@@ -1,0 +1,183 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Parser 2 — History Accumulator (RAW)
+ *
+ * CONFIG FIRST / ZERO HARDCODE
+ *
+ * DATA LAKE layer:
+ * - Reads active symbols from Parser 1 Market Registry (registry_source)
+ * - Fetches Bybit public tickers in ONE batch request per category
+ * - Appends FULL RAW ticker snapshot to NDJSON history per symbol/day
+ *
+ * No analytics. No filtering. No field selection.
+ *
+ * @return array<string,mixed>
+ */
+return [
+
+    /* ======================================================
+       CORE
+       ====================================================== */
+
+    'core' => [
+        'enabled' => true,
+        'parser_name' => 'Parser2HistoryAccumulator',
+        'layer' => 'data_lake_raw',
+    ],
+
+    /* ======================================================
+       SOURCES (INPUT)
+       ====================================================== */
+
+    'sources' => [
+        // Site-root relative path (без ведущего /)
+        'registry_source' => 'modules/parser/parser1_market_registry/storage/active.json',
+
+        // Which categories to process (Bybit V5)
+        // Allowed: spot | linear | inverse
+        'categories' => ['linear'],
+    ],
+
+    /* ======================================================
+       HISTORY WINDOW (INFO ONLY)
+       ====================================================== */
+
+    'history' => [
+        // Cron reference (не используется в логике)
+        'interval_sec' => 60,
+
+        // RAW accumulator — nothing is cut
+        'keep_seconds' => 0,
+    ],
+
+    /* ======================================================
+       BYBIT PUBLIC API
+       ====================================================== */
+
+    'bybit' => [
+        'base_url' => 'https://api.bybit.com',
+        'endpoint_tickers' => '/v5/market/tickers',
+
+        // Network
+        'timeout_sec' => 20,
+        'connect_timeout_sec' => 10,
+        'max_bytes' => 8000000,
+
+        'user_agent' => 'tredercopis-parser2-history-raw/1.0',
+
+        'retry' => [
+            'count' => 1,
+            'sleep_ms' => 300,
+        ],
+    ],
+
+    /* ======================================================
+       OUTPUT (RELATIVE TO MODULE DIR)
+       ====================================================== */
+
+    'output' => [
+        // storage/{SYMBOL}/{YYYY-MM-DD}.ndjson
+        'storage_dir' => 'storage',
+
+        // Service meta (also relative to module dir)
+        'state' => 'storage/state.json',
+        'last_run' => 'storage/last_run.json',
+        'errors' => 'storage/errors.json',
+    ],
+
+    /* ======================================================
+       WRITE SAFETY
+       ====================================================== */
+
+    'write' => [
+        // Atomic JSON meta writes (state/last_run/errors)
+        'atomic' => true,
+
+        // Backup meta files before overwrite (when true -> backup_suffix is REQUIRED)
+        'backup_before_write' => true,
+        'backup_suffix' => '.bak',
+    ],
+
+    /* ======================================================
+       UI CONTRACT (SINGLE SOURCE OF TRUTH)
+       ====================================================== */
+
+    'ui' => [
+        'title' => 'Parser 2 — History Accumulator (RAW)',
+        'layer' => 'Data Lake',
+
+        // UI reads ONLY config['ui']['fields']
+        'fields' => [
+
+            [
+                'key' => 'parser',
+                'label' => 'PARSER',
+                'type' => 'parser_name',
+                'source' => ['core.parser_name'],
+            ],
+
+            [
+                'key' => 'status',
+                'label' => 'STATUS',
+                'type' => 'status_badge',
+                'source' => ['_enabled', 'ok'],
+            ],
+
+            [
+                'key' => 'last_run',
+                'label' => 'LAST RUN',
+                'type' => 'datetime',
+                'source' => ['ts'],
+            ],
+
+            [
+                'key' => 'duration',
+                'label' => 'DURATION',
+                'type' => 'duration_ms',
+                'source' => ['duration_ms'],
+            ],
+
+            [
+                'key' => 'symbols_total',
+                'label' => 'SYMBOLS',
+                'type' => 'count',
+                'source' => ['symbols_total'],
+            ],
+
+            [
+                'key' => 'processed',
+                'label' => 'PROCESSED',
+                'type' => 'count_success',
+                'source' => ['processed'],
+            ],
+
+            [
+                'key' => 'written',
+                'label' => 'WRITTEN',
+                'type' => 'count_success',
+                'source' => ['written'],
+            ],
+
+            [
+                'key' => 'skipped',
+                'label' => 'SKIPPED',
+                'type' => 'count_danger',
+                'source' => ['skipped'],
+            ],
+        ],
+    ],
+];
+
+/* RULES
+- Parser2 is RAW accumulator (Data Lake)
+- NO analytics, NO filtering, NO optimization logic
+- Output NDJSON format (append-only):
+  storage/{SYMBOL}/{YYYY-MM-DD}.ndjson
+  Each line:
+  {"ts":"...","ts_unix":123,"category":"linear","data":{ FULL BYBIT TICKER ... }}
+- Any analytics must read from this layer
+- UI reads ONLY config['ui']['fields']
+- CONFIG FIRST / ZERO-HARDCODE: service must not contain hidden defaults
+*/

@@ -1,0 +1,16 @@
+{
+    "ts": "2026-03-12T17:47:41+00:00",
+    "symbols_total": 533,
+    "processed": 533,
+    "written": 533,
+    "skipped": 0,
+    "tickers_total": 643,
+    "missing_in_tickers": 0,
+    "missing_symbols": [],
+    "registry_shape": "assoc_map",
+    "ok": true,
+    "success": true,
+    "status": "ok",
+    "duration_ms": 1361,
+    "errors_count": 0
+}

@@ -1,0 +1,21 @@
+{
+    "id": "system-light",
+    "name": "System Light",
+    "author": "Tredercopis",
+    "version": "1.0",
+    "layout": "2-columns",
+    "css_class": "theme-light",
+    "system": true,
+    "colors": {
+        "bg": "#f8f9fa",
+        "sidebar": "#2c3e50",
+        "card": "#ffffff",
+        "text": "#212529",
+        "text_muted": "#6c757d",
+        "accent": "#3498db",
+        "success": "#28a745",
+        "warning": "#ffc107",
+        "danger": "#dc3545",
+        "border": "#dee2e6"
+    }
+}

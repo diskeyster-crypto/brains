@@ -5,19 +5,60 @@ require_once __DIR__ . '/service.php';
 
 final class SmartBrainController
 {
-    public function index(): void
-    {
-        $service = new SmartBrainService();
-        $data = $service->getDashboardData();
+    private SmartBrainService $service;
+    private string $smartBrainUrl;
 
-        extract($data, EXTR_SKIP);
-        include __DIR__ . '/views/index.php';
+    public function __construct()
+    {
+        $this->service = new SmartBrainService();
+        $this->smartBrainUrl = '/admin/smart_brain';
     }
 
+    /**
+     * Dashboard page
+     * GET /admin/smart_brain
+     */
+    public function index(): void
+    {
+        $data = $this->service->getDashboardData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/dashboard.php';
+    }
+
+    /**
+     * Global config page
+     * GET /admin/smart_brain/config
+     */
+    public function config(): void
+    {
+        $config = $this->service->getConfig();
+        $smartBrainUrl = $this->smartBrainUrl;
+
+        include __DIR__ . '/views/config.php';
+    }
+
+    /**
+     * Analizator page
+     * GET /admin/smart_brain/analizator
+     */
+    public function analizator(): void
+    {
+        $data = $this->service->getAnalizatorData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/analizator.php';
+    }
+
+    /**
+     * Runtime API
+     * GET /admin/smart_brain/api/runtime
+     */
     public function runtime(): void
     {
-        $service = new SmartBrainService();
-        $data = $service->getRuntimeData();
+        $data = $this->service->getRuntimeData();
 
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

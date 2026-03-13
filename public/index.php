@@ -1013,6 +1013,16 @@ Router::get('/admin/smart_brain', function () {
     $controller->index();
 });
 
+Router::get('/admin/smart_brain/config', function () {
+    $controller = new SmartBrainController();
+    $controller->config();
+});
+
+Router::get('/admin/smart_brain/analizator', function () {
+    $controller = new SmartBrainController();
+    $controller->analizator();
+});
+
 Router::get('/admin/smart_brain/api/runtime', function () {
     $controller = new SmartBrainController();
     $controller->runtime();

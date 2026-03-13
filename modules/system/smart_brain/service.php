@@ -37,4 +37,20 @@ final class SmartBrainService
     {
         return $this->core->getRuntimeData();
     }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getConfig(): array
+    {
+        return $this->core->getConfigData();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getAnalizatorData(): array
+    {
+        return $this->core->getAnalizatorData();
+    }
 }

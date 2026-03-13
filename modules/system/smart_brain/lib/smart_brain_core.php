@@ -100,4 +100,25 @@ final class SmartBrainCore
             'last_run' => $this->state->readJson('storage/last_run.json', []),
         ];
     }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getConfigData(): array
+    {
+        return $this->config->all();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getAnalizatorData(): array
+    {
+        return [
+            'candidates' => $this->state->readJson('storage/candidates.json', []),
+            'signals' => $this->state->readJson('storage/signals.json', []),
+            'monitors' => $this->state->readJson('storage/monitors.json', []),
+            'last_run' => $this->state->readJson('storage/last_run.json', []),
+        ];
+    }
 }

@@ -1,0 +1,1388 @@
+{
+    "149b8f7060f481c7d59579314834a9ff9ad3f556": {
+        "executed_at": "2026-02-17T10:38:08+03:00",
+        "result": "opened_protected",
+        "order_id": "de9dd7e3-bb18-47c4-a25e-9faef64d391f",
+        "trade_id": "149b8f7060f481c7d59579314834a9ff9ad3f556",
+        "error": null
+    },
+    "2081d8f70d4f26df3cc7cfc64acd4a539aee588c": {
+        "executed_at": "2026-02-17T10:40:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "929bde6c223d232a8954bc099cd3fe361e5ec9aa": {
+        "executed_at": "2026-02-17T10:42:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1a482b3400237f4130aa6b0ccdd2d53c24d85f04": {
+        "executed_at": "2026-02-17T10:44:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c3ffacf5266684aa3cfe0e0ee433614aa84a8b48": {
+        "executed_at": "2026-02-17T10:46:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1928dee8491da9f644eb272f42ce0ec8d0c67330": {
+        "executed_at": "2026-02-17T10:48:10+03:00",
+        "result": "opened_protected",
+        "order_id": "f072a4b1-5bff-479e-b070-e5374f6ea14b",
+        "trade_id": "1928dee8491da9f644eb272f42ce0ec8d0c67330",
+        "error": null
+    },
+    "aac2f6d820fa2b5502b3e0c3de2a9b2c579adba9": {
+        "executed_at": "2026-02-17T10:50:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c97852333481ab8ffeb18185edf203380ec950cf": {
+        "executed_at": "2026-02-17T10:52:09+03:00",
+        "result": "opened_protected",
+        "order_id": "65bec435-4d28-4f1d-9aa0-32da3ce0491c",
+        "trade_id": "c97852333481ab8ffeb18185edf203380ec950cf",
+        "error": null
+    },
+    "3c910b0231e981610db24abe65f23b2bf935a557": {
+        "executed_at": "2026-02-17T10:54:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "94ef76694592004fa21b6691a5a415ecfd559033": {
+        "executed_at": "2026-02-17T10:56:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "9ff314f28c49ca08692372698b8748e018c674f1": {
+        "executed_at": "2026-02-17T10:58:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "faa08fd33fdd9b0fec0ab34e475c834fcb8de59b": {
+        "executed_at": "2026-02-17T11:00:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "d31933192f925c74bd460087978e7c25c49925bc": {
+        "executed_at": "2026-02-17T11:02:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "f498e1788351feb550de1b46ee411701a5001855": {
+        "executed_at": "2026-02-17T11:04:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1c4bd28342ab29d806e2a2ee79ffc1d0ec89a6ed": {
+        "executed_at": "2026-02-17T11:06:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a25891f927afe66251a87afe8f3ba6ab786ff00e": {
+        "executed_at": "2026-02-17T11:08:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "0603e7e53abe8d61e4b970eef3caf6a8a9594752": {
+        "executed_at": "2026-02-17T11:10:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "95e01014a35d78f26002fc502c6c70a66d5387fc": {
+        "executed_at": "2026-02-17T11:12:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1ac8d2051fb964b6b22def00f89d7985888219e6": {
+        "executed_at": "2026-02-17T11:14:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "58dd8e5d73dcab15b3978297ba37d2e1979328f5": {
+        "executed_at": "2026-02-17T11:16:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bce12ca6f03b48b0bea0402dc1249e3edaa0fe5f": {
+        "executed_at": "2026-02-17T11:18:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bd302787afd9fef7f7e368d27c4b9a0f59b9e090": {
+        "executed_at": "2026-02-17T11:20:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "2be96d1c768efa38f74f2cd85f6fc72f1e1a82e3": {
+        "executed_at": "2026-02-17T11:22:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "symbol_busy:RAYDIUMUSDT"
+    },
+    "380c3e201f22093d86c0aebdcf4204d22a123878": {
+        "executed_at": "2026-02-17T11:24:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e893161466331c6f6b730b5a972921088a651217": {
+        "executed_at": "2026-02-17T11:26:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b05a5c2d904728b6d99f8b53327a0f202b70e676": {
+        "executed_at": "2026-02-17T11:28:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "0b08f30cec993cc4cdd8247659ef21c0c8682be0": {
+        "executed_at": "2026-02-17T11:30:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "fef0d4ab9e0f8a2f1631b582557cb5e2680f6143": {
+        "executed_at": "2026-02-17T11:32:03+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "da23fc56b7d7a7e5b81d185b7dbec48b6d5bea2c": {
+        "executed_at": "2026-02-17T11:34:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4147391de6966c045d1610fa7ac77b10a9370247": {
+        "executed_at": "2026-02-17T11:36:03+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ca9d2c0b8ad546254a613b0af18e3a57cc8ada3f": {
+        "executed_at": "2026-02-17T11:40:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "22b90292b12518eea303b04a3db4c2738c92f880": {
+        "executed_at": "2026-02-17T11:42:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "5d4f975158192f42a380365de247038a169ca1b5": {
+        "executed_at": "2026-02-17T11:44:03+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "45e98086ad158757bfd2c525590e2c83c7ecf93c": {
+        "executed_at": "2026-02-17T11:46:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "52da9da473d2159d8417c2ed9e88e268208c9567": {
+        "executed_at": "2026-02-17T11:48:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "0942d0f5b857075086f93cc0334c9ba285a3a07e": {
+        "executed_at": "2026-02-17T11:50:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "3952df49a2ec9e0ab2b196382f6927f13867f744": {
+        "executed_at": "2026-02-17T11:52:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "d314cc1871c53e73b0506a89b5f1dc8129fcb16f": {
+        "executed_at": "2026-02-17T11:54:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ebb5ea5b37fcb499da6cc99943aa5b9f6e5808f5": {
+        "executed_at": "2026-02-17T11:56:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "2fe0b418d179246c2cd81b21305e297a9f6bd5f5": {
+        "executed_at": "2026-02-17T11:58:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "af7f71eb2c2595f275674e5ca940a023a1f00563": {
+        "executed_at": "2026-02-17T12:00:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e483a581617c331fc731c37fc16e640e637aae16": {
+        "executed_at": "2026-02-17T12:02:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "f63de8475956a4c3fd46e8b9f4fd44ebb7743ff9": {
+        "executed_at": "2026-02-17T12:04:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c8d89605f8f856c74e137700e53162f4b2711df3": {
+        "executed_at": "2026-02-17T12:06:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e80a60b1e921080ed107a5ff7c0238bd9ee01be2": {
+        "executed_at": "2026-02-17T12:08:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "5d964e48a436b88035d15155853d51e410f7dfa9": {
+        "executed_at": "2026-02-17T12:14:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1c79501312a4054a400c77cb81575a604558d7d7": {
+        "executed_at": "2026-02-17T12:16:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b20696dc443c56171750546a7558e91da1ba301a": {
+        "executed_at": "2026-02-17T12:18:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "aa789b6bcb777b3a8360b42f0107ed46ef0ba0fe": {
+        "executed_at": "2026-02-17T12:20:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "95589f6b6d39e262b43dcef3bc575503454b0777": {
+        "executed_at": "2026-02-17T12:22:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "d8ab8a211f6e894909f8baf877e266c4c0adc842": {
+        "executed_at": "2026-02-17T12:24:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "72bd2e1510e8eb7b3ec5b39816bb46aff1220aef": {
+        "executed_at": "2026-02-17T12:26:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "57e6fc307a893d8e482c4ed84de2bcc5725969ab": {
+        "executed_at": "2026-02-17T12:28:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "26d84538e3a32342cb2f03dd5ea8d42ebe40a1d5": {
+        "executed_at": "2026-02-17T12:30:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "11835cc3b3d41b00af98d8ae153d7f14b6c08986": {
+        "executed_at": "2026-02-17T12:32:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "0f028eb37e3594cd92d95541babc76b52e07f10f": {
+        "executed_at": "2026-02-17T12:34:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "f6975f166cfc400377b9d11408a9b4cf82fe1ac3": {
+        "executed_at": "2026-02-17T12:36:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "703edf7a057b3a5682400f832c4379353f2cc9ed": {
+        "executed_at": "2026-02-17T12:38:04+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b90a16f04d6cb006030913684b1c72d8d96d4daf": {
+        "executed_at": "2026-02-17T12:40:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bbc5a0a77c827033704d993e3bb9e488409b37ec": {
+        "executed_at": "2026-02-17T12:42:05+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "743d370f9c8df56cbdec8f811e9a6bcf4d8f9ade": {
+        "executed_at": "2026-02-17T12:44:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "71805e2989ebff751b841eae7391bfe150752233": {
+        "executed_at": "2026-02-17T12:46:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e40fe600279811357b1c873b011fd01efb108aa0": {
+        "executed_at": "2026-02-17T12:48:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "786c8155e52fd07c946ffb9de7f7bd0622f4e8fa": {
+        "executed_at": "2026-02-17T12:50:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bf272dcfae8061d02e55d8ab47c11ab3bebabb9b": {
+        "executed_at": "2026-02-17T12:52:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "cce4a943edc0041e2c43b3e214a7da9c59265e2b": {
+        "executed_at": "2026-02-17T12:54:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bb836eb517a53aa52165ec1a7e322ef5dab6f32e": {
+        "executed_at": "2026-02-17T12:56:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "731fa9c1d24efb38ad3de2c4e4c9dacdcddef59a": {
+        "executed_at": "2026-02-17T12:58:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "8a2782b596c2595f60ff7e1fb8c251bf3bd990e1": {
+        "executed_at": "2026-02-17T13:00:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c6a1e152c78cca259f9dcb5986edf99134c9f126": {
+        "executed_at": "2026-02-17T13:02:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "7859476d5fb598a3234bec4ba2cee83028b0490f": {
+        "executed_at": "2026-02-17T13:04:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "58bd4590698c49b48288bf4f7c86559149b04518": {
+        "executed_at": "2026-02-17T13:06:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "f3585f86974a8fe1e59c59cd041390a8eff8318a": {
+        "executed_at": "2026-02-17T13:08:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a2e40c013f47bce82dfb9d8de31d611e3cf1ce30": {
+        "executed_at": "2026-02-17T13:10:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "39163a304c0b30693d1fc97526c634bff73f51b8": {
+        "executed_at": "2026-02-17T13:12:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "25e1b2271773b0bd87c8b5f307205f415376d346": {
+        "executed_at": "2026-02-17T13:14:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "d84f3757a09b4ee714fd5b1841a5477f2c51f6cc": {
+        "executed_at": "2026-02-17T13:16:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a5b01c21e218581b770136d7f790d5e8519535e9": {
+        "executed_at": "2026-02-17T13:18:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b542db73f580b5170a88815c43049c9b5568137d": {
+        "executed_at": "2026-02-17T13:20:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "2f7c5ba01b92f9afeb22898b03202be15e02d5f6": {
+        "executed_at": "2026-02-17T13:22:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "3cf8ac913bb9db31b02748a5eeca50e588b295ad": {
+        "executed_at": "2026-02-17T13:24:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "73a93c66d5d3b6efb3a1a72307962d639702c322": {
+        "executed_at": "2026-02-17T13:26:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "3c2ba19124cf4ebf0f9b37d45e14512b3f23bcdb": {
+        "executed_at": "2026-02-17T13:28:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "974cb61bbc10b7bbb3dcfc6158d2f4be13c4eb8c": {
+        "executed_at": "2026-02-17T13:30:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4613765fe1f7b18ef28db07378027c4ab92c3a41": {
+        "executed_at": "2026-02-17T13:32:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "af02488981e7ed24e99f5f7241d48e02e76d6d85": {
+        "executed_at": "2026-02-17T13:34:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "680e61b24909b52451954781260be95d3c0e87fe": {
+        "executed_at": "2026-02-17T13:36:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "36f23c96a994a961d0102c9285298db1abc2e55c": {
+        "executed_at": "2026-02-17T13:38:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "5494d063b4540b48e409bf20835a00b4a0025aeb": {
+        "executed_at": "2026-02-17T13:40:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1bc95ebeff12b8cc85ca71ec731aca39fabed5d9": {
+        "executed_at": "2026-02-17T13:42:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a6e04a1b36ca98d46d7799d2a13a39976f414d7e": {
+        "executed_at": "2026-02-17T13:44:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "symbol_busy:RAYDIUMUSDT"
+    },
+    "f5626290d834956cba8c4157dfd076b7ed1934ee": {
+        "executed_at": "2026-02-17T13:46:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "15b330cadc3c91f7a9281a029f16d0a389cfcd95": {
+        "executed_at": "2026-02-17T13:48:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "301c9e5d82ab9e6bc388f49dbb498da1140884dc": {
+        "executed_at": "2026-02-17T13:50:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "83876742be0e027f80ef5c9078e770fbfd4eede2": {
+        "executed_at": "2026-02-17T13:52:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e9fdc2345e3c23351a104d35831572f0d6ccfc62": {
+        "executed_at": "2026-02-17T13:54:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a0eb0cd7c75a4ad05f582ed868e636b3cb0979b3": {
+        "executed_at": "2026-02-17T13:56:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e508a388e7b0dac04bd34a743293e720e5a5ebfb": {
+        "executed_at": "2026-02-17T13:58:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ca970f4404a0d2a8944d03cb2cbf1a5f17c1753a": {
+        "executed_at": "2026-02-17T14:00:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b11a291fb12676f1c135b19ac6e7d15725c466a3": {
+        "executed_at": "2026-02-17T14:02:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "0fc1c873ce9e1cc269a880d836647eda1d791d7c": {
+        "executed_at": "2026-02-17T14:04:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "91c011b3843659f378108099c717d28c3ddc7196": {
+        "executed_at": "2026-02-17T14:06:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "df68740bbadf3c2700cf4c768b599905ea616b30": {
+        "executed_at": "2026-02-17T14:08:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "06b4e4dfbc2e93054cc07e129ac63fa2680b7cd0": {
+        "executed_at": "2026-02-17T14:10:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "080fb653c96b25d039adfeb0ababbc38ee65a31e": {
+        "executed_at": "2026-02-17T14:12:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "81920c3f83bc392ebbd2dfff35a0f7262f70aeb2": {
+        "executed_at": "2026-02-17T14:14:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "6f4cfc380b0c2c9dcafa7c3952021eb078ca73a2": {
+        "executed_at": "2026-02-17T14:16:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "0889d4180af62f3b2654dc1f4373cd116fa9c730": {
+        "executed_at": "2026-02-17T14:18:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ca156b370d0d920de38a825d6009947d54e3b4cf": {
+        "executed_at": "2026-02-17T14:20:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4c2643676a79f2c80262030e4595c4e8627facf6": {
+        "executed_at": "2026-02-17T14:22:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1921d4f427979045ef945b70e32fc97c38081dbe": {
+        "executed_at": "2026-02-17T14:24:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "06c171ae098e91aebca4ae0fcc75ecd596dd97e7": {
+        "executed_at": "2026-02-17T14:26:09+03:00",
+        "result": "opened_protected",
+        "order_id": "50fe8c80-f1d9-4f23-accf-c9880ed0bb19",
+        "trade_id": "06c171ae098e91aebca4ae0fcc75ecd596dd97e7",
+        "error": null
+    },
+    "b6ff948b67b26d8e669671fea66a7bde83b26413": {
+        "executed_at": "2026-02-17T14:28:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "3aa866e9bca9ffa7f3f30fe13933c4b51cc3ad3f": {
+        "executed_at": "2026-02-17T14:30:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "cd33309a64b15733f6510b27cc8c400af907de2d": {
+        "executed_at": "2026-02-17T14:32:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b2cdead890c2cf6d69b36a3f3454dec1354477d0": {
+        "executed_at": "2026-02-17T14:34:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "491d9354b77d5c6ca966460bd06884632070580a": {
+        "executed_at": "2026-02-17T14:36:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e7904527091aa54adf18d61167d4d3d2611286d4": {
+        "executed_at": "2026-02-17T14:38:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "27f63bffc949faabc370728b31ddce85909511c4": {
+        "executed_at": "2026-02-17T14:40:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "307366e1b10835421c6cdf1df310f39a8948d19d": {
+        "executed_at": "2026-02-17T14:42:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "5d8d641a3cdf2c8a9431ba1157b8cec9dd6882b4": {
+        "executed_at": "2026-02-17T14:44:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "fb9e9ba729031752727d970bad5887e4a8ee8835": {
+        "executed_at": "2026-02-17T14:46:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "7ef6fe18bb327edb0dfdcb943500a7daf2e886fe": {
+        "executed_at": "2026-02-17T14:48:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ed516ba6ed482f349a700e092311f60f78ca8f18": {
+        "executed_at": "2026-02-17T14:50:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "f10694325b98d40db5d659c170a6881503dd8f46": {
+        "executed_at": "2026-02-17T14:52:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "56d60f78aaca68af91d37c52f1ed765d24d770fe": {
+        "executed_at": "2026-02-17T14:54:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c6889dd7c719d299802dd26343de5ba08884594a": {
+        "executed_at": "2026-02-17T14:56:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a108902ed618a69d8364e1a378a794168dfd909b": {
+        "executed_at": "2026-02-17T14:58:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b4157a9031973be9da67727c91bb99a0ee7bf226": {
+        "executed_at": "2026-02-17T15:00:16+03:00",
+        "result": "opened_protected",
+        "order_id": "600dba03-7cd3-4dfd-8cf7-85fc9cac5ab7",
+        "trade_id": "b4157a9031973be9da67727c91bb99a0ee7bf226",
+        "error": null
+    },
+    "7fb5dccdd40aa3ef0fe8609700989dffe086a5df": {
+        "executed_at": "2026-02-17T15:02:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4b724686671e9bd848c06770216caff057a3a80a": {
+        "executed_at": "2026-02-17T15:04:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "020b0e0d0e5dc70f3dde713d7bcb374719567577": {
+        "executed_at": "2026-02-17T15:06:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "d9d131e5ee8c2053c3f37691f04ed309faaf7877": {
+        "executed_at": "2026-02-17T15:08:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "6541d4f8f27395a65e3a7e3aef54bbdcc9c85473": {
+        "executed_at": "2026-02-17T15:10:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c5d0c5acb4d934a6b98cf8eb127e8d00e23d880f": {
+        "executed_at": "2026-02-17T15:12:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "40c78b2ca9aa49ec94e566b5cf5ddacb146efe52": {
+        "executed_at": "2026-02-17T15:14:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ccad19f8a5601a407717fb3c82ed945fb7415f59": {
+        "executed_at": "2026-02-17T15:16:13+03:00",
+        "result": "opened_protected",
+        "order_id": "2d3b1704-c787-4c9c-8980-ec2ca5ac2f09",
+        "trade_id": "ccad19f8a5601a407717fb3c82ed945fb7415f59",
+        "error": null
+    },
+    "efc746dff3590233aa8df9bf4475b4be759875a5": {
+        "executed_at": "2026-02-17T15:18:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "3076ea05eeb68684f8b4f091d54b227c7e09f5f3": {
+        "executed_at": "2026-02-17T15:20:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "5293d65e4d0fc73a06392bf277ba791ade86c9cf": {
+        "executed_at": "2026-02-17T15:22:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "09775721365e60545bf920e2e9bf6f86b18c1591": {
+        "executed_at": "2026-02-17T15:24:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1334dc33d82e34e660f332edde5dcfbc79647769": {
+        "executed_at": "2026-02-17T15:26:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "44218ad0d41e41b6b9b52030078cb0ffd6bd9613": {
+        "executed_at": "2026-02-17T15:28:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "614c19e30487cc6f16aa177e6592a83d3ae2419d": {
+        "executed_at": "2026-02-17T15:30:11+03:00",
+        "result": "opened_protected",
+        "order_id": "25ffebc0-a509-40a3-86b9-82345a012742",
+        "trade_id": "614c19e30487cc6f16aa177e6592a83d3ae2419d",
+        "error": null
+    },
+    "d387d038052d446c2e45c43f2125c192a18c6417": {
+        "executed_at": "2026-02-17T15:32:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "9da1fb36397be24789bd19452417c7c0b8514959": {
+        "executed_at": "2026-02-17T15:34:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "7bfc915a2248a4b9ba4b57c3e73e3c6e9eac969c": {
+        "executed_at": "2026-02-17T15:36:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "b7766eb27c9860ae87dc98f5e15a60a2b95b4d34": {
+        "executed_at": "2026-02-17T15:38:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "6d64c1b637af57008639c5c772f072e686c852a9": {
+        "executed_at": "2026-02-17T15:40:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "858bbf55212c2d04dccc61ca26179dce38ebe416": {
+        "executed_at": "2026-02-17T15:42:10+03:00",
+        "result": "opened_protected",
+        "order_id": "d618f0df-1634-453a-abc0-c2acb8b3b834",
+        "trade_id": "858bbf55212c2d04dccc61ca26179dce38ebe416",
+        "error": null
+    },
+    "ef445301b43ef45633e9db993d1a879d89fd0028": {
+        "executed_at": "2026-02-17T15:44:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "8e1f763867d6fe9e94127db466f47c4b894990b7": {
+        "executed_at": "2026-02-17T15:46:11+03:00",
+        "result": "opened_protected",
+        "order_id": "02bdd3a0-614b-4e47-a0e8-b5ec145ecc53",
+        "trade_id": "8e1f763867d6fe9e94127db466f47c4b894990b7",
+        "error": null
+    },
+    "e68d6c03d32e16cc850fd53e59ddc61b5cc2c58e": {
+        "executed_at": "2026-02-17T15:48:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "d8a1658623a5d9be248b609cc5746649f2d730bd": {
+        "executed_at": "2026-02-17T15:50:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "e96545c03741e266b894bc0d54c77593c24ea408": {
+        "executed_at": "2026-02-17T15:54:11+03:00",
+        "result": "opened_protected",
+        "order_id": "d6665624-853d-4f49-a5e5-7e8d3f6fda6a",
+        "trade_id": "e96545c03741e266b894bc0d54c77593c24ea408",
+        "error": null
+    },
+    "fc97afe36d3c8ff61f6ed4bcac5e009383381cdb": {
+        "executed_at": "2026-02-17T15:56:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "02cbf4196946275519df40d2599db0ba3bdde23d": {
+        "executed_at": "2026-02-17T15:58:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a4ef07e36d46c5c341469e40e4709c0346cd66eb": {
+        "executed_at": "2026-02-17T16:00:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "f75ee87b62c251d9ccea4bd4419ee60612cc8012": {
+        "executed_at": "2026-02-17T16:02:06+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "cb15253b43ca2660470e1b0a2f367326a2150d6f": {
+        "executed_at": "2026-02-17T16:04:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "10d5a8f8c624e04a541b1c062a1968c60c11040f": {
+        "executed_at": "2026-02-17T16:06:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "41820c6f93364960823aada478fa8b193eabc61b": {
+        "executed_at": "2026-02-17T16:08:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "3bda365785e961524bb476ebd1e664732dc1ee0a": {
+        "executed_at": "2026-02-17T16:10:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "04fe348ef386f5dcfc6ff7598fe2ecccbdf2b550": {
+        "executed_at": "2026-02-17T16:12:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "df5632e379b6c0fc544a1153ac9c8d4c400664fb": {
+        "executed_at": "2026-02-17T16:14:11+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "249d4db7706f23d11f90bf8a3e58405d59757c09": {
+        "executed_at": "2026-02-17T16:16:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "88bb4547420379bf42563ed6fbc8e0831a371d93": {
+        "executed_at": "2026-02-17T16:18:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "2bd2a1fbc132f95ed9b4644792966c4e8c532a28": {
+        "executed_at": "2026-02-17T16:20:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "a9c958f58df44b8b8b46a68846c5df1eb7ab505a": {
+        "executed_at": "2026-02-17T16:22:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "708143ea775a6ebe39b283064b66245adbb88190": {
+        "executed_at": "2026-02-17T16:24:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4e7ac0e5e2a3227ecd22457b319fc9c45f956540": {
+        "executed_at": "2026-02-17T16:26:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bb99c0f74eda52789fc723b79faaadf693ac4ff3": {
+        "executed_at": "2026-02-17T16:28:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1ea7611f4c9e5d8c8daf23f17c5ac0f016b7e45d": {
+        "executed_at": "2026-02-17T16:30:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "881d3df9253c064928c2696bbdf0c6bfb1268266": {
+        "executed_at": "2026-02-17T16:32:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ad6ff4de9c37c281c2ce0dfe791b02038fffa0c6": {
+        "executed_at": "2026-02-17T16:34:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c7b3125cedac07ef6ebf19351ddee3048a28b180": {
+        "executed_at": "2026-02-17T16:36:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "03ead031ca7fb7152b9854e6199f10d13c7fa24f": {
+        "executed_at": "2026-02-17T16:38:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "8a1efe84b01cf38b09086c2e87ddaa0799047312": {
+        "executed_at": "2026-02-17T16:40:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "921ac0c690d2101949344b4ac1246a699bb706ee": {
+        "executed_at": "2026-02-17T16:42:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "68de7ed396ad491b37107418bb3b988be1d95a2c": {
+        "executed_at": "2026-02-17T16:44:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "01dbe89cfc9da51c6ad85a1935cee2ad49503d0c": {
+        "executed_at": "2026-02-17T16:46:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "30faf9cb36edc23a709ebd513fd99dfd9ac1539b": {
+        "executed_at": "2026-02-17T16:48:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "df56fdc7ef02d1fdde2b50925f1ca69531d0075a": {
+        "executed_at": "2026-02-17T16:50:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "8eb79d99f6831af4619dcc886c3c995a4cb5916d": {
+        "executed_at": "2026-02-17T16:52:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "1fa07060b20f693bfea0b03bce91a464096549ab": {
+        "executed_at": "2026-02-17T16:54:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c783751594cc7249fc188e1c23ea37cc52d551bb": {
+        "executed_at": "2026-02-17T16:56:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "bb921255bae4376a3680fb904c5a9b6067fd716e": {
+        "executed_at": "2026-02-17T16:58:07+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "9fc37e8db724e8834000f6a9bf8032ef181f2e2e": {
+        "executed_at": "2026-02-17T17:00:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ed5781ddd15de02f3854821e49890e574fefebbe": {
+        "executed_at": "2026-02-17T17:02:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "daef58ac7c9ee91e89cd10bb48c5995a296f4864": {
+        "executed_at": "2026-02-17T17:04:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ed68849daba84ac108e8be29ac71473c0e1226bf": {
+        "executed_at": "2026-02-17T17:06:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "75dc25eb57edee0b7143d0d24c9816f039d6c033": {
+        "executed_at": "2026-02-17T17:08:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4912cac0b3e40992acbaa2354b2f97f5cd1a40f5": {
+        "executed_at": "2026-02-17T17:10:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "8f8805daa9d8c22f00dbc6cd271580fa3e14f469": {
+        "executed_at": "2026-02-17T17:12:09+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "4256afec149e0c9a154e5bfd790a966d73f2fa88": {
+        "executed_at": "2026-02-17T17:14:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "ddab7e2587eba0f448841514164409c873e66504": {
+        "executed_at": "2026-02-17T17:16:08+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "c4860a05fc8b1c7b6408eb2f3c41279b2bd313a6": {
+        "executed_at": "2026-02-17T17:18:10+03:00",
+        "result": "rejected_limits",
+        "order_id": null,
+        "trade_id": null,
+        "error": "max_open_trades_reached:1"
+    },
+    "875d87781045f677299dac3b8d55f78b3e23db83": {
+        "executed_at": "2026-02-17T17:20:11+03:00",
+        "result": "opened_protected",
+        "order_id": "10b942c8-c324-4724-ab36-2b74a6b976dc",
+        "trade_id": "875d87781045f677299dac3b8d55f78b3e23db83",
+        "error": null
+    }
+}

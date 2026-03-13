@@ -1,0 +1,440 @@
+[
+    {
+        "schema_version": "sim_trade_v1",
+        "trade_id": "11dab29629a5955c6685ebbd18c110e56256edfe",
+        "signal_id": "11dab29629a5955c6685ebbd18c110e56256edfe",
+        "symbol": "ORCAUSDT",
+        "side": "long",
+        "status": "rejected",
+        "entry_action": "wait_retrace",
+        "entry_action_applied": "waiting_for_entry_touch",
+        "entry_timeout_minutes_signal": 10,
+        "entry_timeout_minutes_effective": 10,
+        "entry_timeout_source": "brain",
+        "entry_timeout_deadline_ts": 1771317903,
+        "late_threshold_pct": 2.0219,
+        "created_ts": 1771317303,
+        "created_at": "2026-02-17T11:35:04+03:00",
+        "profile_id": "111",
+        "risk": {
+            "profile_id": "111",
+            "budget_usdt_per_trade": 6,
+            "leverage": 5,
+            "stop_from_liq_range_pct": 20,
+            "slippage_bps": 20,
+            "fees_bps": 6,
+            "order_type": "market",
+            "trailing": {
+                "enabled": true,
+                "activation_roi_pct": 6,
+                "mode": "normal",
+                "drawdown_factor": 0.5
+            },
+            "take_profit": {
+                "enabled": true,
+                "roi_pct": 555
+            },
+            "limits": {
+                "max_open_trades": 1,
+                "one_trade_per_symbol": true
+            }
+        },
+        "risk_source": "brain_signal",
+        "risk_hash": "2f002932e7081de00e9289b853cc6be87e9237c5",
+        "entry": {
+            "target_price": 1.1293827999999999,
+            "opened_price": null,
+            "opened_price_no_slippage": null,
+            "opened_ts": null,
+            "opened_at": null,
+            "budget_usdt": 6,
+            "leverage": 5,
+            "qty": 25.058687445998526,
+            "margin_usdt": 6,
+            "notional_usdt": 30,
+            "slippage_bps": 20
+        },
+        "liq_price": 0.95775168000000022,
+        "sl_price_initial": 1.1493020160000003,
+        "sl_price_current": 1.1493020160000003,
+        "targets": {
+            "take_profit": 2.5260700560000009,
+            "take_profit_enabled": true,
+            "take_profit_roi_pct": 555,
+            "stop_loss_original": 1.1180889719999998,
+            "stop_loss_current": 1.1493020160000003
+        },
+        "trailing": {
+            "enabled": true,
+            "activation_roi_pct": 6,
+            "mode": "normal",
+            "drawdown_factor": 0.5,
+            "active": false,
+            "activated_ts": null,
+            "activated_at": null,
+            "peak_roi_pct": 0,
+            "peak_price": null,
+            "sl_trailing_last": null
+        },
+        "signal_score": 0.097586000000000006,
+        "signal_confirmations": 1,
+        "market": {
+            "last_price": null,
+            "last_ts_unix": null
+        },
+        "pnl": {
+            "unrealized": 0,
+            "realized": 0,
+            "max_drawdown_roi": 0,
+            "max_favorable_roi": 0,
+            "roi_margin": 0,
+            "roi_unrealized_pct": 0,
+            "pnl_unrealized_usdt": 0
+        },
+        "events": [
+            {
+                "ts": "2026-02-17T11:35:04+03:00",
+                "type": "created_pending",
+                "price": 1.1948000000000001,
+                "fill_price": 1.1971896000000002,
+                "slippage_bps": 20,
+                "entry_action_applied": "waiting_for_entry_touch"
+            }
+        ],
+        "reject_result": {
+            "status": "rejected",
+            "close_reason": "reject_entry_not_reached",
+            "closed_at": "2026-02-17T11:45:04+03:00",
+            "closed_ts": 1771317904,
+            "trade": {
+                "schema_version": "sim_trade_v1",
+                "trade_id": "11dab29629a5955c6685ebbd18c110e56256edfe",
+                "signal_id": "11dab29629a5955c6685ebbd18c110e56256edfe",
+                "symbol": "ORCAUSDT",
+                "side": "long",
+                "status": "pending_entry",
+                "entry_action": "wait_retrace",
+                "entry_action_applied": "timeout_wait_entry",
+                "entry_timeout_minutes_signal": 10,
+                "entry_timeout_minutes_effective": 10,
+                "entry_timeout_source": "brain",
+                "entry_timeout_deadline_ts": 1771317903,
+                "late_threshold_pct": 2.0219,
+                "created_ts": 1771317303,
+                "created_at": "2026-02-17T11:35:04+03:00",
+                "profile_id": "111",
+                "risk": {
+                    "profile_id": "111",
+                    "budget_usdt_per_trade": 6,
+                    "leverage": 5,
+                    "stop_from_liq_range_pct": 20,
+                    "slippage_bps": 20,
+                    "fees_bps": 6,
+                    "order_type": "market",
+                    "trailing": {
+                        "enabled": true,
+                        "activation_roi_pct": 6,
+                        "mode": "normal",
+                        "drawdown_factor": 0.5
+                    },
+                    "take_profit": {
+                        "enabled": true,
+                        "roi_pct": 555
+                    },
+                    "limits": {
+                        "max_open_trades": 1,
+                        "one_trade_per_symbol": true
+                    }
+                },
+                "risk_source": "brain_signal",
+                "risk_hash": "2f002932e7081de00e9289b853cc6be87e9237c5",
+                "entry": {
+                    "target_price": 1.1293827999999999,
+                    "opened_price": null,
+                    "opened_price_no_slippage": null,
+                    "opened_ts": null,
+                    "opened_at": null,
+                    "budget_usdt": 6,
+                    "leverage": 5,
+                    "qty": 25.058687445998526,
+                    "margin_usdt": 6,
+                    "notional_usdt": 30,
+                    "slippage_bps": 20
+                },
+                "liq_price": 0.95775168000000022,
+                "sl_price_initial": 1.1493020160000003,
+                "sl_price_current": 1.1493020160000003,
+                "targets": {
+                    "take_profit": 2.5260700560000009,
+                    "take_profit_enabled": true,
+                    "take_profit_roi_pct": 555,
+                    "stop_loss_original": 1.1180889719999998,
+                    "stop_loss_current": 1.1493020160000003
+                },
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 6,
+                    "mode": "normal",
+                    "drawdown_factor": 0.5,
+                    "active": false,
+                    "activated_ts": null,
+                    "activated_at": null,
+                    "peak_roi_pct": 0,
+                    "peak_price": null,
+                    "sl_trailing_last": null
+                },
+                "signal_score": 0.097586000000000006,
+                "signal_confirmations": 1,
+                "market": {
+                    "last_price": null,
+                    "last_ts_unix": null
+                },
+                "pnl": {
+                    "unrealized": 0,
+                    "realized": 0,
+                    "max_drawdown_roi": 0,
+                    "max_favorable_roi": 0,
+                    "roi_margin": 0,
+                    "roi_unrealized_pct": 0,
+                    "pnl_unrealized_usdt": 0
+                },
+                "events": [
+                    {
+                        "ts": "2026-02-17T11:35:04+03:00",
+                        "type": "created_pending",
+                        "price": 1.1948000000000001,
+                        "fill_price": 1.1971896000000002,
+                        "slippage_bps": 20,
+                        "entry_action_applied": "waiting_for_entry_touch"
+                    },
+                    {
+                        "ts": "2026-02-17T11:45:04+03:00",
+                        "type": "entry_timeout",
+                        "entry_action_applied": "timeout_wait_entry"
+                    }
+                ]
+            }
+        },
+        "reject_reason": "reject_entry_not_reached",
+        "rejected_at": "2026-02-17T11:45:04+03:00"
+    },
+    {
+        "schema_version": "sim_trade_v1",
+        "trade_id": "95589f6b6d39e262b43dcef3bc575503454b0777",
+        "signal_id": "95589f6b6d39e262b43dcef3bc575503454b0777",
+        "symbol": "ORCAUSDT",
+        "side": "long",
+        "status": "rejected",
+        "entry_action": "wait_retrace",
+        "entry_action_applied": "waiting_for_entry_touch",
+        "entry_timeout_minutes_signal": 10,
+        "entry_timeout_minutes_effective": 10,
+        "entry_timeout_source": "brain",
+        "entry_timeout_deadline_ts": 1771321203,
+        "late_threshold_pct": 2.0219,
+        "created_ts": 1771320603,
+        "created_at": "2026-02-17T12:30:03+03:00",
+        "profile_id": "111",
+        "risk": {
+            "profile_id": "111",
+            "budget_usdt_per_trade": 6,
+            "leverage": 5,
+            "stop_from_liq_range_pct": 20,
+            "slippage_bps": 20,
+            "fees_bps": 6,
+            "order_type": "market",
+            "trailing": {
+                "enabled": true,
+                "activation_roi_pct": 6,
+                "mode": "normal",
+                "drawdown_factor": 0.5
+            },
+            "take_profit": {
+                "enabled": true,
+                "roi_pct": 555
+            },
+            "limits": {
+                "max_open_trades": 1,
+                "one_trade_per_symbol": true
+            }
+        },
+        "risk_source": "brain_signal",
+        "risk_hash": "2f002932e7081de00e9289b853cc6be87e9237c5",
+        "entry": {
+            "target_price": 1.200914,
+            "opened_price": null,
+            "opened_price_no_slippage": null,
+            "opened_ts": null,
+            "opened_at": null,
+            "budget_usdt": 6,
+            "leverage": 5,
+            "qty": 23.927211508414484,
+            "margin_usdt": 6,
+            "notional_usdt": 30,
+            "slippage_bps": 20
+        },
+        "liq_price": 1.0030420799999999,
+        "sl_price_initial": 1.2036504960000001,
+        "sl_price_current": 1.2036504960000001,
+        "targets": {
+            "take_profit": 2.6455234860000005,
+            "take_profit_enabled": true,
+            "take_profit_roi_pct": 555,
+            "stop_loss_original": 1.1889048600000001,
+            "stop_loss_current": 1.2036504960000001
+        },
+        "trailing": {
+            "enabled": true,
+            "activation_roi_pct": 6,
+            "mode": "normal",
+            "drawdown_factor": 0.5,
+            "active": false,
+            "activated_ts": null,
+            "activated_at": null,
+            "peak_roi_pct": 0,
+            "peak_price": null,
+            "sl_trailing_last": null
+        },
+        "signal_score": 0.115817,
+        "signal_confirmations": 1,
+        "market": {
+            "last_price": null,
+            "last_ts_unix": null
+        },
+        "pnl": {
+            "unrealized": 0,
+            "realized": 0,
+            "max_drawdown_roi": 0,
+            "max_favorable_roi": 0,
+            "roi_margin": 0,
+            "roi_unrealized_pct": 0,
+            "pnl_unrealized_usdt": 0
+        },
+        "events": [
+            {
+                "ts": "2026-02-17T12:30:03+03:00",
+                "type": "created_pending",
+                "price": 1.2513000000000001,
+                "fill_price": 1.2538026,
+                "slippage_bps": 20,
+                "entry_action_applied": "waiting_for_entry_touch"
+            }
+        ],
+        "reject_result": {
+            "status": "rejected",
+            "close_reason": "reject_entry_not_reached",
+            "closed_at": "2026-02-17T12:41:04+03:00",
+            "closed_ts": 1771321264,
+            "trade": {
+                "schema_version": "sim_trade_v1",
+                "trade_id": "95589f6b6d39e262b43dcef3bc575503454b0777",
+                "signal_id": "95589f6b6d39e262b43dcef3bc575503454b0777",
+                "symbol": "ORCAUSDT",
+                "side": "long",
+                "status": "pending_entry",
+                "entry_action": "wait_retrace",
+                "entry_action_applied": "timeout_wait_entry",
+                "entry_timeout_minutes_signal": 10,
+                "entry_timeout_minutes_effective": 10,
+                "entry_timeout_source": "brain",
+                "entry_timeout_deadline_ts": 1771321203,
+                "late_threshold_pct": 2.0219,
+                "created_ts": 1771320603,
+                "created_at": "2026-02-17T12:30:03+03:00",
+                "profile_id": "111",
+                "risk": {
+                    "profile_id": "111",
+                    "budget_usdt_per_trade": 6,
+                    "leverage": 5,
+                    "stop_from_liq_range_pct": 20,
+                    "slippage_bps": 20,
+                    "fees_bps": 6,
+                    "order_type": "market",
+                    "trailing": {
+                        "enabled": true,
+                        "activation_roi_pct": 6,
+                        "mode": "normal",
+                        "drawdown_factor": 0.5
+                    },
+                    "take_profit": {
+                        "enabled": true,
+                        "roi_pct": 555
+                    },
+                    "limits": {
+                        "max_open_trades": 1,
+                        "one_trade_per_symbol": true
+                    }
+                },
+                "risk_source": "brain_signal",
+                "risk_hash": "2f002932e7081de00e9289b853cc6be87e9237c5",
+                "entry": {
+                    "target_price": 1.200914,
+                    "opened_price": null,
+                    "opened_price_no_slippage": null,
+                    "opened_ts": null,
+                    "opened_at": null,
+                    "budget_usdt": 6,
+                    "leverage": 5,
+                    "qty": 23.927211508414484,
+                    "margin_usdt": 6,
+                    "notional_usdt": 30,
+                    "slippage_bps": 20
+                },
+                "liq_price": 1.0030420799999999,
+                "sl_price_initial": 1.2036504960000001,
+                "sl_price_current": 1.2036504960000001,
+                "targets": {
+                    "take_profit": 2.6455234860000005,
+                    "take_profit_enabled": true,
+                    "take_profit_roi_pct": 555,
+                    "stop_loss_original": 1.1889048600000001,
+                    "stop_loss_current": 1.2036504960000001
+                },
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 6,
+                    "mode": "normal",
+                    "drawdown_factor": 0.5,
+                    "active": false,
+                    "activated_ts": null,
+                    "activated_at": null,
+                    "peak_roi_pct": 0,
+                    "peak_price": null,
+                    "sl_trailing_last": null
+                },
+                "signal_score": 0.115817,
+                "signal_confirmations": 1,
+                "market": {
+                    "last_price": null,
+                    "last_ts_unix": null
+                },
+                "pnl": {
+                    "unrealized": 0,
+                    "realized": 0,
+                    "max_drawdown_roi": 0,
+                    "max_favorable_roi": 0,
+                    "roi_margin": 0,
+                    "roi_unrealized_pct": 0,
+                    "pnl_unrealized_usdt": 0
+                },
+                "events": [
+                    {
+                        "ts": "2026-02-17T12:30:03+03:00",
+                        "type": "created_pending",
+                        "price": 1.2513000000000001,
+                        "fill_price": 1.2538026,
+                        "slippage_bps": 20,
+                        "entry_action_applied": "waiting_for_entry_touch"
+                    },
+                    {
+                        "ts": "2026-02-17T12:41:04+03:00",
+                        "type": "entry_timeout",
+                        "entry_action_applied": "timeout_wait_entry"
+                    }
+                ]
+            }
+        },
+        "reject_reason": "reject_entry_not_reached",
+        "rejected_at": "2026-02-17T12:41:04+03:00"
+    }
+]

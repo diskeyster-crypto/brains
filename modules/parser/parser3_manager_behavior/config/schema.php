@@ -1,0 +1,205 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Parser 3: Manager — Behavior Profiler (Market Intelligence)
+ *
+ * CONFIG FIRST / ZERO-HARDCODE
+ *
+ * Manager = грубая оценка поведения и подготовка кандидатов (воронка).
+ * ВАЖНО: в output нет цен и нет таймсерии цен.
+ *
+ * @return array<string,mixed>
+ */
+return [
+
+    /* ======================================================
+       CORE
+       ====================================================== */
+
+    'enabled' => true,
+
+/* ======================================================
+   INPUTS (SYSTEMPATHS CONTRACT)
+   ====================================================== */
+
+'sources' => [
+    // Parser 1 active registry
+    'registry_storage_key' => 'parser.parser1_market_registry.storage',
+    'registry_filename' => 'active.json',
+
+    // Parser 2 RAW accumulator base dir
+    'history_storage_key' => 'parser.parser2_history_accumulator.storage',
+],
+
+
+    /* ======================================================
+       HISTORY READ POLICY
+       ====================================================== */
+
+    // How many recent days (files) to scan per symbol
+    // 0 => scan all available days (может быть тяжело)
+    'scan_days' => 0,
+
+    // Max NDJSON lines to read per symbol per file (safety)
+    // 0 => no limit
+    'max_lines_per_file' => 0,
+
+    // Parser2 write interval (sec) used only for hints (expected_reversal_sec)
+    // If you write tickers each minute => 60
+    'interval_sec' => 60,
+
+    /* ======================================================
+       BEHAVIOR CLASSES (ontology)
+       ====================================================== */
+
+    // Allowed classes:
+    // - volatile
+    // - trend
+    // - corridor
+    // - dead
+    // - unclassified
+    'classes' => [
+        'volatile',
+        'trend',
+        'corridor',
+        'dead',
+        'unclassified',
+    ],
+
+    /* ======================================================
+       THRESHOLDS / HEURISTICS
+       ====================================================== */
+
+    'thresholds' => [
+        // Minimum points required to classify
+        'min_points' => 300,
+
+        // Volatility classification (std of returns)
+        'volatility_std_hi' => 0.012,   // ~1.2% per tick
+        'volatility_std_lo' => 0.004,   // ~0.4% per tick
+
+        // Trend classification (mean vs std)
+        'trend_snr_hi' => 0.18,
+
+        // Corridor classification
+        'corridor_std_max' => 0.006,
+        'corridor_snr_max' => 0.08,
+
+        // Dead classification (volume heuristic)
+        'dead_volume24h_max' => 500000, // quote turnover
+        'dead_points_max' => 200,
+
+        // Pump tag detection: absolute return threshold per step
+        'pump_step_pct' => 0.03,        // 3% step move
+        'pump_min_events' => 3,
+
+        // Reversal detection window (steps) after pump event
+        'reversal_steps' => 6,
+        'reversal_min_ratio' => 0.45,   // fraction of pumps that reverse quickly => manipulated tag
+    ],
+
+    /* ======================================================
+       CANDIDATES (funnel routing)
+       ====================================================== */
+
+    'candidates' => [
+        // minimal confidence to include in any candidates list
+        'min_confidence' => 0.25,
+
+        // minimal internal score per candidate type
+        'min_score_pump' => 0.35,
+        'min_score_corridor' => 0.35,
+        'min_score_trend' => 0.35,
+        'min_score_volatile' => 0.35,
+    ],
+
+    /* ======================================================
+       OUTPUT (RELATIVE TO MODULE DIR)
+       ====================================================== */
+
+    'output' => [
+        // per-symbol behavior profiles
+        'profiles_dir' => 'storage/profiles',
+
+        // indexes
+        'index_classes_dir' => 'storage/index/classes',
+        'index_tags_dir' => 'storage/index/tags',
+
+        // candidates lists for detectors/resolvers
+        'candidates_dir' => 'storage/candidates',
+
+        // meta
+        'state' => 'storage/state.json',
+        'last_run' => 'storage/last_run.json',
+        'errors' => 'storage/errors.json',
+    ],
+
+    /* ======================================================
+       WRITE SAFETY
+       ====================================================== */
+
+    'write' => [
+        'atomic' => true,
+        'backup_before_write' => false,
+        'backup_suffix' => '.bak',
+    ],
+
+    /* ======================================================
+       UI CONTRACT (Parser Manager table)
+       ====================================================== */
+
+    'ui' => [
+        'fields' => [
+            [
+                'key' => 'parser',
+                'label' => 'PARSER',
+                'type' => 'parser_name',
+                'source' => ['_title', '_module'],
+            ],
+            [
+                'key' => 'status',
+                'label' => 'STATUS',
+                'type' => 'status_badge',
+                'source' => ['_enabled', 'ok'],
+            ],
+            [
+                'key' => 'last_run',
+                'label' => 'LAST RUN',
+                'type' => 'datetime',
+                'source' => ['ts'],
+            ],
+            [
+                'key' => 'duration',
+                'label' => 'DURATION',
+                'type' => 'duration_ms',
+                'source' => ['duration_ms'],
+            ],
+            [
+                'key' => 'symbols',
+                'label' => 'SYMBOLS',
+                'type' => 'count',
+                'source' => ['symbols_total'],
+            ],
+            [
+                'key' => 'classified',
+                'label' => 'CLASSIFIED',
+                'type' => 'count_success',
+                'source' => ['classified'],
+            ],
+            [
+                'key' => 'unclassified',
+                'label' => 'UNCLASS',
+                'type' => 'count_danger',
+                'source' => ['unclassified'],
+            ],
+        ],
+    ],
+];
+
+/* RULES
+- Manager outputs NO price series and NO raw price fields.
+- Reads ONLY: Parser1 active + Parser2 NDJSON.
+- Writes ONLY inside this module storage/.
+- Candidate lists are inputs for Detector/Resolver (funnel).
+*/

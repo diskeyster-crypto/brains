@@ -1,0 +1,7 @@
+{
+    "ts": "2026-01-29T13:52:02+03:00",
+    "errors": [
+        "input_missing:modules/parser4_analyzer/storage/candidates.json",
+        "input_invalid:candidates_json"
+    ]
+}

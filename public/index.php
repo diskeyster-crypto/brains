@@ -1003,6 +1003,22 @@ Router::post('/admin/brain/api/profiles/set_active', function () {
 });
 
 // ============================================================
+// SMART BRAIN MODULE ROUTES
+// ============================================================
+
+require_once ROOT . '/modules/system/smart_brain/controller.php';
+
+Router::get('/admin/smart_brain', function () {
+    $controller = new SmartBrainController();
+    $controller->index();
+});
+
+Router::get('/admin/smart_brain/api/runtime', function () {
+    $controller = new SmartBrainController();
+    $controller->runtime();
+});
+
+// ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================
 

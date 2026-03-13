@@ -1,0 +1,13 @@
+{
+    "name": "parser3_manager_behavior",
+    "title": "Manager Behavior Parser",
+    "version": "1.0.0",
+    "description": "Analyzes manager behavior patterns",
+    "category": "parser",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

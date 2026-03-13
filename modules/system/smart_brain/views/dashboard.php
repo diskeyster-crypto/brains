@@ -257,7 +257,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                             <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['reason'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['duration'] ?? '-')) ?> min</td>
+                            <td><?= ($row['duration'] ?? null) !== null ? htmlspecialchars((string)$row['duration']) . ' min' : '-' ?></td>
                         </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>

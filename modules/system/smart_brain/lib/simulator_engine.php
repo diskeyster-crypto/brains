@@ -156,9 +156,10 @@ final class SimulatorEngine
                 $closedAt = date('c');
                 $duration = 0;
                 if ($openedAt !== '') {
-                    $diff = strtotime($closedAt) - strtotime($openedAt);
-                    if ($diff !== false && $diff > 0) {
-                        $duration = (int)round($diff / 60); // minutes
+                    $tsOpen = strtotime($openedAt);
+                    $tsClose = strtotime($closedAt);
+                    if ($tsOpen !== false && $tsClose !== false && $tsClose > $tsOpen) {
+                        $duration = (int)round(($tsClose - $tsOpen) / 60); // minutes
                     }
                 }
                 $closed[] = [

@@ -1,0 +1,16 @@
+name: parser2_history_accumulator
+version: 1.0.0
+purpose: Parser 2 — History Accumulator (Bybit public tickers → per-symbol JSON history)
+inputs:
+  - modules/parser1_market_registry/storage/active.json
+outputs:
+  - modules/parser2_history_accumulator/storage/{SYMBOL}_history.json
+  - modules/parser2_history_accumulator/storage/state.json
+  - modules/parser2_history_accumulator/storage/last_run.json
+dependencies:
+  - none (public API only)
+cron:
+  - cron.php: execute (*/1 * * * *)
+notes:
+  - JSON only, no DB
+  - Uses ONE batch tickers request per category per run

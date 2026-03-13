@@ -1,0 +1,13 @@
+{
+    "name": "parser4_analyzer",
+    "title": "Analyzer Parser",
+    "version": "1.0.0",
+    "description": "Analyzes market data and generates candidates",
+    "category": "parser",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

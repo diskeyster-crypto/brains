@@ -1,0 +1,14 @@
+{
+    "ok": true,
+    "ts": "2026-03-12T17:47:44+00:00",
+    "ts_unix": 1773337664,
+    "monitored_count": 0,
+    "signals_published": 0,
+    "instant_signals": 0,
+    "expired_count": 50,
+    "new_candidates": 0,
+    "confirmed_count": 0,
+    "candidates_loaded": 0,
+    "errors": [],
+    "duration_ms": 16
+}

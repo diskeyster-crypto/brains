@@ -1,0 +1,65 @@
+/* Tredercopis Theme - Components CSS */
+.btn-primary {
+    background-color: var(--theme-accent);
+    border-color: var(--theme-accent);
+}
+
+.btn-success {
+    background-color: var(--theme-success);
+    border-color: var(--theme-success);
+}
+
+.btn-warning {
+    background-color: var(--theme-warning);
+    border-color: var(--theme-warning);
+}
+
+.btn-danger {
+    background-color: var(--theme-danger);
+    border-color: var(--theme-danger);
+}
+
+.table {
+    color: var(--theme-text);
+}
+
+.table thead th {
+    border-color: var(--theme-border);
+}
+
+.table td, .table th {
+    border-color: var(--theme-border);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(255,255,255,0.05);
+}
+
+.form-control {
+    background-color: var(--theme-card);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+.form-control:focus {
+    background-color: var(--theme-card);
+    border-color: var(--theme-accent);
+    color: var(--theme-text);
+}
+
+.badge {
+    font-weight: 500;
+}
+
+.alert {
+    border-radius: 8px;
+}
+
+.nav-link {
+    color: rgba(255,255,255,0.8);
+}
+
+.nav-link:hover, .nav-link.active {
+    color: #fff;
+    background-color: var(--theme-accent);
+}

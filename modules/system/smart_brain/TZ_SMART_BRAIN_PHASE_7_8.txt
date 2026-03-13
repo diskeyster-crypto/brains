@@ -1,0 +1,390 @@
+SMART BRAIN
+Technical Specification
+
+PHASE 7 + PHASE 8
+
+IMPORTANT
+---------
+
+This task is limited STRICTLY to:
+
+PHASE 7 = Simulator Engine
+PHASE 8 = Metrics / Statistics
+
+Do NOT redesign architecture.
+Do NOT modify executor or live trading.
+Do NOT modify parser2/parser3/parser4 logic except compatibility-only adjustments.
+Work only inside:
+
+modules/system/smart_brain/
+
+
+====================================================
+CURRENT PIPELINE
+====================================================
+
+Parser4 Analyzer
+        ↓
+Candidates
+        ↓
+Corridor Monitor
+        ↓
+Monitors
+        ↓
+Coin Passports
+        ↓
+Risk Engine
+        ↓
+Signals
+        ↓
+(NEW)
+Simulator Engine
+        ↓
+Metrics
+
+
+====================================================
+PHASE 7 — SIMULATOR ENGINE
+====================================================
+
+Goal:
+Turn Smart Brain into a real paper-trading system.
+
+Simulator must ALWAYS work, независимо от реального исполнителя.
+
+
+FILES
+-----
+
+lib/simulator_engine.php
+storage/simulator/waiting.json
+storage/simulator/active.json
+storage/simulator/closed.json
+
+
+INPUT
+-----
+
+storage/signals.json
+
+
+REQUIRED LOGIC
+--------------
+
+Simulator must maintain 3 states:
+
+1. WAITING
+2. ACTIVE
+3. CLOSED
+
+
+WAITING STRUCTURE
+-----------------
+
+Each waiting trade must contain:
+
+symbol
+entry_zone_low
+entry_zone_high
+budget
+leverage
+stoploss
+takeprofit
+status
+
+Example:
+
+{
+ "symbol": "BTCUSDT",
+ "entry_zone_low": 62100,
+ "entry_zone_high": 62580,
+ "budget": 12.5,
+ "leverage": 5,
+ "stoploss": 0.012,
+ "takeprofit": 0.028,
+ "status": "waiting"
+}
+
+
+ACTIVE STRUCTURE
+----------------
+
+Each active trade must contain:
+
+symbol
+entry_price
+current_price
+budget
+leverage
+stoploss
+takeprofit
+roi
+mae
+mfe
+opened_at
+status
+
+Example:
+
+{
+ "symbol": "BTCUSDT",
+ "entry_price": 62320,
+ "current_price": 62650,
+ "budget": 12.5,
+ "leverage": 5,
+ "stoploss": 0.012,
+ "takeprofit": 0.028,
+ "roi": 0.026,
+ "mae": 0.004,
+ "mfe": 0.031,
+ "opened_at": "2026-03-13T18:00:00Z",
+ "status": "active"
+}
+
+
+CLOSED STRUCTURE
+----------------
+
+Each closed trade must contain:
+
+symbol
+entry_price
+exit_price
+budget
+leverage
+stoploss
+takeprofit
+roi
+mae
+mfe
+duration
+reason
+opened_at
+closed_at
+status
+
+Example:
+
+{
+ "symbol": "BTCUSDT",
+ "entry_price": 62320,
+ "exit_price": 64010,
+ "budget": 12.5,
+ "leverage": 5,
+ "stoploss": 0.012,
+ "takeprofit": 0.028,
+ "roi": 0.054,
+ "mae": 0.006,
+ "mfe": 0.058,
+ "duration": 22,
+ "reason": "take_profit",
+ "opened_at": "2026-03-13T18:00:00Z",
+ "closed_at": "2026-03-13T18:22:00Z",
+ "status": "closed"
+}
+
+
+SIMULATOR STATE TRANSITIONS
+---------------------------
+
+1. Signals from storage/signals.json become WAITING trades.
+
+2. WAITING → ACTIVE when current price enters entry zone:
+   entry_zone_low <= current_price <= entry_zone_high
+
+3. ACTIVE → CLOSED if:
+   - stoploss hit
+   - takeprofit hit
+
+4. CLOSED trade must be removed from ACTIVE and appended to CLOSED.
+
+
+IMPORTANT
+---------
+
+Simulator must calculate and update in ACTIVE:
+
+- current_price
+- roi
+- mae
+- mfe
+
+Definitions:
+
+MAE = max adverse excursion during active trade
+MFE = max favorable excursion during active trade
+
+Duration in CLOSED:
+minutes between opened_at and closed_at
+
+
+SOURCE OF CURRENT PRICE
+-----------------------
+
+Use latest available price data from existing Smart Brain context.
+
+If current price is not yet available in pipeline, use latest price already passed through candidate/monitor data.
+Do NOT invent external APIs.
+Do NOT connect live exchange here.
+
+
+NO DUPLICATES
+-------------
+
+Simulator must not duplicate waiting/active trades for same symbol.
+If signal already exists in WAITING or ACTIVE, do not append duplicate.
+
+
+UI REQUIREMENT
+--------------
+
+Simulator tab must show 3 real tables:
+
+WAITING
+ACTIVE
+CLOSED
+
+All fields listed above must be displayed.
+
+
+====================================================
+PHASE 8 — METRICS / STATISTICS
+====================================================
+
+Goal:
+Measure Smart Brain performance objectively.
+
+Files:
+
+lib/smart_brain_core.php
+views/dashboard.php
+views/runtime.php
+Optional:
+storage/simulator/stats.json
+
+
+REQUIRED METRICS
+----------------
+
+Compute at least:
+
+total_trades
+winrate
+average_roi
+median_mae
+median_mfe
+median_duration
+signal_to_entry_conversion
+
+Definitions:
+
+signal_to_entry_conversion =
+active+closed trades / total signals generated
+
+
+DATA SOURCE
+-----------
+
+Use simulator/closed.json
+Use simulator/active.json
+Use storage/signals.json
+
+
+STATS STRUCTURE
+---------------
+
+Write stats to:
+
+storage/simulator/stats.json
+
+Example:
+
+{
+ "total_trades": 150,
+ "winrate": 0.72,
+ "average_roi": 0.034,
+ "median_mae": 0.006,
+ "median_mfe": 0.019,
+ "median_duration": 18,
+ "signal_to_entry_conversion": 0.41,
+ "updated_at": "2026-03-13T18:30:00Z"
+}
+
+
+UI REQUIREMENT
+--------------
+
+Dashboard must display:
+
+- total trades
+- winrate
+- average ROI
+- conversion
+- active count
+- waiting count
+- closed count
+
+Runtime tab must display full stats.json snapshot.
+
+
+PASSPORT COMPATIBILITY
+----------------------
+
+Simulator closed trades MUST contain:
+
+mae
+mfe
+duration
+
+so that Coin Passports can compute:
+
+avg_mae
+avg_mfe
+avg_duration
+
+This is mandatory.
+
+
+FILES ALLOWED TO CHANGE
+====================================================
+
+modules/system/smart_brain/lib/simulator_engine.php
+modules/system/smart_brain/lib/smart_brain_core.php
+modules/system/smart_brain/views/simulator.php
+modules/system/smart_brain/views/dashboard.php
+modules/system/smart_brain/views/runtime.php
+modules/system/smart_brain/storage/simulator/*.json
+
+Optional:
+modules/system/smart_brain/lib/state_manager.php
+
+
+FILES NOT ALLOWED TO CHANGE
+====================================================
+
+executor
+trading bot
+live trading
+external APIs
+parser2
+parser3
+parser4
+
+
+DEFINITION OF DONE
+====================================================
+
+Phase 7 + Phase 8 are DONE only if:
+
+1. Waiting / Active / Closed transitions work.
+2. Active trades track ROI, MAE, MFE.
+3. Closed trades contain duration and reason.
+4. No duplicate waiting/active trades per symbol.
+5. stats.json is generated.
+6. Dashboard shows real metrics.
+7. Runtime tab shows full metrics snapshot.
+8. Passports receive usable mae/mfe/duration data from closed trades.
+9. No placeholder simulator logic remains.
+
+
+END OF SPEC

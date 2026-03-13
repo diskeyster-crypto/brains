@@ -1,0 +1,70 @@
+{
+    "enabled": true,
+    "mode": "live",
+    "account_id": "trading_bot",
+    "max_positions": 10,
+    "safety_stop_errors": 5,
+    "last_modified": "2026-02-17T19:50:43+03:00",
+    "modified_by": null,
+    "notes": "Trading Bot v1 runtime settings. Edit via UI or this file.",
+    "reconcile_before_action": true,
+    "exchange": {
+        "category": "linear",
+        "account_type": "UNIFIED",
+        "settle_coin": "USDT",
+        "position_idx": 0,
+        "tpsl_mode": "Full",
+        "sl_trigger_by": "IndexPrice"
+    },
+    "sources": {
+        "signals_key": "system.brain.storage",
+        "signals_file": "signals.json",
+        "risk_active_key": "system.brain.storage",
+        "risk_active_file": "runtime/risk_active.json",
+        "commands_key": "system.brain.storage",
+        "commands_file": "runtime/trading_commands.json"
+    },
+    "execution": {
+        "max_scan_intents_per_run": 200,
+        "max_intents_per_run": 1,
+        "max_deferred_intents_per_run": 10,
+        "default_entry_timeout_minutes": 8,
+        "default_late_threshold_pct": 1.25,
+        "retrace_slack_pct": 0.05,
+        "exchange_positions_cache_ttl_sec": 2,
+        "require_price_check_live": true,
+        "reverse_side_enabled": true,
+        "commands_enabled": false,
+        "commands_apply_before_intents": false,
+        "commands_allow_close": false,
+        "commands_max_per_run": 50,
+        "dumb_trailing_enabled": true,
+        "enable_trailing_on_open": false,
+        "dumb_trailing_activation_epsilon_pct": 0.02,
+        "balance_coin": "USDT",
+        "balance_required_buffer_pct": 5,
+        "balance_reject_below_usdt": 2,
+        "balance_cache_ttl_sec": 8,
+        "balance_strict_stable_coin_only": true
+    },
+    "validation": {
+        "signal_schema_version": "clean_signal_v1"
+    },
+    "ui": {
+        "max_preview_items": 50
+    },
+    "symbol_overrides": {
+        "MAGIC": {
+            "enabled": true,
+            "reverse_side_enabled": false
+        },
+        "MER": {
+            "enabled": true,
+            "reverse_side_enabled": false
+        },
+        "RAYDIUM": {
+            "enabled": true,
+            "reverse_side_enabled": false
+        }
+    }
+}

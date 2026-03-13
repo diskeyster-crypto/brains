@@ -1,0 +1,21 @@
+SMART_BRAIN v2 BUILD PLAN
+
+1. Create clean Smart Brain module skeleton
+2. Add global config system under config/
+3. Integrate Parser4 as internal Smart Brain component
+4. Add Corridor Monitor
+5. Add Coin Passport engine
+6. Add Risk Engine
+7. Add Simulator engine
+8. Connect UI to runtime state
+9. Only after that connect real executor
+
+Current package already includes:
+- skeleton module
+- global config
+- runtime orchestrator
+- placeholder Parser4 component
+- corridor monitor
+- risk engine
+- simulator sync
+- dashboard

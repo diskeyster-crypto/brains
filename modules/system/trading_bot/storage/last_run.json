@@ -1,0 +1,136 @@
+{
+    "ts": "2026-03-12T17:47:45+00:00",
+    "ok": true,
+    "status": "ok",
+    "mode": "live",
+    "steps": [
+        {
+            "step": "reconcile",
+            "status": "ok",
+            "positions_synced": 0,
+            "orders_synced": 0,
+            "orphan_positions_count": 0,
+            "orphan_positions": []
+        },
+        {
+            "step": "load_intents",
+            "status": "ok",
+            "count": 0
+        },
+        {
+            "step": "validate_intents",
+            "status": "ok",
+            "valid": 0,
+            "rejected": 0,
+            "truncated": 0
+        },
+        {
+            "step": "execute_intents",
+            "status": "ok",
+            "opened": 0,
+            "failed": 0,
+            "executed": 0,
+            "deferred_checked": 0,
+            "max_execute_per_run": 1,
+            "max_deferred_per_run": 10
+        },
+        {
+            "step": "update_positions",
+            "status": "ok",
+            "updated": 0,
+            "closed": 0,
+            "trailing_applied": 0,
+            "trailing_failed": 0,
+            "trailing_skipped": 0
+        },
+        {
+            "step": "safety_checks",
+            "status": "ok",
+            "checks_passed": 2,
+            "checks_failed": 0
+        }
+    ],
+    "intents_loaded": 0,
+    "intents_valid": 0,
+    "intents_rejected": 0,
+    "intents_rejected_exec": 0,
+    "intents_failed_exec": 0,
+    "intents_rejected_total": 0,
+    "intents_deferred": 0,
+    "positions_opened": 0,
+    "positions_updated": 0,
+    "positions_closed": 0,
+    "orders_sent": 0,
+    "orders_filled": 0,
+    "orders_failed": 0,
+    "errors_count": 0,
+    "errors": [],
+    "warnings": [],
+    "selected_intent": null,
+    "selected_decision": null,
+    "balance_snapshot_last": {
+        "coin": "USDT",
+        "account_type": "UNIFIED",
+        "available": 14.18968315,
+        "available_usd": 14.18968315,
+        "total_available_balance_usd": 14.18968315,
+        "total_margin_balance_usd": 0,
+        "total_wallet_balance_usd": 14.18163857,
+        "total_equity_usd": 14.18163857,
+        "source": "coin_equity_fallback",
+        "account_totals_missing": true,
+        "raw_totalAvailableBalance": "",
+        "ret_code": 0,
+        "ret_msg": "OK",
+        "deprecated_fields": [
+            "availableToWithdraw"
+        ],
+        "wallet_balance": 14.18163857,
+        "equity": 14.18163857,
+        "raw_account": {
+            "accountIMRate": "",
+            "totalMaintenanceMarginByMp": "",
+            "totalInitialMargin": "",
+            "accountType": "UNIFIED",
+            "accountMMRate": "",
+            "accountMMRateByMp": "",
+            "accountIMRateByMp": "",
+            "totalInitialMarginByMp": "",
+            "totalMaintenanceMargin": "",
+            "totalEquity": "14.18163857",
+            "totalMarginBalance": "",
+            "totalAvailableBalance": "",
+            "totalPerpUPL": "0",
+            "totalWalletBalance": "14.18163857",
+            "accountLTV": "",
+            "coin": [
+                {
+                    "spotBorrow": "0",
+                    "availableToBorrow": "",
+                    "bonus": "0",
+                    "accruedInterest": "0",
+                    "availableToWithdraw": "",
+                    "totalOrderIM": "0",
+                    "equity": "14.18968315",
+                    "totalPositionMM": "0",
+                    "usdValue": "14.1816376",
+                    "unrealisedPnl": "0",
+                    "collateralSwitch": true,
+                    "spotHedgingQty": "0",
+                    "borrowAmount": "0",
+                    "totalPositionIM": "0",
+                    "walletBalance": "14.18968315",
+                    "cumRealisedPnl": "-2040.00635082",
+                    "locked": "0",
+                    "marginCollateral": true,
+                    "coin": "USDT"
+                }
+            ]
+        }
+    },
+    "balance_snapshot_ts": 1771338009,
+    "intents_preview": [],
+    "intents_preview_total": 0,
+    "intents_truncated": 0,
+    "duration_ms": 860
+}

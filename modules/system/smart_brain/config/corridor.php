@@ -1,0 +1,9 @@
+<?php
+declare(strict_types=1);
+
+return [
+    'enabled' => true,
+    'entry_zone_percent' => 0.20,
+    'max_wait_minutes' => 60,
+    'rebuild_interval_seconds' => 5,
+];

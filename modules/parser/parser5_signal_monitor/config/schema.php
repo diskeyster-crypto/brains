@@ -1,0 +1,177 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Parser 5: Signal Monitor Engine — Configuration
+ *
+ * ALL paths and parameters defined here. ZERO HARDCODE.
+ */
+return [
+    'enabled' => true,
+
+    // -------------------------------------------------------
+    // MODES: Instant Signal vs Monitor
+    // -------------------------------------------------------
+    'modes' => [
+        'instant_signal' => [
+            'enabled' => true,
+            // Instant = only when CURRENT impulse is still present (validated via Parser2 history tail)
+            'abs_return_threshold' => 0.012,   // 1.2% on latest window
+            'min_score' => 0.25,
+            // If candidate has no best_window_min, use this window for impulse validation
+            'window_minutes_fallback' => 2,
+        ],
+        'monitor' => [
+            'enabled' => true,
+            'min_checks' => 2,
+            'confirmations_required' => 2,
+        ],
+    ],
+
+    // -------------------------------------------------------
+    // INPUT SOURCES
+    // -------------------------------------------------------
+    'sources' => [
+        // Parser4 candidates (main input) — SystemPaths key + filename
+        'candidates_storage_key' => 'parser.parser4_analyzer.storage',
+        'candidates_filename' => 'candidates.json',
+
+        // Parser2 history (for price checking) — SystemPaths key (directory)
+        'history_storage_key' => 'parser.parser2_history_accumulator.storage',
+    ],
+
+    // -------------------------------------------------------
+    // MONITOR SETTINGS
+    // -------------------------------------------------------
+    'monitor' => [
+        // Maximum candidates to monitor simultaneously
+        'max_monitored' => 50,
+        // Time to keep candidate on monitor (minutes) before expiring
+        'monitor_ttl_minutes' => 60,
+        // Minimum score from Parser4 to accept candidate
+        'min_score' => 0.01,
+        // Re-sync candidates from Parser4 every N runs
+        'resync_interval' => 5,
+    ],
+
+    // -------------------------------------------------------
+    // ENTRY CONDITIONS (when to generate signal)
+    // -------------------------------------------------------
+    'entry' => [
+        // Price must move in expected direction by this % (confirmation)
+        'min_price_move_pct' => 0.0025,  // 0.25%
+        // Maximum allowed drawdown before invalidating signal
+        'max_drawdown_pct' => 0.01,     // 1%
+        // Minimum time on monitor before signal (minutes)
+        'min_monitor_time' => 1,
+        // Maximum time on monitor (after this, remove if no signal)
+        'max_monitor_time' => 30,
+        // Require price to confirm direction N times
+        'confirmation_count' => 2,
+    ],
+
+    // -------------------------------------------------------
+    // SIGNAL SETTINGS
+    // -------------------------------------------------------
+    'signal' => [
+        // Maximum active signals
+        'max_active_signals' => 20,
+        // Signal validity time (minutes)
+        'validity_minutes' => 30,
+        // Default take profit (%)
+        'take_profit_pct' => 0.02,    // 2%
+        // Default stop loss (%)
+        'stop_loss_pct' => 0.01,      // 1%
+        // Risk/reward ratio minimum
+        'min_risk_reward' => 1.5,
+    ],
+
+    // -------------------------------------------------------
+    // OUTPUT PATHS
+    // -------------------------------------------------------
+    'output' => [
+        // Main signals file for Executor (ONE shared file)
+        'signals' => 'storage/signals.json',
+        // Current monitor state
+        'monitor' => 'storage/monitor.json',
+        // Last run statistics
+        'last_run' => 'storage/last_run.json',
+        // Signal history directory
+        'history_dir' => 'storage/history',
+        // Log file
+        'log' => 'logs/signal_monitor.log',
+    ],
+
+    // -------------------------------------------------------
+    // LOGGING
+    // -------------------------------------------------------
+    'logging' => [
+        'max_log_size_mb' => 10,
+        'debug' => false,
+    ],
+
+    // -------------------------------------------------------
+    // UI FIELDS FOR PARSER MANAGER
+    // -------------------------------------------------------
+    'ui' => [
+        'fields' => [
+            [
+                'key' => 'parser',
+                'label' => 'PARSER',
+                'type' => 'parser_name',
+                'source' => ['_title', '_module'],
+            ],
+            [
+                'key' => 'status',
+                'label' => 'STATUS',
+                'type' => 'status_badge',
+                'source' => ['_enabled', 'ok'],
+            ],
+            [
+                'key' => 'last_run',
+                'label' => 'LAST RUN',
+                'type' => 'datetime',
+                'source' => ['ts'],
+            ],
+            [
+                'key' => 'duration',
+                'label' => 'DURATION',
+                'type' => 'duration_ms',
+                'source' => ['duration_ms'],
+            ],
+            [
+                'key' => 'monitored',
+                'label' => 'MONITORED',
+                'type' => 'count',
+                'source' => ['monitored_count'],
+            ],
+            [
+                'key' => 'signals',
+                'label' => 'SIGNALS',
+                'type' => 'count_success',
+                'source' => ['signals_published'],
+            ],
+            [
+                'key' => 'expired',
+                'label' => 'EXPIRED',
+                'type' => 'count_danger',
+                'source' => ['expired_count'],
+            ],
+        ],
+    ],
+];
+
+/* ==========================================================
+   RULES (Tredercopis / Parser5)
+   ==========================================================
+   - CONFIG FIRST / ZERO-HARDCODE: all params & paths live here.
+   - profiles/thresholds are tuned to produce enough candidates for Parser5,
+     while Parser5 performs the strict live confirmation.
+   - LF only.
+   ========================================================== */
+
+/* RULES
+- Schema mirrors config defaults
+- Do not store physical filesystem paths; use SystemPaths keys
+- LF only
+*/

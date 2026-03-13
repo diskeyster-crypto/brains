@@ -1,0 +1,13 @@
+{
+    "name": "delist_parser0",
+    "title": "Delist Parser",
+    "version": "1.0.0",
+    "description": "Fetches new listings and delistings from Bybit announcements. Creates whitelist (new coins) and blacklist (delisted coins).",
+    "category": "parser",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

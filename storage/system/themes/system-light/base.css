@@ -1,0 +1,40 @@
+/* Tredercopis Theme - Base CSS */
+:root {
+    --theme-bg: #f8f9fa;
+    --theme-sidebar: #2c3e50;
+    --theme-card: #ffffff;
+    --theme-text: #212529;
+    --theme-text-muted: #6c757d;
+    --theme-accent: #3498db;
+    --theme-success: #28a745;
+    --theme-warning: #ffc107;
+    --theme-danger: #dc3545;
+    --theme-border: #dee2e6;
+}
+
+body {
+    background-color: var(--theme-bg);
+    color: var(--theme-text);
+}
+
+.sidebar {
+    background-color: var(--theme-sidebar);
+}
+
+.card {
+    background-color: var(--theme-card);
+    border-color: var(--theme-border);
+}
+
+.text-muted {
+    color: var(--theme-text-muted) !important;
+}
+
+a {
+    color: var(--theme-accent);
+}
+
+a:hover {
+    color: var(--theme-accent);
+    filter: brightness(1.2);
+}

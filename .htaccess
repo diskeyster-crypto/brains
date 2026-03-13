@@ -1,0 +1,35 @@
+# Tredercopis Core - Root .htaccess (Legacy Mode)
+# For setup where docroot = / (not /public)
+#
+# RECOMMENDED: Set your server's document root to /public directory
+# This file is only for backward compatibility
+#
+# ARCHITECTURE NOTE:
+# This file contains ONLY routing directives.
+# Security (directory access control) MUST be configured in Apache VirtualHost.
+# See README.md for VirtualHost security configuration.
+#
+# ⚠️ SECURITY IN .htaccess IS FORBIDDEN BY ARCHITECTURE
+# Directory/Location directives MUST be in VirtualHost config.
+
+# Rewrite rules - route application paths to front controller
+RewriteEngine On
+
+# Allow existing files and directories
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Route /install to front controller
+RewriteRule ^install$ public/index.php [L]
+
+# Route /admin/* to front controller
+RewriteRule ^admin(/.*)?$ public/index.php [L]
+
+# Route /api/* to front controller
+RewriteRule ^api(/.*)?$ public/index.php [L]
+
+# Deny access to dotfiles (this is allowed in .htaccess)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>

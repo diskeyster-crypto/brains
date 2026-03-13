@@ -1,0 +1,23 @@
+{
+    "name": "parser15_history_sync",
+    "version": "1.0.0",
+    "description": "History Sync - Backfill & Gap Repair for Parser2",
+    "type": "parser",
+    "enabled": true,
+    "service": "Parser15HistorySyncService",
+    "cron": {
+        "enabled": true,
+        "interval": "*/2 * * * *",
+        "description": "Run every 2 minutes to detect and repair gaps in Parser2 history"
+    },
+    "dependencies": [
+        "parser1_market_registry",
+        "parser2_history_accumulator"
+    ],
+    "ui": {
+        "page": "parsers",
+        "order": 1.5,
+        "icon": "sync",
+        "color": "#4CAF50"
+    }
+}

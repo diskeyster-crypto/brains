@@ -1,0 +1,13 @@
+{
+    "name": "parser6_simulator",
+    "title": "Parser 6: Simulator",
+    "version": "1.0.0",
+    "description": "Simulates execution of Parser5 signals using Parser2 NDJSON price stream. No Bybit orders.",
+    "category": "simulator",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

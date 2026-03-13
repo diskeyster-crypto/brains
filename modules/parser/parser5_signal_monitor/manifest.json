@@ -1,0 +1,13 @@
+{
+    "name": "parser5_signal_monitor",
+    "title": "Signal Monitor Parser",
+    "version": "1.0.0",
+    "description": "Monitors signals and generates trading alerts",
+    "category": "parser",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

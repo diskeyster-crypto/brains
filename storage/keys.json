@@ -1,0 +1,18 @@
+{
+    "bybit": {
+        "trading_bot": {
+            "credentials": {
+                "api_key": {
+                    "encrypted": true,
+                    "value": "vjWgBMLjaAmhqwgnHCIIr5ecT0RjCh7kTb5eoANJogpGjxM5f7yOyIwE13iJbIRb"
+                },
+                "api_secret": {
+                    "encrypted": true,
+                    "value": "+m0UiTUm7s4pNpdtBDxZYbb747hYRC07f15mSNVtYb5WokdpcRWtWlYRvXPd2YY8rCssqyf1BSzk1YXD8EgPiw=="
+                }
+            },
+            "created_at": "2026-01-26T16:09:55+03:00",
+            "updated_at": "2026-01-26T16:09:55+03:00"
+        }
+    }
+}

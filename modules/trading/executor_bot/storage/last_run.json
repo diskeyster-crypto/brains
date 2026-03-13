@@ -1,0 +1,12 @@
+{
+    "ts": "2026-02-02T23:25:48+03:00",
+    "ok": true,
+    "success": true,
+    "status": "ok",
+    "signals_seen": 0,
+    "signals_processed": 0,
+    "opened_ok": 0,
+    "failed_orders": 0,
+    "errors_count": 0,
+    "errors": []
+}

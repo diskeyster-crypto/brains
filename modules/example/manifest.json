@@ -1,0 +1,13 @@
+{
+    "name": "example",
+    "title": "Example Module",
+    "version": "1.0.0",
+    "description": "An example module demonstrating the module system",
+    "author": "Tredercopis Team",
+    "category": "module",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "logs": "storage/logs"
+    }
+}

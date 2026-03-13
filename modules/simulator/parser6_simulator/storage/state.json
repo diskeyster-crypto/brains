@@ -1,0 +1,17 @@
+{
+    "ts": "2026-03-12T17:47:45+00:00",
+    "ok": true,
+    "status": "ok",
+    "open_trades": 1,
+    "closed_trades": 7,
+    "signals_seen": 0,
+    "signals_skipped": 0,
+    "winrate": 0.42859999999999998,
+    "roi_sum": 0,
+    "errors_count": 0,
+    "contract": {
+        "signals_schema": "clean_signal_v1",
+        "risk_schema": "risk_active_v1",
+        "trade_schema": "sim_trade_v1"
+    }
+}

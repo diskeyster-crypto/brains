@@ -32,32 +32,36 @@ final class SmartBrainCore
      */
     public function run(): array
     {
-        $cfg = $this->config->all();
-
         $this->logger->log('info', 'Smart Brain cycle started');
 
-        $parser = new Parser4Analyzer((array)$cfg['parser4'], $this->state);
+        $parser4Cfg = $this->config->getEffective('parser4');
+        $corridorCfg = $this->config->getEffective('corridor');
+        $riskCfg = $this->config->getEffective('risk_engine');
+        $profilesCfg = $this->config->getEffective('profiles');
+        $simulatorCfg = $this->config->getEffective('simulator');
+
+        $parser = new Parser4Analyzer($parser4Cfg, $this->state);
         $candidates = $parser->run();
 
-        $corridor = new CorridorMonitor((array)$cfg['corridor']);
+        $corridor = new CorridorMonitor($corridorCfg);
         $monitors = $corridor->buildMonitors($candidates);
         $this->state->writeJson('storage/monitors.json', $monitors);
 
         $passports = new CoinPassportEngine($this->state);
         $passports->update($candidates);
 
-        $risk = new RiskEngine((array)$cfg['risk_engine'], (array)$cfg['profiles']);
+        $risk = new RiskEngine($riskCfg, $profilesCfg);
         $riskMonitors = $risk->apply($monitors);
 
         $signalBuilder = new SignalBuilder();
         $signals = $signalBuilder->build($riskMonitors);
         $this->state->writeJson('storage/signals.json', $signals);
 
-        $simulator = new SimulatorEngine((array)$cfg['simulator'], $this->state);
+        $simulator = new SimulatorEngine($simulatorCfg, $this->state);
         $simulator->sync($signals);
 
         $runtime = new SmartBrainRuntime($this->state);
-        $runtime->snapshot($cfg);
+        $runtime->snapshot($this->config->all());
 
         $result = [
             'ok' => true,
@@ -78,8 +82,9 @@ final class SmartBrainCore
      */
     public function getDashboardData(): array
     {
+        $uiSettings = $this->config->getEffective('ui');
         return [
-            'title' => (string)($this->config->get('ui')['title'] ?? 'Smart Brain'),
+            'title' => (string)($uiSettings['title'] ?? 'Smart Brain'),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
             'signals' => $this->state->readJson('storage/signals.json', []),
             'monitors' => $this->state->readJson('storage/monitors.json', []),
@@ -119,6 +124,45 @@ final class SmartBrainCore
             'signals' => $this->state->readJson('storage/signals.json', []),
             'monitors' => $this->state->readJson('storage/monitors.json', []),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getSimulatorData(): array
+    {
+        return [
+            'waiting' => $this->state->readJson('storage/simulator/waiting.json', []),
+            'active' => $this->state->readJson('storage/simulator/active.json', []),
+            'closed' => $this->state->readJson('storage/simulator/closed.json', []),
+            'last_run' => $this->state->readJson('storage/last_run.json', []),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getPassportsData(): array
+    {
+        $passportsDir = $this->moduleBase . '/storage/passports';
+        $passports = [];
+
+        if (is_dir($passportsDir)) {
+            $files = glob($passportsDir . '/*.json');
+            if ($files) {
+                foreach ($files as $file) {
+                    $data = json_decode((string)file_get_contents($file), true);
+                    if (is_array($data)) {
+                        $passports[] = $data;
+                    }
+                }
+            }
+        }
+
+        return [
+            'passports' => $passports,
+            'count' => count($passports),
         ];
     }
 }

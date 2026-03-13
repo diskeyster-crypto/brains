@@ -1,8 +1,9 @@
 <?php
 /**
- * Smart Brain Module - Analizator View
+ * Smart Brain Module - Analyzer View
  * 
- * Displays analysis data: candidates, signals, and monitor details.
+ * Phase 3: Parser4 Analyzer display.
+ * Candidate fields: symbol, corridor_low, corridor_high, corridor_width, volatility, strength, trend_bias
  */
 
 /** @var string $smartBrainUrl */
@@ -11,15 +12,32 @@
 /** @var array<int,array<string,mixed>> $monitors */
 /** @var array<string,mixed> $last_run */
 
-$pageTitle = 'Smart Brain - Analizator';
+$pageTitle = 'Smart Brain - Analyzer';
 $activeTab = 'analizator';
 
+$extraStyles = '
+.status-monitoring { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.status-entry_zone { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.status-triggered { background: rgba(16,185,129,0.15); color: #34d399; }
+.status-invalidated { background: rgba(239,68,68,0.15); color: #f87171; }
+.status-waiting { background: rgba(148,163,184,0.15); color: #94a3b8; }
+';
+
 $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $smartBrainUrl) {
+    $statusClass = function(string $status): string {
+        return match($status) {
+            'monitoring' => 'status-monitoring',
+            'entry_zone' => 'status-entry_zone',
+            'triggered' => 'status-triggered',
+            'invalidated' => 'status-invalidated',
+            default => 'status-waiting',
+        };
+    };
 ?>
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h4 class="mb-1"><i class="bi bi-graph-up me-2 text-primary"></i>Analizator</h4>
+            <h4 class="mb-1"><i class="bi bi-graph-up me-2 text-primary"></i>Analyzer</h4>
             <p class="text-secondary mb-0">Analysis pipeline: Candidates → Monitors → Signals</p>
         </div>
         <div>
@@ -60,7 +78,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         </div>
     </div>
 
-    <!-- Candidates Table -->
+    <!-- Candidates Table (Phase 3 fields) -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 style="margin: 0;"><i class="bi bi-search me-1"></i> Candidates</h5>
@@ -69,24 +87,27 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Strength</th><th>Direction</th><th>Price</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Volatility</th><th>Strength</th><th>Trend Bias</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($candidates)): ?>
-                        <tr><td colspan="5" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
+                        <tr><td colspan="8" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
                     <?php else: ?>
                         <?php foreach ($candidates as $i => $c): ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
                             <td><strong><?= htmlspecialchars((string)($c['symbol'] ?? '')) ?></strong></td>
+                            <td><?= htmlspecialchars((string)($c['corridor_low'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($c['corridor_high'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($c['corridor_width'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($c['volatility'] ?? '-')) ?></td>
                             <td>
                                 <?php $str = (float)($c['strength'] ?? 0); ?>
                                 <span class="badge <?= $str >= 0.7 ? 'bg-success' : ($str >= 0.5 ? 'bg-warning' : 'bg-secondary') ?>">
                                     <?= number_format($str, 2) ?>
                                 </span>
                             </td>
-                            <td><?= htmlspecialchars((string)($c['direction'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($c['price'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($c['trend_bias'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -95,42 +116,10 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         </div>
     </div>
 
-    <!-- Signals Table -->
+    <!-- Monitors Table -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 style="margin: 0;"><i class="bi bi-broadcast me-1"></i> Signals</h5>
-            <span class="badge bg-success"><?= count($signals) ?></span>
-        </div>
-        <div class="card-body p-0">
-            <table class="table table-dark table-hover mb-0">
-                <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Direction</th><th>Budget</th><th>Leverage</th><th>Entry Zone</th><th>Stop Loss</th></tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($signals)): ?>
-                        <tr><td colspan="7" class="text-center text-secondary py-4">No signals generated</td></tr>
-                    <?php else: ?>
-                        <?php foreach ($signals as $i => $s): ?>
-                        <tr>
-                            <td><?= $i + 1 ?></td>
-                            <td><strong><?= htmlspecialchars((string)($s['symbol'] ?? '')) ?></strong></td>
-                            <td><?= htmlspecialchars((string)($s['direction'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($s['budget'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($s['leverage'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($s['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['entry_zone_high'] ?? '')) ?></td>
-                            <td><?= htmlspecialchars((string)($s['stop_loss'] ?? '-')) ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Monitors Detail Table -->
-    <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 style="margin: 0;"><i class="bi bi-binoculars me-1"></i> Monitors (detailed)</h5>
+            <h5 style="margin: 0;"><i class="bi bi-binoculars me-1"></i> Monitors</h5>
             <span class="badge bg-warning"><?= count($monitors) ?></span>
         </div>
         <div class="card-body p-0">
@@ -143,6 +132,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                         <tr><td colspan="7" class="text-center text-secondary py-4">No monitors</td></tr>
                     <?php else: ?>
                         <?php foreach ($monitors as $i => $m): ?>
+                        <?php $st = (string)($m['status'] ?? 'waiting'); ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
                             <td><strong><?= htmlspecialchars((string)($m['symbol'] ?? '')) ?></strong></td>
@@ -150,12 +140,39 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                             <td><?= htmlspecialchars((string)($m['corridor_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['entry_zone_low'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['entry_zone_high'] ?? '')) ?></td>
-                            <td>
-                                <?php $st = (string)($m['status'] ?? ''); ?>
-                                <span class="badge <?= $st === 'active' ? 'bg-success' : ($st === 'waiting' ? 'bg-warning' : 'bg-secondary') ?>">
-                                    <?= htmlspecialchars($st ?: '-') ?>
-                                </span>
-                            </td>
+                            <td><span class="badge <?= $statusClass($st) ?>"><?= htmlspecialchars($st) ?></span></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Signals Table (Phase 7 fields) -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-broadcast me-1"></i> Signals</h5>
+            <span class="badge bg-success"><?= count($signals) ?></span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr><th>#</th><th>Symbol</th><th>Entry Zone</th><th>Corridor</th><th>Leverage</th><th>Budget</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($signals)): ?>
+                        <tr><td colspan="7" class="text-center text-secondary py-4">No signals generated</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($signals as $i => $s): ?>
+                        <tr>
+                            <td><?= $i + 1 ?></td>
+                            <td><strong><?= htmlspecialchars((string)($s['symbol'] ?? '')) ?></strong></td>
+                            <td><?= htmlspecialchars((string)($s['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['entry_zone_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($s['corridor_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['corridor_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($s['leverage'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($s['budget'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($s['status'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>

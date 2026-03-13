@@ -1,69 +1,111 @@
 {
     "parser4": {
-        "enabled": true,
-        "profiles_key": "parser.parser3_manager_behavior.storage",
-        "history_key": "parser.parser2_history_accumulator.storage",
-        "corridor_window_minutes": 120,
-        "min_history_points": 40,
-        "strength_threshold": 0.5,
-        "max_candidates": 200
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "profiles_key": "parser.parser3_manager_behavior.storage",
+            "history_key": "parser.parser2_history_accumulator.storage",
+            "corridor_window_minutes": 120,
+            "min_history_points": 40,
+            "strength_threshold": 0.5,
+            "max_candidates": 200
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "corridor": {
-        "enabled": true,
-        "entry_zone_percent": 0.20000000000000001,
-        "max_wait_minutes": 60,
-        "rebuild_interval_seconds": 5
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "entry_zone_percent": 0.2,
+            "max_wait_minutes": 60,
+            "rebuild_interval_seconds": 5
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "risk_engine": {
-        "enabled": true,
-        "max_leverage": 15,
-        "max_budget_per_coin": 20,
-        "risk_levels": [
-            {
-                "max_corridor_width": 0.01,
-                "leverage": 15,
-                "budget_factor": 1
-            },
-            {
-                "max_corridor_width": 0.029999999999999999,
-                "leverage": 10,
-                "budget_factor": 0.80000000000000004
-            },
-            {
-                "max_corridor_width": 0.059999999999999998,
-                "leverage": 5,
-                "budget_factor": 0.59999999999999998
-            },
-            {
-                "max_corridor_width": 1,
-                "leverage": 3,
-                "budget_factor": 0.40000000000000002
-            }
-        ],
-        "default_stop_loss_percent": 0.050000000000000003
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "max_leverage": 15,
+            "max_budget_per_coin": 20,
+            "risk_levels": [
+                {
+                    "max_corridor_width": 0.01,
+                    "leverage": 15,
+                    "budget_factor": 1
+                },
+                {
+                    "max_corridor_width": 0.03,
+                    "leverage": 10,
+                    "budget_factor": 0.8
+                },
+                {
+                    "max_corridor_width": 0.06,
+                    "leverage": 5,
+                    "budget_factor": 0.6
+                },
+                {
+                    "max_corridor_width": 1,
+                    "leverage": 3,
+                    "budget_factor": 0.4
+                }
+            ],
+            "default_stop_loss_percent": 0.05
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "simulator": {
-        "enabled": true,
-        "max_positions": 50,
-        "take_profit_enabled": true,
-        "trailing_enabled": false
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "max_positions": 50,
+            "take_profit_enabled": true,
+            "trailing_enabled": false
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "profiles": {
-        "default_profile": "111",
-        "profiles": {
-            "111": {
-                "budget": 15,
-                "max_leverage": 5,
-                "stop_loss_range": 0.20000000000000001,
-                "slippage_bps": 20,
-                "trailing_activate_roi": 0.059999999999999998,
-                "take_profit_roi": 5.5499999999999998
+        "mode": "manual",
+        "settings": {
+            "default_profile": "111",
+            "profiles": {
+                "111": {
+                    "budget": 15,
+                    "max_leverage": 5,
+                    "stop_loss_range": 0.2,
+                    "slippage_bps": 20,
+                    "trailing_activate_roi": 0.06,
+                    "take_profit_roi": 5.55
+                }
             }
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
         }
     },
     "ui": {
-        "title": "Smart Brain",
-        "refresh_seconds": 5
+        "mode": "manual",
+        "settings": {
+            "title": "Smart Brain",
+            "refresh_seconds": 5
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
-    "updated_at": "2026-03-13T13:25:11+00:00"
+    "updated_at": "2026-03-13T15:58:51+00:00"
 }

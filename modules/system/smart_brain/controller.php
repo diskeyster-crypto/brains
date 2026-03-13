@@ -40,7 +40,7 @@ final class SmartBrainController
     }
 
     /**
-     * Analizator page
+     * Analyzer page
      * GET /admin/smart_brain/analizator
      */
     public function analizator(): void
@@ -50,6 +50,45 @@ final class SmartBrainController
 
         extract($data, EXTR_SKIP);
         include __DIR__ . '/views/analizator.php';
+    }
+
+    /**
+     * Simulator page
+     * GET /admin/smart_brain/simulator
+     */
+    public function simulator(): void
+    {
+        $data = $this->service->getSimulatorData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/simulator.php';
+    }
+
+    /**
+     * Coin Passports page
+     * GET /admin/smart_brain/passports
+     */
+    public function passports(): void
+    {
+        $data = $this->service->getPassportsData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/passports.php';
+    }
+
+    /**
+     * Runtime page
+     * GET /admin/smart_brain/runtime
+     */
+    public function runtimePage(): void
+    {
+        $data = $this->service->getRuntimeData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/runtime.php';
     }
 
     /**

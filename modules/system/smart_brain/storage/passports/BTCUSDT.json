@@ -1,0 +1,10 @@
+{
+    "symbol": "BTCUSDT",
+    "last_seen_at": "2026-03-13T15:58:51+00:00",
+    "corridor_low": 62000,
+    "corridor_high": 63000,
+    "corridor_width": 0.016,
+    "volatility": 0.012,
+    "strength": 0.75,
+    "trend_bias": "bullish"
+}

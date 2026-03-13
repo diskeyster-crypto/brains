@@ -1,0 +1,67 @@
+<?php
+/**
+ * Smart Brain Module - Runtime View
+ * 
+ * Shows runtime config snapshot and last run information.
+ */
+
+/** @var string $smartBrainUrl */
+/** @var array<string,mixed> $config */
+/** @var array<string,mixed> $snapshot */
+/** @var array<string,mixed> $last_run */
+
+$pageTitle = 'Smart Brain - Runtime';
+$activeTab = 'runtime';
+
+$pageContent = function() use ($config, $snapshot, $last_run, $smartBrainUrl) {
+?>
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-activity me-2 text-primary"></i>Runtime</h4>
+            <p class="text-secondary mb-0">Current runtime state, config snapshot, and last run details</p>
+        </div>
+    </div>
+
+    <!-- Last Run Card -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-clock-history me-1"></i> Last Run</h5></div>
+        <div class="card-body">
+            <?php if (empty($last_run)): ?>
+                <p class="text-secondary">No runs recorded yet.</p>
+            <?php else: ?>
+                <div class="row">
+                    <?php foreach ($last_run as $key => $val): ?>
+                    <div class="col-md-3 mb-2">
+                        <strong><?= htmlspecialchars((string)$key) ?>:</strong>
+                        <span class="text-warning"><?= htmlspecialchars(is_bool($val) ? ($val ? 'true' : 'false') : (string)$val) ?></span>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Config Snapshot -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-camera me-1"></i> Config Snapshot</h5></div>
+        <div class="card-body">
+            <?php if (empty($snapshot)): ?>
+                <p class="text-secondary">No snapshot recorded yet.</p>
+            <?php else: ?>
+                <pre style="background:#0f172a; padding:16px; border-radius:8px; font-size:0.85rem; max-height:600px; overflow:auto; color:#e2e8f0;"><?= htmlspecialchars(json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) ?></pre>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Current Config -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-gear me-1"></i> Current Config (effective)</h5></div>
+        <div class="card-body">
+            <pre style="background:#0f172a; padding:16px; border-radius:8px; font-size:0.85rem; max-height:600px; overflow:auto; color:#e2e8f0;"><?= htmlspecialchars(json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) ?></pre>
+        </div>
+    </div>
+<?php
+};
+
+require __DIR__ . '/_layout.php';

@@ -3,7 +3,7 @@
  * Smart Brain Module - Shared Navigation Tabs
  * 
  * Usage: Include this file with $activeTab set to current page name
- * Available tabs: dashboard, config, analizator
+ * Available tabs: dashboard, config, analizator, simulator, passports, runtime
  */
 
 $smartBrainUrl = $smartBrainUrl ?? '/admin/smart_brain';
@@ -17,12 +17,27 @@ $activeTab = $activeTab ?? 'dashboard';
     </li>
     <li class="nav-item">
         <a class="nav-link <?= $activeTab === 'config' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/config">
-            <i class="bi bi-gear me-1"></i> Global config
+            <i class="bi bi-gear me-1"></i> Global Config
         </a>
     </li>
     <li class="nav-item">
         <a class="nav-link <?= $activeTab === 'analizator' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/analizator">
-            <i class="bi bi-graph-up me-1"></i> Analizator
+            <i class="bi bi-graph-up me-1"></i> Analyzer
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'simulator' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/simulator">
+            <i class="bi bi-joystick me-1"></i> Simulator
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'passports' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/passports">
+            <i class="bi bi-card-checklist me-1"></i> Coin Passports
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'runtime' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/runtime">
+            <i class="bi bi-activity me-1"></i> Runtime
         </a>
     </li>
 </ul>

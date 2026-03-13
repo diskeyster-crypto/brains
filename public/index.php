@@ -1023,6 +1023,21 @@ Router::get('/admin/smart_brain/analizator', function () {
     $controller->analizator();
 });
 
+Router::get('/admin/smart_brain/simulator', function () {
+    $controller = new SmartBrainController();
+    $controller->simulator();
+});
+
+Router::get('/admin/smart_brain/passports', function () {
+    $controller = new SmartBrainController();
+    $controller->passports();
+});
+
+Router::get('/admin/smart_brain/runtime', function () {
+    $controller = new SmartBrainController();
+    $controller->runtimePage();
+});
+
 Router::get('/admin/smart_brain/api/runtime', function () {
     $controller = new SmartBrainController();
     $controller->runtime();

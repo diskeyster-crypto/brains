@@ -1,0 +1,69 @@
+{
+    "parser4": {
+        "enabled": true,
+        "profiles_key": "parser.parser3_manager_behavior.storage",
+        "history_key": "parser.parser2_history_accumulator.storage",
+        "corridor_window_minutes": 120,
+        "min_history_points": 40,
+        "strength_threshold": 0.5,
+        "max_candidates": 200
+    },
+    "corridor": {
+        "enabled": true,
+        "entry_zone_percent": 0.20000000000000001,
+        "max_wait_minutes": 60,
+        "rebuild_interval_seconds": 5
+    },
+    "risk_engine": {
+        "enabled": true,
+        "max_leverage": 15,
+        "max_budget_per_coin": 20,
+        "risk_levels": [
+            {
+                "max_corridor_width": 0.01,
+                "leverage": 15,
+                "budget_factor": 1
+            },
+            {
+                "max_corridor_width": 0.029999999999999999,
+                "leverage": 10,
+                "budget_factor": 0.80000000000000004
+            },
+            {
+                "max_corridor_width": 0.059999999999999998,
+                "leverage": 5,
+                "budget_factor": 0.59999999999999998
+            },
+            {
+                "max_corridor_width": 1,
+                "leverage": 3,
+                "budget_factor": 0.40000000000000002
+            }
+        ],
+        "default_stop_loss_percent": 0.050000000000000003
+    },
+    "simulator": {
+        "enabled": true,
+        "max_positions": 50,
+        "take_profit_enabled": true,
+        "trailing_enabled": false
+    },
+    "profiles": {
+        "default_profile": "111",
+        "profiles": {
+            "111": {
+                "budget": 15,
+                "max_leverage": 5,
+                "stop_loss_range": 0.20000000000000001,
+                "slippage_bps": 20,
+                "trailing_activate_roi": 0.059999999999999998,
+                "take_profit_roi": 5.5499999999999998
+            }
+        }
+    },
+    "ui": {
+        "title": "Smart Brain",
+        "refresh_seconds": 5
+    },
+    "updated_at": "2026-03-13T13:25:11+00:00"
+}

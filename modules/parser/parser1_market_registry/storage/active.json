@@ -1,0 +1,4482 @@
+{
+    "0GUSDT": {
+        "symbol": "0GUSDT",
+        "category": "linear",
+        "baseCoin": "0G",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000000BABYDOGEUSDT": {
+        "symbol": "1000000BABYDOGEUSDT",
+        "category": "linear",
+        "baseCoin": "1000000BABYDOGE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000000CHEEMSUSDT": {
+        "symbol": "1000000CHEEMSUSDT",
+        "category": "linear",
+        "baseCoin": "1000000CHEEMS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000000MOGUSDT": {
+        "symbol": "1000000MOGUSDT",
+        "category": "linear",
+        "baseCoin": "1000000MOG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "10000QUBICUSDT": {
+        "symbol": "10000QUBICUSDT",
+        "category": "linear",
+        "baseCoin": "10000QUBIC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "10000SATSUSDT": {
+        "symbol": "10000SATSUSDT",
+        "category": "linear",
+        "baseCoin": "10000SATS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000BONKUSDT": {
+        "symbol": "1000BONKUSDT",
+        "category": "linear",
+        "baseCoin": "1000BONK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000BTTUSDT": {
+        "symbol": "1000BTTUSDT",
+        "category": "linear",
+        "baseCoin": "1000BTT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000CATUSDT": {
+        "symbol": "1000CATUSDT",
+        "category": "linear",
+        "baseCoin": "1000CAT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000FLOKIUSDT": {
+        "symbol": "1000FLOKIUSDT",
+        "category": "linear",
+        "baseCoin": "1000FLOKI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000LUNCUSDT": {
+        "symbol": "1000LUNCUSDT",
+        "category": "linear",
+        "baseCoin": "1000LUNC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000NEIROCTOUSDT": {
+        "symbol": "1000NEIROCTOUSDT",
+        "category": "linear",
+        "baseCoin": "1000NEIROCTO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000PEPEUSDT": {
+        "symbol": "1000PEPEUSDT",
+        "category": "linear",
+        "baseCoin": "1000PEPE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000RATSUSDT": {
+        "symbol": "1000RATSUSDT",
+        "category": "linear",
+        "baseCoin": "1000RATS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000TAGUSDT": {
+        "symbol": "1000TAGUSDT",
+        "category": "linear",
+        "baseCoin": "1000TAG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000TOSHIUSDT": {
+        "symbol": "1000TOSHIUSDT",
+        "category": "linear",
+        "baseCoin": "1000TOSHI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000TURBOUSDT": {
+        "symbol": "1000TURBOUSDT",
+        "category": "linear",
+        "baseCoin": "1000TURBO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1000XECUSDT": {
+        "symbol": "1000XECUSDT",
+        "category": "linear",
+        "baseCoin": "1000XEC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "1INCHUSDT": {
+        "symbol": "1INCHUSDT",
+        "category": "linear",
+        "baseCoin": "1INCH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "2ZUSDT": {
+        "symbol": "2ZUSDT",
+        "category": "linear",
+        "baseCoin": "2Z",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "4USDT": {
+        "symbol": "4USDT",
+        "category": "linear",
+        "baseCoin": "4",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AAVEUSDT": {
+        "symbol": "AAVEUSDT",
+        "category": "linear",
+        "baseCoin": "AAVE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ACEUSDT": {
+        "symbol": "ACEUSDT",
+        "category": "linear",
+        "baseCoin": "ACE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ACHUSDT": {
+        "symbol": "ACHUSDT",
+        "category": "linear",
+        "baseCoin": "ACH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ACTUSDT": {
+        "symbol": "ACTUSDT",
+        "category": "linear",
+        "baseCoin": "ACT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ACUUSDT": {
+        "symbol": "ACUUSDT",
+        "category": "linear",
+        "baseCoin": "ACU",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ACXUSDT": {
+        "symbol": "ACXUSDT",
+        "category": "linear",
+        "baseCoin": "ACX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ADAUSDT": {
+        "symbol": "ADAUSDT",
+        "category": "linear",
+        "baseCoin": "ADA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AERGOUSDT": {
+        "symbol": "AERGOUSDT",
+        "category": "linear",
+        "baseCoin": "AERGO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AEROUSDT": {
+        "symbol": "AEROUSDT",
+        "category": "linear",
+        "baseCoin": "AERO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AEVOUSDT": {
+        "symbol": "AEVOUSDT",
+        "category": "linear",
+        "baseCoin": "AEVO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AGIUSDT": {
+        "symbol": "AGIUSDT",
+        "category": "linear",
+        "baseCoin": "AGI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AGLDUSDT": {
+        "symbol": "AGLDUSDT",
+        "category": "linear",
+        "baseCoin": "AGLD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AIOUSDT": {
+        "symbol": "AIOUSDT",
+        "category": "linear",
+        "baseCoin": "AIO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AIOZUSDT": {
+        "symbol": "AIOZUSDT",
+        "category": "linear",
+        "baseCoin": "AIOZ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AIXBTUSDT": {
+        "symbol": "AIXBTUSDT",
+        "category": "linear",
+        "baseCoin": "AIXBT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AKEUSDT": {
+        "symbol": "AKEUSDT",
+        "category": "linear",
+        "baseCoin": "AKE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AKTUSDT": {
+        "symbol": "AKTUSDT",
+        "category": "linear",
+        "baseCoin": "AKT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ALCHUSDT": {
+        "symbol": "ALCHUSDT",
+        "category": "linear",
+        "baseCoin": "ALCH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ALGOUSDT": {
+        "symbol": "ALGOUSDT",
+        "category": "linear",
+        "baseCoin": "ALGO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ALICEUSDT": {
+        "symbol": "ALICEUSDT",
+        "category": "linear",
+        "baseCoin": "ALICE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ALLOUSDT": {
+        "symbol": "ALLOUSDT",
+        "category": "linear",
+        "baseCoin": "ALLO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ALPINEUSDT": {
+        "symbol": "ALPINEUSDT",
+        "category": "linear",
+        "baseCoin": "ALPINE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ALTUSDT": {
+        "symbol": "ALTUSDT",
+        "category": "linear",
+        "baseCoin": "ALT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ANIMEUSDT": {
+        "symbol": "ANIMEUSDT",
+        "category": "linear",
+        "baseCoin": "ANIME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ANKRUSDT": {
+        "symbol": "ANKRUSDT",
+        "category": "linear",
+        "baseCoin": "ANKR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "APEUSDT": {
+        "symbol": "APEUSDT",
+        "category": "linear",
+        "baseCoin": "APE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "APEXUSDT": {
+        "symbol": "APEXUSDT",
+        "category": "linear",
+        "baseCoin": "APEX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "API3USDT": {
+        "symbol": "API3USDT",
+        "category": "linear",
+        "baseCoin": "API3",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "APRUSDT": {
+        "symbol": "APRUSDT",
+        "category": "linear",
+        "baseCoin": "APR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "APTUSDT": {
+        "symbol": "APTUSDT",
+        "category": "linear",
+        "baseCoin": "APT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARBUSDT": {
+        "symbol": "ARBUSDT",
+        "category": "linear",
+        "baseCoin": "ARB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARCUSDT": {
+        "symbol": "ARCUSDT",
+        "category": "linear",
+        "baseCoin": "ARC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARIAUSDT": {
+        "symbol": "ARIAUSDT",
+        "category": "linear",
+        "baseCoin": "ARIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARKMUSDT": {
+        "symbol": "ARKMUSDT",
+        "category": "linear",
+        "baseCoin": "ARKM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARKUSDT": {
+        "symbol": "ARKUSDT",
+        "category": "linear",
+        "baseCoin": "ARK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARPAUSDT": {
+        "symbol": "ARPAUSDT",
+        "category": "linear",
+        "baseCoin": "ARPA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ARUSDT": {
+        "symbol": "ARUSDT",
+        "category": "linear",
+        "baseCoin": "AR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ASPUSDT": {
+        "symbol": "ASPUSDT",
+        "category": "linear",
+        "baseCoin": "ASP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ASRUSDT": {
+        "symbol": "ASRUSDT",
+        "category": "linear",
+        "baseCoin": "ASR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ASTERUSDT": {
+        "symbol": "ASTERUSDT",
+        "category": "linear",
+        "baseCoin": "ASTER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ASTRUSDT": {
+        "symbol": "ASTRUSDT",
+        "category": "linear",
+        "baseCoin": "ASTR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ATHUSDT": {
+        "symbol": "ATHUSDT",
+        "category": "linear",
+        "baseCoin": "ATH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ATOMUSDT": {
+        "symbol": "ATOMUSDT",
+        "category": "linear",
+        "baseCoin": "ATOM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ATUSDT": {
+        "symbol": "ATUSDT",
+        "category": "linear",
+        "baseCoin": "AT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AUCTIONUSDT": {
+        "symbol": "AUCTIONUSDT",
+        "category": "linear",
+        "baseCoin": "AUCTION",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AUSDT": {
+        "symbol": "AUSDT",
+        "category": "linear",
+        "baseCoin": "A",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AVAAIUSDT": {
+        "symbol": "AVAAIUSDT",
+        "category": "linear",
+        "baseCoin": "AVAAI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AVAUSDT": {
+        "symbol": "AVAUSDT",
+        "category": "linear",
+        "baseCoin": "AVA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AVAXUSDT": {
+        "symbol": "AVAXUSDT",
+        "category": "linear",
+        "baseCoin": "AVAX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AVLUSDT": {
+        "symbol": "AVLUSDT",
+        "category": "linear",
+        "baseCoin": "AVL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AVNTUSDT": {
+        "symbol": "AVNTUSDT",
+        "category": "linear",
+        "baseCoin": "AVNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AWEUSDT": {
+        "symbol": "AWEUSDT",
+        "category": "linear",
+        "baseCoin": "AWE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AXLUSDT": {
+        "symbol": "AXLUSDT",
+        "category": "linear",
+        "baseCoin": "AXL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AXSUSDT": {
+        "symbol": "AXSUSDT",
+        "category": "linear",
+        "baseCoin": "AXS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "AZTECUSDT": {
+        "symbol": "AZTECUSDT",
+        "category": "linear",
+        "baseCoin": "AZTEC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "B2USDT": {
+        "symbol": "B2USDT",
+        "category": "linear",
+        "baseCoin": "B2",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "B3USDT": {
+        "symbol": "B3USDT",
+        "category": "linear",
+        "baseCoin": "B3",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BABYUSDT": {
+        "symbol": "BABYUSDT",
+        "category": "linear",
+        "baseCoin": "BABY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BANANAS31USDT": {
+        "symbol": "BANANAS31USDT",
+        "category": "linear",
+        "baseCoin": "BANANAS31",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BANANAUSDT": {
+        "symbol": "BANANAUSDT",
+        "category": "linear",
+        "baseCoin": "BANANA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BANDUSDT": {
+        "symbol": "BANDUSDT",
+        "category": "linear",
+        "baseCoin": "BAND",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BANKUSDT": {
+        "symbol": "BANKUSDT",
+        "category": "linear",
+        "baseCoin": "BANK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BANUSDT": {
+        "symbol": "BANUSDT",
+        "category": "linear",
+        "baseCoin": "BAN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BARDUSDT": {
+        "symbol": "BARDUSDT",
+        "category": "linear",
+        "baseCoin": "BARD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BATUSDT": {
+        "symbol": "BATUSDT",
+        "category": "linear",
+        "baseCoin": "BAT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BBUSDT": {
+        "symbol": "BBUSDT",
+        "category": "linear",
+        "baseCoin": "BB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BCHUSDT": {
+        "symbol": "BCHUSDT",
+        "category": "linear",
+        "baseCoin": "BCH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BEAMUSDT": {
+        "symbol": "BEAMUSDT",
+        "category": "linear",
+        "baseCoin": "BEAM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BEATUSDT": {
+        "symbol": "BEATUSDT",
+        "category": "linear",
+        "baseCoin": "BEAT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BELUSDT": {
+        "symbol": "BELUSDT",
+        "category": "linear",
+        "baseCoin": "BEL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BERAUSDT": {
+        "symbol": "BERAUSDT",
+        "category": "linear",
+        "baseCoin": "BERA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BICOUSDT": {
+        "symbol": "BICOUSDT",
+        "category": "linear",
+        "baseCoin": "BICO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BIGTIMEUSDT": {
+        "symbol": "BIGTIMEUSDT",
+        "category": "linear",
+        "baseCoin": "BIGTIME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BIOUSDT": {
+        "symbol": "BIOUSDT",
+        "category": "linear",
+        "baseCoin": "BIO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BIRBUSDT": {
+        "symbol": "BIRBUSDT",
+        "category": "linear",
+        "baseCoin": "BIRB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BLASTUSDT": {
+        "symbol": "BLASTUSDT",
+        "category": "linear",
+        "baseCoin": "BLAST",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BLESSUSDT": {
+        "symbol": "BLESSUSDT",
+        "category": "linear",
+        "baseCoin": "BLESS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BLUAIUSDT": {
+        "symbol": "BLUAIUSDT",
+        "category": "linear",
+        "baseCoin": "BLUAI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BLURUSDT": {
+        "symbol": "BLURUSDT",
+        "category": "linear",
+        "baseCoin": "BLUR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BMTUSDT": {
+        "symbol": "BMTUSDT",
+        "category": "linear",
+        "baseCoin": "BMT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BNBUSDT": {
+        "symbol": "BNBUSDT",
+        "category": "linear",
+        "baseCoin": "BNB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BNTUSDT": {
+        "symbol": "BNTUSDT",
+        "category": "linear",
+        "baseCoin": "BNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BOBAUSDT": {
+        "symbol": "BOBAUSDT",
+        "category": "linear",
+        "baseCoin": "BOBA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BOBBOBUSDT": {
+        "symbol": "BOBBOBUSDT",
+        "category": "linear",
+        "baseCoin": "BOBBOB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BOMEUSDT": {
+        "symbol": "BOMEUSDT",
+        "category": "linear",
+        "baseCoin": "BOME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BRETTUSDT": {
+        "symbol": "BRETTUSDT",
+        "category": "linear",
+        "baseCoin": "BRETT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BREVUSDT": {
+        "symbol": "BREVUSDT",
+        "category": "linear",
+        "baseCoin": "BREV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BROCCOLIUSDT": {
+        "symbol": "BROCCOLIUSDT",
+        "category": "linear",
+        "baseCoin": "BROCCOLI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BRUSDT": {
+        "symbol": "BRUSDT",
+        "category": "linear",
+        "baseCoin": "BR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BSUUSDT": {
+        "symbol": "BSUUSDT",
+        "category": "linear",
+        "baseCoin": "BSU",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BSVUSDT": {
+        "symbol": "BSVUSDT",
+        "category": "linear",
+        "baseCoin": "BSV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BTRUSDT": {
+        "symbol": "BTRUSDT",
+        "category": "linear",
+        "baseCoin": "BTR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "BUSDT": {
+        "symbol": "BUSDT",
+        "category": "linear",
+        "baseCoin": "B",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "C98USDT": {
+        "symbol": "C98USDT",
+        "category": "linear",
+        "baseCoin": "C98",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CAKEUSDT": {
+        "symbol": "CAKEUSDT",
+        "category": "linear",
+        "baseCoin": "CAKE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CAMPUSDT": {
+        "symbol": "CAMPUSDT",
+        "category": "linear",
+        "baseCoin": "CAMP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CARVUSDT": {
+        "symbol": "CARVUSDT",
+        "category": "linear",
+        "baseCoin": "CARV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CATIUSDT": {
+        "symbol": "CATIUSDT",
+        "category": "linear",
+        "baseCoin": "CATI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CCUSDT": {
+        "symbol": "CCUSDT",
+        "category": "linear",
+        "baseCoin": "CC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CELOUSDT": {
+        "symbol": "CELOUSDT",
+        "category": "linear",
+        "baseCoin": "CELO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CETUSUSDT": {
+        "symbol": "CETUSUSDT",
+        "category": "linear",
+        "baseCoin": "CETUS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CFXUSDT": {
+        "symbol": "CFXUSDT",
+        "category": "linear",
+        "baseCoin": "CFX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CGPTUSDT": {
+        "symbol": "CGPTUSDT",
+        "category": "linear",
+        "baseCoin": "CGPT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CHILLGUYUSDT": {
+        "symbol": "CHILLGUYUSDT",
+        "category": "linear",
+        "baseCoin": "CHILLGUY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CHRUSDT": {
+        "symbol": "CHRUSDT",
+        "category": "linear",
+        "baseCoin": "CHR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CHZUSDT": {
+        "symbol": "CHZUSDT",
+        "category": "linear",
+        "baseCoin": "CHZ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CKBUSDT": {
+        "symbol": "CKBUSDT",
+        "category": "linear",
+        "baseCoin": "CKB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CLANKERUSDT": {
+        "symbol": "CLANKERUSDT",
+        "category": "linear",
+        "baseCoin": "CLANKER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CLOUDUSDT": {
+        "symbol": "CLOUDUSDT",
+        "category": "linear",
+        "baseCoin": "CLOUD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CLOUSDT": {
+        "symbol": "CLOUSDT",
+        "category": "linear",
+        "baseCoin": "CLO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COAIUSDT": {
+        "symbol": "COAIUSDT",
+        "category": "linear",
+        "baseCoin": "COAI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COMPUSDT": {
+        "symbol": "COMPUSDT",
+        "category": "linear",
+        "baseCoin": "COMP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COOKIEUSDT": {
+        "symbol": "COOKIEUSDT",
+        "category": "linear",
+        "baseCoin": "COOKIE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COOKUSDT": {
+        "symbol": "COOKUSDT",
+        "category": "linear",
+        "baseCoin": "COOK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COREUSDT": {
+        "symbol": "COREUSDT",
+        "category": "linear",
+        "baseCoin": "CORE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COTIUSDT": {
+        "symbol": "COTIUSDT",
+        "category": "linear",
+        "baseCoin": "COTI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "COWUSDT": {
+        "symbol": "COWUSDT",
+        "category": "linear",
+        "baseCoin": "COW",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CROSSUSDT": {
+        "symbol": "CROSSUSDT",
+        "category": "linear",
+        "baseCoin": "CROSS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CROUSDT": {
+        "symbol": "CROUSDT",
+        "category": "linear",
+        "baseCoin": "CRO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CRVUSDT": {
+        "symbol": "CRVUSDT",
+        "category": "linear",
+        "baseCoin": "CRV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CTCUSDT": {
+        "symbol": "CTCUSDT",
+        "category": "linear",
+        "baseCoin": "CTC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CTKUSDT": {
+        "symbol": "CTKUSDT",
+        "category": "linear",
+        "baseCoin": "CTK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CTSIUSDT": {
+        "symbol": "CTSIUSDT",
+        "category": "linear",
+        "baseCoin": "CTSI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CUSDT": {
+        "symbol": "CUSDT",
+        "category": "linear",
+        "baseCoin": "C",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CVCUSDT": {
+        "symbol": "CVCUSDT",
+        "category": "linear",
+        "baseCoin": "CVC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CVXUSDT": {
+        "symbol": "CVXUSDT",
+        "category": "linear",
+        "baseCoin": "CVX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CYBERUSDT": {
+        "symbol": "CYBERUSDT",
+        "category": "linear",
+        "baseCoin": "CYBER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "CYSUSDT": {
+        "symbol": "CYSUSDT",
+        "category": "linear",
+        "baseCoin": "CYS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DASHUSDT": {
+        "symbol": "DASHUSDT",
+        "category": "linear",
+        "baseCoin": "DASH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DBRUSDT": {
+        "symbol": "DBRUSDT",
+        "category": "linear",
+        "baseCoin": "DBR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DEEPUSDT": {
+        "symbol": "DEEPUSDT",
+        "category": "linear",
+        "baseCoin": "DEEP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DEGENUSDT": {
+        "symbol": "DEGENUSDT",
+        "category": "linear",
+        "baseCoin": "DEGEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DEXEUSDT": {
+        "symbol": "DEXEUSDT",
+        "category": "linear",
+        "baseCoin": "DEXE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DIAUSDT": {
+        "symbol": "DIAUSDT",
+        "category": "linear",
+        "baseCoin": "DIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOGEUSDT": {
+        "symbol": "DOGEUSDT",
+        "category": "linear",
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOGEUSDT-13MAR26": {
+        "symbol": "DOGEUSDT-13MAR26",
+        "category": "linear",
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOGEUSDT-20MAR26": {
+        "symbol": "DOGEUSDT-20MAR26",
+        "category": "linear",
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOGEUSDT-24APR26": {
+        "symbol": "DOGEUSDT-24APR26",
+        "category": "linear",
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOGEUSDT-27MAR26": {
+        "symbol": "DOGEUSDT-27MAR26",
+        "category": "linear",
+        "baseCoin": "DOGE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOGUSDT": {
+        "symbol": "DOGUSDT",
+        "category": "linear",
+        "baseCoin": "DOG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOLOUSDT": {
+        "symbol": "DOLOUSDT",
+        "category": "linear",
+        "baseCoin": "DOLO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOODUSDT": {
+        "symbol": "DOODUSDT",
+        "category": "linear",
+        "baseCoin": "DOOD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DOTUSDT": {
+        "symbol": "DOTUSDT",
+        "category": "linear",
+        "baseCoin": "DOT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DRIFTUSDT": {
+        "symbol": "DRIFTUSDT",
+        "category": "linear",
+        "baseCoin": "DRIFT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DUSKUSDT": {
+        "symbol": "DUSKUSDT",
+        "category": "linear",
+        "baseCoin": "DUSK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DYDXUSDT": {
+        "symbol": "DYDXUSDT",
+        "category": "linear",
+        "baseCoin": "DYDX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "DYMUSDT": {
+        "symbol": "DYMUSDT",
+        "category": "linear",
+        "baseCoin": "DYM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EDENUSDT": {
+        "symbol": "EDENUSDT",
+        "category": "linear",
+        "baseCoin": "EDEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EDUUSDT": {
+        "symbol": "EDUUSDT",
+        "category": "linear",
+        "baseCoin": "EDU",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EGLDUSDT": {
+        "symbol": "EGLDUSDT",
+        "category": "linear",
+        "baseCoin": "EGLD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EIGENUSDT": {
+        "symbol": "EIGENUSDT",
+        "category": "linear",
+        "baseCoin": "EIGEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ELSAUSDT": {
+        "symbol": "ELSAUSDT",
+        "category": "linear",
+        "baseCoin": "ELSA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ENAUSDT": {
+        "symbol": "ENAUSDT",
+        "category": "linear",
+        "baseCoin": "ENA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ENJUSDT": {
+        "symbol": "ENJUSDT",
+        "category": "linear",
+        "baseCoin": "ENJ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ENSOUSDT": {
+        "symbol": "ENSOUSDT",
+        "category": "linear",
+        "baseCoin": "ENSO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ENSUSDT": {
+        "symbol": "ENSUSDT",
+        "category": "linear",
+        "baseCoin": "ENS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EPICUSDT": {
+        "symbol": "EPICUSDT",
+        "category": "linear",
+        "baseCoin": "EPIC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ERAUSDT": {
+        "symbol": "ERAUSDT",
+        "category": "linear",
+        "baseCoin": "ERA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ESPORTSUSDT": {
+        "symbol": "ESPORTSUSDT",
+        "category": "linear",
+        "baseCoin": "ESPORTS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ESPUSDT": {
+        "symbol": "ESPUSDT",
+        "category": "linear",
+        "baseCoin": "ESP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ESUSDT": {
+        "symbol": "ESUSDT",
+        "category": "linear",
+        "baseCoin": "ES",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ETCUSDT": {
+        "symbol": "ETCUSDT",
+        "category": "linear",
+        "baseCoin": "ETC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ETHBTCUSDT": {
+        "symbol": "ETHBTCUSDT",
+        "category": "linear",
+        "baseCoin": "ETHBTC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ETHFIUSDT": {
+        "symbol": "ETHFIUSDT",
+        "category": "linear",
+        "baseCoin": "ETHFI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EULUSDT": {
+        "symbol": "EULUSDT",
+        "category": "linear",
+        "baseCoin": "EUL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "EVAAUSDT": {
+        "symbol": "EVAAUSDT",
+        "category": "linear",
+        "baseCoin": "EVAA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FARTCOINUSDT": {
+        "symbol": "FARTCOINUSDT",
+        "category": "linear",
+        "baseCoin": "FARTCOIN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FFUSDT": {
+        "symbol": "FFUSDT",
+        "category": "linear",
+        "baseCoin": "FF",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FHEUSDT": {
+        "symbol": "FHEUSDT",
+        "category": "linear",
+        "baseCoin": "FHE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FIDAUSDT": {
+        "symbol": "FIDAUSDT",
+        "category": "linear",
+        "baseCoin": "FIDA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FIGHTUSDT": {
+        "symbol": "FIGHTUSDT",
+        "category": "linear",
+        "baseCoin": "FIGHT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FILUSDT": {
+        "symbol": "FILUSDT",
+        "category": "linear",
+        "baseCoin": "FIL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FIOUSDT": {
+        "symbol": "FIOUSDT",
+        "category": "linear",
+        "baseCoin": "FIO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FLOCKUSDT": {
+        "symbol": "FLOCKUSDT",
+        "category": "linear",
+        "baseCoin": "FLOCK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FLOWUSDT": {
+        "symbol": "FLOWUSDT",
+        "category": "linear",
+        "baseCoin": "FLOW",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FLRUSDT": {
+        "symbol": "FLRUSDT",
+        "category": "linear",
+        "baseCoin": "FLR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FLUIDUSDT": {
+        "symbol": "FLUIDUSDT",
+        "category": "linear",
+        "baseCoin": "FLUID",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FLUXUSDT": {
+        "symbol": "FLUXUSDT",
+        "category": "linear",
+        "baseCoin": "FLUX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FOGOUSDT": {
+        "symbol": "FOGOUSDT",
+        "category": "linear",
+        "baseCoin": "FOGO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FOLKSUSDT": {
+        "symbol": "FOLKSUSDT",
+        "category": "linear",
+        "baseCoin": "FOLKS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FORMUSDT": {
+        "symbol": "FORMUSDT",
+        "category": "linear",
+        "baseCoin": "FORM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "FUSDT": {
+        "symbol": "FUSDT",
+        "category": "linear",
+        "baseCoin": "F",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GALAUSDT": {
+        "symbol": "GALAUSDT",
+        "category": "linear",
+        "baseCoin": "GALA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GASUSDT": {
+        "symbol": "GASUSDT",
+        "category": "linear",
+        "baseCoin": "GAS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GIGAUSDT": {
+        "symbol": "GIGAUSDT",
+        "category": "linear",
+        "baseCoin": "GIGA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GIGGLEUSDT": {
+        "symbol": "GIGGLEUSDT",
+        "category": "linear",
+        "baseCoin": "GIGGLE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GLMUSDT": {
+        "symbol": "GLMUSDT",
+        "category": "linear",
+        "baseCoin": "GLM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GMTUSDT": {
+        "symbol": "GMTUSDT",
+        "category": "linear",
+        "baseCoin": "GMT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GMXUSDT": {
+        "symbol": "GMXUSDT",
+        "category": "linear",
+        "baseCoin": "GMX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GNOUSDT": {
+        "symbol": "GNOUSDT",
+        "category": "linear",
+        "baseCoin": "GNO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GOATUSDT": {
+        "symbol": "GOATUSDT",
+        "category": "linear",
+        "baseCoin": "GOAT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GODSUSDT": {
+        "symbol": "GODSUSDT",
+        "category": "linear",
+        "baseCoin": "GODS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GPSUSDT": {
+        "symbol": "GPSUSDT",
+        "category": "linear",
+        "baseCoin": "GPS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GRASSUSDT": {
+        "symbol": "GRASSUSDT",
+        "category": "linear",
+        "baseCoin": "GRASS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GRIFFAINUSDT": {
+        "symbol": "GRIFFAINUSDT",
+        "category": "linear",
+        "baseCoin": "GRIFFAIN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GRTUSDT": {
+        "symbol": "GRTUSDT",
+        "category": "linear",
+        "baseCoin": "GRT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "GUNUSDT": {
+        "symbol": "GUNUSDT",
+        "category": "linear",
+        "baseCoin": "GUN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HAEDALUSDT": {
+        "symbol": "HAEDALUSDT",
+        "category": "linear",
+        "baseCoin": "HAEDAL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HANAUSDT": {
+        "symbol": "HANAUSDT",
+        "category": "linear",
+        "baseCoin": "HANA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HBARUSDT": {
+        "symbol": "HBARUSDT",
+        "category": "linear",
+        "baseCoin": "HBAR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HEIUSDT": {
+        "symbol": "HEIUSDT",
+        "category": "linear",
+        "baseCoin": "HEI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HEMIUSDT": {
+        "symbol": "HEMIUSDT",
+        "category": "linear",
+        "baseCoin": "HEMI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HFTUSDT": {
+        "symbol": "HFTUSDT",
+        "category": "linear",
+        "baseCoin": "HFT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HIGHUSDT": {
+        "symbol": "HIGHUSDT",
+        "category": "linear",
+        "baseCoin": "HIGH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HIPPOUSDT": {
+        "symbol": "HIPPOUSDT",
+        "category": "linear",
+        "baseCoin": "HIPPO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HIVEUSDT": {
+        "symbol": "HIVEUSDT",
+        "category": "linear",
+        "baseCoin": "HIVE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HMSTRUSDT": {
+        "symbol": "HMSTRUSDT",
+        "category": "linear",
+        "baseCoin": "HMSTR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HNTUSDT": {
+        "symbol": "HNTUSDT",
+        "category": "linear",
+        "baseCoin": "HNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HOLOUSDT": {
+        "symbol": "HOLOUSDT",
+        "category": "linear",
+        "baseCoin": "HOLO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HOMEUSDT": {
+        "symbol": "HOMEUSDT",
+        "category": "linear",
+        "baseCoin": "HOME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HOOKUSDT": {
+        "symbol": "HOOKUSDT",
+        "category": "linear",
+        "baseCoin": "HOOK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HPOS10IUSDT": {
+        "symbol": "HPOS10IUSDT",
+        "category": "linear",
+        "baseCoin": "HPOS10I",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HUMAUSDT": {
+        "symbol": "HUMAUSDT",
+        "category": "linear",
+        "baseCoin": "HUMA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HUSDT": {
+        "symbol": "HUSDT",
+        "category": "linear",
+        "baseCoin": "H",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HYPERUSDT": {
+        "symbol": "HYPERUSDT",
+        "category": "linear",
+        "baseCoin": "HYPER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "HYPEUSDT": {
+        "symbol": "HYPEUSDT",
+        "category": "linear",
+        "baseCoin": "HYPE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ICNTUSDT": {
+        "symbol": "ICNTUSDT",
+        "category": "linear",
+        "baseCoin": "ICNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ICPUSDT": {
+        "symbol": "ICPUSDT",
+        "category": "linear",
+        "baseCoin": "ICP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ICXUSDT": {
+        "symbol": "ICXUSDT",
+        "category": "linear",
+        "baseCoin": "ICX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IDUSDT": {
+        "symbol": "IDUSDT",
+        "category": "linear",
+        "baseCoin": "ID",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ILVUSDT": {
+        "symbol": "ILVUSDT",
+        "category": "linear",
+        "baseCoin": "ILV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IMXUSDT": {
+        "symbol": "IMXUSDT",
+        "category": "linear",
+        "baseCoin": "IMX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "INITUSDT": {
+        "symbol": "INITUSDT",
+        "category": "linear",
+        "baseCoin": "INIT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "INJUSDT": {
+        "symbol": "INJUSDT",
+        "category": "linear",
+        "baseCoin": "INJ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "INUSDT": {
+        "symbol": "INUSDT",
+        "category": "linear",
+        "baseCoin": "IN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "INXUSDT": {
+        "symbol": "INXUSDT",
+        "category": "linear",
+        "baseCoin": "INX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IOSTUSDT": {
+        "symbol": "IOSTUSDT",
+        "category": "linear",
+        "baseCoin": "IOST",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IOTAUSDT": {
+        "symbol": "IOTAUSDT",
+        "category": "linear",
+        "baseCoin": "IOTA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IOTXUSDT": {
+        "symbol": "IOTXUSDT",
+        "category": "linear",
+        "baseCoin": "IOTX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IOUSDT": {
+        "symbol": "IOUSDT",
+        "category": "linear",
+        "baseCoin": "IO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IPUSDT": {
+        "symbol": "IPUSDT",
+        "category": "linear",
+        "baseCoin": "IP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "IRYSUSDT": {
+        "symbol": "IRYSUSDT",
+        "category": "linear",
+        "baseCoin": "IRYS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "JASMYUSDT": {
+        "symbol": "JASMYUSDT",
+        "category": "linear",
+        "baseCoin": "JASMY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "JCTUSDT": {
+        "symbol": "JCTUSDT",
+        "category": "linear",
+        "baseCoin": "JCT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "JELLYJELLYUSDT": {
+        "symbol": "JELLYJELLYUSDT",
+        "category": "linear",
+        "baseCoin": "JELLYJELLY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "JSTUSDT": {
+        "symbol": "JSTUSDT",
+        "category": "linear",
+        "baseCoin": "JST",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "JTOUSDT": {
+        "symbol": "JTOUSDT",
+        "category": "linear",
+        "baseCoin": "JTO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "JUPUSDT": {
+        "symbol": "JUPUSDT",
+        "category": "linear",
+        "baseCoin": "JUP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KAIAUSDT": {
+        "symbol": "KAIAUSDT",
+        "category": "linear",
+        "baseCoin": "KAIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KAITOUSDT": {
+        "symbol": "KAITOUSDT",
+        "category": "linear",
+        "baseCoin": "KAITO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KASUSDT": {
+        "symbol": "KASUSDT",
+        "category": "linear",
+        "baseCoin": "KAS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KAVAUSDT": {
+        "symbol": "KAVAUSDT",
+        "category": "linear",
+        "baseCoin": "KAVA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KERNELUSDT": {
+        "symbol": "KERNELUSDT",
+        "category": "linear",
+        "baseCoin": "KERNEL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KGENUSDT": {
+        "symbol": "KGENUSDT",
+        "category": "linear",
+        "baseCoin": "KGEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KITEUSDT": {
+        "symbol": "KITEUSDT",
+        "category": "linear",
+        "baseCoin": "KITE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KMNOUSDT": {
+        "symbol": "KMNOUSDT",
+        "category": "linear",
+        "baseCoin": "KMNO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KNCUSDT": {
+        "symbol": "KNCUSDT",
+        "category": "linear",
+        "baseCoin": "KNC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "KSMUSDT": {
+        "symbol": "KSMUSDT",
+        "category": "linear",
+        "baseCoin": "KSM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "L3USDT": {
+        "symbol": "L3USDT",
+        "category": "linear",
+        "baseCoin": "L3",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LABUSDT": {
+        "symbol": "LABUSDT",
+        "category": "linear",
+        "baseCoin": "LAB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LAUSDT": {
+        "symbol": "LAUSDT",
+        "category": "linear",
+        "baseCoin": "LA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LDOUSDT": {
+        "symbol": "LDOUSDT",
+        "category": "linear",
+        "baseCoin": "LDO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LIGHTUSDT": {
+        "symbol": "LIGHTUSDT",
+        "category": "linear",
+        "baseCoin": "LIGHT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LINEAUSDT": {
+        "symbol": "LINEAUSDT",
+        "category": "linear",
+        "baseCoin": "LINEA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LINKUSDT": {
+        "symbol": "LINKUSDT",
+        "category": "linear",
+        "baseCoin": "LINK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LISTAUSDT": {
+        "symbol": "LISTAUSDT",
+        "category": "linear",
+        "baseCoin": "LISTA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LITUSDT": {
+        "symbol": "LITUSDT",
+        "category": "linear",
+        "baseCoin": "LIT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LPTUSDT": {
+        "symbol": "LPTUSDT",
+        "category": "linear",
+        "baseCoin": "LPT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LQTYUSDT": {
+        "symbol": "LQTYUSDT",
+        "category": "linear",
+        "baseCoin": "LQTY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LRCUSDT": {
+        "symbol": "LRCUSDT",
+        "category": "linear",
+        "baseCoin": "LRC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LSKUSDT": {
+        "symbol": "LSKUSDT",
+        "category": "linear",
+        "baseCoin": "LSK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LTCUSDT": {
+        "symbol": "LTCUSDT",
+        "category": "linear",
+        "baseCoin": "LTC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LUMIAUSDT": {
+        "symbol": "LUMIAUSDT",
+        "category": "linear",
+        "baseCoin": "LUMIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LUNA2USDT": {
+        "symbol": "LUNA2USDT",
+        "category": "linear",
+        "baseCoin": "LUNA2",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "LYNUSDT": {
+        "symbol": "LYNUSDT",
+        "category": "linear",
+        "baseCoin": "LYN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MAGICUSDT": {
+        "symbol": "MAGICUSDT",
+        "category": "linear",
+        "baseCoin": "MAGIC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MAGMAUSDT": {
+        "symbol": "MAGMAUSDT",
+        "category": "linear",
+        "baseCoin": "MAGMA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MANAUSDT": {
+        "symbol": "MANAUSDT",
+        "category": "linear",
+        "baseCoin": "MANA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MANTAUSDT": {
+        "symbol": "MANTAUSDT",
+        "category": "linear",
+        "baseCoin": "MANTA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MASKUSDT": {
+        "symbol": "MASKUSDT",
+        "category": "linear",
+        "baseCoin": "MASK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MAVIAUSDT": {
+        "symbol": "MAVIAUSDT",
+        "category": "linear",
+        "baseCoin": "MAVIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MAVUSDT": {
+        "symbol": "MAVUSDT",
+        "category": "linear",
+        "baseCoin": "MAV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MBOXUSDT": {
+        "symbol": "MBOXUSDT",
+        "category": "linear",
+        "baseCoin": "MBOX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MELANIAUSDT": {
+        "symbol": "MELANIAUSDT",
+        "category": "linear",
+        "baseCoin": "MELANIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MEMEUSDT": {
+        "symbol": "MEMEUSDT",
+        "category": "linear",
+        "baseCoin": "MEME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MERLUSDT": {
+        "symbol": "MERLUSDT",
+        "category": "linear",
+        "baseCoin": "MERL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "METISUSDT": {
+        "symbol": "METISUSDT",
+        "category": "linear",
+        "baseCoin": "METIS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "METUSDT": {
+        "symbol": "METUSDT",
+        "category": "linear",
+        "baseCoin": "MET",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MEUSDT": {
+        "symbol": "MEUSDT",
+        "category": "linear",
+        "baseCoin": "ME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MEWUSDT": {
+        "symbol": "MEWUSDT",
+        "category": "linear",
+        "baseCoin": "MEW",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MINAUSDT": {
+        "symbol": "MINAUSDT",
+        "category": "linear",
+        "baseCoin": "MINA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MIRAUSDT": {
+        "symbol": "MIRAUSDT",
+        "category": "linear",
+        "baseCoin": "MIRA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MITOUSDT": {
+        "symbol": "MITOUSDT",
+        "category": "linear",
+        "baseCoin": "MITO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MLNUSDT": {
+        "symbol": "MLNUSDT",
+        "category": "linear",
+        "baseCoin": "MLN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MMTUSDT": {
+        "symbol": "MMTUSDT",
+        "category": "linear",
+        "baseCoin": "MMT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MNTUSDT": {
+        "symbol": "MNTUSDT",
+        "category": "linear",
+        "baseCoin": "MNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MNTUSDT-13MAR26": {
+        "symbol": "MNTUSDT-13MAR26",
+        "category": "linear",
+        "baseCoin": "MNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MNTUSDT-20MAR26": {
+        "symbol": "MNTUSDT-20MAR26",
+        "category": "linear",
+        "baseCoin": "MNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MNTUSDT-24APR26": {
+        "symbol": "MNTUSDT-24APR26",
+        "category": "linear",
+        "baseCoin": "MNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MNTUSDT-27MAR26": {
+        "symbol": "MNTUSDT-27MAR26",
+        "category": "linear",
+        "baseCoin": "MNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MOCAUSDT": {
+        "symbol": "MOCAUSDT",
+        "category": "linear",
+        "baseCoin": "MOCA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MONUSDT": {
+        "symbol": "MONUSDT",
+        "category": "linear",
+        "baseCoin": "MON",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MOODENGUSDT": {
+        "symbol": "MOODENGUSDT",
+        "category": "linear",
+        "baseCoin": "MOODENG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MORPHOUSDT": {
+        "symbol": "MORPHOUSDT",
+        "category": "linear",
+        "baseCoin": "MORPHO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MOVEUSDT": {
+        "symbol": "MOVEUSDT",
+        "category": "linear",
+        "baseCoin": "MOVE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MOVRUSDT": {
+        "symbol": "MOVRUSDT",
+        "category": "linear",
+        "baseCoin": "MOVR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MTLUSDT": {
+        "symbol": "MTLUSDT",
+        "category": "linear",
+        "baseCoin": "MTL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MUBARAKUSDT": {
+        "symbol": "MUBARAKUSDT",
+        "category": "linear",
+        "baseCoin": "MUBARAK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MUSDT": {
+        "symbol": "MUSDT",
+        "category": "linear",
+        "baseCoin": "M",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "MYXUSDT": {
+        "symbol": "MYXUSDT",
+        "category": "linear",
+        "baseCoin": "MYX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NAORISUSDT": {
+        "symbol": "NAORISUSDT",
+        "category": "linear",
+        "baseCoin": "NAORIS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NEARUSDT": {
+        "symbol": "NEARUSDT",
+        "category": "linear",
+        "baseCoin": "NEAR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NEOUSDT": {
+        "symbol": "NEOUSDT",
+        "category": "linear",
+        "baseCoin": "NEO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NEWTUSDT": {
+        "symbol": "NEWTUSDT",
+        "category": "linear",
+        "baseCoin": "NEWT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NFPUSDT": {
+        "symbol": "NFPUSDT",
+        "category": "linear",
+        "baseCoin": "NFP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NIGHTUSDT": {
+        "symbol": "NIGHTUSDT",
+        "category": "linear",
+        "baseCoin": "NIGHT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NILUSDT": {
+        "symbol": "NILUSDT",
+        "category": "linear",
+        "baseCoin": "NIL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NMRUSDT": {
+        "symbol": "NMRUSDT",
+        "category": "linear",
+        "baseCoin": "NMR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NOMUSDT": {
+        "symbol": "NOMUSDT",
+        "category": "linear",
+        "baseCoin": "NOM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NOTUSDT": {
+        "symbol": "NOTUSDT",
+        "category": "linear",
+        "baseCoin": "NOT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NTRNUSDT": {
+        "symbol": "NTRNUSDT",
+        "category": "linear",
+        "baseCoin": "NTRN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "NXPCUSDT": {
+        "symbol": "NXPCUSDT",
+        "category": "linear",
+        "baseCoin": "NXPC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OGNUSDT": {
+        "symbol": "OGNUSDT",
+        "category": "linear",
+        "baseCoin": "OGN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OGUSDT": {
+        "symbol": "OGUSDT",
+        "category": "linear",
+        "baseCoin": "OG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OKBUSDT": {
+        "symbol": "OKBUSDT",
+        "category": "linear",
+        "baseCoin": "OKB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OLUSDT": {
+        "symbol": "OLUSDT",
+        "category": "linear",
+        "baseCoin": "OL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ONDOUSDT": {
+        "symbol": "ONDOUSDT",
+        "category": "linear",
+        "baseCoin": "ONDO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ONEUSDT": {
+        "symbol": "ONEUSDT",
+        "category": "linear",
+        "baseCoin": "ONE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ONGUSDT": {
+        "symbol": "ONGUSDT",
+        "category": "linear",
+        "baseCoin": "ONG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ONTUSDT": {
+        "symbol": "ONTUSDT",
+        "category": "linear",
+        "baseCoin": "ONT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OPENUSDT": {
+        "symbol": "OPENUSDT",
+        "category": "linear",
+        "baseCoin": "OPEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OPNUSDT": {
+        "symbol": "OPNUSDT",
+        "category": "linear",
+        "baseCoin": "OPN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OPUSDT": {
+        "symbol": "OPUSDT",
+        "category": "linear",
+        "baseCoin": "OP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ORBSUSDT": {
+        "symbol": "ORBSUSDT",
+        "category": "linear",
+        "baseCoin": "ORBS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ORCAUSDT": {
+        "symbol": "ORCAUSDT",
+        "category": "linear",
+        "baseCoin": "ORCA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ORDERUSDT": {
+        "symbol": "ORDERUSDT",
+        "category": "linear",
+        "baseCoin": "ORDER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ORDIUSDT": {
+        "symbol": "ORDIUSDT",
+        "category": "linear",
+        "baseCoin": "ORDI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "OXTUSDT": {
+        "symbol": "OXTUSDT",
+        "category": "linear",
+        "baseCoin": "OXT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PARTIUSDT": {
+        "symbol": "PARTIUSDT",
+        "category": "linear",
+        "baseCoin": "PARTI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PAXGUSDT": {
+        "symbol": "PAXGUSDT",
+        "category": "linear",
+        "baseCoin": "PAXG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PEAQUSDT": {
+        "symbol": "PEAQUSDT",
+        "category": "linear",
+        "baseCoin": "PEAQ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PENDLEUSDT": {
+        "symbol": "PENDLEUSDT",
+        "category": "linear",
+        "baseCoin": "PENDLE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PENGUUSDT": {
+        "symbol": "PENGUUSDT",
+        "category": "linear",
+        "baseCoin": "PENGU",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PEOPLEUSDT": {
+        "symbol": "PEOPLEUSDT",
+        "category": "linear",
+        "baseCoin": "PEOPLE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PHAUSDT": {
+        "symbol": "PHAUSDT",
+        "category": "linear",
+        "baseCoin": "PHA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PIEVERSEUSDT": {
+        "symbol": "PIEVERSEUSDT",
+        "category": "linear",
+        "baseCoin": "PIEVERSE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PIPPINUSDT": {
+        "symbol": "PIPPINUSDT",
+        "category": "linear",
+        "baseCoin": "PIPPIN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PIXELUSDT": {
+        "symbol": "PIXELUSDT",
+        "category": "linear",
+        "baseCoin": "PIXEL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PLAYSOUTUSDT": {
+        "symbol": "PLAYSOUTUSDT",
+        "category": "linear",
+        "baseCoin": "PLAYSOUT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PLUMEUSDT": {
+        "symbol": "PLUMEUSDT",
+        "category": "linear",
+        "baseCoin": "PLUME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PNUTUSDT": {
+        "symbol": "PNUTUSDT",
+        "category": "linear",
+        "baseCoin": "PNUT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "POLUSDT": {
+        "symbol": "POLUSDT",
+        "category": "linear",
+        "baseCoin": "POL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "POLYXUSDT": {
+        "symbol": "POLYXUSDT",
+        "category": "linear",
+        "baseCoin": "POLYX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PONKEUSDT": {
+        "symbol": "PONKEUSDT",
+        "category": "linear",
+        "baseCoin": "PONKE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "POPCATUSDT": {
+        "symbol": "POPCATUSDT",
+        "category": "linear",
+        "baseCoin": "POPCAT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PORTALUSDT": {
+        "symbol": "PORTALUSDT",
+        "category": "linear",
+        "baseCoin": "PORTAL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "POWERUSDT": {
+        "symbol": "POWERUSDT",
+        "category": "linear",
+        "baseCoin": "POWER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "POWRUSDT": {
+        "symbol": "POWRUSDT",
+        "category": "linear",
+        "baseCoin": "POWR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PROMPTUSDT": {
+        "symbol": "PROMPTUSDT",
+        "category": "linear",
+        "baseCoin": "PROMPT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PROMUSDT": {
+        "symbol": "PROMUSDT",
+        "category": "linear",
+        "baseCoin": "PROM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PROVEUSDT": {
+        "symbol": "PROVEUSDT",
+        "category": "linear",
+        "baseCoin": "PROVE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PTBUSDT": {
+        "symbol": "PTBUSDT",
+        "category": "linear",
+        "baseCoin": "PTB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PUFFERUSDT": {
+        "symbol": "PUFFERUSDT",
+        "category": "linear",
+        "baseCoin": "PUFFER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PUMPBTCUSDT": {
+        "symbol": "PUMPBTCUSDT",
+        "category": "linear",
+        "baseCoin": "PUMPBTC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PUMPFUNUSDT": {
+        "symbol": "PUMPFUNUSDT",
+        "category": "linear",
+        "baseCoin": "PUMPFUN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PUNDIXUSDT": {
+        "symbol": "PUNDIXUSDT",
+        "category": "linear",
+        "baseCoin": "PUNDIX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PYRUSDT": {
+        "symbol": "PYRUSDT",
+        "category": "linear",
+        "baseCoin": "PYR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "PYTHUSDT": {
+        "symbol": "PYTHUSDT",
+        "category": "linear",
+        "baseCoin": "PYTH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "QNTUSDT": {
+        "symbol": "QNTUSDT",
+        "category": "linear",
+        "baseCoin": "QNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "QTUMUSDT": {
+        "symbol": "QTUMUSDT",
+        "category": "linear",
+        "baseCoin": "QTUM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "QUSDT": {
+        "symbol": "QUSDT",
+        "category": "linear",
+        "baseCoin": "Q",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RAREUSDT": {
+        "symbol": "RAREUSDT",
+        "category": "linear",
+        "baseCoin": "RARE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RAVEUSDT": {
+        "symbol": "RAVEUSDT",
+        "category": "linear",
+        "baseCoin": "RAVE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RAYDIUMUSDT": {
+        "symbol": "RAYDIUMUSDT",
+        "category": "linear",
+        "baseCoin": "RAYDIUM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RDNTUSDT": {
+        "symbol": "RDNTUSDT",
+        "category": "linear",
+        "baseCoin": "RDNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RECALLUSDT": {
+        "symbol": "RECALLUSDT",
+        "category": "linear",
+        "baseCoin": "RECALL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "REDUSDT": {
+        "symbol": "REDUSDT",
+        "category": "linear",
+        "baseCoin": "RED",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RENDERUSDT": {
+        "symbol": "RENDERUSDT",
+        "category": "linear",
+        "baseCoin": "RENDER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "REQUSDT": {
+        "symbol": "REQUSDT",
+        "category": "linear",
+        "baseCoin": "REQ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RESOLVUSDT": {
+        "symbol": "RESOLVUSDT",
+        "category": "linear",
+        "baseCoin": "RESOLV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "REZUSDT": {
+        "symbol": "REZUSDT",
+        "category": "linear",
+        "baseCoin": "REZ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RIVERUSDT": {
+        "symbol": "RIVERUSDT",
+        "category": "linear",
+        "baseCoin": "RIVER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RLCUSDT": {
+        "symbol": "RLCUSDT",
+        "category": "linear",
+        "baseCoin": "RLC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RLSUSDT": {
+        "symbol": "RLSUSDT",
+        "category": "linear",
+        "baseCoin": "RLS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RLUSDUSDT": {
+        "symbol": "RLUSDUSDT",
+        "category": "linear",
+        "baseCoin": "RLUSD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ROAMUSDT": {
+        "symbol": "ROAMUSDT",
+        "category": "linear",
+        "baseCoin": "ROAM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ROBOUSDT": {
+        "symbol": "ROBOUSDT",
+        "category": "linear",
+        "baseCoin": "ROBO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RONINUSDT": {
+        "symbol": "RONINUSDT",
+        "category": "linear",
+        "baseCoin": "RONIN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ROSEUSDT": {
+        "symbol": "ROSEUSDT",
+        "category": "linear",
+        "baseCoin": "ROSE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RPLUSDT": {
+        "symbol": "RPLUSDT",
+        "category": "linear",
+        "baseCoin": "RPL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RSRUSDT": {
+        "symbol": "RSRUSDT",
+        "category": "linear",
+        "baseCoin": "RSR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RUNEUSDT": {
+        "symbol": "RUNEUSDT",
+        "category": "linear",
+        "baseCoin": "RUNE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "RVNUSDT": {
+        "symbol": "RVNUSDT",
+        "category": "linear",
+        "baseCoin": "RVN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SAFEUSDT": {
+        "symbol": "SAFEUSDT",
+        "category": "linear",
+        "baseCoin": "SAFE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SAGAUSDT": {
+        "symbol": "SAGAUSDT",
+        "category": "linear",
+        "baseCoin": "SAGA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SAHARAUSDT": {
+        "symbol": "SAHARAUSDT",
+        "category": "linear",
+        "baseCoin": "SAHARA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SANDUSDT": {
+        "symbol": "SANDUSDT",
+        "category": "linear",
+        "baseCoin": "SAND",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SAPIENUSDT": {
+        "symbol": "SAPIENUSDT",
+        "category": "linear",
+        "baseCoin": "SAPIEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SCRTUSDT": {
+        "symbol": "SCRTUSDT",
+        "category": "linear",
+        "baseCoin": "SCRT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SCRUSDT": {
+        "symbol": "SCRUSDT",
+        "category": "linear",
+        "baseCoin": "SCR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SCUSDT": {
+        "symbol": "SCUSDT",
+        "category": "linear",
+        "baseCoin": "SC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SEIUSDT": {
+        "symbol": "SEIUSDT",
+        "category": "linear",
+        "baseCoin": "SEI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SENTUSDT": {
+        "symbol": "SENTUSDT",
+        "category": "linear",
+        "baseCoin": "SENT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SFPUSDT": {
+        "symbol": "SFPUSDT",
+        "category": "linear",
+        "baseCoin": "SFP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SHELLUSDT": {
+        "symbol": "SHELLUSDT",
+        "category": "linear",
+        "baseCoin": "SHELL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SHIB1000USDT": {
+        "symbol": "SHIB1000USDT",
+        "category": "linear",
+        "baseCoin": "SHIB1000",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SIGNUSDT": {
+        "symbol": "SIGNUSDT",
+        "category": "linear",
+        "baseCoin": "SIGN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SIRENUSDT": {
+        "symbol": "SIRENUSDT",
+        "category": "linear",
+        "baseCoin": "SIREN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SKLUSDT": {
+        "symbol": "SKLUSDT",
+        "category": "linear",
+        "baseCoin": "SKL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SKRUSDT": {
+        "symbol": "SKRUSDT",
+        "category": "linear",
+        "baseCoin": "SKR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SKYUSDT": {
+        "symbol": "SKYUSDT",
+        "category": "linear",
+        "baseCoin": "SKY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SLPUSDT": {
+        "symbol": "SLPUSDT",
+        "category": "linear",
+        "baseCoin": "SLP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SNTUSDT": {
+        "symbol": "SNTUSDT",
+        "category": "linear",
+        "baseCoin": "SNT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SNXUSDT": {
+        "symbol": "SNXUSDT",
+        "category": "linear",
+        "baseCoin": "SNX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLAYERUSDT": {
+        "symbol": "SOLAYERUSDT",
+        "category": "linear",
+        "baseCoin": "SOLAYER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLUSDT": {
+        "symbol": "SOLUSDT",
+        "category": "linear",
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLUSDT-13MAR26": {
+        "symbol": "SOLUSDT-13MAR26",
+        "category": "linear",
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLUSDT-20MAR26": {
+        "symbol": "SOLUSDT-20MAR26",
+        "category": "linear",
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLUSDT-24APR26": {
+        "symbol": "SOLUSDT-24APR26",
+        "category": "linear",
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLUSDT-27MAR26": {
+        "symbol": "SOLUSDT-27MAR26",
+        "category": "linear",
+        "baseCoin": "SOL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOLVUSDT": {
+        "symbol": "SOLVUSDT",
+        "category": "linear",
+        "baseCoin": "SOLV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOMIUSDT": {
+        "symbol": "SOMIUSDT",
+        "category": "linear",
+        "baseCoin": "SOMI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SONICUSDT": {
+        "symbol": "SONICUSDT",
+        "category": "linear",
+        "baseCoin": "SONIC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOONUSDT": {
+        "symbol": "SOONUSDT",
+        "category": "linear",
+        "baseCoin": "SOON",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOPHUSDT": {
+        "symbol": "SOPHUSDT",
+        "category": "linear",
+        "baseCoin": "SOPH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SOSOUSDT": {
+        "symbol": "SOSOUSDT",
+        "category": "linear",
+        "baseCoin": "SOSO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SPACEUSDT": {
+        "symbol": "SPACEUSDT",
+        "category": "linear",
+        "baseCoin": "SPACE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SPELLUSDT": {
+        "symbol": "SPELLUSDT",
+        "category": "linear",
+        "baseCoin": "SPELL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SPKUSDT": {
+        "symbol": "SPKUSDT",
+        "category": "linear",
+        "baseCoin": "SPK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SPORTFUNUSDT": {
+        "symbol": "SPORTFUNUSDT",
+        "category": "linear",
+        "baseCoin": "SPORTFUN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SPXUSDT": {
+        "symbol": "SPXUSDT",
+        "category": "linear",
+        "baseCoin": "SPX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SQDUSDT": {
+        "symbol": "SQDUSDT",
+        "category": "linear",
+        "baseCoin": "SQD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SSVUSDT": {
+        "symbol": "SSVUSDT",
+        "category": "linear",
+        "baseCoin": "SSV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STABLEUSDT": {
+        "symbol": "STABLEUSDT",
+        "category": "linear",
+        "baseCoin": "STABLE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STBLUSDT": {
+        "symbol": "STBLUSDT",
+        "category": "linear",
+        "baseCoin": "STBL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STEEMUSDT": {
+        "symbol": "STEEMUSDT",
+        "category": "linear",
+        "baseCoin": "STEEM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STGUSDT": {
+        "symbol": "STGUSDT",
+        "category": "linear",
+        "baseCoin": "STG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STORJUSDT": {
+        "symbol": "STORJUSDT",
+        "category": "linear",
+        "baseCoin": "STORJ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STOUSDT": {
+        "symbol": "STOUSDT",
+        "category": "linear",
+        "baseCoin": "STO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STRKUSDT": {
+        "symbol": "STRKUSDT",
+        "category": "linear",
+        "baseCoin": "STRK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "STXUSDT": {
+        "symbol": "STXUSDT",
+        "category": "linear",
+        "baseCoin": "STX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SUIUSDT": {
+        "symbol": "SUIUSDT",
+        "category": "linear",
+        "baseCoin": "SUI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SUNUSDT": {
+        "symbol": "SUNUSDT",
+        "category": "linear",
+        "baseCoin": "SUN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SUPERUSDT": {
+        "symbol": "SUPERUSDT",
+        "category": "linear",
+        "baseCoin": "SUPER",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SUSDT": {
+        "symbol": "SUSDT",
+        "category": "linear",
+        "baseCoin": "S",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SUSHIUSDT": {
+        "symbol": "SUSHIUSDT",
+        "category": "linear",
+        "baseCoin": "SUSHI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SWARMSUSDT": {
+        "symbol": "SWARMSUSDT",
+        "category": "linear",
+        "baseCoin": "SWARMS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SXPUSDT": {
+        "symbol": "SXPUSDT",
+        "category": "linear",
+        "baseCoin": "SXP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SXTUSDT": {
+        "symbol": "SXTUSDT",
+        "category": "linear",
+        "baseCoin": "SXT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SYNUSDT": {
+        "symbol": "SYNUSDT",
+        "category": "linear",
+        "baseCoin": "SYN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SYRUPUSDT": {
+        "symbol": "SYRUPUSDT",
+        "category": "linear",
+        "baseCoin": "SYRUP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "SYSUSDT": {
+        "symbol": "SYSUSDT",
+        "category": "linear",
+        "baseCoin": "SYS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TACUSDT": {
+        "symbol": "TACUSDT",
+        "category": "linear",
+        "baseCoin": "TAC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TAIKOUSDT": {
+        "symbol": "TAIKOUSDT",
+        "category": "linear",
+        "baseCoin": "TAIKO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TAIUSDT": {
+        "symbol": "TAIUSDT",
+        "category": "linear",
+        "baseCoin": "TAI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TAOUSDT": {
+        "symbol": "TAOUSDT",
+        "category": "linear",
+        "baseCoin": "TAO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TAUSDT": {
+        "symbol": "TAUSDT",
+        "category": "linear",
+        "baseCoin": "TA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "THETAUSDT": {
+        "symbol": "THETAUSDT",
+        "category": "linear",
+        "baseCoin": "THETA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "THEUSDT": {
+        "symbol": "THEUSDT",
+        "category": "linear",
+        "baseCoin": "THE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TIAUSDT": {
+        "symbol": "TIAUSDT",
+        "category": "linear",
+        "baseCoin": "TIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TLMUSDT": {
+        "symbol": "TLMUSDT",
+        "category": "linear",
+        "baseCoin": "TLM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TNSRUSDT": {
+        "symbol": "TNSRUSDT",
+        "category": "linear",
+        "baseCoin": "TNSR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TONUSDT": {
+        "symbol": "TONUSDT",
+        "category": "linear",
+        "baseCoin": "TON",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TOWNSUSDT": {
+        "symbol": "TOWNSUSDT",
+        "category": "linear",
+        "baseCoin": "TOWNS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRBUSDT": {
+        "symbol": "TRBUSDT",
+        "category": "linear",
+        "baseCoin": "TRB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TREEUSDT": {
+        "symbol": "TREEUSDT",
+        "category": "linear",
+        "baseCoin": "TREE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRIAUSDT": {
+        "symbol": "TRIAUSDT",
+        "category": "linear",
+        "baseCoin": "TRIA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRUMPUSDT": {
+        "symbol": "TRUMPUSDT",
+        "category": "linear",
+        "baseCoin": "TRUMP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRUSTUSDT": {
+        "symbol": "TRUSTUSDT",
+        "category": "linear",
+        "baseCoin": "TRUST",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRUTHUSDT": {
+        "symbol": "TRUTHUSDT",
+        "category": "linear",
+        "baseCoin": "TRUTH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRUUSDT": {
+        "symbol": "TRUUSDT",
+        "category": "linear",
+        "baseCoin": "TRU",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TRXUSDT": {
+        "symbol": "TRXUSDT",
+        "category": "linear",
+        "baseCoin": "TRX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TSTBSCUSDT": {
+        "symbol": "TSTBSCUSDT",
+        "category": "linear",
+        "baseCoin": "TSTBSC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TURTLEUSDT": {
+        "symbol": "TURTLEUSDT",
+        "category": "linear",
+        "baseCoin": "TURTLE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TUSDT": {
+        "symbol": "TUSDT",
+        "category": "linear",
+        "baseCoin": "T",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TUTUSDT": {
+        "symbol": "TUTUSDT",
+        "category": "linear",
+        "baseCoin": "TUT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "TWTUSDT": {
+        "symbol": "TWTUSDT",
+        "category": "linear",
+        "baseCoin": "TWT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "UAIUSDT": {
+        "symbol": "UAIUSDT",
+        "category": "linear",
+        "baseCoin": "UAI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "UBUSDT": {
+        "symbol": "UBUSDT",
+        "category": "linear",
+        "baseCoin": "UB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "UMAUSDT": {
+        "symbol": "UMAUSDT",
+        "category": "linear",
+        "baseCoin": "UMA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "UNIUSDT": {
+        "symbol": "UNIUSDT",
+        "category": "linear",
+        "baseCoin": "UNI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USD1USDT": {
+        "symbol": "USD1USDT",
+        "category": "linear",
+        "baseCoin": "USD1",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USDCUSDT": {
+        "symbol": "USDCUSDT",
+        "category": "linear",
+        "baseCoin": "USDC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USDEUSDT": {
+        "symbol": "USDEUSDT",
+        "category": "linear",
+        "baseCoin": "USDE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USELESSUSDT": {
+        "symbol": "USELESSUSDT",
+        "category": "linear",
+        "baseCoin": "USELESS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USTCUSDT": {
+        "symbol": "USTCUSDT",
+        "category": "linear",
+        "baseCoin": "USTC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USUALUSDT": {
+        "symbol": "USUALUSDT",
+        "category": "linear",
+        "baseCoin": "USUAL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "USUSDT": {
+        "symbol": "USUSDT",
+        "category": "linear",
+        "baseCoin": "US",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VANAUSDT": {
+        "symbol": "VANAUSDT",
+        "category": "linear",
+        "baseCoin": "VANA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VANRYUSDT": {
+        "symbol": "VANRYUSDT",
+        "category": "linear",
+        "baseCoin": "VANRY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VELODROMEUSDT": {
+        "symbol": "VELODROMEUSDT",
+        "category": "linear",
+        "baseCoin": "VELODROME",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VELOUSDT": {
+        "symbol": "VELOUSDT",
+        "category": "linear",
+        "baseCoin": "VELO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VELVETUSDT": {
+        "symbol": "VELVETUSDT",
+        "category": "linear",
+        "baseCoin": "VELVET",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VETUSDT": {
+        "symbol": "VETUSDT",
+        "category": "linear",
+        "baseCoin": "VET",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VFYUSDT": {
+        "symbol": "VFYUSDT",
+        "category": "linear",
+        "baseCoin": "VFY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VINEUSDT": {
+        "symbol": "VINEUSDT",
+        "category": "linear",
+        "baseCoin": "VINE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VIRTUALUSDT": {
+        "symbol": "VIRTUALUSDT",
+        "category": "linear",
+        "baseCoin": "VIRTUAL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "VVVUSDT": {
+        "symbol": "VVVUSDT",
+        "category": "linear",
+        "baseCoin": "VVV",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WALUSDT": {
+        "symbol": "WALUSDT",
+        "category": "linear",
+        "baseCoin": "WAL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WAVESUSDT": {
+        "symbol": "WAVESUSDT",
+        "category": "linear",
+        "baseCoin": "WAVES",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WAXPUSDT": {
+        "symbol": "WAXPUSDT",
+        "category": "linear",
+        "baseCoin": "WAXP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WCTUSDT": {
+        "symbol": "WCTUSDT",
+        "category": "linear",
+        "baseCoin": "WCT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WETUSDT": {
+        "symbol": "WETUSDT",
+        "category": "linear",
+        "baseCoin": "WET",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WHITEWHALEUSDT": {
+        "symbol": "WHITEWHALEUSDT",
+        "category": "linear",
+        "baseCoin": "WHITEWHALE",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WIFUSDT": {
+        "symbol": "WIFUSDT",
+        "category": "linear",
+        "baseCoin": "WIF",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WLDUSDT": {
+        "symbol": "WLDUSDT",
+        "category": "linear",
+        "baseCoin": "WLD",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WLFIUSDT": {
+        "symbol": "WLFIUSDT",
+        "category": "linear",
+        "baseCoin": "WLFI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WOOUSDT": {
+        "symbol": "WOOUSDT",
+        "category": "linear",
+        "baseCoin": "WOO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "WUSDT": {
+        "symbol": "WUSDT",
+        "category": "linear",
+        "baseCoin": "W",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XAGUSDT": {
+        "symbol": "XAGUSDT",
+        "category": "linear",
+        "baseCoin": "XAG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XAIUSDT": {
+        "symbol": "XAIUSDT",
+        "category": "linear",
+        "baseCoin": "XAI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XANUSDT": {
+        "symbol": "XANUSDT",
+        "category": "linear",
+        "baseCoin": "XAN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XAUTUSDT": {
+        "symbol": "XAUTUSDT",
+        "category": "linear",
+        "baseCoin": "XAUT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XAUUSDT": {
+        "symbol": "XAUUSDT",
+        "category": "linear",
+        "baseCoin": "XAU",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XCHUSDT": {
+        "symbol": "XCHUSDT",
+        "category": "linear",
+        "baseCoin": "XCH",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XCNUSDT": {
+        "symbol": "XCNUSDT",
+        "category": "linear",
+        "baseCoin": "XCN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XDCUSDT": {
+        "symbol": "XDCUSDT",
+        "category": "linear",
+        "baseCoin": "XDC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XIONUSDT": {
+        "symbol": "XIONUSDT",
+        "category": "linear",
+        "baseCoin": "XION",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XLMUSDT": {
+        "symbol": "XLMUSDT",
+        "category": "linear",
+        "baseCoin": "XLM",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XMRUSDT": {
+        "symbol": "XMRUSDT",
+        "category": "linear",
+        "baseCoin": "XMR",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XNYUSDT": {
+        "symbol": "XNYUSDT",
+        "category": "linear",
+        "baseCoin": "XNY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XPINUSDT": {
+        "symbol": "XPINUSDT",
+        "category": "linear",
+        "baseCoin": "XPIN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XPLUSDT": {
+        "symbol": "XPLUSDT",
+        "category": "linear",
+        "baseCoin": "XPL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XRPUSDT": {
+        "symbol": "XRPUSDT",
+        "category": "linear",
+        "baseCoin": "XRP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XRPUSDT-13MAR26": {
+        "symbol": "XRPUSDT-13MAR26",
+        "category": "linear",
+        "baseCoin": "XRP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XRPUSDT-20MAR26": {
+        "symbol": "XRPUSDT-20MAR26",
+        "category": "linear",
+        "baseCoin": "XRP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XRPUSDT-24APR26": {
+        "symbol": "XRPUSDT-24APR26",
+        "category": "linear",
+        "baseCoin": "XRP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XRPUSDT-27MAR26": {
+        "symbol": "XRPUSDT-27MAR26",
+        "category": "linear",
+        "baseCoin": "XRP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XTZUSDT": {
+        "symbol": "XTZUSDT",
+        "category": "linear",
+        "baseCoin": "XTZ",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XVGUSDT": {
+        "symbol": "XVGUSDT",
+        "category": "linear",
+        "baseCoin": "XVG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "XVSUSDT": {
+        "symbol": "XVSUSDT",
+        "category": "linear",
+        "baseCoin": "XVS",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "YBUSDT": {
+        "symbol": "YBUSDT",
+        "category": "linear",
+        "baseCoin": "YB",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "YFIUSDT": {
+        "symbol": "YFIUSDT",
+        "category": "linear",
+        "baseCoin": "YFI",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "YGGUSDT": {
+        "symbol": "YGGUSDT",
+        "category": "linear",
+        "baseCoin": "YGG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "YZYUSDT": {
+        "symbol": "YZYUSDT",
+        "category": "linear",
+        "baseCoin": "YZY",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZAMAUSDT": {
+        "symbol": "ZAMAUSDT",
+        "category": "linear",
+        "baseCoin": "ZAMA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZBCNUSDT": {
+        "symbol": "ZBCNUSDT",
+        "category": "linear",
+        "baseCoin": "ZBCN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZBTUSDT": {
+        "symbol": "ZBTUSDT",
+        "category": "linear",
+        "baseCoin": "ZBT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZECUSDT": {
+        "symbol": "ZECUSDT",
+        "category": "linear",
+        "baseCoin": "ZEC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZENUSDT": {
+        "symbol": "ZENUSDT",
+        "category": "linear",
+        "baseCoin": "ZEN",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZEREBROUSDT": {
+        "symbol": "ZEREBROUSDT",
+        "category": "linear",
+        "baseCoin": "ZEREBRO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZETAUSDT": {
+        "symbol": "ZETAUSDT",
+        "category": "linear",
+        "baseCoin": "ZETA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZILUSDT": {
+        "symbol": "ZILUSDT",
+        "category": "linear",
+        "baseCoin": "ZIL",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZKCUSDT": {
+        "symbol": "ZKCUSDT",
+        "category": "linear",
+        "baseCoin": "ZKC",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZKPUSDT": {
+        "symbol": "ZKPUSDT",
+        "category": "linear",
+        "baseCoin": "ZKP",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZKUSDT": {
+        "symbol": "ZKUSDT",
+        "category": "linear",
+        "baseCoin": "ZK",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZORAUSDT": {
+        "symbol": "ZORAUSDT",
+        "category": "linear",
+        "baseCoin": "ZORA",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZROUSDT": {
+        "symbol": "ZROUSDT",
+        "category": "linear",
+        "baseCoin": "ZRO",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    },
+    "ZRXUSDT": {
+        "symbol": "ZRXUSDT",
+        "category": "linear",
+        "baseCoin": "ZRX",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-12T17:47:40+00:00"
+    }
+}

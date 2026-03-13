@@ -3,7 +3,8 @@
  * Smart Brain Module - Dashboard View
  * 
  * Phase 1: Stable visual interface.
- * Cards: Candidates, Monitors, Signals, Simulator Positions
+ * Phase 8: Real metrics display.
+ * Cards: Candidates, Monitors, Signals, Simulator Positions, Metrics
  * Tables: Monitors, Simulator Waiting/Active/Closed
  * Status values: monitoring, entry_zone, triggered, invalidated
  */
@@ -15,6 +16,7 @@
 /** @var array<int,array<string,mixed>> $waiting */
 /** @var array<int,array<string,mixed>> $active */
 /** @var array<int,array<string,mixed>> $closed */
+/** @var array<string,mixed> $stats */
 
 $pageTitle = 'Smart Brain - Dashboard';
 $activeTab = 'dashboard';
@@ -27,7 +29,7 @@ $extraStyles = '
 .status-waiting { background: rgba(148,163,184,0.15); color: #94a3b8; }
 ';
 
-$pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active, $closed, $smartBrainUrl) {
+$pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active, $closed, $stats, $smartBrainUrl) {
     $statusClass = function(string $status): string {
         return match($status) {
             'monitoring' => 'status-monitoring',
@@ -84,6 +86,71 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             </div>
         </div>
     </div>
+
+    <!-- Metrics Cards (Phase 8) -->
+    <?php if (!empty($stats)): ?>
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: #10b981;"><?= htmlspecialchars((string)($stats['total_trades'] ?? '0')) ?></h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Total Trades</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card">
+                <div class="card-body text-center">
+                    <?php $wr = (float)($stats['winrate'] ?? 0); ?>
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: <?= $wr >= 0.7 ? '#10b981' : ($wr >= 0.5 ? '#f59e0b' : '#ef4444') ?>;"><?= number_format($wr * 100, 1) ?>%</h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Winrate</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card">
+                <div class="card-body text-center">
+                    <?php $avgRoi = (float)($stats['average_roi'] ?? 0); ?>
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: <?= $avgRoi >= 0 ? '#10b981' : '#ef4444' ?>;"><?= number_format($avgRoi * 100, 2) ?>%</h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Avg ROI</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card">
+                <div class="card-body text-center">
+                    <?php $conv = (float)($stats['signal_to_entry_conversion'] ?? 0); ?>
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: #8b5cf6;"><?= number_format($conv * 100, 1) ?>%</h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Conversion</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-1">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: #94a3b8;"><?= count($waiting) ?></h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Waiting</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-1">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: #f59e0b;"><?= count($active) ?></h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Active</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 style="font-size: 1.6rem; font-weight: bold; color: #10b981;"><?= count($closed) ?></h3>
+                    <p style="margin: 0; color: #94a3b8; font-size: 0.85rem;">Closed</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Monitors Table -->
     <div class="card mb-4">
@@ -147,10 +214,10 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-lightning me-1 text-warning"></i> Simulator — Active (<?= count($active) ?>)</h5></div>
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
-                <thead><tr><th>Symbol</th><th>Entry Price</th><th>Current Price</th><th>ROI</th><th>Leverage</th><th>Stop Loss</th><th>Take Profit</th></tr></thead>
+                <thead><tr><th>Symbol</th><th>Entry Price</th><th>Current Price</th><th>ROI</th><th>MAE</th><th>MFE</th><th>Leverage</th><th>SL</th><th>TP</th></tr></thead>
                 <tbody>
                     <?php if (empty($active)): ?>
-                        <tr><td colspan="7" class="text-center text-secondary py-3">—</td></tr>
+                        <tr><td colspan="9" class="text-center text-secondary py-3">—</td></tr>
                     <?php else: ?>
                         <?php foreach ($active as $row): ?>
                         <tr>
@@ -158,6 +225,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['current_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['roi'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['leverage'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($row['stoploss'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['takeprofit'] ?? '-')) ?></td>
@@ -174,19 +243,21 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-check-circle me-1 text-success"></i> Simulator — Closed (<?= count($closed) ?>)</h5></div>
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
-                <thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>ROI</th><th>Reason</th><th>Duration</th></tr></thead>
+                <thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>ROI</th><th>MAE</th><th>MFE</th><th>Reason</th><th>Duration</th></tr></thead>
                 <tbody>
                     <?php if (empty($closed)): ?>
-                        <tr><td colspan="6" class="text-center text-secondary py-3">—</td></tr>
+                        <tr><td colspan="8" class="text-center text-secondary py-3">—</td></tr>
                     <?php else: ?>
                         <?php foreach ($closed as $row): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></strong></td>
-                            <td><?= htmlspecialchars((string)($row['entry'] ?? $row['entry_price'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['exit'] ?? $row['exit_price'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['exit_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['roi'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['reason'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['duration'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['duration'] ?? '-')) ?> min</td>
                         </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>

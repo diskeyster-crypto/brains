@@ -54,8 +54,12 @@ final class SmartBrainCore
         $signals = $risk->apply($monitors);
         $this->state->writeJson('storage/signals.json', $signals);
 
+        // Build price map from candidates/monitors for simulator
+        $prices = $this->buildPriceMap($candidates, $monitors);
+
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
-        $simulator->sync($signals);
+        $simulator->tick($signals, $prices);
+        $stats = $simulator->computeStats();
 
         $runtime = new SmartBrainRuntime($this->state);
         $runtime->snapshot($this->config->all());
@@ -75,6 +79,41 @@ final class SmartBrainCore
     }
 
     /**
+     * Build symbol→price map from candidates and monitors.
+     * Candidates carry last_price from parser4.
+     * Monitors carry corridor data but may not have price directly.
+     *
+     * @param array<int,array<string,mixed>> $candidates
+     * @param array<int,array<string,mixed>> $monitors
+     * @return array<string,float>
+     */
+    private function buildPriceMap(array $candidates, array $monitors): array
+    {
+        $prices = [];
+
+        foreach ($candidates as $c) {
+            $sym = (string)($c['symbol'] ?? '');
+            $p   = (float)($c['last_price'] ?? 0.0);
+            if ($sym !== '' && $p > 0.0) {
+                $prices[$sym] = $p;
+            }
+        }
+
+        // Monitors may carry a last_price too; use as fallback
+        foreach ($monitors as $m) {
+            $sym = (string)($m['symbol'] ?? '');
+            if ($sym !== '' && !isset($prices[$sym])) {
+                $p = (float)($m['last_price'] ?? 0.0);
+                if ($p > 0.0) {
+                    $prices[$sym] = $p;
+                }
+            }
+        }
+
+        return $prices;
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public function getDashboardData(): array
@@ -88,6 +127,7 @@ final class SmartBrainCore
             'waiting' => $this->state->readJson('storage/simulator/waiting.json', []),
             'active' => $this->state->readJson('storage/simulator/active.json', []),
             'closed' => $this->state->readJson('storage/simulator/closed.json', []),
+            'stats' => $this->state->readJson('storage/simulator/stats.json', []),
         ];
     }
 
@@ -100,6 +140,7 @@ final class SmartBrainCore
             'config' => $this->config->all(),
             'snapshot' => $this->state->readJson('runtime/config.snapshot.json', []),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
+            'stats' => $this->state->readJson('storage/simulator/stats.json', []),
         ];
     }
 
@@ -133,6 +174,7 @@ final class SmartBrainCore
             'waiting' => $this->state->readJson('storage/simulator/waiting.json', []),
             'active' => $this->state->readJson('storage/simulator/active.json', []),
             'closed' => $this->state->readJson('storage/simulator/closed.json', []),
+            'stats' => $this->state->readJson('storage/simulator/stats.json', []),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
         ];
     }

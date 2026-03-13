@@ -2,24 +2,37 @@
 /**
  * Smart Brain Module - Runtime View
  * 
- * Shows runtime config snapshot and last run information.
+ * Shows runtime config snapshot, last run information, and full stats.json.
  */
 
 /** @var string $smartBrainUrl */
 /** @var array<string,mixed> $config */
 /** @var array<string,mixed> $snapshot */
 /** @var array<string,mixed> $last_run */
+/** @var array<string,mixed> $stats */
 
 $pageTitle = 'Smart Brain - Runtime';
 $activeTab = 'runtime';
 
-$pageContent = function() use ($config, $snapshot, $last_run, $smartBrainUrl) {
+$pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrainUrl) {
 ?>
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="mb-1"><i class="bi bi-activity me-2 text-primary"></i>Runtime</h4>
-            <p class="text-secondary mb-0">Current runtime state, config snapshot, and last run details</p>
+            <p class="text-secondary mb-0">Current runtime state, config snapshot, statistics, and last run details</p>
+        </div>
+    </div>
+
+    <!-- Simulator Stats Card -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-bar-chart me-1"></i> Simulator Statistics</h5></div>
+        <div class="card-body">
+            <?php if (empty($stats)): ?>
+                <p class="text-secondary">No stats recorded yet. Run the pipeline to generate metrics.</p>
+            <?php else: ?>
+                <pre style="background:#0f172a; padding:16px; border-radius:8px; font-size:0.85rem; max-height:400px; overflow:auto; color:#e2e8f0;"><?= htmlspecialchars(json_encode($stats, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) ?></pre>
+            <?php endif; ?>
         </div>
     </div>
 

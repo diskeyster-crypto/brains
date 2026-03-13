@@ -1,0 +1,392 @@
+SMART BRAIN
+Technical Specification
+PHASE 3 + PHASE 4 ONLY
+
+IMPORTANT
+---------
+
+This task is LIMITED STRICTLY to:
+
+PHASE 3 = Parser4 Analyzer
+PHASE 4 = Corridor Monitor
+
+Do NOT implement any other phases.
+Do NOT redesign architecture.
+Do NOT modify modules outside:
+
+modules/system/smart_brain/
+
+Do NOT add AI/ML.
+Do NOT modify simulator logic except compatibility changes if required.
+Do NOT modify executor or live trading code.
+Do NOT change UI structure except to display new real fields.
+
+
+====================================================
+GOAL
+====================================================
+
+Implement real Smart Brain data pipeline:
+
+Parser3 symbols
++
+Parser2 history
+        ↓
+Parser4 Analyzer
+        ↓
+Candidates
+        ↓
+Corridor Monitor
+        ↓
+Monitors
+
+Result must produce real:
+
+storage/candidates.json
+storage/monitors.json
+
+
+====================================================
+PHASE 3 — PARSER4 ANALYZER
+====================================================
+
+File:
+lib/parser4_analyzer.php
+
+
+CURRENT STATUS
+--------------
+
+Current parser4_analyzer.php is only a placeholder.
+It only reads existing candidates.json.
+
+This must be replaced with REAL analyzer logic.
+
+
+REQUIRED INPUTS
+---------------
+
+Parser4 must use config from:
+
+config/parser4.php
+
+Mode/settings/auto_rules structure already exists.
+Use settings only.
+
+
+Required input path keys from parser4 config:
+
+profiles_key
+history_key
+
+
+These keys refer to existing engine SystemPaths entries.
+
+Use SystemPaths::instance()->get(...) correctly.
+
+Do NOT hardcode filesystem paths.
+
+
+SOURCE DATA
+-----------
+
+1. Symbol list:
+   from Parser3 profiles directory
+
+   key:
+   parser.parser3_manager_behavior.storage
+
+   symbols are derived from filenames in:
+   {profiles_dir}/profiles/*.json
+
+2. Price history:
+   from Parser2 history directory
+
+   key:
+   parser.parser2_history_accumulator.storage
+
+   symbol history is stored by symbol directories
+   latest .ndjson file must be used
+
+
+REQUIRED OUTPUT
+---------------
+
+Write real candidate list to:
+
+storage/candidates.json
+
+
+CANDIDATE STRUCTURE
+-------------------
+
+Each candidate MUST contain:
+
+symbol
+corridor_low
+corridor_high
+corridor_width
+volatility
+strength
+trend_bias
+history_points
+
+
+EXAMPLE
+-------
+
+{
+  "symbol": "BTCUSDT",
+  "corridor_low": 62100.0,
+  "corridor_high": 64500.0,
+  "corridor_width": 0.03865,
+  "volatility": 0.01241,
+  "strength": 0.7421,
+  "trend_bias": "up",
+  "history_points": 245
+}
+
+
+PARSER4 ALGORITHM
+-----------------
+
+1. Load all symbols from Parser3 profiles directory.
+2. For each symbol, load latest Parser2 history .ndjson.
+3. Require minimum history points from config.
+4. Build market structure from history:
+   - corridor_low = minimum price in analysis window
+   - corridor_high = maximum price in analysis window
+   - corridor_width = (high / low) - 1
+   - volatility = stddev of returns
+   - strength = corridor_width / volatility
+   - trend_bias:
+        if last_price > first_price => "up"
+        if last_price < first_price => "down"
+        otherwise => "flat"
+5. Filter:
+   - skip symbols with invalid or empty history
+   - skip symbols with less than min_history_points
+   - skip symbols where volatility <= 0
+   - skip symbols where strength < strength_threshold
+6. Sort by strength DESC
+7. Apply max_candidates limit
+8. Save output to storage/candidates.json
+
+
+TECHNICAL RULES
+---------------
+
+- strict_types required
+- no hardcoded absolute paths
+- use SystemPaths
+- use existing config model
+- use line-by-line safe reading for ndjson
+- do not use random heuristics
+- do not generate trade signals
+- do not generate long/short orders
+- output only market structure candidates
+
+
+LOGGING
+-------
+
+Write last run summary to:
+storage/last_run.json
+
+At minimum include:
+updated_at
+candidates
+status
+
+
+UI REQUIREMENT
+--------------
+
+Analyzer tab must show REAL data from real candidates.json.
+
+Fields to display:
+symbol
+corridor_low
+corridor_high
+corridor_width
+volatility
+strength
+trend_bias
+history_points
+
+
+
+====================================================
+PHASE 4 — CORRIDOR MONITOR
+====================================================
+
+File:
+lib/corridor_monitor.php
+
+
+CURRENT STATUS
+--------------
+
+Current corridor_monitor.php only maps candidates into simple waiting rows.
+
+This must be replaced with REAL monitor builder logic.
+
+
+REQUIRED INPUT
+--------------
+
+Input file:
+
+storage/candidates.json
+
+
+REQUIRED OUTPUT
+---------------
+
+Write monitor list to:
+
+storage/monitors.json
+
+
+MONITOR STRUCTURE
+-----------------
+
+Each monitor MUST contain:
+
+symbol
+corridor_low
+corridor_high
+corridor_width
+entry_zone_low
+entry_zone_high
+price_position
+status
+
+
+EXAMPLE
+-------
+
+{
+  "symbol": "BTCUSDT",
+  "corridor_low": 62100.0,
+  "corridor_high": 64500.0,
+  "corridor_width": 0.03865,
+  "entry_zone_low": 62100.0,
+  "entry_zone_high": 62580.0,
+  "price_position": 0.18,
+  "status": "monitoring"
+}
+
+
+CORRIDOR MONITOR ALGORITHM
+--------------------------
+
+1. Read all candidates from storage/candidates.json
+2. For each candidate:
+   - corridor_low = candidate corridor_low
+   - corridor_high = candidate corridor_high
+   - corridor_width = candidate corridor_width
+   - entry_zone_percent = config/corridor.php settings entry_zone_percent
+   - entry_zone_low = corridor_low
+   - entry_zone_high = corridor_low + (corridor_high - corridor_low) * entry_zone_percent
+3. Determine price_position:
+   - if current_price available from candidate history context:
+       price_position = (current_price - corridor_low) / (corridor_high - corridor_low)
+     else:
+       use latest price from analyzer if it was stored
+4. Clamp price_position between 0 and 1 when inside corridor
+5. Determine status:
+   - if price_position < 0 → invalidated
+   - if 0 <= price_position <= entry_zone_percent → entry_zone
+   - if entry_zone_percent < price_position < 1 → monitoring
+   - if price_position >= 1 → invalidated
+6. Save all monitors to storage/monitors.json
+
+
+IMPORTANT
+---------
+
+Corridor Monitor still does NOT create final trade signals.
+It only creates structured monitored opportunities.
+
+
+UI REQUIREMENT
+--------------
+
+Dashboard + Analyzer must show real monitor data.
+
+Fields:
+symbol
+corridor
+entry zone
+price position
+status
+
+
+STATUS BADGES
+-------------
+
+Use these exact statuses:
+
+monitoring
+entry_zone
+triggered
+invalidated
+
+For Phase 4, triggered may remain unused if no signal trigger exists yet.
+But structure must support it.
+
+
+
+====================================================
+FILES ALLOWED TO CHANGE
+====================================================
+
+Allowed:
+
+modules/system/smart_brain/lib/parser4_analyzer.php
+modules/system/smart_brain/lib/corridor_monitor.php
+modules/system/smart_brain/lib/smart_brain_core.php
+modules/system/smart_brain/service.php
+modules/system/smart_brain/views/analizator.php
+modules/system/smart_brain/views/dashboard.php
+modules/system/smart_brain/storage/*.json
+modules/system/smart_brain/config/parser4.php
+modules/system/smart_brain/config/corridor.php
+
+Optional if needed:
+modules/system/smart_brain/lib/state_manager.php
+modules/system/smart_brain/lib/smart_brain_logger.php
+
+
+NOT ALLOWED
+-----------
+
+Do NOT modify:
+- executor
+- trading bot
+- live trading
+- simulator engine logic beyond compatibility
+- unrelated modules
+- public UI routing outside required smart_brain view support
+
+
+====================================================
+DEFINITION OF DONE
+====================================================
+
+Phase 3 and Phase 4 are DONE only if:
+
+1. Parser4 Analyzer no longer uses placeholder logic
+2. Real candidates are generated from Parser2 + Parser3
+3. Candidates are written to storage/candidates.json
+4. Corridor Monitor generates real monitors
+5. Monitors are written to storage/monitors.json
+6. Analyzer tab displays real candidate data
+7. Dashboard displays real monitor data
+8. PHP syntax passes on all changed files
+9. No fatal errors
+10. No fake stub data remains
+
+
+END OF SPEC

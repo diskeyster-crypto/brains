@@ -87,11 +87,11 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Volatility</th><th>Strength</th><th>Trend Bias</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Volatility</th><th>Strength</th><th>Trend</th><th>Points</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($candidates)): ?>
-                        <tr><td colspan="8" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
+                        <tr><td colspan="9" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
                     <?php else: ?>
                         <?php foreach ($candidates as $i => $c): ?>
                         <tr>
@@ -108,6 +108,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                                 </span>
                             </td>
                             <td><?= htmlspecialchars((string)($c['trend_bias'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($c['history_points'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -125,11 +126,11 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Entry Low</th><th>Entry High</th><th>Status</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Entry Low</th><th>Entry High</th><th>Price Pos</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($monitors)): ?>
-                        <tr><td colspan="7" class="text-center text-secondary py-4">No monitors</td></tr>
+                        <tr><td colspan="9" class="text-center text-secondary py-4">No monitors</td></tr>
                     <?php else: ?>
                         <?php foreach ($monitors as $i => $m): ?>
                         <?php $st = (string)($m['status'] ?? 'waiting'); ?>
@@ -138,8 +139,10 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                             <td><strong><?= htmlspecialchars((string)($m['symbol'] ?? '')) ?></strong></td>
                             <td><?= htmlspecialchars((string)($m['corridor_low'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['corridor_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($m['corridor_width'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($m['entry_zone_low'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['entry_zone_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($m['price_position'] ?? '-')) ?></td>
                             <td><span class="badge <?= $statusClass($st) ?>"><?= htmlspecialchars($st) ?></span></td>
                         </tr>
                         <?php endforeach; ?>

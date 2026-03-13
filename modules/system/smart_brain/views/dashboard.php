@@ -93,7 +93,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Entry Zone Low</th><th>Entry Zone High</th><th>Status</th></tr>
+                    <tr><th>Symbol</th><th>Corridor</th><th>Width</th><th>Entry Zone</th><th>Price Pos</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($monitors)): ?>
@@ -103,10 +103,10 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                         <?php $st = (string)($row['status'] ?? 'waiting'); ?>
                         <tr>
                             <td><strong><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></strong></td>
-                            <td><?= htmlspecialchars((string)($row['corridor_low'] ?? '')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['corridor_high'] ?? '')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['entry_zone_low'] ?? '')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['entry_zone_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['corridor_low'] ?? '')) ?> → <?= htmlspecialchars((string)($row['corridor_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['corridor_width'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($row['entry_zone_high'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['price_position'] ?? '-')) ?></td>
                             <td><span class="badge <?= $statusClass($st) ?>"><?= htmlspecialchars($st) ?></span></td>
                         </tr>
                         <?php endforeach; ?>

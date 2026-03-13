@@ -161,11 +161,11 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Entry Zone</th><th>Corridor</th><th>Leverage</th><th>Budget</th><th>Status</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Entry Zone</th><th>Corridor</th><th>Leverage</th><th>Budget</th><th>Stop Loss</th><th>Take Profit</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($signals)): ?>
-                        <tr><td colspan="7" class="text-center text-secondary py-4">No signals generated</td></tr>
+                        <tr><td colspan="9" class="text-center text-secondary py-4">No signals generated</td></tr>
                     <?php else: ?>
                         <?php foreach ($signals as $i => $s): ?>
                         <tr>
@@ -175,6 +175,8 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                             <td><?= htmlspecialchars((string)($s['corridor_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['corridor_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($s['leverage'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($s['budget'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($s['stop_loss'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($s['take_profit'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($s['status'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>

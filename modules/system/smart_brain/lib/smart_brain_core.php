@@ -48,13 +48,10 @@ final class SmartBrainCore
         $this->state->writeJson('storage/monitors.json', $monitors);
 
         $passports = new CoinPassportEngine($this->state);
-        $passports->update($candidates);
+        $passports->update($monitors);
 
-        $risk = new RiskEngine($riskCfg, $profilesCfg);
-        $riskMonitors = $risk->apply($monitors);
-
-        $signalBuilder = new SignalBuilder();
-        $signals = $signalBuilder->build($riskMonitors);
+        $risk = new RiskEngine($riskCfg, $profilesCfg, $this->state);
+        $signals = $risk->apply($monitors);
         $this->state->writeJson('storage/signals.json', $signals);
 
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);

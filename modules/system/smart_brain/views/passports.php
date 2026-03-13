@@ -34,29 +34,23 @@ $pageContent = function() use ($passports, $count, $smartBrainUrl) {
                 <thead>
                     <tr>
                         <th>Symbol</th>
-                        <th>Corridor Width Avg</th>
-                        <th>Volatility Avg</th>
-                        <th>Speed Class</th>
+                        <th>Trades</th>
+                        <th>Winrate</th>
                         <th>Avg MAE</th>
                         <th>Avg MFE</th>
                         <th>Avg Duration</th>
-                        <th>Winrate</th>
+                        <th>Speed Class</th>
                         <th>Reliability</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($passports)): ?>
-                        <tr><td colspan="9" class="text-center text-secondary py-4">No passports yet — data accumulates after simulator cycles</td></tr>
+                        <tr><td colspan="8" class="text-center text-secondary py-4">No passports yet — data accumulates after simulator cycles</td></tr>
                     <?php else: ?>
                         <?php foreach ($passports as $p): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars((string)($p['symbol'] ?? '')) ?></strong></td>
-                            <td><?= htmlspecialchars((string)($p['corridor_width_avg'] ?? $p['corridor_width'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($p['volatility_avg'] ?? $p['volatility'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($p['speed_class'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($p['avg_mae'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($p['avg_mfe'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($p['avg_duration'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($p['trades_total'] ?? '0')) ?></td>
                             <td>
                                 <?php $wr = $p['winrate'] ?? null; ?>
                                 <?php if ($wr !== null): ?>
@@ -67,6 +61,10 @@ $pageContent = function() use ($passports, $count, $smartBrainUrl) {
                                     -
                                 <?php endif; ?>
                             </td>
+                            <td><?= htmlspecialchars((string)($p['avg_mae'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($p['avg_mfe'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($p['avg_duration'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($p['speed_class'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($p['reliability_score'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>

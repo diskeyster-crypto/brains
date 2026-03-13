@@ -11,6 +11,7 @@ require_once __DIR__ . '/risk_engine.php';
 require_once __DIR__ . '/signal_builder.php';
 require_once __DIR__ . '/simulator_engine.php';
 require_once __DIR__ . '/smart_brain_runtime.php';
+require_once __DIR__ . '/price_feed.php';
 
 final class SmartBrainCore
 {
@@ -40,11 +41,33 @@ final class SmartBrainCore
         $profilesCfg = $this->config->getEffective('profiles');
         $simulatorCfg = $this->config->getEffective('simulator');
 
+        // Parser4: structure analysis from Parser2 history
         $parser = new Parser4Analyzer($parser4Cfg, $this->state);
         $candidates = $parser->run();
 
+        // Collect all symbols from candidates
+        $symbols = [];
+        foreach ($candidates as $c) {
+            $sym = (string)($c['symbol'] ?? '');
+            if ($sym !== '') {
+                $symbols[] = $sym;
+            }
+        }
+
+        // Fetch real current prices from Bybit (Phase 8.2)
+        $priceFeed = new PriceFeed($this->logger);
+        $livePrices = $priceFeed->getPrices(array_unique($symbols));
+
+        // Build final price map: Bybit first, internal last_price as fallback
+        $prices = $this->buildPriceMap($livePrices, $candidates);
+
+        if ($livePrices !== []) {
+            $this->logger->log('info', 'PriceFeed: fetched ' . count($livePrices) . ' live prices from Bybit');
+        }
+
+        // Corridor Monitor uses real prices for price_position / status
         $corridor = new CorridorMonitor($corridorCfg);
-        $monitors = $corridor->buildMonitors($candidates);
+        $monitors = $corridor->buildMonitors($candidates, $prices);
         $this->state->writeJson('storage/monitors.json', $monitors);
 
         $passports = new CoinPassportEngine($this->state);
@@ -54,9 +77,7 @@ final class SmartBrainCore
         $signals = $risk->apply($monitors);
         $this->state->writeJson('storage/signals.json', $signals);
 
-        // Build price map from candidates/monitors for simulator
-        $prices = $this->buildPriceMap($candidates, $monitors);
-
+        // Simulator uses real prices for entry trigger / ROI / MAE / MFE / SL / TP
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
         $simulator->tick($signals, $prices);
         $stats = $simulator->computeStats();
@@ -79,34 +100,24 @@ final class SmartBrainCore
     }
 
     /**
-     * Build symbol→price map from candidates and monitors.
-     * Candidates carry last_price from parser4.
-     * Monitors carry corridor data but may not have price directly.
+     * Build symbol→price map.
+     * Primary: Bybit live prices.
+     * Fallback: internal last_price from candidates.
      *
-     * @param array<int,array<string,mixed>> $candidates
-     * @param array<int,array<string,mixed>> $monitors
+     * @param array<string,float>            $livePrices   Bybit prices
+     * @param array<int,array<string,mixed>> $candidates   Parser4 candidates
      * @return array<string,float>
      */
-    private function buildPriceMap(array $candidates, array $monitors): array
+    private function buildPriceMap(array $livePrices, array $candidates): array
     {
-        $prices = [];
+        $prices = $livePrices;
 
+        // Fallback: use internal last_price for symbols not in livePrices
         foreach ($candidates as $c) {
             $sym = (string)($c['symbol'] ?? '');
             $p   = (float)($c['last_price'] ?? 0.0);
-            if ($sym !== '' && $p > 0.0) {
+            if ($sym !== '' && $p > 0.0 && !isset($prices[$sym])) {
                 $prices[$sym] = $p;
-            }
-        }
-
-        // Monitors may carry a last_price too; use as fallback
-        foreach ($monitors as $m) {
-            $sym = (string)($m['symbol'] ?? '');
-            if ($sym !== '' && !isset($prices[$sym])) {
-                $p = (float)($m['last_price'] ?? 0.0);
-                if ($p > 0.0) {
-                    $prices[$sym] = $p;
-                }
             }
         }
 

@@ -1,0 +1,13 @@
+{
+    "name": "parser2_history_accumulator",
+    "title": "History Accumulator Parser",
+    "version": "1.0.0",
+    "description": "Accumulates historical price data",
+    "category": "parser",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

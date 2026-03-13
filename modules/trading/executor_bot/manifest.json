@@ -1,0 +1,20 @@
+{
+    "name": "executor_bot",
+    "title": "Executor Bot",
+    "version": "3.0.0",
+    "description": "Executes Parser5 signals (monitor_confirmed) using centralized Bybit client",
+    "category": "trading",
+    "enabled": true,
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    },
+    "entry_point": "executor_runner.php",
+    "cron": {
+        "enabled": true,
+        "interval": 60,
+        "handler": "cron_handler.php"
+    }
+}

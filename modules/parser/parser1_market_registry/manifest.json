@@ -1,0 +1,13 @@
+{
+    "name": "parser1_market_registry",
+    "title": "Market Registry Parser",
+    "version": "1.0.0",
+    "description": "Fetches and maintains market registry from exchanges",
+    "category": "parser",
+    "paths": {
+        "storage": "storage",
+        "config": "config/config.php",
+        "schema": "config/schema.php",
+        "logs": "storage/logs"
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "updated_at": "2026-03-12T17:47:45+00:00",
+    "total_signals": 9,
+    "closed": 7,
+    "rejected": 2,
+    "win_rate": 0.42859999999999998,
+    "avg_roi": 1.432043,
+    "max_drawdown": -0.039053999999999998,
+    "profit_factor": 1.1299999999999999,
+    "source": "parser6_simulator"
+}

@@ -1,0 +1,20 @@
+name: parser15_history_sync
+version: 1.0.0
+purpose: Parser 1.5 — History Sync (Backfill & Gap Repair for Parser2)
+inputs:
+  - modules/parser/parser1_market_registry/storage/active.json
+  - modules/parser/parser2_history_accumulator/storage/{SYMBOL}/{DATE}.ndjson
+outputs:
+  - modules/parser/parser2_history_accumulator/storage/{SYMBOL}/{DATE}.ndjson (append only)
+  - modules/parser/parser15_history_sync/storage/state.json
+  - modules/parser/parser15_history_sync/storage/stats.json
+  - modules/parser/parser15_history_sync/storage/last_run.json
+dependencies:
+  - parser1_market_registry
+  - parser2_history_accumulator
+cron:
+  - cron.php: execute (*/2 * * * *)
+notes:
+  - JSON/NDJSON only, no DB
+  - Append-only, never deletes or overwrites
+  - Uses Bybit public kline API

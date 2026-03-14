@@ -5,9 +5,9 @@ return [
     'mode' => 'manual',
     'settings' => [
         'enabled' => true,
-        'entry_zone_percent' => 0.20,
-        'max_wait_minutes' => 60,
-        'rebuild_interval_seconds' => 5,
+        'entry_zone_percent' => 0.15,
+        'max_wait_minutes' => 90,
+        'rebuild_interval_seconds' => 10,
     ],
     'auto_rules' => [
         'allow_brain_override' => false,

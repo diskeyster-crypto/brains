@@ -5,9 +5,9 @@ return [
     'mode' => 'manual',
     'settings' => [
         'enabled' => true,
-        'max_positions' => 50,
+        'max_positions' => 3,
         'take_profit_enabled' => true,
-        'trailing_enabled' => false,
+        'trailing_enabled' => true,
     ],
     'auto_rules' => [
         'allow_brain_override' => false,

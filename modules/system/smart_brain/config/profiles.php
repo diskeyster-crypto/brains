@@ -7,12 +7,12 @@ return [
         'default_profile' => '111',
         'profiles' => [
             '111' => [
-                'budget' => 15.0,
-                'max_leverage' => 5,
-                'stop_loss_range' => 0.20,
+                'budget' => 10.0,
+                'max_leverage' => 4,
+                'stop_loss_range' => 0.30,
                 'slippage_bps' => 20,
-                'trailing_activate_roi' => 0.06,
-                'take_profit_roi' => 5.55,
+                'trailing_activate_roi' => 0.018,
+                'take_profit_roi' => 1.25,
             ],
         ],
     ],

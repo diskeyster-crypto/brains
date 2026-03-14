@@ -45,9 +45,10 @@ final class SmartBrainController
      */
     public function config(): void
     {
-        $config = $this->service->getConfig();
-        $smartBrainUrl = $this->smartBrainUrl;
+        $data = $this->service->getConfig();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
 
+        extract($data, EXTR_SKIP);
         include __DIR__ . '/views/config.php';
     }
 

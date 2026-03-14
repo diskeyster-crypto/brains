@@ -50,6 +50,63 @@ final class SmartBrainConfig
     }
 
     /**
+     * Get user limits from risk_engine config.
+     *
+     * @return array<string,mixed>
+     */
+    public function getUserLimits(): array
+    {
+        $riskEngine = $this->config['risk_engine'] ?? [];
+        return (array)($riskEngine['user_limits'] ?? []);
+    }
+
+    /**
+     * Compute brain auto (derived) values from current config state.
+     *
+     * @return array<string,mixed>
+     */
+    public function getBrainAutoValues(): array
+    {
+        $corridorCfg = $this->getEffective('corridor');
+        $riskCfg = $this->getEffective('risk_engine');
+        $profilesCfg = $this->getEffective('profiles');
+        $userLimits = $this->getUserLimits();
+
+        $profileKey = (string)($profilesCfg['default_profile'] ?? '111');
+        $profile = (array)($profilesCfg['profiles'][$profileKey] ?? []);
+
+        $parser4Cfg = $this->getEffective('parser4');
+
+        return [
+            'effective_strength_threshold' => (float)($parser4Cfg['strength_threshold'] ?? 0.50),
+            'effective_entry_zone_percent' => (float)($corridorCfg['entry_zone_percent'] ?? 0.20),
+            'effective_budget_scaler' => (float)($profile['budget'] ?? 15.0),
+            'effective_leverage_scaler' => (int)($profile['max_leverage'] ?? 5),
+            'effective_reliability_gate' => (float)($userLimits['min_reliability_after_warmup'] ?? 0.15),
+        ];
+    }
+
+    /**
+     * Build full effective config snapshot for runtime output.
+     *
+     * @return array<string,mixed>
+     */
+    public function buildEffectiveSnapshot(): array
+    {
+        return [
+            'user_limits' => $this->getUserLimits(),
+            'brain_auto' => $this->getBrainAutoValues(),
+            'parser4' => $this->getEffective('parser4'),
+            'corridor' => $this->getEffective('corridor'),
+            'risk_engine' => $this->getEffective('risk_engine'),
+            'profiles' => $this->getEffective('profiles'),
+            'simulator' => $this->getEffective('simulator'),
+            'ui' => $this->getEffective('ui'),
+            'generated_at' => date('c'),
+        ];
+    }
+
+    /**
      * Apply runtime overrides from config_overrides/*.json
      */
     private function applyOverrides(): void

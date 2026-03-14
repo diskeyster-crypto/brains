@@ -109,6 +109,9 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         $rejLowRel = (int)($last_run['rejected_low_reliability'] ?? 0);
         $rejMissPass = (int)($last_run['rejected_missing_passport'] ?? 0);
         $rejMissPrice = (int)($last_run['rejected_missing_price'] ?? 0);
+        $bootstrapSig = (int)($last_run['bootstrap_signals_count'] ?? 0);
+        $normalSig = (int)($last_run['normal_signals_count'] ?? 0);
+        $warmupSym = (int)($last_run['warmup_symbols_count'] ?? 0);
     ?>
     <div class="card mb-4" style="border-color: <?= $signalCount === 0 ? '#f59e0b' : '#10b981' ?>;">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -122,7 +125,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         <div class="card-body">
             <div class="row">
                 <!-- Monitor Status Distribution -->
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <h6 class="text-secondary mb-2"><i class="bi bi-pie-chart me-1"></i>Monitor Status Distribution</h6>
                     <table class="table table-sm table-dark mb-0" style="font-size:0.9rem;">
                         <tr><td><span class="badge status-monitoring">monitoring</span></td><td class="text-end"><strong><?= $monitoringCnt ?></strong></td></tr>
@@ -132,13 +135,22 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                     </table>
                 </div>
                 <!-- Rejection Counters -->
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <h6 class="text-secondary mb-2"><i class="bi bi-funnel me-1"></i>Rejection Counters</h6>
                     <table class="table table-sm table-dark mb-0" style="font-size:0.9rem;">
                         <tr><td>Not in entry_zone</td><td class="text-end"><strong><?= $rejNotEntry ?></strong></td></tr>
-                        <tr><td>Low reliability (&lt;0.15)</td><td class="text-end"><strong><?= $rejLowRel ?></strong></td></tr>
+                        <tr><td>Low reliability</td><td class="text-end"><strong><?= $rejLowRel ?></strong></td></tr>
                         <tr><td>Missing passport</td><td class="text-end"><strong><?= $rejMissPass ?></strong></td></tr>
                         <tr><td>Missing price</td><td class="text-end"><strong><?= $rejMissPrice ?></strong></td></tr>
+                    </table>
+                </div>
+                <!-- Signal Mode Breakdown -->
+                <div class="col-md-4">
+                    <h6 class="text-secondary mb-2"><i class="bi bi-lightning me-1"></i>Signal Mode</h6>
+                    <table class="table table-sm table-dark mb-0" style="font-size:0.9rem;">
+                        <tr><td><span class="badge bg-info">bootstrap</span></td><td class="text-end"><strong><?= $bootstrapSig ?></strong></td></tr>
+                        <tr><td><span class="badge bg-success">normal</span></td><td class="text-end"><strong><?= $normalSig ?></strong></td></tr>
+                        <tr><td>Warmup symbols</td><td class="text-end"><strong><?= $warmupSym ?></strong></td></tr>
                     </table>
                 </div>
             </div>

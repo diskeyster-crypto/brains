@@ -92,6 +92,11 @@ final class SmartBrainCore
         $riskCfg = $this->config->getEffective('risk_engine');
         $profilesCfg = $this->config->getEffective('profiles');
         $simulatorCfg = $this->config->getEffective('simulator');
+        $userLimits = $this->config->getUserLimits();
+
+        // Write effective config snapshot (Stable Config Refactor, Part 4)
+        $effectiveSnapshot = $this->config->buildEffectiveSnapshot();
+        $this->state->writeJson('runtime/effective_config.json', $effectiveSnapshot);
 
         // Parser4: structure analysis from Parser2 history
         $parser = new Parser4Analyzer($parser4Cfg, $this->state);
@@ -126,12 +131,13 @@ final class SmartBrainCore
         $passports->update($monitors);
 
         $risk = new RiskEngine($riskCfg, $profilesCfg, $this->state);
-        $signals = $risk->apply($monitors, $prices);
+        $signals = $risk->apply($monitors, $prices, $userLimits);
         $this->state->writeJson('storage/signals.json', $signals);
 
         // Collect rejection counters and debug lines (Phase B)
         $rejectionCounters = $risk->getRejectionCounters();
         $debugLines = $risk->getDebugLines();
+        $signalModeCounters = $risk->getSignalModeCounters();
 
         // Write debug signal log (Phase B, Part 3)
         $this->logger->writeDebugLog($debugLines);
@@ -182,6 +188,10 @@ final class SmartBrainCore
             'rejected_low_reliability' => $rejectionCounters['rejected_low_reliability'] ?? 0,
             'rejected_missing_passport' => $rejectionCounters['rejected_missing_passport'] ?? 0,
             'rejected_missing_price' => $rejectionCounters['rejected_missing_price'] ?? 0,
+            // Stable Config Refactor — bootstrap / normal signal counts
+            'bootstrap_signals_count' => $signalModeCounters['bootstrap_signals_count'] ?? 0,
+            'warmup_symbols_count' => $signalModeCounters['warmup_symbols_count'] ?? 0,
+            'normal_signals_count' => $signalModeCounters['normal_signals_count'] ?? 0,
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -314,7 +324,12 @@ final class SmartBrainCore
      */
     public function getConfigData(): array
     {
-        return $this->config->all();
+        return [
+            'config' => $this->config->all(),
+            'user_limits' => $this->config->getUserLimits(),
+            'brain_auto' => $this->config->getBrainAutoValues(),
+            'effective_config' => $this->state->readJson('runtime/effective_config.json', []),
+        ];
     }
 
     /**

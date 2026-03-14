@@ -1,28 +1,24 @@
 <?php
 /**
  * Smart Brain Module - Global Config View
- * 
- * Phase 2: Centralized configuration system.
- * Shows mode (manual/auto), settings, and auto_rules per section.
- * Displays runtime override indicators.
+ *
+ * Stable Config Refactor:
+ * A. User Limits — editable fields
+ * B. Brain Auto — read-only derived values
+ * C. Effective Runtime — read-only snapshot
+ * D. Advanced / Raw — collapsible technical config
  */
 
 /** @var string $smartBrainUrl */
 /** @var array<string,mixed> $config */
+/** @var array<string,mixed> $user_limits */
+/** @var array<string,mixed> $brain_auto */
+/** @var array<string,mixed> $effective_config */
 
 $pageTitle = 'Smart Brain - Global Config';
 $activeTab = 'config';
 
-$pageContent = function() use ($config, $smartBrainUrl) {
-    $sections = [
-        'parser4'     => ['icon' => 'bi-search',            'title' => 'Parser4 (Analyzer)'],
-        'corridor'    => ['icon' => 'bi-arrows-expand',     'title' => 'Corridor Monitor'],
-        'risk_engine' => ['icon' => 'bi-shield-exclamation', 'title' => 'Risk Engine'],
-        'simulator'   => ['icon' => 'bi-joystick',          'title' => 'Simulator'],
-        'profiles'    => ['icon' => 'bi-person-badge',       'title' => 'Profiles'],
-        'ui'          => ['icon' => 'bi-palette',            'title' => 'UI Settings'],
-    ];
-
+$pageContent = function() use ($config, $user_limits, $brain_auto, $effective_config, $smartBrainUrl) {
     $renderValue = function($value) use (&$renderValue): string {
         if (is_bool($value)) {
             return '<span class="badge ' . ($value ? 'bg-success' : 'bg-danger') . '">' . ($value ? 'true' : 'false') . '</span>';
@@ -38,78 +34,145 @@ $pageContent = function() use ($config, $smartBrainUrl) {
         }
         return htmlspecialchars((string)$value);
     };
+
+    $limitLabels = [
+        'max_budget_per_coin' => 'Max Budget per Coin (USDT)',
+        'max_active_tasks' => 'Max Active Tasks',
+        'max_leverage' => 'Max Leverage',
+        'brain_mode' => 'Brain Mode',
+        'bootstrap_enabled' => 'Bootstrap Enabled',
+        'bootstrap_max_signals' => 'Bootstrap Max Signals',
+        'bootstrap_budget_factor' => 'Bootstrap Budget Factor',
+        'bootstrap_max_leverage' => 'Bootstrap Max Leverage',
+        'min_reliability_after_warmup' => 'Min Reliability (after warmup)',
+        'warmup_min_trades' => 'Warmup Min Trades',
+    ];
+
+    $autoLabels = [
+        'effective_strength_threshold' => 'Strength Threshold',
+        'effective_entry_zone_percent' => 'Entry Zone %',
+        'effective_budget_scaler' => 'Budget Scaler (profile)',
+        'effective_leverage_scaler' => 'Leverage Scaler (profile)',
+        'effective_reliability_gate' => 'Reliability Gate',
+    ];
 ?>
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="mb-1"><i class="bi bi-gear me-2 text-primary"></i>Global Configuration</h4>
-            <p class="text-secondary mb-0">All Smart Brain configuration sections — mode / settings / auto_rules</p>
+            <p class="text-secondary mb-0">User Limits / Brain Auto / Effective Runtime</p>
         </div>
     </div>
 
     <div class="row">
-    <?php foreach ($sections as $key => $meta): ?>
-        <?php $sectionData = $config[$key] ?? []; ?>
-        <?php
-            $mode = $sectionData['mode'] ?? null;
-            $settings = $sectionData['settings'] ?? null;
-            $autoRules = $sectionData['auto_rules'] ?? null;
-            $isNewFormat = ($mode !== null && $settings !== null);
-        ?>
+        <!-- A. User Limits -->
         <div class="col-md-6 mb-4">
             <div class="card h-100">
                 <div class="card-header d-flex align-items-center">
-                    <i class="bi <?= $meta['icon'] ?> me-2"></i>
-                    <h5 style="margin: 0;"><?= htmlspecialchars($meta['title']) ?></h5>
-                    <span class="badge bg-secondary ms-2"><?= $key ?></span>
-                    <?php if ($isNewFormat): ?>
-                        <span class="badge ms-auto <?= $mode === 'auto' ? 'bg-warning' : 'bg-info' ?>"><?= htmlspecialchars((string)$mode) ?></span>
-                    <?php endif; ?>
+                    <i class="bi bi-sliders me-2"></i>
+                    <h5 style="margin: 0;">User Limits</h5>
+                    <span class="badge bg-primary ms-auto">editable</span>
                 </div>
                 <div class="card-body p-0">
-                    <?php if ($isNewFormat && is_array($settings)): ?>
-                    <!-- Settings Table -->
                     <table class="table table-dark table-hover mb-0" style="font-size: 0.9rem;">
-                        <thead><tr><th style="width:40%;">Parameter</th><th>Value</th></tr></thead>
+                        <thead><tr><th style="width:50%;">Parameter</th><th>Value</th></tr></thead>
                         <tbody>
-                        <?php foreach ($settings as $param => $value): ?>
+                        <?php foreach ($limitLabels as $key => $label): ?>
                         <tr>
-                            <td><code><?= htmlspecialchars((string)$param) ?></code></td>
-                            <td><?= $renderValue($value) ?></td>
+                            <td><code><?= htmlspecialchars($key) ?></code><br><small class="text-secondary"><?= htmlspecialchars($label) ?></small></td>
+                            <td><?= $renderValue($user_limits[$key] ?? '-') ?></td>
                         </tr>
                         <?php endforeach; ?>
                         </tbody>
                     </table>
-                    <?php if (is_array($autoRules) && !empty($autoRules)): ?>
-                    <div style="border-top:1px solid var(--border-color); padding:10px 16px; font-size:0.85rem;">
-                        <strong class="text-secondary">Auto Rules:</strong>
-                        <?php foreach ($autoRules as $rk => $rv): ?>
-                            <span class="ms-2"><code><?= htmlspecialchars((string)$rk) ?></code> = <?= $renderValue($rv) ?></span>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                    <?php else: ?>
-                    <!-- Legacy flat format -->
-                    <table class="table table-dark table-hover mb-0" style="font-size: 0.9rem;">
-                        <thead><tr><th style="width:40%;">Parameter</th><th>Value</th></tr></thead>
-                        <tbody>
-                        <?php if (empty($sectionData)): ?>
-                            <tr><td colspan="2" class="text-center text-secondary py-3">No configuration</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($sectionData as $param => $value): ?>
-                            <tr>
-                                <td><code><?= htmlspecialchars((string)$param) ?></code></td>
-                                <td><?= $renderValue($value) ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                        </tbody>
-                    </table>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>
-    <?php endforeach; ?>
+
+        <!-- B. Brain Auto -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex align-items-center">
+                    <i class="bi bi-cpu me-2"></i>
+                    <h5 style="margin: 0;">Brain Auto Values</h5>
+                    <span class="badge bg-secondary ms-auto">read-only</span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-dark table-hover mb-0" style="font-size: 0.9rem;">
+                        <thead><tr><th style="width:50%;">Parameter</th><th>Value</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($autoLabels as $key => $label): ?>
+                        <tr>
+                            <td><code><?= htmlspecialchars($key) ?></code><br><small class="text-secondary"><?= htmlspecialchars($label) ?></small></td>
+                            <td><?= $renderValue($brain_auto[$key] ?? '-') ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- C. Effective Runtime -->
+    <div class="card mb-4">
+        <div class="card-header d-flex align-items-center">
+            <i class="bi bi-file-earmark-code me-2"></i>
+            <h5 style="margin: 0;">Effective Runtime</h5>
+            <span class="badge bg-info ms-auto">runtime/effective_config.json</span>
+        </div>
+        <div class="card-body">
+            <?php if (empty($effective_config)): ?>
+                <p class="text-secondary mb-0">No effective config snapshot yet. Run Smart Brain once to generate.</p>
+            <?php else: ?>
+                <pre style="background:#0f172a; padding:12px; border-radius:6px; font-size:0.8rem; max-height:400px; overflow:auto; margin:0;"><?= htmlspecialchars(json_encode($effective_config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) ?></pre>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- D. Advanced / Raw -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <details>
+                <summary style="cursor:pointer;">
+                    <i class="bi bi-code-slash me-2"></i>
+                    <strong>Advanced / Raw Config</strong>
+                    <span class="badge bg-dark ms-2">technical</span>
+                </summary>
+            </details>
+        </div>
+        <div class="card-body p-0">
+            <details>
+                <summary class="px-3 py-2 text-secondary" style="cursor:pointer;">Show raw config sections</summary>
+                <?php
+                    $sections = [
+                        'parser4'     => ['icon' => 'bi-search',            'title' => 'Parser4 (Analyzer)'],
+                        'corridor'    => ['icon' => 'bi-arrows-expand',     'title' => 'Corridor Monitor'],
+                        'risk_engine' => ['icon' => 'bi-shield-exclamation', 'title' => 'Risk Engine'],
+                        'simulator'   => ['icon' => 'bi-joystick',          'title' => 'Simulator'],
+                        'profiles'    => ['icon' => 'bi-person-badge',       'title' => 'Profiles'],
+                        'ui'          => ['icon' => 'bi-palette',            'title' => 'UI Settings'],
+                    ];
+                ?>
+                <div class="row p-3">
+                <?php foreach ($sections as $key => $meta): ?>
+                    <?php $sectionData = $config[$key] ?? []; ?>
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-header d-flex align-items-center py-2">
+                                <i class="bi <?= $meta['icon'] ?> me-2"></i>
+                                <strong><?= htmlspecialchars($meta['title']) ?></strong>
+                                <span class="badge bg-secondary ms-2"><?= $key ?></span>
+                            </div>
+                            <div class="card-body p-0">
+                                <pre style="background:#0f172a; padding:8px; font-size:0.75rem; max-height:200px; overflow:auto; margin:0;"><?= htmlspecialchars(json_encode($sectionData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) ?></pre>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+                </div>
+            </details>
+        </div>
     </div>
 <?php
 };

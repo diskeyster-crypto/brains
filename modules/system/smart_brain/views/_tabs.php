@@ -45,4 +45,9 @@ $activeTab = $activeTab ?? 'dashboard';
             <i class="bi bi-activity me-1"></i> Runtime
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/maintenance">
+            <i class="bi bi-wrench-adjustable me-1"></i> Maintenance
+        </a>
+    </li>
 </ul>

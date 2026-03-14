@@ -163,4 +163,67 @@ final class SmartBrainController
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
+
+    /**
+     * Maintenance page
+     * GET /admin/smart_brain/maintenance
+     */
+    public function maintenance(): void
+    {
+        $smartBrainUrl = $this->smartBrainUrl;
+        $flash = null;
+
+        include __DIR__ . '/views/maintenance.php';
+    }
+
+    /**
+     * Soft Cleanup
+     * POST /admin/smart_brain/cleanup/soft
+     */
+    public function cleanupSoft(): void
+    {
+        require_once __DIR__ . '/lib/cleanup_manager.php';
+
+        $cleanup = new CleanupManager(__DIR__);
+        $result = $cleanup->softCleanup();
+
+        $smartBrainUrl = $this->smartBrainUrl;
+        $flash = ['type' => 'success', 'message' => 'Soft Cleanup completed — ' . $result['deleted'] . ' file(s) deleted.'];
+
+        include __DIR__ . '/views/maintenance.php';
+    }
+
+    /**
+     * Simulator Reset
+     * POST /admin/smart_brain/cleanup/simulator
+     */
+    public function cleanupSimulator(): void
+    {
+        require_once __DIR__ . '/lib/cleanup_manager.php';
+
+        $cleanup = new CleanupManager(__DIR__);
+        $result = $cleanup->resetSimulator();
+
+        $smartBrainUrl = $this->smartBrainUrl;
+        $flash = ['type' => 'success', 'message' => 'Simulator Reset completed — ' . $result['deleted'] . ' file(s) deleted.'];
+
+        include __DIR__ . '/views/maintenance.php';
+    }
+
+    /**
+     * Full Runtime Reset
+     * POST /admin/smart_brain/cleanup/full
+     */
+    public function cleanupFull(): void
+    {
+        require_once __DIR__ . '/lib/cleanup_manager.php';
+
+        $cleanup = new CleanupManager(__DIR__);
+        $result = $cleanup->fullRuntimeReset();
+
+        $smartBrainUrl = $this->smartBrainUrl;
+        $flash = ['type' => 'success', 'message' => 'Full Runtime Reset completed — ' . $result['deleted'] . ' file(s) deleted.'];
+
+        include __DIR__ . '/views/maintenance.php';
+    }
 }

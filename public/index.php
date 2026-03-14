@@ -1058,6 +1058,26 @@ Router::post('/admin/smart_brain/run', function () {
     $controller->run();
 });
 
+Router::get('/admin/smart_brain/maintenance', function () {
+    $controller = new SmartBrainController();
+    $controller->maintenance();
+});
+
+Router::post('/admin/smart_brain/cleanup/soft', function () {
+    $controller = new SmartBrainController();
+    $controller->cleanupSoft();
+});
+
+Router::post('/admin/smart_brain/cleanup/simulator', function () {
+    $controller = new SmartBrainController();
+    $controller->cleanupSimulator();
+});
+
+Router::post('/admin/smart_brain/cleanup/full', function () {
+    $controller = new SmartBrainController();
+    $controller->cleanupFull();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

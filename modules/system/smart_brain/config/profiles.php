@@ -8,11 +8,11 @@ return [
         'profiles' => [
             '111' => [
                 'budget' => 10.0,
-                'max_leverage' => 4,
-                'stop_loss_range' => 0.30,
+                'max_leverage' => 5,
+                'stop_loss_range' => 0.35,
                 'slippage_bps' => 20,
-                'trailing_activate_roi' => 0.018,
-                'take_profit_roi' => 1.25,
+                'trailing_activate_roi' => 0.015,
+                'take_profit_roi' => 0.85,
             ],
         ],
     ],

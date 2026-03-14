@@ -27,7 +27,7 @@ $pageContent = function() use ($smartBrainUrl) {
     <!-- Protected Notice -->
     <div class="alert alert-info mb-4">
         <i class="bi bi-shield-check me-1"></i>
-        <strong>Protected:</strong> Coin passports, user configuration, and base config files are <strong>never</strong> deleted by any cleanup operation.
+        <strong>Protected:</strong> Coin passports (<code>storage/passports/*</code>), user configuration (<code>runtime/user_config.json</code>), effective config (<code>runtime/effective_config.json</code>), and base config (<code>config/*.php</code>) are <strong>never</strong> deleted by any cleanup operation.
     </div>
 
     <div class="row">

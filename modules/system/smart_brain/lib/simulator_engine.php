@@ -197,16 +197,12 @@ final class SimulatorEngine
             if ($breakEvenEnabled && !$breakEvenActive && $roi >= $breakEvenActivationRoi) {
                 $breakEvenActive = true;
                 $a['break_even_active'] = true;
-                // Move stop to break-even (0 loss) — only tighten, never weaken
-                if ($stoploss > 0.0) {
-                    // stoploss represents the ROI threshold at which we close (roi <= -stoploss)
-                    // Break-even means setting stoploss to 0 (close at roi <= 0)
-                    // But we must never weaken below stop floor
-                    $newSL = max(0.0, $stopFloor > 0.0 ? $stopFloor : 0.0);
-                    // This is a tightening if newSL is smaller (less negative threshold)
-                    // Actually: roi <= -stoploss means stoploss = 0 triggers at roi <= 0
-                    // A smaller stoploss is tighter. We set to 0 for break-even.
-                    $stoploss = 0.0;
+                // Move stop to break-even (roi <= 0 triggers close)
+                // stoploss = 0 means close at roi <= 0
+                // Never weaken below stop floor
+                $breakEvenSL = 0.0;
+                if ($breakEvenSL < $stoploss) {
+                    $stoploss = $breakEvenSL;
                     $a['stoploss'] = $stoploss;
                 }
             }
@@ -265,7 +261,12 @@ final class SimulatorEngine
                 $closedReason = 'trailing_stop';
             }
 
-            // Check stop-loss (never weaken below stop_floor)
+            // Check break-even stop (stoploss=0 means close at roi <= 0)
+            if ($closedReason === null && $breakEvenActive && $stoploss <= 0.0 && $roi <= 0.0) {
+                $closedReason = 'break_even_stop';
+            }
+
+            // Check stop-loss
             if ($closedReason === null && $stoploss > 0.0 && $roi <= -$stoploss) {
                 $closedReason = 'stop_loss';
             }

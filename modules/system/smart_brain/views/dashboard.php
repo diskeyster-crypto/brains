@@ -46,8 +46,55 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             <h4 class="mb-1"><i class="bi bi-cpu me-2 text-primary"></i>Smart Brain Dashboard</h4>
             <p class="text-secondary mb-0">Overview of the last cycle, signals, monitors, and simulator state</p>
         </div>
-        <div>
+        <div class="d-flex align-items-center gap-3">
             <small class="text-secondary">Last update: <?= htmlspecialchars((string)($last_run['updated_at'] ?? '-')) ?></small>
+            <button id="btn-run-now" class="btn btn-primary btn-sm" onclick="runSmartBrain()">
+                <i class="bi bi-play-fill me-1"></i> Run now
+            </button>
+        </div>
+    </div>
+
+    <!-- Runtime Status Card -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Status</small>
+                    <?php
+                        $runStatus = (string)($last_run['status'] ?? 'unknown');
+                        $statusColor = match($runStatus) {
+                            'ok' => '#10b981',
+                            'error' => '#ef4444',
+                            'skipped' => '#f59e0b',
+                            default => '#94a3b8',
+                        };
+                    ?>
+                    <strong style="color: <?= $statusColor ?>;"><?= htmlspecialchars($runStatus) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Source</small>
+                    <strong><?= htmlspecialchars((string)($last_run['source'] ?? '-')) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Duration</small>
+                    <strong><?= isset($last_run['duration_ms']) ? htmlspecialchars((string)$last_run['duration_ms']) . ' ms' : '-' ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Candidates</small>
+                    <strong><?= htmlspecialchars((string)($last_run['candidates'] ?? '0')) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Monitors</small>
+                    <strong><?= htmlspecialchars((string)($last_run['monitors'] ?? '0')) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Signals</small>
+                    <strong><?= htmlspecialchars((string)($last_run['signals'] ?? '0')) ?></strong>
+                </div>
+            </div>
+            <?php $errMsg = (string)($last_run['error_message'] ?? ''); if ($errMsg !== ''): ?>
+            <div class="mt-2 text-danger"><small><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($errMsg) ?></small></div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -267,5 +314,35 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
     </div>
 <?php
 };
+
+$extraScripts = '
+<script>
+var smartBrainRunUrl = ' . json_encode($smartBrainUrl . '/run') . ';
+function runSmartBrain() {
+    var btn = document.getElementById("btn-run-now");
+    btn.disabled = true;
+    btn.innerHTML = "<i class=\"bi bi-arrow-repeat me-1 spin\"></i> Running...";
+
+    fetch(smartBrainRunUrl, { method: "POST" })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            btn.innerHTML = "<i class=\"bi bi-play-fill me-1\"></i> Run now";
+            if (data.ok) {
+                location.reload();
+            } else {
+                alert("Run finished with status: " + (data.status || "error") + "\\n" + (data.error_message || ""));
+                location.reload();
+            }
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = "<i class=\"bi bi-play-fill me-1\"></i> Run now";
+            alert("Request failed: " + err.message);
+        });
+}
+</script>
+<style>.spin { animation: spin 1s linear infinite; } @keyframes spin { 100% { transform: rotate(360deg); } }</style>
+';
 
 require __DIR__ . '/_layout.php';

@@ -1043,6 +1043,11 @@ Router::get('/admin/smart_brain/api/runtime', function () {
     $controller->runtime();
 });
 
+Router::post('/admin/smart_brain/run', function () {
+    $controller = new SmartBrainController();
+    $controller->run();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

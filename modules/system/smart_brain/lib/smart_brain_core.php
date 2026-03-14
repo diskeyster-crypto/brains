@@ -15,6 +15,9 @@ require_once __DIR__ . '/price_feed.php';
 
 final class SmartBrainCore
 {
+    private const LOCK_FILE = 'runtime/brain.lock';
+    private const LOCK_STALE_SECONDS = 300;
+
     private string $moduleBase;
     private SmartBrainConfig $config;
     private SmartBrainLogger $logger;
@@ -29,12 +32,61 @@ final class SmartBrainCore
     }
 
     /**
+     * Run full Smart Brain cycle with lock, timing, and status tracking.
+     *
+     * @param string $source  'cron' or 'manual'
      * @return array<string,mixed>
      */
-    public function run(): array
+    public function run(string $source = 'cron'): array
     {
-        $this->logger->log('info', 'Smart Brain cycle started');
+        $startTime = microtime(true);
 
+        // Acquire lock — prevent overlapping runs
+        if (!$this->acquireLock($source)) {
+            $this->logger->log('warning', 'Smart Brain cycle skipped: lock held by another process');
+            return [
+                'ok' => false,
+                'updated_at' => date('c'),
+                'status' => 'skipped',
+                'source' => $source,
+                'error_message' => 'Lock held by another process',
+            ];
+        }
+
+        $this->logger->log('info', 'Smart Brain cycle started (source=' . $source . ')');
+
+        try {
+            $result = $this->executePipeline($source, $startTime);
+        } catch (\Throwable $e) {
+            $durationMs = (int)round((microtime(true) - $startTime) * 1000);
+            $this->logger->log('error', 'Smart Brain cycle FAILED: ' . $e->getMessage());
+
+            $result = [
+                'ok' => false,
+                'updated_at' => date('c'),
+                'status' => 'error',
+                'source' => $source,
+                'duration_ms' => $durationMs,
+                'candidates' => 0,
+                'monitors' => 0,
+                'signals' => 0,
+                'error_message' => $e->getMessage(),
+            ];
+            $this->state->writeJson('storage/last_run.json', $result);
+        } finally {
+            $this->releaseLock();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Execute the actual pipeline logic.
+     *
+     * @return array<string,mixed>
+     */
+    private function executePipeline(string $source, float $startTime): array
+    {
         $parser4Cfg = $this->config->getEffective('parser4');
         $corridorCfg = $this->config->getEffective('corridor');
         $riskCfg = $this->config->getEffective('risk_engine');
@@ -85,18 +137,87 @@ final class SmartBrainCore
         $runtime = new SmartBrainRuntime($this->state);
         $runtime->snapshot($this->config->all());
 
+        $durationMs = (int)round((microtime(true) - $startTime) * 1000);
+
         $result = [
             'ok' => true,
             'updated_at' => date('c'),
+            'status' => 'ok',
+            'source' => $source,
+            'duration_ms' => $durationMs,
             'candidates' => count($candidates),
             'monitors' => count($monitors),
             'signals' => count($signals),
+            'error_message' => '',
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
-        $this->logger->log('info', 'Smart Brain cycle finished: signals=' . count($signals));
+        $this->logger->log('info', 'Smart Brain cycle finished: source=' . $source . ' signals=' . count($signals) . ' duration=' . $durationMs . 'ms');
 
         return $result;
+    }
+
+    // =========================================================================
+    // Lock mechanism
+    // =========================================================================
+
+    /**
+     * Acquire run lock. Returns true if lock acquired, false if another run is active.
+     * Checks for stale locks (older than LOCK_STALE_SECONDS) and recovers automatically.
+     *
+     * @return bool true if lock acquired or stale lock recovered; false if fresh lock held
+     */
+    private function acquireLock(string $source): bool
+    {
+        $lockPath = $this->moduleBase . '/' . self::LOCK_FILE;
+        $lockDir = dirname($lockPath);
+        if (!is_dir($lockDir)) {
+            @mkdir($lockDir, 0755, true);
+        }
+
+        // Check for existing lock
+        if (is_file($lockPath)) {
+            $raw = @file_get_contents($lockPath);
+            if ($raw !== false && trim($raw) !== '') {
+                $lockData = json_decode($raw, true);
+                if (is_array($lockData)) {
+                    $lockedAt = (int)($lockData['timestamp'] ?? 0);
+                    // If lock is fresh (not stale), reject
+                    if ($lockedAt > 0 && (time() - $lockedAt) < self::LOCK_STALE_SECONDS) {
+                        return false;
+                    }
+                    // Stale lock — log and recover
+                    $this->logger->log('warning', 'Stale lock detected (age=' . (time() - $lockedAt) . 's), recovering');
+                }
+            }
+        }
+
+        // Write lock
+        $lockData = [
+            'pid' => getmypid(),
+            'source' => $source,
+            'timestamp' => time(),
+            'acquired_at' => date('c'),
+        ];
+
+        $written = @file_put_contents($lockPath, json_encode($lockData, JSON_UNESCAPED_SLASHES), LOCK_EX);
+        if ($written === false) {
+            $this->logger->log('warning', 'Failed to write lock file');
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Release run lock.
+     */
+    private function releaseLock(): void
+    {
+        $lockPath = $this->moduleBase . '/' . self::LOCK_FILE;
+        if (is_file($lockPath)) {
+            @unlink($lockPath);
+        }
     }
 
     /**

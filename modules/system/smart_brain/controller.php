@@ -28,6 +28,18 @@ final class SmartBrainController
     }
 
     /**
+     * Manual run — execute one Smart Brain cycle.
+     * POST /admin/smart_brain/run
+     */
+    public function run(): void
+    {
+        $result = $this->service->run('manual');
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
      * Global config page
      * GET /admin/smart_brain/config
      */

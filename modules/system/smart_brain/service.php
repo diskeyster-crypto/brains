@@ -13,13 +13,24 @@ final class SmartBrainService
     }
 
     /**
-     * Run full Smart Brain cycle.
+     * Cron handler: CronManager calls this method.
      *
      * @return array<string,mixed>
      */
-    public function run(): array
+    public function execute(): array
     {
-        return $this->core->run();
+        return $this->core->run('cron');
+    }
+
+    /**
+     * Run full Smart Brain cycle.
+     *
+     * @param string $source  'cron' or 'manual'
+     * @return array<string,mixed>
+     */
+    public function run(string $source = 'cron'): array
+    {
+        return $this->core->run($source);
     }
 
     /**

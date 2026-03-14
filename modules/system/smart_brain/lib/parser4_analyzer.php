@@ -1,13 +1,19 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/patterns/pattern_detector_interface.php';
+require_once __DIR__ . '/patterns/double_bottom_detector.php';
+require_once __DIR__ . '/patterns/double_top_detector.php';
+require_once __DIR__ . '/patterns/pullback_trend_continue_detector.php';
+
 /**
  * Parser4 Analyzer — Smart Brain Market Structure Analyzer
  *
- * Phase 3: Real implementation.
+ * Phase 3 + Pattern Algorithms V1.
  *
  * Reads Parser3 symbols + Parser2 price history.
- * Outputs corridor/volatility/strength/trend candidates.
+ * Runs enabled pattern detectors (double_bottom, double_top, pullback_trend_continue).
+ * Outputs corridor/volatility/strength/trend candidates with pattern_algorithm + pattern_confidence.
  *
  * Does NOT generate trading signals.
  */
@@ -17,6 +23,12 @@ final class Parser4Analyzer
     private array $cfg;
     private StateManager $state;
 
+    /** @var PatternDetectorInterface[] */
+    private array $detectors = [];
+
+    /** @var string Pattern mode: 'one', 'any', 'all' */
+    private string $patternMode;
+
     /**
      * @param array<string,mixed> $cfg  Effective settings from config/parser4.php
      * @param StateManager $state
@@ -25,6 +37,37 @@ final class Parser4Analyzer
     {
         $this->cfg = $cfg;
         $this->state = $state;
+
+        $patternCfg = (array)($cfg['pattern_algorithms'] ?? []);
+        $enabledAlgorithms = (array)($patternCfg['enabled'] ?? []);
+        $this->patternMode = (string)($patternCfg['mode'] ?? 'one');
+
+        $this->detectors = $this->buildDetectors($enabledAlgorithms);
+    }
+
+    /**
+     * Build detector instances for enabled algorithms.
+     *
+     * @param array<int,string> $enabled
+     * @return PatternDetectorInterface[]
+     */
+    private function buildDetectors(array $enabled): array
+    {
+        $available = [
+            'double_bottom' => static fn() => new DoubleBottomDetector(),
+            'double_top' => static fn() => new DoubleTopDetector(),
+            'pullback_trend_continue' => static fn() => new PullbackTrendContinueDetector(),
+        ];
+
+        $detectors = [];
+        foreach ($enabled as $name) {
+            $name = (string)$name;
+            if (isset($available[$name])) {
+                $detectors[] = $available[$name]();
+            }
+        }
+
+        return $detectors;
     }
 
     /**
@@ -33,8 +76,9 @@ final class Parser4Analyzer
      * 1. Load symbols from Parser3 profiles directory
      * 2. For each symbol load latest Parser2 NDJSON history
      * 3. Calculate market structure (corridor, volatility, strength, trend)
-     * 4. Filter and sort candidates
-     * 5. Write storage/candidates.json
+     * 4. Run enabled pattern detectors
+     * 5. Filter and sort candidates
+     * 6. Write storage/candidates.json
      *
      * @return array<int,array<string,mixed>>
      */
@@ -80,17 +124,30 @@ final class Parser4Analyzer
             $trendBias = $this->calculateTrend($history);
             $lastPrice = $history[count($history) - 1]['price'];
 
-            $candidates[] = [
+            // Run pattern detection
+            $patternResult = $this->runPatternDetection($history);
+
+            $candidate = [
                 'symbol' => $symbol,
                 'corridor_low' => $corridor['low'],
                 'corridor_high' => $corridor['high'],
                 'corridor_width' => $corridor['width'],
                 'volatility' => $volatility,
                 'strength' => $strength,
-                'trend_bias' => $trendBias,
+                'trend_bias' => $patternResult['trend_bias'] ?? $trendBias,
                 'history_points' => count($history),
                 'last_price' => $lastPrice,
+                'pattern_algorithm' => $patternResult['pattern_algorithm'],
+                'pattern_confidence' => $patternResult['pattern_confidence'],
             ];
+
+            // If pattern detection is required but no pattern found, skip
+            // (only when detectors are configured)
+            if ($this->detectors !== [] && $patternResult['pattern_algorithm'] === 'none') {
+                continue;
+            }
+
+            $candidates[] = $candidate;
         }
 
         // Sort by strength descending
@@ -106,6 +163,82 @@ final class Parser4Analyzer
         $this->state->writeJson('storage/candidates.json', $candidates);
 
         return $candidates;
+    }
+
+    /**
+     * Run pattern detection for a symbol's history.
+     *
+     * @param array<int,array{ts_unix:int,price:float}> $history
+     * @return array{pattern_algorithm:string,pattern_confidence:float,trend_bias:string|null}
+     */
+    private function runPatternDetection(array $history): array
+    {
+        $default = [
+            'pattern_algorithm' => 'none',
+            'pattern_confidence' => 0.0,
+            'trend_bias' => null,
+        ];
+
+        if ($this->detectors === []) {
+            return $default;
+        }
+
+        $results = [];
+
+        foreach ($this->detectors as $detector) {
+            $result = $detector->detect($history);
+            if ($result !== null && ($result['detected'] ?? false)) {
+                $results[] = [
+                    'name' => $detector->getName(),
+                    'confidence' => (float)($result['confidence'] ?? 0.0),
+                    'trend_bias' => (string)($result['trend_bias'] ?? ''),
+                ];
+            }
+        }
+
+        if ($results === []) {
+            return $default;
+        }
+
+        // Apply mode logic
+        switch ($this->patternMode) {
+            case 'one':
+                // Use the first enabled detector's result (if detected)
+                // In mode=one only one algorithm should be enabled, pick best
+                $best = $results[0];
+                return [
+                    'pattern_algorithm' => $best['name'],
+                    'pattern_confidence' => round($best['confidence'], 2),
+                    'trend_bias' => $best['trend_bias'] ?: null,
+                ];
+
+            case 'any':
+                // Any enabled algorithm match → pick highest confidence
+                usort($results, static fn($a, $b) => $b['confidence'] <=> $a['confidence']);
+                $best = $results[0];
+                return [
+                    'pattern_algorithm' => $best['name'],
+                    'pattern_confidence' => round($best['confidence'], 2),
+                    'trend_bias' => $best['trend_bias'] ?: null,
+                ];
+
+            case 'all':
+                // All enabled algorithms must confirm
+                if (count($results) < count($this->detectors)) {
+                    return $default;
+                }
+                // All confirmed — pick highest confidence
+                usort($results, static fn($a, $b) => $b['confidence'] <=> $a['confidence']);
+                $best = $results[0];
+                return [
+                    'pattern_algorithm' => $best['name'],
+                    'pattern_confidence' => round($best['confidence'], 2),
+                    'trend_bias' => $best['trend_bias'] ?: null,
+                ];
+
+            default:
+                return $default;
+        }
     }
 
     // ------------------------------------------------------------------

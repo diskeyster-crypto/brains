@@ -179,6 +179,8 @@ final class RiskEngine
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'bootstrap',
+                    'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
+                    'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                 ], $exitPolicy);
                 $bootstrapCount++;
                 $this->signalModeCounters['bootstrap_signals_count']++;
@@ -220,6 +222,8 @@ final class RiskEngine
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'normal',
+                    'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
+                    'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                 ], $exitPolicy);
                 $this->signalModeCounters['normal_signals_count']++;
             }

@@ -87,6 +87,9 @@ final class SimulatorEngine
                 'break_even_enabled'         => $signal['break_even_enabled'] ?? false,
                 'break_even_activation_roi'  => $signal['break_even_activation_roi'] ?? 0.01,
                 'corridor_width'             => $signal['corridor_width'] ?? null,
+                // Pattern algorithm tracking
+                'pattern_algorithm'          => $signal['pattern_algorithm'] ?? 'none',
+                'pattern_confidence'         => $signal['pattern_confidence'] ?? 0.0,
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -140,6 +143,9 @@ final class SimulatorEngine
                     'break_even_enabled'         => $w['break_even_enabled'] ?? false,
                     'break_even_activation_roi'  => $w['break_even_activation_roi'] ?? 0.01,
                     'break_even_active'          => false,
+                    // Pattern algorithm tracking
+                    'pattern_algorithm'          => $w['pattern_algorithm'] ?? 'none',
+                    'pattern_confidence'         => $w['pattern_confidence'] ?? 0.0,
 
                 ];
                 $activeSymbols[$symbol] = true;
@@ -288,6 +294,8 @@ final class SimulatorEngine
                     'status'      => 'closed',
                     'trailing_active'    => $trailingActive,
                     'break_even_active'  => $breakEvenActive,
+                    'pattern_algorithm'  => $a['pattern_algorithm'] ?? 'none',
+                    'pattern_confidence' => $a['pattern_confidence'] ?? 0.0,
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);

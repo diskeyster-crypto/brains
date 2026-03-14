@@ -87,16 +87,28 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Volatility</th><th>Strength</th><th>Trend</th><th>Points</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Pattern</th><th>Confidence</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Volatility</th><th>Strength</th><th>Trend</th><th>Points</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($candidates)): ?>
-                        <tr><td colspan="9" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
+                        <tr><td colspan="11" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
                     <?php else: ?>
                         <?php foreach ($candidates as $i => $c): ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
                             <td><strong><?= htmlspecialchars((string)($c['symbol'] ?? '')) ?></strong></td>
+                            <td>
+                                <?php $algo = (string)($c['pattern_algorithm'] ?? 'none'); ?>
+                                <span class="badge <?= $algo !== 'none' ? 'bg-info' : 'bg-secondary' ?>">
+                                    <?= htmlspecialchars($algo) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <?php $conf = (float)($c['pattern_confidence'] ?? 0); ?>
+                                <span class="badge <?= $conf >= 0.7 ? 'bg-success' : ($conf >= 0.4 ? 'bg-warning' : 'bg-secondary') ?>">
+                                    <?= number_format($conf, 2) ?>
+                                </span>
+                            </td>
                             <td><?= htmlspecialchars((string)($c['corridor_low'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_high'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_width'] ?? '-')) ?></td>
@@ -126,11 +138,11 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Entry Low</th><th>Entry High</th><th>Price Pos</th><th>Status</th><th>Rejection Reason</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Pattern</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Entry Low</th><th>Entry High</th><th>Price Pos</th><th>Status</th><th>Rejection Reason</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($monitors)): ?>
-                        <tr><td colspan="10" class="text-center text-secondary py-4">No monitors</td></tr>
+                        <tr><td colspan="11" class="text-center text-secondary py-4">No monitors</td></tr>
                     <?php else: ?>
                         <?php foreach ($monitors as $i => $m): ?>
                         <?php
@@ -144,6 +156,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                         <tr>
                             <td><?= $i + 1 ?></td>
                             <td><strong><?= htmlspecialchars((string)($m['symbol'] ?? '')) ?></strong></td>
+                            <td><span class="badge bg-info"><?= htmlspecialchars((string)($m['pattern_algorithm'] ?? 'none')) ?></span></td>
                             <td><?= htmlspecialchars((string)($m['corridor_low'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['corridor_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['corridor_width'] ?? '-')) ?></td>

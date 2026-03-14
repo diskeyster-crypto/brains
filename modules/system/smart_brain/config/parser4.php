@@ -16,4 +16,11 @@ return [
         'allow_brain_override' => false,
         'override_fields' => [],
     ],
+
+    'pattern_algorithms' => [
+        'enabled' => [
+            'double_bottom',
+        ],
+        'mode' => 'one',  // 'one' | 'any' | 'all'
+    ],
 ];

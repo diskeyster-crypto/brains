@@ -77,6 +77,8 @@ final class CorridorMonitor
                 'entry_zone_high' => round($entryZoneHigh, 8),
                 'price_position' => round($pricePosition, 4),
                 'status' => $status,
+                'pattern_algorithm' => (string)($candidate['pattern_algorithm'] ?? 'none'),
+                'pattern_confidence' => (float)($candidate['pattern_confidence'] ?? 0.0),
             ];
         }
 

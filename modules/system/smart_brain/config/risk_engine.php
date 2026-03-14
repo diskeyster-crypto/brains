@@ -29,5 +29,22 @@ return [
         'bootstrap_max_leverage' => 3,
         'min_reliability_after_warmup' => 0.15,
         'warmup_min_trades' => 10,
+        // Exit Policy
+        'exit_mode' => 'fixed_tp',               // fixed_tp | trailing_tp | hybrid
+        'stop_floor_type' => 'roi_percent',       // roi_percent | corridor_percent
+        'stop_floor_value' => 0.03,
+        'brain_may_tighten_stop' => true,
+        'trailing_enabled' => false,
+        'trailing_activation_roi' => 0.02,
+        'trailing_min_lock_roi' => 0.005,
+        'trailing_min_step' => 0.005,
+        'brain_may_delay_trailing' => false,
+        'fixed_take_profit_roi' => 0.05,
+        'hybrid_tp_share' => 0.5,
+        // Exit Safety
+        'max_trade_duration_minutes' => 1440,
+        'stale_trade_exit_enabled' => false,
+        'break_even_enabled' => false,
+        'break_even_activation_roi' => 0.01,
     ],
 ];

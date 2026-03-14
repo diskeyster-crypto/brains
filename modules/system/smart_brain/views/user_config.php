@@ -126,6 +126,129 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl) {
             </div>
         </div>
 
+        <!-- Exit Policy Section -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-door-open me-2"></i>
+                        <h5 style="margin: 0;">Exit Policy</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="exit_mode" class="form-label">Exit Mode</label>
+                            <select class="form-select" id="exit_mode" name="exit_mode">
+                                <?php foreach (['fixed_tp' => 'Fixed TP', 'trailing_tp' => 'Trailing TP', 'hybrid' => 'Hybrid'] as $em => $emLabel): ?>
+                                <option value="<?= $em ?>" <?= ($form_values['exit_mode'] ?? 'fixed_tp') === $em ? 'selected' : '' ?>><?= $emLabel ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">How take-profit is handled</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stop_floor_type" class="form-label">Stop Floor Type</label>
+                            <select class="form-select" id="stop_floor_type" name="stop_floor_type">
+                                <?php foreach (['roi_percent' => 'ROI Percent', 'corridor_percent' => 'Corridor Percent'] as $sf => $sfLabel): ?>
+                                <option value="<?= $sf ?>" <?= ($form_values['stop_floor_type'] ?? 'roi_percent') === $sf ? 'selected' : '' ?>><?= $sfLabel ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">How minimum stop protection is calculated</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stop_floor_value" class="form-label">Stop Floor Value</label>
+                            <input type="number" step="0.001" min="0.001" class="form-control" id="stop_floor_value" name="stop_floor_value" value="<?= $v('stop_floor_value', '0.03') ?>">
+                            <small class="text-secondary">Minimum stop protection (> 0)</small>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="brain_may_tighten_stop" name="brain_may_tighten_stop" value="1" <?= $checked('brain_may_tighten_stop') ?>>
+                            <label class="form-check-label" for="brain_may_tighten_stop">Brain May Tighten Stop</label>
+                            <br><small class="text-secondary">Allow brain to tighten stop (never weaken below floor)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="fixed_take_profit_roi" class="form-label">Fixed Take Profit ROI</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="fixed_take_profit_roi" name="fixed_take_profit_roi" value="<?= $v('fixed_take_profit_roi', '0.05') ?>">
+                            <small class="text-secondary">ROI target for fixed TP mode (>= 0)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="hybrid_tp_share" class="form-label">Hybrid TP Share</label>
+                            <input type="number" step="0.01" min="0" max="1" class="form-control" id="hybrid_tp_share" name="hybrid_tp_share" value="<?= $v('hybrid_tp_share', '0.5') ?>">
+                            <small class="text-secondary">Share of position for fixed TP in hybrid mode (0..1)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trailing Settings -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-graph-up-arrow me-2"></i>
+                        <h5 style="margin: 0;">Trailing Stop</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="trailing_enabled" name="trailing_enabled" value="1" <?= $checked('trailing_enabled') ?>>
+                            <label class="form-check-label" for="trailing_enabled">Trailing Enabled</label>
+                            <br><small class="text-secondary">Enable trailing stop for profit locking</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_activation_roi" name="trailing_activation_roi" value="<?= $v('trailing_activation_roi', '0.02') ?>">
+                            <small class="text-secondary">ROI threshold to activate trailing (>= 0)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_min_lock_roi" name="trailing_min_lock_roi" value="<?= $v('trailing_min_lock_roi', '0.005') ?>">
+                            <small class="text-secondary">Minimum ROI to lock when trailing (>= 0)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="trailing_min_step" class="form-label">Trailing Min Step</label>
+                            <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_min_step" name="trailing_min_step" value="<?= $v('trailing_min_step', '0.005') ?>">
+                            <small class="text-secondary">Minimum trailing step size (> 0)</small>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="brain_may_delay_trailing" name="brain_may_delay_trailing" value="1" <?= $checked('brain_may_delay_trailing') ?>>
+                            <label class="form-check-label" for="brain_may_delay_trailing">Brain May Delay Trailing</label>
+                            <br><small class="text-secondary">Allow brain to delay trailing activation</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exit Safety Section -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-shield-exclamation me-2"></i>
+                        <h5 style="margin: 0;">Exit Safety</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="max_trade_duration_minutes" class="form-label">Max Trade Duration (minutes)</label>
+                            <input type="number" step="1" min="1" class="form-control" id="max_trade_duration_minutes" name="max_trade_duration_minutes" value="<?= $v('max_trade_duration_minutes', '1440') ?>">
+                            <small class="text-secondary">Maximum trade duration before stale exit (>= 1)</small>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="stale_trade_exit_enabled" name="stale_trade_exit_enabled" value="1" <?= $checked('stale_trade_exit_enabled') ?>>
+                            <label class="form-check-label" for="stale_trade_exit_enabled">Stale Trade Exit Enabled</label>
+                            <br><small class="text-secondary">Automatically close trades exceeding max duration</small>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="break_even_enabled" name="break_even_enabled" value="1" <?= $checked('break_even_enabled') ?>>
+                            <label class="form-check-label" for="break_even_enabled">Break-Even Enabled</label>
+                            <br><small class="text-secondary">Move stop to break-even after ROI threshold</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="break_even_activation_roi" class="form-label">Break-Even Activation ROI</label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="break_even_activation_roi" name="break_even_activation_roi" value="<?= $v('break_even_activation_roi', '0.01') ?>">
+                            <small class="text-secondary">ROI to activate break-even (>= 0)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Action Buttons -->
         <div class="d-flex gap-2 mb-4">
             <button type="submit" class="btn btn-primary">

@@ -81,10 +81,10 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-lightning me-1 text-warning"></i> Active (<?= count($active) ?>)</h5></div>
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
-                <thead><tr><th>Symbol</th><th>Entry Price</th><th>Current Price</th><th>ROI</th><th>MAE</th><th>MFE</th><th>Leverage</th><th>SL</th><th>TP</th><th>Opened</th></tr></thead>
+                <thead><tr><th>Symbol</th><th>Entry Price</th><th>Current Price</th><th>ROI</th><th>MAE</th><th>MFE</th><th>Exit Mode</th><th>Trailing</th><th>BE</th><th>Leverage</th><th>Opened</th></tr></thead>
                 <tbody>
                     <?php if (empty($active)): ?>
-                        <tr><td colspan="10" class="text-center text-secondary py-4">No active positions</td></tr>
+                        <tr><td colspan="11" class="text-center text-secondary py-4">No active positions</td></tr>
                     <?php else: ?>
                         <?php foreach ($active as $row): ?>
                         <tr>
@@ -94,9 +94,10 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                             <td><?= htmlspecialchars((string)($row['roi'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['exit_mode'] ?? '-')) ?></td>
+                            <td><?= !empty($row['trailing_active']) ? '<span class="badge bg-info">ON</span>' : '-' ?></td>
+                            <td><?= !empty($row['break_even_active']) ? '<span class="badge bg-success">ON</span>' : '-' ?></td>
                             <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['stoploss'] ?? '-')) ?></td>
-                            <td><?= htmlspecialchars((string)($row['takeprofit'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['opened_at'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -111,10 +112,10 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-check-circle me-1 text-success"></i> Closed (<?= count($closed) ?>)</h5></div>
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
-                <thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>ROI</th><th>MAE</th><th>MFE</th><th>Reason</th><th>Duration</th></tr></thead>
+                <thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>ROI</th><th>MAE</th><th>MFE</th><th>Exit Mode</th><th>Reason</th><th>Duration</th></tr></thead>
                 <tbody>
                     <?php if (empty($closed)): ?>
-                        <tr><td colspan="8" class="text-center text-secondary py-4">No closed positions</td></tr>
+                        <tr><td colspan="9" class="text-center text-secondary py-4">No closed positions</td></tr>
                     <?php else: ?>
                         <?php foreach ($closed as $row): ?>
                         <tr>
@@ -124,6 +125,7 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                             <td><?= htmlspecialchars((string)($row['roi'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
+                            <td><?= htmlspecialchars((string)($row['exit_mode'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['reason'] ?? '-')) ?></td>
                             <td><?= ($row['duration'] ?? null) !== null ? htmlspecialchars((string)$row['duration']) . ' min' : '-' ?></td>
                         </tr>

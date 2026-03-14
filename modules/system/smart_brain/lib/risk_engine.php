@@ -76,6 +76,22 @@ final class RiskEngine
         $stopLossRange = (float)($profile['stop_loss_range'] ?? 0.20);
         $takeProfitRoi = (float)($profile['take_profit_roi'] ?? 5.55);
 
+        // Exit policy fields from user limits
+        $exitPolicy = [
+            'exit_mode'                  => (string)($userLimits['exit_mode'] ?? 'fixed_tp'),
+            'stop_floor_type'            => (string)($userLimits['stop_floor_type'] ?? 'roi_percent'),
+            'stop_floor_value'           => (float)($userLimits['stop_floor_value'] ?? 0.03),
+            'trailing_enabled'           => (bool)($userLimits['trailing_enabled'] ?? false),
+            'trailing_activation_roi'    => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
+            'trailing_min_lock_roi'      => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
+            'trailing_min_step'          => (float)($userLimits['trailing_min_step'] ?? 0.005),
+            'fixed_take_profit_roi'      => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
+            'break_even_enabled'         => (bool)($userLimits['break_even_enabled'] ?? false),
+            'break_even_activation_roi'  => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+            'max_trade_duration_minutes' => (int)($userLimits['max_trade_duration_minutes'] ?? 1440),
+            'stale_trade_exit_enabled'   => (bool)($userLimits['stale_trade_exit_enabled'] ?? false),
+        ];
+
         $this->rejectionCounters = [
             'rejected_not_entry_zone' => 0,
             'rejected_low_reliability' => 0,
@@ -152,7 +168,7 @@ final class RiskEngine
                 $stopLoss = round($corridorWidth * $stopLossRange, 6);
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
 
-                $signals[] = [
+                $signals[] = array_merge([
                     'symbol' => $symbol,
                     'entry_zone_low' => $monitor['entry_zone_low'] ?? null,
                     'entry_zone_high' => $monitor['entry_zone_high'] ?? null,
@@ -165,7 +181,7 @@ final class RiskEngine
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'bootstrap',
-                ];
+                ], $exitPolicy);
                 $bootstrapCount++;
                 $this->signalModeCounters['bootstrap_signals_count']++;
 
@@ -193,7 +209,7 @@ final class RiskEngine
                 // Calculate take_profit: corridor_width × take_profit_roi
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
 
-                $signals[] = [
+                $signals[] = array_merge([
                     'symbol' => $symbol,
                     'entry_zone_low' => $monitor['entry_zone_low'] ?? null,
                     'entry_zone_high' => $monitor['entry_zone_high'] ?? null,
@@ -206,7 +222,7 @@ final class RiskEngine
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'normal',
-                ];
+                ], $exitPolicy);
                 $this->signalModeCounters['normal_signals_count']++;
             }
         }

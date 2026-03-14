@@ -100,6 +100,23 @@ final class SmartBrainConfig
             'bootstrap_max_leverage'       => (int)$values['bootstrap_max_leverage'],
             'min_reliability_after_warmup' => (float)$values['min_reliability_after_warmup'],
             'warmup_min_trades'            => (int)$values['warmup_min_trades'],
+            // Exit Policy
+            'exit_mode'                    => (string)$values['exit_mode'],
+            'stop_floor_type'              => (string)$values['stop_floor_type'],
+            'stop_floor_value'             => (float)$values['stop_floor_value'],
+            'brain_may_tighten_stop'       => !empty($values['brain_may_tighten_stop']),
+            'trailing_enabled'             => !empty($values['trailing_enabled']),
+            'trailing_activation_roi'      => (float)$values['trailing_activation_roi'],
+            'trailing_min_lock_roi'        => (float)$values['trailing_min_lock_roi'],
+            'trailing_min_step'            => (float)$values['trailing_min_step'],
+            'brain_may_delay_trailing'     => !empty($values['brain_may_delay_trailing']),
+            'fixed_take_profit_roi'        => (float)$values['fixed_take_profit_roi'],
+            'hybrid_tp_share'              => (float)$values['hybrid_tp_share'],
+            // Exit Safety
+            'max_trade_duration_minutes'   => (int)$values['max_trade_duration_minutes'],
+            'stale_trade_exit_enabled'     => !empty($values['stale_trade_exit_enabled']),
+            'break_even_enabled'           => !empty($values['break_even_enabled']),
+            'break_even_activation_roi'    => (float)$values['break_even_activation_roi'],
         ];
 
         $dir = $this->moduleBase . '/runtime';
@@ -165,6 +182,45 @@ final class SmartBrainConfig
             $errors[] = 'warmup_min_trades must be >= 0';
         }
 
+        // Exit Policy validation
+        $validExitModes = ['fixed_tp', 'trailing_tp', 'hybrid'];
+        if (isset($values['exit_mode']) && !in_array((string)$values['exit_mode'], $validExitModes, true)) {
+            $errors[] = 'exit_mode must be one of: fixed_tp, trailing_tp, hybrid';
+        }
+        $validStopFloorTypes = ['roi_percent', 'corridor_percent'];
+        if (isset($values['stop_floor_type']) && !in_array((string)$values['stop_floor_type'], $validStopFloorTypes, true)) {
+            $errors[] = 'stop_floor_type must be one of: roi_percent, corridor_percent';
+        }
+        if (isset($values['stop_floor_value']) && (float)$values['stop_floor_value'] <= 0) {
+            $errors[] = 'stop_floor_value must be > 0';
+        }
+        if (isset($values['trailing_activation_roi']) && (float)$values['trailing_activation_roi'] < 0) {
+            $errors[] = 'trailing_activation_roi must be >= 0';
+        }
+        if (isset($values['trailing_min_lock_roi']) && (float)$values['trailing_min_lock_roi'] < 0) {
+            $errors[] = 'trailing_min_lock_roi must be >= 0';
+        }
+        if (isset($values['trailing_min_step']) && (float)$values['trailing_min_step'] <= 0) {
+            $errors[] = 'trailing_min_step must be > 0';
+        }
+        if (isset($values['fixed_take_profit_roi']) && (float)$values['fixed_take_profit_roi'] < 0) {
+            $errors[] = 'fixed_take_profit_roi must be >= 0';
+        }
+        if (isset($values['hybrid_tp_share'])) {
+            $h = (float)$values['hybrid_tp_share'];
+            if ($h < 0 || $h > 1) {
+                $errors[] = 'hybrid_tp_share must be between 0 and 1';
+            }
+        }
+
+        // Exit Safety validation
+        if (isset($values['max_trade_duration_minutes']) && (int)$values['max_trade_duration_minutes'] < 1) {
+            $errors[] = 'max_trade_duration_minutes must be >= 1';
+        }
+        if (isset($values['break_even_activation_roi']) && (float)$values['break_even_activation_roi'] < 0) {
+            $errors[] = 'break_even_activation_roi must be >= 0';
+        }
+
         return $errors;
     }
 
@@ -201,9 +257,29 @@ final class SmartBrainConfig
      */
     public function buildEffectiveSnapshot(): array
     {
+        $userLimits = $this->getUserLimits();
         return [
-            'user_limits' => $this->getUserLimits(),
+            'user_limits' => $userLimits,
             'brain_auto' => $this->getBrainAutoValues(),
+            'exit_policy' => [
+                'exit_mode' => $userLimits['exit_mode'] ?? 'fixed_tp',
+                'stop_floor_type' => $userLimits['stop_floor_type'] ?? 'roi_percent',
+                'stop_floor_value' => (float)($userLimits['stop_floor_value'] ?? 0.03),
+                'brain_may_tighten_stop' => (bool)($userLimits['brain_may_tighten_stop'] ?? true),
+                'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+                'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
+                'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
+                'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),
+                'brain_may_delay_trailing' => (bool)($userLimits['brain_may_delay_trailing'] ?? false),
+                'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
+                'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
+            ],
+            'exit_safety' => [
+                'max_trade_duration_minutes' => (int)($userLimits['max_trade_duration_minutes'] ?? 1440),
+                'stale_trade_exit_enabled' => (bool)($userLimits['stale_trade_exit_enabled'] ?? false),
+                'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
+                'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+            ],
             'parser4' => $this->getEffective('parser4'),
             'corridor' => $this->getEffective('corridor'),
             'risk_engine' => $this->getEffective('risk_engine'),

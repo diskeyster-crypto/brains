@@ -75,8 +75,13 @@ final class SmartBrainController
     {
         $values = $_POST;
 
-        // Handle checkbox (not sent when unchecked)
+        // Handle checkboxes (not sent when unchecked)
         $values['bootstrap_enabled'] = !empty($_POST['bootstrap_enabled']);
+        $values['brain_may_tighten_stop'] = !empty($_POST['brain_may_tighten_stop']);
+        $values['trailing_enabled'] = !empty($_POST['trailing_enabled']);
+        $values['brain_may_delay_trailing'] = !empty($_POST['brain_may_delay_trailing']);
+        $values['stale_trade_exit_enabled'] = !empty($_POST['stale_trade_exit_enabled']);
+        $values['break_even_enabled'] = !empty($_POST['break_even_enabled']);
 
         $result = $this->service->saveUserConfig($values);
 

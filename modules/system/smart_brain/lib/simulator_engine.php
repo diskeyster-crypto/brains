@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Simulator Engine — Smart Brain Phase 7
+ * Simulator Engine — Smart Brain Phase 7 + Exit Policy Stabilization
  *
  * Real paper-trading engine with state transitions:
  *   WAITING → ACTIVE → CLOSED
@@ -10,6 +10,12 @@ declare(strict_types=1);
  * Tracks ROI, MAE, MFE per active trade.
  * Produces closed trades with duration and reason for Coin Passports.
  * Prevents duplicate waiting/active trades per symbol.
+ *
+ * Exit policy support:
+ *   - Stop floor (user-defined minimum protection)
+ *   - Trailing activation (lock profit after ROI threshold)
+ *   - Break-even (move stop to entry after ROI threshold)
+ *   - Stale exit (close after max duration)
  */
 final class SimulatorEngine
 {
@@ -70,6 +76,20 @@ final class SimulatorEngine
                 'stoploss'       => $signal['stop_loss'] ?? $signal['stoploss'] ?? null,
                 'takeprofit'     => $signal['take_profit'] ?? $signal['takeprofit'] ?? null,
                 'status'         => 'waiting',
+                // Exit policy fields
+                'exit_mode'                  => $signal['exit_mode'] ?? 'fixed_tp',
+                'stop_floor_type'            => $signal['stop_floor_type'] ?? 'roi_percent',
+                'stop_floor_value'           => $signal['stop_floor_value'] ?? 0.03,
+                'trailing_enabled'           => $signal['trailing_enabled'] ?? false,
+                'trailing_activation_roi'    => $signal['trailing_activation_roi'] ?? 0.02,
+                'trailing_min_lock_roi'      => $signal['trailing_min_lock_roi'] ?? 0.005,
+                'trailing_min_step'          => $signal['trailing_min_step'] ?? 0.005,
+                'fixed_take_profit_roi'      => $signal['fixed_take_profit_roi'] ?? 0.05,
+                'break_even_enabled'         => $signal['break_even_enabled'] ?? false,
+                'break_even_activation_roi'  => $signal['break_even_activation_roi'] ?? 0.01,
+                'max_trade_duration_minutes' => $signal['max_trade_duration_minutes'] ?? 1440,
+                'stale_trade_exit_enabled'   => $signal['stale_trade_exit_enabled'] ?? false,
+                'corridor_width'             => $signal['corridor_width'] ?? null,
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -86,6 +106,15 @@ final class SimulatorEngine
                 && $price >= $low && $price <= $high
                 && !isset($activeSymbols[$symbol])
             ) {
+                // Compute effective stop floor
+                $stopFloor = $this->computeStopFloor($w);
+
+                // Use the larger of signal stoploss and stop floor
+                $effectiveSL = (float)($w['stoploss'] ?? 0.0);
+                if ($stopFloor > 0.0 && ($effectiveSL <= 0.0 || $stopFloor > $effectiveSL)) {
+                    $effectiveSL = $stopFloor;
+                }
+
                 // Activate
                 $active[] = [
                     'symbol'        => $symbol,
@@ -93,13 +122,29 @@ final class SimulatorEngine
                     'current_price' => $price,
                     'budget'        => $w['budget'] ?? null,
                     'leverage'      => $w['leverage'] ?? null,
-                    'stoploss'      => $w['stoploss'] ?? null,
+                    'stoploss'      => $effectiveSL,
                     'takeprofit'    => $w['takeprofit'] ?? null,
                     'roi'           => 0.0,
                     'mae'           => 0.0,
                     'mfe'           => 0.0,
                     'opened_at'     => date('c'),
                     'status'        => 'active',
+                    // Exit policy state
+                    'exit_mode'                  => $w['exit_mode'] ?? 'fixed_tp',
+                    'stop_floor'                 => $stopFloor,
+                    'trailing_enabled'           => $w['trailing_enabled'] ?? false,
+                    'trailing_activation_roi'    => $w['trailing_activation_roi'] ?? 0.02,
+                    'trailing_min_lock_roi'      => $w['trailing_min_lock_roi'] ?? 0.005,
+                    'trailing_min_step'          => $w['trailing_min_step'] ?? 0.005,
+                    'trailing_active'            => false,
+                    'trailing_high_roi'          => 0.0,
+                    'trailing_stop_roi'          => 0.0,
+                    'fixed_take_profit_roi'      => $w['fixed_take_profit_roi'] ?? 0.05,
+                    'break_even_enabled'         => $w['break_even_enabled'] ?? false,
+                    'break_even_activation_roi'  => $w['break_even_activation_roi'] ?? 0.01,
+                    'break_even_active'          => false,
+                    'max_trade_duration_minutes' => $w['max_trade_duration_minutes'] ?? 1440,
+                    'stale_trade_exit_enabled'   => $w['stale_trade_exit_enabled'] ?? false,
                 ];
                 $activeSymbols[$symbol] = true;
             } else {
@@ -108,7 +153,7 @@ final class SimulatorEngine
         }
         $waiting = $newWaiting;
 
-        // 3. Update ACTIVE trades: ROI, MAE, MFE; check SL/TP → CLOSED
+        // 3. Update ACTIVE trades: ROI, MAE, MFE; apply exit policy → CLOSED
         $newActive = [];
         foreach ($active as $a) {
             $symbol     = (string)($a['symbol'] ?? '');
@@ -141,11 +186,90 @@ final class SimulatorEngine
             $a['mae']           = round($mae, 6);
             $a['mfe']           = round($mfe, 6);
 
-            // Check stop-loss
+            // ===== Exit Policy Logic =====
+            $stopFloor = (float)($a['stop_floor'] ?? 0.0);
+
+            // A. Break-even support
+            $breakEvenEnabled = (bool)($a['break_even_enabled'] ?? false);
+            $breakEvenActivationRoi = (float)($a['break_even_activation_roi'] ?? 0.01);
+            $breakEvenActive = (bool)($a['break_even_active'] ?? false);
+
+            if ($breakEvenEnabled && !$breakEvenActive && $roi >= $breakEvenActivationRoi) {
+                $breakEvenActive = true;
+                $a['break_even_active'] = true;
+                // Move stop to break-even (0 loss) — only tighten, never weaken
+                if ($stoploss > 0.0) {
+                    // stoploss represents the ROI threshold at which we close (roi <= -stoploss)
+                    // Break-even means setting stoploss to 0 (close at roi <= 0)
+                    // But we must never weaken below stop floor
+                    $newSL = max(0.0, $stopFloor > 0.0 ? $stopFloor : 0.0);
+                    // This is a tightening if newSL is smaller (less negative threshold)
+                    // Actually: roi <= -stoploss means stoploss = 0 triggers at roi <= 0
+                    // A smaller stoploss is tighter. We set to 0 for break-even.
+                    $stoploss = 0.0;
+                    $a['stoploss'] = $stoploss;
+                }
+            }
+
+            // B. Trailing support
+            $trailingEnabled = (bool)($a['trailing_enabled'] ?? false);
+            $trailingActivationRoi = (float)($a['trailing_activation_roi'] ?? 0.02);
+            $trailingMinLockRoi = (float)($a['trailing_min_lock_roi'] ?? 0.005);
+            $trailingMinStep = (float)($a['trailing_min_step'] ?? 0.005);
+            $trailingActive = (bool)($a['trailing_active'] ?? false);
+            $trailingHighRoi = (float)($a['trailing_high_roi'] ?? 0.0);
+            $trailingStopRoi = (float)($a['trailing_stop_roi'] ?? 0.0);
+
+            if ($trailingEnabled && $roi >= $trailingActivationRoi) {
+                if (!$trailingActive) {
+                    // Activate trailing
+                    $trailingActive = true;
+                    $trailingHighRoi = $roi;
+                    // Lock at least trailing_min_lock_roi
+                    $trailingStopRoi = max($trailingMinLockRoi, $roi - $trailingMinStep);
+                } else {
+                    // Update trailing — only move up
+                    if ($roi > $trailingHighRoi) {
+                        $newStop = max($trailingMinLockRoi, $roi - $trailingMinStep);
+                        if ($newStop > $trailingStopRoi + 0.0000001) {
+                            $trailingStopRoi = $newStop;
+                        }
+                        $trailingHighRoi = $roi;
+                    }
+                }
+
+                $a['trailing_active'] = $trailingActive;
+                $a['trailing_high_roi'] = round($trailingHighRoi, 6);
+                $a['trailing_stop_roi'] = round($trailingStopRoi, 6);
+            }
+
+            // ===== Determine close reason =====
             $closedReason = null;
-            if ($stoploss > 0.0 && $roi <= -$stoploss) {
+
+            // D. Stale exit — check duration
+            $staleExitEnabled = (bool)($a['stale_trade_exit_enabled'] ?? false);
+            $maxDurationMinutes = (int)($a['max_trade_duration_minutes'] ?? 0);
+            if ($staleExitEnabled && $maxDurationMinutes > 0) {
+                $openedAt = (string)($a['opened_at'] ?? '');
+                if ($openedAt !== '') {
+                    $tsOpen = strtotime($openedAt);
+                    $now = time();
+                    if ($tsOpen !== false && ($now - $tsOpen) >= $maxDurationMinutes * 60) {
+                        $closedReason = 'stale_exit';
+                    }
+                }
+            }
+
+            // Check trailing stop hit (higher priority than SL/TP for trailing mode)
+            if ($closedReason === null && $trailingActive && $trailingStopRoi > 0.0 && $roi <= $trailingStopRoi) {
+                $closedReason = 'trailing_stop';
+            }
+
+            // Check stop-loss (never weaken below stop_floor)
+            if ($closedReason === null && $stoploss > 0.0 && $roi <= -$stoploss) {
                 $closedReason = 'stop_loss';
             }
+
             // Check take-profit
             if ($closedReason === null && $takeprofit > 0.0 && $roi >= $takeprofit) {
                 $closedReason = 'take_profit';
@@ -175,9 +299,12 @@ final class SimulatorEngine
                     'mfe'         => round($mfe, 6),
                     'duration'    => $duration,
                     'reason'      => $closedReason,
+                    'exit_mode'   => $a['exit_mode'] ?? 'fixed_tp',
                     'opened_at'   => $openedAt,
                     'closed_at'   => $closedAt,
                     'status'      => 'closed',
+                    'trailing_active'    => $trailingActive,
+                    'break_even_active'  => $breakEvenActive,
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);
@@ -189,6 +316,26 @@ final class SimulatorEngine
         $this->state->writeJson('storage/simulator/waiting.json', $waiting);
         $this->state->writeJson('storage/simulator/active.json', $newActive);
         $this->state->writeJson('storage/simulator/closed.json', $closed);
+    }
+
+    /**
+     * Compute the effective stop floor for a waiting trade.
+     *
+     * @param array<string,mixed> $trade
+     * @return float
+     */
+    private function computeStopFloor(array $trade): float
+    {
+        $stopFloorType = (string)($trade['stop_floor_type'] ?? 'roi_percent');
+        $stopFloorValue = (float)($trade['stop_floor_value'] ?? 0.0);
+
+        if ($stopFloorType === 'corridor_percent') {
+            $corridorWidth = (float)($trade['corridor_width'] ?? 0.0);
+            return $corridorWidth * $stopFloorValue;
+        }
+
+        // roi_percent — direct value
+        return $stopFloorValue;
     }
 
     /**

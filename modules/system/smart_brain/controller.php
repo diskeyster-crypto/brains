@@ -76,7 +76,7 @@ final class SmartBrainController
         $values = $_POST;
 
         // Handle checkbox (not sent when unchecked)
-        $values['bootstrap_enabled'] = isset($_POST['bootstrap_enabled']) ? true : false;
+        $values['bootstrap_enabled'] = !empty($_POST['bootstrap_enabled']);
 
         $result = $this->service->saveUserConfig($values);
 

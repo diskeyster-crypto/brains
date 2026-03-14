@@ -3,7 +3,7 @@
  * Smart Brain Module - Shared Navigation Tabs
  * 
  * Usage: Include this file with $activeTab set to current page name
- * Available tabs: dashboard, config, analizator, simulator, passports, runtime
+ * Available tabs: dashboard, user_config, config, analizator, simulator, passports, runtime
  */
 
 $smartBrainUrl = $smartBrainUrl ?? '/admin/smart_brain';
@@ -13,6 +13,11 @@ $activeTab = $activeTab ?? 'dashboard';
     <li class="nav-item">
         <a class="nav-link <?= $activeTab === 'dashboard' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>">
             <i class="bi bi-house me-1"></i> Dashboard
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'user_config' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/user_config">
+            <i class="bi bi-sliders me-1"></i> User Config
         </a>
     </li>
     <li class="nav-item">

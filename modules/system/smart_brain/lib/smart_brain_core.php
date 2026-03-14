@@ -333,6 +333,29 @@ final class SmartBrainCore
     }
 
     /**
+     * Get data for User Config form.
+     *
+     * @return array<string,mixed>
+     */
+    public function getUserConfigData(): array
+    {
+        return [
+            'user_limits' => $this->config->getUserLimits(),
+        ];
+    }
+
+    /**
+     * Save user config and return result.
+     *
+     * @param array<string,mixed> $values
+     * @return array{ok:bool,errors:list<string>}
+     */
+    public function saveUserConfig(array $values): array
+    {
+        return $this->config->saveUserConfig($values);
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public function getAnalizatorData(): array

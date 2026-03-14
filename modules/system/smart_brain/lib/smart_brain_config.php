@@ -12,6 +12,7 @@ final class SmartBrainConfig
         $this->moduleBase = rtrim($moduleBase, '/');
         $this->config = require $this->moduleBase . '/config/config.php';
         $this->applyOverrides();
+        $this->applyUserConfig();
     }
 
     /**
@@ -50,7 +51,7 @@ final class SmartBrainConfig
     }
 
     /**
-     * Get user limits from risk_engine config.
+     * Get user limits — merged from base config + runtime/user_config.json.
      *
      * @return array<string,mixed>
      */
@@ -58,6 +59,113 @@ final class SmartBrainConfig
     {
         $riskEngine = $this->config['risk_engine'] ?? [];
         return (array)($riskEngine['user_limits'] ?? []);
+    }
+
+    /**
+     * Load saved user config from runtime/user_config.json.
+     *
+     * @return array<string,mixed>
+     */
+    public function loadUserConfig(): array
+    {
+        $path = $this->moduleBase . '/runtime/user_config.json';
+        if (!is_file($path)) {
+            return [];
+        }
+        $data = json_decode((string)file_get_contents($path), true);
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Save user config to runtime/user_config.json.
+     *
+     * @param array<string,mixed> $values
+     * @return array{ok:bool,errors:list<string>}
+     */
+    public function saveUserConfig(array $values): array
+    {
+        $errors = $this->validateUserConfig($values);
+        if (!empty($errors)) {
+            return ['ok' => false, 'errors' => $errors];
+        }
+
+        $clean = [
+            'max_budget_per_coin'          => (float)$values['max_budget_per_coin'],
+            'max_active_tasks'             => (int)$values['max_active_tasks'],
+            'max_leverage'                 => (int)$values['max_leverage'],
+            'brain_mode'                   => (string)$values['brain_mode'],
+            'bootstrap_enabled'            => !empty($values['bootstrap_enabled']),
+            'bootstrap_max_signals'        => (int)$values['bootstrap_max_signals'],
+            'bootstrap_budget_factor'      => (float)$values['bootstrap_budget_factor'],
+            'bootstrap_max_leverage'       => (int)$values['bootstrap_max_leverage'],
+            'min_reliability_after_warmup' => (float)$values['min_reliability_after_warmup'],
+            'warmup_min_trades'            => (int)$values['warmup_min_trades'],
+        ];
+
+        $dir = $this->moduleBase . '/runtime';
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $path = $dir . '/user_config.json';
+        $json = json_encode($clean, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        file_put_contents($path, $json, LOCK_EX);
+
+        // Apply saved values immediately into config
+        $this->config['risk_engine']['user_limits'] = array_merge(
+            $this->config['risk_engine']['user_limits'] ?? [],
+            $clean
+        );
+
+        return ['ok' => true, 'errors' => []];
+    }
+
+    /**
+     * Validate user config values.
+     *
+     * @param array<string,mixed> $values
+     * @return list<string>
+     */
+    public function validateUserConfig(array $values): array
+    {
+        $errors = [];
+
+        if (!isset($values['max_budget_per_coin']) || (float)$values['max_budget_per_coin'] <= 0) {
+            $errors[] = 'max_budget_per_coin must be > 0';
+        }
+        if (!isset($values['max_active_tasks']) || (int)$values['max_active_tasks'] < 1) {
+            $errors[] = 'max_active_tasks must be >= 1';
+        }
+        if (!isset($values['max_leverage']) || (int)$values['max_leverage'] < 1) {
+            $errors[] = 'max_leverage must be >= 1';
+        }
+        $validModes = ['safe', 'balanced', 'aggressive'];
+        if (!isset($values['brain_mode']) || !in_array((string)$values['brain_mode'], $validModes, true)) {
+            $errors[] = 'brain_mode must be one of: safe, balanced, aggressive';
+        }
+        if (isset($values['bootstrap_max_signals']) && (int)$values['bootstrap_max_signals'] < 0) {
+            $errors[] = 'bootstrap_max_signals must be >= 0';
+        }
+        if (isset($values['bootstrap_budget_factor'])) {
+            $f = (float)$values['bootstrap_budget_factor'];
+            if ($f <= 0 || $f > 1) {
+                $errors[] = 'bootstrap_budget_factor must be > 0 and <= 1';
+            }
+        }
+        if (isset($values['bootstrap_max_leverage']) && (int)$values['bootstrap_max_leverage'] < 1) {
+            $errors[] = 'bootstrap_max_leverage must be >= 1';
+        }
+        if (isset($values['min_reliability_after_warmup'])) {
+            $r = (float)$values['min_reliability_after_warmup'];
+            if ($r < 0 || $r > 1) {
+                $errors[] = 'min_reliability_after_warmup must be >= 0 and <= 1';
+            }
+        }
+        if (isset($values['warmup_min_trades']) && (int)$values['warmup_min_trades'] < 0) {
+            $errors[] = 'warmup_min_trades must be >= 0';
+        }
+
+        return $errors;
     }
 
     /**
@@ -140,5 +248,25 @@ final class SmartBrainConfig
                 );
             }
         }
+    }
+
+    /**
+     * Apply user config from runtime/user_config.json over base user_limits.
+     */
+    private function applyUserConfig(): void
+    {
+        $saved = $this->loadUserConfig();
+        if (empty($saved)) {
+            return;
+        }
+
+        if (!isset($this->config['risk_engine']['user_limits'])) {
+            $this->config['risk_engine']['user_limits'] = [];
+        }
+
+        $this->config['risk_engine']['user_limits'] = array_merge(
+            $this->config['risk_engine']['user_limits'],
+            $saved
+        );
     }
 }

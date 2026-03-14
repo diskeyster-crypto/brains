@@ -1018,6 +1018,16 @@ Router::get('/admin/smart_brain/config', function () {
     $controller->config();
 });
 
+Router::get('/admin/smart_brain/user_config', function () {
+    $controller = new SmartBrainController();
+    $controller->userConfig();
+});
+
+Router::post('/admin/smart_brain/user_config/save', function () {
+    $controller = new SmartBrainController();
+    $controller->saveUserConfig();
+});
+
 Router::get('/admin/smart_brain/analizator', function () {
     $controller = new SmartBrainController();
     $controller->analizator();

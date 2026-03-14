@@ -60,6 +60,23 @@ final class SmartBrainService
     /**
      * @return array<string,mixed>
      */
+    public function getUserConfigData(): array
+    {
+        return $this->core->getUserConfigData();
+    }
+
+    /**
+     * @param array<string,mixed> $values
+     * @return array{ok:bool,errors:list<string>}
+     */
+    public function saveUserConfig(array $values): array
+    {
+        return $this->core->saveUserConfig($values);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
     public function getAnalizatorData(): array
     {
         return $this->core->getAnalizatorData();

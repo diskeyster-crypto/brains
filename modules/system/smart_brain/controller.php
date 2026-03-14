@@ -53,6 +53,50 @@ final class SmartBrainController
     }
 
     /**
+     * User Config page — editable form
+     * GET /admin/smart_brain/user_config
+     */
+    public function userConfig(): void
+    {
+        $data = $this->service->getUserConfigData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+        $data['flash'] = null;
+        $data['form_values'] = $data['user_limits'];
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/user_config.php';
+    }
+
+    /**
+     * Save User Config
+     * POST /admin/smart_brain/user_config/save
+     */
+    public function saveUserConfig(): void
+    {
+        $values = $_POST;
+
+        // Handle checkbox (not sent when unchecked)
+        $values['bootstrap_enabled'] = isset($_POST['bootstrap_enabled']) ? true : false;
+
+        $result = $this->service->saveUserConfig($values);
+
+        $data = $this->service->getUserConfigData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        if ($result['ok']) {
+            $data['flash'] = ['type' => 'success', 'message' => 'User config saved successfully.'];
+            $data['form_values'] = $data['user_limits'];
+        } else {
+            $data['flash'] = ['type' => 'error', 'message' => 'Validation errors: ' . implode('; ', $result['errors'])];
+            // Preserve entered form values on error
+            $data['form_values'] = $values;
+        }
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/user_config.php';
+    }
+
+    /**
      * Analyzer page
      * GET /admin/smart_brain/analizator
      */

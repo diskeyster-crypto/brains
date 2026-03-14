@@ -2,11 +2,12 @@
 /**
  * Smart Brain Module - Global Config View
  *
- * Stable Config Refactor:
- * A. User Limits — editable fields
- * B. Brain Auto — read-only derived values
- * C. Effective Runtime — read-only snapshot
- * D. Advanced / Raw — collapsible technical config
+ * Read-only configuration overview:
+ * A. Brain Auto — derived values (read-only)
+ * B. Effective Runtime — merged snapshot (read-only)
+ * C. Advanced / Raw — collapsible technical config
+ *
+ * User-editable limits are on the dedicated User Config tab.
  */
 
 /** @var string $smartBrainUrl */
@@ -60,18 +61,18 @@ $pageContent = function() use ($config, $user_limits, $brain_auto, $effective_co
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="mb-1"><i class="bi bi-gear me-2 text-primary"></i>Global Configuration</h4>
-            <p class="text-secondary mb-0">User Limits / Brain Auto / Effective Runtime</p>
+            <p class="text-secondary mb-0">Brain Auto / Effective Runtime / Advanced Raw — <a href="<?= htmlspecialchars($smartBrainUrl) ?>/user_config" class="text-info">Edit User Config →</a></p>
         </div>
     </div>
 
     <div class="row">
-        <!-- A. User Limits -->
+        <!-- A. User Limits (read-only summary) -->
         <div class="col-md-6 mb-4">
             <div class="card h-100">
                 <div class="card-header d-flex align-items-center">
                     <i class="bi bi-sliders me-2"></i>
                     <h5 style="margin: 0;">User Limits</h5>
-                    <span class="badge bg-primary ms-auto">editable</span>
+                    <a href="<?= htmlspecialchars($smartBrainUrl) ?>/user_config" class="badge bg-primary ms-auto text-decoration-none">edit →</a>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-dark table-hover mb-0" style="font-size: 0.9rem;">

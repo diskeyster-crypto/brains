@@ -42,8 +42,6 @@ return [
         'fixed_take_profit_roi' => 0.05,
         'hybrid_tp_share' => 0.5,
         // Exit Safety
-        'max_trade_duration_minutes' => 1440,
-        'stale_trade_exit_enabled' => false,
         'break_even_enabled' => false,
         'break_even_activation_roi' => 0.01,
     ],

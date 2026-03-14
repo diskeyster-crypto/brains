@@ -98,6 +98,53 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         </div>
     </div>
 
+    <!-- Signal Diagnostics Card (Phase B) -->
+    <?php
+        $signalCount = (int)($last_run['signals'] ?? 0);
+        $monitoringCnt = (int)($last_run['monitoring_count'] ?? 0);
+        $entryZoneCnt = (int)($last_run['entry_zone_count'] ?? 0);
+        $triggeredCnt = (int)($last_run['triggered_count'] ?? 0);
+        $invalidatedCnt = (int)($last_run['invalidated_count'] ?? 0);
+        $rejNotEntry = (int)($last_run['rejected_not_entry_zone'] ?? 0);
+        $rejLowRel = (int)($last_run['rejected_low_reliability'] ?? 0);
+        $rejMissPass = (int)($last_run['rejected_missing_passport'] ?? 0);
+        $rejMissPrice = (int)($last_run['rejected_missing_price'] ?? 0);
+    ?>
+    <div class="card mb-4" style="border-color: <?= $signalCount === 0 ? '#f59e0b' : '#10b981' ?>;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-bug me-1"></i> Signal Diagnostics</h5>
+            <?php if ($signalCount === 0): ?>
+            <span class="badge bg-warning text-dark">0 signals — see reasons below</span>
+            <?php else: ?>
+            <span class="badge bg-success"><?= $signalCount ?> signals generated</span>
+            <?php endif; ?>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <!-- Monitor Status Distribution -->
+                <div class="col-md-6">
+                    <h6 class="text-secondary mb-2"><i class="bi bi-pie-chart me-1"></i>Monitor Status Distribution</h6>
+                    <table class="table table-sm table-dark mb-0" style="font-size:0.9rem;">
+                        <tr><td><span class="badge status-monitoring">monitoring</span></td><td class="text-end"><strong><?= $monitoringCnt ?></strong></td></tr>
+                        <tr><td><span class="badge status-entry_zone">entry_zone</span></td><td class="text-end"><strong><?= $entryZoneCnt ?></strong></td></tr>
+                        <tr><td><span class="badge status-triggered">triggered</span></td><td class="text-end"><strong><?= $triggeredCnt ?></strong></td></tr>
+                        <tr><td><span class="badge status-invalidated">invalidated</span></td><td class="text-end"><strong><?= $invalidatedCnt ?></strong></td></tr>
+                    </table>
+                </div>
+                <!-- Rejection Counters -->
+                <div class="col-md-6">
+                    <h6 class="text-secondary mb-2"><i class="bi bi-funnel me-1"></i>Rejection Counters</h6>
+                    <table class="table table-sm table-dark mb-0" style="font-size:0.9rem;">
+                        <tr><td>Not in entry_zone</td><td class="text-end"><strong><?= $rejNotEntry ?></strong></td></tr>
+                        <tr><td>Low reliability (&lt;0.15)</td><td class="text-end"><strong><?= $rejLowRel ?></strong></td></tr>
+                        <tr><td>Missing passport</td><td class="text-end"><strong><?= $rejMissPass ?></strong></td></tr>
+                        <tr><td>Missing price</td><td class="text-end"><strong><?= $rejMissPrice ?></strong></td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Stats Cards -->
     <div class="row mb-4">
         <div class="col-md-3">

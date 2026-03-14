@@ -126,8 +126,15 @@ final class SmartBrainCore
         $passports->update($monitors);
 
         $risk = new RiskEngine($riskCfg, $profilesCfg, $this->state);
-        $signals = $risk->apply($monitors);
+        $signals = $risk->apply($monitors, $prices);
         $this->state->writeJson('storage/signals.json', $signals);
+
+        // Collect rejection counters and debug lines (Phase B)
+        $rejectionCounters = $risk->getRejectionCounters();
+        $debugLines = $risk->getDebugLines();
+
+        // Write debug signal log (Phase B, Part 3)
+        $this->logger->writeDebugLog($debugLines);
 
         // Simulator uses real prices for entry trigger / ROI / MAE / MFE / SL / TP
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
@@ -139,6 +146,22 @@ final class SmartBrainCore
 
         $durationMs = (int)round((microtime(true) - $startTime) * 1000);
 
+        // Monitor status distribution (Phase B, Part 1)
+        $monitoringCount = 0;
+        $entryZoneCount = 0;
+        $triggeredCount = 0;
+        $invalidatedCount = 0;
+        foreach ($monitors as $m) {
+            $st = (string)($m['status'] ?? '');
+            match ($st) {
+                'monitoring' => $monitoringCount++,
+                'entry_zone' => $entryZoneCount++,
+                'triggered' => $triggeredCount++,
+                'invalidated' => $invalidatedCount++,
+                default => null,
+            };
+        }
+
         $result = [
             'ok' => true,
             'updated_at' => date('c'),
@@ -149,6 +172,16 @@ final class SmartBrainCore
             'monitors' => count($monitors),
             'signals' => count($signals),
             'error_message' => '',
+            // Phase B — monitor status distribution
+            'monitoring_count' => $monitoringCount,
+            'entry_zone_count' => $entryZoneCount,
+            'triggered_count' => $triggeredCount,
+            'invalidated_count' => $invalidatedCount,
+            // Phase B — rejection counters
+            'rejected_not_entry_zone' => $rejectionCounters['rejected_not_entry_zone'] ?? 0,
+            'rejected_low_reliability' => $rejectionCounters['rejected_low_reliability'] ?? 0,
+            'rejected_missing_passport' => $rejectionCounters['rejected_missing_passport'] ?? 0,
+            'rejected_missing_price' => $rejectionCounters['rejected_missing_price'] ?? 0,
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);

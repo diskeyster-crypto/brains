@@ -126,14 +126,21 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Entry Low</th><th>Entry High</th><th>Price Pos</th><th>Status</th></tr>
+                    <tr><th>#</th><th>Symbol</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Entry Low</th><th>Entry High</th><th>Price Pos</th><th>Status</th><th>Rejection Reason</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($monitors)): ?>
-                        <tr><td colspan="9" class="text-center text-secondary py-4">No monitors</td></tr>
+                        <tr><td colspan="10" class="text-center text-secondary py-4">No monitors</td></tr>
                     <?php else: ?>
                         <?php foreach ($monitors as $i => $m): ?>
-                        <?php $st = (string)($m['status'] ?? 'waiting'); ?>
+                        <?php
+                            $st = (string)($m['status'] ?? 'waiting');
+                            // Compute rejection reason for display
+                            $rejReason = '';
+                            if ($st !== 'entry_zone') {
+                                $rejReason = 'status=' . $st;
+                            }
+                        ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
                             <td><strong><?= htmlspecialchars((string)($m['symbol'] ?? '')) ?></strong></td>
@@ -144,6 +151,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                             <td><?= htmlspecialchars((string)($m['entry_zone_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['price_position'] ?? '-')) ?></td>
                             <td><span class="badge <?= $statusClass($st) ?>"><?= htmlspecialchars($st) ?></span></td>
+                            <td><small class="text-secondary"><?= htmlspecialchars($rejReason) ?></small></td>
                         </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>

@@ -37,13 +37,19 @@ final class RiskEngine
         $this->state = $state;
     }
 
+    /** @var array<string,int> Rejection counters from last apply() call */
+    private array $rejectionCounters = [];
+    /** @var array<string,string> Per-symbol rejection reasons from last apply() call */
+    private array $debugLines = [];
+
     /**
      * Generate signals from monitors using passport-based risk parameters.
      *
      * @param array<int,array<string,mixed>> $monitors
+     * @param array<string,float>            $prices  Current prices (symbol→price) for missing_price check
      * @return array<int,array<string,mixed>>
      */
-    public function apply(array $monitors): array
+    public function apply(array $monitors, array $prices = []): array
     {
         $profileKey = (string)($this->profiles['default_profile'] ?? '111');
         $profile = (array)($this->profiles['profiles'][$profileKey] ?? []);
@@ -54,6 +60,14 @@ final class RiskEngine
         $stopLossRange = (float)($profile['stop_loss_range'] ?? 0.20);
         $takeProfitRoi = (float)($profile['take_profit_roi'] ?? 5.55);
 
+        $this->rejectionCounters = [
+            'rejected_not_entry_zone' => 0,
+            'rejected_low_reliability' => 0,
+            'rejected_missing_passport' => 0,
+            'rejected_missing_price' => 0,
+        ];
+        $this->debugLines = [];
+
         $signals = [];
 
         foreach ($monitors as $monitor) {
@@ -62,15 +76,33 @@ final class RiskEngine
 
             // Only generate signals for entry_zone monitors
             if ($status !== 'entry_zone') {
+                $this->rejectionCounters['rejected_not_entry_zone']++;
+                $this->addDebugLine($symbol, 'status=' . $status);
+                continue;
+            }
+
+            // Check if current price exists
+            if (!isset($prices[$symbol]) || $prices[$symbol] <= 0.0) {
+                $this->rejectionCounters['rejected_missing_price']++;
+                $this->addDebugLine($symbol, 'missing current price');
                 continue;
             }
 
             // Load passport for symbol
             $passport = $this->state->readJson('storage/passports/' . $symbol . '.json', []);
+
+            if (empty($passport)) {
+                $this->rejectionCounters['rejected_missing_passport']++;
+                $this->addDebugLine($symbol, 'missing passport');
+                continue;
+            }
+
             $reliabilityScore = (float)($passport['reliability_score'] ?? 0.0);
 
             // Skip if reliability too low
             if ($reliabilityScore < 0.15) {
+                $this->rejectionCounters['rejected_low_reliability']++;
+                $this->addDebugLine($symbol, 'reliability_score=' . number_format($reliabilityScore, 4) . ' below threshold 0.15');
                 continue;
             }
 
@@ -106,5 +138,35 @@ final class RiskEngine
         }
 
         return $signals;
+    }
+
+    /**
+     * Get rejection counters from the last apply() call.
+     *
+     * @return array<string,int>
+     */
+    public function getRejectionCounters(): array
+    {
+        return $this->rejectionCounters;
+    }
+
+    /**
+     * Get debug rejection lines from the last apply() call.
+     *
+     * @return array<string,string>
+     */
+    public function getDebugLines(): array
+    {
+        return $this->debugLines;
+    }
+
+    /**
+     * Record a debug rejection line (max 200).
+     */
+    private function addDebugLine(string $symbol, string $reason): void
+    {
+        if (count($this->debugLines) < 200) {
+            $this->debugLines[] = $symbol . ' rejected: ' . $reason;
+        }
     }
 }

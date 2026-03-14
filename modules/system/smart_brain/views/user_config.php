@@ -224,16 +224,6 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl) {
                         <h5 style="margin: 0;">Exit Safety</h5>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3">
-                            <label for="max_trade_duration_minutes" class="form-label">Max Trade Duration (minutes)</label>
-                            <input type="number" step="1" min="1" class="form-control" id="max_trade_duration_minutes" name="max_trade_duration_minutes" value="<?= $v('max_trade_duration_minutes', '1440') ?>">
-                            <small class="text-secondary">Maximum trade duration before stale exit (>= 1)</small>
-                        </div>
-                        <div class="mb-3 form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch" id="stale_trade_exit_enabled" name="stale_trade_exit_enabled" value="1" <?= $checked('stale_trade_exit_enabled') ?>>
-                            <label class="form-check-label" for="stale_trade_exit_enabled">Stale Trade Exit Enabled</label>
-                            <br><small class="text-secondary">Automatically close trades exceeding max duration</small>
-                        </div>
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="break_even_enabled" name="break_even_enabled" value="1" <?= $checked('break_even_enabled') ?>>
                             <label class="form-check-label" for="break_even_enabled">Break-Even Enabled</label>

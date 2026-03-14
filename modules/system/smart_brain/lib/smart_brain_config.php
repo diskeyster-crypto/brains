@@ -113,8 +113,6 @@ final class SmartBrainConfig
             'fixed_take_profit_roi'        => (float)$values['fixed_take_profit_roi'],
             'hybrid_tp_share'              => (float)$values['hybrid_tp_share'],
             // Exit Safety
-            'max_trade_duration_minutes'   => (int)$values['max_trade_duration_minutes'],
-            'stale_trade_exit_enabled'     => !empty($values['stale_trade_exit_enabled']),
             'break_even_enabled'           => !empty($values['break_even_enabled']),
             'break_even_activation_roi'    => (float)$values['break_even_activation_roi'],
         ];
@@ -214,9 +212,6 @@ final class SmartBrainConfig
         }
 
         // Exit Safety validation
-        if (isset($values['max_trade_duration_minutes']) && (int)$values['max_trade_duration_minutes'] < 1) {
-            $errors[] = 'max_trade_duration_minutes must be >= 1';
-        }
         if (isset($values['break_even_activation_roi']) && (float)$values['break_even_activation_roi'] < 0) {
             $errors[] = 'break_even_activation_roi must be >= 0';
         }
@@ -275,8 +270,6 @@ final class SmartBrainConfig
                 'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
             ],
             'exit_safety' => [
-                'max_trade_duration_minutes' => (int)($userLimits['max_trade_duration_minutes'] ?? 1440),
-                'stale_trade_exit_enabled' => (bool)($userLimits['stale_trade_exit_enabled'] ?? false),
                 'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
                 'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
             ],

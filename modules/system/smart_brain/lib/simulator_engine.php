@@ -15,7 +15,6 @@ declare(strict_types=1);
  *   - Stop floor (user-defined minimum protection)
  *   - Trailing activation (lock profit after ROI threshold)
  *   - Break-even (move stop to entry after ROI threshold)
- *   - Stale exit (close after max duration)
  */
 final class SimulatorEngine
 {
@@ -87,8 +86,6 @@ final class SimulatorEngine
                 'fixed_take_profit_roi'      => $signal['fixed_take_profit_roi'] ?? 0.05,
                 'break_even_enabled'         => $signal['break_even_enabled'] ?? false,
                 'break_even_activation_roi'  => $signal['break_even_activation_roi'] ?? 0.01,
-                'max_trade_duration_minutes' => $signal['max_trade_duration_minutes'] ?? 1440,
-                'stale_trade_exit_enabled'   => $signal['stale_trade_exit_enabled'] ?? false,
                 'corridor_width'             => $signal['corridor_width'] ?? null,
             ];
             $waitingSymbols[$symbol] = true;
@@ -143,8 +140,7 @@ final class SimulatorEngine
                     'break_even_enabled'         => $w['break_even_enabled'] ?? false,
                     'break_even_activation_roi'  => $w['break_even_activation_roi'] ?? 0.01,
                     'break_even_active'          => false,
-                    'max_trade_duration_minutes' => $w['max_trade_duration_minutes'] ?? 1440,
-                    'stale_trade_exit_enabled'   => $w['stale_trade_exit_enabled'] ?? false,
+
                 ];
                 $activeSymbols[$symbol] = true;
             } else {
@@ -241,20 +237,6 @@ final class SimulatorEngine
 
             // ===== Determine close reason =====
             $closedReason = null;
-
-            // D. Stale exit — check duration
-            $staleExitEnabled = (bool)($a['stale_trade_exit_enabled'] ?? false);
-            $maxDurationMinutes = (int)($a['max_trade_duration_minutes'] ?? 0);
-            if ($staleExitEnabled && $maxDurationMinutes > 0) {
-                $openedAt = (string)($a['opened_at'] ?? '');
-                if ($openedAt !== '') {
-                    $tsOpen = strtotime($openedAt);
-                    $now = time();
-                    if ($tsOpen !== false && ($now - $tsOpen) >= $maxDurationMinutes * 60) {
-                        $closedReason = 'stale_exit';
-                    }
-                }
-            }
 
             // Check trailing stop hit (higher priority than SL/TP for trailing mode)
             if ($closedReason === null && $trailingActive && $trailingStopRoi > 0.0 && $roi <= $trailingStopRoi) {

@@ -102,6 +102,12 @@ final class SmartBrainCore
         $parser = new Parser4Analyzer($parser4Cfg, $this->state);
         $candidates = $parser->run();
 
+        // Write analyzer debug log (Pattern-First Decision Flow)
+        $analyzerDebugLines = $parser->getAnalyzerDebugLines();
+        if ($analyzerDebugLines !== []) {
+            $this->logger->writeAnalyzerDebugLog($analyzerDebugLines);
+        }
+
         // Collect all symbols from candidates
         $symbols = [];
         foreach ($candidates as $c) {

@@ -23,4 +23,15 @@ return [
         ],
         'mode' => 'one',  // 'one' | 'any' | 'all'
     ],
+
+    'analyzer_decision' => [
+        'enabled' => true,
+        'threshold' => 0.65,
+        'weights' => [
+            'pattern_confidence' => 0.40,
+            'trend_match_score' => 0.20,
+            'corridor_fit_score' => 0.20,
+            'entry_quality_score' => 0.20,
+        ],
+    ],
 ];

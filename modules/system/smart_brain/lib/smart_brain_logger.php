@@ -34,4 +34,17 @@ final class SmartBrainLogger
         $content = implode(PHP_EOL, array_slice($lines, 0, 200)) . PHP_EOL;
         @file_put_contents($path, $content, LOCK_EX);
     }
+
+    /**
+     * Write analyzer decision debug log (analyzer_debug.log).
+     * Overwrites the file each cycle. Max 200 lines.
+     *
+     * @param array<int,string> $lines
+     */
+    public function writeAnalyzerDebugLog(array $lines): void
+    {
+        $path = $this->logsDir . '/analyzer_debug.log';
+        $content = implode(PHP_EOL, array_slice($lines, 0, 200)) . PHP_EOL;
+        @file_put_contents($path, $content, LOCK_EX);
+    }
 }

@@ -9,11 +9,13 @@ require_once __DIR__ . '/patterns/pullback_trend_continue_detector.php';
 /**
  * Parser4 Analyzer — Smart Brain Market Structure Analyzer
  *
- * Phase 3 + Pattern Algorithms V1.
+ * Pattern-First Decision Flow.
  *
  * Reads Parser3 symbols + Parser2 price history.
  * Runs enabled pattern detectors (double_bottom, double_top, pullback_trend_continue).
- * Outputs corridor/volatility/strength/trend candidates with pattern_algorithm + pattern_confidence.
+ * Computes trend_match_score, corridor_fit_score, entry_quality_score.
+ * Calculates weighted analyzer_score; applies analyzer_pass threshold.
+ * Outputs corridor/volatility/strength/trend candidates with full decision fields.
  *
  * Does NOT generate trading signals.
  */
@@ -29,6 +31,12 @@ final class Parser4Analyzer
     /** @var string Pattern mode: 'one', 'any', 'all' */
     private string $patternMode;
 
+    /** @var array<string,mixed> Analyzer decision config */
+    private array $decisionCfg;
+
+    /** @var array<int,string> Debug rejection lines from last run */
+    private array $analyzerDebugLines = [];
+
     /**
      * @param array<string,mixed> $cfg  Effective settings from config/parser4.php
      * @param StateManager $state
@@ -41,6 +49,8 @@ final class Parser4Analyzer
         $patternCfg = (array)($cfg['pattern_algorithms'] ?? []);
         $enabledAlgorithms = (array)($patternCfg['enabled'] ?? []);
         $this->patternMode = (string)($patternCfg['mode'] ?? 'one');
+
+        $this->decisionCfg = (array)($cfg['analyzer_decision'] ?? []);
 
         $this->detectors = $this->buildDetectors($enabledAlgorithms);
     }
@@ -71,14 +81,18 @@ final class Parser4Analyzer
     }
 
     /**
-     * Run the analyzer pipeline.
+     * Run the analyzer pipeline — Pattern-First Decision Flow.
      *
      * 1. Load symbols from Parser3 profiles directory
      * 2. For each symbol load latest Parser2 NDJSON history
      * 3. Calculate market structure (corridor, volatility, strength, trend)
-     * 4. Run enabled pattern detectors
-     * 5. Filter and sort candidates
-     * 6. Write storage/candidates.json
+     * 4. STEP 1: Run enabled pattern detectors (primary gate)
+     * 5. STEP 2: Compute trend_match_score
+     * 6. STEP 3: Compute corridor_fit_score
+     * 7. STEP 4: Compute entry_quality_score
+     * 8. STEP 5: Compute weighted analyzer_score
+     * 9. STEP 6: Apply analyzer_pass threshold
+     * 10. Write storage/candidates.json
      *
      * @return array<int,array<string,mixed>>
      */
@@ -88,9 +102,19 @@ final class Parser4Analyzer
             return [];
         }
 
+        $this->analyzerDebugLines = [];
+
         $minHistoryPoints = (int)($this->cfg['min_history_points'] ?? 40);
         $strengthThreshold = (float)($this->cfg['strength_threshold'] ?? 0.50);
         $maxCandidates = (int)($this->cfg['max_candidates'] ?? 200);
+
+        $decisionEnabled = (bool)($this->decisionCfg['enabled'] ?? true);
+        $threshold = (float)($this->decisionCfg['threshold'] ?? 0.65);
+        $weights = (array)($this->decisionCfg['weights'] ?? []);
+        $wPattern   = (float)($weights['pattern_confidence'] ?? 0.40);
+        $wTrend     = (float)($weights['trend_match_score'] ?? 0.20);
+        $wCorridor  = (float)($weights['corridor_fit_score'] ?? 0.20);
+        $wEntry     = (float)($weights['entry_quality_score'] ?? 0.20);
 
         $symbols = $this->loadSymbols();
 
@@ -124,8 +148,65 @@ final class Parser4Analyzer
             $trendBias = $this->calculateTrend($history);
             $lastPrice = $history[count($history) - 1]['price'];
 
-            // Run pattern detection
+            // STEP 1 — Pattern detection (primary gate)
             $patternResult = $this->runPatternDetection($history);
+
+            // If detectors are configured but no pattern found, reject
+            if ($this->detectors !== [] && $patternResult['pattern_algorithm'] === 'none') {
+                $this->addAnalyzerDebug($symbol, 'no pattern detected');
+                continue;
+            }
+
+            $patternAlgorithm = $patternResult['pattern_algorithm'];
+            $patternConfidence = $patternResult['pattern_confidence'];
+            $patternTrendBias = $patternResult['trend_bias'] ?? $trendBias;
+
+            // STEP 2 — Trend confirmation score
+            $trendMatchScore = $this->computeTrendMatchScore($history, $patternAlgorithm, $patternTrendBias);
+
+            // STEP 3 — Corridor fit score
+            $corridorFitScore = $this->computeCorridorFitScore(
+                $lastPrice, $corridor['low'], $corridor['high'], $patternTrendBias
+            );
+
+            // STEP 4 — Entry quality score
+            $entryQualityScore = $this->computeEntryQualityScore(
+                $history, $lastPrice, $corridor['low'], $corridor['high'], $patternTrendBias
+            );
+
+            // STEP 5 — Weighted analyzer score
+            $analyzerScore = round(
+                ($patternConfidence * $wPattern)
+                + ($trendMatchScore * $wTrend)
+                + ($corridorFitScore * $wCorridor)
+                + ($entryQualityScore * $wEntry),
+                4
+            );
+
+            // STEP 6 — Analyzer pass threshold
+            $analyzerPass = true;
+            $rejectionReason = '';
+
+            if ($decisionEnabled && $analyzerScore < $threshold) {
+                $analyzerPass = false;
+                $rejectionReason = 'analyzer_score ' . number_format($analyzerScore, 4)
+                    . ' below threshold ' . number_format($threshold, 2);
+
+                // Build detailed reason breakdown
+                if ($trendMatchScore < 0.4) {
+                    $rejectionReason = 'trend mismatch (score=' . number_format($trendMatchScore, 2) . ')';
+                } elseif ($corridorFitScore < 0.4) {
+                    $rejectionReason = 'corridor fit too weak (score=' . number_format($corridorFitScore, 2) . ')';
+                } elseif ($entryQualityScore < 0.4) {
+                    $rejectionReason = 'entry quality too poor (score=' . number_format($entryQualityScore, 2) . ')';
+                } else {
+                    $rejectionReason = 'analyzer_score ' . number_format($analyzerScore, 4)
+                        . ' below threshold ' . number_format($threshold, 2);
+                }
+
+                $this->addAnalyzerDebug($symbol, $rejectionReason);
+                continue;
+            }
 
             $candidate = [
                 'symbol' => $symbol,
@@ -134,25 +215,24 @@ final class Parser4Analyzer
                 'corridor_width' => $corridor['width'],
                 'volatility' => $volatility,
                 'strength' => $strength,
-                'trend_bias' => $patternResult['trend_bias'] ?? $trendBias,
+                'trend_bias' => $patternTrendBias,
                 'history_points' => count($history),
                 'last_price' => $lastPrice,
-                'pattern_algorithm' => $patternResult['pattern_algorithm'],
-                'pattern_confidence' => $patternResult['pattern_confidence'],
+                'pattern_algorithm' => $patternAlgorithm,
+                'pattern_confidence' => $patternConfidence,
+                'trend_match_score' => round($trendMatchScore, 4),
+                'corridor_fit_score' => round($corridorFitScore, 4),
+                'entry_quality_score' => round($entryQualityScore, 4),
+                'analyzer_score' => $analyzerScore,
+                'analyzer_pass' => $analyzerPass,
             ];
-
-            // If pattern detection is required but no pattern found, skip
-            // (only when detectors are configured)
-            if ($this->detectors !== [] && $patternResult['pattern_algorithm'] === 'none') {
-                continue;
-            }
 
             $candidates[] = $candidate;
         }
 
-        // Sort by strength descending
+        // Sort by analyzer_score descending
         usort($candidates, function (array $a, array $b): int {
-            return $b['strength'] <=> $a['strength'];
+            return ($b['analyzer_score'] ?? 0) <=> ($a['analyzer_score'] ?? 0);
         });
 
         // Apply max_candidates limit
@@ -163,6 +243,242 @@ final class Parser4Analyzer
         $this->state->writeJson('storage/candidates.json', $candidates);
 
         return $candidates;
+    }
+
+    /**
+     * Get analyzer debug rejection lines from the last run.
+     *
+     * @return array<int,string>
+     */
+    public function getAnalyzerDebugLines(): array
+    {
+        return $this->analyzerDebugLines;
+    }
+
+    /**
+     * Record an analyzer debug rejection line (max 200).
+     */
+    private function addAnalyzerDebug(string $symbol, string $reason): void
+    {
+        if (count($this->analyzerDebugLines) < 200) {
+            $this->analyzerDebugLines[] = $symbol . ' rejected: ' . $reason;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Analyzer Decision Scoring (Steps 2–4)
+    // ------------------------------------------------------------------
+
+    /**
+     * STEP 2: Compute trend confirmation score.
+     *
+     * Measures how well the broader trend confirms the detected pattern direction.
+     * Range: 0.0 to 1.0
+     *
+     * @param array<int,array{ts_unix:int,price:float}> $history
+     */
+    private function computeTrendMatchScore(array $history, string $patternAlgorithm, string $patternTrendBias): float
+    {
+        $n = count($history);
+        if ($n < 10) {
+            return 0.5;
+        }
+
+        $prices = array_column($history, 'price');
+
+        // Compute short-term trend (last 30% of data)
+        $shortLen = max(5, (int)($n * 0.3));
+        $shortSlice = array_slice($prices, $n - $shortLen);
+        $shortStart = $shortSlice[0];
+        $shortEnd = $shortSlice[count($shortSlice) - 1];
+        $shortReturn = ($shortStart > 0.0) ? ($shortEnd - $shortStart) / $shortStart : 0.0;
+
+        // Compute medium-term trend (last 60% of data)
+        $medLen = max(10, (int)($n * 0.6));
+        $medSlice = array_slice($prices, $n - $medLen);
+        $medStart = $medSlice[0];
+        $medEnd = $medSlice[count($medSlice) - 1];
+        $medReturn = ($medStart > 0.0) ? ($medEnd - $medStart) / $medStart : 0.0;
+
+        // For reversal patterns, trend context is different
+        if ($patternAlgorithm === 'double_bottom') {
+            // double_bottom → bullish: good if medium trend was down (reversal context)
+            // AND short-term shows recovery
+            $medScore = ($medReturn < 0) ? min(1.0, abs($medReturn) / 0.05) : max(0.0, 0.5 - $medReturn * 5);
+            $shortScore = ($shortReturn > 0) ? min(1.0, $shortReturn / 0.02) : 0.2;
+            return round(max(0.0, min(1.0, ($medScore * 0.5) + ($shortScore * 0.5))), 4);
+        }
+
+        if ($patternAlgorithm === 'double_top') {
+            // double_top → bearish: good if medium trend was up (reversal context)
+            // AND short-term shows decline
+            $medScore = ($medReturn > 0) ? min(1.0, $medReturn / 0.05) : max(0.0, 0.5 + $medReturn * 5);
+            $shortScore = ($shortReturn < 0) ? min(1.0, abs($shortReturn) / 0.02) : 0.2;
+            return round(max(0.0, min(1.0, ($medScore * 0.5) + ($shortScore * 0.5))), 4);
+        }
+
+        if ($patternAlgorithm === 'pullback_trend_continue') {
+            // continuation: trend and pattern bias should align
+            if ($patternTrendBias === 'up') {
+                $trendAlign = ($medReturn > 0) ? min(1.0, $medReturn / 0.03) : 0.1;
+                $shortAlign = ($shortReturn > 0) ? min(1.0, $shortReturn / 0.01) : 0.2;
+            } else {
+                $trendAlign = ($medReturn < 0) ? min(1.0, abs($medReturn) / 0.03) : 0.1;
+                $shortAlign = ($shortReturn < 0) ? min(1.0, abs($shortReturn) / 0.01) : 0.2;
+            }
+            return round(max(0.0, min(1.0, ($trendAlign * 0.6) + ($shortAlign * 0.4))), 4);
+        }
+
+        // Fallback: simple trend alignment
+        if ($patternTrendBias === 'up') {
+            return round(max(0.0, min(1.0, 0.5 + $shortReturn * 10)), 4);
+        }
+        if ($patternTrendBias === 'down') {
+            return round(max(0.0, min(1.0, 0.5 - $shortReturn * 10)), 4);
+        }
+
+        return 0.5;
+    }
+
+    /**
+     * STEP 3: Compute corridor fit score.
+     *
+     * Measures whether the current price sits in a structurally acceptable zone
+     * relative to the corridor and pattern direction.
+     * Range: 0.0 to 1.0
+     */
+    private function computeCorridorFitScore(float $lastPrice, float $corridorLow, float $corridorHigh, string $patternTrendBias): float
+    {
+        $range = $corridorHigh - $corridorLow;
+        if ($range <= 0.0 || $lastPrice <= 0.0) {
+            return 0.5;
+        }
+
+        // Price position within corridor: 0 = at low, 1 = at high
+        $position = ($lastPrice - $corridorLow) / $range;
+
+        // Clamp for outside-corridor prices
+        $position = max(-0.2, min(1.2, $position));
+
+        if ($patternTrendBias === 'up') {
+            // For bullish patterns, better if price is in the lower half (buy low)
+            // Ideal zone: 0.1 to 0.4
+            if ($position < 0.0) {
+                return round(max(0.1, 0.5 + $position), 4); // slightly below corridor
+            }
+            if ($position <= 0.4) {
+                return round(0.6 + (0.4 - abs($position - 0.2)) * 1.0, 4);
+            }
+            if ($position <= 0.7) {
+                return round(max(0.3, 0.7 - ($position - 0.4) * 1.0), 4);
+            }
+            return round(max(0.1, 0.4 - ($position - 0.7) * 1.0), 4);
+        }
+
+        if ($patternTrendBias === 'down') {
+            // For bearish patterns, better if price is in the upper half (sell high)
+            // Ideal zone: 0.6 to 0.9
+            if ($position > 1.0) {
+                return round(max(0.1, 0.5 - ($position - 1.0)), 4);
+            }
+            if ($position >= 0.6) {
+                return round(0.6 + (0.4 - abs($position - 0.8)) * 1.0, 4);
+            }
+            if ($position >= 0.3) {
+                return round(max(0.3, 0.7 - (0.6 - $position) * 1.0), 4);
+            }
+            return round(max(0.1, 0.4 - (0.3 - $position) * 1.0), 4);
+        }
+
+        // Flat/neutral — prefer mid-corridor
+        return round(max(0.3, 1.0 - abs($position - 0.5) * 1.5), 4);
+    }
+
+    /**
+     * STEP 4: Compute entry quality score.
+     *
+     * Estimates whether entering now is timely:
+     * - not too late (move already extended)
+     * - not too early (no confirmation yet)
+     * - not chasing a stretched move
+     * Range: 0.0 to 1.0
+     */
+    private function computeEntryQualityScore(
+        array $history,
+        float $lastPrice,
+        float $corridorLow,
+        float $corridorHigh,
+        string $patternTrendBias
+    ): float {
+        $n = count($history);
+        if ($n < 10 || $lastPrice <= 0.0) {
+            return 0.5;
+        }
+
+        $prices = array_column($history, 'price');
+
+        // Recent momentum: last 5 bars
+        $recentLen = min(5, $n - 1);
+        $recentStart = $prices[$n - 1 - $recentLen];
+        $recentMomentum = ($recentStart > 0.0) ? ($lastPrice - $recentStart) / $recentStart : 0.0;
+
+        // How far current price is from corridor extremes
+        $range = $corridorHigh - $corridorLow;
+        $distFromLow = ($range > 0.0) ? ($lastPrice - $corridorLow) / $range : 0.5;
+        $distFromHigh = ($range > 0.0) ? ($corridorHigh - $lastPrice) / $range : 0.5;
+
+        // Volatility of last few bars (should not be too extreme)
+        $recentSlice = array_slice($prices, $n - min(10, $n));
+        $recentMax = max($recentSlice);
+        $recentMin = min($recentSlice);
+        $recentRange = ($recentMin > 0.0) ? ($recentMax - $recentMin) / $recentMin : 0.0;
+        $volatilityPenalty = min(1.0, $recentRange / 0.10); // penalize wild swings
+
+        if ($patternTrendBias === 'up') {
+            // Bullish: moderate positive momentum is good, too much is chasing
+            $momentumScore = 0.5;
+            if ($recentMomentum > 0.0 && $recentMomentum < 0.03) {
+                $momentumScore = 0.7 + ($recentMomentum / 0.03) * 0.3;
+            } elseif ($recentMomentum >= 0.03) {
+                // Chasing — already extended
+                $momentumScore = max(0.2, 0.7 - ($recentMomentum - 0.03) * 5);
+            } elseif ($recentMomentum < 0.0 && $recentMomentum > -0.02) {
+                // Small dip — good entry zone
+                $momentumScore = 0.6;
+            } else {
+                $momentumScore = 0.3;
+            }
+
+            // Prefer lower corridor position
+            $positionScore = max(0.2, 1.0 - max(0.0, $distFromLow - 0.2));
+
+            return round(max(0.0, min(1.0,
+                ($momentumScore * 0.45) + ($positionScore * 0.35) + ((1.0 - $volatilityPenalty) * 0.20)
+            )), 4);
+        }
+
+        if ($patternTrendBias === 'down') {
+            // Bearish: moderate negative momentum is good
+            $momentumScore = 0.5;
+            if ($recentMomentum < 0.0 && $recentMomentum > -0.03) {
+                $momentumScore = 0.7 + (abs($recentMomentum) / 0.03) * 0.3;
+            } elseif ($recentMomentum <= -0.03) {
+                $momentumScore = max(0.2, 0.7 - (abs($recentMomentum) - 0.03) * 5);
+            } elseif ($recentMomentum > 0.0 && $recentMomentum < 0.02) {
+                $momentumScore = 0.6;
+            } else {
+                $momentumScore = 0.3;
+            }
+
+            // Prefer higher corridor position for bearish
+            $positionScore = max(0.2, 1.0 - max(0.0, $distFromHigh - 0.2));
+
+            return round(max(0.0, min(1.0,
+                ($momentumScore * 0.45) + ($positionScore * 0.35) + ((1.0 - $volatilityPenalty) * 0.20)
+            )), 4);
+        }
+
+        return round(max(0.3, 0.6 - $volatilityPenalty * 0.3), 4);
     }
 
     /**

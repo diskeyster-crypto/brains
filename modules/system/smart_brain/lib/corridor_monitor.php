@@ -79,6 +79,10 @@ final class CorridorMonitor
                 'status' => $status,
                 'pattern_algorithm' => (string)($candidate['pattern_algorithm'] ?? 'none'),
                 'pattern_confidence' => (float)($candidate['pattern_confidence'] ?? 0.0),
+                'trend_match_score' => (float)($candidate['trend_match_score'] ?? 0.0),
+                'corridor_fit_score' => (float)($candidate['corridor_fit_score'] ?? 0.0),
+                'entry_quality_score' => (float)($candidate['entry_quality_score'] ?? 0.0),
+                'analyzer_score' => (float)($candidate['analyzer_score'] ?? 0.0),
             ];
         }
 

@@ -90,6 +90,10 @@ final class SimulatorEngine
                 // Pattern algorithm tracking
                 'pattern_algorithm'          => $signal['pattern_algorithm'] ?? 'none',
                 'pattern_confidence'         => $signal['pattern_confidence'] ?? 0.0,
+                'trend_match_score'          => $signal['trend_match_score'] ?? 0.0,
+                'corridor_fit_score'         => $signal['corridor_fit_score'] ?? 0.0,
+                'entry_quality_score'        => $signal['entry_quality_score'] ?? 0.0,
+                'analyzer_score'             => $signal['analyzer_score'] ?? 0.0,
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -146,6 +150,10 @@ final class SimulatorEngine
                     // Pattern algorithm tracking
                     'pattern_algorithm'          => $w['pattern_algorithm'] ?? 'none',
                     'pattern_confidence'         => $w['pattern_confidence'] ?? 0.0,
+                    'trend_match_score'          => $w['trend_match_score'] ?? 0.0,
+                    'corridor_fit_score'         => $w['corridor_fit_score'] ?? 0.0,
+                    'entry_quality_score'        => $w['entry_quality_score'] ?? 0.0,
+                    'analyzer_score'             => $w['analyzer_score'] ?? 0.0,
 
                 ];
                 $activeSymbols[$symbol] = true;
@@ -296,6 +304,10 @@ final class SimulatorEngine
                     'break_even_active'  => $breakEvenActive,
                     'pattern_algorithm'  => $a['pattern_algorithm'] ?? 'none',
                     'pattern_confidence' => $a['pattern_confidence'] ?? 0.0,
+                    'trend_match_score'  => $a['trend_match_score'] ?? 0.0,
+                    'corridor_fit_score' => $a['corridor_fit_score'] ?? 0.0,
+                    'entry_quality_score' => $a['entry_quality_score'] ?? 0.0,
+                    'analyzer_score'     => $a['analyzer_score'] ?? 0.0,
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);

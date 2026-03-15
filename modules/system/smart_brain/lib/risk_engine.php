@@ -181,6 +181,10 @@ final class RiskEngine
                     'signal_mode' => 'bootstrap',
                     'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
+                    'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
+                    'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
+                    'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
+                    'analyzer_score' => (float)($monitor['analyzer_score'] ?? 0.0),
                 ], $exitPolicy);
                 $bootstrapCount++;
                 $this->signalModeCounters['bootstrap_signals_count']++;
@@ -224,6 +228,10 @@ final class RiskEngine
                     'signal_mode' => 'normal',
                     'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
+                    'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
+                    'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
+                    'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
+                    'analyzer_score' => (float)($monitor['analyzer_score'] ?? 0.0),
                 ], $exitPolicy);
                 $this->signalModeCounters['normal_signals_count']++;
             }

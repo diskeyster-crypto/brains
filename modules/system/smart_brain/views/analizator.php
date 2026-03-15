@@ -78,48 +78,97 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         </div>
     </div>
 
-    <!-- Candidates Table (Phase 3 fields) -->
+    <!-- Candidates Table (Pattern-First Decision Flow) -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 style="margin: 0;"><i class="bi bi-search me-1"></i> Candidates</h5>
             <span class="badge bg-primary"><?= count($candidates) ?></span>
         </div>
-        <div class="card-body p-0">
-            <table class="table table-dark table-hover mb-0">
+        <div class="card-body p-0" style="overflow-x: auto;">
+            <table class="table table-dark table-hover mb-0" style="font-size: 0.85rem;">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Pattern</th><th>Confidence</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Volatility</th><th>Strength</th><th>Trend</th><th>Points</th></tr>
+                    <tr>
+                        <th>#</th>
+                        <th>Symbol</th>
+                        <th>Pattern</th>
+                        <th>Pat.Conf</th>
+                        <th>Trend Match</th>
+                        <th>Corr.Fit</th>
+                        <th>Entry Q.</th>
+                        <th>Score</th>
+                        <th>Pass</th>
+                        <th>Trend</th>
+                        <th>Corr.Low</th>
+                        <th>Corr.High</th>
+                        <th>Width</th>
+                        <th>Vol</th>
+                        <th>Str</th>
+                        <th>Pts</th>
+                    </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($candidates)): ?>
-                        <tr><td colspan="11" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
+                        <tr><td colspan="16" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
                     <?php else: ?>
                         <?php foreach ($candidates as $i => $c): ?>
+                        <?php
+                            $algo = (string)($c['pattern_algorithm'] ?? 'none');
+                            $conf = (float)($c['pattern_confidence'] ?? 0);
+                            $tms = (float)($c['trend_match_score'] ?? 0);
+                            $cfs = (float)($c['corridor_fit_score'] ?? 0);
+                            $eqs = (float)($c['entry_quality_score'] ?? 0);
+                            $as = (float)($c['analyzer_score'] ?? 0);
+                            $ap = (bool)($c['analyzer_pass'] ?? false);
+                            $str = (float)($c['strength'] ?? 0);
+                        ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
                             <td><strong><?= htmlspecialchars((string)($c['symbol'] ?? '')) ?></strong></td>
                             <td>
-                                <?php $algo = (string)($c['pattern_algorithm'] ?? 'none'); ?>
                                 <span class="badge <?= $algo !== 'none' ? 'bg-info' : 'bg-secondary' ?>">
                                     <?= htmlspecialchars($algo) ?>
                                 </span>
                             </td>
                             <td>
-                                <?php $conf = (float)($c['pattern_confidence'] ?? 0); ?>
                                 <span class="badge <?= $conf >= 0.7 ? 'bg-success' : ($conf >= 0.4 ? 'bg-warning' : 'bg-secondary') ?>">
                                     <?= number_format($conf, 2) ?>
                                 </span>
                             </td>
+                            <td>
+                                <span class="badge <?= $tms >= 0.7 ? 'bg-success' : ($tms >= 0.4 ? 'bg-warning' : 'bg-danger') ?>">
+                                    <?= number_format($tms, 2) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $cfs >= 0.7 ? 'bg-success' : ($cfs >= 0.4 ? 'bg-warning' : 'bg-danger') ?>">
+                                    <?= number_format($cfs, 2) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $eqs >= 0.7 ? 'bg-success' : ($eqs >= 0.4 ? 'bg-warning' : 'bg-danger') ?>">
+                                    <?= number_format($eqs, 2) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $as >= 0.75 ? 'bg-success' : ($as >= 0.65 ? 'bg-warning' : 'bg-danger') ?>">
+                                    <?= number_format($as, 4) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge <?= $ap ? 'bg-success' : 'bg-danger' ?>">
+                                    <?= $ap ? '✓' : '✗' ?>
+                                </span>
+                            </td>
+                            <td><?= htmlspecialchars((string)($c['trend_bias'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_low'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_high'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_width'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['volatility'] ?? '-')) ?></td>
                             <td>
-                                <?php $str = (float)($c['strength'] ?? 0); ?>
                                 <span class="badge <?= $str >= 0.7 ? 'bg-success' : ($str >= 0.5 ? 'bg-warning' : 'bg-secondary') ?>">
                                     <?= number_format($str, 2) ?>
                                 </span>
                             </td>
-                            <td><?= htmlspecialchars((string)($c['trend_bias'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['history_points'] ?? '-')) ?></td>
                         </tr>
                         <?php endforeach; ?>

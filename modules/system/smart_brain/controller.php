@@ -81,6 +81,7 @@ final class SmartBrainController
         $values['trailing_enabled'] = !empty($_POST['trailing_enabled']);
         $values['brain_may_delay_trailing'] = !empty($_POST['brain_may_delay_trailing']);
         $values['break_even_enabled'] = !empty($_POST['break_even_enabled']);
+        $values['early_failure_enabled'] = !empty($_POST['early_failure_enabled']);
 
         $result = $this->service->saveUserConfig($values);
 

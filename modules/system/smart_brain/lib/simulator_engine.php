@@ -87,6 +87,16 @@ final class SimulatorEngine
                 'break_even_enabled'         => $signal['break_even_enabled'] ?? false,
                 'break_even_activation_roi'  => $signal['break_even_activation_roi'] ?? 0.01,
                 'corridor_width'             => $signal['corridor_width'] ?? null,
+                // Stop Loss Engine V2
+                'stop_mode'                    => $signal['stop_mode'] ?? 'brain_managed',
+                'simple_stop_liq_factor'       => $signal['simple_stop_liq_factor'] ?? 0.15,
+                'brain_stop_corridor_factor'   => $signal['brain_stop_corridor_factor'] ?? 0.25,
+                'brain_stop_volatility_factor' => $signal['brain_stop_volatility_factor'] ?? 0.50,
+                'brain_stop_liq_safety_factor' => $signal['brain_stop_liq_safety_factor'] ?? 0.30,
+                // Early Failure Guard
+                'early_failure_enabled'        => $signal['early_failure_enabled'] ?? false,
+                'early_failure_window_minutes' => $signal['early_failure_window_minutes'] ?? 5,
+                'early_failure_max_adverse_roi' => $signal['early_failure_max_adverse_roi'] ?? -0.008,
                 // Pattern algorithm tracking
                 'pattern_algorithm'          => $signal['pattern_algorithm'] ?? 'none',
                 'pattern_confidence'         => $signal['pattern_confidence'] ?? 0.0,
@@ -119,6 +129,13 @@ final class SimulatorEngine
                     $effectiveSL = $stopFloor;
                 }
 
+                // Apply stop mode to compute stop distance
+                $stopMode = (string)($w['stop_mode'] ?? 'brain_managed');
+                $stopModeDistance = $this->computeStopModeDistance($w, $stopMode);
+                if ($stopModeDistance > 0.0 && ($effectiveSL <= 0.0 || $stopModeDistance > $effectiveSL)) {
+                    $effectiveSL = $stopModeDistance;
+                }
+
                 // Activate
                 $active[] = [
                     'symbol'        => $symbol,
@@ -147,6 +164,16 @@ final class SimulatorEngine
                     'break_even_enabled'         => $w['break_even_enabled'] ?? false,
                     'break_even_activation_roi'  => $w['break_even_activation_roi'] ?? 0.01,
                     'break_even_active'          => false,
+                    // Stop Loss Engine V2
+                    'stop_mode'                    => $stopMode,
+                    'simple_stop_liq_factor'       => $w['simple_stop_liq_factor'] ?? 0.15,
+                    'brain_stop_corridor_factor'   => $w['brain_stop_corridor_factor'] ?? 0.25,
+                    'brain_stop_volatility_factor' => $w['brain_stop_volatility_factor'] ?? 0.50,
+                    'brain_stop_liq_safety_factor' => $w['brain_stop_liq_safety_factor'] ?? 0.30,
+                    // Early Failure Guard
+                    'early_failure_enabled'        => $w['early_failure_enabled'] ?? false,
+                    'early_failure_window_minutes' => $w['early_failure_window_minutes'] ?? 5,
+                    'early_failure_max_adverse_roi' => $w['early_failure_max_adverse_roi'] ?? -0.008,
                     // Pattern algorithm tracking
                     'pattern_algorithm'          => $w['pattern_algorithm'] ?? 'none',
                     'pattern_confidence'         => $w['pattern_confidence'] ?? 0.0,
@@ -252,6 +279,24 @@ final class SimulatorEngine
             // ===== Determine close reason =====
             $closedReason = null;
 
+            // Early Failure Guard: close bad entries quickly
+            $earlyFailureEnabled = (bool)($a['early_failure_enabled'] ?? false);
+            if ($closedReason === null && $earlyFailureEnabled) {
+                $earlyFailureWindowMinutes = (int)($a['early_failure_window_minutes'] ?? 5);
+                $earlyFailureMaxAdverseRoi = (float)($a['early_failure_max_adverse_roi'] ?? -0.008);
+                $openedAt = (string)($a['opened_at'] ?? '');
+                if ($openedAt !== '') {
+                    $tsOpen = strtotime($openedAt);
+                    if ($tsOpen !== false) {
+                        $tradeAgeMinutes = (time() - $tsOpen) / 60.0;
+                        // Only check inside the early failure window
+                        if ($tradeAgeMinutes <= $earlyFailureWindowMinutes && $roi <= $earlyFailureMaxAdverseRoi) {
+                            $closedReason = 'early_failure';
+                        }
+                    }
+                }
+            }
+
             // Check trailing stop hit (higher priority than SL/TP for trailing mode)
             if ($closedReason === null && $trailingActive && $trailingStopRoi > 0.0 && $roi <= $trailingStopRoi) {
                 $closedReason = 'trailing_stop';
@@ -297,6 +342,7 @@ final class SimulatorEngine
                     'duration'    => $duration,
                     'reason'      => $closedReason,
                     'exit_mode'   => $a['exit_mode'] ?? 'fixed_tp',
+                    'stop_mode'   => $a['stop_mode'] ?? 'brain_managed',
                     'opened_at'   => $openedAt,
                     'closed_at'   => $closedAt,
                     'status'      => 'closed',
@@ -339,6 +385,66 @@ final class SimulatorEngine
 
         // roi_percent — direct value
         return $stopFloorValue;
+    }
+
+    /**
+     * Compute stop distance based on stop mode (Stop Loss Engine V2).
+     *
+     * simple_liq_percent:
+     *   stop_distance = distance_to_liq × simple_stop_liq_factor
+     *   Liquidation distance estimated from leverage: 1/leverage (ROI at liquidation).
+     *   If leverage is unavailable, returns 0 (fallback to existing stop).
+     *
+     * brain_managed:
+     *   Uses conservative combination of corridor, volatility, and liquidation safety.
+     *   Final stop = max(corridor_stop, volatility_stop, liq_stop)
+     *   This ensures the brain stop is never weaker than any single component.
+     *
+     * @param array<string,mixed> $trade
+     * @param string $stopMode
+     * @return float  Stop distance as ROI fraction (e.g. 0.05 = 5%)
+     */
+    private function computeStopModeDistance(array $trade, string $stopMode): float
+    {
+        $leverage = (int)($trade['leverage'] ?? 0);
+        // Estimate distance to liquidation as ROI fraction: roughly 1/leverage
+        // e.g. leverage=5 → liq at ~20% adverse move → distance_to_liq = 0.20
+        $distanceToLiq = ($leverage > 0) ? (1.0 / $leverage) : 0.0;
+
+        if ($stopMode === 'simple_liq_percent') {
+            // Simple mode: fraction of distance to liquidation
+            $factor = (float)($trade['simple_stop_liq_factor'] ?? 0.15);
+            if ($distanceToLiq <= 0.0) {
+                // Fallback: liquidation info unavailable, use existing stop
+                return 0.0;
+            }
+            return round($distanceToLiq * $factor, 6);
+        }
+
+        if ($stopMode === 'brain_managed') {
+            $corridorWidth = (float)($trade['corridor_width'] ?? 0.0);
+            $corridorFactor = (float)($trade['brain_stop_corridor_factor'] ?? 0.25);
+            $volatilityFactor = (float)($trade['brain_stop_volatility_factor'] ?? 0.50);
+            $liqSafetyFactor = (float)($trade['brain_stop_liq_safety_factor'] ?? 0.30);
+
+            // 1. Corridor component: corridor_size × brain_stop_corridor_factor
+            $corridorStop = $corridorWidth * $corridorFactor;
+
+            // 2. Volatility component: use corridor_width as volatility proxy × factor
+            //    (corridor width is the best available volatility measure in this context)
+            $volatilityStop = $corridorWidth * $volatilityFactor;
+
+            // 3. Liquidation safety component
+            $liqStop = ($distanceToLiq > 0.0) ? ($distanceToLiq * $liqSafetyFactor) : 0.0;
+
+            // Conservative rule: use the maximum of all three components
+            // This ensures the brain stop is never weaker than any single safety measure
+            $brainStop = max($corridorStop, $volatilityStop, $liqStop);
+
+            return round($brainStop, 6);
+        }
+
+        return 0.0;
     }
 
     /**

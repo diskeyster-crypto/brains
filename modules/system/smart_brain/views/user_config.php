@@ -239,6 +239,76 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl) {
             </div>
         </div>
 
+        <!-- Stop Loss Engine V2 Section -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-shield-lock me-2"></i>
+                        <h5 style="margin: 0;">Stop Loss Engine</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="stop_mode" class="form-label">Stop Mode</label>
+                            <select class="form-select" id="stop_mode" name="stop_mode">
+                                <?php foreach (['simple_liq_percent' => 'Simple Liq Percent', 'brain_managed' => 'Brain Managed'] as $sm => $smLabel): ?>
+                                <option value="<?= $sm ?>" <?= ($form_values['stop_mode'] ?? 'brain_managed') === $sm ? 'selected' : '' ?>><?= $smLabel ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">Stop-loss calculation mode</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="simple_stop_liq_factor" class="form-label">Simple Stop Liq Factor</label>
+                            <input type="number" step="0.01" min="0.01" class="form-control" id="simple_stop_liq_factor" name="simple_stop_liq_factor" value="<?= $v('simple_stop_liq_factor', '0.15') ?>">
+                            <small class="text-secondary">Fraction of distance-to-liquidation for simple mode (> 0)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="brain_stop_corridor_factor" class="form-label">Brain Stop Corridor Factor</label>
+                            <input type="number" step="0.01" min="0.01" class="form-control" id="brain_stop_corridor_factor" name="brain_stop_corridor_factor" value="<?= $v('brain_stop_corridor_factor', '0.25') ?>">
+                            <small class="text-secondary">Corridor component weight for brain mode (> 0)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="brain_stop_volatility_factor" class="form-label">Brain Stop Volatility Factor</label>
+                            <input type="number" step="0.01" min="0.01" class="form-control" id="brain_stop_volatility_factor" name="brain_stop_volatility_factor" value="<?= $v('brain_stop_volatility_factor', '0.50') ?>">
+                            <small class="text-secondary">Volatility component weight for brain mode (> 0)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="brain_stop_liq_safety_factor" class="form-label">Brain Stop Liq Safety Factor</label>
+                            <input type="number" step="0.01" min="0.01" class="form-control" id="brain_stop_liq_safety_factor" name="brain_stop_liq_safety_factor" value="<?= $v('brain_stop_liq_safety_factor', '0.30') ?>">
+                            <small class="text-secondary">Liquidation safety component for brain mode (> 0)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Early Failure Guard -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <h5 style="margin: 0;">Early Failure Guard</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="early_failure_enabled" name="early_failure_enabled" value="1" <?= $checked('early_failure_enabled') ?>>
+                            <label class="form-check-label" for="early_failure_enabled">Early Failure Enabled</label>
+                            <br><small class="text-secondary">Cut obviously bad entries in the first minutes</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="early_failure_window_minutes" class="form-label">Early Failure Window (minutes)</label>
+                            <input type="number" step="1" min="1" class="form-control" id="early_failure_window_minutes" name="early_failure_window_minutes" value="<?= $v('early_failure_window_minutes', '5') ?>">
+                            <small class="text-secondary">Time window after entry to check for bad entry (>= 1)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="early_failure_max_adverse_roi" class="form-label">Early Failure Max Adverse ROI</label>
+                            <input type="number" step="0.001" max="-0.001" class="form-control" id="early_failure_max_adverse_roi" name="early_failure_max_adverse_roi" value="<?= $v('early_failure_max_adverse_roi', '-0.008') ?>">
+                            <small class="text-secondary">ROI threshold to trigger early failure (must be &lt; 0, e.g. -0.008 = -0.8%)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Action Buttons -->
         <div class="d-flex gap-2 mb-4">
             <button type="submit" class="btn btn-primary">

@@ -41,5 +41,15 @@ return [
         'hybrid_tp_share' => 0.40,
         'break_even_enabled' => true,
         'break_even_activation_roi' => 0.006,
+        // Stop Loss Engine V2
+        'stop_mode' => 'brain_managed',
+        'simple_stop_liq_factor' => 0.15,
+        'brain_stop_corridor_factor' => 0.25,
+        'brain_stop_volatility_factor' => 0.50,
+        'brain_stop_liq_safety_factor' => 0.30,
+        // Early Failure Guard
+        'early_failure_enabled' => true,
+        'early_failure_window_minutes' => 5,
+        'early_failure_max_adverse_roi' => -0.008,
     ],
 ];

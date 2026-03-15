@@ -149,6 +149,7 @@ $pageContent = function() use (
                                 'trailing_stop' => '#f59e0b',
                                 'break_even_stop' => '#3b82f6',
                                 'take_profit' => '#22c55e',
+                                'early_failure' => '#f97316',
                             ];
                             foreach ($exit_reasons as $reason => $count):
                                 $pct = $totalClosed > 0 ? ($count / $totalClosed) * 100 : 0;
@@ -245,12 +246,12 @@ $pageContent = function() use (
             <table class="table table-dark table-hover mb-0">
                 <thead><tr>
                     <th>Symbol</th><th>Entry Price</th><th>Current Price</th><th>ROI</th>
-                    <th>MAE</th><th>MFE</th><th>Exit Mode</th><th>Trailing</th><th>BE</th>
+                    <th>MAE</th><th>MFE</th><th>Exit Mode</th><th>Stop Mode</th><th>Trailing</th><th>BE</th>
                     <th>Leverage</th><th>Opened</th><th>State</th>
                 </tr></thead>
                 <tbody>
                     <?php if (empty($active)): ?>
-                        <tr><td colspan="12" class="text-center text-secondary py-4">No active positions</td></tr>
+                        <tr><td colspan="13" class="text-center text-secondary py-4">No active positions</td></tr>
                     <?php else: ?>
                         <?php foreach ($active as $row): ?>
                         <tr>
@@ -261,6 +262,7 @@ $pageContent = function() use (
                             <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['exit_mode'] ?? '-')) ?></td>
+                            <td><span class="badge bg-secondary"><?= htmlspecialchars((string)($row['stop_mode'] ?? '-')) ?></span></td>
                             <td><?= !empty($row['trailing_active']) ? '<span class="badge bg-info">ON</span>' : '-' ?></td>
                             <td><?= !empty($row['break_even_active']) ? '<span class="badge bg-success">ON</span>' : '-' ?></td>
                             <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
@@ -283,12 +285,12 @@ $pageContent = function() use (
             <table class="table table-dark table-hover mb-0">
                 <thead><tr>
                     <th>Symbol</th><th>Entry</th><th>Exit</th><th>ROI</th>
-                    <th>MAE</th><th>MFE</th><th>Exit Mode</th><th>Reason</th>
+                    <th>MAE</th><th>MFE</th><th>Exit Mode</th><th>Stop Mode</th><th>Reason</th>
                     <th>Duration</th><th>Opened</th><th>Closed</th><th>Result</th>
                 </tr></thead>
                 <tbody>
                     <?php if (empty($closed)): ?>
-                        <tr><td colspan="12" class="text-center text-secondary py-4">No closed positions</td></tr>
+                        <tr><td colspan="13" class="text-center text-secondary py-4">No closed positions</td></tr>
                     <?php else: ?>
                         <?php foreach ($closed as $row):
                             $roi = (float)($row['roi'] ?? 0);
@@ -302,6 +304,7 @@ $pageContent = function() use (
                             <td><?= htmlspecialchars((string)($row['mae'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['mfe'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['exit_mode'] ?? '-')) ?></td>
+                            <td><span class="badge bg-secondary"><?= htmlspecialchars((string)($row['stop_mode'] ?? '-')) ?></span></td>
                             <td>
                                 <?php
                                 $reason = (string)($row['reason'] ?? '-');
@@ -310,6 +313,7 @@ $pageContent = function() use (
                                     'trailing_stop' => 'bg-warning text-dark',
                                     'break_even_stop' => 'bg-info',
                                     'take_profit' => 'bg-success',
+                                    'early_failure' => 'bg-warning text-dark',
                                     default => 'bg-secondary',
                                 };
                                 ?>

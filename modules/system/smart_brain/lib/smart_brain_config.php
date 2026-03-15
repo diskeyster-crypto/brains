@@ -115,6 +115,16 @@ final class SmartBrainConfig
             // Exit Safety
             'break_even_enabled'           => !empty($values['break_even_enabled']),
             'break_even_activation_roi'    => (float)$values['break_even_activation_roi'],
+            // Stop Loss Engine V2
+            'stop_mode'                    => (string)$values['stop_mode'],
+            'simple_stop_liq_factor'       => (float)$values['simple_stop_liq_factor'],
+            'brain_stop_corridor_factor'   => (float)$values['brain_stop_corridor_factor'],
+            'brain_stop_volatility_factor' => (float)$values['brain_stop_volatility_factor'],
+            'brain_stop_liq_safety_factor' => (float)$values['brain_stop_liq_safety_factor'],
+            // Early Failure Guard
+            'early_failure_enabled'        => !empty($values['early_failure_enabled']),
+            'early_failure_window_minutes' => (int)$values['early_failure_window_minutes'],
+            'early_failure_max_adverse_roi' => (float)$values['early_failure_max_adverse_roi'],
         ];
 
         $dir = $this->moduleBase . '/runtime';
@@ -216,6 +226,31 @@ final class SmartBrainConfig
             $errors[] = 'break_even_activation_roi must be >= 0';
         }
 
+        // Stop Loss Engine V2 validation
+        $validStopModes = ['simple_liq_percent', 'brain_managed'];
+        if (isset($values['stop_mode']) && !in_array((string)$values['stop_mode'], $validStopModes, true)) {
+            $errors[] = 'stop_mode must be one of: simple_liq_percent, brain_managed';
+        }
+        if (isset($values['simple_stop_liq_factor']) && (float)$values['simple_stop_liq_factor'] <= 0) {
+            $errors[] = 'simple_stop_liq_factor must be > 0';
+        }
+        if (isset($values['brain_stop_corridor_factor']) && (float)$values['brain_stop_corridor_factor'] <= 0) {
+            $errors[] = 'brain_stop_corridor_factor must be > 0';
+        }
+        if (isset($values['brain_stop_volatility_factor']) && (float)$values['brain_stop_volatility_factor'] <= 0) {
+            $errors[] = 'brain_stop_volatility_factor must be > 0';
+        }
+        if (isset($values['brain_stop_liq_safety_factor']) && (float)$values['brain_stop_liq_safety_factor'] <= 0) {
+            $errors[] = 'brain_stop_liq_safety_factor must be > 0';
+        }
+        // Early Failure Guard validation
+        if (isset($values['early_failure_window_minutes']) && (int)$values['early_failure_window_minutes'] < 1) {
+            $errors[] = 'early_failure_window_minutes must be >= 1';
+        }
+        if (isset($values['early_failure_max_adverse_roi']) && (float)$values['early_failure_max_adverse_roi'] >= 0) {
+            $errors[] = 'early_failure_max_adverse_roi must be < 0';
+        }
+
         return $errors;
     }
 
@@ -272,6 +307,18 @@ final class SmartBrainConfig
             'exit_safety' => [
                 'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
                 'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+            ],
+            'stop_engine' => [
+                'stop_mode' => (string)($userLimits['stop_mode'] ?? 'brain_managed'),
+                'simple_stop_liq_factor' => (float)($userLimits['simple_stop_liq_factor'] ?? 0.15),
+                'brain_stop_corridor_factor' => (float)($userLimits['brain_stop_corridor_factor'] ?? 0.25),
+                'brain_stop_volatility_factor' => (float)($userLimits['brain_stop_volatility_factor'] ?? 0.50),
+                'brain_stop_liq_safety_factor' => (float)($userLimits['brain_stop_liq_safety_factor'] ?? 0.30),
+            ],
+            'early_failure' => [
+                'early_failure_enabled' => (bool)($userLimits['early_failure_enabled'] ?? false),
+                'early_failure_window_minutes' => (int)($userLimits['early_failure_window_minutes'] ?? 5),
+                'early_failure_max_adverse_roi' => (float)($userLimits['early_failure_max_adverse_roi'] ?? -0.008),
             ],
             'parser4' => $this->get('parser4', []),
             'corridor' => $this->getEffective('corridor'),

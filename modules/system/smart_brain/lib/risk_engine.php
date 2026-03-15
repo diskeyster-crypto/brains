@@ -88,6 +88,16 @@ final class RiskEngine
             'fixed_take_profit_roi'      => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
             'break_even_enabled'         => (bool)($userLimits['break_even_enabled'] ?? false),
             'break_even_activation_roi'  => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+            // Stop Loss Engine V2
+            'stop_mode'                    => (string)($userLimits['stop_mode'] ?? 'brain_managed'),
+            'simple_stop_liq_factor'       => (float)($userLimits['simple_stop_liq_factor'] ?? 0.15),
+            'brain_stop_corridor_factor'   => (float)($userLimits['brain_stop_corridor_factor'] ?? 0.25),
+            'brain_stop_volatility_factor' => (float)($userLimits['brain_stop_volatility_factor'] ?? 0.50),
+            'brain_stop_liq_safety_factor' => (float)($userLimits['brain_stop_liq_safety_factor'] ?? 0.30),
+            // Early Failure Guard
+            'early_failure_enabled'        => (bool)($userLimits['early_failure_enabled'] ?? false),
+            'early_failure_window_minutes' => (int)($userLimits['early_failure_window_minutes'] ?? 5),
+            'early_failure_max_adverse_roi' => (float)($userLimits['early_failure_max_adverse_roi'] ?? -0.008),
         ];
 
         $this->rejectionCounters = [

@@ -359,6 +359,11 @@ final class RiskEngine
         return null;
     }
 
+    // Dynamic Leverage V1 thresholds (configurable in future versions)
+    private const LEVERAGE_HIGH_VOLATILITY_THRESHOLD = 0.05;
+    private const LEVERAGE_WIDE_CORRIDOR_THRESHOLD = 0.10;
+    private const LEVERAGE_WEAK_RELIABILITY_THRESHOLD = 0.30;
+
     /**
      * Dynamic Leverage V1 — compute leverage based on signal quality and risk context.
      *
@@ -402,13 +407,13 @@ final class RiskEngine
         $leverage = $base;
 
         // Adjustment: high volatility reduces leverage
-        if ($volatility > 0.05) {
+        if ($volatility > self::LEVERAGE_HIGH_VOLATILITY_THRESHOLD) {
             $leverage--;
             $reasons[] = 'high_volatility(-1)';
         }
 
         // Adjustment: wide corridor reduces leverage
-        if ($corridorWidth > 0.10) {
+        if ($corridorWidth > self::LEVERAGE_WIDE_CORRIDOR_THRESHOLD) {
             $leverage--;
             $reasons[] = 'wide_corridor(-1)';
         }
@@ -420,7 +425,7 @@ final class RiskEngine
         }
 
         // Adjustment: weak reliability reduces leverage
-        if (!$isBootstrap && $reliabilityScore < 0.30) {
+        if (!$isBootstrap && $reliabilityScore < self::LEVERAGE_WEAK_RELIABILITY_THRESHOLD) {
             $leverage--;
             $reasons[] = 'weak_reliability(-1)';
         }

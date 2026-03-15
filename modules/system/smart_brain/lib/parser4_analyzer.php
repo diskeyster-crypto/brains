@@ -38,12 +38,17 @@ final class Parser4Analyzer
     private array $analyzerDebugLines = [];
 
     /**
-     * @param array<string,mixed> $cfg  Effective settings from config/parser4.php
+     * @param array<string,mixed> $cfg  Full parser4 config (settings + pattern_algorithms + analyzer_decision)
      * @param StateManager $state
      */
     public function __construct(array $cfg, StateManager $state)
     {
-        $this->cfg = $cfg;
+        // Support full parser4 config: extract settings sub-key for setting-level reads
+        if (isset($cfg['settings']) && is_array($cfg['settings'])) {
+            $this->cfg = $cfg['settings'];
+        } else {
+            $this->cfg = $cfg;
+        }
         $this->state = $state;
 
         $patternCfg = (array)($cfg['pattern_algorithms'] ?? []);
@@ -115,6 +120,14 @@ final class Parser4Analyzer
         $wTrend     = (float)($weights['trend_match_score'] ?? 0.20);
         $wCorridor  = (float)($weights['corridor_fit_score'] ?? 0.20);
         $wEntry     = (float)($weights['entry_quality_score'] ?? 0.20);
+
+        // Debug: log effective analyzer config to confirm config delivery
+        $this->analyzerDebugLines[] = sprintf(
+            'analyzer config: threshold=%.2f weights=[pattern=%.2f trend=%.2f corridor=%.2f entry=%.2f] pattern_mode=%s detectors=%d',
+            $threshold, $wPattern, $wTrend, $wCorridor, $wEntry,
+            $this->patternMode,
+            count($this->detectors)
+        );
 
         $symbols = $this->loadSymbols();
 

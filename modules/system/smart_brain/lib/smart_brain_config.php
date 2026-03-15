@@ -273,7 +273,7 @@ final class SmartBrainConfig
                 'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
                 'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
             ],
-            'parser4' => $this->getEffective('parser4'),
+            'parser4' => $this->get('parser4', []),
             'corridor' => $this->getEffective('corridor'),
             'risk_engine' => $this->getEffective('risk_engine'),
             'profiles' => $this->getEffective('profiles'),

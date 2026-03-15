@@ -87,7 +87,7 @@ final class SmartBrainCore
      */
     private function executePipeline(string $source, float $startTime): array
     {
-        $parser4Cfg = $this->config->getEffective('parser4');
+        $parser4Cfg = $this->config->get('parser4', []);
         $corridorCfg = $this->config->getEffective('corridor');
         $riskCfg = $this->config->getEffective('risk_engine');
         $profilesCfg = $this->config->getEffective('profiles');

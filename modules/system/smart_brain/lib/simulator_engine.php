@@ -106,6 +106,8 @@ final class SimulatorEngine
                 'corridor_fit_score'         => $signal['corridor_fit_score'] ?? 0.0,
                 'entry_quality_score'        => $signal['entry_quality_score'] ?? 0.0,
                 'analyzer_score'             => $signal['analyzer_score'] ?? 0.0,
+                // Dynamic leverage V1
+                'leverage_reason'            => $signal['leverage_reason'] ?? '',
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -185,7 +187,8 @@ final class SimulatorEngine
                     'corridor_fit_score'         => $w['corridor_fit_score'] ?? 0.0,
                     'entry_quality_score'        => $w['entry_quality_score'] ?? 0.0,
                     'analyzer_score'             => $w['analyzer_score'] ?? 0.0,
-
+                    // Dynamic leverage V1
+                    'leverage_reason'            => $w['leverage_reason'] ?? '',
                 ];
                 $activeSymbols[$symbol] = true;
             } else {
@@ -366,6 +369,7 @@ final class SimulatorEngine
                     'corridor_fit_score' => $a['corridor_fit_score'] ?? 0.0,
                     'entry_quality_score' => $a['entry_quality_score'] ?? 0.0,
                     'analyzer_score'     => $a['analyzer_score'] ?? 0.0,
+                    'leverage_reason'    => $a['leverage_reason'] ?? '',
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);

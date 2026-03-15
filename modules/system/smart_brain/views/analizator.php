@@ -167,7 +167,18 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                                     <?= $ap ? '✓' : '✗' ?>
                                 </span>
                             </td>
-                            <td><?= htmlspecialchars((string)($c['trend_bias'] ?? '-')) ?></td>
+                            <td>
+                                <?php
+                                    $candidateSide = strtolower((string)($c['side'] ?? ''));
+                                    if ($candidateSide === 'short') {
+                                        echo '<span class="badge" style="background:#ef4444;">▼ SHORT</span>';
+                                    } elseif ($candidateSide === 'long') {
+                                        echo '<span class="badge" style="background:#22c55e;">▲ LONG</span>';
+                                    } else {
+                                        echo htmlspecialchars((string)($c['trend_bias'] ?? '-'));
+                                    }
+                                ?>
+                            </td>
                             <td><?= htmlspecialchars((string)($c['corridor_low'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_high'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($c['corridor_width'] ?? '-')) ?></td>
@@ -239,11 +250,11 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Символ</th><th>Сторона</th><th>Зона входа</th><th>Коридор</th><th>Плечо</th><th>Бюджет</th><th>Стоп-лосс</th><th>Тейк-профит</th><th>Состояние</th></tr>
+                    <tr><th>#</th><th>Символ</th><th>Сторона</th><th>Зона входа</th><th>Коридор</th><th>Плечо</th><th>Причина плеча</th><th>Бюджет</th><th>Стоп-лосс</th><th>Тейк-профит</th><th>Состояние</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($signals)): ?>
-                        <tr><td colspan="10" class="text-center text-secondary py-4">Сигналы не сгенерированы</td></tr>
+                        <tr><td colspan="11" class="text-center text-secondary py-4">Сигналы не сгенерированы</td></tr>
                     <?php else: ?>
                         <?php foreach ($signals as $i => $s): ?>
                         <?php
@@ -259,6 +270,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                             <td><?= htmlspecialchars((string)($s['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['entry_zone_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($s['corridor_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['corridor_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($s['leverage'] ?? '-')) ?></td>
+                            <td><small class="text-secondary"><?= htmlspecialchars((string)($s['leverage_reason'] ?? '-')) ?></small></td>
                             <td><?= htmlspecialchars((string)($s['budget'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($s['stop_loss'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($s['take_profit'] ?? '-')) ?></td>

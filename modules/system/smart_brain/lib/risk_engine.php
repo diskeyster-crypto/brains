@@ -2,10 +2,19 @@
 declare(strict_types=1);
 
 /**
- * Risk Engine — Smart Brain Phase 6 + Stable Config Refactor
+ * Risk Engine — Smart Brain Phase 6 + Side & Leverage Fix
  *
  * Transforms monitored opportunities into trade-ready signals
  * with adaptive risk parameters based on passport data.
+ *
+ * Side determination:
+ *   Uses explicit side from pattern detection (monitor['side']).
+ *   Rejects signals where side cannot be resolved — no silent long fallback.
+ *
+ * Dynamic Leverage V1:
+ *   Base leverage from analyzer_score ladder.
+ *   Adjustments: volatility, corridor_width, bootstrap mode, reliability.
+ *   Clamped to [1, user max_leverage].
  *
  * Bootstrap mode:
  *   If passport.trades_total < warmup_min_trades AND bootstrap_enabled:
@@ -105,6 +114,7 @@ final class RiskEngine
             'rejected_low_reliability' => 0,
             'rejected_missing_passport' => 0,
             'rejected_missing_price' => 0,
+            'rejected_side_unresolved' => 0,
         ];
         $this->debugLines = [];
         $this->signalModeCounters = [
@@ -126,6 +136,16 @@ final class RiskEngine
                 $this->addDebugLine($symbol, 'status=' . $status);
                 continue;
             }
+
+            // Resolve explicit side — reject if unresolvable (no silent long fallback)
+            $side = $this->resolveExplicitSide($monitor);
+            if ($side === null) {
+                $this->rejectionCounters['rejected_side_unresolved']++;
+                $this->addDebugLine($symbol, 'side unresolved (pattern=' . ($monitor['pattern_algorithm'] ?? 'none') . ', trend_bias=' . ($monitor['trend_bias'] ?? '') . ')');
+                continue;
+            }
+
+            $this->addDebugLine($symbol, 'side=' . $side . ' from pattern ' . ($monitor['pattern_algorithm'] ?? 'none'));
 
             // Check if current price exists
             if (!isset($prices[$symbol]) || $prices[$symbol] <= 0.0) {
@@ -151,6 +171,10 @@ final class RiskEngine
                 $this->signalModeCounters['warmup_symbols_count']++;
             }
 
+            $analyzerScore = (float)($monitor['analyzer_score'] ?? 0.0);
+            $volatility = (float)($monitor['volatility'] ?? 0.0);
+            $corridorWidth = (float)($monitor['corridor_width'] ?? 0.0);
+
             // Determine signal mode: bootstrap or normal
             if (empty($passport) || $isWarmup) {
                 // Bootstrap path
@@ -170,8 +194,14 @@ final class RiskEngine
                     continue;
                 }
 
-                $corridorWidth = (float)($monitor['corridor_width'] ?? 0.0);
-                $leverage = min($bootstrapMaxLeverage, $maxLeverage);
+                // Dynamic Leverage V1 — bootstrap: capped at bootstrap_max_leverage
+                $leverageResult = $this->computeDynamicLeverage(
+                    $analyzerScore, $volatility, $corridorWidth,
+                    $reliabilityScore, true, $bootstrapMaxLeverage, $maxLeverage
+                );
+                $leverage = $leverageResult['leverage'];
+                $leverageReason = $leverageResult['reason'];
+
                 $budget = round($maxBudgetPerCoin * $bootstrapBudgetFactor, 2);
                 $stopLoss = round($corridorWidth * $stopLossRange, 6);
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
@@ -184,19 +214,20 @@ final class RiskEngine
                     'corridor_high' => $monitor['corridor_high'] ?? null,
                     'corridor_width' => $corridorWidth,
                     'leverage' => $leverage,
+                    'leverage_reason' => $leverageReason,
                     'budget' => $budget,
                     'stop_loss' => $stopLoss,
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'bootstrap',
                     'trend_bias' => (string)($monitor['trend_bias'] ?? ''),
-                    'side' => $this->deriveSide((string)($monitor['trend_bias'] ?? '')),
+                    'side' => $side,
                     'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                     'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
                     'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
-                    'analyzer_score' => (float)($monitor['analyzer_score'] ?? 0.0),
+                    'analyzer_score' => $analyzerScore,
                 ], $exitPolicy);
                 $bootstrapCount++;
                 $this->signalModeCounters['bootstrap_signals_count']++;
@@ -209,11 +240,13 @@ final class RiskEngine
                     continue;
                 }
 
-                $corridorWidth = (float)($monitor['corridor_width'] ?? 0.0);
-
-                // Calculate leverage: reliability_score × max_leverage, clamped [1, max_leverage]
-                $leverage = (int)round($reliabilityScore * $profileMaxLeverage);
-                $leverage = max(1, min($leverage, $profileMaxLeverage, $maxLeverage));
+                // Dynamic Leverage V1 — normal mode
+                $leverageResult = $this->computeDynamicLeverage(
+                    $analyzerScore, $volatility, $corridorWidth,
+                    $reliabilityScore, false, $profileMaxLeverage, $maxLeverage
+                );
+                $leverage = $leverageResult['leverage'];
+                $leverageReason = $leverageResult['reason'];
 
                 // Calculate budget: profile.budget × reliability_score, clamped ≤ max_budget_per_coin
                 $budget = round($profileBudget * $reliabilityScore, 2);
@@ -233,19 +266,20 @@ final class RiskEngine
                     'corridor_high' => $monitor['corridor_high'] ?? null,
                     'corridor_width' => $corridorWidth,
                     'leverage' => $leverage,
+                    'leverage_reason' => $leverageReason,
                     'budget' => $budget,
                     'stop_loss' => $stopLoss,
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'normal',
                     'trend_bias' => (string)($monitor['trend_bias'] ?? ''),
-                    'side' => $this->deriveSide((string)($monitor['trend_bias'] ?? '')),
+                    'side' => $side,
                     'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                     'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
                     'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
-                    'analyzer_score' => (float)($monitor['analyzer_score'] ?? 0.0),
+                    'analyzer_score' => $analyzerScore,
                 ], $exitPolicy);
                 $this->signalModeCounters['normal_signals_count']++;
             }
@@ -295,11 +329,108 @@ final class RiskEngine
     }
 
     /**
-     * Derive explicit trade side from trend_bias.
-     * up → long, down → short, default → long.
+     * Resolve explicit trade side from monitor data.
+     *
+     * Priority:
+     *   1. monitor['side'] (explicit from pattern detection)
+     *   2. Fallback to trend_bias if side not set
+     *
+     * Returns null if side cannot be determined — caller must reject signal.
+     * No silent default to 'long'.
      */
-    private function deriveSide(string $trendBias): string
+    private function resolveExplicitSide(array $monitor): ?string
     {
-        return $trendBias === 'down' ? 'short' : 'long';
+        // Priority 1: explicit side from pattern detection
+        $side = (string)($monitor['side'] ?? '');
+        if ($side === 'long' || $side === 'short') {
+            return $side;
+        }
+
+        // Priority 2: derive from trend_bias (backward compat for older data)
+        $trendBias = (string)($monitor['trend_bias'] ?? '');
+        if ($trendBias === 'up') {
+            return 'long';
+        }
+        if ($trendBias === 'down') {
+            return 'short';
+        }
+
+        // Cannot determine side — reject
+        return null;
+    }
+
+    /**
+     * Dynamic Leverage V1 — compute leverage based on signal quality and risk context.
+     *
+     * Base leverage from analyzer_score ladder:
+     *   score < 0.50     → 2x
+     *   0.50 <= score < 0.65 → 3x
+     *   0.65 <= score < 0.80 → 4x
+     *   score >= 0.80    → 5x
+     *
+     * Adjustments:
+     *   - high volatility (> 0.05)    → -1
+     *   - wide corridor (> 0.10)      → -1
+     *   - bootstrap mode              → clamp to bootstrap_max
+     *   - weak reliability (< 0.30)   → -1
+     *
+     * Final: clamped to [1, max_leverage]
+     *
+     * @return array{leverage:int,reason:string}
+     */
+    private function computeDynamicLeverage(
+        float $analyzerScore,
+        float $volatility,
+        float $corridorWidth,
+        float $reliabilityScore,
+        bool $isBootstrap,
+        int $modeMaxLeverage,
+        int $userMaxLeverage
+    ): array {
+        // Base leverage from analyzer_score ladder
+        if ($analyzerScore >= 0.80) {
+            $base = 5;
+        } elseif ($analyzerScore >= 0.65) {
+            $base = 4;
+        } elseif ($analyzerScore >= 0.50) {
+            $base = 3;
+        } else {
+            $base = 2;
+        }
+
+        $reasons = ['base=' . $base . '(score=' . number_format($analyzerScore, 2) . ')'];
+        $leverage = $base;
+
+        // Adjustment: high volatility reduces leverage
+        if ($volatility > 0.05) {
+            $leverage--;
+            $reasons[] = 'high_volatility(-1)';
+        }
+
+        // Adjustment: wide corridor reduces leverage
+        if ($corridorWidth > 0.10) {
+            $leverage--;
+            $reasons[] = 'wide_corridor(-1)';
+        }
+
+        // Adjustment: bootstrap mode caps leverage
+        if ($isBootstrap) {
+            $leverage = min($leverage, $modeMaxLeverage);
+            $reasons[] = 'bootstrap(max=' . $modeMaxLeverage . ')';
+        }
+
+        // Adjustment: weak reliability reduces leverage
+        if (!$isBootstrap && $reliabilityScore < 0.30) {
+            $leverage--;
+            $reasons[] = 'weak_reliability(-1)';
+        }
+
+        // Clamp to valid range
+        $leverage = max(1, min($leverage, $modeMaxLeverage, $userMaxLeverage));
+
+        return [
+            'leverage' => $leverage,
+            'reason' => implode(' + ', $reasons),
+        ];
     }
 }

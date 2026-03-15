@@ -219,6 +219,15 @@ final class Parser4Analyzer
                 continue;
             }
 
+            // Derive explicit side from pattern algorithm + trend_bias
+            $side = $this->deriveSideFromPattern($patternAlgorithm, $patternTrendBias);
+
+            // Reject candidate if side cannot be resolved
+            if ($side === null) {
+                $this->addAnalyzerDebug($symbol, 'side unresolved (pattern=' . $patternAlgorithm . ', trend_bias=' . $patternTrendBias . ')');
+                continue;
+            }
+
             $candidate = [
                 'symbol' => $symbol,
                 'corridor_low' => $corridor['low'],
@@ -227,6 +236,7 @@ final class Parser4Analyzer
                 'volatility' => $volatility,
                 'strength' => $strength,
                 'trend_bias' => $patternTrendBias,
+                'side' => $side,
                 'history_points' => count($history),
                 'last_price' => $lastPrice,
                 'pattern_algorithm' => $patternAlgorithm,
@@ -274,6 +284,34 @@ final class Parser4Analyzer
         if (count($this->analyzerDebugLines) < 200) {
             $this->analyzerDebugLines[] = $symbol . ' rejected: ' . $reason;
         }
+    }
+
+    /**
+     * Derive explicit trade side from pattern algorithm and trend_bias.
+     *
+     * double_bottom                → long
+     * double_top                   → short
+     * pullback_trend_continue up   → long
+     * pullback_trend_continue down → short
+     *
+     * Returns null if side cannot be determined (reject candidate).
+     */
+    private function deriveSideFromPattern(string $patternAlgorithm, string $trendBias): ?string
+    {
+        return match ($patternAlgorithm) {
+            'double_bottom' => 'long',
+            'double_top' => 'short',
+            'pullback_trend_continue' => match ($trendBias) {
+                'up' => 'long',
+                'down' => 'short',
+                default => null,
+            },
+            default => match ($trendBias) {
+                'up' => 'long',
+                'down' => 'short',
+                default => null,
+            },
+        };
     }
 
     // ------------------------------------------------------------------

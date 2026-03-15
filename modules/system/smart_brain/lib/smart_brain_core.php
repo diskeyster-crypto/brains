@@ -132,7 +132,7 @@ final class SmartBrainCore
         $corridor = new CorridorMonitor($corridorCfg);
         $monitors = $corridor->buildMonitors($candidates, $prices);
 
-        // Enrich monitors with trend_bias from candidates (for side derivation)
+        // Enrich monitors with trend_bias and side from candidates
         $candidateBySymbol = [];
         foreach ($candidates as $c) {
             $sym = (string)($c['symbol'] ?? '');
@@ -144,6 +144,10 @@ final class SmartBrainCore
             $sym = (string)($m['symbol'] ?? '');
             if (isset($candidateBySymbol[$sym])) {
                 $m['trend_bias'] = (string)($candidateBySymbol[$sym]['trend_bias'] ?? '');
+                // Propagate explicit side from pattern detection
+                if (isset($candidateBySymbol[$sym]['side']) && $candidateBySymbol[$sym]['side'] !== '') {
+                    $m['side'] = (string)$candidateBySymbol[$sym]['side'];
+                }
             }
         }
         unset($m);

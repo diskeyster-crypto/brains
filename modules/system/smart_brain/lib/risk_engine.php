@@ -189,6 +189,8 @@ final class RiskEngine
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'bootstrap',
+                    'trend_bias' => (string)($monitor['trend_bias'] ?? ''),
+                    'side' => $this->deriveSide((string)($monitor['trend_bias'] ?? '')),
                     'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                     'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
@@ -236,6 +238,8 @@ final class RiskEngine
                     'take_profit' => $takeProfit,
                     'status' => 'waiting',
                     'signal_mode' => 'normal',
+                    'trend_bias' => (string)($monitor['trend_bias'] ?? ''),
+                    'side' => $this->deriveSide((string)($monitor['trend_bias'] ?? '')),
                     'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                     'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
@@ -288,5 +292,14 @@ final class RiskEngine
         if (count($this->debugLines) < 200) {
             $this->debugLines[] = $symbol . ' rejected: ' . $reason;
         }
+    }
+
+    /**
+     * Derive explicit trade side from trend_bias.
+     * up → long, down → short, default → long.
+     */
+    private function deriveSide(string $trendBias): string
+    {
+        return $trendBias === 'down' ? 'short' : 'long';
     }
 }

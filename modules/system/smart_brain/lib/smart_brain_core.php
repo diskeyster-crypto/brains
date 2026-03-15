@@ -131,6 +131,23 @@ final class SmartBrainCore
         // Corridor Monitor uses real prices for price_position / status
         $corridor = new CorridorMonitor($corridorCfg);
         $monitors = $corridor->buildMonitors($candidates, $prices);
+
+        // Enrich monitors with trend_bias from candidates (for side derivation)
+        $candidateBySymbol = [];
+        foreach ($candidates as $c) {
+            $sym = (string)($c['symbol'] ?? '');
+            if ($sym !== '') {
+                $candidateBySymbol[$sym] = $c;
+            }
+        }
+        foreach ($monitors as &$m) {
+            $sym = (string)($m['symbol'] ?? '');
+            if (isset($candidateBySymbol[$sym])) {
+                $m['trend_bias'] = (string)($candidateBySymbol[$sym]['trend_bias'] ?? '');
+            }
+        }
+        unset($m);
+
         $this->state->writeJson('storage/monitors.json', $monitors);
 
         $passports = new CoinPassportEngine($this->state);
@@ -441,6 +458,19 @@ final class SmartBrainCore
             else $roiBuckets['> 5%']++;
         }
 
+        // Side-based analytics
+        $sideSummary = ['long' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0], 'short' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0]];
+        foreach ($closed as $trade) {
+            $side = (string)($trade['side'] ?? 'long');
+            $roi = (float)($trade['roi'] ?? 0);
+            $key = ($side === 'short') ? 'short' : 'long';
+            $sideSummary[$key]['count']++;
+            $sideSummary[$key]['roi_sum'] += $roi;
+            if ($roi > 0) {
+                $sideSummary[$key]['wins']++;
+            }
+        }
+
         return [
             'waiting' => $waiting,
             'active'  => $active,
@@ -455,6 +485,7 @@ final class SmartBrainCore
             'wins' => $wins,
             'losses' => $losses,
             'roi_buckets' => $roiBuckets,
+            'side_summary' => $sideSummary,
         ];
     }
 

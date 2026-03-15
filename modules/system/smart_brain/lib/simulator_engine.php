@@ -75,6 +75,8 @@ final class SimulatorEngine
                 'stoploss'       => $signal['stop_loss'] ?? $signal['stoploss'] ?? null,
                 'takeprofit'     => $signal['take_profit'] ?? $signal['takeprofit'] ?? null,
                 'status'         => 'waiting',
+                'side'           => $signal['side'] ?? 'long',
+                'trend_bias'     => $signal['trend_bias'] ?? '',
                 // Exit policy fields
                 'exit_mode'                  => $signal['exit_mode'] ?? 'fixed_tp',
                 'stop_floor_type'            => $signal['stop_floor_type'] ?? 'roi_percent',
@@ -150,6 +152,8 @@ final class SimulatorEngine
                     'mfe'           => 0.0,
                     'opened_at'     => date('c'),
                     'status'        => 'active',
+                    'side'          => $w['side'] ?? 'long',
+                    'trend_bias'    => $w['trend_bias'] ?? '',
                     // Exit policy state
                     'exit_mode'                  => $w['exit_mode'] ?? 'fixed_tp',
                     'stop_floor'                 => $stopFloor,
@@ -198,13 +202,19 @@ final class SimulatorEngine
             $price      = $prices[$symbol] ?? (float)($a['current_price'] ?? 0.0);
             $stoploss   = (float)($a['stoploss'] ?? 0.0);
             $takeprofit = (float)($a['takeprofit'] ?? 0.0);
+            $side       = (string)($a['side'] ?? 'long');
 
             if ($entryPrice <= 0.0) {
                 $newActive[] = $a;
                 continue;
             }
 
-            $roi = ($price - $entryPrice) / $entryPrice;
+            // Side-aware ROI calculation
+            if ($side === 'short') {
+                $roi = ($entryPrice - $price) / $entryPrice;
+            } else {
+                $roi = ($price - $entryPrice) / $entryPrice;
+            }
             $oldMae = (float)($a['mae'] ?? 0.0);
             $oldMfe = (float)($a['mfe'] ?? 0.0);
 
@@ -343,6 +353,8 @@ final class SimulatorEngine
                     'reason'      => $closedReason,
                     'exit_mode'   => $a['exit_mode'] ?? 'fixed_tp',
                     'stop_mode'   => $a['stop_mode'] ?? 'brain_managed',
+                    'side'        => $a['side'] ?? 'long',
+                    'trend_bias'  => $a['trend_bias'] ?? '',
                     'opened_at'   => $openedAt,
                     'closed_at'   => $closedAt,
                     'status'      => 'closed',

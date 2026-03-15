@@ -360,36 +360,36 @@ final class Parser4Analyzer
 
         if ($patternTrendBias === 'up') {
             // For bullish patterns, better if price is in the lower half (buy low)
-            // Ideal zone: 0.1 to 0.4
+            // Ideal zone: 0.1 to 0.5 — soft penalty outside, floor at 0.35
             if ($position < 0.0) {
-                return round(max(0.1, 0.5 + $position), 4); // slightly below corridor
+                return round(max(0.35, 0.55 + $position), 4);
             }
-            if ($position <= 0.4) {
-                return round(0.6 + (0.4 - abs($position - 0.2)) * 1.0, 4);
+            if ($position <= 0.5) {
+                return round(0.65 + (0.35 - abs($position - 0.25)) * 0.8, 4);
             }
-            if ($position <= 0.7) {
-                return round(max(0.3, 0.7 - ($position - 0.4) * 1.0), 4);
+            if ($position <= 0.8) {
+                return round(max(0.45, 0.75 - ($position - 0.5) * 0.8), 4);
             }
-            return round(max(0.1, 0.4 - ($position - 0.7) * 1.0), 4);
+            return round(max(0.35, 0.55 - ($position - 0.8) * 0.5), 4);
         }
 
         if ($patternTrendBias === 'down') {
             // For bearish patterns, better if price is in the upper half (sell high)
-            // Ideal zone: 0.6 to 0.9
+            // Ideal zone: 0.5 to 0.9 — soft penalty outside, floor at 0.35
             if ($position > 1.0) {
-                return round(max(0.1, 0.5 - ($position - 1.0)), 4);
+                return round(max(0.35, 0.55 - ($position - 1.0) * 0.5), 4);
             }
-            if ($position >= 0.6) {
-                return round(0.6 + (0.4 - abs($position - 0.8)) * 1.0, 4);
+            if ($position >= 0.5) {
+                return round(0.65 + (0.35 - abs($position - 0.75)) * 0.8, 4);
             }
-            if ($position >= 0.3) {
-                return round(max(0.3, 0.7 - (0.6 - $position) * 1.0), 4);
+            if ($position >= 0.2) {
+                return round(max(0.45, 0.75 - (0.5 - $position) * 0.8), 4);
             }
-            return round(max(0.1, 0.4 - (0.3 - $position) * 1.0), 4);
+            return round(max(0.35, 0.55 - (0.2 - $position) * 0.5), 4);
         }
 
-        // Flat/neutral — prefer mid-corridor
-        return round(max(0.3, 1.0 - abs($position - 0.5) * 1.5), 4);
+        // Flat/neutral — prefer mid-corridor, soft penalty at extremes
+        return round(max(0.4, 1.0 - abs($position - 0.5) * 1.0), 4);
     }
 
     /**

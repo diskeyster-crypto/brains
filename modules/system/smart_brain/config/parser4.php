@@ -26,11 +26,11 @@ return [
 
     'analyzer_decision' => [
         'enabled' => true,
-        'threshold' => 0.65,
+        'threshold' => 0.45,
         'weights' => [
-            'pattern_confidence' => 0.40,
+            'pattern_confidence' => 0.50,
             'trend_match_score' => 0.20,
-            'corridor_fit_score' => 0.20,
+            'corridor_fit_score' => 0.10,
             'entry_quality_score' => 0.20,
         ],
     ],

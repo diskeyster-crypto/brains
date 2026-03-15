@@ -1,8 +1,8 @@
 <?php
 /**
  * Smart Brain Module - Analyzer View
- * 
- * Phase 3: Parser4 Analyzer display.
+ *
+ * Simulator UI Clarity V3: Russian labels.
  * Candidate fields: symbol, corridor_low, corridor_high, corridor_width, volatility, strength, trend_bias
  */
 
@@ -12,7 +12,7 @@
 /** @var array<int,array<string,mixed>> $monitors */
 /** @var array<string,mixed> $last_run */
 
-$pageTitle = 'Smart Brain - Analyzer';
+$pageTitle = 'Smart Brain - Анализатор';
 $activeTab = 'analizator';
 
 $extraStyles = '
@@ -23,7 +23,15 @@ $extraStyles = '
 .status-waiting { background: rgba(148,163,184,0.15); color: #94a3b8; }
 ';
 
-$pageContent = function() use ($candidates, $signals, $monitors, $last_run, $smartBrainUrl) {
+/**
+ * Helper: Bybit symbol link
+ */
+$symbolLink = function(string $symbol): string {
+    $safe = htmlspecialchars($symbol);
+    return '<a href="https://www.bybit.com/trade/usdt/' . $safe . '" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none fw-bold">' . $safe . '</a>';
+};
+
+$pageContent = function() use ($candidates, $signals, $monitors, $last_run, $smartBrainUrl, $symbolLink) {
     $statusClass = function(string $status): string {
         return match($status) {
             'monitoring' => 'status-monitoring',
@@ -37,41 +45,41 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h4 class="mb-1"><i class="bi bi-graph-up me-2 text-primary"></i>Analyzer</h4>
-            <p class="text-secondary mb-0">Analysis pipeline: Candidates → Monitors → Signals</p>
+            <h4 class="mb-1"><i class="bi bi-graph-up me-2 text-primary"></i>Анализатор</h4>
+            <p class="text-secondary mb-0">Пайплайн анализа: Кандидаты → Мониторы → Сигналы</p>
         </div>
         <div>
-            <span class="badge bg-primary fs-6"><?= count($candidates) ?> Candidates</span>
-            <span class="badge bg-warning fs-6 ms-1"><?= count($monitors) ?> Monitors</span>
-            <span class="badge bg-success fs-6 ms-1"><?= count($signals) ?> Signals</span>
+            <span class="badge bg-primary fs-6"><?= count($candidates) ?> Кандидаты</span>
+            <span class="badge bg-warning fs-6 ms-1"><?= count($monitors) ?> Мониторы</span>
+            <span class="badge bg-success fs-6 ms-1"><?= count($signals) ?> Сигналы</span>
         </div>
     </div>
 
     <!-- Pipeline Summary -->
     <div class="card mb-4">
         <div class="card-header">
-            <h5 style="margin: 0;"><i class="bi bi-diagram-3 me-1"></i> Pipeline Overview</h5>
+            <h5 style="margin: 0;"><i class="bi bi-diagram-3 me-1"></i> Обзор пайплайна</h5>
         </div>
         <div class="card-body">
             <div class="row text-center">
                 <div class="col">
                     <div style="padding:12px; border-radius:8px; background:rgba(59,130,246,0.1);">
                         <h3 style="color:var(--primary); margin:0;"><?= count($candidates) ?></h3>
-                        <small class="text-secondary">Parser4 Candidates</small>
+                        <small class="text-secondary">Кандидаты Parser4</small>
                     </div>
                 </div>
                 <div class="col-auto d-flex align-items-center"><i class="bi bi-arrow-right text-secondary fs-4"></i></div>
                 <div class="col">
                     <div style="padding:12px; border-radius:8px; background:rgba(245,158,11,0.1);">
                         <h3 style="color:#f59e0b; margin:0;"><?= count($monitors) ?></h3>
-                        <small class="text-secondary">Corridor Monitors</small>
+                        <small class="text-secondary">Мониторы коридора</small>
                     </div>
                 </div>
                 <div class="col-auto d-flex align-items-center"><i class="bi bi-arrow-right text-secondary fs-4"></i></div>
                 <div class="col">
                     <div style="padding:12px; border-radius:8px; background:rgba(16,185,129,0.1);">
                         <h3 style="color:#10b981; margin:0;"><?= count($signals) ?></h3>
-                        <small class="text-secondary">Signals Built</small>
+                        <small class="text-secondary">Сигналы</small>
                     </div>
                 </div>
             </div>
@@ -81,7 +89,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
     <!-- Candidates Table (Pattern-First Decision Flow) -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 style="margin: 0;"><i class="bi bi-search me-1"></i> Candidates</h5>
+            <h5 style="margin: 0;"><i class="bi bi-search me-1"></i> Кандидаты</h5>
             <span class="badge bg-primary"><?= count($candidates) ?></span>
         </div>
         <div class="card-body p-0" style="overflow-x: auto;">
@@ -89,26 +97,26 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th>Symbol</th>
-                        <th>Pattern</th>
-                        <th>Pat.Conf</th>
-                        <th>Trend Match</th>
-                        <th>Corr.Fit</th>
-                        <th>Entry Q.</th>
-                        <th>Score</th>
-                        <th>Pass</th>
-                        <th>Trend</th>
-                        <th>Corr.Low</th>
-                        <th>Corr.High</th>
-                        <th>Width</th>
-                        <th>Vol</th>
-                        <th>Str</th>
-                        <th>Pts</th>
+                        <th>Символ</th>
+                        <th>Паттерн</th>
+                        <th>Уверен.</th>
+                        <th>Тренд</th>
+                        <th>Корр.Фит</th>
+                        <th>Кач.Входа</th>
+                        <th>Оценка</th>
+                        <th>Пройден</th>
+                        <th>Направление</th>
+                        <th>Корр.Low</th>
+                        <th>Корр.High</th>
+                        <th>Ширина</th>
+                        <th>Волат.</th>
+                        <th>Сила</th>
+                        <th>Точки</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($candidates)): ?>
-                        <tr><td colspan="16" class="text-center text-secondary py-4">No candidates in last cycle</td></tr>
+                        <tr><td colspan="16" class="text-center text-secondary py-4">Нет кандидатов в последнем цикле</td></tr>
                     <?php else: ?>
                         <?php foreach ($candidates as $i => $c): ?>
                         <?php
@@ -123,7 +131,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                         ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
-                            <td><strong><?= htmlspecialchars((string)($c['symbol'] ?? '')) ?></strong></td>
+                            <td><?= $symbolLink((string)($c['symbol'] ?? '')) ?></td>
                             <td>
                                 <span class="badge <?= $algo !== 'none' ? 'bg-info' : 'bg-secondary' ?>">
                                     <?= htmlspecialchars($algo) ?>
@@ -181,17 +189,17 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
     <!-- Monitors Table -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 style="margin: 0;"><i class="bi bi-binoculars me-1"></i> Monitors</h5>
+            <h5 style="margin: 0;"><i class="bi bi-binoculars me-1"></i> Мониторы</h5>
             <span class="badge bg-warning"><?= count($monitors) ?></span>
         </div>
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Pattern</th><th>Corridor Low</th><th>Corridor High</th><th>Width</th><th>Entry Low</th><th>Entry High</th><th>Price Pos</th><th>Status</th><th>Rejection Reason</th></tr>
+                    <tr><th>#</th><th>Символ</th><th>Паттерн</th><th>Корр. Low</th><th>Корр. High</th><th>Ширина</th><th>Вход Low</th><th>Вход High</th><th>Позиция цены</th><th>Состояние</th><th>Причина отклонения</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($monitors)): ?>
-                        <tr><td colspan="11" class="text-center text-secondary py-4">No monitors</td></tr>
+                        <tr><td colspan="11" class="text-center text-secondary py-4">Нет мониторов</td></tr>
                     <?php else: ?>
                         <?php foreach ($monitors as $i => $m): ?>
                         <?php
@@ -204,7 +212,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                         ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
-                            <td><strong><?= htmlspecialchars((string)($m['symbol'] ?? '')) ?></strong></td>
+                            <td><?= $symbolLink((string)($m['symbol'] ?? '')) ?></td>
                             <td><span class="badge bg-info"><?= htmlspecialchars((string)($m['pattern_algorithm'] ?? 'none')) ?></span></td>
                             <td><?= htmlspecialchars((string)($m['corridor_low'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($m['corridor_high'] ?? '')) ?></td>
@@ -225,22 +233,29 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
     <!-- Signals Table (Phase 7 fields) -->
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 style="margin: 0;"><i class="bi bi-broadcast me-1"></i> Signals</h5>
+            <h5 style="margin: 0;"><i class="bi bi-broadcast me-1"></i> Сигналы</h5>
             <span class="badge bg-success"><?= count($signals) ?></span>
         </div>
         <div class="card-body p-0">
             <table class="table table-dark table-hover mb-0">
                 <thead>
-                    <tr><th>#</th><th>Symbol</th><th>Entry Zone</th><th>Corridor</th><th>Leverage</th><th>Budget</th><th>Stop Loss</th><th>Take Profit</th><th>Status</th></tr>
+                    <tr><th>#</th><th>Символ</th><th>Сторона</th><th>Зона входа</th><th>Коридор</th><th>Плечо</th><th>Бюджет</th><th>Стоп-лосс</th><th>Тейк-профит</th><th>Состояние</th></tr>
                 </thead>
                 <tbody>
                     <?php if (empty($signals)): ?>
-                        <tr><td colspan="9" class="text-center text-secondary py-4">No signals generated</td></tr>
+                        <tr><td colspan="10" class="text-center text-secondary py-4">Сигналы не сгенерированы</td></tr>
                     <?php else: ?>
                         <?php foreach ($signals as $i => $s): ?>
+                        <?php
+                            $side = strtolower((string)($s['side'] ?? 'long'));
+                            $sideBadgeHtml = ($side === 'short')
+                                ? '<span class="badge" style="background:#ef4444;">▼ SHORT</span>'
+                                : '<span class="badge" style="background:#22c55e;">▲ LONG</span>';
+                        ?>
                         <tr>
                             <td><?= $i + 1 ?></td>
-                            <td><strong><?= htmlspecialchars((string)($s['symbol'] ?? '')) ?></strong></td>
+                            <td><?= $symbolLink((string)($s['symbol'] ?? '')) ?></td>
+                            <td><?= $sideBadgeHtml ?></td>
                             <td><?= htmlspecialchars((string)($s['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['entry_zone_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($s['corridor_low'] ?? '')) ?> → <?= htmlspecialchars((string)($s['corridor_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($s['leverage'] ?? '-')) ?></td>

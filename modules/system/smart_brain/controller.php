@@ -127,6 +127,19 @@ final class SmartBrainController
     }
 
     /**
+     * Simulator Analytics page
+     * GET /admin/smart_brain/simulator_analytics
+     */
+    public function simulatorAnalytics(): void
+    {
+        $data = $this->service->getSimulatorAnalyticsData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/simulator_analytics.php';
+    }
+
+    /**
      * Coin Passports page
      * GET /admin/smart_brain/passports
      */

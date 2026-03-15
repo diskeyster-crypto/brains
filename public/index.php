@@ -1038,6 +1038,11 @@ Router::get('/admin/smart_brain/simulator', function () {
     $controller->simulator();
 });
 
+Router::get('/admin/smart_brain/simulator_analytics', function () {
+    $controller = new SmartBrainController();
+    $controller->simulatorAnalytics();
+});
+
 Router::get('/admin/smart_brain/passports', function () {
     $controller = new SmartBrainController();
     $controller->passports();

@@ -62,7 +62,7 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                     <?php else: ?>
                         <?php foreach ($waiting as $row): ?>
                         <tr>
-                            <td><strong><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></strong></td>
+                            <td><strong><a href="https://www.bybit.com/trade/usdt/<?= htmlspecialchars((string)($row['symbol'] ?? '')) ?>" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none"><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></a></strong></td>
                             <td><?= htmlspecialchars((string)($row['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($row['entry_zone_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($row['budget'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
@@ -88,7 +88,7 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                     <?php else: ?>
                         <?php foreach ($active as $row): ?>
                         <tr>
-                            <td><strong><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></strong></td>
+                            <td><strong><a href="https://www.bybit.com/trade/usdt/<?= htmlspecialchars((string)($row['symbol'] ?? '')) ?>" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none"><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></a></strong></td>
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['current_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['roi'] ?? '-')) ?></td>
@@ -119,7 +119,7 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                     <?php else: ?>
                         <?php foreach ($closed as $row): ?>
                         <tr>
-                            <td><strong><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></strong></td>
+                            <td><strong><a href="https://www.bybit.com/trade/usdt/<?= htmlspecialchars((string)($row['symbol'] ?? '')) ?>" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none"><?= htmlspecialchars((string)($row['symbol'] ?? '')) ?></a></strong></td>
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['exit_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['roi'] ?? '-')) ?></td>

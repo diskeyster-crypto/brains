@@ -93,6 +93,14 @@ final class SmartBrainService
     /**
      * @return array<string,mixed>
      */
+    public function getSimulatorAnalyticsData(): array
+    {
+        return $this->core->getSimulatorAnalyticsData();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
     public function getPassportsData(): array
     {
         return $this->core->getPassportsData();

@@ -391,6 +391,76 @@ final class SmartBrainCore
     /**
      * @return array<string,mixed>
      */
+    public function getSimulatorAnalyticsData(): array
+    {
+        $waiting = $this->state->readJson('storage/simulator/waiting.json', []);
+        $active  = $this->state->readJson('storage/simulator/active.json', []);
+        $closed  = $this->state->readJson('storage/simulator/closed.json', []);
+        $stats   = $this->state->readJson('storage/simulator/stats.json', []);
+
+        // Exit reason counts
+        $exitReasons = [];
+        foreach ($closed as $trade) {
+            $reason = (string)($trade['reason'] ?? 'unknown');
+            $exitReasons[$reason] = ($exitReasons[$reason] ?? 0) + 1;
+        }
+
+        // ROI aggregates for closed trades
+        $closedRois = array_map(fn($t) => (float)($t['roi'] ?? 0), $closed);
+        $avgRoi = count($closedRois) > 0 ? array_sum($closedRois) / count($closedRois) : 0;
+        sort($closedRois);
+        $medianRoi = 0;
+        if (count($closedRois) > 0) {
+            $mid = (int)floor(count($closedRois) / 2);
+            $medianRoi = count($closedRois) % 2 === 0
+                ? ($closedRois[$mid - 1] + $closedRois[$mid]) / 2
+                : $closedRois[$mid];
+        }
+
+        // MAE/MFE/duration averages for closed trades
+        $closedMae = array_map(fn($t) => (float)($t['mae'] ?? 0), $closed);
+        $closedMfe = array_map(fn($t) => (float)($t['mfe'] ?? 0), $closed);
+        $closedDur = array_map(fn($t) => (float)($t['duration'] ?? 0), $closed);
+        $avgMae = count($closedMae) > 0 ? array_sum($closedMae) / count($closedMae) : 0;
+        $avgMfe = count($closedMfe) > 0 ? array_sum($closedMfe) / count($closedMfe) : 0;
+        $avgDuration = count($closedDur) > 0 ? array_sum($closedDur) / count($closedDur) : 0;
+
+        // Win/loss counts
+        $wins = count(array_filter($closedRois, fn($r) => $r > 0));
+        $losses = count($closedRois) - $wins;
+
+        // ROI distribution buckets for chart
+        $roiBuckets = ['< -5%' => 0, '-5% to -2%' => 0, '-2% to 0%' => 0, '0% to 2%' => 0, '2% to 5%' => 0, '> 5%' => 0];
+        foreach ($closedRois as $roi) {
+            $pct = $roi * 100;
+            if ($pct < -5) $roiBuckets['< -5%']++;
+            elseif ($pct < -2) $roiBuckets['-5% to -2%']++;
+            elseif ($pct < 0) $roiBuckets['-2% to 0%']++;
+            elseif ($pct < 2) $roiBuckets['0% to 2%']++;
+            elseif ($pct < 5) $roiBuckets['2% to 5%']++;
+            else $roiBuckets['> 5%']++;
+        }
+
+        return [
+            'waiting' => $waiting,
+            'active'  => $active,
+            'closed'  => $closed,
+            'stats'   => $stats,
+            'exit_reasons' => $exitReasons,
+            'avg_roi' => $avgRoi,
+            'median_roi' => $medianRoi,
+            'avg_mae' => $avgMae,
+            'avg_mfe' => $avgMfe,
+            'avg_duration' => $avgDuration,
+            'wins' => $wins,
+            'losses' => $losses,
+            'roi_buckets' => $roiBuckets,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
     public function getPassportsData(): array
     {
         $passportsDir = $this->moduleBase . '/storage/passports';

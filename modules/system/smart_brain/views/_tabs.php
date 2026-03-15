@@ -36,6 +36,11 @@ $activeTab = $activeTab ?? 'dashboard';
         </a>
     </li>
     <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'simulator_analytics' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/simulator_analytics">
+            <i class="bi bi-graph-up-arrow me-1"></i> Sim Analytics
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link <?= $activeTab === 'passports' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/passports">
             <i class="bi bi-card-checklist me-1"></i> Coin Passports
         </a>

@@ -189,8 +189,6 @@ final class Parser4Analyzer
 
             if ($decisionEnabled && $analyzerScore < $threshold) {
                 $analyzerPass = false;
-                $rejectionReason = 'analyzer_score ' . number_format($analyzerScore, 4)
-                    . ' below threshold ' . number_format($threshold, 2);
 
                 // Build detailed reason breakdown
                 if ($trendMatchScore < 0.4) {

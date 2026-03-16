@@ -12,6 +12,7 @@ require_once __DIR__ . '/signal_builder.php';
 require_once __DIR__ . '/simulator_engine.php';
 require_once __DIR__ . '/smart_brain_runtime.php';
 require_once __DIR__ . '/price_feed.php';
+require_once __DIR__ . '/symbol_intelligence.php';
 
 final class SmartBrainCore
 {
@@ -102,6 +103,17 @@ final class SmartBrainCore
         $parser = new Parser4Analyzer($parser4Cfg, $this->state);
         $candidates = $parser->run();
 
+        // Symbol Intelligence: filter candidates by user-selected mode
+        $symbolIntelEnabled = (bool)($userLimits['symbol_intelligence_enabled'] ?? false);
+        $symbolFilterMode = (string)($userLimits['symbol_filter_mode'] ?? 'all');
+        $symbolIntelFiltered = 0;
+        if ($symbolIntelEnabled && $symbolFilterMode !== 'all') {
+            $symbolIntel = new SymbolIntelligence($this->state);
+            $beforeCount = count($candidates);
+            $candidates = $symbolIntel->filterCandidates($candidates, $symbolFilterMode);
+            $symbolIntelFiltered = $beforeCount - count($candidates);
+        }
+
         // Write analyzer debug log (Pattern-First Decision Flow)
         $analyzerDebugLines = $parser->getAnalyzerDebugLines();
         if ($analyzerDebugLines !== []) {
@@ -174,6 +186,10 @@ final class SmartBrainCore
         $simulator->tick($signals, $prices);
         $stats = $simulator->computeStats();
 
+        // Rebuild symbol intelligence from updated closed trades
+        $symbolIntelRebuild = new SymbolIntelligence($this->state);
+        $symbolIntelRebuild->rebuild();
+
         $runtime = new SmartBrainRuntime($this->state);
         $runtime->snapshot($this->config->all());
 
@@ -220,6 +236,9 @@ final class SmartBrainCore
             'bootstrap_signals_count' => $signalModeCounters['bootstrap_signals_count'] ?? 0,
             'warmup_symbols_count' => $signalModeCounters['warmup_symbols_count'] ?? 0,
             'normal_signals_count' => $signalModeCounters['normal_signals_count'] ?? 0,
+            // Symbol Intelligence
+            'symbol_intel_filtered' => $symbolIntelFiltered,
+            'symbol_filter_mode' => $symbolFilterMode,
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -386,6 +405,8 @@ final class SmartBrainCore
             'user_limits' => $userLimits,
             'patterns_enabled' => $patternsEnabled,
             'pattern_mode' => $patternMode,
+            'symbol_intelligence_enabled' => (bool)($userLimits['symbol_intelligence_enabled'] ?? false),
+            'symbol_filter_mode' => (string)($userLimits['symbol_filter_mode'] ?? 'all'),
         ];
     }
 
@@ -518,7 +539,20 @@ final class SmartBrainCore
             'pattern_stats' => (array)($stats['pattern_stats'] ?? []),
             'leverage_mode_stats' => (array)($stats['leverage_mode_stats'] ?? ['manual' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0]]),
             'stop_control_stats' => (array)($stats['stop_control_stats'] ?? ['manual' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0]]),
+            // Symbol Intelligence data
+            'symbol_intelligence' => $this->getSymbolIntelligenceData(),
         ];
+    }
+
+    /**
+     * Get symbol intelligence data from storage.
+     *
+     * @return array<string,mixed>
+     */
+    public function getSymbolIntelligenceData(): array
+    {
+        $symbolIntel = new SymbolIntelligence($this->state);
+        return $symbolIntel->getSymbolStatsData();
     }
 
     /**

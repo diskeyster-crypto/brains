@@ -82,6 +82,7 @@ final class SmartBrainController
         $values['brain_may_delay_trailing'] = !empty($_POST['brain_may_delay_trailing']);
         $values['break_even_enabled'] = !empty($_POST['break_even_enabled']);
         $values['early_failure_enabled'] = !empty($_POST['early_failure_enabled']);
+        $values['symbol_intelligence_enabled'] = !empty($_POST['symbol_intelligence_enabled']);
 
         // Pattern selection: checkboxes send array, absent when none checked
         $values['patterns_enabled'] = isset($_POST['patterns_enabled']) && is_array($_POST['patterns_enabled'])
@@ -104,6 +105,8 @@ final class SmartBrainController
             // Preserve pattern selection on error
             $data['patterns_enabled'] = $values['patterns_enabled'] ?? [];
             $data['pattern_mode'] = $values['pattern_mode'] ?? 'any';
+            $data['symbol_intelligence_enabled'] = !empty($values['symbol_intelligence_enabled']);
+            $data['symbol_filter_mode'] = $values['symbol_filter_mode'] ?? 'all';
         }
 
         extract($data, EXTR_SKIP);

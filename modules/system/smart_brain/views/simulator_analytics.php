@@ -24,6 +24,7 @@
 /** @var array<string,array<string,mixed>> $pattern_stats */
 /** @var array<string,array<string,mixed>> $leverage_mode_stats */
 /** @var array<string,array<string,mixed>> $stop_control_stats */
+/** @var array<string,mixed> $symbol_intelligence */
 
 $pageTitle = 'Smart Brain - Аналитика симулятора';
 $activeTab = 'simulator_analytics';
@@ -107,6 +108,7 @@ $pageContent = function() use (
     $waiting, $active, $closed, $stats, $exit_reasons,
     $avg_roi, $median_roi, $avg_mae, $avg_mfe, $avg_duration,
     $wins, $losses, $roi_buckets, $side_summary, $pattern_stats, $leverage_mode_stats, $stop_control_stats,
+    $symbol_intelligence,
     $fmtRoi, $symbolLink, $sideBadge, $reasonBadgeFn,
     $totalClosed, $totalActive, $totalWaiting, $totalAll, $winrate,
     $smartBrainUrl
@@ -359,6 +361,174 @@ $pageContent = function() use (
             </div>
         </div>
     </div>
+
+    <!-- ===== SYMBOL INTELLIGENCE ===== -->
+    <?php
+    $si = $symbol_intelligence ?? [];
+    $siStats = (array)($si['symbol_stats'] ?? []);
+    $siWhitelist = (array)($si['whitelist'] ?? []);
+    $siBlacklist = (array)($si['blacklist'] ?? []);
+    $siWatchlist = (array)($si['watchlist'] ?? []);
+    $siWhitelistCount = (int)($si['whitelist_count'] ?? count($siWhitelist));
+    $siBlacklistCount = (int)($si['blacklist_count'] ?? count($siBlacklist));
+    $siWatchlistCount = (int)($si['watchlist_count'] ?? count($siWatchlist));
+    $siTotalSymbols = (int)($si['total_symbols'] ?? count($siStats));
+    ?>
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin:0;"><i class="bi bi-stars me-1"></i> Symbol Intelligence</h5></div>
+        <div class="card-body">
+            <!-- Summary cards -->
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-3">
+                    <div class="stat-card"><div class="stat-value"><?= $siTotalSymbols ?></div><div class="stat-label">Всего символов</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-card"><div class="stat-value roi-positive"><?= $siWhitelistCount ?></div><div class="stat-label">Whitelist</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-card"><div class="stat-value roi-negative"><?= $siBlacklistCount ?></div><div class="stat-label">Blacklist</div></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-card"><div class="stat-value text-warning"><?= $siWatchlistCount ?></div><div class="stat-label">Watchlist</div></div>
+                </div>
+            </div>
+
+            <!-- Per-symbol table -->
+            <?php if (empty($siStats)): ?>
+                <p class="text-secondary text-center py-3">Нет данных по символам. Запустите симуляцию для сбора статистики.</p>
+            <?php else: ?>
+                <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0">
+                    <thead><tr>
+                        <th>Символ</th>
+                        <th>Статус</th>
+                        <th class="text-end">Сделок</th>
+                        <th class="text-end">Выигр.</th>
+                        <th class="text-end">Проигр.</th>
+                        <th class="text-end">Винрейт</th>
+                        <th class="text-end">Ср. ROI</th>
+                        <th class="text-end">Ср. MAE</th>
+                        <th class="text-end">Ср. MFE</th>
+                        <th class="text-end">Посл. ROI</th>
+                        <th>Посл. сделка</th>
+                    </tr></thead>
+                    <tbody>
+                    <?php
+                    // Sort by trades_total descending
+                    $sortedStats = $siStats;
+                    uasort($sortedStats, fn($a, $b) => ($b['trades_total'] ?? 0) <=> ($a['trades_total'] ?? 0));
+                    foreach ($sortedStats as $sym => $sd):
+                        $statusBadge = match ((string)($sd['status'] ?? 'unknown')) {
+                            'whitelist' => '<span class="badge bg-success">whitelist</span>',
+                            'blacklist' => '<span class="badge bg-danger">blacklist</span>',
+                            'watchlist' => '<span class="badge bg-warning text-dark">watchlist</span>',
+                            default => '<span class="badge bg-secondary">unknown</span>',
+                        };
+                    ?>
+                        <tr>
+                            <td><?= $symbolLink((string)$sym) ?></td>
+                            <td><?= $statusBadge ?></td>
+                            <td class="text-end"><?= (int)($sd['trades_total'] ?? 0) ?></td>
+                            <td class="text-end roi-positive"><?= (int)($sd['wins'] ?? 0) ?></td>
+                            <td class="text-end roi-negative"><?= (int)($sd['losses'] ?? 0) ?></td>
+                            <td class="text-end"><?= number_format((float)($sd['winrate'] ?? 0) * 100, 1) ?>%</td>
+                            <td class="text-end <?= (float)($sd['average_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sd['average_roi'] ?? 0) * 100, 2) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($sd['average_mae'] ?? 0) * 100, 2) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($sd['average_mfe'] ?? 0) * 100, 2) ?>%</td>
+                            <td class="text-end <?= (float)($sd['last_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sd['last_roi'] ?? 0) * 100, 2) ?>%</td>
+                            <td><?= htmlspecialchars((string)($sd['last_trade_at'] ?? '-')) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- ===== WHITELIST / BLACKLIST / WATCHLIST GROUPED ===== -->
+    <?php if (!empty($siStats)): ?>
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card h-100" style="border-left: 4px solid #22c55e;">
+                <div class="card-header"><h6 style="margin:0;"><span class="badge bg-success">WHITELIST</span> (<?= $siWhitelistCount ?>)</h6></div>
+                <div class="card-body p-0">
+                    <?php if (empty($siWhitelist)): ?>
+                        <p class="text-secondary text-center py-3">Пусто</p>
+                    <?php else: ?>
+                        <table class="table table-dark table-sm mb-0">
+                            <thead><tr><th>Символ</th><th class="text-end">Сделок</th><th class="text-end">Винрейт</th><th class="text-end">Ср. ROI</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($siWhitelist as $sym):
+                                $sd = $siStats[$sym] ?? [];
+                            ?>
+                            <tr>
+                                <td><?= $symbolLink((string)$sym) ?></td>
+                                <td class="text-end"><?= (int)($sd['trades_total'] ?? 0) ?></td>
+                                <td class="text-end"><?= number_format((float)($sd['winrate'] ?? 0) * 100, 1) ?>%</td>
+                                <td class="text-end <?= (float)($sd['average_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sd['average_roi'] ?? 0) * 100, 2) ?>%</td>
+                            </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100" style="border-left: 4px solid #ef4444;">
+                <div class="card-header"><h6 style="margin:0;"><span class="badge bg-danger">BLACKLIST</span> (<?= $siBlacklistCount ?>)</h6></div>
+                <div class="card-body p-0">
+                    <?php if (empty($siBlacklist)): ?>
+                        <p class="text-secondary text-center py-3">Пусто</p>
+                    <?php else: ?>
+                        <table class="table table-dark table-sm mb-0">
+                            <thead><tr><th>Символ</th><th class="text-end">Сделок</th><th class="text-end">Винрейт</th><th class="text-end">Ср. ROI</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($siBlacklist as $sym):
+                                $sd = $siStats[$sym] ?? [];
+                            ?>
+                            <tr>
+                                <td><?= $symbolLink((string)$sym) ?></td>
+                                <td class="text-end"><?= (int)($sd['trades_total'] ?? 0) ?></td>
+                                <td class="text-end"><?= number_format((float)($sd['winrate'] ?? 0) * 100, 1) ?>%</td>
+                                <td class="text-end <?= (float)($sd['average_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sd['average_roi'] ?? 0) * 100, 2) ?>%</td>
+                            </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100" style="border-left: 4px solid #f59e0b;">
+                <div class="card-header"><h6 style="margin:0;"><span class="badge bg-warning text-dark">WATCHLIST</span> (<?= $siWatchlistCount ?>)</h6></div>
+                <div class="card-body p-0">
+                    <?php if (empty($siWatchlist)): ?>
+                        <p class="text-secondary text-center py-3">Пусто</p>
+                    <?php else: ?>
+                        <table class="table table-dark table-sm mb-0">
+                            <thead><tr><th>Символ</th><th class="text-end">Сделок</th><th class="text-end">Винрейт</th><th class="text-end">Ср. ROI</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($siWatchlist as $sym):
+                                $sd = $siStats[$sym] ?? [];
+                            ?>
+                            <tr>
+                                <td><?= $symbolLink((string)$sym) ?></td>
+                                <td class="text-end"><?= (int)($sd['trades_total'] ?? 0) ?></td>
+                                <td class="text-end"><?= number_format((float)($sd['winrate'] ?? 0) * 100, 1) ?>%</td>
+                                <td class="text-end <?= (float)($sd['average_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sd['average_roi'] ?? 0) * 100, 2) ?>%</td>
+                            </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- ===== D. EXIT REASONS SUMMARY + CHARTS ===== -->
     <div class="row mb-4">

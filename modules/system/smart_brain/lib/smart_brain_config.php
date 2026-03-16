@@ -133,6 +133,9 @@ final class SmartBrainConfig
             // Stop Control
             'stop_control_mode'            => (string)($values['stop_control_mode'] ?? 'auto'),
             'manual_stop_loss_roi'         => (float)($values['manual_stop_loss_roi'] ?? 0.03),
+            // Symbol Intelligence
+            'symbol_intelligence_enabled'  => !empty($values['symbol_intelligence_enabled']),
+            'symbol_filter_mode'           => (string)($values['symbol_filter_mode'] ?? 'all'),
         ];
 
         // Pattern Selection
@@ -300,6 +303,12 @@ final class SmartBrainConfig
             $errors[] = 'manual_stop_loss_roi must be > 0';
         }
 
+        // Symbol Intelligence validation
+        $validFilterModes = ['all', 'whitelist_only', 'exclude_blacklist', 'watchlist_only'];
+        if (isset($values['symbol_filter_mode']) && !in_array((string)$values['symbol_filter_mode'], $validFilterModes, true)) {
+            $errors[] = 'symbol_filter_mode must be one of: all, whitelist_only, exclude_blacklist, watchlist_only';
+        }
+
         // Pattern Selection validation
         $patternsProvided = isset($values['patterns_enabled']) && is_array($values['patterns_enabled']) ? $values['patterns_enabled'] : [];
         if (empty($patternsProvided)) {
@@ -391,6 +400,10 @@ final class SmartBrainConfig
             'stop_control' => [
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
                 'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+            ],
+            'symbol_intelligence' => [
+                'symbol_intelligence_enabled' => (bool)($userLimits['symbol_intelligence_enabled'] ?? false),
+                'symbol_filter_mode' => (string)($userLimits['symbol_filter_mode'] ?? 'all'),
             ],
             'pattern_selection' => [
                 'enabled' => (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []),

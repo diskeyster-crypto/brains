@@ -12,14 +12,18 @@
 /** @var array{type:string,message:string}|null $flash */
 /** @var list<string> $patterns_enabled */
 /** @var string $pattern_mode */
+/** @var bool $symbol_intelligence_enabled */
+/** @var string $symbol_filter_mode */
 
 $pageTitle = 'Smart Brain - User Config';
 $activeTab = 'user_config';
 
 $patterns_enabled = $patterns_enabled ?? [];
 $pattern_mode = $pattern_mode ?? 'any';
+$symbol_intelligence_enabled = $symbol_intelligence_enabled ?? false;
+$symbol_filter_mode = $symbol_filter_mode ?? 'all';
 
-$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode) {
+$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode) {
     $v = function(string $key, $default = '') use ($form_values) {
         return htmlspecialchars((string)($form_values[$key] ?? $default));
     };
@@ -144,8 +148,40 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
+        <!-- Symbol Intelligence -->
         <div class="row">
-            <!-- Trading Limits -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-stars me-2"></i>
+                        <h5 style="margin: 0;">Symbol Intelligence</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                            Интеллектуальная фильтрация монет по истории торгов.<br>
+                            Включите и выберите режим фильтрации для фокусировки на лучших символах.<br>
+                            При выключенном режиме — торгуются все монеты без фильтрации.
+                        </p>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="symbol_intelligence_enabled" name="symbol_intelligence_enabled" value="1" <?= $symbol_intelligence_enabled ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="symbol_intelligence_enabled">Symbol Intelligence Enabled</label>
+                            <br><small class="text-secondary">Включить фильтрацию по спискам</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="symbol_filter_mode" class="form-label fw-bold">Filter Mode</label>
+                            <select class="form-select" id="symbol_filter_mode" name="symbol_filter_mode">
+                                <?php foreach (['all' => 'All — все символы', 'whitelist_only' => 'Whitelist Only — только хорошие', 'exclude_blacklist' => 'Exclude Blacklist — без плохих', 'watchlist_only' => 'Watchlist Only — только наблюдение'] as $fm => $fmLabel): ?>
+                                <option value="<?= $fm ?>" <?= $symbol_filter_mode === $fm ? 'selected' : '' ?>><?= htmlspecialchars($fmLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">Режим фильтрации кандидатов</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
             <div class="col-md-6 mb-4">
                 <div class="card h-100">
                     <div class="card-header d-flex align-items-center">

@@ -20,8 +20,10 @@ return [
     'pattern_algorithms' => [
         'enabled' => [
             'double_bottom',
+            'double_top',
+            'pullback_trend_continue',
         ],
-        'mode' => 'one',  // 'one' | 'any' | 'all'
+        'mode' => 'any',  // 'one' | 'any' | 'all'
     ],
 
     'analyzer_decision' => [

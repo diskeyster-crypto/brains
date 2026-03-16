@@ -115,7 +115,38 @@ $pageContent = function() use ($config, $user_limits, $brain_auto, $effective_co
         </div>
     </div>
 
-    <!-- C. Effective Runtime -->
+    <!-- C. Pattern Selection (read-only, effective from User Config) -->
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex align-items-center">
+                    <i class="bi bi-search me-2"></i>
+                    <h5 style="margin: 0;">Pattern Selection</h5>
+                    <a href="<?= htmlspecialchars($smartBrainUrl) ?>/user_config" class="badge bg-primary ms-auto text-decoration-none">edit →</a>
+                </div>
+                <div class="card-body">
+                    <?php
+                        $ps = (array)($effective_config['pattern_selection'] ?? []);
+                        $psEnabled = (array)($ps['enabled'] ?? []);
+                        $psMode = (string)($ps['mode'] ?? '-');
+                        $allPatterns = ['double_bottom' => 'Double Bottom', 'double_top' => 'Double Top', 'pullback_trend_continue' => 'Pullback Trend Continue'];
+                    ?>
+                    <?php if (empty($effective_config)): ?>
+                        <p class="text-secondary mb-0">Нет данных. Запустите Smart Brain для генерации effective config.</p>
+                    <?php else: ?>
+                        <div class="mb-2">
+                            <?php foreach ($allPatterns as $pKey => $pLabel): ?>
+                            <span class="badge <?= in_array($pKey, $psEnabled, true) ? 'bg-success' : 'bg-dark text-secondary' ?> me-1 mb-1"><?= htmlspecialchars($pLabel) ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                        <small class="text-secondary">Режим: <strong class="text-info"><?= htmlspecialchars($psMode) ?></strong></small>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- D. Effective Runtime -->
     <div class="card mb-4">
         <div class="card-header d-flex align-items-center">
             <i class="bi bi-file-earmark-code me-2"></i>

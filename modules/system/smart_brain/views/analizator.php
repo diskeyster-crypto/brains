@@ -11,9 +11,12 @@
 /** @var array<int,array<string,mixed>> $signals */
 /** @var array<int,array<string,mixed>> $monitors */
 /** @var array<string,mixed> $last_run */
+/** @var array{enabled:list<string>,mode:string} $pattern_selection */
 
 $pageTitle = 'Smart Brain - Анализатор';
 $activeTab = 'analizator';
+
+$pattern_selection = $pattern_selection ?? ['enabled' => [], 'mode' => '-'];
 
 $extraStyles = '
 .status-monitoring { background: rgba(59,130,246,0.15); color: #60a5fa; }
@@ -31,7 +34,7 @@ $symbolLink = function(string $symbol): string {
     return '<a href="https://www.bybit.com/trade/usdt/' . $safe . '" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none fw-bold">' . $safe . '</a>';
 };
 
-$pageContent = function() use ($candidates, $signals, $monitors, $last_run, $smartBrainUrl, $symbolLink) {
+$pageContent = function() use ($candidates, $signals, $monitors, $last_run, $smartBrainUrl, $symbolLink, $pattern_selection) {
     $statusClass = function(string $status): string {
         return match($status) {
             'monitoring' => 'status-monitoring',
@@ -53,6 +56,21 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
             <span class="badge bg-warning fs-6 ms-1"><?= count($monitors) ?> Мониторы</span>
             <span class="badge bg-success fs-6 ms-1"><?= count($signals) ?> Сигналы</span>
         </div>
+    </div>
+
+    <!-- Active Pattern Selection -->
+    <?php
+        $ps = $pattern_selection ?? [];
+        $psEnabled = (array)($ps['enabled'] ?? []);
+        $psMode = (string)($ps['mode'] ?? '-');
+        $patternLabels = ['double_bottom' => 'Double Bottom', 'double_top' => 'Double Top', 'pullback_trend_continue' => 'Pullback Trend Continue'];
+    ?>
+    <div class="mb-3">
+        <small class="text-secondary me-2">Паттерны:</small>
+        <?php foreach ($patternLabels as $pKey => $pLabel): ?>
+        <span class="badge <?= in_array($pKey, $psEnabled, true) ? 'bg-success' : 'bg-dark text-secondary' ?> me-1"><?= htmlspecialchars($pLabel) ?></span>
+        <?php endforeach; ?>
+        <small class="text-secondary ms-2">Режим: <strong class="text-info"><?= htmlspecialchars($psMode) ?></strong></small>
     </div>
 
     <!-- Pipeline Summary -->

@@ -1,0 +1,694 @@
+<?php
+/**
+ * Smart Brain — Full Simulation Audit Script
+ *
+ * Analyzes simulator data, collects pattern statistics,
+ * audits side/leverage/stop logic, and produces a JSON report.
+ *
+ * Usage:
+ *   php simulation_audit.php
+ *
+ * Output:
+ *   storage/simulation_audit_report.json
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . '/lib/state_manager.php';
+
+final class SimulationAudit
+{
+    private StateManager $state;
+    private string $moduleBase;
+
+    public function __construct(string $moduleBase)
+    {
+        $this->moduleBase = rtrim($moduleBase, '/');
+        $this->state = new StateManager($this->moduleBase);
+    }
+
+    /**
+     * Run the full audit and return the report array.
+     *
+     * @return array<string,mixed>
+     */
+    public function run(): array
+    {
+        $waiting = $this->state->readJson('storage/simulator/waiting.json', []);
+        $active  = $this->state->readJson('storage/simulator/active.json', []);
+        $closed  = $this->state->readJson('storage/simulator/closed.json', []);
+        $signals = $this->state->readJson('storage/signals.json', []);
+        $monitors = $this->state->readJson('storage/monitors.json', []);
+        $candidates = $this->state->readJson('storage/candidates.json', []);
+        $lastRun = $this->state->readJson('storage/last_run.json', []);
+        $effectiveCfg = $this->state->readJson('runtime/effective_config.json', []);
+        $userCfg = $this->state->readJson('runtime/user_config.json', []);
+
+        $report = [];
+        $report['audit_timestamp'] = date('c');
+        $report['data_summary'] = [
+            'candidates_count' => count($candidates),
+            'monitors_count' => count($monitors),
+            'signals_count' => count($signals),
+            'waiting_count' => count($waiting),
+            'active_count' => count($active),
+            'closed_count' => count($closed),
+            'has_last_run' => !empty($lastRun),
+            'has_effective_config' => !empty($effectiveCfg),
+            'has_user_config' => !empty($userCfg),
+        ];
+
+        // Part 1: Pattern Statistics
+        $report['pattern_statistics'] = $this->computePatternStats($closed, $signals, $waiting, $active);
+
+        // Part 2: Side Audit
+        $report['side_audit'] = $this->auditSide($candidates, $signals, $closed, $active);
+
+        // Part 3: Leverage Audit
+        $report['leverage_audit'] = $this->auditLeverage($signals, $closed);
+
+        // Part 4: Stop Engine Audit
+        $report['stop_engine_audit'] = $this->auditStopEngine($closed);
+
+        // Part 5: Simulator Lifecycle Audit
+        $report['lifecycle_audit'] = $this->auditLifecycle($waiting, $active, $closed, $signals);
+
+        // Part 6: Long vs Short
+        $report['long_vs_short'] = $this->auditLongVsShort($closed);
+
+        // Part 7: Bootstrap vs Normal
+        $report['bootstrap_vs_normal'] = $this->auditBootstrapVsNormal($signals, $closed);
+
+        // Part 8: Analyzer / Gating Audit
+        $report['analyzer_audit'] = $this->auditAnalyzer($lastRun, $effectiveCfg);
+
+        // Part 9: Stats Engine Audit
+        $report['stats_engine_audit'] = $this->auditStatsEngine($waiting, $active, $closed, $signals);
+
+        // Part 10: Config Audit
+        $report['config_audit'] = $this->auditConfig($effectiveCfg, $userCfg);
+
+        return $report;
+    }
+
+    /**
+     * Part 1: Pattern Statistics per algorithm
+     *
+     * @return array<string,mixed>
+     */
+    private function computePatternStats(array $closed, array $signals, array $waiting, array $active): array
+    {
+        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', '_unknown'];
+
+        $stats = [];
+        foreach ($algorithms as $algo) {
+            $stats[$algo] = [
+                'signals_total' => 0,
+                'waiting_total' => 0,
+                'active_total' => 0,
+                'closed_total' => 0,
+                'wins' => 0,
+                'losses' => 0,
+                'winrate' => 0.0,
+                'average_roi' => 0.0,
+                'average_mae' => 0.0,
+                'average_mfe' => 0.0,
+                'average_duration' => 0.0,
+                'long_count' => 0,
+                'short_count' => 0,
+                'stop_loss_count' => 0,
+                'early_failure_count' => 0,
+                'trailing_stop_count' => 0,
+                'break_even_stop_count' => 0,
+                'take_profit_count' => 0,
+                'bootstrap_signals_count' => 0,
+                'normal_signals_count' => 0,
+                'average_leverage' => 0.0,
+            ];
+        }
+
+        // Count signals by pattern
+        foreach ($signals as $s) {
+            $algo = $this->getAlgorithm($s);
+            $stats[$algo]['signals_total']++;
+            $mode = (string)($s['signal_mode'] ?? '');
+            if ($mode === 'bootstrap') {
+                $stats[$algo]['bootstrap_signals_count']++;
+            } else {
+                $stats[$algo]['normal_signals_count']++;
+            }
+        }
+
+        // Count waiting by pattern
+        foreach ($waiting as $w) {
+            $algo = $this->getAlgorithm($w);
+            $stats[$algo]['waiting_total']++;
+        }
+
+        // Count active by pattern
+        foreach ($active as $a) {
+            $algo = $this->getAlgorithm($a);
+            $stats[$algo]['active_total']++;
+        }
+
+        // Analyze closed trades
+        foreach ($algorithms as $algo) {
+            $algoTrades = array_filter($closed, fn($t) => $this->getAlgorithm($t) === $algo);
+            $count = count($algoTrades);
+            $stats[$algo]['closed_total'] = $count;
+
+            if ($count === 0) {
+                continue;
+            }
+
+            $rois = [];
+            $maes = [];
+            $mfes = [];
+            $durations = [];
+            $leverages = [];
+
+            foreach ($algoTrades as $t) {
+                $roi = (float)($t['roi'] ?? 0.0);
+                $rois[] = $roi;
+                $maes[] = (float)($t['mae'] ?? 0.0);
+                $mfes[] = (float)($t['mfe'] ?? 0.0);
+                $durations[] = (float)($t['duration'] ?? 0.0);
+                $leverages[] = (float)($t['leverage'] ?? 0.0);
+
+                if ($roi >= 0) {
+                    $stats[$algo]['wins']++;
+                } else {
+                    $stats[$algo]['losses']++;
+                }
+
+                $side = (string)($t['side'] ?? '');
+                if ($side === 'long') {
+                    $stats[$algo]['long_count']++;
+                } elseif ($side === 'short') {
+                    $stats[$algo]['short_count']++;
+                }
+
+                $reason = (string)($t['close_reason'] ?? '');
+                match ($reason) {
+                    'stop_loss' => $stats[$algo]['stop_loss_count']++,
+                    'early_failure' => $stats[$algo]['early_failure_count']++,
+                    'trailing_stop' => $stats[$algo]['trailing_stop_count']++,
+                    'break_even_stop' => $stats[$algo]['break_even_stop_count']++,
+                    'take_profit' => $stats[$algo]['take_profit_count']++,
+                    default => null,
+                };
+            }
+
+            $stats[$algo]['winrate'] = round($stats[$algo]['wins'] / $count, 4);
+            $stats[$algo]['average_roi'] = round(array_sum($rois) / $count, 6);
+            $stats[$algo]['average_mae'] = round(array_sum($maes) / $count, 6);
+            $stats[$algo]['average_mfe'] = round(array_sum($mfes) / $count, 6);
+            $stats[$algo]['average_duration'] = round(array_sum($durations) / $count, 2);
+            $nonZeroLeverages = array_filter($leverages, fn($l) => $l > 0);
+            $stats[$algo]['average_leverage'] = count($nonZeroLeverages) > 0
+                ? round(array_sum($nonZeroLeverages) / count($nonZeroLeverages), 2)
+                : 0.0;
+        }
+
+        // Remove _unknown if empty
+        if ($stats['_unknown']['closed_total'] === 0
+            && $stats['_unknown']['signals_total'] === 0
+            && $stats['_unknown']['waiting_total'] === 0
+            && $stats['_unknown']['active_total'] === 0
+        ) {
+            unset($stats['_unknown']);
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Part 2: Side Audit
+     *
+     * @return array<string,mixed>
+     */
+    private function auditSide(array $candidates, array $signals, array $closed, array $active): array
+    {
+        $result = [
+            'side_by_pattern' => [],
+            'wrong_side_examples' => [],
+            'unresolved_side_count' => 0,
+        ];
+
+        // Expected side mapping
+        $expectedSide = [
+            'double_bottom' => 'long',
+            'double_top' => 'short',
+        ];
+
+        // Count sides by pattern for closed trades
+        $sideByPattern = [];
+        foreach ($closed as $t) {
+            $algo = $this->getAlgorithm($t);
+            $side = (string)($t['side'] ?? 'unknown');
+            if (!isset($sideByPattern[$algo])) {
+                $sideByPattern[$algo] = [];
+            }
+            $sideByPattern[$algo][$side] = ($sideByPattern[$algo][$side] ?? 0) + 1;
+        }
+
+        // Also count from signals
+        foreach ($signals as $s) {
+            $algo = $this->getAlgorithm($s);
+            $side = (string)($s['side'] ?? 'unknown');
+            if (!isset($sideByPattern[$algo])) {
+                $sideByPattern[$algo] = [];
+            }
+            // Prefix signal counts separately
+            $key = $side . '_signals';
+            $sideByPattern[$algo][$key] = ($sideByPattern[$algo][$key] ?? 0) + 1;
+        }
+
+        $result['side_by_pattern'] = $sideByPattern;
+
+        // Check for wrong side (e.g., double_bottom should be long)
+        foreach (array_merge($closed, $active) as $t) {
+            $algo = (string)($t['pattern_algorithm'] ?? '');
+            $side = (string)($t['side'] ?? '');
+            if (isset($expectedSide[$algo]) && $side !== '' && $side !== $expectedSide[$algo]) {
+                $result['wrong_side_examples'][] = [
+                    'symbol' => (string)($t['symbol'] ?? ''),
+                    'pattern' => $algo,
+                    'expected_side' => $expectedSide[$algo],
+                    'actual_side' => $side,
+                ];
+            }
+            if ($side === '' || $side === 'unknown') {
+                $result['unresolved_side_count']++;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Part 3: Leverage Audit
+     *
+     * @return array<string,mixed>
+     */
+    private function auditLeverage(array $signals, array $closed): array
+    {
+        $leverages = [];
+        $bootstrapLeverages = [];
+        $normalLeverages = [];
+
+        foreach (array_merge($signals, $closed) as $item) {
+            $lev = (float)($item['leverage'] ?? 0);
+            if ($lev <= 0) {
+                continue;
+            }
+            $leverages[] = $lev;
+
+            $mode = (string)($item['signal_mode'] ?? '');
+            if ($mode === 'bootstrap') {
+                $bootstrapLeverages[] = $lev;
+            } else {
+                $normalLeverages[] = $lev;
+            }
+        }
+
+        $distribution = [];
+        foreach ($leverages as $lev) {
+            $key = (string)(int)$lev . 'x';
+            $distribution[$key] = ($distribution[$key] ?? 0) + 1;
+        }
+        ksort($distribution);
+
+        return [
+            'total_samples' => count($leverages),
+            'min_leverage' => $leverages !== [] ? min($leverages) : 0,
+            'max_leverage' => $leverages !== [] ? max($leverages) : 0,
+            'average_leverage' => $leverages !== [] ? round(array_sum($leverages) / count($leverages), 2) : 0,
+            'bootstrap_average' => $bootstrapLeverages !== []
+                ? round(array_sum($bootstrapLeverages) / count($bootstrapLeverages), 2) : 0,
+            'normal_average' => $normalLeverages !== []
+                ? round(array_sum($normalLeverages) / count($normalLeverages), 2) : 0,
+            'distribution' => $distribution,
+        ];
+    }
+
+    /**
+     * Part 4: Stop Engine Audit
+     *
+     * @return array<string,mixed>
+     */
+    private function auditStopEngine(array $closed): array
+    {
+        $modes = ['simple_liq_percent', 'brain_managed', '_unknown'];
+        $result = [];
+
+        foreach ($modes as $mode) {
+            $modeTrades = array_filter($closed, function ($t) use ($mode) {
+                $m = (string)($t['stop_mode'] ?? '');
+                return $mode === '_unknown' ? ($m === '') : ($m === $mode);
+            });
+
+            $count = count($modeTrades);
+            $stats = [
+                'closed_total' => $count,
+                'stop_loss_count' => 0,
+                'early_failure_count' => 0,
+                'trailing_stop_count' => 0,
+                'break_even_stop_count' => 0,
+                'take_profit_count' => 0,
+                'average_roi' => 0.0,
+                'average_mae' => 0.0,
+                'average_mfe' => 0.0,
+                'winrate' => 0.0,
+            ];
+
+            if ($count > 0) {
+                $rois = [];
+                $maes = [];
+                $mfes = [];
+                $wins = 0;
+
+                foreach ($modeTrades as $t) {
+                    $roi = (float)($t['roi'] ?? 0.0);
+                    $rois[] = $roi;
+                    $maes[] = (float)($t['mae'] ?? 0.0);
+                    $mfes[] = (float)($t['mfe'] ?? 0.0);
+                    if ($roi >= 0) {
+                        $wins++;
+                    }
+
+                    $reason = (string)($t['close_reason'] ?? '');
+                    match ($reason) {
+                        'stop_loss' => $stats['stop_loss_count']++,
+                        'early_failure' => $stats['early_failure_count']++,
+                        'trailing_stop' => $stats['trailing_stop_count']++,
+                        'break_even_stop' => $stats['break_even_stop_count']++,
+                        'take_profit' => $stats['take_profit_count']++,
+                        default => null,
+                    };
+                }
+
+                $stats['winrate'] = round($wins / $count, 4);
+                $stats['average_roi'] = round(array_sum($rois) / $count, 6);
+                $stats['average_mae'] = round(array_sum($maes) / $count, 6);
+                $stats['average_mfe'] = round(array_sum($mfes) / $count, 6);
+            }
+
+            $result[$mode] = $stats;
+        }
+
+        // Remove _unknown if empty
+        if ($result['_unknown']['closed_total'] === 0) {
+            unset($result['_unknown']);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Part 5: Simulator Lifecycle Audit
+     *
+     * @return array<string,mixed>
+     */
+    private function auditLifecycle(array $waiting, array $active, array $closed, array $signals): array
+    {
+        $stuckInActive = [];
+        $now = time();
+
+        foreach ($active as $a) {
+            $activated = strtotime((string)($a['activated_at'] ?? ''));
+            if ($activated !== false && ($now - $activated) > 86400) { // 24h+
+                $stuckInActive[] = [
+                    'symbol' => (string)($a['symbol'] ?? ''),
+                    'activated_at' => (string)($a['activated_at'] ?? ''),
+                    'hours_active' => round(($now - $activated) / 3600, 1),
+                ];
+            }
+        }
+
+        // Compute average time to first close
+        $firstCloseTime = null;
+        foreach ($closed as $t) {
+            $closedAt = strtotime((string)($t['closed_at'] ?? ''));
+            if ($closedAt !== false) {
+                if ($firstCloseTime === null || $closedAt < $firstCloseTime) {
+                    $firstCloseTime = $closedAt;
+                }
+            }
+        }
+
+        return [
+            'waiting_count' => count($waiting),
+            'active_count' => count($active),
+            'closed_count' => count($closed),
+            'stuck_trades' => $stuckInActive,
+            'stuck_count' => count($stuckInActive),
+            'signals_in_current_cycle' => count($signals),
+            'first_close_time' => $firstCloseTime !== null ? date('c', $firstCloseTime) : null,
+        ];
+    }
+
+    /**
+     * Part 6: Long vs Short performance
+     *
+     * @return array<string,mixed>
+     */
+    private function auditLongVsShort(array $closed): array
+    {
+        $sides = ['long', 'short'];
+        $result = [];
+
+        foreach ($sides as $side) {
+            $sideTrades = array_filter($closed, fn($t) => (string)($t['side'] ?? '') === $side);
+            $count = count($sideTrades);
+            $entry = [
+                'trades_total' => $count,
+                'winrate' => 0.0,
+                'avg_roi' => 0.0,
+                'avg_mae' => 0.0,
+                'avg_mfe' => 0.0,
+            ];
+
+            if ($count > 0) {
+                $wins = 0;
+                $rois = [];
+                $maes = [];
+                $mfes = [];
+                foreach ($sideTrades as $t) {
+                    $roi = (float)($t['roi'] ?? 0.0);
+                    $rois[] = $roi;
+                    $maes[] = (float)($t['mae'] ?? 0.0);
+                    $mfes[] = (float)($t['mfe'] ?? 0.0);
+                    if ($roi >= 0) {
+                        $wins++;
+                    }
+                }
+                $entry['winrate'] = round($wins / $count, 4);
+                $entry['avg_roi'] = round(array_sum($rois) / $count, 6);
+                $entry['avg_mae'] = round(array_sum($maes) / $count, 6);
+                $entry['avg_mfe'] = round(array_sum($mfes) / $count, 6);
+            }
+
+            $result[$side] = $entry;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Part 7: Bootstrap vs Normal
+     *
+     * @return array<string,mixed>
+     */
+    private function auditBootstrapVsNormal(array $signals, array $closed): array
+    {
+        $modes = ['bootstrap', 'normal'];
+        $result = [];
+
+        foreach ($modes as $mode) {
+            $modeSignals = array_filter($signals, function ($s) use ($mode) {
+                $m = (string)($s['signal_mode'] ?? '');
+                return $mode === 'normal' ? ($m !== 'bootstrap') : ($m === 'bootstrap');
+            });
+            $modeClosed = array_filter($closed, function ($t) use ($mode) {
+                $m = (string)($t['signal_mode'] ?? '');
+                return $mode === 'normal' ? ($m !== 'bootstrap') : ($m === 'bootstrap');
+            });
+
+            $count = count($modeClosed);
+            $entry = [
+                'signals_total' => count($modeSignals),
+                'closed_total' => $count,
+                'winrate' => 0.0,
+                'avg_leverage' => 0.0,
+                'avg_roi' => 0.0,
+            ];
+
+            if ($count > 0) {
+                $wins = 0;
+                $rois = [];
+                $leverages = [];
+                foreach ($modeClosed as $t) {
+                    $roi = (float)($t['roi'] ?? 0.0);
+                    $rois[] = $roi;
+                    $leverages[] = (float)($t['leverage'] ?? 0.0);
+                    if ($roi >= 0) {
+                        $wins++;
+                    }
+                }
+                $entry['winrate'] = round($wins / $count, 4);
+                $entry['avg_roi'] = round(array_sum($rois) / $count, 6);
+                $nonZero = array_filter($leverages, fn($l) => $l > 0);
+                $entry['avg_leverage'] = count($nonZero) > 0
+                    ? round(array_sum($nonZero) / count($nonZero), 2) : 0.0;
+            }
+
+            $result[$mode] = $entry;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Part 8: Analyzer / Gating Audit
+     *
+     * @return array<string,mixed>
+     */
+    private function auditAnalyzer(array $lastRun, array $effectiveCfg): array
+    {
+        $parser4 = (array)($effectiveCfg['parser4'] ?? []);
+        $analyzerDecision = (array)($parser4['analyzer_decision'] ?? []);
+        $patternAlgorithms = (array)($parser4['pattern_algorithms'] ?? []);
+
+        return [
+            'last_run_candidates' => (int)($lastRun['candidates'] ?? 0),
+            'last_run_signals' => (int)($lastRun['signals'] ?? 0),
+            'last_run_monitors' => (int)($lastRun['monitors'] ?? 0),
+            'rejection_counters' => [
+                'rejected_not_entry_zone' => (int)($lastRun['rejected_not_entry_zone'] ?? 0),
+                'rejected_low_reliability' => (int)($lastRun['rejected_low_reliability'] ?? 0),
+                'rejected_missing_passport' => (int)($lastRun['rejected_missing_passport'] ?? 0),
+                'rejected_missing_price' => (int)($lastRun['rejected_missing_price'] ?? 0),
+                'rejected_side_unresolved' => (int)($lastRun['rejected_side_unresolved'] ?? 0),
+            ],
+            'signal_mode_counters' => [
+                'bootstrap_signals_count' => (int)($lastRun['bootstrap_signals_count'] ?? 0),
+                'warmup_symbols_count' => (int)($lastRun['warmup_symbols_count'] ?? 0),
+                'normal_signals_count' => (int)($lastRun['normal_signals_count'] ?? 0),
+            ],
+            'effective_pattern_config' => $patternAlgorithms,
+            'effective_analyzer_decision' => $analyzerDecision,
+        ];
+    }
+
+    /**
+     * Part 9: Stats Engine Audit
+     *
+     * @return array<string,mixed>
+     */
+    private function auditStatsEngine(array $waiting, array $active, array $closed, array $signals): array
+    {
+        $totalClosed = count($closed);
+        $wins = 0;
+        $rois = [];
+        $maes = [];
+        $mfes = [];
+        $durations = [];
+
+        foreach ($closed as $t) {
+            $roi = (float)($t['roi'] ?? 0.0);
+            $rois[] = $roi;
+            if ($roi >= 0) {
+                $wins++;
+            }
+            $maes[] = (float)($t['mae'] ?? 0.0);
+            $mfes[] = (float)($t['mfe'] ?? 0.0);
+            $durations[] = (float)($t['duration'] ?? 0.0);
+        }
+
+        $winrate = $totalClosed > 0 ? round($wins / $totalClosed, 4) : 0.0;
+        $avgRoi = $totalClosed > 0 ? round(array_sum($rois) / $totalClosed, 6) : 0.0;
+        $avgMae = $totalClosed > 0 ? round(array_sum($maes) / $totalClosed, 6) : 0.0;
+        $avgMfe = $totalClosed > 0 ? round(array_sum($mfes) / $totalClosed, 6) : 0.0;
+        $avgDur = $totalClosed > 0 ? round(array_sum($durations) / $totalClosed, 2) : 0.0;
+
+        // Check signal_to_entry_conversion bug
+        $totalSignals = count($signals);
+        $enteredCount = count($active) + $totalClosed;
+        $conversion = ($totalSignals > 0) ? round($enteredCount / $totalSignals, 4) : 0.0;
+
+        $conversionBug = false;
+        if ($conversion > 1.0) {
+            $conversionBug = true;
+        }
+
+        return [
+            'total_trades' => $totalClosed,
+            'winrate' => $winrate,
+            'average_roi' => $avgRoi,
+            'average_mae' => $avgMae,
+            'average_mfe' => $avgMfe,
+            'average_duration' => $avgDur,
+            'signal_to_entry_conversion' => $conversion,
+            'conversion_bug_detected' => $conversionBug,
+            'conversion_bug_explanation' => $conversionBug
+                ? 'signal_to_entry_conversion > 1.0 because signals.json holds only current cycle signals, while active+closed accumulate across cycles'
+                : null,
+        ];
+    }
+
+    /**
+     * Config audit - check effective config state
+     *
+     * @return array<string,mixed>
+     */
+    private function auditConfig(array $effectiveCfg, array $userCfg): array
+    {
+        $patternSelection = (array)($effectiveCfg['pattern_selection'] ?? []);
+        $parser4Patterns = (array)(($effectiveCfg['parser4'] ?? [])['pattern_algorithms'] ?? []);
+
+        return [
+            'effective_pattern_selection' => $patternSelection,
+            'parser4_pattern_algorithms' => $parser4Patterns,
+            'user_config_patterns' => (array)($userCfg['patterns'] ?? []),
+            'pattern_merge_consistent' => $this->checkPatternConsistency($patternSelection, $parser4Patterns),
+        ];
+    }
+
+    /**
+     * Check pattern selection consistency between effective snapshot and parser4
+     */
+    private function checkPatternConsistency(array $selection, array $parser4): bool
+    {
+        $selEnabled = (array)($selection['enabled'] ?? []);
+        $p4Enabled = (array)($parser4['enabled'] ?? []);
+        sort($selEnabled);
+        sort($p4Enabled);
+        return $selEnabled === $p4Enabled
+            && (string)($selection['mode'] ?? '') === (string)($parser4['mode'] ?? '');
+    }
+
+    /**
+     * Extract algorithm name from a trade/signal record.
+     */
+    private function getAlgorithm(array $item): string
+    {
+        $algo = (string)($item['pattern_algorithm'] ?? '');
+        if ($algo === '') {
+            return '_unknown';
+        }
+        return $algo;
+    }
+}
+
+// CLI execution
+if (PHP_SAPI === 'cli') {
+    $moduleBase = __DIR__;
+    $audit = new SimulationAudit($moduleBase);
+    $report = $audit->run();
+
+    $outputPath = $moduleBase . '/storage/simulation_audit_report.json';
+    file_put_contents($outputPath, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    echo "Simulation Audit Report generated: $outputPath\n";
+    echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
+}

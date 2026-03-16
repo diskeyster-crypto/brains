@@ -405,11 +405,18 @@ final class SmartBrainCore
      */
     public function getAnalizatorData(): array
     {
+        $parser4Cfg = $this->config->get('parser4', []);
+        $patternAlgorithms = (array)($parser4Cfg['pattern_algorithms'] ?? []);
+
         return [
             'candidates' => $this->state->readJson('storage/candidates.json', []),
             'signals' => $this->state->readJson('storage/signals.json', []),
             'monitors' => $this->state->readJson('storage/monitors.json', []),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
+            'pattern_selection' => [
+                'enabled' => (array)($patternAlgorithms['enabled'] ?? []),
+                'mode' => (string)($patternAlgorithms['mode'] ?? 'one'),
+            ],
         ];
     }
 

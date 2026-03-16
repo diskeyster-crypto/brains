@@ -505,10 +505,13 @@ final class SimulatorEngine
         $medianMfe  = $this->median($mfes);
         $medianDur  = $this->median($durations);
 
-        $totalSignals = count($signals);
+        // signal_to_entry_conversion: use cumulative counts to avoid > 1.0 bug.
+        // All trades that ever entered = waiting + active + closed.
+        // signals.json only holds current cycle, so use total entries as denominator proxy.
+        $totalEntries = count($waiting) + count($active) + $totalClosed;
         $enteredCount = count($active) + $totalClosed;
-        $conversion   = ($totalSignals > 0)
-            ? round($enteredCount / $totalSignals, 4)
+        $conversion   = ($totalEntries > 0)
+            ? round($enteredCount / $totalEntries, 4)
             : 0.0;
 
         $stats = [

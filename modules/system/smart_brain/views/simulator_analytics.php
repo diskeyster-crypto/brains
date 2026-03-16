@@ -68,11 +68,14 @@ $symbolLink = function(string $symbol): string {
  * Helper: side badge
  */
 $sideBadge = function($side): string {
-    $s = strtolower((string)($side ?? 'long'));
+    $s = strtolower((string)($side ?? ''));
     if ($s === 'short') {
         return '<span class="badge badge-short">▼ SHORT</span>';
     }
-    return '<span class="badge badge-long">▲ LONG</span>';
+    if ($s === 'long') {
+        return '<span class="badge badge-long">▲ LONG</span>';
+    }
+    return '<span class="badge bg-secondary">—</span>';
 };
 
 /**
@@ -345,7 +348,7 @@ $pageContent = function() use (
                         <?php foreach ($active as $row): ?>
                         <tr>
                             <td><?= $symbolLink((string)($row['symbol'] ?? '')) ?></td>
-                            <td><?= $sideBadge($row['side'] ?? 'long') ?></td>
+                            <td><?= $sideBadge($row['side'] ?? '') ?></td>
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['current_price'] ?? '-')) ?></td>
                             <td><?= $fmtRoi($row['roi'] ?? 0) ?></td>
@@ -384,6 +387,7 @@ $pageContent = function() use (
                     <th>Тип выхода</th>
                     <th>Режим стопа</th>
                     <th title="Показывает, по какому правилу сделка была закрыта: стоп-лосс, ранний сбой входа, трейлинг, безубыток, тейк-профит.">Причина закрытия</th>
+                    <th>Плечо</th>
                     <th>Длительность</th>
                     <th>Время входа</th>
                     <th>Время выхода</th>
@@ -391,7 +395,7 @@ $pageContent = function() use (
                 </tr></thead>
                 <tbody>
                     <?php if (empty($closed)): ?>
-                        <tr><td colspan="14" class="text-center text-secondary py-4">Нет закрытых позиций</td></tr>
+                        <tr><td colspan="15" class="text-center text-secondary py-4">Нет закрытых позиций</td></tr>
                     <?php else: ?>
                         <?php foreach ($closed as $row):
                             $roi = (float)($row['roi'] ?? 0);
@@ -399,7 +403,7 @@ $pageContent = function() use (
                         ?>
                         <tr>
                             <td><?= $symbolLink((string)($row['symbol'] ?? '')) ?></td>
-                            <td><?= $sideBadge($row['side'] ?? 'long') ?></td>
+                            <td><?= $sideBadge($row['side'] ?? '') ?></td>
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['exit_price'] ?? '-')) ?></td>
                             <td><?= $fmtRoi($roi) ?></td>
@@ -408,6 +412,7 @@ $pageContent = function() use (
                             <td><?= htmlspecialchars((string)($row['exit_mode'] ?? '-')) ?></td>
                             <td><span class="badge bg-secondary"><?= htmlspecialchars((string)($row['stop_mode'] ?? '-')) ?></span></td>
                             <td><?= $reasonBadgeFn($row['reason'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
                             <td><?= ($row['duration'] ?? null) !== null ? htmlspecialchars((string)$row['duration']) . ' мин' : '-' ?></td>
                             <td><?= htmlspecialchars((string)($row['opened_at'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['closed_at'] ?? '-')) ?></td>

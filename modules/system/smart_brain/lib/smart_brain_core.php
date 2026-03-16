@@ -215,6 +215,7 @@ final class SmartBrainCore
             'rejected_low_reliability' => $rejectionCounters['rejected_low_reliability'] ?? 0,
             'rejected_missing_passport' => $rejectionCounters['rejected_missing_passport'] ?? 0,
             'rejected_missing_price' => $rejectionCounters['rejected_missing_price'] ?? 0,
+            'rejected_side_unresolved' => $rejectionCounters['rejected_side_unresolved'] ?? 0,
             // Stable Config Refactor — bootstrap / normal signal counts
             'bootstrap_signals_count' => $signalModeCounters['bootstrap_signals_count'] ?? 0,
             'warmup_symbols_count' => $signalModeCounters['warmup_symbols_count'] ?? 0,
@@ -465,9 +466,9 @@ final class SmartBrainCore
         // Side-based analytics
         $sideSummary = ['long' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0], 'short' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0]];
         foreach ($closed as $trade) {
-            $side = (string)($trade['side'] ?? 'long');
+            $side = (string)($trade['side'] ?? '');
             $roi = (float)($trade['roi'] ?? 0);
-            $key = ($side === 'short') ? 'short' : 'long';
+            $key = ($side === 'short') ? 'short' : 'long';  // backward compat: unknown side grouped with long for analytics
             $sideSummary[$key]['count']++;
             $sideSummary[$key]['roi_sum'] += $roi;
             if ($roi > 0) {

@@ -50,11 +50,14 @@ $symbolLink = function(string $symbol): string {
  * Helper: side badge
  */
 $sideBadge = function($side): string {
-    $s = strtolower((string)($side ?? 'long'));
+    $s = strtolower((string)($side ?? ''));
     if ($s === 'short') {
         return '<span class="badge badge-short">▼ SHORT</span>';
     }
-    return '<span class="badge badge-long">▲ LONG</span>';
+    if ($s === 'long') {
+        return '<span class="badge badge-long">▲ LONG</span>';
+    }
+    return '<span class="badge bg-secondary">—</span>';
 };
 
 /**
@@ -118,20 +121,22 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                     <th>Зона входа</th>
                     <th>Бюджет</th>
                     <th>Плечо</th>
+                    <th>Причина плеча</th>
                     <th>Стоп-лосс</th>
                     <th>Тейк-профит</th>
                 </tr></thead>
                 <tbody>
                     <?php if (empty($waiting)): ?>
-                        <tr><td colspan="7" class="text-center text-secondary py-4">Нет ожидающих позиций</td></tr>
+                        <tr><td colspan="8" class="text-center text-secondary py-4">Нет ожидающих позиций</td></tr>
                     <?php else: ?>
                         <?php foreach ($waiting as $row): ?>
                         <tr>
                             <td><?= $symbolLink((string)($row['symbol'] ?? '')) ?></td>
-                            <td><?= $sideBadge($row['side'] ?? 'long') ?></td>
+                            <td><?= $sideBadge($row['side'] ?? '') ?></td>
                             <td><?= htmlspecialchars((string)($row['entry_zone_low'] ?? '')) ?> → <?= htmlspecialchars((string)($row['entry_zone_high'] ?? '')) ?></td>
                             <td><?= htmlspecialchars((string)($row['budget'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
+                            <td><small class="text-secondary"><?= htmlspecialchars((string)($row['leverage_reason'] ?? '-')) ?></small></td>
                             <td><?= htmlspecialchars((string)($row['stoploss'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['takeprofit'] ?? '-')) ?></td>
                         </tr>
@@ -160,17 +165,18 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                     <th>Трейлинг</th>
                     <th>Безубыток</th>
                     <th>Плечо</th>
+                    <th>Причина плеча</th>
                     <th>Время входа</th>
                     <th>Состояние</th>
                 </tr></thead>
                 <tbody>
                     <?php if (empty($active)): ?>
-                        <tr><td colspan="14" class="text-center text-secondary py-4">Нет активных позиций</td></tr>
+                        <tr><td colspan="15" class="text-center text-secondary py-4">Нет активных позиций</td></tr>
                     <?php else: ?>
                         <?php foreach ($active as $row): ?>
                         <tr>
                             <td><?= $symbolLink((string)($row['symbol'] ?? '')) ?></td>
-                            <td><?= $sideBadge($row['side'] ?? 'long') ?></td>
+                            <td><?= $sideBadge($row['side'] ?? '') ?></td>
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['current_price'] ?? '-')) ?></td>
                             <td><?= $fmtRoi($row['roi'] ?? 0) ?></td>
@@ -181,6 +187,7 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                             <td><?= !empty($row['trailing_active']) ? '<span class="badge bg-info">ON</span>' : '-' ?></td>
                             <td><?= !empty($row['break_even_active']) ? '<span class="badge bg-success">ON</span>' : '-' ?></td>
                             <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
+                            <td><small class="text-secondary"><?= htmlspecialchars((string)($row['leverage_reason'] ?? '-')) ?></small></td>
                             <td><?= htmlspecialchars((string)($row['opened_at'] ?? '-')) ?></td>
                             <td><span class="badge bg-primary">ACTIVE</span></td>
                         </tr>
@@ -207,18 +214,19 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                     <th title="Показывает, по какому правилу сделка была закрыта: стоп-лосс, ранний сбой входа, трейлинг, безубыток, тейк-профит.">Причина закрытия</th>
                     <th>Тип выхода</th>
                     <th>Режим стопа</th>
+                    <th>Плечо</th>
                     <th>Длительность</th>
                     <th>Время входа</th>
                     <th>Время выхода</th>
                 </tr></thead>
                 <tbody>
                     <?php if (empty($closed)): ?>
-                        <tr><td colspan="13" class="text-center text-secondary py-4">Нет закрытых позиций</td></tr>
+                        <tr><td colspan="14" class="text-center text-secondary py-4">Нет закрытых позиций</td></tr>
                     <?php else: ?>
                         <?php foreach ($closed as $row): ?>
                         <tr>
                             <td><?= $symbolLink((string)($row['symbol'] ?? '')) ?></td>
-                            <td><?= $sideBadge($row['side'] ?? 'long') ?></td>
+                            <td><?= $sideBadge($row['side'] ?? '') ?></td>
                             <td><?= htmlspecialchars((string)($row['entry_price'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['exit_price'] ?? '-')) ?></td>
                             <td><?= $fmtRoi($row['roi'] ?? 0) ?></td>
@@ -227,6 +235,7 @@ $pageContent = function() use ($waiting, $active, $closed, $stats, $last_run, $s
                             <td><?= $reasonBadge($row['reason'] ?? '-') ?></td>
                             <td><?= htmlspecialchars((string)($row['exit_mode'] ?? '-')) ?></td>
                             <td><span class="badge bg-secondary"><?= htmlspecialchars((string)($row['stop_mode'] ?? '-')) ?></span></td>
+                            <td><?= htmlspecialchars((string)($row['leverage'] ?? '-')) ?></td>
                             <td><?= ($row['duration'] ?? null) !== null ? htmlspecialchars((string)$row['duration']) . ' мин' : '-' ?></td>
                             <td><?= htmlspecialchars((string)($row['opened_at'] ?? '-')) ?></td>
                             <td><?= htmlspecialchars((string)($row['closed_at'] ?? '-')) ?></td>

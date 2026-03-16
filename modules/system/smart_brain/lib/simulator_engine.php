@@ -63,6 +63,11 @@ final class SimulatorEngine
             if ($symbol === '') {
                 continue;
             }
+            // Reject signals without explicit side — no silent default to long
+            $signalSide = (string)($signal['side'] ?? '');
+            if ($signalSide !== 'long' && $signalSide !== 'short') {
+                continue;
+            }
             if (isset($waitingSymbols[$symbol]) || isset($activeSymbols[$symbol])) {
                 continue;
             }
@@ -75,7 +80,7 @@ final class SimulatorEngine
                 'stoploss'       => $signal['stop_loss'] ?? $signal['stoploss'] ?? null,
                 'takeprofit'     => $signal['take_profit'] ?? $signal['takeprofit'] ?? null,
                 'status'         => 'waiting',
-                'side'           => $signal['side'] ?? 'long',
+                'side'           => $signalSide,
                 'trend_bias'     => $signal['trend_bias'] ?? '',
                 // Exit policy fields
                 'exit_mode'                  => $signal['exit_mode'] ?? 'fixed_tp',
@@ -154,7 +159,7 @@ final class SimulatorEngine
                     'mfe'           => 0.0,
                     'opened_at'     => date('c'),
                     'status'        => 'active',
-                    'side'          => $w['side'] ?? 'long',
+                    'side'          => (string)($w['side'] ?? ''),
                     'trend_bias'    => $w['trend_bias'] ?? '',
                     // Exit policy state
                     'exit_mode'                  => $w['exit_mode'] ?? 'fixed_tp',
@@ -205,7 +210,7 @@ final class SimulatorEngine
             $price      = $prices[$symbol] ?? (float)($a['current_price'] ?? 0.0);
             $stoploss   = (float)($a['stoploss'] ?? 0.0);
             $takeprofit = (float)($a['takeprofit'] ?? 0.0);
-            $side       = (string)($a['side'] ?? 'long');
+            $side       = (string)($a['side'] ?? '');
 
             if ($entryPrice <= 0.0) {
                 $newActive[] = $a;
@@ -356,7 +361,7 @@ final class SimulatorEngine
                     'reason'      => $closedReason,
                     'exit_mode'   => $a['exit_mode'] ?? 'fixed_tp',
                     'stop_mode'   => $a['stop_mode'] ?? 'brain_managed',
-                    'side'        => $a['side'] ?? 'long',
+                    'side'        => $side,
                     'trend_bias'  => $a['trend_bias'] ?? '',
                     'opened_at'   => $openedAt,
                     'closed_at'   => $closedAt,

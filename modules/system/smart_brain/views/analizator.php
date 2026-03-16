@@ -258,10 +258,14 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
                     <?php else: ?>
                         <?php foreach ($signals as $i => $s): ?>
                         <?php
-                            $side = strtolower((string)($s['side'] ?? 'long'));
-                            $sideBadgeHtml = ($side === 'short')
-                                ? '<span class="badge" style="background:#ef4444;">▼ SHORT</span>'
-                                : '<span class="badge" style="background:#22c55e;">▲ LONG</span>';
+                            $side = strtolower((string)($s['side'] ?? ''));
+                            if ($side === 'short') {
+                                $sideBadgeHtml = '<span class="badge" style="background:#ef4444;">▼ SHORT</span>';
+                            } elseif ($side === 'long') {
+                                $sideBadgeHtml = '<span class="badge" style="background:#22c55e;">▲ LONG</span>';
+                            } else {
+                                $sideBadgeHtml = '<span class="badge bg-secondary">—</span>';
+                            }
                         ?>
                         <tr>
                             <td><?= $i + 1 ?></td>

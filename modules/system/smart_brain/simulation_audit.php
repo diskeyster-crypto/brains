@@ -611,15 +611,20 @@ final class SimulationAudit
         $avgMfe = $totalClosed > 0 ? round(array_sum($mfes) / $totalClosed, 6) : 0.0;
         $avgDur = $totalClosed > 0 ? round(array_sum($durations) / $totalClosed, 2) : 0.0;
 
-        // Check signal_to_entry_conversion bug
-        $totalSignals = count($signals);
+        // signal_to_entry_conversion: use the FIXED formula (same as simulator_engine.php)
+        // Denominator = waiting + active + closed (all cumulative), not signals.json count
+        $totalEntries = count($waiting) + count($active) + $totalClosed;
         $enteredCount = count($active) + $totalClosed;
-        $conversion = ($totalSignals > 0) ? round($enteredCount / $totalSignals, 4) : 0.0;
+        $conversionFixed = ($totalEntries > 0)
+            ? round($enteredCount / $totalEntries, 4)
+            : 0.0;
 
-        $conversionBug = false;
-        if ($conversion > 1.0) {
-            $conversionBug = true;
-        }
+        // Diagnostic: also compute with the OLD (buggy) formula for comparison
+        $totalSignalsCurrent = count($signals);
+        $conversionOld = ($totalSignalsCurrent > 0)
+            ? round($enteredCount / $totalSignalsCurrent, 4)
+            : 0.0;
+        $oldFormulaBug = ($conversionOld > 1.0);
 
         return [
             'total_trades' => $totalClosed,
@@ -628,11 +633,12 @@ final class SimulationAudit
             'average_mae' => $avgMae,
             'average_mfe' => $avgMfe,
             'average_duration' => $avgDur,
-            'signal_to_entry_conversion' => $conversion,
-            'conversion_bug_detected' => $conversionBug,
-            'conversion_bug_explanation' => $conversionBug
-                ? 'signal_to_entry_conversion > 1.0 because signals.json holds only current cycle signals, while active+closed accumulate across cycles'
-                : null,
+            'signal_to_entry_conversion' => $conversionFixed,
+            'old_formula_conversion' => $conversionOld,
+            'old_formula_bug_detected' => $oldFormulaBug,
+            'old_formula_bug_explanation' => $oldFormulaBug
+                ? 'Old formula (signals.json / active+closed) exceeds 1.0 — FIXED in simulator_engine.php using cumulative denominator'
+                : 'Old formula bug not triggered (either no data or single cycle)',
         ];
     }
 

@@ -360,8 +360,11 @@ final class RiskEngine
     }
 
     // Dynamic Leverage V1 thresholds (configurable in future versions)
+    // Fractional thresholds: 0.05 = 5% price std-dev over analysis window
     private const LEVERAGE_HIGH_VOLATILITY_THRESHOLD = 0.05;
+    // Fractional thresholds: 0.10 = 10% corridor width (high/low spread)
     private const LEVERAGE_WIDE_CORRIDOR_THRESHOLD = 0.10;
+    // Passport reliability score below which leverage is reduced by 1
     private const LEVERAGE_WEAK_RELIABILITY_THRESHOLD = 0.30;
 
     /**

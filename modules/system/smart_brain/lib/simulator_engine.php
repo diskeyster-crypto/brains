@@ -63,7 +63,8 @@ final class SimulatorEngine
             if ($symbol === '') {
                 continue;
             }
-            // Reject signals without explicit side — no silent default to long
+            // Reject signals without explicit side — no silent default to long.
+            // RiskEngine already logs side-rejection details, so no additional logging needed here.
             $signalSide = (string)($signal['side'] ?? '');
             if ($signalSide !== 'long' && $signalSide !== 'short') {
                 continue;

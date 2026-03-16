@@ -112,6 +112,9 @@ final class SmartBrainCore
             $beforeCount = count($candidates);
             $candidates = $symbolIntel->filterCandidates($candidates, $symbolFilterMode);
             $symbolIntelFiltered = $beforeCount - count($candidates);
+            if ($symbolIntelFiltered > 0) {
+                $this->logger->log('info', 'Symbol Intelligence: filtered ' . $symbolIntelFiltered . ' candidates (mode=' . $symbolFilterMode . ', remaining=' . count($candidates) . ')');
+            }
         }
 
         // Write analyzer debug log (Pattern-First Decision Flow)

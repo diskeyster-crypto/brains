@@ -109,6 +109,12 @@ final class RiskEngine
             'early_failure_max_adverse_roi' => (float)($userLimits['early_failure_max_adverse_roi'] ?? -0.008),
         ];
 
+        // Leverage & Stop Control
+        $leverageMode = (string)($userLimits['leverage_mode'] ?? 'auto');
+        $manualLeverage = (int)($userLimits['manual_leverage'] ?? 3);
+        $stopControlMode = (string)($userLimits['stop_control_mode'] ?? 'auto');
+        $manualStopLossRoi = (float)($userLimits['manual_stop_loss_roi'] ?? 0.03);
+
         $this->rejectionCounters = [
             'rejected_not_entry_zone' => 0,
             'rejected_low_reliability' => 0,
@@ -202,6 +208,12 @@ final class RiskEngine
                 $leverage = $leverageResult['leverage'];
                 $leverageReason = $leverageResult['reason'];
 
+                // Manual leverage override
+                if ($leverageMode === 'manual') {
+                    $leverage = max(1, min($manualLeverage, $bootstrapMaxLeverage, $maxLeverage));
+                    $leverageReason = 'manual=' . $leverage;
+                }
+
                 $budget = round($maxBudgetPerCoin * $bootstrapBudgetFactor, 2);
                 $stopLoss = round($corridorWidth * $stopLossRange, 6);
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
@@ -228,6 +240,9 @@ final class RiskEngine
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
                     'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
                     'analyzer_score' => $analyzerScore,
+                    'leverage_mode' => $leverageMode,
+                    'stop_control_mode' => $stopControlMode,
+                    'manual_stop_loss_roi' => $manualStopLossRoi,
                 ], $exitPolicy);
                 $bootstrapCount++;
                 $this->signalModeCounters['bootstrap_signals_count']++;
@@ -247,6 +262,12 @@ final class RiskEngine
                 );
                 $leverage = $leverageResult['leverage'];
                 $leverageReason = $leverageResult['reason'];
+
+                // Manual leverage override
+                if ($leverageMode === 'manual') {
+                    $leverage = max(1, min($manualLeverage, $maxLeverage));
+                    $leverageReason = 'manual=' . $leverage;
+                }
 
                 // Calculate budget: profile.budget × reliability_score, clamped ≤ max_budget_per_coin
                 $budget = round($profileBudget * $reliabilityScore, 2);
@@ -280,6 +301,9 @@ final class RiskEngine
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
                     'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
                     'analyzer_score' => $analyzerScore,
+                    'leverage_mode' => $leverageMode,
+                    'stop_control_mode' => $stopControlMode,
+                    'manual_stop_loss_roi' => $manualStopLossRoi,
                 ], $exitPolicy);
                 $this->signalModeCounters['normal_signals_count']++;
             }

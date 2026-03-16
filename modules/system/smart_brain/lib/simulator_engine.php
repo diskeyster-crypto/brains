@@ -114,6 +114,9 @@ final class SimulatorEngine
                 'analyzer_score'             => $signal['analyzer_score'] ?? 0.0,
                 // Dynamic leverage V1
                 'leverage_reason'            => $signal['leverage_reason'] ?? '',
+                'leverage_mode'              => $signal['leverage_mode'] ?? 'auto',
+                'stop_control_mode'          => $signal['stop_control_mode'] ?? 'auto',
+                'manual_stop_loss_roi'       => $signal['manual_stop_loss_roi'] ?? 0.03,
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -144,6 +147,15 @@ final class SimulatorEngine
                 $stopModeDistance = $this->computeStopModeDistance($w, $stopMode);
                 if ($stopModeDistance > 0.0 && ($effectiveSL <= 0.0 || $stopModeDistance > $effectiveSL)) {
                     $effectiveSL = $stopModeDistance;
+                }
+
+                // Manual stop control override
+                $stopControlMode = (string)($w['stop_control_mode'] ?? 'auto');
+                if ($stopControlMode === 'manual') {
+                    $manualStopLossRoi = (float)($w['manual_stop_loss_roi'] ?? 0.03);
+                    if ($manualStopLossRoi > 0.0) {
+                        $effectiveSL = $manualStopLossRoi;
+                    }
                 }
 
                 // Activate
@@ -195,6 +207,9 @@ final class SimulatorEngine
                     'analyzer_score'             => $w['analyzer_score'] ?? 0.0,
                     // Dynamic leverage V1
                     'leverage_reason'            => $w['leverage_reason'] ?? '',
+                    'leverage_mode'              => $w['leverage_mode'] ?? 'auto',
+                    'stop_control_mode'          => $w['stop_control_mode'] ?? 'auto',
+                    'manual_stop_loss_roi'       => $w['manual_stop_loss_roi'] ?? 0.03,
                 ];
                 $activeSymbols[$symbol] = true;
             } else {
@@ -376,6 +391,9 @@ final class SimulatorEngine
                     'entry_quality_score' => $a['entry_quality_score'] ?? 0.0,
                     'analyzer_score'     => $a['analyzer_score'] ?? 0.0,
                     'leverage_reason'    => $a['leverage_reason'] ?? '',
+                    'leverage_mode'              => $a['leverage_mode'] ?? 'auto',
+                    'stop_control_mode'          => $a['stop_control_mode'] ?? 'auto',
+                    'manual_stop_loss_roi'       => $a['manual_stop_loss_roi'] ?? 0.03,
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);
@@ -514,6 +532,90 @@ final class SimulatorEngine
             ? round($enteredCount / $totalEntries, 4)
             : 0.0;
 
+        // Per-pattern statistics
+        $patternStats = [];
+        foreach ($closed as $trade) {
+            $pattern = (string)($trade['pattern_algorithm'] ?? 'none');
+            if (!isset($patternStats[$pattern])) {
+                $patternStats[$pattern] = [
+                    'trades_total' => 0, 'wins' => 0, 'losses' => 0,
+                    'roi_sum' => 0.0, 'mae_sum' => 0.0, 'mfe_sum' => 0.0, 'duration_sum' => 0.0,
+                    'long_count' => 0, 'short_count' => 0,
+                    'stop_loss_count' => 0, 'early_failure_count' => 0,
+                    'trailing_stop_count' => 0, 'break_even_stop_count' => 0,
+                    'take_profit_count' => 0, 'leverage_sum' => 0.0,
+                ];
+            }
+            $p = &$patternStats[$pattern];
+            $tradeRoi = (float)($trade['roi'] ?? 0.0);
+            $p['trades_total']++;
+            if ($tradeRoi >= 0) { $p['wins']++; } else { $p['losses']++; }
+            $p['roi_sum'] += $tradeRoi;
+            $p['mae_sum'] += (float)($trade['mae'] ?? 0.0);
+            $p['mfe_sum'] += (float)($trade['mfe'] ?? 0.0);
+            $p['duration_sum'] += (float)($trade['duration'] ?? 0.0);
+            $side = (string)($trade['side'] ?? '');
+            if ($side === 'long') { $p['long_count']++; }
+            if ($side === 'short') { $p['short_count']++; }
+            $reason = (string)($trade['reason'] ?? '');
+            match ($reason) {
+                'stop_loss' => $p['stop_loss_count']++,
+                'early_failure' => $p['early_failure_count']++,
+                'trailing_stop' => $p['trailing_stop_count']++,
+                'break_even_stop' => $p['break_even_stop_count']++,
+                'take_profit' => $p['take_profit_count']++,
+                default => null,
+            };
+            $p['leverage_sum'] += (float)($trade['leverage'] ?? 0.0);
+            unset($p);
+        }
+
+        // Finalize per-pattern stats with derived metrics
+        $patternStatsResult = [];
+        foreach ($patternStats as $pattern => $p) {
+            $t = $p['trades_total'];
+            $patternStatsResult[$pattern] = [
+                'trades_total' => $t,
+                'wins' => $p['wins'],
+                'losses' => $p['losses'],
+                'winrate' => $t > 0 ? round($p['wins'] / $t, 4) : 0.0,
+                'average_roi' => $t > 0 ? round($p['roi_sum'] / $t, 6) : 0.0,
+                'average_mae' => $t > 0 ? round($p['mae_sum'] / $t, 6) : 0.0,
+                'average_mfe' => $t > 0 ? round($p['mfe_sum'] / $t, 6) : 0.0,
+                'average_duration' => $t > 0 ? round($p['duration_sum'] / $t, 1) : 0.0,
+                'long_count' => $p['long_count'],
+                'short_count' => $p['short_count'],
+                'stop_loss_count' => $p['stop_loss_count'],
+                'early_failure_count' => $p['early_failure_count'],
+                'trailing_stop_count' => $p['trailing_stop_count'],
+                'break_even_stop_count' => $p['break_even_stop_count'],
+                'take_profit_count' => $p['take_profit_count'],
+                'average_leverage' => $t > 0 ? round($p['leverage_sum'] / $t, 2) : 0.0,
+            ];
+        }
+
+        // Leverage mode stats
+        $leverageModeStats = ['manual' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0]];
+        foreach ($closed as $trade) {
+            $lm = (string)($trade['leverage_mode'] ?? 'auto');
+            $key = ($lm === 'manual') ? 'manual' : 'auto';
+            $leverageModeStats[$key]['count']++;
+            $tradeRoi = (float)($trade['roi'] ?? 0.0);
+            $leverageModeStats[$key]['roi_sum'] += $tradeRoi;
+            if ($tradeRoi >= 0) { $leverageModeStats[$key]['wins']++; }
+        }
+
+        // Stop control mode stats
+        $stopControlStats = ['manual' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0]];
+        foreach ($closed as $trade) {
+            $scm = (string)($trade['stop_control_mode'] ?? 'auto');
+            $key = ($scm === 'manual') ? 'manual' : 'auto';
+            $stopControlStats[$key]['count']++;
+            $tradeRoi = (float)($trade['roi'] ?? 0.0);
+            if ($tradeRoi >= 0) { $stopControlStats[$key]['wins']++; }
+            $stopControlStats[$key]['mae_sum'] += (float)($trade['mae'] ?? 0.0);
+        }
+
         $stats = [
             'total_trades'               => $totalClosed,
             'winrate'                    => $winrate,
@@ -525,6 +627,9 @@ final class SimulatorEngine
             'waiting_count'              => count($waiting),
             'active_count'               => count($active),
             'closed_count'               => $totalClosed,
+            'pattern_stats'              => $patternStatsResult,
+            'leverage_mode_stats'        => $leverageModeStats,
+            'stop_control_stats'         => $stopControlStats,
             'updated_at'                 => date('c'),
         ];
 

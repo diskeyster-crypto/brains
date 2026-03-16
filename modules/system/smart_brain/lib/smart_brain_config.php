@@ -127,6 +127,12 @@ final class SmartBrainConfig
             'early_failure_enabled'        => !empty($values['early_failure_enabled']),
             'early_failure_window_minutes' => (int)$values['early_failure_window_minutes'],
             'early_failure_max_adverse_roi' => (float)$values['early_failure_max_adverse_roi'],
+            // Leverage Control
+            'leverage_mode'                => (string)($values['leverage_mode'] ?? 'auto'),
+            'manual_leverage'              => (int)($values['manual_leverage'] ?? 3),
+            // Stop Control
+            'stop_control_mode'            => (string)($values['stop_control_mode'] ?? 'auto'),
+            'manual_stop_loss_roi'         => (float)($values['manual_stop_loss_roi'] ?? 0.03),
         ];
 
         // Pattern Selection
@@ -270,6 +276,30 @@ final class SmartBrainConfig
             $errors[] = 'early_failure_max_adverse_roi must be < 0';
         }
 
+        // Leverage Control validation
+        $validLeverageModes = ['manual', 'auto'];
+        if (isset($values['leverage_mode']) && !in_array((string)$values['leverage_mode'], $validLeverageModes, true)) {
+            $errors[] = 'leverage_mode must be one of: manual, auto';
+        }
+        if (isset($values['manual_leverage'])) {
+            $ml = (int)$values['manual_leverage'];
+            if ($ml < 1) {
+                $errors[] = 'manual_leverage must be >= 1';
+            }
+            $maxLev = (int)($values['max_leverage'] ?? 15);
+            if ($ml > $maxLev) {
+                $errors[] = 'manual_leverage must be <= max_leverage (' . $maxLev . ')';
+            }
+        }
+        // Stop Control validation
+        $validStopControlModes = ['manual', 'auto'];
+        if (isset($values['stop_control_mode']) && !in_array((string)$values['stop_control_mode'], $validStopControlModes, true)) {
+            $errors[] = 'stop_control_mode must be one of: manual, auto';
+        }
+        if (isset($values['manual_stop_loss_roi']) && (float)$values['manual_stop_loss_roi'] <= 0) {
+            $errors[] = 'manual_stop_loss_roi must be > 0';
+        }
+
         // Pattern Selection validation
         $patternsProvided = isset($values['patterns_enabled']) && is_array($values['patterns_enabled']) ? $values['patterns_enabled'] : [];
         if (empty($patternsProvided)) {
@@ -353,6 +383,14 @@ final class SmartBrainConfig
                 'early_failure_enabled' => (bool)($userLimits['early_failure_enabled'] ?? false),
                 'early_failure_window_minutes' => (int)($userLimits['early_failure_window_minutes'] ?? 5),
                 'early_failure_max_adverse_roi' => (float)($userLimits['early_failure_max_adverse_roi'] ?? -0.008),
+            ],
+            'leverage_control' => [
+                'leverage_mode' => (string)($userLimits['leverage_mode'] ?? 'auto'),
+                'manual_leverage' => (int)($userLimits['manual_leverage'] ?? 3),
+            ],
+            'stop_control' => [
+                'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
+                'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
             ],
             'pattern_selection' => [
                 'enabled' => (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []),

@@ -21,6 +21,9 @@
 /** @var int $losses */
 /** @var array<string,int> $roi_buckets */
 /** @var array<string,array<string,mixed>> $side_summary */
+/** @var array<string,array<string,mixed>> $pattern_stats */
+/** @var array<string,array<string,mixed>> $leverage_mode_stats */
+/** @var array<string,array<string,mixed>> $stop_control_stats */
 
 $pageTitle = 'Smart Brain - Аналитика симулятора';
 $activeTab = 'simulator_analytics';
@@ -103,7 +106,8 @@ $winrate = $totalClosed > 0 ? ($wins / $totalClosed) : 0;
 $pageContent = function() use (
     $waiting, $active, $closed, $stats, $exit_reasons,
     $avg_roi, $median_roi, $avg_mae, $avg_mfe, $avg_duration,
-    $wins, $losses, $roi_buckets, $side_summary, $fmtRoi, $symbolLink, $sideBadge, $reasonBadgeFn,
+    $wins, $losses, $roi_buckets, $side_summary, $pattern_stats, $leverage_mode_stats, $stop_control_stats,
+    $fmtRoi, $symbolLink, $sideBadge, $reasonBadgeFn,
     $totalClosed, $totalActive, $totalWaiting, $totalAll, $winrate,
     $smartBrainUrl
 ) {
@@ -203,6 +207,151 @@ $pageContent = function() use (
                                 <div class="col"><strong><?= $shortData['wins'] ?></strong><br><small class="text-secondary">Выигрышей</small></div>
                                 <div class="col"><strong><?= number_format($shortWr, 1) ?>%</strong><br><small class="text-secondary">Винрейт</small></div>
                                 <div class="col"><strong class="<?= $shortAvgRoi >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format($shortAvgRoi, 2) ?>%</strong><br><small class="text-secondary">Средний ROI</small></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== PATTERN STATISTICS ===== -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin:0;"><i class="bi bi-puzzle me-1"></i> Статистика по паттернам</h5></div>
+        <div class="card-body p-0">
+            <?php if (empty($pattern_stats)): ?>
+                <p class="text-secondary text-center py-4">Нет данных по паттернам</p>
+            <?php else: ?>
+                <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm mb-0">
+                    <thead><tr>
+                        <th>Паттерн</th>
+                        <th class="text-end">Сделок</th>
+                        <th class="text-end">Выигр.</th>
+                        <th class="text-end">Проигр.</th>
+                        <th class="text-end">Винрейт</th>
+                        <th class="text-end">Ср. ROI</th>
+                        <th class="text-end">Ср. MAE</th>
+                        <th class="text-end">Ср. MFE</th>
+                        <th class="text-end">Ср. длит.</th>
+                        <th class="text-end">Long</th>
+                        <th class="text-end">Short</th>
+                        <th class="text-end">SL</th>
+                        <th class="text-end">EF</th>
+                        <th class="text-end">TS</th>
+                        <th class="text-end">BE</th>
+                        <th class="text-end">TP</th>
+                        <th class="text-end">Ср. плечо</th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ($pattern_stats as $pName => $pData): ?>
+                        <tr>
+                            <td class="fw-bold"><?= htmlspecialchars((string)$pName) ?></td>
+                            <td class="text-end"><?= (int)($pData['trades_total'] ?? 0) ?></td>
+                            <td class="text-end roi-positive"><?= (int)($pData['wins'] ?? 0) ?></td>
+                            <td class="text-end roi-negative"><?= (int)($pData['losses'] ?? 0) ?></td>
+                            <td class="text-end"><?= number_format((float)($pData['winrate'] ?? 0) * 100, 1) ?>%</td>
+                            <td class="text-end <?= (float)($pData['average_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($pData['average_roi'] ?? 0) * 100, 2) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($pData['average_mae'] ?? 0) * 100, 2) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($pData['average_mfe'] ?? 0) * 100, 2) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($pData['average_duration'] ?? 0), 1) ?> мин</td>
+                            <td class="text-end"><?= (int)($pData['long_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= (int)($pData['short_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= (int)($pData['stop_loss_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= (int)($pData['early_failure_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= (int)($pData['trailing_stop_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= (int)($pData['break_even_stop_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= (int)($pData['take_profit_count'] ?? 0) ?></td>
+                            <td class="text-end"><?= number_format((float)($pData['average_leverage'] ?? 0), 2) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- ===== LEVERAGE MODE STATS ===== -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h5 style="margin:0;"><i class="bi bi-speedometer me-1"></i> Режим плеча (Leverage)</h5></div>
+                <div class="card-body">
+                    <?php
+                    $lmAuto = $leverage_mode_stats['auto'] ?? ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0];
+                    $lmManual = $leverage_mode_stats['manual'] ?? ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0];
+                    $lmAutoWr = $lmAuto['count'] > 0 ? ($lmAuto['wins'] / $lmAuto['count']) * 100 : 0;
+                    $lmManualWr = $lmManual['count'] > 0 ? ($lmManual['wins'] / $lmManual['count']) * 100 : 0;
+                    $lmAutoAvg = $lmAuto['count'] > 0 ? ($lmAuto['roi_sum'] / $lmAuto['count']) * 100 : 0;
+                    $lmManualAvg = $lmManual['count'] > 0 ? ($lmManual['roi_sum'] / $lmManual['count']) * 100 : 0;
+                    ?>
+                    <div class="row text-center mb-3">
+                        <div class="col-6">
+                            <div class="card" style="border-left: 4px solid #3b82f6;">
+                                <div class="card-body py-2">
+                                    <h6 class="mb-2"><span class="badge bg-primary">AUTO</span></h6>
+                                    <div class="row">
+                                        <div class="col"><strong><?= $lmAuto['count'] ?></strong><br><small class="text-secondary">Сделок</small></div>
+                                        <div class="col"><strong><?= number_format($lmAutoWr, 1) ?>%</strong><br><small class="text-secondary">Винрейт</small></div>
+                                        <div class="col"><strong class="<?= $lmAutoAvg >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format($lmAutoAvg, 2) ?>%</strong><br><small class="text-secondary">Ср. ROI</small></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="card" style="border-left: 4px solid #f59e0b;">
+                                <div class="card-body py-2">
+                                    <h6 class="mb-2"><span class="badge bg-warning text-dark">MANUAL</span></h6>
+                                    <div class="row">
+                                        <div class="col"><strong><?= $lmManual['count'] ?></strong><br><small class="text-secondary">Сделок</small></div>
+                                        <div class="col"><strong><?= number_format($lmManualWr, 1) ?>%</strong><br><small class="text-secondary">Винрейт</small></div>
+                                        <div class="col"><strong class="<?= $lmManualAvg >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format($lmManualAvg, 2) ?>%</strong><br><small class="text-secondary">Ср. ROI</small></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== STOP CONTROL STATS ===== -->
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h5 style="margin:0;"><i class="bi bi-shield-minus me-1"></i> Режим стоп-лосса (Stop Control)</h5></div>
+                <div class="card-body">
+                    <?php
+                    $scAuto = $stop_control_stats['auto'] ?? ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0];
+                    $scManual = $stop_control_stats['manual'] ?? ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0];
+                    $scAutoWr = $scAuto['count'] > 0 ? ($scAuto['wins'] / $scAuto['count']) * 100 : 0;
+                    $scManualWr = $scManual['count'] > 0 ? ($scManual['wins'] / $scManual['count']) * 100 : 0;
+                    $scAutoMae = $scAuto['count'] > 0 ? ($scAuto['mae_sum'] / $scAuto['count']) * 100 : 0;
+                    $scManualMae = $scManual['count'] > 0 ? ($scManual['mae_sum'] / $scManual['count']) * 100 : 0;
+                    ?>
+                    <div class="row text-center mb-3">
+                        <div class="col-6">
+                            <div class="card" style="border-left: 4px solid #3b82f6;">
+                                <div class="card-body py-2">
+                                    <h6 class="mb-2"><span class="badge bg-primary">AUTO</span></h6>
+                                    <div class="row">
+                                        <div class="col"><strong><?= $scAuto['count'] ?></strong><br><small class="text-secondary">Сделок</small></div>
+                                        <div class="col"><strong><?= number_format($scAutoWr, 1) ?>%</strong><br><small class="text-secondary">Винрейт</small></div>
+                                        <div class="col"><strong><?= number_format($scAutoMae, 2) ?>%</strong><br><small class="text-secondary">Ср. MAE</small></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="card" style="border-left: 4px solid #f59e0b;">
+                                <div class="card-body py-2">
+                                    <h6 class="mb-2"><span class="badge bg-warning text-dark">MANUAL</span></h6>
+                                    <div class="row">
+                                        <div class="col"><strong><?= $scManual['count'] ?></strong><br><small class="text-secondary">Сделок</small></div>
+                                        <div class="col"><strong><?= number_format($scManualWr, 1) ?>%</strong><br><small class="text-secondary">Винрейт</small></div>
+                                        <div class="col"><strong><?= number_format($scManualMae, 2) ?>%</strong><br><small class="text-secondary">Ср. MAE</small></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

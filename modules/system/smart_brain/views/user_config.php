@@ -84,6 +84,66 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
+        <!-- Leverage Control & Stop Control -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-speedometer me-2"></i>
+                        <h5 style="margin: 0;">Leverage Control</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                            Режим «auto» — плечо рассчитывается мозгом автоматически.<br>
+                            Режим «manual» — используется фиксированное плечо.
+                        </p>
+                        <div class="mb-3">
+                            <label for="leverage_mode" class="form-label fw-bold">Leverage Mode</label>
+                            <select class="form-select" id="leverage_mode" name="leverage_mode">
+                                <?php foreach (['auto' => 'Auto', 'manual' => 'Manual'] as $lm => $lmLabel): ?>
+                                <option value="<?= $lm ?>" <?= ($form_values['leverage_mode'] ?? 'auto') === $lm ? 'selected' : '' ?>><?= $lmLabel ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">Режим выбора плеча</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="manual_leverage" class="form-label">Manual Leverage</label>
+                            <input type="number" step="1" min="1" class="form-control" id="manual_leverage" name="manual_leverage" value="<?= $v('manual_leverage', '3') ?>">
+                            <small class="text-secondary">Фиксированное плечо (используется в режиме manual)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-shield-minus me-2"></i>
+                        <h5 style="margin: 0;">Stop Control</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                            Режим «auto» — стоп-лосс рассчитывается мозгом автоматически.<br>
+                            Режим «manual» — используется фиксированный стоп-лосс ROI.
+                        </p>
+                        <div class="mb-3">
+                            <label for="stop_control_mode" class="form-label fw-bold">Stop Control Mode</label>
+                            <select class="form-select" id="stop_control_mode" name="stop_control_mode">
+                                <?php foreach (['auto' => 'Auto', 'manual' => 'Manual'] as $sc => $scLabel): ?>
+                                <option value="<?= $sc ?>" <?= ($form_values['stop_control_mode'] ?? 'auto') === $sc ? 'selected' : '' ?>><?= $scLabel ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">Режим управления стоп-лоссом</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="manual_stop_loss_roi" class="form-label">Manual Stop Loss ROI</label>
+                            <input type="number" step="0.001" min="0.001" class="form-control" id="manual_stop_loss_roi" name="manual_stop_loss_roi" value="<?= $v('manual_stop_loss_roi', '0.03') ?>">
+                            <small class="text-secondary">Фиксированный стоп-лосс ROI (например, 0.03 = 3%)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row">
             <!-- Trading Limits -->
             <div class="col-md-6 mb-4">

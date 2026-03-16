@@ -1,2 +1,6 @@
 # Generated runtime data (not committed)
 storage/simulation_audit_report.json
+storage/symbol_stats.json
+storage/whitelist.json
+storage/blacklist.json
+storage/watchlist.json

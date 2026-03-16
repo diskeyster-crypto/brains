@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 final class SmartBrainConfig
 {
+    private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue'];
+
     private string $moduleBase;
     /** @var array<string,mixed> */
     private array $config;
@@ -128,10 +130,9 @@ final class SmartBrainConfig
         ];
 
         // Pattern Selection
-        $allowedAlgorithms = ['double_bottom', 'double_top', 'pullback_trend_continue'];
         $patternsEnabled = [];
         if (isset($values['patterns_enabled']) && is_array($values['patterns_enabled'])) {
-            $patternsEnabled = array_values(array_intersect($values['patterns_enabled'], $allowedAlgorithms));
+            $patternsEnabled = array_values(array_intersect($values['patterns_enabled'], self::ALLOWED_PATTERN_ALGORITHMS));
         }
         $patternMode = (string)($values['pattern_mode'] ?? 'any');
         if (!in_array($patternMode, ['one', 'any', 'all'], true)) {
@@ -270,17 +271,14 @@ final class SmartBrainConfig
         }
 
         // Pattern Selection validation
-        $allowedAlgorithms = ['double_bottom', 'double_top', 'pullback_trend_continue'];
-        if (isset($values['patterns_enabled']) && is_array($values['patterns_enabled'])) {
-            $invalid = array_diff($values['patterns_enabled'], $allowedAlgorithms);
+        $patternsProvided = isset($values['patterns_enabled']) && is_array($values['patterns_enabled']) ? $values['patterns_enabled'] : [];
+        if (empty($patternsProvided)) {
+            $errors[] = 'Нужно выбрать хотя бы один алгоритм анализа.';
+        } else {
+            $invalid = array_diff($patternsProvided, self::ALLOWED_PATTERN_ALGORITHMS);
             if (!empty($invalid)) {
                 $errors[] = 'patterns_enabled contains invalid algorithm(s): ' . implode(', ', $invalid);
             }
-            if (empty($values['patterns_enabled'])) {
-                $errors[] = 'Нужно выбрать хотя бы один алгоритм анализа.';
-            }
-        } else {
-            $errors[] = 'Нужно выбрать хотя бы один алгоритм анализа.';
         }
         $validPatternModes = ['one', 'any', 'all'];
         if (isset($values['pattern_mode']) && !in_array((string)$values['pattern_mode'], $validPatternModes, true)) {
@@ -440,6 +438,10 @@ final class SmartBrainConfig
     {
         if (!isset($this->config['parser4'])) {
             return;
+        }
+
+        if (!isset($this->config['parser4']['pattern_algorithms'])) {
+            $this->config['parser4']['pattern_algorithms'] = [];
         }
 
         if (isset($patterns['enabled']) && is_array($patterns['enabled']) && !empty($patterns['enabled'])) {

@@ -187,7 +187,7 @@ final class SimulationAudit
                     $stats[$algo]['short_count']++;
                 }
 
-                $reason = (string)($t['close_reason'] ?? '');
+                $reason = (string)($t['reason'] ?? '');
                 match ($reason) {
                     'stop_loss' => $stats[$algo]['stop_loss_count']++,
                     'early_failure' => $stats[$algo]['early_failure_count']++,
@@ -376,7 +376,7 @@ final class SimulationAudit
                         $wins++;
                     }
 
-                    $reason = (string)($t['close_reason'] ?? '');
+                    $reason = (string)($t['reason'] ?? '');
                     match ($reason) {
                         'stop_loss' => $stats['stop_loss_count']++,
                         'early_failure' => $stats['early_failure_count']++,

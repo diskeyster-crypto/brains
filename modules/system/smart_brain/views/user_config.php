@@ -10,16 +10,24 @@
 /** @var array<string,mixed> $user_limits */
 /** @var array<string,mixed> $form_values */
 /** @var array{type:string,message:string}|null $flash */
+/** @var list<string> $patterns_enabled */
+/** @var string $pattern_mode */
 
 $pageTitle = 'Smart Brain - User Config';
 $activeTab = 'user_config';
 
-$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl) {
+$patterns_enabled = $patterns_enabled ?? [];
+$pattern_mode = $pattern_mode ?? 'any';
+
+$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode) {
     $v = function(string $key, $default = '') use ($form_values) {
         return htmlspecialchars((string)($form_values[$key] ?? $default));
     };
     $checked = function(string $key) use ($form_values): string {
         return !empty($form_values[$key]) ? 'checked' : '';
+    };
+    $patternChecked = function(string $algo) use ($patterns_enabled): string {
+        return in_array($algo, $patterns_enabled, true) ? 'checked' : '';
     };
 ?>
     <!-- Page Header -->
@@ -31,6 +39,50 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl) {
     </div>
 
     <form method="POST" action="<?= htmlspecialchars($smartBrainUrl) ?>/user_config/save" id="user-config-form">
+
+        <!-- Pattern Selection Section -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-search me-2"></i>
+                        <h5 style="margin: 0;">Pattern Selection</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                            Выбранные алгоритмы используются анализатором для поиска входов.<br>
+                            Режим «any» — достаточно совпадения любого включённого алгоритма.<br>
+                            Режим «one» — используется только один выбранный алгоритм.<br>
+                            Режим «all» — сигнал допускается только при подтверждении всеми включёнными алгоритмами.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Enabled Algorithms</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom" name="patterns_enabled[]" value="double_bottom" <?= $patternChecked('double_bottom') ?>>
+                                <label class="form-check-label" for="pattern_double_bottom">Double Bottom</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="pattern_double_top" name="patterns_enabled[]" value="double_top" <?= $patternChecked('double_top') ?>>
+                                <label class="form-check-label" for="pattern_double_top">Double Top</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="pattern_pullback" name="patterns_enabled[]" value="pullback_trend_continue" <?= $patternChecked('pullback_trend_continue') ?>>
+                                <label class="form-check-label" for="pattern_pullback">Pullback Trend Continue</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="pattern_mode" class="form-label fw-bold">Pattern Mode</label>
+                            <select class="form-select" id="pattern_mode" name="pattern_mode">
+                                <?php foreach (['one' => 'One', 'any' => 'Any', 'all' => 'All'] as $pm => $pmLabel): ?>
+                                <option value="<?= $pm ?>" <?= $pattern_mode === $pm ? 'selected' : '' ?>><?= $pmLabel ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-secondary">Режим проверки алгоритмов</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div class="row">
             <!-- Trading Limits -->

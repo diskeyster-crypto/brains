@@ -83,6 +83,12 @@ final class SmartBrainController
         $values['break_even_enabled'] = !empty($_POST['break_even_enabled']);
         $values['early_failure_enabled'] = !empty($_POST['early_failure_enabled']);
 
+        // Pattern selection: checkboxes send array, absent when none checked
+        $values['patterns_enabled'] = isset($_POST['patterns_enabled']) && is_array($_POST['patterns_enabled'])
+            ? $_POST['patterns_enabled']
+            : [];
+        $values['pattern_mode'] = (string)($_POST['pattern_mode'] ?? 'any');
+
         $result = $this->service->saveUserConfig($values);
 
         $data = $this->service->getUserConfigData();
@@ -95,6 +101,9 @@ final class SmartBrainController
             $data['flash'] = ['type' => 'error', 'message' => 'Validation errors: ' . implode('; ', $result['errors'])];
             // Preserve entered form values on error
             $data['form_values'] = $values;
+            // Preserve pattern selection on error
+            $data['patterns_enabled'] = $values['patterns_enabled'] ?? [];
+            $data['pattern_mode'] = $values['pattern_mode'] ?? 'any';
         }
 
         extract($data, EXTR_SKIP);

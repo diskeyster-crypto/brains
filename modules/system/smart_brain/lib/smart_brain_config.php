@@ -127,6 +127,21 @@ final class SmartBrainConfig
             'early_failure_max_adverse_roi' => (float)$values['early_failure_max_adverse_roi'],
         ];
 
+        // Pattern Selection
+        $allowedAlgorithms = ['double_bottom', 'double_top', 'pullback_trend_continue'];
+        $patternsEnabled = [];
+        if (isset($values['patterns_enabled']) && is_array($values['patterns_enabled'])) {
+            $patternsEnabled = array_values(array_intersect($values['patterns_enabled'], $allowedAlgorithms));
+        }
+        $patternMode = (string)($values['pattern_mode'] ?? 'any');
+        if (!in_array($patternMode, ['one', 'any', 'all'], true)) {
+            $patternMode = 'any';
+        }
+        $clean['patterns'] = [
+            'enabled' => $patternsEnabled,
+            'mode' => $patternMode,
+        ];
+
         $dir = $this->moduleBase . '/runtime';
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
@@ -141,6 +156,9 @@ final class SmartBrainConfig
             $this->config['risk_engine']['user_limits'] ?? [],
             $clean
         );
+
+        // Apply pattern selection into parser4 config immediately
+        $this->applyPatternSelection($clean['patterns']);
 
         return ['ok' => true, 'errors' => []];
     }
@@ -251,6 +269,24 @@ final class SmartBrainConfig
             $errors[] = 'early_failure_max_adverse_roi must be < 0';
         }
 
+        // Pattern Selection validation
+        $allowedAlgorithms = ['double_bottom', 'double_top', 'pullback_trend_continue'];
+        if (isset($values['patterns_enabled']) && is_array($values['patterns_enabled'])) {
+            $invalid = array_diff($values['patterns_enabled'], $allowedAlgorithms);
+            if (!empty($invalid)) {
+                $errors[] = 'patterns_enabled contains invalid algorithm(s): ' . implode(', ', $invalid);
+            }
+            if (empty($values['patterns_enabled'])) {
+                $errors[] = 'Нужно выбрать хотя бы один алгоритм анализа.';
+            }
+        } else {
+            $errors[] = 'Нужно выбрать хотя бы один алгоритм анализа.';
+        }
+        $validPatternModes = ['one', 'any', 'all'];
+        if (isset($values['pattern_mode']) && !in_array((string)$values['pattern_mode'], $validPatternModes, true)) {
+            $errors[] = 'pattern_mode must be one of: one, any, all';
+        }
+
         return $errors;
     }
 
@@ -320,6 +356,10 @@ final class SmartBrainConfig
                 'early_failure_window_minutes' => (int)($userLimits['early_failure_window_minutes'] ?? 5),
                 'early_failure_max_adverse_roi' => (float)($userLimits['early_failure_max_adverse_roi'] ?? -0.008),
             ],
+            'pattern_selection' => [
+                'enabled' => (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []),
+                'mode' => (string)(($this->config['parser4']['pattern_algorithms'] ?? [])['mode'] ?? 'one'),
+            ],
             'parser4' => $this->get('parser4', []),
             'corridor' => $this->getEffective('corridor'),
             'risk_engine' => $this->getEffective('risk_engine'),
@@ -384,5 +424,29 @@ final class SmartBrainConfig
             $this->config['risk_engine']['user_limits'],
             $saved
         );
+
+        // Apply pattern selection from user config into parser4 config
+        if (isset($saved['patterns']) && is_array($saved['patterns'])) {
+            $this->applyPatternSelection($saved['patterns']);
+        }
+    }
+
+    /**
+     * Merge user pattern selection into parser4 config.
+     *
+     * @param array{enabled:list<string>,mode:string} $patterns
+     */
+    private function applyPatternSelection(array $patterns): void
+    {
+        if (!isset($this->config['parser4'])) {
+            return;
+        }
+
+        if (isset($patterns['enabled']) && is_array($patterns['enabled']) && !empty($patterns['enabled'])) {
+            $this->config['parser4']['pattern_algorithms']['enabled'] = $patterns['enabled'];
+        }
+        if (isset($patterns['mode']) && in_array($patterns['mode'], ['one', 'any', 'all'], true)) {
+            $this->config['parser4']['pattern_algorithms']['mode'] = $patterns['mode'];
+        }
     }
 }

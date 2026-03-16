@@ -367,8 +367,25 @@ final class SmartBrainCore
      */
     public function getUserConfigData(): array
     {
+        $userLimits = $this->config->getUserLimits();
+
+        // Get effective pattern selection from parser4 config (base merged with user override)
+        $parser4Cfg = $this->config->get('parser4', []);
+        $patternAlgorithms = (array)($parser4Cfg['pattern_algorithms'] ?? []);
+        $patternsEnabled = (array)($patternAlgorithms['enabled'] ?? []);
+        $patternMode = (string)($patternAlgorithms['mode'] ?? 'one');
+
+        // If user has patterns saved, use those for form display
+        $savedUserConfig = $this->config->loadUserConfig();
+        if (isset($savedUserConfig['patterns']) && is_array($savedUserConfig['patterns'])) {
+            $patternsEnabled = (array)($savedUserConfig['patterns']['enabled'] ?? $patternsEnabled);
+            $patternMode = (string)($savedUserConfig['patterns']['mode'] ?? $patternMode);
+        }
+
         return [
-            'user_limits' => $this->config->getUserLimits(),
+            'user_limits' => $userLimits,
+            'patterns_enabled' => $patternsEnabled,
+            'pattern_mode' => $patternMode,
         ];
     }
 

@@ -372,6 +372,12 @@ final class SmartBrainConfig
             $rawList = trim((string)($values['manual_symbol_list'] ?? ''));
             if ($rawList === '') {
                 $errors[] = 'manual_symbol_list cannot be empty when manual symbol universe is enabled';
+            } else {
+                require_once __DIR__ . '/symbol_intelligence.php';
+                $parsed = SymbolIntelligence::parseManualSymbolList($rawList);
+                if (empty($parsed)) {
+                    $errors[] = 'manual_symbol_list must contain at least one valid symbol';
+                }
             }
         }
 

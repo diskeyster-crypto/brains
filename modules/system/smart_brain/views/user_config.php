@@ -16,6 +16,7 @@
 /** @var string $symbol_filter_mode */
 /** @var bool $manual_symbol_universe_enabled */
 /** @var string $manual_symbol_mode */
+/** @var list<string> $config_warnings */
 
 $pageTitle = 'Smart Brain - User Config';
 $activeTab = 'user_config';
@@ -26,8 +27,9 @@ $symbol_intelligence_enabled = $symbol_intelligence_enabled ?? false;
 $symbol_filter_mode = $symbol_filter_mode ?? 'all';
 $manual_symbol_universe_enabled = $manual_symbol_universe_enabled ?? false;
 $manual_symbol_mode = $manual_symbol_mode ?? 'manual_only';
+$config_warnings = $config_warnings ?? [];
 
-$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode, $manual_symbol_universe_enabled, $manual_symbol_mode) {
+$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode, $manual_symbol_universe_enabled, $manual_symbol_mode, $config_warnings) {
     $v = function(string $key, $default = '') use ($form_values) {
         return htmlspecialchars((string)($form_values[$key] ?? $default));
     };
@@ -45,6 +47,16 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             <p class="text-secondary mb-0">Edit hard limits — these are user-controlled values</p>
         </div>
     </div>
+
+    <!-- Config Conflict Guard: warnings -->
+    <?php if (!empty($config_warnings)): ?>
+    <div class="alert alert-warning mb-4" style="font-size:0.85rem;">
+        <h6 class="mb-2"><i class="bi bi-exclamation-triangle-fill me-1"></i> Config Conflict Guard</h6>
+        <?php foreach ($config_warnings as $cw): ?>
+        <div class="mb-1"><i class="bi bi-exclamation-triangle me-1"></i> <?= htmlspecialchars($cw) ?></div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 
     <form method="POST" action="<?= htmlspecialchars($smartBrainUrl) ?>/user_config/save" id="user-config-form">
 

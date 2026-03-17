@@ -381,6 +381,11 @@ final class SmartBrainConfig
             }
         }
 
+        // Config Conflict Guard: warn about conflicting filter combinations at save time
+        // This is a warning, not a blocking error — the runtime guard handles the precedence.
+        // The conflict message is stored alongside the config for UI display.
+        // (Save is NOT blocked, but the user sees a clear notice.)
+
         // Pattern Selection validation
         $patternsProvided = isset($values['patterns_enabled']) && is_array($values['patterns_enabled']) ? $values['patterns_enabled'] : [];
         if (empty($patternsProvided)) {
@@ -397,6 +402,66 @@ final class SmartBrainConfig
         }
 
         return $errors;
+    }
+
+    /**
+     * Detect config conflict warnings for the current user config.
+     * These are non-blocking warnings about potentially problematic filter combinations.
+     *
+     * @return list<string>
+     */
+    public function detectConfigConflicts(): array
+    {
+        $warnings = [];
+        $userLimits = $this->getUserLimits();
+
+        $manualEnabled  = (bool)($userLimits['manual_symbol_universe_enabled'] ?? false);
+        $manualMode     = (string)($userLimits['manual_symbol_mode'] ?? 'manual_only');
+        $intelEnabled   = (bool)($userLimits['symbol_intelligence_enabled'] ?? false);
+        $filterMode     = (string)($userLimits['symbol_filter_mode'] ?? 'all');
+
+        $restrictiveModes = ['whitelist_only', 'soft_whitelist_only', 'whitelist_plus_soft', 'watchlist_only'];
+
+        // Conflict: manual_only + restrictive symbol intelligence filter
+        if ($manualEnabled && $manualMode === 'manual_only'
+            && $intelEnabled && in_array($filterMode, $restrictiveModes, true)
+        ) {
+            $warnings[] = 'Конфликт фильтров: включён manual_only и одновременно активен режим '
+                . $filterMode . '. Режим manual_only является терминальным ограничением — '
+                . 'Symbol Intelligence фильтр будет пропущен при выполнении. '
+                . 'Рекомендуется отключить Symbol Intelligence или изменить manual_symbol_mode.';
+        }
+
+        // Warning: symbol intelligence enabled with restrictive mode, but lists may be empty
+        if ($intelEnabled && in_array($filterMode, $restrictiveModes, true) && !$manualEnabled) {
+            $moduleBase = $this->moduleBase;
+            $emptyList = false;
+            if (in_array($filterMode, ['whitelist_only', 'whitelist_plus_soft'], true)) {
+                $path = $moduleBase . '/storage/whitelist.json';
+                if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
+                    $emptyList = true;
+                }
+            }
+            if ($filterMode === 'soft_whitelist_only' || $filterMode === 'whitelist_plus_soft') {
+                $path = $moduleBase . '/storage/soft_whitelist.json';
+                if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
+                    $emptyList = true;
+                }
+            }
+            if ($filterMode === 'watchlist_only') {
+                $path = $moduleBase . '/storage/watchlist.json';
+                if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
+                    $emptyList = true;
+                }
+            }
+            if ($emptyList) {
+                $warnings[] = 'Symbol Intelligence: режим ' . $filterMode
+                    . ' активен, но соответствующие списки пусты. '
+                    . 'Все кандидаты могут быть отфильтрованы.';
+            }
+        }
+
+        return $warnings;
     }
 
     /**

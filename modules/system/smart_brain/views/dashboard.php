@@ -17,9 +17,12 @@
 /** @var array<int,array<string,mixed>> $active */
 /** @var array<int,array<string,mixed>> $closed */
 /** @var array<string,mixed> $stats */
+/** @var list<string> $config_warnings */
 
 $pageTitle = 'Smart Brain - Dashboard';
 $activeTab = 'dashboard';
+
+$config_warnings = $config_warnings ?? [];
 
 $extraStyles = '
 .status-monitoring { background: rgba(59,130,246,0.15); color: #60a5fa; }
@@ -29,7 +32,7 @@ $extraStyles = '
 .status-waiting { background: rgba(148,163,184,0.15); color: #94a3b8; }
 ';
 
-$pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active, $closed, $stats, $smartBrainUrl) {
+$pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active, $closed, $stats, $smartBrainUrl, $config_warnings) {
     $statusClass = function(string $status): string {
         return match($status) {
             'monitoring' => 'status-monitoring',
@@ -95,6 +98,30 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             <?php $errMsg = (string)($last_run['error_message'] ?? ''); if ($errMsg !== ''): ?>
             <div class="mt-2 text-danger"><small><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($errMsg) ?></small></div>
             <?php endif; ?>
+            <?php
+                // Config Conflict Guard: show runtime conflict from last_run
+                $conflictDetected = (bool)($last_run['config_conflict_detected'] ?? false);
+                $conflictMsg = (string)($last_run['config_conflict_message'] ?? '');
+                if ($conflictDetected && $conflictMsg !== ''):
+            ?>
+            <div class="mt-2 alert alert-warning mb-0 py-1 px-2" style="font-size:0.85rem;">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                <strong>Config Conflict:</strong> <?= htmlspecialchars($conflictMsg) ?>
+            </div>
+            <?php endif; ?>
+            <?php
+                // Config Conflict Guard: show current config warnings
+                if (!empty($config_warnings)):
+                    foreach ($config_warnings as $cw):
+            ?>
+            <div class="mt-2 alert alert-warning mb-0 py-1 px-2" style="font-size:0.85rem;">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                <?= htmlspecialchars($cw) ?>
+            </div>
+            <?php
+                    endforeach;
+                endif;
+            ?>
         </div>
     </div>
 

@@ -124,11 +124,35 @@ final class SmartBrainCore
             }
         }
 
-        // Symbol Intelligence: filter candidates by user-selected mode
+        // ---- Config Conflict Guard: filter precedence ----
+        // When manual_only is active, it acts as a terminal universe restriction.
+        // Symbol Intelligence filter must NOT further narrow candidates in this case,
+        // unless the manual_symbol_mode explicitly combines with symbol intelligence
+        // (manual_plus_whitelist, manual_plus_soft, manual_exclude_blacklist).
         $symbolIntelEnabled = (bool)($userLimits['symbol_intelligence_enabled'] ?? false);
         $symbolFilterMode = (string)($userLimits['symbol_filter_mode'] ?? 'all');
         $symbolIntelFiltered = 0;
-        if ($symbolIntelEnabled && $symbolFilterMode !== 'all') {
+        $configConflictDetected = false;
+        $configConflictMessage = '';
+
+        $skipSymbolIntelFilter = false;
+        if ($manualUniverseEnabled && $manualSymbolMode === 'manual_only'
+            && $symbolIntelEnabled && $symbolFilterMode !== 'all'
+        ) {
+            // manual_only is a terminal restriction — do not further narrow by symbol intelligence
+            $skipSymbolIntelFilter = true;
+            $restrictiveModes = ['whitelist_only', 'soft_whitelist_only', 'whitelist_plus_soft', 'watchlist_only'];
+            if (in_array($symbolFilterMode, $restrictiveModes, true)) {
+                $configConflictDetected = true;
+                $configConflictMessage = 'Конфликт фильтров: включён manual_only и одновременно активен режим '
+                    . $symbolFilterMode . '. manual_only работает как терминальное ограничение — '
+                    . 'фильтр Symbol Intelligence пропущен для этого запуска.';
+                $this->logger->log('warning', 'Config Conflict Guard: ' . $configConflictMessage);
+            }
+        }
+
+        // Symbol Intelligence: filter candidates by user-selected mode
+        if (!$skipSymbolIntelFilter && $symbolIntelEnabled && $symbolFilterMode !== 'all') {
             $symbolIntel = new SymbolIntelligence($this->state, $userLimits);
             $beforeCount = count($candidates);
             $candidates = $symbolIntel->filterCandidates($candidates, $symbolFilterMode);
@@ -140,6 +164,24 @@ final class SmartBrainCore
 
         // Re-write candidates.json with filtered data (early filter application)
         $filteredCandidatesCount = count($candidates);
+
+        // ---- Config Conflict Guard: no silent zero output ----
+        // If raw candidates > 0 but all were filtered out, produce a clear explanation.
+        if ($rawCandidatesCount > 0 && $filteredCandidatesCount === 0 && !$configConflictDetected) {
+            $reasons = [];
+            if ($manualUniverseEnabled) {
+                $reasons[] = 'manual_symbol_universe (mode=' . $manualSymbolMode . ', count=' . $manualSymbolCount . ')';
+            }
+            if ($symbolIntelEnabled && $symbolFilterMode !== 'all') {
+                $reasons[] = 'symbol_intelligence (mode=' . $symbolFilterMode . ')';
+            }
+            $configConflictDetected = true;
+            $configConflictMessage = 'Все ' . $rawCandidatesCount . ' кандидатов были отфильтрованы. '
+                . 'Активные фильтры: ' . ($reasons !== [] ? implode(' + ', $reasons) : 'нет')
+                . '. Проверьте настройки фильтрации или содержимое whitelist/blacklist.';
+            $this->logger->log('warning', 'Config Conflict Guard: zero candidates after filtering. ' . $configConflictMessage);
+        }
+
         $this->state->writeJson('storage/candidates.json', $candidates);
 
         // Write analyzer debug log (Pattern-First Decision Flow)
@@ -274,6 +316,9 @@ final class SmartBrainCore
             'manual_symbol_universe_enabled' => $manualUniverseEnabled,
             'manual_symbol_mode' => $manualSymbolMode,
             'manual_symbol_count' => $manualSymbolCount,
+            // Config Conflict Guard
+            'config_conflict_detected' => $configConflictDetected,
+            'config_conflict_message' => $configConflictMessage,
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -385,6 +430,7 @@ final class SmartBrainCore
             'active' => $this->state->readJson('storage/simulator/active.json', []),
             'closed' => $this->state->readJson('storage/simulator/closed.json', []),
             'stats' => $this->state->readJson('storage/simulator/stats.json', []),
+            'config_warnings' => $this->config->detectConfigConflicts(),
         ];
     }
 
@@ -398,6 +444,7 @@ final class SmartBrainCore
             'snapshot' => $this->state->readJson('runtime/config.snapshot.json', []),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
             'stats' => $this->state->readJson('storage/simulator/stats.json', []),
+            'config_warnings' => $this->config->detectConfigConflicts(),
         ];
     }
 
@@ -444,6 +491,7 @@ final class SmartBrainCore
             'symbol_filter_mode' => (string)($userLimits['symbol_filter_mode'] ?? 'all'),
             'manual_symbol_universe_enabled' => (bool)($userLimits['manual_symbol_universe_enabled'] ?? false),
             'manual_symbol_mode' => (string)($userLimits['manual_symbol_mode'] ?? 'manual_only'),
+            'config_warnings' => $this->config->detectConfigConflicts(),
         ];
     }
 

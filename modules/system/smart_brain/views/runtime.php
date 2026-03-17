@@ -10,11 +10,14 @@
 /** @var array<string,mixed> $snapshot */
 /** @var array<string,mixed> $last_run */
 /** @var array<string,mixed> $stats */
+/** @var list<string> $config_warnings */
 
 $pageTitle = 'Smart Brain - Runtime';
 $activeTab = 'runtime';
 
-$pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrainUrl) {
+$config_warnings = $config_warnings ?? [];
+
+$pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrainUrl, $config_warnings) {
 ?>
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -23,6 +26,31 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             <p class="text-secondary mb-0">Current runtime state, config snapshot, statistics, and last run details</p>
         </div>
     </div>
+
+    <!-- Config Conflict Guard: warnings -->
+    <?php
+        $conflictDetected = (bool)($last_run['config_conflict_detected'] ?? false);
+        $conflictMsg = (string)($last_run['config_conflict_message'] ?? '');
+        $allWarnings = $config_warnings;
+        if ($conflictDetected && $conflictMsg !== '') {
+            array_unshift($allWarnings, $conflictMsg);
+        }
+        if (!empty($allWarnings)):
+    ?>
+    <div class="card mb-4" style="border-color: #f59e0b;">
+        <div class="card-header" style="background: rgba(245,158,11,0.1);">
+            <h5 style="margin: 0;"><i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i> Config Conflict Guard</h5>
+        </div>
+        <div class="card-body">
+            <?php foreach ($allWarnings as $w): ?>
+            <div class="alert alert-warning mb-2 py-1 px-2" style="font-size:0.85rem;">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                <?= htmlspecialchars($w) ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Simulator Stats Card -->
     <div class="card mb-4">

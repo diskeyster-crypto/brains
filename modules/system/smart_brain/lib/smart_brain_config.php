@@ -433,31 +433,34 @@ final class SmartBrainConfig
         }
 
         // Warning: symbol intelligence enabled with restrictive mode, but lists may be empty
-        if ($intelEnabled && in_array($filterMode, $restrictiveModes, true) && !$manualEnabled) {
-            $moduleBase = $this->moduleBase;
-            $emptyList = false;
-            if (in_array($filterMode, ['whitelist_only', 'whitelist_plus_soft'], true)) {
-                $path = $moduleBase . '/storage/whitelist.json';
-                if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
-                    $emptyList = true;
+        if ($intelEnabled && in_array($filterMode, $restrictiveModes, true)) {
+            // Skip this check if manual_only conflict is already detected
+            if (!($manualEnabled && $manualMode === 'manual_only')) {
+                $moduleBase = $this->moduleBase;
+                $emptyList = false;
+                if (in_array($filterMode, ['whitelist_only', 'whitelist_plus_soft'], true)) {
+                    $path = $moduleBase . '/storage/whitelist.json';
+                    if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
+                        $emptyList = true;
+                    }
                 }
-            }
-            if ($filterMode === 'soft_whitelist_only' || $filterMode === 'whitelist_plus_soft') {
-                $path = $moduleBase . '/storage/soft_whitelist.json';
-                if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
-                    $emptyList = true;
+                if ($filterMode === 'soft_whitelist_only' || $filterMode === 'whitelist_plus_soft') {
+                    $path = $moduleBase . '/storage/soft_whitelist.json';
+                    if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
+                        $emptyList = true;
+                    }
                 }
-            }
-            if ($filterMode === 'watchlist_only') {
-                $path = $moduleBase . '/storage/watchlist.json';
-                if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
-                    $emptyList = true;
+                if ($filterMode === 'watchlist_only') {
+                    $path = $moduleBase . '/storage/watchlist.json';
+                    if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
+                        $emptyList = true;
+                    }
                 }
-            }
-            if ($emptyList) {
-                $warnings[] = 'Symbol Intelligence: режим ' . $filterMode
-                    . ' активен, но соответствующие списки пусты. '
-                    . 'Все кандидаты могут быть отфильтрованы.';
+                if ($emptyList) {
+                    $warnings[] = 'Symbol Intelligence: режим ' . $filterMode
+                        . ' активен, но соответствующие списки пусты. '
+                        . 'Все кандидаты могут быть отфильтрованы.';
+                }
             }
         }
 

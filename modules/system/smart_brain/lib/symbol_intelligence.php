@@ -454,4 +454,77 @@ final class SymbolIntelligence
 
         return $filtered;
     }
+
+    /**
+     * Parse a raw manual symbol list string into a clean array of uppercase symbol names.
+     *
+     * @param string $rawList  Raw user input (newline/comma separated)
+     * @return list<string>
+     */
+    public static function parseManualSymbolList(string $rawList): array
+    {
+        // Split by newlines and commas
+        $parts = preg_split('/[\r\n,]+/', $rawList);
+        if (!is_array($parts)) {
+            return [];
+        }
+
+        $symbols = [];
+        foreach ($parts as $part) {
+            $sym = strtoupper(trim($part));
+            if ($sym !== '') {
+                $symbols[] = $sym;
+            }
+        }
+
+        return array_values(array_unique($symbols));
+    }
+
+    /**
+     * Filter candidates by a manual symbol universe.
+     *
+     * @param array<int,array<string,mixed>> $candidates
+     * @param list<string>                   $manualSymbols  Cleaned uppercase symbol names
+     * @param string                         $mode           'manual_only' | 'manual_plus_whitelist' | 'manual_plus_soft' | 'manual_exclude_blacklist'
+     * @return array<int,array<string,mixed>>
+     */
+    public function filterByManualUniverse(array $candidates, array $manualSymbols, string $mode): array
+    {
+        $manualSet = array_flip($manualSymbols);
+
+        // Build the allowed / blocked set based on mode
+        $allowedSet = $manualSet;
+
+        if ($mode === 'manual_plus_whitelist') {
+            $whitelist = $this->state->readJson('storage/whitelist.json', []);
+            foreach ($whitelist as $sym) {
+                $allowedSet[$sym] = true;
+            }
+        } elseif ($mode === 'manual_plus_soft') {
+            $softWhitelist = $this->state->readJson('storage/soft_whitelist.json', []);
+            foreach ($softWhitelist as $sym) {
+                $allowedSet[$sym] = true;
+            }
+        } elseif ($mode === 'manual_exclude_blacklist') {
+            $blacklist = $this->state->readJson('storage/blacklist.json', []);
+            $blacklistSet = array_flip($blacklist);
+            // Remove blacklisted symbols from manual set
+            foreach ($blacklistSet as $sym => $_) {
+                unset($allowedSet[$sym]);
+            }
+        }
+
+        $filtered = [];
+        foreach ($candidates as $c) {
+            $symbol = strtoupper((string)($c['symbol'] ?? ''));
+            if ($symbol === '') {
+                continue;
+            }
+            if (isset($allowedSet[$symbol])) {
+                $filtered[] = $c;
+            }
+        }
+
+        return $filtered;
+    }
 }

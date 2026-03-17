@@ -84,6 +84,7 @@ final class SmartBrainController
         $values['early_failure_enabled'] = !empty($_POST['early_failure_enabled']);
         $values['symbol_intelligence_enabled'] = !empty($_POST['symbol_intelligence_enabled']);
         $values['soft_whitelist_enabled'] = !empty($_POST['soft_whitelist_enabled']);
+        $values['manual_symbol_universe_enabled'] = !empty($_POST['manual_symbol_universe_enabled']);
 
         // Pattern selection: checkboxes send array, absent when none checked
         $values['patterns_enabled'] = isset($_POST['patterns_enabled']) && is_array($_POST['patterns_enabled'])
@@ -108,6 +109,8 @@ final class SmartBrainController
             $data['pattern_mode'] = $values['pattern_mode'] ?? 'any';
             $data['symbol_intelligence_enabled'] = !empty($values['symbol_intelligence_enabled']);
             $data['symbol_filter_mode'] = $values['symbol_filter_mode'] ?? 'all';
+            $data['manual_symbol_universe_enabled'] = !empty($values['manual_symbol_universe_enabled']);
+            $data['manual_symbol_mode'] = $values['manual_symbol_mode'] ?? 'manual_only';
         }
 
         extract($data, EXTR_SKIP);

@@ -148,6 +148,10 @@ final class SmartBrainConfig
             'soft_whitelist_min_winrate'          => (float)($values['soft_whitelist_min_winrate'] ?? 0.50),
             'soft_whitelist_min_avg_roi'          => (float)($values['soft_whitelist_min_avg_roi'] ?? 0.005),
             'symbol_recent_window'                => (int)($values['symbol_recent_window'] ?? 5),
+            // Manual Symbol Universe
+            'manual_symbol_universe_enabled'      => !empty($values['manual_symbol_universe_enabled']),
+            'manual_symbol_list'                  => (string)($values['manual_symbol_list'] ?? ''),
+            'manual_symbol_mode'                  => (string)($values['manual_symbol_mode'] ?? 'manual_only'),
         ];
 
         // Pattern Selection
@@ -359,6 +363,18 @@ final class SmartBrainConfig
             $errors[] = 'symbol_recent_window must be >= 1';
         }
 
+        // Manual Symbol Universe validation
+        $validManualModes = ['manual_only', 'manual_plus_whitelist', 'manual_plus_soft', 'manual_exclude_blacklist'];
+        if (isset($values['manual_symbol_mode']) && !in_array((string)$values['manual_symbol_mode'], $validManualModes, true)) {
+            $errors[] = 'manual_symbol_mode must be one of: ' . implode(', ', $validManualModes);
+        }
+        if (!empty($values['manual_symbol_universe_enabled'])) {
+            $rawList = trim((string)($values['manual_symbol_list'] ?? ''));
+            if ($rawList === '') {
+                $errors[] = 'manual_symbol_list cannot be empty when manual symbol universe is enabled';
+            }
+        }
+
         // Pattern Selection validation
         $patternsProvided = isset($values['patterns_enabled']) && is_array($values['patterns_enabled']) ? $values['patterns_enabled'] : [];
         if (empty($patternsProvided)) {
@@ -465,6 +481,11 @@ final class SmartBrainConfig
                 'soft_whitelist_min_winrate' => (float)($userLimits['soft_whitelist_min_winrate'] ?? 0.50),
                 'soft_whitelist_min_avg_roi' => (float)($userLimits['soft_whitelist_min_avg_roi'] ?? 0.005),
                 'symbol_recent_window' => (int)($userLimits['symbol_recent_window'] ?? 5),
+            ],
+            'manual_symbol_universe' => [
+                'manual_symbol_universe_enabled' => (bool)($userLimits['manual_symbol_universe_enabled'] ?? false),
+                'manual_symbol_list' => (string)($userLimits['manual_symbol_list'] ?? ''),
+                'manual_symbol_mode' => (string)($userLimits['manual_symbol_mode'] ?? 'manual_only'),
             ],
             'pattern_selection' => [
                 'enabled' => (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []),

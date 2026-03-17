@@ -14,6 +14,8 @@
 /** @var string $pattern_mode */
 /** @var bool $symbol_intelligence_enabled */
 /** @var string $symbol_filter_mode */
+/** @var bool $manual_symbol_universe_enabled */
+/** @var string $manual_symbol_mode */
 
 $pageTitle = 'Smart Brain - User Config';
 $activeTab = 'user_config';
@@ -22,8 +24,10 @@ $patterns_enabled = $patterns_enabled ?? [];
 $pattern_mode = $pattern_mode ?? 'any';
 $symbol_intelligence_enabled = $symbol_intelligence_enabled ?? false;
 $symbol_filter_mode = $symbol_filter_mode ?? 'all';
+$manual_symbol_universe_enabled = $manual_symbol_universe_enabled ?? false;
+$manual_symbol_mode = $manual_symbol_mode ?? 'manual_only';
 
-$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode) {
+$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode, $manual_symbol_universe_enabled, $manual_symbol_mode) {
     $v = function(string $key, $default = '') use ($form_values) {
         return htmlspecialchars((string)($form_values[$key] ?? $default));
     };
@@ -240,6 +244,54 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 <div class="mb-2">
                                     <label for="blacklist_max_early_failure_ratio" class="form-label">Макс. доля early failure</label>
                                     <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" id="blacklist_max_early_failure_ratio" name="blacklist_max_early_failure_ratio" value="<?= $v('blacklist_max_early_failure_ratio', '0.60') ?>">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Symbol Universe -->
+        <div class="row">
+            <div class="col-md-12 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-list-ul me-2"></i>
+                        <h5 style="margin: 0;">Ручной список монет</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                            Используйте этот список, если хотите ограничить или закрепить набор монет для симуляции,<br>
+                            даже при сбросе статистики whitelist / blacklist / soft whitelist.
+                        </p>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="manual_symbol_universe_enabled" name="manual_symbol_universe_enabled" value="1" <?= $manual_symbol_universe_enabled ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="manual_symbol_universe_enabled">Ручной список включён</label>
+                                    <br><small class="text-secondary">Включить ограничение по ручному списку монет</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="manual_symbol_mode" class="form-label fw-bold">Режим ручного списка</label>
+                                    <select class="form-select" id="manual_symbol_mode" name="manual_symbol_mode">
+                                        <?php foreach ([
+                                            'manual_only' => 'Manual Only — только из списка',
+                                            'manual_plus_whitelist' => 'Manual + Whitelist — список + whitelist',
+                                            'manual_plus_soft' => 'Manual + Soft Whitelist — список + soft whitelist',
+                                            'manual_exclude_blacklist' => 'Manual − Blacklist — список без blacklist',
+                                        ] as $mm => $mmLabel): ?>
+                                        <option value="<?= $mm ?>" <?= $manual_symbol_mode === $mm ? 'selected' : '' ?>><?= htmlspecialchars($mmLabel) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-secondary">Как комбинировать ручной список с автоматическими списками</small>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label for="manual_symbol_list" class="form-label fw-bold">Список монет</label>
+                                    <textarea class="form-control" id="manual_symbol_list" name="manual_symbol_list" rows="5" placeholder="BTCUSDT, ETHUSDT, SOLUSDT"><?= $v('manual_symbol_list', '') ?></textarea>
+                                    <small class="text-secondary">По одной монете на строку или через запятую. Пример: BTCUSDT, ETHUSDT</small>
                                 </div>
                             </div>
                         </div>

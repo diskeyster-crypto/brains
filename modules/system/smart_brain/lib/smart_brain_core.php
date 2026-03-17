@@ -102,6 +102,27 @@ final class SmartBrainCore
         // Parser4: structure analysis from Parser2 history
         $parser = new Parser4Analyzer($parser4Cfg, $this->state);
         $candidates = $parser->run();
+        $rawCandidatesCount = count($candidates);
+
+        // Manual Symbol Universe: restrict candidates to user-specified symbols
+        $manualUniverseEnabled = (bool)($userLimits['manual_symbol_universe_enabled'] ?? false);
+        $manualSymbolMode = (string)($userLimits['manual_symbol_mode'] ?? 'manual_only');
+        $manualSymbolCount = 0;
+        $manualUniverseFiltered = 0;
+        if ($manualUniverseEnabled) {
+            $rawList = (string)($userLimits['manual_symbol_list'] ?? '');
+            $manualSymbols = SymbolIntelligence::parseManualSymbolList($rawList);
+            $manualSymbolCount = count($manualSymbols);
+            if ($manualSymbolCount > 0) {
+                $symbolIntelInstance = new SymbolIntelligence($this->state, $userLimits);
+                $beforeManual = count($candidates);
+                $candidates = $symbolIntelInstance->filterByManualUniverse($candidates, $manualSymbols, $manualSymbolMode);
+                $manualUniverseFiltered = $beforeManual - count($candidates);
+                if ($manualUniverseFiltered > 0) {
+                    $this->logger->log('info', 'Manual Symbol Universe: filtered ' . $manualUniverseFiltered . ' candidates (mode=' . $manualSymbolMode . ', symbols=' . $manualSymbolCount . ', remaining=' . count($candidates) . ')');
+                }
+            }
+        }
 
         // Symbol Intelligence: filter candidates by user-selected mode
         $symbolIntelEnabled = (bool)($userLimits['symbol_intelligence_enabled'] ?? false);
@@ -116,6 +137,10 @@ final class SmartBrainCore
                 $this->logger->log('info', 'Symbol Intelligence: filtered ' . $symbolIntelFiltered . ' candidates (mode=' . $symbolFilterMode . ', remaining=' . count($candidates) . ')');
             }
         }
+
+        // Re-write candidates.json with filtered data (early filter application)
+        $filteredCandidatesCount = count($candidates);
+        $this->state->writeJson('storage/candidates.json', $candidates);
 
         // Write analyzer debug log (Pattern-First Decision Flow)
         $analyzerDebugLines = $parser->getAnalyzerDebugLines();
@@ -242,6 +267,13 @@ final class SmartBrainCore
             // Symbol Intelligence
             'symbol_intel_filtered' => $symbolIntelFiltered,
             'symbol_filter_mode' => $symbolFilterMode,
+            // Early filter application stats
+            'raw_candidates_count' => $rawCandidatesCount,
+            'filtered_candidates_count' => $filteredCandidatesCount,
+            // Manual Symbol Universe
+            'manual_symbol_universe_enabled' => $manualUniverseEnabled,
+            'manual_symbol_mode' => $manualSymbolMode,
+            'manual_symbol_count' => $manualSymbolCount,
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -410,6 +442,8 @@ final class SmartBrainCore
             'pattern_mode' => $patternMode,
             'symbol_intelligence_enabled' => (bool)($userLimits['symbol_intelligence_enabled'] ?? false),
             'symbol_filter_mode' => (string)($userLimits['symbol_filter_mode'] ?? 'all'),
+            'manual_symbol_universe_enabled' => (bool)($userLimits['manual_symbol_universe_enabled'] ?? false),
+            'manual_symbol_mode' => (string)($userLimits['manual_symbol_mode'] ?? 'manual_only'),
         ];
     }
 

@@ -108,7 +108,7 @@ final class SmartBrainCore
         $symbolFilterMode = (string)($userLimits['symbol_filter_mode'] ?? 'all');
         $symbolIntelFiltered = 0;
         if ($symbolIntelEnabled && $symbolFilterMode !== 'all') {
-            $symbolIntel = new SymbolIntelligence($this->state);
+            $symbolIntel = new SymbolIntelligence($this->state, $userLimits);
             $beforeCount = count($candidates);
             $candidates = $symbolIntel->filterCandidates($candidates, $symbolFilterMode);
             $symbolIntelFiltered = $beforeCount - count($candidates);
@@ -190,7 +190,7 @@ final class SmartBrainCore
         $stats = $simulator->computeStats();
 
         // Rebuild symbol intelligence from updated closed trades
-        $symbolIntelRebuild = new SymbolIntelligence($this->state);
+        $symbolIntelRebuild = new SymbolIntelligence($this->state, $userLimits);
         $symbolIntelRebuild->rebuild();
 
         $runtime = new SmartBrainRuntime($this->state);

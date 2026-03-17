@@ -83,6 +83,7 @@ final class SmartBrainController
         $values['break_even_enabled'] = !empty($_POST['break_even_enabled']);
         $values['early_failure_enabled'] = !empty($_POST['early_failure_enabled']);
         $values['symbol_intelligence_enabled'] = !empty($_POST['symbol_intelligence_enabled']);
+        $values['soft_whitelist_enabled'] = !empty($_POST['soft_whitelist_enabled']);
 
         // Pattern selection: checkboxes send array, absent when none checked
         $values['patterns_enabled'] = isset($_POST['patterns_enabled']) && is_array($_POST['patterns_enabled'])

@@ -136,6 +136,18 @@ final class SmartBrainConfig
             // Symbol Intelligence
             'symbol_intelligence_enabled'  => !empty($values['symbol_intelligence_enabled']),
             'symbol_filter_mode'           => (string)($values['symbol_filter_mode'] ?? 'all'),
+            // Symbol Intelligence V2 — configurable thresholds
+            'whitelist_min_trades'                => (int)($values['whitelist_min_trades'] ?? 5),
+            'whitelist_min_winrate'               => (float)($values['whitelist_min_winrate'] ?? 0.50),
+            'whitelist_min_avg_roi'               => (float)($values['whitelist_min_avg_roi'] ?? 0.0),
+            'blacklist_min_trades'                => (int)($values['blacklist_min_trades'] ?? 3),
+            'blacklist_max_winrate'               => (float)($values['blacklist_max_winrate'] ?? 0.30),
+            'blacklist_max_early_failure_ratio'    => (float)($values['blacklist_max_early_failure_ratio'] ?? 0.60),
+            'soft_whitelist_enabled'              => !empty($values['soft_whitelist_enabled']),
+            'soft_whitelist_min_trades'           => (int)($values['soft_whitelist_min_trades'] ?? 1),
+            'soft_whitelist_min_winrate'          => (float)($values['soft_whitelist_min_winrate'] ?? 0.50),
+            'soft_whitelist_min_avg_roi'          => (float)($values['soft_whitelist_min_avg_roi'] ?? 0.005),
+            'symbol_recent_window'                => (int)($values['symbol_recent_window'] ?? 5),
         ];
 
         // Pattern Selection
@@ -304,9 +316,47 @@ final class SmartBrainConfig
         }
 
         // Symbol Intelligence validation
-        $validFilterModes = ['all', 'whitelist_only', 'exclude_blacklist', 'watchlist_only'];
+        $validFilterModes = ['all', 'whitelist_only', 'exclude_blacklist', 'watchlist_only', 'soft_whitelist_only', 'whitelist_plus_soft'];
         if (isset($values['symbol_filter_mode']) && !in_array((string)$values['symbol_filter_mode'], $validFilterModes, true)) {
-            $errors[] = 'symbol_filter_mode must be one of: all, whitelist_only, exclude_blacklist, watchlist_only';
+            $errors[] = 'symbol_filter_mode must be one of: ' . implode(', ', $validFilterModes);
+        }
+
+        // Symbol Intelligence V2 threshold validation
+        if (isset($values['whitelist_min_trades']) && (int)$values['whitelist_min_trades'] < 1) {
+            $errors[] = 'whitelist_min_trades must be >= 1';
+        }
+        if (isset($values['whitelist_min_winrate'])) {
+            $wr = (float)$values['whitelist_min_winrate'];
+            if ($wr < 0 || $wr > 1) {
+                $errors[] = 'whitelist_min_winrate must be between 0 and 1';
+            }
+        }
+        if (isset($values['blacklist_min_trades']) && (int)$values['blacklist_min_trades'] < 1) {
+            $errors[] = 'blacklist_min_trades must be >= 1';
+        }
+        if (isset($values['blacklist_max_winrate'])) {
+            $bw = (float)$values['blacklist_max_winrate'];
+            if ($bw < 0 || $bw > 1) {
+                $errors[] = 'blacklist_max_winrate must be between 0 and 1';
+            }
+        }
+        if (isset($values['blacklist_max_early_failure_ratio'])) {
+            $ef = (float)$values['blacklist_max_early_failure_ratio'];
+            if ($ef < 0 || $ef > 1) {
+                $errors[] = 'blacklist_max_early_failure_ratio must be between 0 and 1';
+            }
+        }
+        if (isset($values['soft_whitelist_min_trades']) && (int)$values['soft_whitelist_min_trades'] < 1) {
+            $errors[] = 'soft_whitelist_min_trades must be >= 1';
+        }
+        if (isset($values['soft_whitelist_min_winrate'])) {
+            $sw = (float)$values['soft_whitelist_min_winrate'];
+            if ($sw < 0 || $sw > 1) {
+                $errors[] = 'soft_whitelist_min_winrate must be between 0 and 1';
+            }
+        }
+        if (isset($values['symbol_recent_window']) && (int)$values['symbol_recent_window'] < 1) {
+            $errors[] = 'symbol_recent_window must be >= 1';
         }
 
         // Pattern Selection validation
@@ -404,6 +454,17 @@ final class SmartBrainConfig
             'symbol_intelligence' => [
                 'symbol_intelligence_enabled' => (bool)($userLimits['symbol_intelligence_enabled'] ?? false),
                 'symbol_filter_mode' => (string)($userLimits['symbol_filter_mode'] ?? 'all'),
+                'whitelist_min_trades' => (int)($userLimits['whitelist_min_trades'] ?? 5),
+                'whitelist_min_winrate' => (float)($userLimits['whitelist_min_winrate'] ?? 0.50),
+                'whitelist_min_avg_roi' => (float)($userLimits['whitelist_min_avg_roi'] ?? 0.0),
+                'blacklist_min_trades' => (int)($userLimits['blacklist_min_trades'] ?? 3),
+                'blacklist_max_winrate' => (float)($userLimits['blacklist_max_winrate'] ?? 0.30),
+                'blacklist_max_early_failure_ratio' => (float)($userLimits['blacklist_max_early_failure_ratio'] ?? 0.60),
+                'soft_whitelist_enabled' => (bool)($userLimits['soft_whitelist_enabled'] ?? true),
+                'soft_whitelist_min_trades' => (int)($userLimits['soft_whitelist_min_trades'] ?? 1),
+                'soft_whitelist_min_winrate' => (float)($userLimits['soft_whitelist_min_winrate'] ?? 0.50),
+                'soft_whitelist_min_avg_roi' => (float)($userLimits['soft_whitelist_min_avg_roi'] ?? 0.005),
+                'symbol_recent_window' => (int)($userLimits['symbol_recent_window'] ?? 5),
             ],
             'pattern_selection' => [
                 'enabled' => (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []),

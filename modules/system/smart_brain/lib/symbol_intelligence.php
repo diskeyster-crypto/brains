@@ -2,17 +2,31 @@
 declare(strict_types=1);
 
 /**
- * Symbol Intelligence Layer — Smart Brain
+ * Symbol Intelligence Layer V2 — Smart Brain
  *
  * Analyzes closed simulator trades per symbol and classifies symbols into:
- *   whitelist  — good performing symbols
- *   blacklist  — bad performing symbols (enough evidence)
- *   watchlist  — uncertain / not enough data
- *   unknown    — no history at all
+ *   whitelist       — good performing symbols (hard whitelist)
+ *   soft_whitelist  — promising symbols (not yet meeting hard whitelist thresholds)
+ *   blacklist       — bad performing symbols (enough evidence)
+ *   watchlist       — uncertain / not enough data
+ *   unknown         — no history at all
+ *
+ * Classification order:
+ *   1. Check if symbol has zero trades → unknown
+ *   2. Check blacklist conditions (enough trades + low winrate or high early failure)
+ *   3. Check hard whitelist conditions (enough trades + good winrate + positive ROI)
+ *   4. Check soft whitelist conditions (fewer trades + promising winrate + positive ROI)
+ *   5. Everything else → watchlist
+ *
+ * Symbol score formula:
+ *   score = (winrate * 0.35) + (clamp(avg_roi, -0.1, 0.1) / 0.1 * 0.25)
+ *         + (recent_winrate * 0.20) + (clamp(recent_avg_roi, -0.1, 0.1) / 0.1 * 0.10)
+ *         - (early_failure_ratio * 0.10)
  *
  * Writes:
  *   storage/symbol_stats.json
  *   storage/whitelist.json
+ *   storage/soft_whitelist.json
  *   storage/blacklist.json
  *   storage/watchlist.json
  */
@@ -20,29 +34,64 @@ final class SymbolIntelligence
 {
     private StateManager $state;
 
-    // Classification thresholds (conservative defaults)
-    private const MIN_TRADES_FOR_CLASSIFICATION = 5;
-    private const WHITELIST_MIN_WINRATE = 0.50;
-    private const WHITELIST_MIN_AVG_ROI = 0.0;
-    private const BLACKLIST_MAX_WINRATE = 0.30;
-    private const BLACKLIST_EARLY_FAILURE_RATIO = 0.60;
+    // Classification thresholds — user-configurable, with conservative defaults
+    private int   $whitelistMinTrades;
+    private float $whitelistMinWinrate;
+    private float $whitelistMinAvgRoi;
 
-    public function __construct(StateManager $state)
+    private int   $blacklistMinTrades;
+    private float $blacklistMaxWinrate;
+    private float $blacklistMaxEarlyFailureRatio;
+
+    private bool  $softWhitelistEnabled;
+    private int   $softWhitelistMinTrades;
+    private float $softWhitelistMinWinrate;
+    private float $softWhitelistMinAvgRoi;
+
+    private int   $recentWindow;
+
+    /**
+     * @param StateManager         $state
+     * @param array<string,mixed>  $thresholds  User-configurable thresholds from user config
+     */
+    public function __construct(StateManager $state, array $thresholds = [])
     {
         $this->state = $state;
+
+        // Hard whitelist thresholds
+        $this->whitelistMinTrades  = max(1, (int)($thresholds['whitelist_min_trades'] ?? 5));
+        $this->whitelistMinWinrate = (float)($thresholds['whitelist_min_winrate'] ?? 0.50);
+        $this->whitelistMinAvgRoi  = (float)($thresholds['whitelist_min_avg_roi'] ?? 0.0);
+
+        // Blacklist thresholds
+        $this->blacklistMinTrades            = max(1, (int)($thresholds['blacklist_min_trades'] ?? 3));
+        $this->blacklistMaxWinrate           = (float)($thresholds['blacklist_max_winrate'] ?? 0.30);
+        $this->blacklistMaxEarlyFailureRatio = (float)($thresholds['blacklist_max_early_failure_ratio'] ?? 0.60);
+
+        // Soft whitelist thresholds
+        $this->softWhitelistEnabled   = (bool)($thresholds['soft_whitelist_enabled'] ?? true);
+        $this->softWhitelistMinTrades = max(1, (int)($thresholds['soft_whitelist_min_trades'] ?? 1));
+        $this->softWhitelistMinWinrate = (float)($thresholds['soft_whitelist_min_winrate'] ?? 0.50);
+        $this->softWhitelistMinAvgRoi  = (float)($thresholds['soft_whitelist_min_avg_roi'] ?? 0.005);
+
+        // Recent performance window
+        $this->recentWindow = max(1, (int)($thresholds['symbol_recent_window'] ?? 5));
     }
 
     /**
      * Rebuild all symbol intelligence data from closed trades.
      *
-     * @return array{symbol_stats:array<string,mixed>,whitelist:list<string>,blacklist:list<string>,watchlist:list<string>}
+     * @return array{symbol_stats:array<string,mixed>,whitelist:list<string>,soft_whitelist:list<string>,blacklist:list<string>,watchlist:list<string>}
      */
     public function rebuild(): array
     {
         $closed = $this->state->readJson('storage/simulator/closed.json', []);
 
-        // Aggregate per-symbol raw data
+        // Aggregate per-symbol raw data + collect per-symbol trades for recent window
         $raw = [];
+        /** @var array<string,list<array<string,mixed>>> $perSymbolTrades */
+        $perSymbolTrades = [];
+
         foreach ($closed as $trade) {
             $symbol = (string)($trade['symbol'] ?? '');
             if ($symbol === '') {
@@ -69,6 +118,7 @@ final class SymbolIntelligence
                     'last_trade_at' => '',
                     'last_roi' => 0.0,
                 ];
+                $perSymbolTrades[$symbol] = [];
             }
 
             $r = &$raw[$symbol];
@@ -115,12 +165,16 @@ final class SymbolIntelligence
                 $r['last_roi'] = $tradeRoi;
             }
 
+            // Collect trade for recent window calculation
+            $perSymbolTrades[$symbol][] = $trade;
+
             unset($r);
         }
 
         // Compute final stats and classify
         $symbolStats = [];
         $whitelist = [];
+        $softWhitelist = [];
         $blacklist = [];
         $watchlist = [];
 
@@ -131,8 +185,15 @@ final class SymbolIntelligence
             $avgMae = $t > 0 ? round($r['mae_sum'] / $t, 6) : 0.0;
             $avgMfe = $t > 0 ? round($r['mfe_sum'] / $t, 6) : 0.0;
             $avgDuration = $t > 0 ? round($r['duration_sum'] / $t, 1) : 0.0;
+            $earlyFailureRatio = $t > 0 ? round($r['early_failure_count'] / $t, 4) : 0.0;
 
-            $status = $this->classifySymbol($t, $winrate, $avgRoi, $r['early_failure_count']);
+            // Recent performance (last N trades per symbol)
+            $recentData = $this->computeRecentMetrics($perSymbolTrades[$symbol] ?? []);
+
+            $status = $this->classifySymbol($t, $winrate, $avgRoi, $earlyFailureRatio);
+
+            // Symbol score
+            $score = $this->computeSymbolScore($winrate, $avgRoi, $recentData['recent_winrate'], $recentData['recent_avg_roi'], $earlyFailureRatio);
 
             $symbolStats[$symbol] = [
                 'trades_total' => $t,
@@ -154,10 +215,18 @@ final class SymbolIntelligence
                 'last_trade_at' => $r['last_trade_at'],
                 'last_roi' => $r['last_roi'],
                 'status' => $status,
+                'symbol_score' => $score,
+                // Recent performance metrics
+                'recent_trades_total' => $recentData['recent_trades_total'],
+                'recent_wins' => $recentData['recent_wins'],
+                'recent_losses' => $recentData['recent_losses'],
+                'recent_winrate' => $recentData['recent_winrate'],
+                'recent_avg_roi' => $recentData['recent_avg_roi'],
             ];
 
             match ($status) {
                 'whitelist' => $whitelist[] = $symbol,
+                'soft_whitelist' => $softWhitelist[] = $symbol,
                 'blacklist' => $blacklist[] = $symbol,
                 'watchlist' => $watchlist[] = $symbol,
                 default => null,
@@ -166,6 +235,7 @@ final class SymbolIntelligence
 
         // Sort lists alphabetically
         sort($whitelist);
+        sort($softWhitelist);
         sort($blacklist);
         sort($watchlist);
 
@@ -173,55 +243,144 @@ final class SymbolIntelligence
         $this->state->writeJson('storage/symbol_stats.json', [
             'symbols' => $symbolStats,
             'whitelist_count' => count($whitelist),
+            'soft_whitelist_count' => count($softWhitelist),
             'blacklist_count' => count($blacklist),
             'watchlist_count' => count($watchlist),
             'total_symbols' => count($symbolStats),
             'updated_at' => date('c'),
         ]);
         $this->state->writeJson('storage/whitelist.json', $whitelist);
+        $this->state->writeJson('storage/soft_whitelist.json', $softWhitelist);
         $this->state->writeJson('storage/blacklist.json', $blacklist);
         $this->state->writeJson('storage/watchlist.json', $watchlist);
 
         return [
             'symbol_stats' => $symbolStats,
             'whitelist' => $whitelist,
+            'soft_whitelist' => $softWhitelist,
             'blacklist' => $blacklist,
             'watchlist' => $watchlist,
         ];
     }
 
     /**
+     * Compute recent performance metrics from the last N trades for a symbol.
+     *
+     * @param list<array<string,mixed>> $trades  All trades for this symbol (in order from closed.json)
+     * @return array{recent_trades_total:int,recent_wins:int,recent_losses:int,recent_winrate:float,recent_avg_roi:float}
+     */
+    private function computeRecentMetrics(array $trades): array
+    {
+        $recentTrades = array_slice($trades, -$this->recentWindow);
+        $count = count($recentTrades);
+
+        if ($count === 0) {
+            return [
+                'recent_trades_total' => 0,
+                'recent_wins' => 0,
+                'recent_losses' => 0,
+                'recent_winrate' => 0.0,
+                'recent_avg_roi' => 0.0,
+            ];
+        }
+
+        $wins = 0;
+        $roiSum = 0.0;
+        foreach ($recentTrades as $t) {
+            $roi = (float)($t['roi'] ?? 0.0);
+            $roiSum += $roi;
+            if ($roi >= 0) {
+                $wins++;
+            }
+        }
+
+        return [
+            'recent_trades_total' => $count,
+            'recent_wins' => $wins,
+            'recent_losses' => $count - $wins,
+            'recent_winrate' => round($wins / $count, 4),
+            'recent_avg_roi' => round($roiSum / $count, 6),
+        ];
+    }
+
+    /**
+     * Compute a simple ranking score for a symbol.
+     *
+     * Formula:
+     *   score = (winrate * 0.35)
+     *         + (clamp(avg_roi, -0.1, 0.1) / 0.1 * 0.25)
+     *         + (recent_winrate * 0.20)
+     *         + (clamp(recent_avg_roi, -0.1, 0.1) / 0.1 * 0.10)
+     *         - (early_failure_ratio * 0.10)
+     *
+     * Range: approximately -0.45 to +0.90
+     *
+     * @return float
+     */
+    private function computeSymbolScore(float $winrate, float $avgRoi, float $recentWinrate, float $recentAvgRoi, float $earlyFailureRatio): float
+    {
+        $clampRoi = max(-0.1, min(0.1, $avgRoi));
+        $clampRecentRoi = max(-0.1, min(0.1, $recentAvgRoi));
+
+        $score = ($winrate * 0.35)
+            + (($clampRoi / 0.1) * 0.25)
+            + ($recentWinrate * 0.20)
+            + (($clampRecentRoi / 0.1) * 0.10)
+            - ($earlyFailureRatio * 0.10);
+
+        return round($score, 4);
+    }
+
+    /**
      * Classify a symbol based on its trading metrics.
+     *
+     * Classification order (first match wins):
+     *   1. No trades → unknown
+     *   2. Enough trades + low winrate → blacklist
+     *   3. Enough trades + high early failure ratio → blacklist
+     *   4. Enough trades + good winrate + positive ROI → whitelist (hard)
+     *   5. Soft whitelist enabled + enough trades + promising metrics → soft_whitelist
+     *   6. Everything else → watchlist
      *
      * @param int   $tradesTotal
      * @param float $winrate
      * @param float $avgRoi
-     * @param int   $earlyFailureCount
-     * @return string  'whitelist' | 'blacklist' | 'watchlist' | 'unknown'
+     * @param float $earlyFailureRatio  early_failure_count / trades_total
+     * @return string  'whitelist' | 'soft_whitelist' | 'blacklist' | 'watchlist' | 'unknown'
      */
-    private function classifySymbol(int $tradesTotal, float $winrate, float $avgRoi, int $earlyFailureCount): string
+    private function classifySymbol(int $tradesTotal, float $winrate, float $avgRoi, float $earlyFailureRatio): string
     {
-        // Not enough evidence — watchlist or unknown
-        if ($tradesTotal < self::MIN_TRADES_FOR_CLASSIFICATION) {
-            return $tradesTotal === 0 ? 'unknown' : 'watchlist';
+        // 1. No trades → unknown
+        if ($tradesTotal === 0) {
+            return 'unknown';
         }
 
-        // Blacklist: very low winrate
-        if ($winrate < self::BLACKLIST_MAX_WINRATE) {
+        // 2. Blacklist: enough trades + very low winrate
+        if ($tradesTotal >= $this->blacklistMinTrades && $winrate < $this->blacklistMaxWinrate) {
             return 'blacklist';
         }
 
-        // Blacklist: extremely high early failure ratio
-        if ($tradesTotal > 0 && ($earlyFailureCount / $tradesTotal) >= self::BLACKLIST_EARLY_FAILURE_RATIO) {
+        // 3. Blacklist: enough trades + extremely high early failure ratio
+        if ($tradesTotal >= $this->blacklistMinTrades && $earlyFailureRatio >= $this->blacklistMaxEarlyFailureRatio) {
             return 'blacklist';
         }
 
-        // Whitelist: good winrate and positive average ROI
-        if ($winrate >= self::WHITELIST_MIN_WINRATE && $avgRoi > self::WHITELIST_MIN_AVG_ROI) {
+        // 4. Hard whitelist: enough trades + good winrate + positive ROI
+        if ($tradesTotal >= $this->whitelistMinTrades
+            && $winrate >= $this->whitelistMinWinrate
+            && $avgRoi > $this->whitelistMinAvgRoi) {
             return 'whitelist';
         }
 
-        // Everything else: watchlist (between whitelist and blacklist)
+        // 5. Soft whitelist: enabled + enough trades + promising metrics
+        if ($this->softWhitelistEnabled
+            && $tradesTotal >= $this->softWhitelistMinTrades
+            && $winrate >= $this->softWhitelistMinWinrate
+            && $avgRoi > $this->softWhitelistMinAvgRoi) {
+            return 'soft_whitelist';
+        }
+
+        // 6. Everything else → watchlist
         return 'watchlist';
     }
 
@@ -236,9 +395,11 @@ final class SymbolIntelligence
         return [
             'symbol_stats' => (array)($statsFile['symbols'] ?? []),
             'whitelist' => $this->state->readJson('storage/whitelist.json', []),
+            'soft_whitelist' => $this->state->readJson('storage/soft_whitelist.json', []),
             'blacklist' => $this->state->readJson('storage/blacklist.json', []),
             'watchlist' => $this->state->readJson('storage/watchlist.json', []),
             'whitelist_count' => (int)($statsFile['whitelist_count'] ?? 0),
+            'soft_whitelist_count' => (int)($statsFile['soft_whitelist_count'] ?? 0),
             'blacklist_count' => (int)($statsFile['blacklist_count'] ?? 0),
             'watchlist_count' => (int)($statsFile['watchlist_count'] ?? 0),
             'total_symbols' => (int)($statsFile['total_symbols'] ?? 0),
@@ -250,7 +411,7 @@ final class SymbolIntelligence
      * Filter candidates by symbol intelligence mode.
      *
      * @param array<int,array<string,mixed>> $candidates
-     * @param string $filterMode  'all' | 'whitelist_only' | 'exclude_blacklist' | 'watchlist_only'
+     * @param string $filterMode  'all' | 'whitelist_only' | 'exclude_blacklist' | 'watchlist_only' | 'soft_whitelist_only' | 'whitelist_plus_soft'
      * @return array<int,array<string,mixed>>
      */
     public function filterCandidates(array $candidates, string $filterMode): array
@@ -260,11 +421,13 @@ final class SymbolIntelligence
         }
 
         $whitelist = $this->state->readJson('storage/whitelist.json', []);
+        $softWhitelist = $this->state->readJson('storage/soft_whitelist.json', []);
         $blacklist = $this->state->readJson('storage/blacklist.json', []);
         $watchlist = $this->state->readJson('storage/watchlist.json', []);
 
         // Convert to lookup sets for performance
         $whitelistSet = array_flip($whitelist);
+        $softWhitelistSet = array_flip($softWhitelist);
         $blacklistSet = array_flip($blacklist);
         $watchlistSet = array_flip($watchlist);
 
@@ -279,6 +442,8 @@ final class SymbolIntelligence
                 'whitelist_only' => isset($whitelistSet[$symbol]),
                 'exclude_blacklist' => !isset($blacklistSet[$symbol]),
                 'watchlist_only' => isset($watchlistSet[$symbol]),
+                'soft_whitelist_only' => isset($softWhitelistSet[$symbol]),
+                'whitelist_plus_soft' => isset($whitelistSet[$symbol]) || isset($softWhitelistSet[$symbol]),
                 default => true,
             };
 

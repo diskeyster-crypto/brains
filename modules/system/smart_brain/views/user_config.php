@@ -148,9 +148,9 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
-        <!-- Symbol Intelligence -->
+        <!-- Symbol Intelligence V2 -->
         <div class="row">
-            <div class="col-md-6 mb-4">
+            <div class="col-md-12 mb-4">
                 <div class="card h-100">
                     <div class="card-header d-flex align-items-center">
                         <i class="bi bi-stars me-2"></i>
@@ -162,19 +162,86 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             Включите и выберите режим фильтрации для фокусировки на лучших символах.<br>
                             При выключенном режиме — торгуются все монеты без фильтрации.
                         </p>
-                        <div class="mb-3 form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch" id="symbol_intelligence_enabled" name="symbol_intelligence_enabled" value="1" <?= $symbol_intelligence_enabled ? 'checked' : '' ?>>
-                            <label class="form-check-label" for="symbol_intelligence_enabled">Symbol Intelligence Enabled</label>
-                            <br><small class="text-secondary">Включить фильтрацию по спискам</small>
-                        </div>
-                        <div class="mb-3">
-                            <label for="symbol_filter_mode" class="form-label fw-bold">Filter Mode</label>
-                            <select class="form-select" id="symbol_filter_mode" name="symbol_filter_mode">
-                                <?php foreach (['all' => 'All — все символы', 'whitelist_only' => 'Whitelist Only — только хорошие', 'exclude_blacklist' => 'Exclude Blacklist — без плохих', 'watchlist_only' => 'Watchlist Only — только наблюдение'] as $fm => $fmLabel): ?>
-                                <option value="<?= $fm ?>" <?= $symbol_filter_mode === $fm ? 'selected' : '' ?>><?= htmlspecialchars($fmLabel) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small class="text-secondary">Режим фильтрации кандидатов</small>
+                        <div class="row">
+                            <!-- Enable + Filter Mode -->
+                            <div class="col-md-4">
+                                <div class="mb-3 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="symbol_intelligence_enabled" name="symbol_intelligence_enabled" value="1" <?= $symbol_intelligence_enabled ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="symbol_intelligence_enabled">Symbol Intelligence Enabled</label>
+                                    <br><small class="text-secondary">Включить фильтрацию по спискам</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="symbol_filter_mode" class="form-label fw-bold">Filter Mode</label>
+                                    <select class="form-select" id="symbol_filter_mode" name="symbol_filter_mode">
+                                        <?php foreach ([
+                                            'all' => 'All — все символы',
+                                            'whitelist_only' => 'Whitelist Only — только хорошие',
+                                            'exclude_blacklist' => 'Exclude Blacklist — без плохих',
+                                            'watchlist_only' => 'Watchlist Only — только наблюдение',
+                                            'soft_whitelist_only' => 'Soft Whitelist Only — только перспективные',
+                                            'whitelist_plus_soft' => 'Whitelist + Soft — хорошие + перспективные',
+                                        ] as $fm => $fmLabel): ?>
+                                        <option value="<?= $fm ?>" <?= $symbol_filter_mode === $fm ? 'selected' : '' ?>><?= htmlspecialchars($fmLabel) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-secondary">Режим фильтрации кандидатов</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="symbol_recent_window" class="form-label fw-bold">Окно последних сделок</label>
+                                    <input type="number" step="1" min="1" class="form-control" id="symbol_recent_window" name="symbol_recent_window" value="<?= $v('symbol_recent_window', '5') ?>">
+                                    <small class="text-secondary">Кол-во последних сделок для анализа (recent window)</small>
+                                </div>
+                            </div>
+                            <!-- Whitelist thresholds -->
+                            <div class="col-md-4">
+                                <h6 class="text-success mb-2">Whitelist пороги</h6>
+                                <div class="mb-2">
+                                    <label for="whitelist_min_trades" class="form-label">Мин. сделок для whitelist</label>
+                                    <input type="number" step="1" min="1" class="form-control form-control-sm" id="whitelist_min_trades" name="whitelist_min_trades" value="<?= $v('whitelist_min_trades', '5') ?>">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="whitelist_min_winrate" class="form-label">Мин. винрейт для whitelist</label>
+                                    <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" id="whitelist_min_winrate" name="whitelist_min_winrate" value="<?= $v('whitelist_min_winrate', '0.50') ?>">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="whitelist_min_avg_roi" class="form-label">Мин. ср. ROI для whitelist</label>
+                                    <input type="number" step="0.001" class="form-control form-control-sm" id="whitelist_min_avg_roi" name="whitelist_min_avg_roi" value="<?= $v('whitelist_min_avg_roi', '0') ?>">
+                                </div>
+                                <hr>
+                                <h6 class="text-info mb-2">Soft Whitelist пороги</h6>
+                                <div class="mb-2 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="soft_whitelist_enabled" name="soft_whitelist_enabled" value="1" <?= $checked('soft_whitelist_enabled') ?>>
+                                    <label class="form-check-label" for="soft_whitelist_enabled">Включить soft whitelist</label>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="soft_whitelist_min_trades" class="form-label">Мин. сделок для soft whitelist</label>
+                                    <input type="number" step="1" min="1" class="form-control form-control-sm" id="soft_whitelist_min_trades" name="soft_whitelist_min_trades" value="<?= $v('soft_whitelist_min_trades', '1') ?>">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="soft_whitelist_min_winrate" class="form-label">Мин. винрейт для soft whitelist</label>
+                                    <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" id="soft_whitelist_min_winrate" name="soft_whitelist_min_winrate" value="<?= $v('soft_whitelist_min_winrate', '0.50') ?>">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="soft_whitelist_min_avg_roi" class="form-label">Мин. ср. ROI для soft whitelist</label>
+                                    <input type="number" step="0.001" class="form-control form-control-sm" id="soft_whitelist_min_avg_roi" name="soft_whitelist_min_avg_roi" value="<?= $v('soft_whitelist_min_avg_roi', '0.005') ?>">
+                                </div>
+                            </div>
+                            <!-- Blacklist thresholds -->
+                            <div class="col-md-4">
+                                <h6 class="text-danger mb-2">Blacklist пороги</h6>
+                                <div class="mb-2">
+                                    <label for="blacklist_min_trades" class="form-label">Мин. сделок для blacklist</label>
+                                    <input type="number" step="1" min="1" class="form-control form-control-sm" id="blacklist_min_trades" name="blacklist_min_trades" value="<?= $v('blacklist_min_trades', '3') ?>">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="blacklist_max_winrate" class="form-label">Макс. винрейт для blacklist</label>
+                                    <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" id="blacklist_max_winrate" name="blacklist_max_winrate" value="<?= $v('blacklist_max_winrate', '0.30') ?>">
+                                </div>
+                                <div class="mb-2">
+                                    <label for="blacklist_max_early_failure_ratio" class="form-label">Макс. доля early failure</label>
+                                    <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" id="blacklist_max_early_failure_ratio" name="blacklist_max_early_failure_ratio" value="<?= $v('blacklist_max_early_failure_ratio', '0.60') ?>">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -256,12 +256,9 @@ trait BotSourcesTrait
             }
         }
 
-        // Method 3: Check if live_intents.json exists at all (indicates Brain wrote it)
-        // But do NOT load it here — just check existence
-        if (is_file($brainBase . '/live_intents.json')) {
-            return true;
-        }
-
+        // If neither effective_config.json nor user_config.json provides a definitive answer,
+        // default to false (not Brain-controlled). This is the safer behavior — legacy fallback
+        // is allowed when mode cannot be determined.
         return false;
     }
 

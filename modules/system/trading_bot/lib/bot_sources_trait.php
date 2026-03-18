@@ -714,30 +714,15 @@ trait BotSourcesTrait
      */
     protected function resolveIntentLifecycleState(array $execResult): string
     {
+        // Priority order: skipped > rejected > failed > closed > trailing_active > protected > opened > pending
+
         // Explicit skipped state (duplicate suppression)
         if (($execResult['status'] ?? '') === 'skipped') {
             return 'skipped';
         }
 
-        if (!empty($execResult['opened'])) {
-            // Distinguish protected vs merely opened
-            $status = $execResult['status'] ?? '';
-            if ($status === 'opened_protected') {
-                return 'protected';
-            }
-            return 'opened';
-        }
-
         $status = $execResult['status'] ?? '';
 
-        // Closed states
-        if (strpos($status, 'closed_') === 0 || $status === 'exchange_closed') {
-            return 'closed';
-        }
-
-        if (strpos($status, 'deferred_') === 0) {
-            return 'deferred';
-        }
         if (strpos($status, 'rejected_') === 0) {
             return 'rejected';
         }
@@ -746,6 +731,29 @@ trait BotSourcesTrait
         }
         if ($status === 'error') {
             return 'failed';
+        }
+
+        // Closed states
+        if (strpos($status, 'closed_') === 0 || $status === 'exchange_closed') {
+            return 'closed';
+        }
+
+        if (!empty($execResult['opened'])) {
+            // trailing_active outranks protected outranks opened
+            // NOTE: trailing_active is typically set by post-processing in service.php
+            // after updateActivePositions() runs, but can also be detected here if
+            // trailing_active flag is present in exec result.
+            if (!empty($execResult['trailing_active'])) {
+                return 'trailing_active';
+            }
+            if ($status === 'opened_protected') {
+                return 'protected';
+            }
+            return 'opened';
+        }
+
+        if (strpos($status, 'deferred_') === 0) {
+            return 'deferred';
         }
 
         return 'pending';

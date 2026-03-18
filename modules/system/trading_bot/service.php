@@ -463,28 +463,10 @@ final class TradingBotService
                     $execResult = $this->executeIntent($intent, $mode);
 
                     // Observability: build per-intent result record
-                    $result['intents_processed']++;
+                    // NOTE: summary counts are derived from finalized intent_results after
+                    // updateActivePositions post-processing (single source of truth).
                     $intentResultRecord = $this->buildIntentResultRecord($intent, $execResult);
                     $result['intent_results'][] = $intentResultRecord;
-                    $lifecycleState = $intentResultRecord['lifecycle_state'];
-                    if ($lifecycleState === 'opened' || $lifecycleState === 'protected') {
-                        $result['intents_opened']++;
-                    } elseif ($lifecycleState === 'deferred') {
-                        $result['intents_skipped']++;
-                    } elseif ($lifecycleState === 'rejected') {
-                        $result['intents_rejected_exec']++;
-                    } elseif ($lifecycleState === 'failed') {
-                        $result['intents_failed_exec']++;
-                    }
-                    // Track rejection/close reason stats
-                    if (in_array($lifecycleState, ['rejected', 'failed'], true) && !empty($intentResultRecord['rejection_reason'])) {
-                        $rr = $intentResultRecord['rejection_reason'];
-                        $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
-                    }
-                    if (!empty($intentResultRecord['close_reason'])) {
-                        $cr = $intentResultRecord['close_reason'];
-                        $result['close_reason_stats'][$cr] = ($result['close_reason_stats'][$cr] ?? 0) + 1;
-                    }
 
                     // P6.11: Track selected decision for UI (first processed intent)
                     if ($result['selected_decision'] === null) {
@@ -555,14 +537,14 @@ final class TradingBotService
                             // Soft reject: NOT an error, just a warning
                             // Do NOT increment orders_failed
                             // Do NOT add to $this->errors (safety-stop)
+                            // NOTE: intents_rejected_exec is derived from intent_results post-processing
                             $executedThisRun++;
-                            $result['intents_rejected_exec']++;
                             $this->warnings[] = "Rejected: {$execStatus} — " . ($execResult['error'] ?? 'no_reason_provided');
                         } else {
                             // Real execution error: counts towards safety-stop
+                            // NOTE: intents_failed_exec is derived from intent_results post-processing
                             $executedThisRun++;
                             $result['orders_failed']++;
-                            $result['intents_failed_exec']++;
                             $this->errors[] = $execResult['error'] ?? 'Unknown execution error';
                         }
                     }
@@ -616,27 +598,99 @@ final class TradingBotService
                 'trailing_skipped' => $updateResult['trailing_skipped'] ?? 0,
             ];
 
-            // Observability: active protection summary (normalized, not legacy-dependent)
+            // ============================================================
+            // Post-process: upgrade intent result lifecycle states based on
+            // active trade runtime. This enables trailing_active to become a
+            // real reachable lifecycle state (not just listed).
+            // ============================================================
             $activeTrades = $this->store->loadActiveTrades();
+            $tradesBySymbolSide = [];
+            foreach ($activeTrades as $t) {
+                $key = ($t['symbol'] ?? '') . '_' . strtolower($t['side'] ?? '');
+                $tradesBySymbolSide[$key] = $t;
+            }
+            foreach ($result['intent_results'] as &$ir) {
+                if (in_array($ir['lifecycle_state'], ['opened', 'protected'], true)) {
+                    $key = ($ir['symbol'] ?? '') . '_' . strtolower($ir['side'] ?? '');
+                    if (isset($tradesBySymbolSide[$key])) {
+                        $trade = $tradesBySymbolSide[$key];
+                        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                        $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+                        // Trailing is considered active when it has been applied to exchange,
+                        // not merely enabled in config.
+                        // Primary: protection block has trailing_stop > 0 AND trailing is enabled
+                        $exchangeTrailingSet = (float)($prot['trailing_stop'] ?? 0) > 0
+                            && (bool)($prot['trailing_enabled'] ?? false);
+                        // Fallback: runtime.dumb_trailing_applied (legacy, still written by updateActivePositions)
+                        $runtimeTrailingApplied = !empty($rt['dumb_trailing_applied']);
+                        if ($exchangeTrailingSet || $runtimeTrailingApplied) {
+                            $ir['lifecycle_state'] = 'trailing_active';
+                            $ir['trailing_status'] = 'active';
+                            // trailing_active is a stronger sub-state of protected
+                            $ir['protection_status'] = 'protected';
+                        }
+                    }
+                }
+            }
+            unset($ir);
+
+            // ============================================================
+            // Derive execution summary counts from finalized intent_results
+            // (single source of truth — no drift between records and counts).
+            // ============================================================
+            $result['intents_processed'] = count($result['intent_results']);
+            $result['intents_opened'] = 0;
+            $result['intents_skipped'] = 0;
+            $result['intents_rejected_exec'] = 0;
+            $result['intents_failed_exec'] = 0;
+            $result['rejection_reason_stats'] = [];
+            $result['close_reason_stats'] = [];
+            foreach ($result['intent_results'] as $ir) {
+                $ls = $ir['lifecycle_state'] ?? '';
+                if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
+                    $result['intents_opened']++;
+                } elseif (in_array($ls, ['deferred', 'skipped'], true)) {
+                    $result['intents_skipped']++;
+                } elseif ($ls === 'rejected') {
+                    $result['intents_rejected_exec']++;
+                } elseif ($ls === 'failed') {
+                    $result['intents_failed_exec']++;
+                }
+                if (in_array($ls, ['rejected', 'failed'], true) && !empty($ir['rejection_reason'])) {
+                    $rr = $ir['rejection_reason'];
+                    $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
+                }
+                if (!empty($ir['close_reason'])) {
+                    $cr = $ir['close_reason'];
+                    $result['close_reason_stats'][$cr] = ($result['close_reason_stats'][$cr] ?? 0) + 1;
+                }
+            }
+
+            // ============================================================
+            // Active protection summary (normalized detection).
+            // trailing_active is a stronger sub-state of protected:
+            //   protected_positions_count includes trailing_active trades.
+            //   trailing_active_count is a narrower subcount.
+            // ============================================================
             $protectedCount = 0;
             $trailingActiveCount = 0;
             $protectionErrorsCount = 0;
             foreach ($activeTrades as $t) {
                 $rt = is_array($t['runtime'] ?? null) ? $t['runtime'] : [];
                 $prot = is_array($t['protection'] ?? null) ? $t['protection'] : [];
-                $riskTrailing = is_array($t['risk']['trailing'] ?? null) ? $t['risk']['trailing'] : [];
 
                 // Protected = SL price is set (either in protection block or from exchange)
                 if ((float)($prot['stop_loss_price'] ?? 0) > 0) {
                     $protectedCount++;
                 }
 
-                // Trailing active: prefer normalized trailing state
-                // 1) runtime.dumb_trailing_applied (legacy but still written by updateActivePositions)
-                // 2) risk.trailing.enabled as fallback indicator that trailing is configured
-                $trailingApplied = !empty($rt['dumb_trailing_applied']);
-                $trailingEnabled = (bool)($riskTrailing['enabled'] ?? false);
-                if ($trailingApplied || ($trailingEnabled && !empty($rt['dumb_trailing_applied_at']))) {
+                // Trailing active: prefer normalized exchange/protection state
+                // Primary: protection block has trailing_stop set AND trailing is enabled
+                $exchangeTrailingSet = (float)($prot['trailing_stop'] ?? 0) > 0
+                    && (bool)($prot['trailing_enabled'] ?? false);
+                // Fallback: runtime.dumb_trailing_applied (legacy field, still written by updateActivePositions)
+                $runtimeTrailingApplied = !empty($rt['dumb_trailing_applied']);
+                if ($exchangeTrailingSet || $runtimeTrailingApplied) {
                     $trailingActiveCount++;
                 }
 

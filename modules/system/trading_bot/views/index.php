@@ -335,16 +335,16 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         <div class="fw-semibold"><?= (int)($lastRunBot['intents_processed'] ?? 0) ?></div>
                     </div>
                     <div class="col-4 mb-2">
-                        <div class="text-muted">Opened / Protected</div>
-                        <div class="fw-semibold text-success"><?= (int)($lastRunBot['intents_opened'] ?? $lastRunBot['positions_opened'] ?? 0) ?></div>
+                        <div class="text-muted">Opened / Protected / Trailing</div>
+                        <div class="fw-semibold text-success"><?= (int)($lastRunBot['intents_opened'] ?? 0) ?></div>
                     </div>
                     <div class="col-4 mb-2">
                         <div class="text-muted">Rejected (exec)</div>
                         <div class="fw-semibold text-danger"><?= (int)($lastRunBot['intents_rejected_exec'] ?? 0) ?></div>
                     </div>
                     <div class="col-4">
-                        <div class="text-muted">Skipped (dup/deferred)</div>
-                        <div class="fw-semibold text-warning"><?= (int)($lastRunBot['intents_skipped'] ?? $lastRunBot['intents_deferred'] ?? 0) ?></div>
+                        <div class="text-muted">Skipped / Deferred</div>
+                        <div class="fw-semibold text-warning"><?= (int)($lastRunBot['intents_skipped'] ?? 0) ?></div>
                     </div>
                     <div class="col-4">
                         <div class="text-muted">Failed (exec)</div>

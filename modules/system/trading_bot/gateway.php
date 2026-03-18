@@ -17,6 +17,9 @@ class TradingBotGateway
     private array $config;
     private ?object $client = null;
     
+    /** @var string Execution mode: live|dry */
+    private string $mode = 'dry';
+    
     /** @var array P4: Instrument meta cache (tickSize, qtyStep, minOrderQty) */
     private array $instrumentMetaCache = [];
     
@@ -62,6 +65,7 @@ class TradingBotGateway
     {
         $accountId = $this->config['module']['account_id'] ?? 'trading_bot';
         $mode = $this->config['module']['mode'] ?? 'dry';
+        $this->mode = $mode;
         
         if (!class_exists('\\Core\\Gateway\\Bybit')) {
             throw new \RuntimeException('Core\\Gateway\\Bybit class not found');

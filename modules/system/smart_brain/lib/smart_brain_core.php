@@ -139,7 +139,11 @@ final class SmartBrainCore
         if ($manualUniverseEnabled && $manualSymbolMode === 'manual_only'
             && $symbolIntelEnabled && $symbolFilterMode !== 'all'
         ) {
-            // manual_only is a terminal restriction — do not further narrow by symbol intelligence
+            // manual_only is a terminal restriction — do not further narrow by symbol intelligence.
+            // Note: 'exclude_blacklist' mode is NOT in restrictiveModes because it only removes
+            // known bad symbols and does not narrow the universe to a subset — it is safe to combine
+            // with manual_only. The restrictive modes below require intersection with specific lists,
+            // which conflicts with manual_only intent.
             $skipSymbolIntelFilter = true;
             $restrictiveModes = ['whitelist_only', 'soft_whitelist_only', 'whitelist_plus_soft', 'watchlist_only'];
             if (in_array($symbolFilterMode, $restrictiveModes, true)) {

@@ -154,6 +154,13 @@ final class TradingBotService
             'balance_snapshot_ts' => 0,
             'intents_preview' => [],
             'intents_preview_total' => 0,
+            // Observability: per-intent result records and lifecycle tracking
+            'intent_results' => [],
+            'intents_processed' => 0,
+            'intents_opened' => 0,
+            'intents_skipped' => 0,
+            'rejection_reason_stats' => [],
+            'close_reason_stats' => [],
         ];
         
         try {
@@ -272,6 +279,7 @@ final class TradingBotService
             $result['source_error_message'] = $sourceError;
             $result['approved_intents_loaded'] = $intentsResult['count'] ?? 0;
             $result['executable_intents_count'] = $intentsResult['count'] ?? 0;
+            $result['duplicate_skipped'] = $intentsResult['duplicate_skipped'] ?? 0;
             
             // P6.11: Intents preview (first 10 intents before validation)
             $result['intents_preview_total'] = $intentsResult['count'] ?? 0;
@@ -437,7 +445,27 @@ final class TradingBotService
                     }
                     
                     $execResult = $this->executeIntent($intent, $mode);
-                    
+
+                    // Observability: build per-intent result record
+                    $result['intents_processed']++;
+                    $intentResultRecord = $this->buildIntentResultRecord($intent, $execResult);
+                    $result['intent_results'][] = $intentResultRecord;
+                    $lifecycleState = $intentResultRecord['lifecycle_state'];
+                    if ($lifecycleState === 'opened') {
+                        $result['intents_opened']++;
+                    } elseif ($lifecycleState === 'deferred') {
+                        $result['intents_skipped']++;
+                    }
+                    // Track rejection/close reason stats
+                    if ($lifecycleState === 'rejected' && !empty($intentResultRecord['rejection_reason'])) {
+                        $rr = $intentResultRecord['rejection_reason'];
+                        $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
+                    }
+                    if (!empty($intentResultRecord['close_reason'])) {
+                        $cr = $intentResultRecord['close_reason'];
+                        $result['close_reason_stats'][$cr] = ($result['close_reason_stats'][$cr] ?? 0) + 1;
+                    }
+
                     // P6.11: Track selected decision for UI (first processed intent)
                     if ($result['selected_decision'] === null) {
                         $execStatus = $execResult['status'] ?? '';
@@ -566,6 +594,31 @@ final class TradingBotService
                 'trailing_applied' => $updateResult['trailing_applied'] ?? 0,
                 'trailing_failed' => $updateResult['trailing_failed'] ?? 0,
                 'trailing_skipped' => $updateResult['trailing_skipped'] ?? 0,
+            ];
+
+            // Observability: active protection summary
+            $activeTrades = $this->store->loadActiveTrades();
+            $protectedCount = 0;
+            $trailingActiveCount = 0;
+            $protectionErrorsCount = 0;
+            foreach ($activeTrades as $t) {
+                $rt = is_array($t['runtime'] ?? null) ? $t['runtime'] : [];
+                $prot = is_array($t['protection'] ?? null) ? $t['protection'] : [];
+                if ((float)($prot['stop_loss_price'] ?? 0) > 0) {
+                    $protectedCount++;
+                }
+                if (!empty($rt['dumb_trailing_applied'])) {
+                    $trailingActiveCount++;
+                }
+                if (!empty($rt['sl_repair_attempted']) && empty($rt['sl_repair_result']['ok'])) {
+                    $protectionErrorsCount++;
+                }
+            }
+            $result['active_protection_summary'] = [
+                'active_positions_count' => count($activeTrades),
+                'protected_positions_count' => $protectedCount,
+                'trailing_active_count' => $trailingActiveCount,
+                'protection_errors_count' => $protectionErrorsCount,
             ];
             
             // Step 6: Safety checks

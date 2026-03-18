@@ -133,6 +133,7 @@ trait BotSourcesTrait
 
             $executedIndex = $this->loadExecutedIndex();
             $validIntents = [];
+            $duplicateSkipped = 0;
 
             foreach ($intents as $intent) {
                 // V2 FIX: Use intent_id as the authoritative identity key for Brain intents
@@ -145,10 +146,12 @@ trait BotSourcesTrait
 
                 // Skip if already executed (idempotency) — check BOTH intent_id and signal_id for safety
                 if (isset($executedIndex[$executionKey])) {
+                    $duplicateSkipped++;
                     continue;
                 }
                 // Also check signal_id separately for backward compat with old executed_index entries
                 if ($intentId !== null && $signalId !== null && $intentId !== $signalId && isset($executedIndex[$signalId])) {
+                    $duplicateSkipped++;
                     continue;
                 }
 
@@ -203,6 +206,7 @@ trait BotSourcesTrait
 
             $result['count'] = count($validIntents);
             $result['intents'] = $validIntents;
+            $result['duplicate_skipped'] = $duplicateSkipped;
 
             if (count($validIntents) === 0) {
                 $result['source_status'] = 'empty';

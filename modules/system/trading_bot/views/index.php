@@ -316,6 +316,89 @@ $exShow = array_slice($exPositions, 0, 3);
         <?php endif; ?>
     </div>
 </div>
+
+<!-- Execution & Protection Summary -->
+<?php
+$intentResults = is_array($lastRunBot['intent_results'] ?? null) ? $lastRunBot['intent_results'] : [];
+$rejReasonStats = is_array($lastRunBot['rejection_reason_stats'] ?? null) ? $lastRunBot['rejection_reason_stats'] : [];
+$closeReasonStats = is_array($lastRunBot['close_reason_stats'] ?? null) ? $lastRunBot['close_reason_stats'] : [];
+$protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $lastRunBot['active_protection_summary'] : [];
+?>
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-bar-chart me-2"></i>Execution Summary</div>
+            <div class="card-body">
+                <div class="row small">
+                    <div class="col-4 mb-2">
+                        <div class="text-muted">Processed</div>
+                        <div class="fw-semibold"><?= (int)($lastRunBot['intents_processed'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4 mb-2">
+                        <div class="text-muted">Opened</div>
+                        <div class="fw-semibold text-success"><?= (int)($lastRunBot['intents_opened'] ?? $lastRunBot['positions_opened'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4 mb-2">
+                        <div class="text-muted">Rejected (exec)</div>
+                        <div class="fw-semibold text-danger"><?= (int)($lastRunBot['intents_rejected_exec'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted">Skipped / Deferred</div>
+                        <div class="fw-semibold text-warning"><?= (int)($lastRunBot['intents_skipped'] ?? $lastRunBot['intents_deferred'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted">Failed (exec)</div>
+                        <div class="fw-semibold text-danger"><?= (int)($lastRunBot['intents_failed_exec'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted">Rejected (total)</div>
+                        <div class="fw-semibold"><?= (int)($lastRunBot['intents_rejected_total'] ?? 0) ?></div>
+                    </div>
+                </div>
+                <?php if (!empty($rejReasonStats)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Rejection Reasons</small>
+                <?php foreach ($rejReasonStats as $reason => $cnt): ?>
+                    <span class="badge bg-danger me-1 mb-1"><?= htmlspecialchars($reason) ?> (<?= (int)$cnt ?>)</span>
+                <?php endforeach; ?>
+                <?php endif; ?>
+                <?php if (!empty($closeReasonStats)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Close Reasons</small>
+                <?php foreach ($closeReasonStats as $reason => $cnt): ?>
+                    <span class="badge bg-secondary me-1 mb-1"><?= htmlspecialchars($reason) ?> (<?= (int)$cnt ?>)</span>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-shield-check me-2"></i>Active Protection Summary</div>
+            <div class="card-body">
+                <div class="row small">
+                    <div class="col-6 mb-2">
+                        <div class="text-muted">Active Positions</div>
+                        <div class="fw-semibold"><?= (int)($protSummary['active_positions_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6 mb-2">
+                        <div class="text-muted">Protected (SL set)</div>
+                        <div class="fw-semibold text-success"><?= (int)($protSummary['protected_positions_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Trailing Active</div>
+                        <div class="fw-semibold text-info"><?= (int)($protSummary['trailing_active_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Protection Errors</div>
+                        <div class="fw-semibold <?= (int)($protSummary['protection_errors_count'] ?? 0) > 0 ? 'text-danger' : '' ?>"><?= (int)($protSummary['protection_errors_count'] ?? 0) ?></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php endif; ?>
 
 <?php if (!empty($lastRun)): ?>

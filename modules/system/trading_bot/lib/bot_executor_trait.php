@@ -191,6 +191,31 @@ trait BotExecutorTrait
             // ============================================================
             $effectiveOpenSymbols = array_map(function($t) { return $t['symbol'] ?? ''; }, $effectiveActiveTrades);
             
+            // Brain-owned execution limits enforcement
+            if ($isBrainControlled) {
+                $brainLimits = $intent['execution_limits_snapshot'] ?? [];
+                $brainMaxPositions = (int)($brainLimits['live_max_positions'] ?? 0);
+                $brainOnePerSymbol = (bool)($brainLimits['live_one_trade_per_symbol'] ?? true);
+
+                if ($brainMaxPositions > 0 && count($effectiveActiveTrades) >= $brainMaxPositions) {
+                    return $this->rejectIntent($intent, 'rejected_live_max_positions_reached',
+                        "Brain limit: max {$brainMaxPositions} positions reached (current: " . count($effectiveActiveTrades) . ")", $result, [
+                            'effective_live_max_positions' => $brainMaxPositions,
+                            'current_positions' => count($effectiveActiveTrades),
+                            'limits_controlled_by_brain' => true,
+                        ]);
+                }
+
+                if ($brainOnePerSymbol && in_array($symbol, $effectiveOpenSymbols, true)) {
+                    return $this->rejectIntent($intent, 'rejected_live_one_trade_per_symbol',
+                        "Brain limit: one trade per symbol — {$symbol} already open", $result, [
+                            'effective_live_one_trade_per_symbol' => true,
+                            'symbol' => $symbol,
+                            'limits_controlled_by_brain' => true,
+                        ]);
+                }
+            }
+
             $limitsCheck = $this->riskEngine->checkLimits($risk, count($effectiveActiveTrades), $effectiveOpenSymbols, $symbol);
             if (!$limitsCheck['allowed']) {
                 return $this->rejectIntent($intent, 'rejected_limits', $limitsCheck['reason'], $result);

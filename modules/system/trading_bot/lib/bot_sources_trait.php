@@ -48,8 +48,8 @@ trait BotSourcesTrait
             $liveIntentsPath = $brainBase . '/live_intents.json';
 
             if (!is_file($liveIntentsPath)) {
-                // No live intents file — fall back to legacy signals
-                $result['source'] = 'fallback_signals';
+                // No live intents file — source not available
+                $result['source'] = 'no_brain_intents_file';
                 return $result;
             }
 

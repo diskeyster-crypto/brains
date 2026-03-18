@@ -212,25 +212,38 @@ final class TradingBotService
                 }
             }
             
-            // Step 2: Load intents — prefer Brain-approved live_intents over raw signals
+            // Step 2: Load intents — Brain-approved live_intents are authoritative
             $brainLiveResult = $this->loadBrainLiveIntents();
             $inputSource = 'brain_live_intents';
             $brainControlled = $brainLiveResult['brain_controlled'] ?? false;
             $effectiveLiveConfig = $brainLiveResult['effective_live_config'] ?? [];
+            $legacyFallbackAllowed = !$brainControlled;
+            $legacyFallbackUsed = false;
 
-            if ($brainControlled && ($brainLiveResult['count'] ?? 0) > 0) {
-                // Use Brain-approved live intents (preferred path)
+            if ($brainControlled) {
+                // Brain-controlled mode: Brain live intents are the ONLY source.
+                // NO legacy fallback is allowed for safety.
                 $intentsResult = $brainLiveResult;
-                $inputSource = 'brain_live_intents';
-            } elseif ($brainControlled && ($brainLiveResult['source'] ?? '') === 'brain_live_intents_disabled') {
-                // Brain says live trading is disabled — no intents to load
-                $intentsResult = $brainLiveResult;
-                $inputSource = 'brain_live_intents_disabled';
+
+                if (($brainLiveResult['source'] ?? '') === 'brain_live_intents_disabled') {
+                    $inputSource = 'brain_live_intents_disabled';
+                } elseif (!($brainLiveResult['ok'] ?? false)) {
+                    // Brain source exists but is invalid/corrupted — safe stop, NO legacy fallback
+                    $inputSource = 'brain_live_intents_error';
+                    $intentsResult = ['ok' => true, 'count' => 0, 'intents' => [], 'errors' => $brainLiveResult['errors'] ?? []];
+                    $this->warnings[] = 'Brain-controlled mode active: live_intents source error. Legacy fallback disabled. ' . implode('; ', $brainLiveResult['errors'] ?? []);
+                } elseif (($brainLiveResult['count'] ?? 0) === 0) {
+                    // Brain approved zero intents — this is a valid decision, NOT an error
+                    $inputSource = 'brain_live_intents';
+                    $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. Legacy raw signal fallback is disabled for safety.';
+                } else {
+                    $inputSource = 'brain_live_intents';
+                }
             } else {
-                // Fallback: load from legacy signals (backward compatibility)
+                // Brain-controlled mode NOT active — legacy fallback allowed
                 $intentsResult = $this->loadIntentsFromSignals();
                 $inputSource = 'fallback_signals';
-                $brainControlled = false;
+                $legacyFallbackUsed = true;
             }
 
             $result['intents_loaded'] = $intentsResult['count'] ?? 0;
@@ -238,6 +251,9 @@ final class TradingBotService
             $result['controlled_by_brain'] = $brainControlled;
             $result['effective_selection_mode_from_brain'] = (string)($effectiveLiveConfig['live_signal_selection_mode'] ?? 'n/a');
             $result['strategy_overrides_disabled_or_overridden'] = $brainControlled;
+            $result['legacy_fallback_allowed'] = $legacyFallbackAllowed;
+            $result['legacy_fallback_used'] = $legacyFallbackUsed;
+            $result['brain_controlled_live_mode'] = $brainControlled;
             
             // P6.11: Intents preview (first 10 intents before validation)
             $result['intents_preview_total'] = $intentsResult['count'] ?? 0;
@@ -256,6 +272,17 @@ final class TradingBotService
                 'source' => $inputSource,
                 'brain_controlled' => $brainControlled,
             ];
+
+            // Brain-owned execution limits visibility
+            if ($brainControlled && !empty($effectiveLiveConfig)) {
+                $result['effective_live_max_positions'] = (int)($effectiveLiveConfig['live_max_positions'] ?? 3);
+                $result['effective_live_one_trade_per_symbol'] = (bool)($effectiveLiveConfig['live_one_trade_per_symbol'] ?? true);
+                $result['effective_trailing_contract_source'] = 'brain_intent';
+                $result['limits_controlled_by_brain'] = true;
+            } else {
+                $result['effective_trailing_contract_source'] = 'bot_local_config';
+                $result['limits_controlled_by_brain'] = false;
+            }
             
             // Step 3: Validate intents
             $validIntents = [];

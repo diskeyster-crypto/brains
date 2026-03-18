@@ -526,7 +526,7 @@ final class SmartBrainCore
 
             $intent = [
                 'schema_version' => 'live_intent_v1',
-                'intent_id' => 'li_' . $signalId . '_' . time(),
+                'intent_id' => 'li_' . $signalId . '_' . substr(md5($signalId . $symbol . $side . $entryPolicy), 0, 8),
                 'signal_id' => $signalId,
                 'symbol' => $symbol,
                 'side' => $side,
@@ -544,6 +544,10 @@ final class SmartBrainCore
                 'approval_reason' => $approvalReason,
                 'created_ts' => time(),
                 'expires_at' => (int)($signal['expires_at'] ?? 0),
+                'execution_limits_snapshot' => [
+                    'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
+                    'live_one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
+                ],
             ];
 
             if ($reverseEnabled && $sideOriginal !== $side) {
@@ -566,6 +570,7 @@ final class SmartBrainCore
             'schema_version' => 'live_intents_v1',
             'generated_at' => date('c'),
             'live_trading_enabled' => true,
+            'brain_controlled_live_mode' => true,
             'effective_live_config' => $liveConfig,
             'intents' => $intents,
         ];

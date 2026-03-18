@@ -212,9 +212,32 @@ final class TradingBotService
                 }
             }
             
-            // Step 2: Load intents from Brain signals
-            $intentsResult = $this->loadIntentsFromSignals();
+            // Step 2: Load intents — prefer Brain-approved live_intents over raw signals
+            $brainLiveResult = $this->loadBrainLiveIntents();
+            $inputSource = 'brain_live_intents';
+            $brainControlled = $brainLiveResult['brain_controlled'] ?? false;
+            $effectiveLiveConfig = $brainLiveResult['effective_live_config'] ?? [];
+
+            if ($brainControlled && ($brainLiveResult['count'] ?? 0) > 0) {
+                // Use Brain-approved live intents (preferred path)
+                $intentsResult = $brainLiveResult;
+                $inputSource = 'brain_live_intents';
+            } elseif ($brainControlled && ($brainLiveResult['source'] ?? '') === 'brain_live_intents_disabled') {
+                // Brain says live trading is disabled — no intents to load
+                $intentsResult = $brainLiveResult;
+                $inputSource = 'brain_live_intents_disabled';
+            } else {
+                // Fallback: load from legacy signals (backward compatibility)
+                $intentsResult = $this->loadIntentsFromSignals();
+                $inputSource = 'fallback_signals';
+                $brainControlled = false;
+            }
+
             $result['intents_loaded'] = $intentsResult['count'] ?? 0;
+            $result['input_source'] = $inputSource;
+            $result['controlled_by_brain'] = $brainControlled;
+            $result['effective_selection_mode_from_brain'] = (string)($effectiveLiveConfig['live_signal_selection_mode'] ?? 'n/a');
+            $result['strategy_overrides_disabled_or_overridden'] = $brainControlled;
             
             // P6.11: Intents preview (first 10 intents before validation)
             $result['intents_preview_total'] = $intentsResult['count'] ?? 0;
@@ -230,6 +253,8 @@ final class TradingBotService
                 'step' => 'load_intents',
                 'status' => 'ok',
                 'count' => $intentsResult['count'] ?? 0,
+                'source' => $inputSource,
+                'brain_controlled' => $brainControlled,
             ];
             
             // Step 3: Validate intents

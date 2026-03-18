@@ -9,12 +9,149 @@ use Core\System\SystemPaths;
  * Bot Sources Trait
  * 
  * Handles loading data from Brain signals and other sources.
+ * BRAIN-CONTROLLED: Prefers Brain-approved live_intents.json over raw signals.
  * CLEAN signals only - risk from signal.risk block.
  */
 trait BotSourcesTrait
 {
     /**
-     * Load intents from Brain signals
+     * Load Brain-approved live intents (preferred source).
+     * Brain generates live_intents.json with only approved, filtered intents.
+     * Bot must consume these instead of raw signals when available.
+     *
+     * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,brain_controlled:bool,effective_live_config:array}
+     */
+    protected function loadBrainLiveIntents(): array
+    {
+        $result = [
+            'ok' => true,
+            'count' => 0,
+            'intents' => [],
+            'errors' => [],
+            'source' => 'brain_live_intents',
+            'brain_controlled' => false,
+            'effective_live_config' => [],
+        ];
+
+        try {
+            $paths = SystemPaths::instance();
+
+            // Brain storage key (same as signals_key — they share the same storage root)
+            $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+            if (!$paths->has($brainKey)) {
+                $result['ok'] = false;
+                $result['errors'][] = "Brain storage path key not found: {$brainKey}";
+                return $result;
+            }
+
+            $brainBase = $paths->get($brainKey);
+            $liveIntentsPath = $brainBase . '/live_intents.json';
+
+            if (!is_file($liveIntentsPath)) {
+                // No live intents file — fall back to legacy signals
+                $result['source'] = 'fallback_signals';
+                return $result;
+            }
+
+            $content = @file_get_contents($liveIntentsPath);
+            if ($content === false) {
+                $result['ok'] = false;
+                $result['errors'][] = "Failed to read live_intents.json";
+                return $result;
+            }
+
+            $data = @json_decode($content, true);
+            if (!is_array($data)) {
+                $result['ok'] = false;
+                $result['errors'][] = "Invalid JSON in live_intents.json";
+                return $result;
+            }
+
+            // Validate schema
+            $schemaVersion = $data['schema_version'] ?? '';
+            if ($schemaVersion !== 'live_intents_v1') {
+                $result['ok'] = false;
+                $result['errors'][] = "Unexpected schema_version in live_intents.json: {$schemaVersion}";
+                return $result;
+            }
+
+            $result['brain_controlled'] = true;
+            $result['effective_live_config'] = $data['effective_live_config'] ?? [];
+
+            // If live trading is not enabled in Brain config, return empty intents
+            if (!($data['live_trading_enabled'] ?? false)) {
+                $result['source'] = 'brain_live_intents_disabled';
+                return $result;
+            }
+
+            $intents = $data['intents'] ?? [];
+            if (!is_array($intents)) {
+                $intents = [];
+            }
+
+            $executedIndex = $this->loadExecutedIndex();
+            $validIntents = [];
+
+            foreach ($intents as $intent) {
+                $intentId = $intent['intent_id'] ?? ($intent['signal_id'] ?? null);
+                if (empty($intentId)) {
+                    continue;
+                }
+
+                // Skip if already executed (idempotency)
+                if (isset($executedIndex[$intentId])) {
+                    continue;
+                }
+
+                // Skip if expired
+                $expiresAt = $intent['expires_at'] ?? 0;
+                if ($expiresAt > 0 && $expiresAt < time()) {
+                    continue;
+                }
+
+                // Normalize intent for bot execution
+                $normalized = [
+                    'id' => $intentId,
+                    'signal_id' => $intent['signal_id'] ?? $intentId,
+                    'schema_version' => 'intent_live_v1',
+                    'symbol' => (string)($intent['symbol'] ?? ''),
+                    'side' => (string)($intent['side'] ?? ''),
+                    'entry_price' => (float)($intent['entry_price_reference'] ?? 0),
+                    'entry_action' => (string)($intent['entry_action'] ?? 'enter_now'),
+                    'entry_timeout_minutes' => $intent['entry_timeout_minutes'] ?? null,
+                    'late_threshold_pct' => $this->config['execution']['default_late_threshold_pct'] ?? 0.5,
+                    'created_ts' => $intent['created_ts'] ?? time(),
+                    'expires_at' => $intent['expires_at'] ?? 0,
+                    'risk' => $intent['risk'] ?? [],
+                    'trailing' => $intent['trailing'] ?? [],
+                    'brain' => [],
+                    'source' => 'brain_live_intent',
+                    'intent_created_at' => $intent['created_ts'] ?? date('c'),
+                    'brain_controlled' => true,
+                    'selection_mode_used' => $intent['selection_mode_used'] ?? '',
+                    'approval_reason' => $intent['approval_reason'] ?? '',
+                ];
+
+                if (isset($intent['side_original'])) {
+                    $normalized['side_original'] = $intent['side_original'];
+                }
+
+                $validIntents[] = $normalized;
+            }
+
+            $result['count'] = count($validIntents);
+            $result['intents'] = $validIntents;
+
+        } catch (\Throwable $e) {
+            $result['ok'] = false;
+            $result['errors'][] = 'Exception: ' . $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Load intents from Brain signals (legacy fallback)
      * 
      * @return array Result with intents
      */
@@ -179,7 +316,9 @@ trait BotSourcesTrait
         // SL calculated from liquidation after position opens
         $sideLower = strtolower((string)$side);
 
-        // Optional: reverse side (LONG↔SHORT) — testing / contrarian mode
+        // DEPRECATED: reverse side in legacy signal path.
+        // Brain now handles reverse_side via live_reverse_side_enabled in live_intents.
+        // This legacy path is kept for backward compatibility only.
         $reverseEnabled = (bool)($this->config['execution']['reverse_side_enabled'] ?? false);
         $sideOriginal = $sideLower;
 

@@ -61,52 +61,62 @@ trait BotExecutorTrait
         $side = (string)($intent['side'] ?? '');
 
         // ============================================================
-        // Per-symbol overrides (manual):
-        // config.symbol_overrides[SYMBOL]:
-        // - enabled: bool (false → reject)
-        // - reverse_side_enabled: bool (overrides global execution.reverse_side_enabled)
-        // - force_side: 'long'|'short' (applies after reverse toggle)
+        // Brain-controlled intent check:
+        // If intent comes from Brain live_intents (brain_controlled=true),
+        // skip bot-local strategy toggles (reverse_side, force_side, symbol_overrides).
+        // Brain has already applied all strategy decisions.
+        // Bot only applies execution-layer logic.
         // ============================================================
-        $symbolOverrides = (array)($this->config['symbol_overrides'] ?? []);
-        $symCfg = [];
-        if ($symbol !== '' && isset($symbolOverrides[$symbol]) && is_array($symbolOverrides[$symbol])) {
-            $symCfg = $symbolOverrides[$symbol];
-        }
+        $isBrainControlled = !empty($intent['brain_controlled']);
 
-        if (!empty($symCfg) && array_key_exists('enabled', $symCfg) && $symCfg['enabled'] === false) {
-            return $this->rejectIntent($intent, 'rejected_symbol_disabled', "symbol_disabled:{$symbol}", $result);
-        }
+        if (!$isBrainControlled) {
+            // ============================================================
+            // LEGACY: Per-symbol overrides (manual) — DEPRECATED when Brain-controlled.
+            // config.symbol_overrides[SYMBOL]:
+            // - enabled: bool (false → reject)
+            // - reverse_side_enabled: bool (overrides global execution.reverse_side_enabled)
+            // - force_side: 'long'|'short' (applies after reverse toggle)
+            // WARNING: These are deprecated strategy controls. Brain should be the source of truth.
+            // ============================================================
+            $symbolOverrides = (array)($this->config['symbol_overrides'] ?? []);
+            $symCfg = [];
+            if ($symbol !== '' && isset($symbolOverrides[$symbol]) && is_array($symbolOverrides[$symbol])) {
+                $symCfg = $symbolOverrides[$symbol];
+            }
 
-        // ============================================================
-        // Side inversion (LONG↔SHORT) — runtime toggle (global or per-symbol)
-        // execution.reverse_side_enabled = true → invert side for execution.
-        // Keeps original side for UI/debug in intent.side_original.
-        // ============================================================
-        $reverseEnabled = (bool)($this->config['execution']['reverse_side_enabled'] ?? false);
-        if (!empty($symCfg) && array_key_exists('reverse_side_enabled', $symCfg)) {
-            $reverseEnabled = (bool)$symCfg['reverse_side_enabled'];
-        }
+            if (!empty($symCfg) && array_key_exists('enabled', $symCfg) && $symCfg['enabled'] === false) {
+                return $this->rejectIntent($intent, 'rejected_symbol_disabled', "symbol_disabled:{$symbol} (legacy bot override)", $result);
+            }
 
-        if ($reverseEnabled) {
-            $origSide = (string)($intent['side_original'] ?? $intent['side'] ?? '');
-            if ($origSide === 'long' || $origSide === 'short') {
-                $intent['side_original'] = $origSide;
-                $intent['side'] = ($origSide === 'long') ? 'short' : 'long';
-                $intent['side_effective_reason'] = 'reverse_side_enabled';
-                $side = (string)$intent['side'];
+            // DEPRECATED: Side inversion (LONG↔SHORT) — bot-local toggle
+            // Brain now controls reverse_side via live_reverse_side_enabled.
+            $reverseEnabled = (bool)($this->config['execution']['reverse_side_enabled'] ?? false);
+            if (!empty($symCfg) && array_key_exists('reverse_side_enabled', $symCfg)) {
+                $reverseEnabled = (bool)$symCfg['reverse_side_enabled'];
+            }
+
+            if ($reverseEnabled) {
+                $origSide = (string)($intent['side_original'] ?? $intent['side'] ?? '');
+                if ($origSide === 'long' || $origSide === 'short') {
+                    $intent['side_original'] = $origSide;
+                    $intent['side'] = ($origSide === 'long') ? 'short' : 'long';
+                    $intent['side_effective_reason'] = 'reverse_side_enabled (legacy bot override)';
+                    $side = (string)$intent['side'];
+                }
+            }
+
+            // DEPRECATED: Optional force-side after reverse toggle
+            $forceSide = (!empty($symCfg) && isset($symCfg['force_side'])) ? (string)$symCfg['force_side'] : '';
+            if ($forceSide === 'long' || $forceSide === 'short') {
+                if (!isset($intent['side_original'])) {
+                    $intent['side_original'] = (string)($intent['side'] ?? $side);
+                }
+                $intent['side'] = $forceSide;
+                $intent['side_effective_reason'] = 'force_side (legacy bot override)';
+                $side = $forceSide;
             }
         }
-
-        // Optional force-side after reverse toggle
-        $forceSide = (!empty($symCfg) && isset($symCfg['force_side'])) ? (string)$symCfg['force_side'] : '';
-        if ($forceSide === 'long' || $forceSide === 'short') {
-            if (!isset($intent['side_original'])) {
-                $intent['side_original'] = (string)($intent['side'] ?? $side);
-            }
-            $intent['side'] = $forceSide;
-            $intent['side_effective_reason'] = 'force_side';
-            $side = $forceSide;
-        }
+        // Brain-controlled: side/symbol already decided by Brain, no bot overrides
 
         $risk = $intent['risk'] ?? [];
         

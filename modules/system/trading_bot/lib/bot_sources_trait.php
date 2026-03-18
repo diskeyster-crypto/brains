@@ -188,6 +188,10 @@ trait BotSourcesTrait
                     'execution_limits_snapshot' => $intent['execution_limits_snapshot'] ?? [],
                     'effective_trailing_contract_source' => !empty($brainTrailing) ? 'brain_intent' : 'risk_block',
                     'trailing_contract_normalized' => !empty($brainTrailing),
+                    // V2: Execution identity and trailing debug visibility
+                    'execution_identity_key' => $intentId ?? $executionKey,
+                    'dedupe_basis' => 'intent_id',
+                    'normalized_drawdown_factor_source' => $risk['trailing']['drawdown_factor_source'] ?? 'n/a',
                 ];
 
                 if (isset($intent['side_original'])) {
@@ -287,11 +291,26 @@ trait BotSourcesTrait
             return $risk;
         }
 
+        // V2 FIX: drawdown_factor source must be explicit and semantically correct.
+        // trailing_min_step is NOT the same as drawdown_factor.
+        // Priority: 1) explicit drawdown_factor from Brain trailing contract
+        //           2) existing risk.trailing.drawdown_factor (from Brain signal risk block)
+        //           3) documented engine default (0.5 = normal mode)
+        $drawdownFactor = (float)($brainTrailing['drawdown_factor']
+            ?? $risk['trailing']['drawdown_factor']
+            ?? 0.5);
+        $drawdownFactorSource = isset($brainTrailing['drawdown_factor'])
+            ? 'brain_trailing_contract'
+            : (isset($risk['trailing']['drawdown_factor'])
+                ? 'risk_block'
+                : 'documented_default');
+
         $normalized = [
             'enabled' => (bool)($brainTrailing['trailing_enabled'] ?? false),
             // Brain uses ratio (e.g. 0.02 = 2%), bot expects percentage (e.g. 2.0 = 2%)
             'activation_roi_pct' => (float)($brainTrailing['trailing_activation_roi'] ?? 0) * 100,
-            'drawdown_factor' => (float)($risk['trailing']['drawdown_factor'] ?? ($brainTrailing['trailing_min_step'] ?? 0.5)),
+            'drawdown_factor' => $drawdownFactor,
+            'drawdown_factor_source' => $drawdownFactorSource,
             'min_lock_roi' => (float)($brainTrailing['trailing_min_lock_roi'] ?? 0),
             'min_step' => (float)($brainTrailing['trailing_min_step'] ?? 0),
             'break_even_enabled' => (bool)($brainTrailing['break_even_enabled'] ?? false),

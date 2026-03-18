@@ -66,6 +66,10 @@ $effectiveTrailingSource = (string)($lastRunBot['effective_trailing_contract_sou
 $limitsControlledByBrain = (bool)($lastRunBot['limits_controlled_by_brain'] ?? false);
 $sourceLoadStatus = (string)($lastRunBot['source_load_status'] ?? 'n/a');
 $sourceErrorMessage = (string)($lastRunBot['source_error_message'] ?? '');
+$trailingControlledByBrain = (bool)($lastRunBot['trailing_controlled_by_brain'] ?? false);
+$localTrailingOverridden = (bool)($lastRunBot['local_trailing_toggles_overridden'] ?? false);
+$executionIdentityKey = (string)($lastRunBot['execution_identity_key'] ?? 'n/a');
+$dedupeBasis = (string)($lastRunBot['dedupe_basis'] ?? 'n/a');
 ?>
 <div class="alert <?= $controlledByBrain ? 'alert-info' : 'alert-secondary' ?> mb-4 py-2" style="font-size: 0.85rem;">
     <i class="bi bi-<?= $controlledByBrain ? 'lightning-charge' : 'info-circle' ?> me-1"></i>
@@ -74,6 +78,8 @@ $sourceErrorMessage = (string)($lastRunBot['source_error_message'] ?? '');
         — <span class="text-info">Brain-controlled</span> (selection mode: <code><?= htmlspecialchars($selectionModeBot) ?></code>)
         <br><small>Bot-local strategy overrides (reverse_side, force_side, symbol_overrides) are <b>skipped</b> — Brain owns strategy decisions.</small>
         <br><small>Legacy fallback: <b>disabled</b> | Trailing: <code><?= htmlspecialchars($effectiveTrailingSource) ?></code> | Limits: <b><?= $limitsControlledByBrain ? 'Brain-owned' : 'bot-local' ?></b></small>
+        <br><small>Trailing controlled by Brain: <b><?= $trailingControlledByBrain ? 'yes' : 'no' ?></b> | Local toggles overridden: <b><?= $localTrailingOverridden ? 'yes' : 'no' ?></b></small>
+        <br><small>Execution identity key: <code><?= htmlspecialchars($executionIdentityKey) ?></code> | Dedupe basis: <code><?= htmlspecialchars($dedupeBasis) ?></code></small>
         <br><small>Source status: <code><?= htmlspecialchars($sourceLoadStatus) ?></code><?= $sourceErrorMessage !== '' ? ' — <span class="text-warning">' . htmlspecialchars($sourceErrorMessage) . '</span>' : '' ?></small>
     <?php else: ?>
         — <span class="text-secondary">Legacy fallback mode</span> (bot-local overrides active)

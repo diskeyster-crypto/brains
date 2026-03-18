@@ -290,9 +290,19 @@ final class TradingBotService
                 }
                 $result['effective_trailing_contract_source'] = 'brain_intent';
                 $result['limits_controlled_by_brain'] = true;
+                // V2: Brain-controlled trailing visibility
+                $result['trailing_controlled_by_brain'] = true;
+                $result['local_trailing_toggles_overridden'] = true;
+                $result['execution_identity_key'] = 'intent_id';
+                $result['dedupe_basis'] = 'intent_id';
             } else {
                 $result['effective_trailing_contract_source'] = 'bot_local_config';
                 $result['limits_controlled_by_brain'] = false;
+                // V2: Legacy trailing visibility
+                $result['trailing_controlled_by_brain'] = false;
+                $result['local_trailing_toggles_overridden'] = false;
+                $result['execution_identity_key'] = 'signal_id';
+                $result['dedupe_basis'] = 'legacy_signal_id';
             }
             
             // Step 3: Validate intents

@@ -461,17 +461,28 @@ trait BotExecutorTrait
                 // ============================================================
                 // Step 8: Set trading-stop (SL + trailing if enabled)
                 // P6.6: Trailing only sent if enable_trailing_on_open=true
+                // V2 FIX: In Brain-controlled mode, trailing decision comes from
+                // the normalized Brain contract — bot-local toggles are overridden.
                 // ============================================================
                 $tradingStopOptions = [
                     'position_idx' => $positionIdx,
                     'stop_loss' => $sl,
                 ];
                 
-                // P6.6: Phase-1 trailing toggle - only add trailing if config allows
-                $enableTrailingOnOpen = (bool)($this->config['execution']['enable_trailing_on_open'] ?? false);
-                if ($trailing['enabled'] && $enableTrailingOnOpen) {
-                    $tradingStopOptions['trailing_stop'] = $trailing['trailing_stop'];
-                    $tradingStopOptions['active_price'] = $trailing['active_price'];
+                // V2 FIX: Brain-controlled trailing overrides bot-local enable_trailing_on_open
+                if ($isBrainControlled) {
+                    // Brain decides trailing behavior — bot-local toggle ignored
+                    if ($trailing['enabled']) {
+                        $tradingStopOptions['trailing_stop'] = $trailing['trailing_stop'];
+                        $tradingStopOptions['active_price'] = $trailing['active_price'];
+                    }
+                } else {
+                    // Legacy mode: P6.6 Phase-1 trailing toggle still applies
+                    $enableTrailingOnOpen = (bool)($this->config['execution']['enable_trailing_on_open'] ?? false);
+                    if ($trailing['enabled'] && $enableTrailingOnOpen) {
+                        $tradingStopOptions['trailing_stop'] = $trailing['trailing_stop'];
+                        $tradingStopOptions['active_price'] = $trailing['active_price'];
+                    }
                 }
                 
                 // P4: Pass side for proper price normalization
@@ -566,7 +577,8 @@ trait BotExecutorTrait
     ): void {
         $closeResult = null;
         $closeOk = false;
-        $intentId = $intent['signal_id'] ?? $intent['id'] ?? 'unknown';
+        // V2 FIX: Use unified execution identity key for all paths (Brain intent_id or legacy signal_id)
+        $intentId = $this->getExecutionIdentityKey($intent);
         
         // Attempt to close position
         if ($this->gateway && $this->gateway->isInitialized() && $qty > 0) {
@@ -623,7 +635,8 @@ trait BotExecutorTrait
             $result['error'] = $reason;
         }
         
-        $this->markSignalExecuted($intent['signal_id'] ?? $intent['id'], $result);
+        // V2 FIX: Use unified execution identity key (same as used everywhere else)
+        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result);
     }
     
     /**
@@ -1050,9 +1063,17 @@ trait BotExecutorTrait
                 // ============================================================
                 // P8: Phase-1 "Dumb" Trailing (exchange-managed)
                 // Activate trailing "now" once ROI (Bybit) reaches activation threshold.
+                // V2 FIX: In Brain-controlled mode, trailing decision comes from
+                // the normalized Brain contract in risk.trailing — bot-local
+                // dumb_trailing_enabled toggle is overridden.
                 // ============================================================
 
-                if (($this->config['execution']['dumb_trailing_enabled'] ?? false) === true) {
+                $tradeBrainControlled = !empty($trade['brain_controlled']);
+                $dumbTrailingGateOpen = $tradeBrainControlled
+                    ? true  // Brain-controlled: trailing gated by risk.trailing.enabled only
+                    : (($this->config['execution']['dumb_trailing_enabled'] ?? false) === true);
+
+                if ($dumbTrailingGateOpen) {
                     $risk = $trade['risk'] ?? [];
                     $trailingCfg = $risk['trailing'] ?? [];
 

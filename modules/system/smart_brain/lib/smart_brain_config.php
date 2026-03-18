@@ -437,25 +437,23 @@ final class SmartBrainConfig
             // Skip this check if manual_only conflict is already detected
             if (!($manualEnabled && $manualMode === 'manual_only')) {
                 $moduleBase = $this->moduleBase;
+                $isListEmpty = function(string $filename) use ($moduleBase): bool {
+                    $path = $moduleBase . '/storage/' . $filename;
+                    return !is_file($path) || trim((string)file_get_contents($path)) === '[]';
+                };
+
                 $emptyList = false;
-                if (in_array($filterMode, ['whitelist_only', 'whitelist_plus_soft'], true)) {
-                    $path = $moduleBase . '/storage/whitelist.json';
-                    if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
-                        $emptyList = true;
-                    }
+                if ($filterMode === 'whitelist_only') {
+                    $emptyList = $isListEmpty('whitelist.json');
+                } elseif ($filterMode === 'soft_whitelist_only') {
+                    $emptyList = $isListEmpty('soft_whitelist.json');
+                } elseif ($filterMode === 'whitelist_plus_soft') {
+                    // whitelist_plus_soft accepts symbols from EITHER list — warn only if BOTH are empty
+                    $emptyList = $isListEmpty('whitelist.json') && $isListEmpty('soft_whitelist.json');
+                } elseif ($filterMode === 'watchlist_only') {
+                    $emptyList = $isListEmpty('watchlist.json');
                 }
-                if ($filterMode === 'soft_whitelist_only' || $filterMode === 'whitelist_plus_soft') {
-                    $path = $moduleBase . '/storage/soft_whitelist.json';
-                    if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
-                        $emptyList = true;
-                    }
-                }
-                if ($filterMode === 'watchlist_only') {
-                    $path = $moduleBase . '/storage/watchlist.json';
-                    if (!is_file($path) || trim((string)file_get_contents($path)) === '[]') {
-                        $emptyList = true;
-                    }
-                }
+
                 if ($emptyList) {
                     $warnings[] = 'Symbol Intelligence: режим ' . $filterMode
                         . ' активен, но соответствующие списки пусты. '

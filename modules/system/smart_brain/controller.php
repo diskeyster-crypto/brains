@@ -98,7 +98,13 @@ final class SmartBrainController
         $data['smartBrainUrl'] = $this->smartBrainUrl;
 
         if ($result['ok']) {
-            $data['flash'] = ['type' => 'success', 'message' => 'User config saved successfully.'];
+            // Config Conflict Guard: mention warnings in flash message if present
+            $configWarnings = $data['config_warnings'] ?? [];
+            if (!empty($configWarnings)) {
+                $data['flash'] = ['type' => 'warning', 'message' => 'User config saved. ⚠ ' . implode(' ', $configWarnings)];
+            } else {
+                $data['flash'] = ['type' => 'success', 'message' => 'User config saved successfully.'];
+            }
             $data['form_values'] = $data['user_limits'];
         } else {
             $data['flash'] = ['type' => 'error', 'message' => 'Validation errors: ' . implode('; ', $result['errors'])];

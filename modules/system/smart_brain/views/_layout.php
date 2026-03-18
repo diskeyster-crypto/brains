@@ -52,7 +52,7 @@ $extraScripts = $extraScripts ?? '';
 
     <!-- Flash Messages -->
     <?php if ($flash): ?>
-    <div class="alert alert-<?= $flash['type'] === 'success' ? 'success' : 'danger' ?> alert-dismissible fade show">
+    <div class="alert alert-<?= match($flash['type']) { 'success' => 'success', 'warning' => 'warning', default => 'danger' } ?> alert-dismissible fade show">
         <?= htmlspecialchars($flash['message']) ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>

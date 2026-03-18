@@ -588,6 +588,95 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
+        <!-- ================================================ -->
+        <!-- Live Trading Control (Brain-owned) -->
+        <!-- ================================================ -->
+        <div class="row">
+            <div class="col-12 mb-4">
+                <div class="card border-warning">
+                    <div class="card-header bg-warning bg-opacity-10 d-flex align-items-center">
+                        <i class="bi bi-lightning-charge me-2 text-warning"></i>
+                        <h5 style="margin: 0;">Live Trading Control</h5>
+                        <span class="badge bg-warning text-dark ms-2">Brain-owned</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            Brain — единый центр контроля live-торговли. Здесь задаются все стратегические настройки для Trading Bot.
+                            Bot выполняет только утверждённые Brain интенты.
+                        </p>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="live_trading_enabled" name="live_trading_enabled" value="1" <?= $checked('live_trading_enabled') ?>>
+                                    <label class="form-check-label fw-bold" for="live_trading_enabled">Live Trading Enabled</label>
+                                    <br><small class="text-secondary">Включить генерацию live intents для Trading Bot</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="live_signal_selection_mode" class="form-label">Live Signal Selection Mode</label>
+                                <select class="form-select" id="live_signal_selection_mode" name="live_signal_selection_mode">
+<?php
+    $liveSelModes = [
+        'all' => 'all — все сигналы',
+        'whitelist_only' => 'whitelist_only — только whitelist',
+        'soft_whitelist_only' => 'soft_whitelist_only — только soft whitelist',
+        'whitelist_plus_soft' => 'whitelist_plus_soft — whitelist + soft',
+        'manual_only' => 'manual_only — только ручной список',
+        'manual_plus_soft' => 'manual_plus_soft — manual + soft',
+        'manual_plus_whitelist' => 'manual_plus_whitelist — manual + whitelist',
+        'watchlist_only' => 'watchlist_only — только watchlist',
+    ];
+    $currentLiveMode = (string)($form_values['live_signal_selection_mode'] ?? 'whitelist_only');
+    foreach ($liveSelModes as $modeKey => $modeLabel):
+?>
+                                    <option value="<?= $modeKey ?>" <?= $currentLiveMode === $modeKey ? 'selected' : '' ?>><?= htmlspecialchars($modeLabel) ?></option>
+<?php endforeach; ?>
+                                </select>
+                                <small class="text-secondary">Режим отбора символов для live-торговли</small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="live_max_positions" class="form-label">Live Max Positions</label>
+                                <input type="number" step="1" min="1" max="50" class="form-control" id="live_max_positions" name="live_max_positions" value="<?= $v('live_max_positions', '3') ?>">
+                                <small class="text-secondary">Макс. кол-во одновременных live-позиций</small>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="live_one_trade_per_symbol" name="live_one_trade_per_symbol" value="1" <?= $checked('live_one_trade_per_symbol') ?>>
+                                    <label class="form-check-label" for="live_one_trade_per_symbol">One Trade Per Symbol</label>
+                                    <br><small class="text-secondary">Не более одной live-позиции на символ</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="live_entry_policy" class="form-label">Live Entry Policy</label>
+                                <select class="form-select" id="live_entry_policy" name="live_entry_policy">
+<?php
+    $currentEntryPolicy = (string)($form_values['live_entry_policy'] ?? 'enter_now');
+?>
+                                    <option value="enter_now" <?= $currentEntryPolicy === 'enter_now' ? 'selected' : '' ?>>enter_now — немедленный вход</option>
+                                    <option value="wait_retrace" <?= $currentEntryPolicy === 'wait_retrace' ? 'selected' : '' ?>>wait_retrace — ждать откат</option>
+                                </select>
+                                <small class="text-secondary">Политика входа для live-позиций</small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="live_reverse_side_enabled" name="live_reverse_side_enabled" value="1" <?= $checked('live_reverse_side_enabled') ?>>
+                                    <label class="form-check-label" for="live_reverse_side_enabled">Reverse Side (Live)</label>
+                                    <br><small class="text-warning">⚠ Инвертировать сторону (LONG↔SHORT) для live-торговли</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="alert alert-info small mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Trailing / Exit / Stop политика для live-торговли берётся из настроек выше (Exit Policy, Trailing, Stop Control).
+                            Bot не имеет собственных стратегических контролов — Brain является единственным источником истины.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Action Buttons -->
         <div class="d-flex gap-2 mb-4">
             <button type="submit" class="btn btn-primary">

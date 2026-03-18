@@ -99,29 +99,61 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             <div class="mt-2 text-danger"><small><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($errMsg) ?></small></div>
             <?php endif; ?>
             <?php
-                // Config Conflict Guard: show runtime conflict from last_run
+                // Config Conflict Guard: deduplicated warnings from last_run + current config
                 $conflictDetected = (bool)($last_run['config_conflict_detected'] ?? false);
                 $conflictMsg = (string)($last_run['config_conflict_message'] ?? '');
-                if ($conflictDetected && $conflictMsg !== ''):
+                $dashWarnings = [];
+                if ($conflictDetected && $conflictMsg !== '') {
+                    $dashWarnings[] = $conflictMsg;
+                }
+                foreach ($config_warnings as $cw) {
+                    $dashWarnings[] = $cw;
+                }
+                // Deduplicate
+                $dashSeen = [];
+                $dashUniqueWarnings = [];
+                foreach ($dashWarnings as $dw) {
+                    $dwKey = mb_strtolower(trim($dw));
+                    if (!isset($dashSeen[$dwKey])) {
+                        $dashSeen[$dwKey] = true;
+                        $dashUniqueWarnings[] = $dw;
+                    }
+                }
+                foreach ($dashUniqueWarnings as $duw):
             ?>
             <div class="mt-2 alert alert-warning mb-0 py-1 px-2" style="font-size:0.85rem;">
                 <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                <strong>Config Conflict:</strong> <?= htmlspecialchars($conflictMsg) ?>
+                <?= htmlspecialchars($duw) ?>
             </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- Live Trading Status Card -->
+    <?php
+        $liveEnabled = (bool)($last_run['live_trading_enabled'] ?? false);
+        $liveMode = (string)($last_run['live_signal_selection_mode'] ?? 'n/a');
+        $liveApproved = (int)($last_run['live_candidates_approved_count'] ?? 0);
+        $liveRejected = (int)($last_run['live_candidates_rejected_count'] ?? 0);
+        $liveIntentsCount = (int)($last_run['live_intents_created_count'] ?? 0);
+    ?>
+    <div class="card mb-4" style="border-color: <?= $liveEnabled ? '#22c55e' : '#6b7280' ?>;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-lightning-charge me-1"></i> Live Trading</h5>
+            <?php if ($liveEnabled): ?>
+            <span class="badge bg-success">ENABLED — <?= htmlspecialchars($liveMode) ?></span>
+            <?php else: ?>
+            <span class="badge bg-secondary">DISABLED</span>
             <?php endif; ?>
-            <?php
-                // Config Conflict Guard: show current config warnings
-                if (!empty($config_warnings)):
-                    foreach ($config_warnings as $cw):
-            ?>
-            <div class="mt-2 alert alert-warning mb-0 py-1 px-2" style="font-size:0.85rem;">
-                <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                <?= htmlspecialchars($cw) ?>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3"><small class="text-secondary d-block">Selection Mode</small><strong><?= htmlspecialchars($liveMode) ?></strong></div>
+                <div class="col-md-2"><small class="text-secondary d-block">Approved</small><strong class="text-success"><?= $liveApproved ?></strong></div>
+                <div class="col-md-2"><small class="text-secondary d-block">Rejected</small><strong class="text-danger"><?= $liveRejected ?></strong></div>
+                <div class="col-md-2"><small class="text-secondary d-block">Live Intents</small><strong class="text-warning"><?= $liveIntentsCount ?></strong></div>
+                <div class="col-md-3"><small class="text-secondary d-block">Status</small><strong><?= $liveEnabled ? '<span class="text-success">Active</span>' : '<span class="text-secondary">Inactive</span>' ?></strong></div>
             </div>
-            <?php
-                    endforeach;
-                endif;
-            ?>
         </div>
     </div>
 

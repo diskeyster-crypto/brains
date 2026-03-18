@@ -708,6 +708,7 @@ final class SmartBrainCore
             'active' => $this->state->readJson('storage/simulator/active.json', []),
             'closed' => $this->state->readJson('storage/simulator/closed.json', []),
             'stats' => $this->state->readJson('storage/simulator/stats.json', []),
+            'live_intents' => $this->state->readJson('storage/live_intents.json', []),
             'config_warnings' => $this->config->detectConfigConflicts(),
         ];
     }
@@ -722,6 +723,7 @@ final class SmartBrainCore
             'snapshot' => $this->state->readJson('runtime/config.snapshot.json', []),
             'last_run' => $this->state->readJson('storage/last_run.json', []),
             'stats' => $this->state->readJson('storage/simulator/stats.json', []),
+            'live_intents' => $this->state->readJson('storage/live_intents.json', []),
             'config_warnings' => $this->config->detectConfigConflicts(),
         ];
     }

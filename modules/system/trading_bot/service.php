@@ -290,19 +290,28 @@ final class TradingBotService
                 }
                 $result['effective_trailing_contract_source'] = 'brain_intent';
                 $result['limits_controlled_by_brain'] = true;
-                // V2: Brain-controlled trailing visibility
+                // V3: Brain-controlled trailing visibility
                 $result['trailing_controlled_by_brain'] = true;
                 $result['local_trailing_toggles_overridden'] = true;
                 $result['execution_identity_key'] = 'intent_id';
                 $result['dedupe_basis'] = 'intent_id';
+                // V3: Extract normalized_drawdown_factor_source from first available intent
+                $result['normalized_drawdown_factor_source'] = 'n/a';
+                if (!empty($intentsResult['intents'])) {
+                    $firstIntent = $intentsResult['intents'][0] ?? [];
+                    $firstRisk = is_array($firstIntent['risk'] ?? null) ? $firstIntent['risk'] : [];
+                    $firstTrailing = is_array($firstRisk['trailing'] ?? null) ? $firstRisk['trailing'] : [];
+                    $result['normalized_drawdown_factor_source'] = $firstTrailing['drawdown_factor_source'] ?? 'n/a';
+                }
             } else {
                 $result['effective_trailing_contract_source'] = 'bot_local_config';
                 $result['limits_controlled_by_brain'] = false;
-                // V2: Legacy trailing visibility
+                // V3: Legacy trailing visibility
                 $result['trailing_controlled_by_brain'] = false;
                 $result['local_trailing_toggles_overridden'] = false;
                 $result['execution_identity_key'] = 'signal_id';
                 $result['dedupe_basis'] = 'legacy_signal_id';
+                $result['normalized_drawdown_factor_source'] = 'legacy_non_brain_mode';
             }
             
             // Step 3: Validate intents
@@ -607,12 +616,17 @@ final class TradingBotService
         return [
             'id' => $intent['id'] ?? null,
             'signal_id' => $intent['signal_id'] ?? null,
+            'intent_id' => $intent['intent_id'] ?? null,
+            'execution_identity_key' => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? null)),
+            'dedupe_basis' => $intent['dedupe_basis'] ?? (!empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id'),
+            'source_signal_id' => $intent['signal_id'] ?? null,
             'symbol' => $intent['symbol'] ?? null,
             'side' => $intent['side'] ?? null,
             'entry_action' => $intent['entry_action'] ?? null,
             'entry_price' => $intent['entry_price'] ?? null,
             'created_ts' => $intent['created_ts'] ?? null,
             'expires_at' => $intent['expires_at'] ?? null,
+            'brain_controlled' => !empty($intent['brain_controlled']),
             'risk' => [
                 'profile_id' => $risk['profile_id'] ?? null,
                 'budget_usdt_per_trade' => $risk['budget_usdt_per_trade'] ?? null,
@@ -626,6 +640,8 @@ final class TradingBotService
                     'activation_roi_pct' => $trailing['activation_roi_pct'] ?? null,
                     'mode' => $trailing['mode'] ?? null,
                     'drawdown_factor' => $trailing['drawdown_factor'] ?? null,
+                    'drawdown_factor_source' => $trailing['drawdown_factor_source'] ?? null,
+                    'min_step' => $trailing['min_step'] ?? null,
                 ],
                 'limits' => [
                     'max_open_trades' => $limits['max_open_trades'] ?? null,

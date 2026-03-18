@@ -33,9 +33,10 @@ $brainSourceBadge = (bool)($lastRunBot['controlled_by_brain'] ?? false)
         <table class="table table-sm">
             <thead>
                 <tr>
-                    <th>Signal ID</th>
+                    <th>Execution Key</th>
                     <th>Symbol</th>
                     <th>Side</th>
+                    <th>Dedupe</th>
                     <th>Reason</th>
                     <th>Missing Fields</th>
                     <th>Rejected At</th>
@@ -45,14 +46,19 @@ $brainSourceBadge = (bool)($lastRunBot['controlled_by_brain'] ?? false)
             <tbody>
                 <?php foreach ($intents as $item): ?>
                 <?php $intent = $item['intent'] ?? $item; ?>
+                <?php
+                    $execKey = $intent['intent_id'] ?? $intent['id'] ?? $intent['signal_id'] ?? '';
+                    $dedupe = !empty($intent['brain_controlled']) ? 'intent_id' : 'signal_id';
+                ?>
                 <tr>
-                    <td class="small"><?= htmlspecialchars(substr($intent['id'] ?? $intent['signal_id'] ?? '', 0, 12)) ?>...</td>
+                    <td class="small" title="<?= htmlspecialchars($execKey) ?>"><?= htmlspecialchars(substr($execKey, 0, 12)) ?>...</td>
                     <td><strong><?= htmlspecialchars($intent['symbol'] ?? '') ?></strong></td>
                     <td>
                         <span class="badge bg-<?= ($intent['side'] ?? '') === 'long' ? 'success' : 'danger' ?>">
                             <?= strtoupper($intent['side'] ?? '') ?>
                         </span>
                     </td>
+                    <td class="small"><span class="badge bg-<?= $dedupe === 'intent_id' ? 'info' : 'secondary' ?>"><?= htmlspecialchars($dedupe) ?></span></td>
                     <td class="text-danger small"><?= htmlspecialchars($item['reason'] ?? '') ?></td>
                     <td class="small">
                         <?php if (!empty($item['missing_fields'])): ?>

@@ -587,10 +587,15 @@ trait BotSourcesTrait
      * - rejected_late_entry: Price moved too far
      * - rejected_sl_failed: Failed to set SL (fail-safe closed)
      * 
-     * @param string $signalId Signal ID
+     * V3 FIX: $signalId is now always the unified execution identity key
+     * (intent_id for Brain intents, signal_id for legacy).
+     * All callers must use getExecutionIdentityKey() to derive this value.
+     * 
+     * @param string $signalId Execution identity key (intent_id or legacy signal_id)
      * @param array $result Execution result
+     * @param string $dedupeBasis 'intent_id' or 'legacy_signal_id' (for debug tracing)
      */
-    protected function markSignalExecuted(string $signalId, array $result): void
+    protected function markSignalExecuted(string $signalId, array $result, string $dedupeBasis = ''): void
     {
         $path = $this->storageDir . '/executed_index.json';
         
@@ -609,7 +614,7 @@ trait BotSourcesTrait
             // Last resort: non-atomic write with error logging
             error_log("TradingBot: flock failed for executed_index.json, falling back to non-atomic write");
             $index = $this->loadExecutedIndex();
-            $index[$signalId] = $this->buildExecutedEntry($result);
+            $index[$signalId] = $this->buildExecutedEntry($result, $signalId, $dedupeBasis);
             @file_put_contents($path, json_encode($index, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
             return;
         }
@@ -634,7 +639,7 @@ trait BotSourcesTrait
             }
             
             // Add/update entry
-            $index[$signalId] = $this->buildExecutedEntry($result);
+            $index[$signalId] = $this->buildExecutedEntry($result, $signalId, $dedupeBasis);
             
             // Truncate and write
             ftruncate($fp, 0);
@@ -649,16 +654,29 @@ trait BotSourcesTrait
     
     /**
      * Build executed index entry
+     *
+     * @param array $result Execution result
+     * @param string $executionKey The execution identity key used (for debug tracing)
+     * @param string $dedupeBasis Whether the key is intent_id or legacy_signal_id
      */
-    private function buildExecutedEntry(array $result): array
+    private function buildExecutedEntry(array $result, string $executionKey = '', string $dedupeBasis = ''): array
     {
-        return [
+        $entry = [
             'executed_at' => date('c'),
             'result' => $result['status'] ?? 'unknown',
             'order_id' => $result['order_id'] ?? null,
             'trade_id' => $result['trade_id'] ?? null,
             'error' => $result['error'] ?? null,
         ];
+
+        if ($executionKey !== '') {
+            $entry['execution_identity_key'] = $executionKey;
+        }
+        if ($dedupeBasis !== '') {
+            $entry['dedupe_basis'] = $dedupeBasis;
+        }
+
+        return $entry;
     }
     
     /**

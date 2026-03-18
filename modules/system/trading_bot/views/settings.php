@@ -69,6 +69,18 @@ $dumbTrailingEnabled = (bool)($cfg['execution']['dumb_trailing_enabled'] ?? fals
 $enableTrailingOnOpen = (bool)($cfg['execution']['enable_trailing_on_open'] ?? true);
 $dumbTrailingEpsPct = (float)($cfg['execution']['dumb_trailing_activation_epsilon_pct'] ?? 0.2);
 
+// V3: Detect Brain-controlled mode from last_run.json for deprecation notices
+$_brainModeActive = false;
+if (isset($this->storageDir)) {
+    $_lastRunPath = $this->storageDir . '/last_run.json';
+    if (is_file($_lastRunPath)) {
+        $_lastRunData = @json_decode((string)@file_get_contents($_lastRunPath), true);
+        if (is_array($_lastRunData)) {
+            $_brainModeActive = (bool)($_lastRunData['trailing_controlled_by_brain'] ?? false);
+        }
+    }
+}
+
 // --- Balance
 $balanceCoin = (string)($cfg['execution']['balance_coin'] ?? 'USDT');
 $balanceBufferPct = (int)($cfg['execution']['balance_required_buffer_pct'] ?? 10);
@@ -606,13 +618,25 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 
                     <h6 class="mb-3">Trailing (Dumb / On-Open)</h6>
 
+<?php if ($_brainModeActive): ?>
+                    <div class="alert alert-info py-2 mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>Brain-controlled mode active:</strong>
+                        These local trailing toggles (<code>dumb_trailing_enabled</code>, <code>enable_trailing_on_open</code>)
+                        are <strong>overridden</strong> by Brain trailing contract.
+                        Trailing enabled/disabled is determined by normalized Brain <code>risk.trailing</code>.
+                        Local toggles are used only in legacy (non-Brain) mode.
+                    </div>
+<?php endif; ?>
+
                     <div class="row g-3">
                         <div class="col-md-6">
                             <div class="form-check form-switch mt-2">
                                 <input class="form-check-input" type="checkbox" id="dumb_trailing_enabled" name="dumb_trailing_enabled" <?= $dumbTrailingEnabled ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="dumb_trailing_enabled">
                                     Dumb Trailing включён
-                                    <?= sprintf($helpIcon, htmlspecialchars('Простой trailing по последней цене. Рекомендуется держать OFF и использовать StepTrailing/ProfitManager.')) ?>
+                                    <?php if ($_brainModeActive): ?><span class="badge bg-secondary ms-1">overridden</span><?php endif; ?>
+                                    <?= sprintf($helpIcon, htmlspecialchars('Простой trailing по последней цене. В Brain-controlled mode этот toggle игнорируется — trailing управляется Brain контрактом.')) ?>
                                 </label>
                             </div>
 
@@ -625,7 +649,8 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                                 <input class="form-check-input" type="checkbox" id="enable_trailing_on_open" name="enable_trailing_on_open" <?= $enableTrailingOnOpen ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="enable_trailing_on_open">
                                     Включать trailing сразу при открытии
-                                    <?= sprintf($helpIcon, htmlspecialchars('Если true — бот может активировать trailing настройки сразу после open (если allow).')) ?>
+                                    <?php if ($_brainModeActive): ?><span class="badge bg-secondary ms-1">overridden</span><?php endif; ?>
+                                    <?= sprintf($helpIcon, htmlspecialchars('Если true — бот активирует trailing при open. В Brain-controlled mode этот toggle игнорируется — Brain контракт решает.')) ?>
                                 </label>
                             </div>
 

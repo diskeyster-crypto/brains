@@ -510,7 +510,8 @@ trait BotExecutorTrait
                 $result['ok'] = true;
                 
                 $executionKey = $this->getExecutionIdentityKey($intent);
-                $this->markSignalExecuted($executionKey, $result);
+                $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+                $this->markSignalExecuted($executionKey, $result, $dedupeBasis);
                 $this->store->saveOrder($order, $orderResult);
                 
             } else {
@@ -522,7 +523,8 @@ trait BotExecutorTrait
                 $result['status'] = 'opened_dry';
                 
                 $executionKey = $this->getExecutionIdentityKey($intent);
-                $this->markSignalExecuted($executionKey, $result);
+                $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+                $this->markSignalExecuted($executionKey, $result, $dedupeBasis);
                 $this->store->saveOrder($order, $orderResult);
             }
             
@@ -556,7 +558,8 @@ trait BotExecutorTrait
             'status' => $status,
         ], $context));
         
-        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result);
+        $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result, $dedupeBasis);
         
         return $result;
     }
@@ -636,7 +639,8 @@ trait BotExecutorTrait
         }
         
         // V2 FIX: Use unified execution identity key (same as used everywhere else)
-        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result);
+        $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result, $dedupeBasis);
     }
     
     /**

@@ -614,16 +614,9 @@ final class TradingBotService
                     $key = ($ir['symbol'] ?? '') . '_' . strtolower($ir['side'] ?? '');
                     if (isset($tradesBySymbolSide[$key])) {
                         $trade = $tradesBySymbolSide[$key];
-                        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
-                        $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
                         // Trailing is considered active when it has been applied to exchange,
                         // not merely enabled in config.
-                        // Primary: protection block has trailing_stop > 0 AND trailing is enabled
-                        $exchangeTrailingSet = (float)($prot['trailing_stop'] ?? 0) > 0
-                            && (bool)($prot['trailing_enabled'] ?? false);
-                        // Fallback: runtime.dumb_trailing_applied (legacy, still written by updateActivePositions)
-                        $runtimeTrailingApplied = !empty($rt['dumb_trailing_applied']);
-                        if ($exchangeTrailingSet || $runtimeTrailingApplied) {
+                        if ($this->isTrailingActive($trade)) {
                             $ir['lifecycle_state'] = 'trailing_active';
                             $ir['trailing_status'] = 'active';
                             // trailing_active is a stronger sub-state of protected
@@ -688,13 +681,8 @@ final class TradingBotService
                     $protectedCount++;
                 }
 
-                // Trailing active: prefer normalized exchange/protection state
-                // Primary: protection block has trailing_stop set AND trailing is enabled
-                $exchangeTrailingSet = (float)($prot['trailing_stop'] ?? 0) > 0
-                    && (bool)($prot['trailing_enabled'] ?? false);
-                // Fallback: runtime.dumb_trailing_applied (legacy field, still written by updateActivePositions)
-                $runtimeTrailingApplied = !empty($rt['dumb_trailing_applied']);
-                if ($exchangeTrailingSet || $runtimeTrailingApplied) {
+                // Trailing active: normalized detection via helper
+                if ($this->isTrailingActive($t)) {
                     $trailingActiveCount++;
                 }
 

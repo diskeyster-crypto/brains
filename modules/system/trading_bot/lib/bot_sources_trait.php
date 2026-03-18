@@ -893,6 +893,32 @@ trait BotSourcesTrait
     }
 
     /**
+     * Detect whether trailing is actually active on a trade.
+     *
+     * trailing_active means trailing has been applied to exchange,
+     * NOT merely enabled in config.
+     *
+     * Primary: protection block has trailing_stop > 0 AND trailing_enabled
+     * Fallback: runtime.dumb_trailing_applied (legacy field, still written by updateActivePositions)
+     *
+     * @param array $trade Active trade record
+     * @return bool
+     */
+    protected function isTrailingActive(array $trade): bool
+    {
+        $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+
+        // Primary: exchange protection state
+        $exchangeTrailingSet = (float)($prot['trailing_stop'] ?? 0) > 0
+            && (bool)($prot['trailing_enabled'] ?? false);
+        // Fallback: legacy runtime field
+        $runtimeTrailingApplied = !empty($rt['dumb_trailing_applied']);
+
+        return $exchangeTrailingSet || $runtimeTrailingApplied;
+    }
+
+    /**
      * Load commands from Brain (P7)
      * 
      * Reads trading_commands.json from Brain storage.

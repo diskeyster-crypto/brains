@@ -71,6 +71,7 @@ $localTrailingOverridden = (bool)($lastRunBot['local_trailing_toggles_overridden
 $executionIdentityKey = (string)($lastRunBot['execution_identity_key'] ?? 'n/a');
 $dedupeBasis = (string)($lastRunBot['dedupe_basis'] ?? 'n/a');
 $normalizedDrawdownFactorSource = (string)($lastRunBot['normalized_drawdown_factor_source'] ?? 'n/a');
+$effectiveTrailingContract = is_array($lastRunBot['effective_trailing_contract'] ?? null) ? $lastRunBot['effective_trailing_contract'] : null;
 ?>
 <div class="alert <?= $controlledByBrain ? 'alert-info' : 'alert-secondary' ?> mb-4 py-2" style="font-size: 0.85rem;">
     <i class="bi bi-<?= $controlledByBrain ? 'lightning-charge' : 'info-circle' ?> me-1"></i>
@@ -80,6 +81,9 @@ $normalizedDrawdownFactorSource = (string)($lastRunBot['normalized_drawdown_fact
         <br><small>Bot-local strategy overrides (reverse_side, force_side, symbol_overrides) are <b>skipped</b> — Brain owns strategy decisions.</small>
         <br><small>Legacy fallback: <b>disabled</b> | Trailing: <code><?= htmlspecialchars($effectiveTrailingSource) ?></code> | Limits: <b><?= $limitsControlledByBrain ? 'Brain-owned' : 'bot-local' ?></b></small>
         <br><small>Trailing controlled by Brain: <b><?= $trailingControlledByBrain ? 'yes' : 'no' ?></b> | Local toggles overridden: <b><?= $localTrailingOverridden ? 'yes' : 'no' ?></b> | Drawdown factor source: <code><?= htmlspecialchars($normalizedDrawdownFactorSource) ?></code></small>
+        <?php if ($effectiveTrailingContract !== null): ?>
+        <br><small>Effective trailing: enabled=<b><?= $effectiveTrailingContract['enabled'] ? 'yes' : 'no' ?></b> | activation=<code><?= htmlspecialchars((string)($effectiveTrailingContract['activation_roi_pct'] ?? 'n/a')) ?>%</code> | drawdown=<code><?= htmlspecialchars((string)($effectiveTrailingContract['drawdown_factor'] ?? 'n/a')) ?></code> | min_step=<code><?= htmlspecialchars((string)($effectiveTrailingContract['min_step'] ?? 'n/a')) ?></code> | exit=<code><?= htmlspecialchars((string)($effectiveTrailingContract['exit_mode'] ?? 'n/a')) ?></code></small>
+        <?php endif; ?>
         <br><small>Execution identity key: <code><?= htmlspecialchars($executionIdentityKey) ?></code> | Dedupe basis: <code><?= htmlspecialchars($dedupeBasis) ?></code></small>
         <br><small>Source status: <code><?= htmlspecialchars($sourceLoadStatus) ?></code><?= $sourceErrorMessage !== '' ? ' — <span class="text-warning">' . htmlspecialchars($sourceErrorMessage) . '</span>' : '' ?></small>
     <?php else: ?>

@@ -295,13 +295,26 @@ final class TradingBotService
                 $result['local_trailing_toggles_overridden'] = true;
                 $result['execution_identity_key'] = 'intent_id';
                 $result['dedupe_basis'] = 'intent_id';
-                // V3: Extract normalized_drawdown_factor_source from first available intent
+                // V3: Extract normalized_drawdown_factor_source and effective trailing contract from first available intent
                 $result['normalized_drawdown_factor_source'] = 'n/a';
+                $result['effective_trailing_contract'] = null;
                 if (!empty($intentsResult['intents'])) {
                     $firstIntent = $intentsResult['intents'][0] ?? [];
                     $firstRisk = is_array($firstIntent['risk'] ?? null) ? $firstIntent['risk'] : [];
                     $firstTrailing = is_array($firstRisk['trailing'] ?? null) ? $firstRisk['trailing'] : [];
                     $result['normalized_drawdown_factor_source'] = $firstTrailing['drawdown_factor_source'] ?? 'n/a';
+                    // V4: Include effective trailing contract snapshot for runtime debug truth
+                    $result['effective_trailing_contract'] = [
+                        'enabled' => $firstTrailing['enabled'] ?? null,
+                        'activation_roi_pct' => $firstTrailing['activation_roi_pct'] ?? null,
+                        'drawdown_factor' => $firstTrailing['drawdown_factor'] ?? null,
+                        'drawdown_factor_source' => $firstTrailing['drawdown_factor_source'] ?? null,
+                        'min_step' => $firstTrailing['min_step'] ?? null,
+                        'min_lock_roi' => $firstTrailing['min_lock_roi'] ?? null,
+                        'break_even_enabled' => $firstTrailing['break_even_enabled'] ?? null,
+                        'exit_mode' => $firstTrailing['exit_mode'] ?? null,
+                        'brain_trailing_applied' => $firstTrailing['brain_trailing_applied'] ?? null,
+                    ];
                 }
             } else {
                 $result['effective_trailing_contract_source'] = 'bot_local_config';
@@ -312,6 +325,7 @@ final class TradingBotService
                 $result['execution_identity_key'] = 'signal_id';
                 $result['dedupe_basis'] = 'legacy_signal_id';
                 $result['normalized_drawdown_factor_source'] = 'legacy_non_brain_mode';
+                $result['effective_trailing_contract'] = null;
             }
             
             // Step 3: Validate intents

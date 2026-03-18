@@ -119,7 +119,10 @@ class BotRiskEngine
             return $result;
         }
         
-        // P1.2: If trailing is enabled, validate its params
+        // P1.2: If trailing is enabled, validate its params.
+        // In Brain-controlled mode, these values come from normalizeBrainTrailingIntoRisk()
+        // which provides drawdown_factor from: brain_trailing_contract, risk_block,
+        // or documented_default (0.5). drawdown_factor is NOT the same as trailing_min_step.
         $trailing = $risk['trailing'];
         if ($trailing['enabled'] ?? false) {
             $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
@@ -305,6 +308,12 @@ class BotRiskEngine
      *   - trail_dist_pct = (activation_roi_pct/100/leverage) * drawdown_factor
      *   - trailingStop = entry * trail_dist_pct
      * 
+     * drawdown_factor semantics:
+     *   trailing distance = price_move_pct * drawdown_factor
+     *   This is a giveback ratio, NOT the same as trailing_min_step.
+     *   In Brain-controlled mode, this value comes from the normalized
+     *   Brain trailing contract (via normalizeBrainTrailingIntoRisk).
+     * 
      * @param array $risk Risk block
      * @param float $entryAvg Average entry price
      * @param string $side Position side (long|short)
@@ -315,11 +324,12 @@ class BotRiskEngine
         $trailing = $risk['trailing'] ?? [];
         
         // Check if trailing is enabled
+        // In Brain-controlled mode, this reflects the Brain's trailing decision
         if (!($trailing['enabled'] ?? false)) {
             return ['enabled' => false];
         }
         
-        // Get parameters
+        // Get parameters — in Brain mode these come from normalized Brain contract
         $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
         $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0);
         $leverage = (int)($risk['leverage'] ?? 1);

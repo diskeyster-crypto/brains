@@ -7,7 +7,27 @@ namespace Modules\System\TradingBot\Lib;
  * Bot Trailing Engine
  * 
  * Trailing stop logic for Trading Bot.
- * Uses trailing parameters from risk block.
+ * Uses trailing parameters from the normalized risk.trailing block.
+ *
+ * In Brain-controlled mode, risk.trailing is populated by
+ * normalizeBrainTrailingIntoRisk() in bot_sources_trait.php.
+ * Bot-local trailing toggles (enable_trailing_on_open, dumb_trailing_enabled)
+ * do NOT affect this engine — they are gating logic in bot_executor_trait.php
+ * that is bypassed when Brain-controlled mode is active.
+ *
+ * Key fields consumed from risk.trailing:
+ *   enabled            — whether trailing is active (Brain-owned in Brain mode)
+ *   activation_roi_pct — ROI % threshold to activate trailing
+ *   drawdown_factor    — trailing distance multiplier (NOT the same as trailing_min_step)
+ *
+ * drawdown_factor semantics:
+ *   Trailing distance = price_move * drawdown_factor
+ *   This is a giveback ratio: 0.5 means trail gives back 50% of the max profit move.
+ *   Source is tracked via drawdown_factor_source in the trailing block:
+ *     - brain_trailing_contract: from Brain intent trailing contract
+ *     - risk_block: from Brain signal risk block
+ *     - documented_default: engine default 0.5 (normal mode)
+ *     - legacy_non_brain_mode: bot-local config in non-Brain mode
  */
 class BotTrailingEngine
 {
@@ -44,6 +64,10 @@ class BotTrailingEngine
         $side = $trade['side'];
         $entryPrice = $trade['entry_price'];
         $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
+        // Documented engine default: 0.5 (normal mode) — used only if upstream
+        // normalization did not provide an explicit drawdown_factor.
+        // In Brain-controlled mode, normalizeBrainTrailingIntoRisk() always provides
+        // this value with explicit source tracking via drawdown_factor_source.
         $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0.5);
         
         // Calculate current ROI

@@ -371,12 +371,18 @@ final class SmartBrainCore
             'config_conflict_message' => $configConflictMessage,
             // Live Intent Generation
             'live_trading_enabled' => $liveConfig['live_trading_enabled'],
+            'brain_controlled_live_mode' => (bool)($liveConfig['live_trading_enabled'] ?? false),
             'live_signal_selection_mode' => $liveConfig['live_signal_selection_mode'],
             'live_candidates_approved_count' => $liveIntentResult['approved_count'],
             'live_candidates_rejected_count' => $liveIntentResult['rejected_count'],
             'live_rejection_reasons' => $liveIntentResult['rejection_reasons'],
             'live_intents_created_count' => $liveIntentResult['intents_created'],
             'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
+            'effective_execution_limits' => [
+                'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
+                'live_one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
+            ],
+            'effective_trailing_contract' => $liveConfig['trailing_contract'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);

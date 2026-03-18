@@ -154,6 +154,14 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <div class="col-md-2"><small class="text-secondary d-block">Live Intents</small><strong class="text-warning"><?= $liveIntentsCount ?></strong></div>
                 <div class="col-md-3"><small class="text-secondary d-block">Status</small><strong><?= $liveEnabled ? '<span class="text-success">Active</span>' : '<span class="text-secondary">Inactive</span>' ?></strong></div>
             </div>
+            <?php if ($liveEnabled): ?>
+            <div class="alert alert-success small mb-0 mt-2 py-1 px-2">
+                <i class="bi bi-shield-check me-1"></i> <strong>Brain-Controlled Live Mode:</strong> Active — bot will only execute Brain-approved intents. Legacy fallback disabled.
+                <?php if ($liveIntentsCount === 0 && $liveApproved === 0): ?>
+                <br><i class="bi bi-info-circle me-1"></i> Zero approved intents — no live execution expected this run.
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

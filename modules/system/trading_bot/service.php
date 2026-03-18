@@ -283,9 +283,11 @@ final class TradingBotService
             ];
 
             // Brain-owned execution limits visibility
-            if ($brainControlled && !empty($effectiveLiveConfig)) {
-                $result['effective_live_max_positions'] = (int)($effectiveLiveConfig['live_max_positions'] ?? 3);
-                $result['effective_live_one_trade_per_symbol'] = (bool)($effectiveLiveConfig['live_one_trade_per_symbol'] ?? true);
+            if ($brainControlled) {
+                if (!empty($effectiveLiveConfig)) {
+                    $result['effective_live_max_positions'] = (int)($effectiveLiveConfig['live_max_positions'] ?? 3);
+                    $result['effective_live_one_trade_per_symbol'] = (bool)($effectiveLiveConfig['live_one_trade_per_symbol'] ?? true);
+                }
                 $result['effective_trailing_contract_source'] = 'brain_intent';
                 $result['limits_controlled_by_brain'] = true;
             } else {

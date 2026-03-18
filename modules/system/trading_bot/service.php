@@ -213,36 +213,43 @@ final class TradingBotService
             }
             
             // Step 2: Load intents — Brain-approved live_intents are authoritative
+            // V2: Determine brain_controlled_live_mode BEFORE source loading
             $brainLiveResult = $this->loadBrainLiveIntents();
-            $inputSource = 'brain_live_intents';
             $brainControlled = $brainLiveResult['brain_controlled'] ?? false;
             $effectiveLiveConfig = $brainLiveResult['effective_live_config'] ?? [];
             $legacyFallbackAllowed = !$brainControlled;
             $legacyFallbackUsed = false;
+            $sourceStatus = $brainLiveResult['source_status'] ?? 'unknown';
+            $sourceError = $brainLiveResult['source_error'] ?? '';
 
             if ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
-                // NO legacy fallback is allowed for safety.
+                // NO legacy fallback is allowed for safety — regardless of source status.
                 $intentsResult = $brainLiveResult;
 
-                if (($brainLiveResult['source'] ?? '') === 'brain_live_intents_disabled') {
+                if ($sourceStatus === 'disabled') {
                     $inputSource = 'brain_live_intents_disabled';
-                } elseif (!($brainLiveResult['ok'] ?? false)) {
-                    // Brain source exists but is invalid/corrupted — safe stop, NO legacy fallback
+                } elseif ($sourceStatus === 'missing') {
+                    // V2: File missing but Brain mode is ON → safe no-trade, NO fallback
+                    $inputSource = 'none';
+                    $intentsResult = ['ok' => true, 'count' => 0, 'intents' => [], 'errors' => $brainLiveResult['errors'] ?? []];
+                    $this->warnings[] = $sourceError !== '' ? $sourceError : 'Brain-controlled mode active: Brain live intents source is missing. No trades executed. Legacy fallback disabled.';
+                } elseif ($sourceStatus === 'invalid' || !($brainLiveResult['ok'] ?? false)) {
+                    // V2: File invalid/corrupted but Brain mode is ON → safe stop, NO fallback
                     $inputSource = 'brain_live_intents_error';
                     $intentsResult = ['ok' => true, 'count' => 0, 'intents' => [], 'errors' => $brainLiveResult['errors'] ?? []];
-                    $this->warnings[] = 'Brain-controlled mode active: live_intents source error. Legacy fallback disabled. ' . implode('; ', $brainLiveResult['errors'] ?? []);
+                    $this->warnings[] = 'Brain-controlled mode active: live_intents.json is invalid. Run stopped. Legacy fallback is disabled. ' . implode('; ', $brainLiveResult['errors'] ?? []);
                 } elseif (($brainLiveResult['count'] ?? 0) === 0) {
                     // Brain approved zero intents — this is a valid decision, NOT an error
                     $inputSource = 'brain_live_intents';
-                    $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. Legacy raw signal fallback is disabled for safety.';
+                    $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled.';
                 } else {
                     $inputSource = 'brain_live_intents';
                 }
             } else {
                 // Brain-controlled mode NOT active — legacy fallback allowed
                 $intentsResult = $this->loadIntentsFromSignals();
-                $inputSource = 'fallback_signals';
+                $inputSource = 'legacy_signals';
                 $legacyFallbackUsed = true;
             }
 
@@ -254,6 +261,8 @@ final class TradingBotService
             $result['legacy_fallback_allowed'] = $legacyFallbackAllowed;
             $result['legacy_fallback_used'] = $legacyFallbackUsed;
             $result['brain_controlled_live_mode'] = $brainControlled;
+            $result['source_load_status'] = $sourceStatus;
+            $result['source_error_message'] = $sourceError;
             
             // P6.11: Intents preview (first 10 intents before validation)
             $result['intents_preview_total'] = $intentsResult['count'] ?? 0;

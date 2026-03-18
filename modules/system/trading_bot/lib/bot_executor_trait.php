@@ -498,7 +498,8 @@ trait BotExecutorTrait
                 $result['status'] = 'opened_protected';
                 $result['ok'] = true;
                 
-                $this->markSignalExecuted($signalId, $result);
+                $executionKey = $this->getExecutionIdentityKey($intent);
+                $this->markSignalExecuted($executionKey, $result);
                 $this->store->saveOrder($order, $orderResult);
                 
             } else {
@@ -509,7 +510,8 @@ trait BotExecutorTrait
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_dry';
                 
-                $this->markSignalExecuted($signalId, $result);
+                $executionKey = $this->getExecutionIdentityKey($intent);
+                $this->markSignalExecuted($executionKey, $result);
                 $this->store->saveOrder($order, $orderResult);
             }
             
@@ -543,7 +545,7 @@ trait BotExecutorTrait
             'status' => $status,
         ], $context));
         
-        $this->markSignalExecuted($intent['signal_id'] ?? $intent['id'], $result);
+        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result);
         
         return $result;
     }

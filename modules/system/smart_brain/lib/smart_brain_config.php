@@ -601,6 +601,18 @@ final class SmartBrainConfig
     }
 
     /**
+     * Check if Brain-controlled live mode is active.
+     * This is determined from user config, NOT from whether live_intents.json loaded successfully.
+     *
+     * @return bool
+     */
+    public function isBrainControlledLiveMode(): bool
+    {
+        $userLimits = $this->getUserLimits();
+        return (bool)($userLimits['live_trading_enabled'] ?? false);
+    }
+
+    /**
      * Compute brain auto (derived) values from current config state.
      *
      * @return array<string,mixed>

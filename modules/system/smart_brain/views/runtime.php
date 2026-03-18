@@ -110,7 +110,13 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $zeroReason = (string)($last_run['zero_output_reason'] ?? '');
                 $siSkipped = (bool)($last_run['restrictive_si_skipped'] ?? false);
                 $siSkipReason = (string)($last_run['restrictive_si_skip_reason'] ?? '');
+                $brainControlledLiveMode = (bool)($last_run['brain_controlled_live_mode'] ?? $liveEnabled);
             ?>
+            <?php if ($brainControlledLiveMode): ?>
+            <div class="alert alert-success small mb-0 mt-2 py-1 px-2">
+                <i class="bi bi-shield-check me-1"></i> <strong>Brain-Controlled Live Mode:</strong> Active — bot will only execute Brain-approved intents. Legacy fallback disabled.
+            </div>
+            <?php endif; ?>
             <?php if ($filterStage !== 'none' && $zeroReason !== ''): ?>
             <div class="alert alert-info small mb-0 mt-2 py-1 px-2">
                 <i class="bi bi-info-circle me-1"></i> <strong>Filter stage:</strong> <?= htmlspecialchars($filterStage) ?> — <?= htmlspecialchars($zeroReason) ?>

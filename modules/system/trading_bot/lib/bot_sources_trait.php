@@ -19,7 +19,11 @@ trait BotSourcesTrait
      * Brain generates live_intents.json with only approved, filtered intents.
      * Bot must consume these instead of raw signals when available.
      *
-     * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,brain_controlled:bool,effective_live_config:array}
+     * CRITICAL V2: brain_controlled is determined from Brain effective config,
+     * NOT from whether live_intents.json loaded successfully.
+     * If Brain mode is ON and file is missing/invalid → safe no-trade, NOT legacy fallback.
+     *
+     * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,brain_controlled:bool,effective_live_config:array,source_status:string,source_error:string,fallback_allowed:bool}
      */
     protected function loadBrainLiveIntents(): array
     {
@@ -31,6 +35,9 @@ trait BotSourcesTrait
             'source' => 'brain_live_intents',
             'brain_controlled' => false,
             'effective_live_config' => [],
+            'source_status' => 'unknown',
+            'source_error' => '',
+            'fallback_allowed' => true,
         ];
 
         try {
@@ -41,15 +48,37 @@ trait BotSourcesTrait
             if (!$paths->has($brainKey)) {
                 $result['ok'] = false;
                 $result['errors'][] = "Brain storage path key not found: {$brainKey}";
+                $result['source_status'] = 'missing';
+                $result['source_error'] = "Brain storage path key not found: {$brainKey}";
                 return $result;
             }
 
             $brainBase = $paths->get($brainKey);
             $liveIntentsPath = $brainBase . '/live_intents.json';
 
+            // ================================================================
+            // V2 FIX: Determine brain_controlled mode from EFFECTIVE CONFIG,
+            // not from file load success.
+            // Check effective_config.json or user_config.json for live_trading_enabled.
+            // ================================================================
+            $brainControlledMode = $this->detectBrainControlledMode($brainBase);
+
+            if ($brainControlledMode) {
+                $result['brain_controlled'] = true;
+                $result['fallback_allowed'] = false;
+            }
+
             if (!is_file($liveIntentsPath)) {
                 // No live intents file — source not available
-                $result['source'] = 'no_brain_intents_file';
+                if ($brainControlledMode) {
+                    // V2: Brain mode is ON but file missing → safe no-trade
+                    $result['source'] = 'none';
+                    $result['source_status'] = 'missing';
+                    $result['source_error'] = 'Brain-controlled mode active: Brain live intents source is missing. No trades executed. Legacy fallback disabled.';
+                } else {
+                    $result['source'] = 'no_brain_intents_file';
+                    $result['source_status'] = 'missing';
+                }
                 return $result;
             }
 
@@ -57,6 +86,8 @@ trait BotSourcesTrait
             if ($content === false) {
                 $result['ok'] = false;
                 $result['errors'][] = "Failed to read live_intents.json";
+                $result['source_status'] = 'invalid';
+                $result['source_error'] = 'Failed to read live_intents.json';
                 return $result;
             }
 
@@ -64,6 +95,8 @@ trait BotSourcesTrait
             if (!is_array($data)) {
                 $result['ok'] = false;
                 $result['errors'][] = "Invalid JSON in live_intents.json";
+                $result['source_status'] = 'invalid';
+                $result['source_error'] = 'Invalid JSON in live_intents.json';
                 return $result;
             }
 
@@ -72,15 +105,24 @@ trait BotSourcesTrait
             if ($schemaVersion !== 'live_intents_v1') {
                 $result['ok'] = false;
                 $result['errors'][] = "Unexpected schema_version in live_intents.json: {$schemaVersion}";
+                $result['source_status'] = 'invalid';
+                $result['source_error'] = "Unexpected schema_version: {$schemaVersion}";
                 return $result;
             }
 
-            $result['brain_controlled'] = true;
+            // V2: Also check brain_controlled_live_mode from the file itself
+            if (!empty($data['brain_controlled_live_mode'])) {
+                $result['brain_controlled'] = true;
+                $result['fallback_allowed'] = false;
+            }
+
             $result['effective_live_config'] = $data['effective_live_config'] ?? [];
+            $result['source_status'] = 'loaded';
 
             // If live trading is not enabled in Brain config, return empty intents
             if (!($data['live_trading_enabled'] ?? false)) {
                 $result['source'] = 'brain_live_intents_disabled';
+                $result['source_status'] = 'disabled';
                 return $result;
             }
 
@@ -93,13 +135,20 @@ trait BotSourcesTrait
             $validIntents = [];
 
             foreach ($intents as $intent) {
-                $intentId = $intent['intent_id'] ?? ($intent['signal_id'] ?? null);
-                if (empty($intentId)) {
+                // V2 FIX: Use intent_id as the authoritative identity key for Brain intents
+                $intentId = $intent['intent_id'] ?? null;
+                $signalId = $intent['signal_id'] ?? null;
+                $executionKey = $intentId ?? $signalId ?? null;
+                if (empty($executionKey)) {
                     continue;
                 }
 
-                // Skip if already executed (idempotency)
-                if (isset($executedIndex[$intentId])) {
+                // Skip if already executed (idempotency) — check BOTH intent_id and signal_id for safety
+                if (isset($executedIndex[$executionKey])) {
+                    continue;
+                }
+                // Also check signal_id separately for backward compat with old executed_index entries
+                if ($intentId !== null && $signalId !== null && $intentId !== $signalId && isset($executedIndex[$signalId])) {
                     continue;
                 }
 
@@ -109,10 +158,16 @@ trait BotSourcesTrait
                     continue;
                 }
 
+                // V2: Normalize Brain trailing_contract into risk.trailing for bot execution engines
+                $risk = $intent['risk'] ?? [];
+                $brainTrailing = $intent['trailing'] ?? [];
+                $risk = $this->normalizeBrainTrailingIntoRisk($risk, $brainTrailing);
+
                 // Normalize intent for bot execution
                 $normalized = [
-                    'id' => $intentId,
-                    'signal_id' => $intent['signal_id'] ?? $intentId,
+                    'id' => $executionKey,
+                    'signal_id' => $signalId ?? $executionKey,
+                    'intent_id' => $intentId ?? $executionKey,
                     'schema_version' => 'intent_live_v1',
                     'symbol' => (string)($intent['symbol'] ?? ''),
                     'side' => (string)($intent['side'] ?? ''),
@@ -122,14 +177,17 @@ trait BotSourcesTrait
                     'late_threshold_pct' => $this->config['execution']['default_late_threshold_pct'] ?? 0.5,
                     'created_ts' => $intent['created_ts'] ?? time(),
                     'expires_at' => $intent['expires_at'] ?? 0,
-                    'risk' => $intent['risk'] ?? [],
-                    'trailing' => $intent['trailing'] ?? [],
+                    'risk' => $risk,
+                    'trailing' => $brainTrailing,
                     'brain' => [],
                     'source' => 'brain_live_intent',
                     'intent_created_at' => $intent['created_ts'] ?? date('c'),
                     'brain_controlled' => true,
                     'selection_mode_used' => $intent['selection_mode_used'] ?? '',
                     'approval_reason' => $intent['approval_reason'] ?? '',
+                    'execution_limits_snapshot' => $intent['execution_limits_snapshot'] ?? [],
+                    'effective_trailing_contract_source' => !empty($brainTrailing) ? 'brain_intent' : 'risk_block',
+                    'trailing_contract_normalized' => !empty($brainTrailing),
                 ];
 
                 if (isset($intent['side_original'])) {
@@ -142,12 +200,131 @@ trait BotSourcesTrait
             $result['count'] = count($validIntents);
             $result['intents'] = $validIntents;
 
+            if (count($validIntents) === 0) {
+                $result['source_status'] = 'empty';
+            }
+
         } catch (\Throwable $e) {
             $result['ok'] = false;
             $result['errors'][] = 'Exception: ' . $e->getMessage();
+            $result['source_status'] = 'invalid';
+            $result['source_error'] = 'Exception: ' . $e->getMessage();
         }
 
         return $result;
+    }
+
+    /**
+     * V2: Detect Brain-controlled live mode from effective config files.
+     * This is checked BEFORE loading live_intents.json so the mode flag
+     * does not depend on successful file loading.
+     *
+     * @param string $brainBase Brain storage base directory
+     * @return bool
+     */
+    private function detectBrainControlledMode(string $brainBase): bool
+    {
+        // Method 1: Check effective_config.json (written by Smart Brain each cycle)
+        $effectiveConfigPath = $brainBase . '/../runtime/effective_config.json';
+        if (is_file($effectiveConfigPath)) {
+            $content = @file_get_contents($effectiveConfigPath);
+            if ($content !== false) {
+                $data = @json_decode($content, true);
+                if (is_array($data)) {
+                    $liveEnabled = $data['live_trading']['live_trading_enabled']
+                        ?? $data['live_trading_enabled']
+                        ?? null;
+                    if ($liveEnabled !== null) {
+                        return (bool)$liveEnabled;
+                    }
+                }
+            }
+        }
+
+        // Method 2: Check user_config.json directly
+        $userConfigPath = $brainBase . '/../runtime/user_config.json';
+        if (is_file($userConfigPath)) {
+            $content = @file_get_contents($userConfigPath);
+            if ($content !== false) {
+                $data = @json_decode($content, true);
+                if (is_array($data)) {
+                    $liveEnabled = $data['live_trading_enabled'] ?? null;
+                    if ($liveEnabled !== null) {
+                        return (bool)$liveEnabled;
+                    }
+                }
+            }
+        }
+
+        // Method 3: Check if live_intents.json exists at all (indicates Brain wrote it)
+        // But do NOT load it here — just check existence
+        if (is_file($brainBase . '/live_intents.json')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * V2: Normalize Brain trailing contract into risk.trailing format
+     * that bot execution engines (BotRiskEngine, BotTrailingEngine) expect.
+     *
+     * Brain contract fields → Bot execution fields mapping:
+     * - trailing.trailing_enabled → risk.trailing.enabled
+     * - trailing.trailing_activation_roi → risk.trailing.activation_roi_pct (converted to %)
+     * - trailing.trailing_min_lock_roi → risk.trailing.min_lock_roi
+     * - trailing.trailing_min_step → risk.trailing.min_step
+     * - trailing.break_even_enabled → risk.trailing.break_even_enabled
+     * - trailing.break_even_activation_roi → risk.trailing.break_even_activation_roi
+     * - trailing.exit_mode → risk.trailing.exit_mode
+     * - trailing.fixed_take_profit_roi → risk.trailing.fixed_take_profit_roi
+     * - trailing.hybrid_tp_share → risk.trailing.hybrid_tp_share
+     *
+     * @param array $risk Existing risk block from signal
+     * @param array $brainTrailing Brain trailing contract
+     * @return array Updated risk block with normalized trailing
+     */
+    private function normalizeBrainTrailingIntoRisk(array $risk, array $brainTrailing): array
+    {
+        if (empty($brainTrailing)) {
+            return $risk;
+        }
+
+        $normalized = [
+            'enabled' => (bool)($brainTrailing['trailing_enabled'] ?? false),
+            // Brain uses ratio (e.g. 0.02 = 2%), bot expects percentage (e.g. 2.0 = 2%)
+            'activation_roi_pct' => (float)($brainTrailing['trailing_activation_roi'] ?? 0) * 100,
+            'drawdown_factor' => (float)($risk['trailing']['drawdown_factor'] ?? ($brainTrailing['trailing_min_step'] ?? 0.5)),
+            'min_lock_roi' => (float)($brainTrailing['trailing_min_lock_roi'] ?? 0),
+            'min_step' => (float)($brainTrailing['trailing_min_step'] ?? 0),
+            'break_even_enabled' => (bool)($brainTrailing['break_even_enabled'] ?? false),
+            'break_even_activation_roi' => (float)($brainTrailing['break_even_activation_roi'] ?? 0),
+            'exit_mode' => (string)($brainTrailing['exit_mode'] ?? 'fixed_tp'),
+            'fixed_take_profit_roi' => (float)($brainTrailing['fixed_take_profit_roi'] ?? 0),
+            'hybrid_tp_share' => (float)($brainTrailing['hybrid_tp_share'] ?? 0),
+            'brain_trailing_applied' => true,
+        ];
+
+        $risk['trailing'] = $normalized;
+        return $risk;
+    }
+
+    /**
+     * V2: Get the authoritative execution identity key for an intent.
+     * For Brain-controlled intents: use intent_id
+     * For legacy signals: use signal_id or id
+     *
+     * @param array $intent Intent data
+     * @return string Execution identity key
+     */
+    protected function getExecutionIdentityKey(array $intent): string
+    {
+        if (!empty($intent['brain_controlled'])) {
+            // Brain intent: intent_id is authoritative
+            return (string)($intent['intent_id'] ?? $intent['id'] ?? $intent['signal_id'] ?? 'unknown');
+        }
+        // Legacy signal: signal_id / id
+        return (string)($intent['signal_id'] ?? $intent['id'] ?? 'unknown');
     }
 
     /**

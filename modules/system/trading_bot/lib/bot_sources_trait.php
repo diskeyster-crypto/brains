@@ -57,11 +57,11 @@ trait BotSourcesTrait
             $liveIntentsPath = $brainBase . '/live_intents.json';
 
             // ================================================================
-            // V2 FIX: Determine brain_controlled mode from EFFECTIVE CONFIG,
-            // not from file load success.
-            // Check effective_config.json or user_config.json for live_trading_enabled.
+            // Determine brain_controlled mode from EFFECTIVE CONFIG,
+            // not from file load success. detectBrainControlledMode() reads
+            // effective_config.json / user_config.json independently.
             // ================================================================
-            $brainControlledMode = $this->detectBrainControlledMode($brainBase);
+            $brainControlledMode = $this->detectBrainControlledMode();
 
             if ($brainControlledMode) {
                 $result['brain_controlled'] = true;
@@ -219,15 +219,31 @@ trait BotSourcesTrait
     }
 
     /**
-     * V2: Detect Brain-controlled live mode from effective config files.
-     * This is checked BEFORE loading live_intents.json so the mode flag
-     * does not depend on successful file loading.
+     * Detect Brain-controlled live mode from Brain effective/user config.
      *
-     * @param string $brainBase Brain storage base directory
-     * @return bool
+     * CRITICAL: This is determined from Brain config files (effective_config.json
+     * or user_config.json), NOT from whether live_intents.json loaded successfully.
+     * If Brain mode is active, it stays true even if the intents file is
+     * missing, invalid, or empty — resulting in safe no-trade, NOT legacy fallback.
+     *
+     * Must be called BEFORE any source loading so service.php can branch
+     * the execution flow explicitly.
+     *
+     * @return bool true when Brain-controlled live mode is active
      */
-    private function detectBrainControlledMode(string $brainBase): bool
+    protected function detectBrainControlledMode(): bool
     {
+        try {
+            $paths = SystemPaths::instance();
+            $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+            if (!$paths->has($brainKey)) {
+                return false;
+            }
+            $brainBase = $paths->get($brainKey);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
         // Method 1: Check effective_config.json (written by Smart Brain each cycle)
         $effectiveConfigPath = $brainBase . '/../runtime/effective_config.json';
         if (is_file($effectiveConfigPath)) {
@@ -260,9 +276,8 @@ trait BotSourcesTrait
             }
         }
 
-        // If neither effective_config.json nor user_config.json provides a definitive answer,
-        // default to false (not Brain-controlled). This is the safer behavior — legacy fallback
-        // is allowed when mode cannot be determined.
+        // If neither config provides a definitive answer, default to false.
+        // Legacy fallback is allowed when mode cannot be determined.
         return false;
     }
 

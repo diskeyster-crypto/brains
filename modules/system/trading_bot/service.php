@@ -212,45 +212,52 @@ final class TradingBotService
                 }
             }
             
-            // Step 2: Load intents — Brain-approved live_intents are authoritative
-            // V2: Determine brain_controlled_live_mode BEFORE source loading
-            $brainLiveResult = $this->loadBrainLiveIntents();
-            $brainControlled = $brainLiveResult['brain_controlled'] ?? false;
-            $effectiveLiveConfig = $brainLiveResult['effective_live_config'] ?? [];
+            // Step 2: Detect Brain-controlled mode FIRST (from config, not file load)
+            // This MUST happen before any source loading so the execution path
+            // branches explicitly: Brain-only vs legacy.
+            $brainControlled = $this->detectBrainControlledMode();
             $legacyFallbackAllowed = !$brainControlled;
             $legacyFallbackUsed = false;
-            $sourceStatus = $brainLiveResult['source_status'] ?? 'unknown';
-            $sourceError = $brainLiveResult['source_error'] ?? '';
+            $sourceStatus = 'unknown';
+            $sourceError = '';
+            $effectiveLiveConfig = [];
 
             if ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
-                // NO legacy fallback is allowed for safety — regardless of source status.
-                $intentsResult = $brainLiveResult;
+                // NO legacy fallback is allowed — regardless of source status.
+                $brainLiveResult = $this->loadBrainLiveIntents();
+                $effectiveLiveConfig = $brainLiveResult['effective_live_config'] ?? [];
+                $sourceStatus = $brainLiveResult['source_status'] ?? 'unknown';
+                $sourceError = $brainLiveResult['source_error'] ?? '';
 
                 if ($sourceStatus === 'disabled') {
                     $inputSource = 'brain_live_intents_disabled';
+                    $intentsResult = $brainLiveResult;
                 } elseif ($sourceStatus === 'missing') {
-                    // V2: File missing but Brain mode is ON → safe no-trade, NO fallback
+                    // File missing but Brain mode is ON → safe no-trade, NO fallback
                     $inputSource = 'none';
                     $intentsResult = ['ok' => true, 'count' => 0, 'intents' => [], 'errors' => $brainLiveResult['errors'] ?? []];
                     $this->warnings[] = $sourceError !== '' ? $sourceError : 'Brain-controlled mode active: Brain live intents source is missing. No trades executed. Legacy fallback disabled.';
                 } elseif ($sourceStatus === 'invalid' || !($brainLiveResult['ok'] ?? false)) {
-                    // V2: File invalid/corrupted but Brain mode is ON → safe stop, NO fallback
+                    // File invalid/corrupted but Brain mode is ON → safe stop, NO fallback
                     $inputSource = 'brain_live_intents_error';
                     $intentsResult = ['ok' => true, 'count' => 0, 'intents' => [], 'errors' => $brainLiveResult['errors'] ?? []];
                     $this->warnings[] = 'Brain-controlled mode active: live_intents.json is invalid. Run stopped. Legacy fallback is disabled. ' . implode('; ', $brainLiveResult['errors'] ?? []);
                 } elseif (($brainLiveResult['count'] ?? 0) === 0) {
-                    // Brain approved zero intents — this is a valid decision, NOT an error
+                    // Brain approved zero intents — valid decision, NOT an error
                     $inputSource = 'brain_live_intents';
+                    $intentsResult = $brainLiveResult;
                     $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled.';
                 } else {
                     $inputSource = 'brain_live_intents';
+                    $intentsResult = $brainLiveResult;
                 }
             } else {
-                // Brain-controlled mode NOT active — legacy fallback allowed
+                // Brain-controlled mode NOT active — legacy signal path
                 $intentsResult = $this->loadIntentsFromSignals();
                 $inputSource = 'legacy_signals';
                 $legacyFallbackUsed = true;
+                $sourceStatus = ($intentsResult['ok'] ?? false) ? 'loaded' : 'invalid';
             }
 
             $result['intents_loaded'] = $intentsResult['count'] ?? 0;
@@ -296,6 +303,7 @@ final class TradingBotService
                 $result['trailing_controlled_by_brain'] = true;
                 $result['local_trailing_toggles_overridden'] = true;
                 $result['execution_identity_key'] = 'intent_id';
+                $result['execution_key_basis'] = 'intent_id';
                 $result['dedupe_basis'] = 'intent_id';
                 // V3: Extract normalized_drawdown_factor_source and effective trailing contract from first available intent
                 $result['normalized_drawdown_factor_source'] = 'n/a';
@@ -325,6 +333,7 @@ final class TradingBotService
                 $result['trailing_controlled_by_brain'] = false;
                 $result['local_trailing_toggles_overridden'] = false;
                 $result['execution_identity_key'] = 'signal_id';
+                $result['execution_key_basis'] = 'legacy_signal_id';
                 $result['dedupe_basis'] = 'legacy_signal_id';
                 $result['normalized_drawdown_factor_source'] = 'legacy_non_brain_mode';
                 $result['effective_trailing_contract'] = null;

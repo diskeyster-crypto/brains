@@ -23,10 +23,31 @@ $lastRunBot = $lastRun ?? [];
 $brainSourceBadge = (bool)($lastRunBot['controlled_by_brain'] ?? false)
     ? '<span class="badge bg-info">Brain-controlled</span>'
     : '<span class="badge bg-secondary">Legacy signals</span>';
+$brainControlledIntents = (bool)($lastRunBot['controlled_by_brain'] ?? false);
+$inputSourceIntents = (string)($lastRunBot['input_source'] ?? 'unknown');
+$sourceStatusIntents = (string)($lastRunBot['source_status'] ?? 'n/a');
+$legacyFallbackAllowedIntents = (bool)($lastRunBot['legacy_fallback_allowed'] ?? true);
+$legacyFallbackUsedIntents = (bool)($lastRunBot['legacy_fallback_used'] ?? false);
+$executionKeyBasisIntents = (string)($lastRunBot['execution_identity_key'] ?? 'n/a');
+$trailingByBrainIntents = (bool)($lastRunBot['trailing_controlled_by_brain'] ?? false);
+$localTrailingOverriddenIntents = (bool)($lastRunBot['local_trailing_toggles_overridden'] ?? false);
 ?>
         <?= $brainSourceBadge ?>
     </div>
     <div class="card-body">
+        <!-- Brain-controlled runtime summary -->
+        <div class="alert <?= $brainControlledIntents ? 'alert-info' : 'alert-secondary' ?> py-2 mb-3" style="font-size: 0.82rem;">
+            <strong>Brain-controlled mode:</strong> <?= $brainControlledIntents ? 'ON' : 'OFF' ?>
+            | <strong>Input source:</strong> <code><?= htmlspecialchars($inputSourceIntents) ?></code>
+            | <strong>Source status:</strong> <code><?= htmlspecialchars($sourceStatusIntents) ?></code>
+            <br>
+            <strong>Legacy fallback allowed:</strong> <?= $legacyFallbackAllowedIntents ? 'yes' : 'no' ?>
+            | <strong>Legacy fallback used:</strong> <?= $legacyFallbackUsedIntents ? 'yes' : 'no' ?>
+            | <strong>Execution key basis:</strong> <code><?= htmlspecialchars($executionKeyBasisIntents) ?></code>
+            <br>
+            <strong>Trailing controlled by Brain:</strong> <?= $trailingByBrainIntents ? 'yes' : 'no' ?>
+            | <strong>Local trailing toggles overridden:</strong> <?= $localTrailingOverriddenIntents ? 'yes' : 'no' ?>
+        </div>
         <?php if (empty($intents)): ?>
         <p class="text-muted mb-0">No rejected intents</p>
         <?php else: ?>

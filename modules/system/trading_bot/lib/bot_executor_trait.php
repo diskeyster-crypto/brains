@@ -40,6 +40,28 @@ trait BotExecutorTrait
     protected int $balanceCacheTs = 0;
     
     /**
+     * Get the authoritative execution identity key for an intent.
+     * For Brain-controlled intents: use intent_id (stable, deterministic).
+     * For legacy signals: use signal_id or id.
+     *
+     * All execution branches (success, reject, fail-safe, emergency)
+     * MUST use this helper so the same Brain intent is always marked
+     * under the same dedupe key.
+     *
+     * @param array $intent Intent data
+     * @return string Execution identity key
+     */
+    protected function getExecutionIdentityKey(array $intent): string
+    {
+        if (!empty($intent['brain_controlled'])) {
+            // Brain intent: intent_id is authoritative — signal_id is informational only
+            return (string)($intent['intent_id'] ?? $intent['id'] ?? $intent['signal_id'] ?? 'unknown');
+        }
+        // Legacy signal: signal_id / id
+        return (string)($intent['signal_id'] ?? $intent['id'] ?? 'unknown');
+    }
+
+    /**
      * Execute intent (open position) - LIVE Phase-1
      * 
      * @param array $intent Intent data

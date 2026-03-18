@@ -326,24 +326,6 @@ trait BotSourcesTrait
     }
 
     /**
-     * V2: Get the authoritative execution identity key for an intent.
-     * For Brain-controlled intents: use intent_id
-     * For legacy signals: use signal_id or id
-     *
-     * @param array $intent Intent data
-     * @return string Execution identity key
-     */
-    protected function getExecutionIdentityKey(array $intent): string
-    {
-        if (!empty($intent['brain_controlled'])) {
-            // Brain intent: intent_id is authoritative
-            return (string)($intent['intent_id'] ?? $intent['id'] ?? $intent['signal_id'] ?? 'unknown');
-        }
-        // Legacy signal: signal_id / id
-        return (string)($intent['signal_id'] ?? $intent['id'] ?? 'unknown');
-    }
-
-    /**
      * Load intents from Brain signals (legacy fallback)
      * 
      * @return array Result with intents

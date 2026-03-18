@@ -261,8 +261,10 @@ final class TradingBotService
             $result['legacy_fallback_allowed'] = $legacyFallbackAllowed;
             $result['legacy_fallback_used'] = $legacyFallbackUsed;
             $result['brain_controlled_live_mode'] = $brainControlled;
-            $result['source_load_status'] = $sourceStatus;
+            $result['source_status'] = $sourceStatus;
             $result['source_error_message'] = $sourceError;
+            $result['approved_intents_loaded'] = $intentsResult['count'] ?? 0;
+            $result['executable_intents_count'] = $intentsResult['count'] ?? 0;
             
             // P6.11: Intents preview (first 10 intents before validation)
             $result['intents_preview_total'] = $intentsResult['count'] ?? 0;

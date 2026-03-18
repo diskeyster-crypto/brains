@@ -677,6 +677,78 @@ trait BotSourcesTrait
     }
     
     /**
+     * Resolve a normalized lifecycle state from an execution result.
+     *
+     * @param array $execResult Execution result array
+     * @return string One of: pending, opened, rejected, failed, deferred, skipped, closed
+     */
+    protected function resolveIntentLifecycleState(array $execResult): string
+    {
+        if (!empty($execResult['opened'])) {
+            return 'opened';
+        }
+
+        $status = $execResult['status'] ?? '';
+
+        if (strpos($status, 'deferred_') === 0) {
+            return 'deferred';
+        }
+        if (strpos($status, 'rejected_') === 0) {
+            return 'rejected';
+        }
+        if ($status === 'critical_unprotected_position_close_failed') {
+            return 'failed';
+        }
+        if ($status === 'error') {
+            return 'failed';
+        }
+
+        return 'pending';
+    }
+
+    /**
+     * Build a structured result record for a single processed intent.
+     *
+     * @param array $intent  The intent that was processed
+     * @param array $execResult  The execution result
+     * @return array Structured intent result record
+     */
+    protected function buildIntentResultRecord(array $intent, array $execResult): array
+    {
+        $lifecycleState = $this->resolveIntentLifecycleState($execResult);
+        $trailingEnabled = $intent['risk']['trailing']['enabled'] ?? false;
+
+        $record = [
+            'intent_id' => $intent['intent_id'] ?? $intent['id'] ?? null,
+            'signal_id' => $intent['signal_id'] ?? null,
+            'symbol' => $intent['symbol'] ?? '',
+            'side' => $intent['side'] ?? '',
+            'brain_controlled' => !empty($intent['brain_controlled']),
+            'execution_identity_key' => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? '')),
+            'lifecycle_state' => $lifecycleState,
+            'processed_at' => date('c'),
+            'execution_result' => $execResult['status'] ?? 'unknown',
+            'rejection_reason' => null,
+            'close_reason' => null,
+            'order_id' => $execResult['order_id'] ?? null,
+            'position_id' => $execResult['trade_id'] ?? null,
+            'protection_status' => ($execResult['status'] === 'opened_protected') ? 'sl_set' : 'none',
+            'trailing_status' => $trailingEnabled ? 'enabled' : 'disabled',
+            'source_status' => $intent['source'] ?? 'brain_live_intent',
+            'debug_message' => $execResult['error'] ?? null,
+        ];
+
+        if ($lifecycleState === 'rejected') {
+            $record['rejection_reason'] = $execResult['status'];
+        }
+        if ($lifecycleState === 'failed') {
+            $record['close_reason'] = $execResult['error'] ?? $execResult['status'];
+        }
+
+        return $record;
+    }
+
+    /**
      * Load commands from Brain (P7)
      * 
      * Reads trading_commands.json from Brain storage.

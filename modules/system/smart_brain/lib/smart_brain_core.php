@@ -168,10 +168,40 @@ final class SmartBrainCore
 
         // Re-write candidates.json with filtered data (early filter application)
         $filteredCandidatesCount = count($candidates);
+        $afterManualFilterCount = $rawCandidatesCount - $manualUniverseFiltered;
+        $afterSymbolFilterCount = $filteredCandidatesCount;
 
-        // ---- Config Conflict Guard: no silent zero output ----
-        // If raw candidates > 0 but all were filtered out, produce a clear explanation.
-        if ($rawCandidatesCount > 0 && $filteredCandidatesCount === 0 && !$configConflictDetected) {
+        // ---- Config Conflict Guard V2: stage-aware zero-output diagnostics ----
+        $filterStageThatRemovedAll = 'none';
+        $zeroOutputReason = '';
+        $restrictiveSiSkipped = $skipSymbolIntelFilter;
+        $restrictiveSiSkipReason = '';
+
+        if ($skipSymbolIntelFilter) {
+            $restrictiveSiSkipReason = 'manual_only является terminal restriction — restrictive SI filter пропущен.';
+        }
+
+        if ($rawCandidatesCount === 0) {
+            $filterStageThatRemovedAll = 'analyzer';
+            $zeroOutputReason = 'Analyzer не нашёл raw candidates — это не конфликт фильтров.';
+        } elseif ($rawCandidatesCount > 0 && $afterManualFilterCount === 0 && $manualUniverseEnabled) {
+            $filterStageThatRemovedAll = 'manual_filter';
+            $zeroOutputReason = 'Raw candidates найдены (' . $rawCandidatesCount . '), но после manual filter осталось 0.';
+            if (!$configConflictDetected) {
+                $configConflictDetected = true;
+                $configConflictMessage = $zeroOutputReason;
+                $this->logger->log('warning', 'Config Conflict Guard: ' . $configConflictMessage);
+            }
+        } elseif ($rawCandidatesCount > 0 && $filteredCandidatesCount === 0 && $symbolIntelFiltered > 0) {
+            $filterStageThatRemovedAll = 'symbol_intelligence_filter';
+            $zeroOutputReason = 'Raw candidates найдены (' . $rawCandidatesCount . '), но после symbol intelligence filter осталось 0.';
+            if (!$configConflictDetected) {
+                $configConflictDetected = true;
+                $configConflictMessage = $zeroOutputReason;
+                $this->logger->log('warning', 'Config Conflict Guard: ' . $configConflictMessage);
+            }
+        } elseif ($rawCandidatesCount > 0 && $filteredCandidatesCount === 0 && !$configConflictDetected) {
+            $filterStageThatRemovedAll = 'unknown';
             $reasons = [];
             if ($manualUniverseEnabled) {
                 $reasons[] = 'manual_symbol_universe (mode=' . $manualSymbolMode . ', count=' . $manualSymbolCount . ')';
@@ -255,6 +285,14 @@ final class SmartBrainCore
         // Write debug signal log (Phase B, Part 3)
         $this->logger->writeDebugLog($debugLines);
 
+        // ================================================================
+        // Live Intent Generation — Brain-controlled live bot refactor
+        // Brain applies live_signal_selection_mode to filter signals
+        // and produces live_intents.json for the Trading Bot executor.
+        // ================================================================
+        $liveConfig = $this->config->buildLiveConfig();
+        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits);
+
         // Simulator uses real prices for entry trigger / ROI / MAE / MFE / SL / TP
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
         $simulator->tick($signals, $prices);
@@ -313,9 +351,17 @@ final class SmartBrainCore
             // Symbol Intelligence
             'symbol_intel_filtered' => $symbolIntelFiltered,
             'symbol_filter_mode' => $symbolFilterMode,
-            // Early filter application stats
+            // Stage-aware filter diagnostics (Config Conflict Guard V2)
             'raw_candidates_count' => $rawCandidatesCount,
+            'after_manual_filter_count' => $afterManualFilterCount,
+            'after_symbol_filter_count' => $afterSymbolFilterCount,
             'filtered_candidates_count' => $filteredCandidatesCount,
+            'filter_stage_that_removed_all' => $filterStageThatRemovedAll,
+            'zero_output_reason' => $zeroOutputReason,
+            'restrictive_si_skipped' => $restrictiveSiSkipped,
+            'restrictive_si_skip_reason' => $restrictiveSiSkipReason,
+            // Config Conflict Guard warnings
+            'config_warnings' => $this->config->detectConfigConflicts(),
             // Manual Symbol Universe
             'manual_symbol_universe_enabled' => $manualUniverseEnabled,
             'manual_symbol_mode' => $manualSymbolMode,
@@ -323,12 +369,240 @@ final class SmartBrainCore
             // Config Conflict Guard
             'config_conflict_detected' => $configConflictDetected,
             'config_conflict_message' => $configConflictMessage,
+            // Live Intent Generation
+            'live_trading_enabled' => $liveConfig['live_trading_enabled'],
+            'live_signal_selection_mode' => $liveConfig['live_signal_selection_mode'],
+            'live_candidates_approved_count' => $liveIntentResult['approved_count'],
+            'live_candidates_rejected_count' => $liveIntentResult['rejected_count'],
+            'live_rejection_reasons' => $liveIntentResult['rejection_reasons'],
+            'live_intents_created_count' => $liveIntentResult['intents_created'],
+            'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
         $this->logger->log('info', 'Smart Brain cycle finished: source=' . $source . ' signals=' . count($signals) . ' duration=' . $durationMs . 'ms');
 
         return $result;
+    }
+
+    // =========================================================================
+    // Live Intent Generation — Brain-controlled live bot refactor
+    // =========================================================================
+
+    /**
+     * Generate Brain-approved live intents from signals.
+     * Applies live_signal_selection_mode filter and writes storage/live_intents.json.
+     *
+     * @param array  $signals    Approved signals from RiskEngine
+     * @param array  $liveConfig Effective live trading config from buildLiveConfig()
+     * @param array  $userLimits User limits from config
+     * @return array{approved_count:int,rejected_count:int,rejection_reasons:array,intents_created:int,intents_written:int,approvals:array}
+     */
+    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits): array
+    {
+        $result = [
+            'approved_count' => 0,
+            'rejected_count' => 0,
+            'rejection_reasons' => [],
+            'intents_created' => 0,
+            'intents_written' => 0,
+            'approvals' => [],
+        ];
+
+        // If live trading is disabled, write empty intents and return
+        if (!($liveConfig['live_trading_enabled'] ?? false)) {
+            $this->state->writeJson('storage/live_intents.json', [
+                'schema_version' => 'live_intents_v1',
+                'generated_at' => date('c'),
+                'live_trading_enabled' => false,
+                'effective_live_config' => $liveConfig,
+                'intents' => [],
+            ]);
+            return $result;
+        }
+
+        $selectionMode = (string)($liveConfig['live_signal_selection_mode'] ?? 'whitelist_only');
+        $entryPolicy = (string)($liveConfig['live_entry_policy'] ?? 'enter_now');
+        $reverseEnabled = (bool)($liveConfig['live_reverse_side_enabled'] ?? false);
+
+        // Load symbol intelligence lists for live selection filtering
+        $whitelist = $this->loadSymbolList('whitelist.json');
+        $softWhitelist = $this->loadSymbolList('soft_whitelist.json');
+        $watchlist = $this->loadSymbolList('watchlist.json');
+        $manualSymbols = [];
+        if (!empty($userLimits['manual_symbol_universe_enabled'])) {
+            $rawList = (string)($userLimits['manual_symbol_list'] ?? '');
+            $manualSymbols = SymbolIntelligence::parseManualSymbolList($rawList);
+        }
+
+        $intents = [];
+        $signalsList = $signals['signals'] ?? [];
+        if (!is_array($signalsList)) {
+            $signalsList = $signals;
+        }
+
+        foreach ($signalsList as $signal) {
+            $symbol = (string)($signal['symbol'] ?? '');
+            $signalId = (string)($signal['id'] ?? '');
+            if ($symbol === '' || $signalId === '') {
+                continue;
+            }
+
+            // Apply live signal selection mode
+            $approved = false;
+            $approvalReason = '';
+            $selectionSource = '';
+
+            switch ($selectionMode) {
+                case 'all':
+                    $approved = true;
+                    $approvalReason = 'mode=all';
+                    $selectionSource = 'all';
+                    break;
+                case 'whitelist_only':
+                    $approved = in_array($symbol, $whitelist, true);
+                    $approvalReason = $approved ? 'symbol in whitelist' : '';
+                    $selectionSource = 'whitelist';
+                    break;
+                case 'soft_whitelist_only':
+                    $approved = in_array($symbol, $softWhitelist, true);
+                    $approvalReason = $approved ? 'symbol in soft_whitelist' : '';
+                    $selectionSource = 'soft_whitelist';
+                    break;
+                case 'whitelist_plus_soft':
+                    $approved = in_array($symbol, $whitelist, true) || in_array($symbol, $softWhitelist, true);
+                    $approvalReason = $approved ? 'symbol in whitelist or soft_whitelist' : '';
+                    $selectionSource = 'whitelist+soft';
+                    break;
+                case 'manual_only':
+                    $approved = in_array($symbol, $manualSymbols, true);
+                    $approvalReason = $approved ? 'symbol in manual_list' : '';
+                    $selectionSource = 'manual';
+                    break;
+                case 'manual_plus_soft':
+                    $approved = in_array($symbol, $manualSymbols, true) || in_array($symbol, $softWhitelist, true);
+                    $approvalReason = $approved ? 'symbol in manual_list or soft_whitelist' : '';
+                    $selectionSource = 'manual+soft';
+                    break;
+                case 'manual_plus_whitelist':
+                    $approved = in_array($symbol, $manualSymbols, true) || in_array($symbol, $whitelist, true);
+                    $approvalReason = $approved ? 'symbol in manual_list or whitelist' : '';
+                    $selectionSource = 'manual+whitelist';
+                    break;
+                case 'watchlist_only':
+                    $approved = in_array($symbol, $watchlist, true);
+                    $approvalReason = $approved ? 'symbol in watchlist' : '';
+                    $selectionSource = 'watchlist';
+                    break;
+                default:
+                    $approved = false;
+                    $approvalReason = 'unknown selection mode: ' . $selectionMode;
+                    $selectionSource = 'unknown';
+                    break;
+            }
+
+            if (!$approved) {
+                $result['rejected_count']++;
+                $result['rejection_reasons'][] = [
+                    'symbol' => $symbol,
+                    'signal_id' => $signalId,
+                    'reason' => 'not_in_selection_mode',
+                    'selection_mode' => $selectionMode,
+                ];
+                continue;
+            }
+
+            $result['approved_count']++;
+
+            // Build live intent
+            $side = (string)($signal['side'] ?? '');
+            $sideOriginal = $side;
+            if ($reverseEnabled && ($side === 'long' || $side === 'short')) {
+                $side = ($side === 'long') ? 'short' : 'long';
+            }
+
+            $risk = $signal['risk'] ?? [];
+            $trailing = $liveConfig['trailing_contract'] ?? [];
+
+            $intent = [
+                'schema_version' => 'live_intent_v1',
+                'intent_id' => 'li_' . $signalId . '_' . time(),
+                'signal_id' => $signalId,
+                'symbol' => $symbol,
+                'side' => $side,
+                'entry_action' => $entryPolicy,
+                'entry_timeout_minutes' => (int)($signal['entry_timeout_minutes'] ?? 8),
+                'entry_price_reference' => (float)($signal['entry']['price'] ?? ($signal['entry_price'] ?? 0)),
+                'risk' => $risk,
+                'trailing' => $trailing,
+                'stop_policy' => [
+                    'stop_control_mode' => $trailing['stop_control_mode'] ?? 'auto',
+                    'manual_stop_loss_roi' => (float)($trailing['manual_stop_loss_roi'] ?? 0.03),
+                ],
+                'selection_mode_used' => $selectionMode,
+                'selection_source' => $selectionSource,
+                'approval_reason' => $approvalReason,
+                'created_ts' => time(),
+                'expires_at' => (int)($signal['expires_at'] ?? 0),
+            ];
+
+            if ($reverseEnabled && $sideOriginal !== $side) {
+                $intent['side_original'] = $sideOriginal;
+            }
+
+            // Propagate schema_version from signal
+            if (isset($signal['schema_version'])) {
+                $intent['source_schema_version'] = $signal['schema_version'];
+            }
+
+            $intents[] = $intent;
+            $result['approvals'][] = ['symbol' => $symbol, 'signal_id' => $signalId, 'reason' => $approvalReason];
+        }
+
+        $result['intents_created'] = count($intents);
+
+        // Write live_intents.json
+        $payload = [
+            'schema_version' => 'live_intents_v1',
+            'generated_at' => date('c'),
+            'live_trading_enabled' => true,
+            'effective_live_config' => $liveConfig,
+            'intents' => $intents,
+        ];
+        $this->state->writeJson('storage/live_intents.json', $payload);
+        $result['intents_written'] = count($intents);
+
+        if (count($intents) > 0) {
+            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' intents (mode=' . $selectionMode . ', approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ')');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Load a symbol list from storage JSON file.
+     * Returns flat array of symbol strings.
+     *
+     * @param string $filename Filename relative to storage/
+     * @return list<string>
+     */
+    private function loadSymbolList(string $filename): array
+    {
+        $result = $this->config->loadSymbolListJson($filename);
+        if (!$result['valid'] && $result['warning'] !== '') {
+            $this->logger->log('warning', $result['warning']);
+        }
+        $list = $result['list'];
+        // Extract symbol names from list items
+        $symbols = [];
+        foreach ($list as $item) {
+            if (is_string($item)) {
+                $symbols[] = $item;
+            } elseif (is_array($item) && isset($item['symbol'])) {
+                $symbols[] = (string)$item['symbol'];
+            }
+        }
+        return $symbols;
     }
 
     // =========================================================================

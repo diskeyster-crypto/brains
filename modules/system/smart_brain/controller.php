@@ -86,6 +86,11 @@ final class SmartBrainController
         $values['soft_whitelist_enabled'] = !empty($_POST['soft_whitelist_enabled']);
         $values['manual_symbol_universe_enabled'] = !empty($_POST['manual_symbol_universe_enabled']);
 
+        // Live Trading Control checkboxes
+        $values['live_trading_enabled'] = !empty($_POST['live_trading_enabled']);
+        $values['live_one_trade_per_symbol'] = !empty($_POST['live_one_trade_per_symbol']);
+        $values['live_reverse_side_enabled'] = !empty($_POST['live_reverse_side_enabled']);
+
         // Pattern selection: checkboxes send array, absent when none checked
         $values['patterns_enabled'] = isset($_POST['patterns_enabled']) && is_array($_POST['patterns_enabled'])
             ? $_POST['patterns_enabled']
@@ -117,6 +122,9 @@ final class SmartBrainController
             $data['symbol_filter_mode'] = $values['symbol_filter_mode'] ?? 'all';
             $data['manual_symbol_universe_enabled'] = !empty($values['manual_symbol_universe_enabled']);
             $data['manual_symbol_mode'] = $values['manual_symbol_mode'] ?? 'manual_only';
+            // Live trading form values on error
+            $data['live_trading_enabled'] = !empty($values['live_trading_enabled']);
+            $data['live_signal_selection_mode'] = $values['live_signal_selection_mode'] ?? 'whitelist_only';
         }
 
         extract($data, EXTR_SKIP);

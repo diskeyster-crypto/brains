@@ -152,6 +152,13 @@ final class SmartBrainConfig
             'manual_symbol_universe_enabled'      => !empty($values['manual_symbol_universe_enabled']),
             'manual_symbol_list'                  => (string)($values['manual_symbol_list'] ?? ''),
             'manual_symbol_mode'                  => (string)($values['manual_symbol_mode'] ?? 'manual_only'),
+            // Live Trading Control (Brain-owned)
+            'live_trading_enabled'                => !empty($values['live_trading_enabled']),
+            'live_signal_selection_mode'           => (string)($values['live_signal_selection_mode'] ?? 'whitelist_only'),
+            'live_max_positions'                  => (int)($values['live_max_positions'] ?? 3),
+            'live_one_trade_per_symbol'           => !empty($values['live_one_trade_per_symbol'] ?? true),
+            'live_entry_policy'                   => (string)($values['live_entry_policy'] ?? 'enter_now'),
+            'live_reverse_side_enabled'           => !empty($values['live_reverse_side_enabled']),
         ];
 
         // Pattern Selection
@@ -386,6 +393,19 @@ final class SmartBrainConfig
         // The conflict message is stored alongside the config for UI display.
         // (Save is NOT blocked, but the user sees a clear notice.)
 
+        // Live Trading Control validation
+        $validLiveSelectionModes = ['all', 'whitelist_only', 'soft_whitelist_only', 'whitelist_plus_soft', 'manual_only', 'manual_plus_soft', 'manual_plus_whitelist', 'watchlist_only'];
+        if (isset($values['live_signal_selection_mode']) && !in_array((string)$values['live_signal_selection_mode'], $validLiveSelectionModes, true)) {
+            $errors[] = 'live_signal_selection_mode must be one of: ' . implode(', ', $validLiveSelectionModes);
+        }
+        if (isset($values['live_max_positions']) && (int)$values['live_max_positions'] < 1) {
+            $errors[] = 'live_max_positions must be >= 1';
+        }
+        $validEntryPolicies = ['enter_now', 'wait_retrace'];
+        if (isset($values['live_entry_policy']) && !in_array((string)$values['live_entry_policy'], $validEntryPolicies, true)) {
+            $errors[] = 'live_entry_policy must be one of: ' . implode(', ', $validEntryPolicies);
+        }
+
         // Pattern Selection validation
         $patternsProvided = isset($values['patterns_enabled']) && is_array($values['patterns_enabled']) ? $values['patterns_enabled'] : [];
         if (empty($patternsProvided)) {
@@ -406,6 +426,7 @@ final class SmartBrainConfig
 
     /**
      * Detect config conflict warnings for the current user config.
+     * Config Conflict Guard V2: extended detection, real JSON parsing, no fragile checks.
      * These are non-blocking warnings about potentially problematic filter combinations.
      *
      * @return list<string>
@@ -422,7 +443,24 @@ final class SmartBrainConfig
 
         $restrictiveModes = ['whitelist_only', 'soft_whitelist_only', 'whitelist_plus_soft', 'watchlist_only'];
 
-        // Conflict: manual_only + restrictive symbol intelligence filter
+        // (A) manual_only + empty manual list
+        if ($manualEnabled && $manualMode === 'manual_only') {
+            $rawList = trim((string)($userLimits['manual_symbol_list'] ?? ''));
+            if ($rawList === '') {
+                $warnings[] = 'Конфликт конфигурации: manual_only включён, но manual_symbol_list пуст — кандидаты будут полностью отфильтрованы.';
+            }
+        }
+
+        // (B) manual_plus_soft with both sources empty
+        if ($manualEnabled && $manualMode === 'manual_plus_soft') {
+            $rawList = trim((string)($userLimits['manual_symbol_list'] ?? ''));
+            $softEmpty = $this->isSymbolListEmpty('soft_whitelist.json');
+            if ($rawList === '' && $softEmpty) {
+                $warnings[] = 'Конфликт конфигурации: manual_plus_soft включён, но пусты и manual_symbol_list, и soft_whitelist — кандидаты будут полностью отфильтрованы.';
+            }
+        }
+
+        // (G) cross-filter conflict: manual_only + restrictive SI + empty backing lists
         if ($manualEnabled && $manualMode === 'manual_only'
             && $intelEnabled && in_array($filterMode, $restrictiveModes, true)
         ) {
@@ -432,37 +470,134 @@ final class SmartBrainConfig
                 . 'Рекомендуется отключить Symbol Intelligence или изменить manual_symbol_mode.';
         }
 
-        // Warning: symbol intelligence enabled with restrictive mode, but lists may be empty
+        // Symbol intelligence restrictive mode with empty lists
         if ($intelEnabled && in_array($filterMode, $restrictiveModes, true)) {
             // Skip this check if manual_only conflict is already detected
             if (!($manualEnabled && $manualMode === 'manual_only')) {
-                $moduleBase = $this->moduleBase;
-                $isListEmpty = function(string $filename) use ($moduleBase): bool {
-                    $path = $moduleBase . '/storage/' . $filename;
-                    return !is_file($path) || trim((string)file_get_contents($path)) === '[]';
-                };
-
                 $emptyList = false;
-                if ($filterMode === 'whitelist_only') {
-                    $emptyList = $isListEmpty('whitelist.json');
-                } elseif ($filterMode === 'soft_whitelist_only') {
-                    $emptyList = $isListEmpty('soft_whitelist.json');
-                } elseif ($filterMode === 'whitelist_plus_soft') {
-                    // whitelist_plus_soft accepts symbols from EITHER list — warn only if BOTH are empty
-                    $emptyList = $isListEmpty('whitelist.json') && $isListEmpty('soft_whitelist.json');
-                } elseif ($filterMode === 'watchlist_only') {
-                    $emptyList = $isListEmpty('watchlist.json');
-                }
 
-                if ($emptyList) {
-                    $warnings[] = 'Symbol Intelligence: режим ' . $filterMode
-                        . ' активен, но соответствующие списки пусты. '
-                        . 'Все кандидаты могут быть отфильтрованы.';
+                // (C) whitelist_only with empty whitelist
+                if ($filterMode === 'whitelist_only') {
+                    $emptyList = $this->isSymbolListEmpty('whitelist.json');
+                    if ($emptyList) {
+                        $warnings[] = 'Конфликт конфигурации: whitelist_only включён, но whitelist пуст — кандидаты будут полностью отфильтрованы.';
+                    }
+                }
+                // (D) soft_whitelist_only with empty soft list
+                elseif ($filterMode === 'soft_whitelist_only') {
+                    $emptyList = $this->isSymbolListEmpty('soft_whitelist.json');
+                    if ($emptyList) {
+                        $warnings[] = 'Конфликт конфигурации: soft_whitelist_only включён, но soft_whitelist пуст — кандидаты будут полностью отфильтрованы.';
+                    }
+                }
+                // (E) whitelist_plus_soft with both lists empty
+                elseif ($filterMode === 'whitelist_plus_soft') {
+                    $emptyList = $this->isSymbolListEmpty('whitelist.json') && $this->isSymbolListEmpty('soft_whitelist.json');
+                    if ($emptyList) {
+                        $warnings[] = 'Конфликт конфигурации: whitelist_plus_soft включён, но пусты и whitelist, и soft_whitelist — кандидаты будут полностью отфильтрованы.';
+                    }
+                }
+                // (F) watchlist_only with empty watchlist
+                elseif ($filterMode === 'watchlist_only') {
+                    $emptyList = $this->isSymbolListEmpty('watchlist.json');
+                    if ($emptyList) {
+                        $warnings[] = 'Конфликт конфигурации: watchlist_only включён, но watchlist пуст — кандидаты будут полностью отфильтрованы.';
+                    }
                 }
             }
         }
 
-        return $warnings;
+        return self::uniqueWarnings($warnings);
+    }
+
+    /**
+     * Load a symbol list JSON file safely.
+     * Returns decoded array or empty array on failure.
+     *
+     * @param string $filename Filename relative to storage/
+     * @return array{list:list<mixed>,valid:bool,warning:string}
+     */
+    public function loadSymbolListJson(string $filename): array
+    {
+        $path = $this->moduleBase . '/storage/' . $filename;
+        if (!is_file($path)) {
+            return ['list' => [], 'valid' => true, 'warning' => ''];
+        }
+        $content = @file_get_contents($path);
+        if ($content === false) {
+            return ['list' => [], 'valid' => false, 'warning' => "Не удалось прочитать файл {$filename}."];
+        }
+        $decoded = @json_decode($content, true);
+        if (!is_array($decoded)) {
+            return ['list' => [], 'valid' => false, 'warning' => "Файл {$filename} содержит некорректный JSON и был интерпретирован как пустой список."];
+        }
+        return ['list' => $decoded, 'valid' => true, 'warning' => ''];
+    }
+
+    /**
+     * Check if a symbol list JSON file is empty (real JSON parsing, not string guessing).
+     *
+     * @param string $filename Filename relative to storage/
+     * @return bool true if list is empty or file is missing/invalid
+     */
+    public function isSymbolListEmpty(string $filename): bool
+    {
+        $result = $this->loadSymbolListJson($filename);
+        return count($result['list']) === 0;
+    }
+
+    /**
+     * Deduplicate warnings by normalized text.
+     *
+     * @param list<string> $warnings
+     * @return list<string>
+     */
+    public static function uniqueWarnings(array $warnings): array
+    {
+        $seen = [];
+        $unique = [];
+        foreach ($warnings as $w) {
+            $key = mb_strtolower(trim($w));
+            if (!isset($seen[$key])) {
+                $seen[$key] = true;
+                $unique[] = $w;
+            }
+        }
+        return $unique;
+    }
+
+    /**
+     * Build the effective live trading config for Brain→Bot contract.
+     *
+     * @return array<string,mixed>
+     */
+    public function buildLiveConfig(): array
+    {
+        $userLimits = $this->getUserLimits();
+        return [
+            'live_trading_enabled' => (bool)($userLimits['live_trading_enabled'] ?? false),
+            'live_signal_selection_mode' => (string)($userLimits['live_signal_selection_mode'] ?? 'whitelist_only'),
+            'live_max_positions' => (int)($userLimits['live_max_positions'] ?? 3),
+            'live_one_trade_per_symbol' => (bool)($userLimits['live_one_trade_per_symbol'] ?? true),
+            'live_entry_policy' => (string)($userLimits['live_entry_policy'] ?? 'enter_now'),
+            'live_reverse_side_enabled' => (bool)($userLimits['live_reverse_side_enabled'] ?? false),
+            'trailing_contract' => [
+                'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+                'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
+                'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
+                'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),
+                'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
+                'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+                'exit_mode' => (string)($userLimits['exit_mode'] ?? 'fixed_tp'),
+                'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
+                'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
+                'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
+                'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+            ],
+            'leverage_mode' => (string)($userLimits['leverage_mode'] ?? 'auto'),
+            'manual_leverage' => (int)($userLimits['manual_leverage'] ?? 3),
+            'max_leverage' => (int)($userLimits['max_leverage'] ?? 5),
+        ];
     }
 
     /**
@@ -558,6 +693,27 @@ final class SmartBrainConfig
                 'manual_symbol_universe_enabled' => (bool)($userLimits['manual_symbol_universe_enabled'] ?? false),
                 'manual_symbol_list' => (string)($userLimits['manual_symbol_list'] ?? ''),
                 'manual_symbol_mode' => (string)($userLimits['manual_symbol_mode'] ?? 'manual_only'),
+            ],
+            'live_trading' => [
+                'live_trading_enabled' => (bool)($userLimits['live_trading_enabled'] ?? false),
+                'live_signal_selection_mode' => (string)($userLimits['live_signal_selection_mode'] ?? 'whitelist_only'),
+                'live_max_positions' => (int)($userLimits['live_max_positions'] ?? 3),
+                'live_one_trade_per_symbol' => (bool)($userLimits['live_one_trade_per_symbol'] ?? true),
+                'live_entry_policy' => (string)($userLimits['live_entry_policy'] ?? 'enter_now'),
+                'live_reverse_side_enabled' => (bool)($userLimits['live_reverse_side_enabled'] ?? false),
+                'live_trailing_contract' => [
+                    'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+                    'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
+                    'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
+                    'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),
+                    'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
+                    'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+                    'exit_mode' => (string)($userLimits['exit_mode'] ?? 'fixed_tp'),
+                    'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
+                    'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
+                    'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
+                    'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+                ],
             ],
             'pattern_selection' => [
                 'enabled' => (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []),

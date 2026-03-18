@@ -526,8 +526,8 @@ final class TradingBotService
                         if (str_starts_with($execStatus, 'deferred_')) {
                             // P6.9: Deferred intent - NOT reject, NOT error
                             // Just a warning, will retry next run
+                            // NOTE: intents_deferred is derived from intent_results post-processing
                             $deferredChecked++;
-                            $result['intents_deferred']++;
                             $reason = $execResult['deferred_reason'] ?? $execStatus;
                             if (!isset($deferredReasonCounts[$reason])) {
                                 $deferredReasonCounts[$reason] = 0;
@@ -641,6 +641,7 @@ final class TradingBotService
             $result['intents_processed'] = count($result['intent_results']);
             $result['intents_opened'] = 0;
             $result['intents_skipped'] = 0;
+            $result['intents_deferred'] = 0;
             $result['intents_rejected_exec'] = 0;
             $result['intents_failed_exec'] = 0;
             $result['rejection_reason_stats'] = [];
@@ -649,7 +650,10 @@ final class TradingBotService
                 $ls = $ir['lifecycle_state'] ?? '';
                 if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
                     $result['intents_opened']++;
-                } elseif (in_array($ls, ['deferred', 'skipped'], true)) {
+                } elseif ($ls === 'deferred') {
+                    $result['intents_deferred']++;
+                    $result['intents_skipped']++;
+                } elseif ($ls === 'skipped') {
                     $result['intents_skipped']++;
                 } elseif ($ls === 'rejected') {
                     $result['intents_rejected_exec']++;

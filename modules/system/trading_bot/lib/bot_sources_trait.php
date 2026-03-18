@@ -134,6 +134,7 @@ trait BotSourcesTrait
             $executedIndex = $this->loadExecutedIndex();
             $validIntents = [];
             $duplicateSkipped = 0;
+            $duplicateSkippedRecords = [];
 
             foreach ($intents as $intent) {
                 // V2 FIX: Use intent_id as the authoritative identity key for Brain intents
@@ -145,13 +146,37 @@ trait BotSourcesTrait
                 }
 
                 // Skip if already executed (idempotency) — check BOTH intent_id and signal_id for safety
+                $isDuplicate = false;
                 if (isset($executedIndex[$executionKey])) {
-                    $duplicateSkipped++;
-                    continue;
+                    $isDuplicate = true;
                 }
                 // Also check signal_id separately for backward compat with old executed_index entries
-                if ($intentId !== null && $signalId !== null && $intentId !== $signalId && isset($executedIndex[$signalId])) {
+                if (!$isDuplicate && $intentId !== null && $signalId !== null && $intentId !== $signalId && isset($executedIndex[$signalId])) {
+                    $isDuplicate = true;
+                }
+
+                if ($isDuplicate) {
                     $duplicateSkipped++;
+                    // Build explicit result record for duplicate-skipped intent
+                    $duplicateSkippedRecords[] = [
+                        'intent_id' => $intentId ?? $executionKey,
+                        'signal_id' => $signalId,
+                        'symbol' => (string)($intent['symbol'] ?? ''),
+                        'side' => (string)($intent['side'] ?? ''),
+                        'brain_controlled' => true,
+                        'execution_identity_key' => $executionKey,
+                        'lifecycle_state' => 'skipped',
+                        'processed_at' => date('c'),
+                        'execution_result' => 'skipped',
+                        'rejection_reason' => 'rejected_duplicate_execution_key',
+                        'close_reason' => null,
+                        'order_id' => null,
+                        'position_id' => null,
+                        'protection_status' => 'none',
+                        'trailing_status' => 'disabled',
+                        'source_status' => 'brain_live_intent',
+                        'debug_message' => 'Already processed (execution key exists in executed_index)',
+                    ];
                     continue;
                 }
 
@@ -207,6 +232,7 @@ trait BotSourcesTrait
             $result['count'] = count($validIntents);
             $result['intents'] = $validIntents;
             $result['duplicate_skipped'] = $duplicateSkipped;
+            $result['duplicate_skipped_records'] = $duplicateSkippedRecords;
 
             if (count($validIntents) === 0) {
                 $result['source_status'] = 'empty';
@@ -688,11 +714,26 @@ trait BotSourcesTrait
      */
     protected function resolveIntentLifecycleState(array $execResult): string
     {
+        // Explicit skipped state (duplicate suppression)
+        if (($execResult['status'] ?? '') === 'skipped') {
+            return 'skipped';
+        }
+
         if (!empty($execResult['opened'])) {
+            // Distinguish protected vs merely opened
+            $status = $execResult['status'] ?? '';
+            if ($status === 'opened_protected') {
+                return 'protected';
+            }
             return 'opened';
         }
 
         $status = $execResult['status'] ?? '';
+
+        // Closed states
+        if (strpos($status, 'closed_') === 0 || $status === 'exchange_closed') {
+            return 'closed';
+        }
 
         if (strpos($status, 'deferred_') === 0) {
             return 'deferred';
@@ -720,7 +761,30 @@ trait BotSourcesTrait
     protected function buildIntentResultRecord(array $intent, array $execResult): array
     {
         $lifecycleState = $this->resolveIntentLifecycleState($execResult);
-        $trailingEnabled = $intent['risk']['trailing']['enabled'] ?? false;
+        $trailingEnabled = (bool)($intent['risk']['trailing']['enabled'] ?? false);
+        $execStatus = $execResult['status'] ?? 'unknown';
+
+        // Richer protection_status
+        $protectionStatus = 'none';
+        if ($lifecycleState === 'protected') {
+            $protectionStatus = 'protected';
+        } elseif ($lifecycleState === 'opened') {
+            $protectionStatus = 'opened_unprotected';
+        } elseif ($lifecycleState === 'failed' && strpos($execStatus, 'unprotected') !== false) {
+            $protectionStatus = 'protection_error';
+        }
+
+        // Richer trailing_status
+        $trailingStatus = 'disabled';
+        if ($trailingEnabled) {
+            if ($lifecycleState === 'trailing_active') {
+                $trailingStatus = 'active';
+            } elseif (in_array($lifecycleState, ['opened', 'protected'], true)) {
+                $trailingStatus = 'armed';
+            } else {
+                $trailingStatus = 'enabled';
+            }
+        }
 
         $record = [
             'intent_id' => $intent['intent_id'] ?? $intent['id'] ?? null,
@@ -731,25 +795,93 @@ trait BotSourcesTrait
             'execution_identity_key' => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? '')),
             'lifecycle_state' => $lifecycleState,
             'processed_at' => date('c'),
-            'execution_result' => $execResult['status'] ?? 'unknown',
+            'execution_result' => $execStatus,
             'rejection_reason' => null,
             'close_reason' => null,
             'order_id' => $execResult['order_id'] ?? null,
             'position_id' => $execResult['trade_id'] ?? null,
-            'protection_status' => ($execResult['status'] === 'opened_protected') ? 'sl_set' : 'none',
-            'trailing_status' => $trailingEnabled ? 'enabled' : 'disabled',
+            'protection_status' => $protectionStatus,
+            'trailing_status' => $trailingStatus,
             'source_status' => $intent['source'] ?? 'brain_live_intent',
             'debug_message' => $execResult['error'] ?? null,
         ];
 
         if ($lifecycleState === 'rejected') {
-            $record['rejection_reason'] = $execResult['status'];
+            $record['rejection_reason'] = $this->normalizeRejectionReason($execStatus);
         }
         if ($lifecycleState === 'failed') {
-            $record['close_reason'] = $execResult['error'] ?? $execResult['status'];
+            $record['rejection_reason'] = $this->normalizeRejectionReason($execStatus);
+            $record['close_reason'] = $this->normalizeCloseReason($execResult['error'] ?? $execStatus);
+        }
+        if ($lifecycleState === 'closed') {
+            $record['close_reason'] = $this->normalizeCloseReason($execStatus);
         }
 
         return $record;
+    }
+
+    /**
+     * Normalize a rejection reason to a stable machine-readable value.
+     *
+     * @param string $raw Raw rejection status/reason
+     * @return string Normalized rejection reason
+     */
+    protected function normalizeRejectionReason(string $raw): string
+    {
+        // Already normalized — starts with rejected_
+        if (strpos($raw, 'rejected_') === 0) {
+            // Map known vague suffixes to stable categories
+            $map = [
+                'rejected_validation' => 'rejected_invalid_brain_intent',
+                'rejected_entry_timeout' => 'rejected_late_entry',
+                'rejected_order_failed' => 'rejected_exchange_error',
+                'rejected_leverage_failed' => 'rejected_exchange_error',
+                'rejected_balance_unavailable' => 'rejected_insufficient_balance',
+                'rejected_balance_below_minimum' => 'rejected_insufficient_balance',
+                'rejected_symbol_disabled' => 'rejected_disabled_by_mode',
+            ];
+            return $map[$raw] ?? $raw;
+        }
+
+        // Map non-prefixed reasons
+        if ($raw === 'error' || $raw === 'unknown') {
+            return 'rejected_unknown';
+        }
+        if (strpos($raw, 'critical_') === 0) {
+            return 'rejected_exchange_error';
+        }
+
+        return 'rejected_' . $raw;
+    }
+
+    /**
+     * Normalize a close reason to a stable machine-readable value.
+     *
+     * @param string $raw Raw close reason
+     * @return string Normalized close reason
+     */
+    protected function normalizeCloseReason(string $raw): string
+    {
+        $map = [
+            'stop_loss' => 'close_stop_loss',
+            'trailing_stop' => 'close_trailing_stop',
+            'take_profit' => 'close_take_profit',
+            'hybrid_take_profit' => 'close_hybrid_take_profit',
+            'break_even' => 'close_break_even',
+            'manual_close' => 'close_manual',
+            'exchange_closed' => 'close_exchange_forced',
+            'reconcile_failed' => 'close_fail_safe',
+            'sl_calculation_failed' => 'close_fail_safe',
+            'sl_set_failed' => 'close_fail_safe',
+            'critical_unprotected_position_close_failed' => 'close_protection_error',
+        ];
+
+        // Already normalized
+        if (strpos($raw, 'close_') === 0) {
+            return $raw;
+        }
+
+        return $map[$raw] ?? 'close_unknown';
     }
 
     /**

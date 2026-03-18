@@ -127,6 +127,7 @@ $filteredResults = array_values($filteredResults);
             <thead>
                 <tr>
                     <th>Intent ID</th>
+                    <th>Signal ID</th>
                     <th>Symbol</th>
                     <th>Side</th>
                     <th>State</th>
@@ -143,6 +144,8 @@ $filteredResults = array_values($filteredResults);
                 <?php
                     $stateColors = [
                         'opened' => 'success',
+                        'protected' => 'success',
+                        'trailing_active' => 'primary',
                         'rejected' => 'danger',
                         'failed' => 'danger',
                         'deferred' => 'warning',
@@ -154,8 +157,10 @@ $filteredResults = array_values($filteredResults);
                     $stateBadge = $stateColors[$irState] ?? 'secondary';
                     $irId = $ir['intent_id'] ?? $ir['execution_identity_key'] ?? '';
                 ?>
+                <?php $irSignalId = $ir['signal_id'] ?? ''; ?>
                 <tr>
                     <td class="small" title="<?= htmlspecialchars($irId) ?>"><?= htmlspecialchars(substr($irId, 0, 12)) ?><?= strlen($irId) > 12 ? '...' : '' ?></td>
+                    <td class="small" title="<?= htmlspecialchars($irSignalId) ?>"><?= htmlspecialchars(substr($irSignalId, 0, 10)) ?><?= strlen($irSignalId) > 10 ? '...' : '' ?></td>
                     <td><strong><?= htmlspecialchars($ir['symbol'] ?? '') ?></strong></td>
                     <td>
                         <span class="badge bg-<?= ($ir['side'] ?? '') === 'long' ? 'success' : 'danger' ?>">

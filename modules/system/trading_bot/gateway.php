@@ -15,6 +15,7 @@ namespace Modules\System\TradingBot;
 class TradingBotGateway
 {
     private array $config;
+    private string $mode = 'dry';
     private ?object $client = null;
     
     /** @var array P4: Instrument meta cache (tickSize, qtyStep, minOrderQty) */
@@ -23,6 +24,7 @@ class TradingBotGateway
     public function __construct(array $config)
     {
         $this->config = $config;
+        $this->mode = $config['module']['mode'] ?? 'dry';
         $this->init();
     }
 

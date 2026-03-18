@@ -59,14 +59,24 @@ $controlledByBrain = (bool)($lastRunBot['controlled_by_brain'] ?? false);
 $inputSourceBot = (string)($lastRunBot['input_source'] ?? 'unknown');
 $selectionModeBot = (string)($lastRunBot['effective_selection_mode_from_brain'] ?? 'n/a');
 ?>
+<?php
+$legacyFallbackAllowed = (bool)($lastRunBot['legacy_fallback_allowed'] ?? true);
+$legacyFallbackUsed = (bool)($lastRunBot['legacy_fallback_used'] ?? false);
+$effectiveTrailingSource = (string)($lastRunBot['effective_trailing_contract_source'] ?? 'n/a');
+$limitsControlledByBrain = (bool)($lastRunBot['limits_controlled_by_brain'] ?? false);
+?>
 <div class="alert <?= $controlledByBrain ? 'alert-info' : 'alert-secondary' ?> mb-4 py-2" style="font-size: 0.85rem;">
     <i class="bi bi-<?= $controlledByBrain ? 'lightning-charge' : 'info-circle' ?> me-1"></i>
     <strong>Intent Source:</strong> <?= htmlspecialchars($inputSourceBot) ?>
     <?php if ($controlledByBrain): ?>
         — <span class="text-info">Brain-controlled</span> (selection mode: <code><?= htmlspecialchars($selectionModeBot) ?></code>)
         <br><small>Bot-local strategy overrides (reverse_side, force_side, symbol_overrides) are <b>skipped</b> — Brain owns strategy decisions.</small>
+        <br><small>Legacy fallback: <b>disabled</b> | Trailing: <code><?= htmlspecialchars($effectiveTrailingSource) ?></code> | Limits: <b><?= $limitsControlledByBrain ? 'Brain-owned' : 'bot-local' ?></b></small>
     <?php else: ?>
         — <span class="text-secondary">Legacy fallback mode</span> (bot-local overrides active)
+        <?php if ($legacyFallbackUsed): ?>
+        <br><small>Legacy fallback: <b>used</b></small>
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 

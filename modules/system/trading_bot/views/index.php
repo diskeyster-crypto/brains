@@ -52,6 +52,24 @@ require $moduleBase . '/views/_tabs.php';
     </div>
 </div>
 
+<!-- Brain-Controlled Status -->
+<?php
+$lastRunBot = $lastRun ?? [];
+$controlledByBrain = (bool)($lastRunBot['controlled_by_brain'] ?? false);
+$inputSourceBot = (string)($lastRunBot['input_source'] ?? 'unknown');
+$selectionModeBot = (string)($lastRunBot['effective_selection_mode_from_brain'] ?? 'n/a');
+?>
+<div class="alert <?= $controlledByBrain ? 'alert-info' : 'alert-secondary' ?> mb-4 py-2" style="font-size: 0.85rem;">
+    <i class="bi bi-<?= $controlledByBrain ? 'lightning-charge' : 'info-circle' ?> me-1"></i>
+    <strong>Intent Source:</strong> <?= htmlspecialchars($inputSourceBot) ?>
+    <?php if ($controlledByBrain): ?>
+        — <span class="text-info">Brain-controlled</span> (selection mode: <code><?= htmlspecialchars($selectionModeBot) ?></code>)
+        <br><small>Bot-local strategy overrides (reverse_side, force_side, symbol_overrides) are <b>skipped</b> — Brain owns strategy decisions.</small>
+    <?php else: ?>
+        — <span class="text-secondary">Legacy fallback mode</span> (bot-local overrides active)
+    <?php endif; ?>
+</div>
+
 
 <!-- Active Positions (Exchange) -->
 <?php

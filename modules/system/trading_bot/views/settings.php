@@ -185,19 +185,26 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                         
                     <div class="row g-3 mt-0">
                         <div class="col-md-8">
+                            <div class="alert alert-warning py-2 px-3 mb-2" style="font-size: 0.82rem;">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>DEPRECATED — Brain-controlled:</strong>
+                                Стратегические контролы ниже (reverse_side, force_side, symbol_overrides)
+                                теперь управляются из Smart Brain → User Config → Live Trading Control.
+                                Здесь они работают только как legacy-fallback, если Brain не отправляет live_intents.
+                            </div>
                             <div class="form-check form-switch mt-2">
                                 <input class="form-check-input" type="checkbox" id="reverse_side_enabled" name="reverse_side_enabled" <?= $reverseSideEnabled ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="reverse_side_enabled">
-                                    Инвертировать направление (LONG ↔ SHORT)
-                                    <?= sprintf($helpIcon, htmlspecialchars('Для тестов: бот будет открывать противоположную сторону от сигнала Brain (LONG→SHORT, SHORT→LONG). В intent добавит side_original для прозрачности.')) ?>
+                                    Инвертировать направление (LONG ↔ SHORT) <span class="badge bg-secondary">deprecated</span>
+                                    <?= sprintf($helpIcon, htmlspecialchars('DEPRECATED: Теперь Brain контролирует reverse_side через live_reverse_side_enabled в User Config. Bot-local toggle работает только в legacy mode.')) ?>
                                 </label>
                             </div>
 
                             <div class="mt-3 p-3 rounded" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color);">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <div>
-                                        <strong>Переопределения по символам</strong>
-                                        <span class="text-muted">(точечно, приоритетнее общего режима)</span>
+                                        <strong>Переопределения по символам</strong> <span class="badge bg-secondary">deprecated</span>
+                                        <span class="text-muted">(legacy fallback — Brain теперь контролирует selection mode)</span>
                                         <?= sprintf($helpIcon, htmlspecialchars('Позволяет точечно включать/выключать торговлю по символу и (опционально) инвертировать сторону только для конкретных тикеров. Это лучше, чем общий "переворот" для всех.')) ?>
                                     </div>
                                     <div class="d-flex align-items-center gap-2">

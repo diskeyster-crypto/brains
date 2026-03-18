@@ -16,8 +16,15 @@ require $moduleBase . '/views/_tabs.php';
 ?>
 
 <div class="card">
-    <div class="card-header">
-        <i class="bi bi-inbox me-2"></i>Rejected Intents
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-inbox me-2"></i>Rejected Intents</span>
+<?php
+$lastRunBot = $lastRun ?? [];
+$brainSourceBadge = (bool)($lastRunBot['controlled_by_brain'] ?? false)
+    ? '<span class="badge bg-info">Brain-controlled</span>'
+    : '<span class="badge bg-secondary">Legacy signals</span>';
+?>
+        <?= $brainSourceBadge ?>
     </div>
     <div class="card-body">
         <?php if (empty($intents)): ?>

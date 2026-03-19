@@ -369,17 +369,26 @@ final class SmartBrainCore
             // Config Conflict Guard
             'config_conflict_detected' => $configConflictDetected,
             'config_conflict_message' => $configConflictMessage,
-            // Live Intent Generation
+            // Live Intent Generation — audit fields
+            'live_stage_runtime_signature' => $liveIntentResult['live_stage_runtime_signature'] ?? '',
             'live_trading_enabled' => $liveConfig['live_trading_enabled'],
             'brain_controlled_live_mode' => (bool)($liveConfig['live_trading_enabled'] ?? false),
             'live_signal_selection_mode' => $liveConfig['live_signal_selection_mode'],
+            'live_signals_seen' => $liveIntentResult['signals_seen'],
             'live_signals_processed' => $liveIntentResult['signals_processed'],
             'live_candidates_approved_count' => $liveIntentResult['approved_count'],
             'live_candidates_rejected_count' => $liveIntentResult['rejected_count'],
             'live_missing_id_fallback_used' => $liveIntentResult['fallback_id_used'],
             'live_rejection_reasons' => $liveIntentResult['rejection_reasons'],
+            'live_rejection_reason_stats' => $liveIntentResult['rejection_reason_stats'],
+            'live_signal_id_source_stats' => $liveIntentResult['signal_id_source_stats'],
             'live_intents_created_count' => $liveIntentResult['intents_created'],
             'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
+            'live_invalid_payload_count' => $liveIntentResult['live_invalid_payload_count'],
+            'live_missing_risk_count' => $liveIntentResult['live_missing_risk_count'],
+            'live_missing_entry_count' => $liveIntentResult['live_missing_entry_count'],
+            'live_mode_filter_rejected_count' => $liveIntentResult['live_mode_filter_rejected_count'],
+            'live_debug_preview' => $liveIntentResult['live_debug_preview'],
             'effective_execution_limits' => [
                 'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
                 'live_one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
@@ -397,18 +406,24 @@ final class SmartBrainCore
     // Live Intent Generation — Brain-controlled live bot refactor
     // =========================================================================
 
+    /** Runtime signature for live-stage code version verification */
+    private const LIVE_STAGE_VERSION = 'live_stage_v2_audit_2026-03-19';
+
     /**
      * Generate Brain-approved live intents from signals.
      * Applies live_signal_selection_mode filter and writes storage/live_intents.json.
      *
+     * Every signal must end as approved or rejected — no silent skip.
+     *
      * @param array  $signals    Approved signals from RiskEngine
      * @param array  $liveConfig Effective live trading config from buildLiveConfig()
      * @param array  $userLimits User limits from config
-     * @return array{approved_count:int,rejected_count:int,rejection_reasons:array,intents_created:int,intents_written:int,approvals:array,signals_processed:int,fallback_id_used:int}
+     * @return array Live stage audit result
      */
     private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits): array
     {
         $result = [
+            'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
             'approved_count' => 0,
             'rejected_count' => 0,
             'rejection_reasons' => [],
@@ -416,7 +431,15 @@ final class SmartBrainCore
             'intents_written' => 0,
             'approvals' => [],
             'signals_processed' => 0,
+            'signals_seen' => 0,
             'fallback_id_used' => 0,
+            'rejection_reason_stats' => [],
+            'signal_id_source_stats' => ['original' => 0, 'generated_fallback' => 0],
+            'live_invalid_payload_count' => 0,
+            'live_missing_risk_count' => 0,
+            'live_missing_entry_count' => 0,
+            'live_mode_filter_rejected_count' => 0,
+            'live_debug_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -425,6 +448,7 @@ final class SmartBrainCore
                 'schema_version' => 'live_intents_v1',
                 'generated_at' => date('c'),
                 'live_trading_enabled' => false,
+                'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
                 'effective_live_config' => $liveConfig,
                 'intents' => [],
             ]);
@@ -451,32 +475,59 @@ final class SmartBrainCore
             $signalsList = $signals;
         }
 
+        $result['signals_seen'] = count($signalsList);
+
         foreach ($signalsList as $signal) {
             $result['signals_processed']++;
             $symbol = (string)($signal['symbol'] ?? '');
             $signalIdSource = 'original';
 
-            // Reject signals with missing symbol — cannot proceed without it
+            // === VALIDATION GATE 1: missing symbol ===
             if ($symbol === '') {
-                $result['rejected_count']++;
-                $result['rejection_reasons'][] = [
-                    'symbol' => '',
-                    'signal_id' => '',
-                    'reason' => 'missing_symbol',
-                    'selection_mode' => $selectionMode,
-                ];
+                $this->rejectLiveSignal($result, '', '', 'missing_symbol', $selectionMode);
+                $result['live_invalid_payload_count']++;
                 continue;
             }
 
-            // Handle missing signal ID: generate deterministic fallback
+            // === SIGNAL ID: original or deterministic fallback ===
             $signalId = (string)($signal['id'] ?? '');
             if ($signalId === '') {
                 $signalId = $this->buildDeterministicSignalId($signal);
                 $signalIdSource = 'generated_fallback';
                 $result['fallback_id_used']++;
             }
+            $result['signal_id_source_stats'][$signalIdSource]++;
 
-            // Apply live signal selection mode
+            // === VALIDATION GATE 2: missing side ===
+            $side = (string)($signal['side'] ?? '');
+            if ($side !== 'long' && $side !== 'short') {
+                $this->rejectLiveSignal($result, $symbol, $signalId, 'missing_side', $selectionMode);
+                $result['live_invalid_payload_count']++;
+                continue;
+            }
+
+            // === VALIDATION GATE 3: risk block must be usable ===
+            $risk = $this->normalizeRiskBlock($signal);
+            if (!is_array($risk) || empty($risk)) {
+                $this->rejectLiveSignal($result, $symbol, $signalId, 'missing_risk_block', $selectionMode);
+                $result['live_missing_risk_count']++;
+                continue;
+            }
+            if (empty($risk['leverage']) || empty($risk['budget'])) {
+                $this->rejectLiveSignal($result, $symbol, $signalId, 'invalid_risk_block', $selectionMode);
+                $result['live_missing_risk_count']++;
+                continue;
+            }
+
+            // === VALIDATION GATE 4: entry reference must exist ===
+            $entryPriceRef = $this->resolveEntryPriceReference($signal);
+            if ($entryPriceRef <= 0.0) {
+                $this->rejectLiveSignal($result, $symbol, $signalId, 'missing_entry_payload', $selectionMode);
+                $result['live_missing_entry_count']++;
+                continue;
+            }
+
+            // === SELECTION MODE FILTER ===
             $approved = false;
             $approvalReason = '';
             $selectionSource = '';
@@ -530,26 +581,19 @@ final class SmartBrainCore
             }
 
             if (!$approved) {
-                $result['rejected_count']++;
-                $result['rejection_reasons'][] = [
-                    'symbol' => $symbol,
-                    'signal_id' => $signalId,
-                    'reason' => 'not_in_selection_mode',
-                    'selection_mode' => $selectionMode,
-                ];
+                $this->rejectLiveSignal($result, $symbol, $signalId, 'live_mode_filter_rejected', $selectionMode);
+                $result['live_mode_filter_rejected_count']++;
                 continue;
             }
 
+            // === APPROVED: build bot-ready live intent ===
             $result['approved_count']++;
 
-            // Build live intent
-            $side = (string)($signal['side'] ?? '');
             $sideOriginal = $side;
             if ($reverseEnabled && ($side === 'long' || $side === 'short')) {
                 $side = ($side === 'long') ? 'short' : 'long';
             }
 
-            $risk = $signal['risk'] ?? [];
             $trailing = $liveConfig['trailing_contract'] ?? [];
 
             $intent = [
@@ -561,17 +605,17 @@ final class SmartBrainCore
                 'side' => $side,
                 'entry_action' => $entryPolicy,
                 'entry_timeout_minutes' => (int)($signal['entry_timeout_minutes'] ?? 8),
-                'entry_price_reference' => (float)($signal['entry']['price'] ?? ($signal['entry_price'] ?? 0)),
+                'entry_price_reference' => $entryPriceRef,
                 'risk' => $risk,
                 'trailing' => $trailing,
                 'stop_policy' => [
-                    'stop_control_mode' => $trailing['stop_control_mode'] ?? 'auto',
-                    'manual_stop_loss_roi' => (float)($trailing['manual_stop_loss_roi'] ?? 0.03),
+                    'stop_control_mode' => (string)($signal['stop_control_mode'] ?? ($trailing['stop_control_mode'] ?? 'auto')),
+                    'manual_stop_loss_roi' => (float)($signal['manual_stop_loss_roi'] ?? ($trailing['manual_stop_loss_roi'] ?? 0.03)),
                 ],
                 'selection_mode_used' => $selectionMode,
                 'selection_source' => $selectionSource,
                 'approval_reason' => $approvalReason,
-                'created_ts' => time(),
+                'created_ts' => (int)($signal['created_ts'] ?? time()),
                 'expires_at' => (int)($signal['expires_at'] ?? 0),
                 'execution_limits_snapshot' => [
                     'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
@@ -583,16 +627,38 @@ final class SmartBrainCore
                 $intent['side_original'] = $sideOriginal;
             }
 
-            // Propagate schema_version from signal
             if (isset($signal['schema_version'])) {
                 $intent['source_schema_version'] = $signal['schema_version'];
             }
 
             $intents[] = $intent;
-            $result['approvals'][] = ['symbol' => $symbol, 'signal_id' => $signalId, 'signal_id_source' => $signalIdSource, 'reason' => $approvalReason];
+            $result['approvals'][] = [
+                'symbol' => $symbol,
+                'signal_id' => $signalId,
+                'signal_id_source' => $signalIdSource,
+                'reason' => $approvalReason,
+            ];
+
+            // Debug preview (first 10)
+            if (count($result['live_debug_preview']) < 10) {
+                $result['live_debug_preview'][] = [
+                    'symbol' => $symbol,
+                    'signal_id_source' => $signalIdSource,
+                    'outcome' => 'approved',
+                    'reason' => $approvalReason,
+                ];
+            }
         }
 
         $result['intents_created'] = count($intents);
+
+        // Build rejection reason stats (grouped counts)
+        $reasonStats = [];
+        foreach ($result['rejection_reasons'] as $r) {
+            $reason = $r['reason'] ?? 'unknown';
+            $reasonStats[$reason] = ($reasonStats[$reason] ?? 0) + 1;
+        }
+        $result['rejection_reason_stats'] = $reasonStats;
 
         // Write live_intents.json
         $payload = [
@@ -600,6 +666,7 @@ final class SmartBrainCore
             'generated_at' => date('c'),
             'live_trading_enabled' => true,
             'brain_controlled_live_mode' => true,
+            'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
             'effective_live_config' => $liveConfig,
             'intents' => $intents,
         ];
@@ -608,9 +675,106 @@ final class SmartBrainCore
 
         if (count($intents) > 0) {
             $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' intents (mode=' . $selectionMode . ', approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ')');
+        } elseif ($result['signals_seen'] > 0) {
+            $this->logger->log('info', 'Live Intents: 0 intents from ' . $result['signals_seen'] . ' signals (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', reasons=' . json_encode($reasonStats) . ')');
         }
 
         return $result;
+    }
+
+    /**
+     * Record explicit rejection for a live-stage signal.
+     * Increments rejected count, records reason, adds debug preview.
+     */
+    private function rejectLiveSignal(array &$result, string $symbol, string $signalId, string $reason, string $selectionMode): void
+    {
+        $result['rejected_count']++;
+        $result['rejection_reasons'][] = [
+            'symbol' => $symbol,
+            'signal_id' => $signalId,
+            'reason' => $reason,
+            'selection_mode' => $selectionMode,
+        ];
+
+        // Debug preview (first 10)
+        if (count($result['live_debug_preview']) < 10) {
+            $result['live_debug_preview'][] = [
+                'symbol' => $symbol !== '' ? $symbol : '(empty)',
+                'signal_id_source' => $signalId !== '' ? 'present' : 'missing',
+                'outcome' => 'rejected',
+                'reason' => $reason,
+            ];
+        }
+    }
+
+    /**
+     * Normalize risk block from signal.
+     * If signal has structured risk block, return it.
+     * Otherwise, build risk block from flat signal fields.
+     *
+     * @return array Normalized risk block (may be empty if signal has no risk data)
+     */
+    private function normalizeRiskBlock(array $signal): array
+    {
+        // Prefer structured risk block if present and non-empty
+        $risk = $signal['risk'] ?? [];
+        if (is_array($risk) && !empty($risk) && !empty($risk['leverage'])) {
+            return $risk;
+        }
+
+        // Fallback: build risk block from flat signal fields
+        $leverage = $signal['leverage'] ?? null;
+        $budget = $signal['budget'] ?? null;
+        if ($leverage === null && $budget === null) {
+            return [];
+        }
+
+        $normalized = [
+            'leverage' => (int)($leverage ?? 1),
+            'budget' => (float)($budget ?? 0),
+            'stop_loss' => (float)($signal['stop_loss'] ?? 0),
+            'take_profit' => (float)($signal['take_profit'] ?? 0),
+        ];
+
+        // Build trailing sub-block from flat exit policy fields
+        $trailingEnabled = (bool)($signal['trailing_enabled'] ?? false);
+        $normalized['trailing'] = [
+            'enabled' => $trailingEnabled,
+            'activation_roi_pct' => (float)($signal['trailing_activation_roi'] ?? 0.02),
+            'min_lock_roi' => (float)($signal['trailing_min_lock_roi'] ?? 0.005),
+            'min_step' => (float)($signal['trailing_min_step'] ?? 0.005),
+        ];
+
+        return $normalized;
+    }
+
+    /**
+     * Resolve entry price reference from signal.
+     * Checks structured entry block first, then flat fields.
+     *
+     * @return float Entry price reference (0.0 if not available)
+     */
+    private function resolveEntryPriceReference(array $signal): float
+    {
+        // Structured entry block
+        $entry = $signal['entry'] ?? [];
+        if (is_array($entry) && !empty($entry['price']) && (float)$entry['price'] > 0) {
+            return (float)$entry['price'];
+        }
+
+        // Flat entry_price field
+        if (!empty($signal['entry_price']) && (float)$signal['entry_price'] > 0) {
+            return (float)$signal['entry_price'];
+        }
+
+        // Compute from entry zone midpoint
+        $entryZoneLow = (float)($signal['entry_zone_low'] ?? 0);
+        $entryZoneHigh = (float)($signal['entry_zone_high'] ?? 0);
+        if ($entryZoneLow > 0 && $entryZoneHigh > 0) {
+            return round(($entryZoneLow + $entryZoneHigh) / 2, 8);
+        }
+
+        return 0.0;
     }
 
     /**

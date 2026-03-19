@@ -218,12 +218,24 @@ final class RiskEngine
                 $stopLoss = round($corridorWidth * $stopLossRange, 6);
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
 
+                $entryZoneLow = (float)($monitor['entry_zone_low'] ?? 0);
+                $entryZoneHigh = (float)($monitor['entry_zone_high'] ?? 0);
+                $entryPriceRef = ($entryZoneLow > 0 && $entryZoneHigh > 0)
+                    ? round(($entryZoneLow + $entryZoneHigh) / 2, 8) : 0.0;
+                $corridorLow = $monitor['corridor_low'] ?? null;
+                $corridorHigh = $monitor['corridor_high'] ?? null;
+                $patternAlgorithm = (string)($monitor['pattern_algorithm'] ?? 'none');
+                $signalId = $this->buildSignalId($symbol, $side, $patternAlgorithm, 'bootstrap',
+                    (string)$corridorLow, (string)$corridorHigh, (string)$entryZoneLow, (string)$entryZoneHigh);
+
                 $signals[] = array_merge([
+                    'id' => $signalId,
+                    'schema_version' => 'clean_signal_v1',
                     'symbol' => $symbol,
-                    'entry_zone_low' => $monitor['entry_zone_low'] ?? null,
-                    'entry_zone_high' => $monitor['entry_zone_high'] ?? null,
-                    'corridor_low' => $monitor['corridor_low'] ?? null,
-                    'corridor_high' => $monitor['corridor_high'] ?? null,
+                    'entry_zone_low' => $entryZoneLow > 0 ? $entryZoneLow : null,
+                    'entry_zone_high' => $entryZoneHigh > 0 ? $entryZoneHigh : null,
+                    'corridor_low' => $corridorLow,
+                    'corridor_high' => $corridorHigh,
                     'corridor_width' => $corridorWidth,
                     'leverage' => $leverage,
                     'leverage_reason' => $leverageReason,
@@ -234,7 +246,7 @@ final class RiskEngine
                     'signal_mode' => 'bootstrap',
                     'trend_bias' => (string)($monitor['trend_bias'] ?? ''),
                     'side' => $side,
-                    'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
+                    'pattern_algorithm' => $patternAlgorithm,
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                     'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
@@ -243,6 +255,24 @@ final class RiskEngine
                     'leverage_mode' => $leverageMode,
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
+                    'risk' => [
+                        'leverage' => $leverage,
+                        'budget' => $budget,
+                        'stop_loss' => $stopLoss,
+                        'take_profit' => $takeProfit,
+                        'trailing' => [
+                            'enabled' => $exitPolicy['trailing_enabled'] ?? false,
+                            'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.02,
+                            'min_lock_roi' => $exitPolicy['trailing_min_lock_roi'] ?? 0.005,
+                            'min_step' => $exitPolicy['trailing_min_step'] ?? 0.005,
+                        ],
+                    ],
+                    'entry' => [
+                        'entry_zone_low' => $entryZoneLow > 0 ? $entryZoneLow : null,
+                        'entry_zone_high' => $entryZoneHigh > 0 ? $entryZoneHigh : null,
+                        'price' => $entryPriceRef,
+                    ],
+                    'created_ts' => time(),
                 ], $exitPolicy);
                 $bootstrapCount++;
                 $this->signalModeCounters['bootstrap_signals_count']++;
@@ -279,12 +309,24 @@ final class RiskEngine
                 // Calculate take_profit: corridor_width × take_profit_roi
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
 
+                $entryZoneLow = (float)($monitor['entry_zone_low'] ?? 0);
+                $entryZoneHigh = (float)($monitor['entry_zone_high'] ?? 0);
+                $entryPriceRef = ($entryZoneLow > 0 && $entryZoneHigh > 0)
+                    ? round(($entryZoneLow + $entryZoneHigh) / 2, 8) : 0.0;
+                $corridorLow = $monitor['corridor_low'] ?? null;
+                $corridorHigh = $monitor['corridor_high'] ?? null;
+                $patternAlgorithm = (string)($monitor['pattern_algorithm'] ?? 'none');
+                $signalId = $this->buildSignalId($symbol, $side, $patternAlgorithm, 'normal',
+                    (string)$corridorLow, (string)$corridorHigh, (string)$entryZoneLow, (string)$entryZoneHigh);
+
                 $signals[] = array_merge([
+                    'id' => $signalId,
+                    'schema_version' => 'clean_signal_v1',
                     'symbol' => $symbol,
-                    'entry_zone_low' => $monitor['entry_zone_low'] ?? null,
-                    'entry_zone_high' => $monitor['entry_zone_high'] ?? null,
-                    'corridor_low' => $monitor['corridor_low'] ?? null,
-                    'corridor_high' => $monitor['corridor_high'] ?? null,
+                    'entry_zone_low' => $entryZoneLow > 0 ? $entryZoneLow : null,
+                    'entry_zone_high' => $entryZoneHigh > 0 ? $entryZoneHigh : null,
+                    'corridor_low' => $corridorLow,
+                    'corridor_high' => $corridorHigh,
                     'corridor_width' => $corridorWidth,
                     'leverage' => $leverage,
                     'leverage_reason' => $leverageReason,
@@ -295,7 +337,7 @@ final class RiskEngine
                     'signal_mode' => 'normal',
                     'trend_bias' => (string)($monitor['trend_bias'] ?? ''),
                     'side' => $side,
-                    'pattern_algorithm' => (string)($monitor['pattern_algorithm'] ?? 'none'),
+                    'pattern_algorithm' => $patternAlgorithm,
                     'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0.0),
                     'trend_match_score' => (float)($monitor['trend_match_score'] ?? 0.0),
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
@@ -304,6 +346,24 @@ final class RiskEngine
                     'leverage_mode' => $leverageMode,
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
+                    'risk' => [
+                        'leverage' => $leverage,
+                        'budget' => $budget,
+                        'stop_loss' => $stopLoss,
+                        'take_profit' => $takeProfit,
+                        'trailing' => [
+                            'enabled' => $exitPolicy['trailing_enabled'] ?? false,
+                            'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.02,
+                            'min_lock_roi' => $exitPolicy['trailing_min_lock_roi'] ?? 0.005,
+                            'min_step' => $exitPolicy['trailing_min_step'] ?? 0.005,
+                        ],
+                    ],
+                    'entry' => [
+                        'entry_zone_low' => $entryZoneLow > 0 ? $entryZoneLow : null,
+                        'entry_zone_high' => $entryZoneHigh > 0 ? $entryZoneHigh : null,
+                        'price' => $entryPriceRef,
+                    ],
+                    'created_ts' => time(),
                 ], $exitPolicy);
                 $this->signalModeCounters['normal_signals_count']++;
             }
@@ -350,6 +410,28 @@ final class RiskEngine
         if (count($this->debugLines) < 200) {
             $this->debugLines[] = $symbol . ' rejected: ' . $reason;
         }
+    }
+
+    /**
+     * Build a deterministic signal ID from stable signal fields.
+     *
+     * @return string Deterministic signal ID (prefixed with 'sig_')
+     */
+    private function buildSignalId(
+        string $symbol,
+        string $side,
+        string $patternAlgorithm,
+        string $signalMode,
+        string $corridorLow,
+        string $corridorHigh,
+        string $entryZoneLow,
+        string $entryZoneHigh
+    ): string {
+        $hashInput = implode('|', [
+            $symbol, $side, $patternAlgorithm, $signalMode,
+            $corridorLow, $corridorHigh, $entryZoneLow, $entryZoneHigh,
+        ]);
+        return 'sig_' . substr(md5($hashInput), 0, 16);
     }
 
     /**

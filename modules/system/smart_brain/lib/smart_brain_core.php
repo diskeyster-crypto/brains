@@ -713,9 +713,20 @@ final class SmartBrainCore
 
         // P0.4: FINAL DEFENSIVE GUARD — sanitize all intents before writing.
         // Ensure no scalar take_profit can ever reach live_intents.json.
+        // Also enforce trailing mode compatibility: when trailing contract covers exit,
+        // remove take_profit entirely to avoid broken hybrid exit contracts.
         foreach ($intents as &$intentRef) {
-            if (isset($intentRef['risk']['take_profit']) && !is_array($intentRef['risk']['take_profit'])) {
-                unset($intentRef['risk']['take_profit']);
+            if (isset($intentRef['risk']['take_profit'])) {
+                // Remove any non-array take_profit (scalar, int, string, null)
+                if (!is_array($intentRef['risk']['take_profit'])) {
+                    unset($intentRef['risk']['take_profit']);
+                }
+                // When trailing_tp mode or trailing enabled, remove take_profit entirely
+                $exitMode = $intentRef['risk']['trailing']['exit_mode'] ?? '';
+                $trailingOn = !empty($intentRef['risk']['trailing']['enabled']);
+                if ($exitMode === 'trailing_tp' || $trailingOn) {
+                    unset($intentRef['risk']['take_profit']);
+                }
             }
         }
         unset($intentRef);
@@ -779,22 +790,23 @@ final class SmartBrainCore
         // Prefer structured risk block if present and non-empty
         $risk = $signal['risk'] ?? [];
         if (is_array($risk) && !empty($risk) && !empty($risk['leverage'])) {
-            // P0: Defensive guard — take_profit must be a valid array or absent.
-            // Remove any scalar, null, or invalid take_profit from the risk block.
+            // P0: Defensive guard — take_profit must be a valid structured array or absent.
+            // Scalar take_profit is NEVER allowed in the outgoing risk block.
             if (array_key_exists('take_profit', $risk)) {
                 $tp = $risk['take_profit'];
                 if (is_array($tp) && !empty($tp)) {
                     // Valid structured take_profit — keep it
-                } elseif (is_numeric($tp) && (float)$tp > 0) {
-                    // Scalar ratio leaked in — convert to structured format
-                    $risk['take_profit'] = [
-                        'enabled' => true,
-                        'roi_pct' => round((float)$tp * 100, 4),
-                    ];
                 } else {
-                    // null, zero, empty array, or invalid — remove entirely
+                    // Scalar, null, zero, empty array, or any invalid value — remove entirely.
+                    // Do NOT convert scalar to structured: prefer omission.
                     unset($risk['take_profit']);
                 }
+            }
+            // P0 Part 3: Trailing mode compatibility — when trailing contract covers exit,
+            // remove take_profit to avoid broken hybrid exit contract.
+            $trailingBlock = $risk['trailing'] ?? [];
+            if (is_array($trailingBlock) && !empty($trailingBlock['enabled'])) {
+                unset($risk['take_profit']);
             }
             return $risk;
         }
@@ -812,18 +824,13 @@ final class SmartBrainCore
             'stop_loss' => (float)($signal['stop_loss'] ?? 0),
         ];
 
-        // P0: take_profit must be structured or absent — never scalar
-        // Check both legacy 'take_profit' and renamed 'take_profit_ratio' flat fields
+        // P0: take_profit — only include if already a valid structured array.
+        // Scalar take_profit is NEVER allowed. Prefer omission.
         $rawTp = $signal['take_profit'] ?? $signal['take_profit_ratio'] ?? null;
         if (is_array($rawTp) && !empty($rawTp)) {
             $normalized['take_profit'] = $rawTp;
-        } elseif (is_numeric($rawTp) && (float)$rawTp > 0) {
-            $normalized['take_profit'] = [
-                'enabled' => true,
-                'roi_pct' => round((float)$rawTp * 100, 4),
-            ];
         }
-        // else: omit take_profit entirely (optional field)
+        // else: omit take_profit entirely — scalar values are never converted
 
         // Build trailing sub-block from flat exit policy fields
         $trailingEnabled = (bool)($signal['trailing_enabled'] ?? false);
@@ -833,6 +840,11 @@ final class SmartBrainCore
             'min_lock_roi' => (float)($signal['trailing_min_lock_roi'] ?? 0.008),
             'min_step' => (float)($signal['trailing_min_step'] ?? 0.005),
         ];
+
+        // P0 Part 3: When trailing covers exit, remove take_profit to avoid hybrid.
+        if ($trailingEnabled) {
+            unset($normalized['take_profit']);
+        }
 
         return $normalized;
     }
@@ -893,19 +905,14 @@ final class SmartBrainCore
         // G. take_profit: use ONLY from normalized risk block (never from flat signal field).
         //    normalizeRiskBlock() already ensures take_profit is structured or absent.
         //    Do NOT read $signal['take_profit'] as it may be a scalar ratio.
+        //    If scalar somehow survived normalizeRiskBlock — remove it entirely (never convert).
         $rawTakeProfit = $risk['take_profit'] ?? null;
         $takeProfitBlock = null;
         if (is_array($rawTakeProfit) && !empty($rawTakeProfit)) {
             // Already structured — pass through
             $takeProfitBlock = $rawTakeProfit;
-        } elseif (is_numeric($rawTakeProfit) && (float)$rawTakeProfit > 0) {
-            // Safety net: scalar somehow survived normalizeRiskBlock — convert
-            $takeProfitBlock = [
-                'enabled' => true,
-                'roi_pct' => round((float)$rawTakeProfit * 100, 4),
-            ];
         }
-        // If null/zero/missing → omit take_profit entirely (it's optional in bot validator)
+        // Scalar or any other non-array value → omit take_profit entirely
 
         // Build the complete bot-ready risk block
         $botReady = [
@@ -921,11 +928,6 @@ final class SmartBrainCore
             'stop_loss' => (float)($risk['stop_loss'] ?? 0),
             'budget' => round($budget, 2),
         ];
-
-        // Only include take_profit if structured and valid
-        if (is_array($takeProfitBlock) && !empty($takeProfitBlock)) {
-            $botReady['take_profit'] = $takeProfitBlock;
-        }
 
         // Trailing block: merge Brain trailing into bot-expected format
         $trailing = $risk['trailing'] ?? [];
@@ -952,6 +954,20 @@ final class SmartBrainCore
                 'break_even_activation_roi' => 0.015,
                 'exit_mode' => 'trailing_tp',
             ];
+        }
+
+        // P0 Part 3: Trailing mode compatibility — when exit_mode is trailing_tp
+        // or trailing is enabled, do NOT include direct take_profit.
+        // One valid exit contract, not a broken hybrid.
+        $exitMode = $botReady['trailing']['exit_mode'] ?? '';
+        $trailingEnabled = !empty($botReady['trailing']['enabled']);
+        if ($exitMode === 'trailing_tp' || $trailingEnabled) {
+            $takeProfitBlock = null;
+        }
+
+        // Only include take_profit if structured, valid, and not suppressed by trailing mode
+        if (is_array($takeProfitBlock) && !empty($takeProfitBlock)) {
+            $botReady['take_profit'] = $takeProfitBlock;
         }
 
         return $botReady;

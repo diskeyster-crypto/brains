@@ -259,8 +259,8 @@ final class RiskEngine
                         'leverage' => $leverage,
                         'budget' => $budget,
                         'stop_loss' => $stopLoss,
-                        // P0: take_profit must be structured array or absent — never scalar
-                        'take_profit' => ($takeProfit > 0) ? ['enabled' => true, 'roi_pct' => round($takeProfit * 100, 4)] : null,
+                        // P0: Omit take_profit entirely when trailing covers exit.
+                        // When trailing is NOT active, emit structured format or null — never scalar.
                         'trailing' => [
                             'enabled' => $exitPolicy['trailing_enabled'] ?? false,
                             'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.03,
@@ -351,8 +351,8 @@ final class RiskEngine
                         'leverage' => $leverage,
                         'budget' => $budget,
                         'stop_loss' => $stopLoss,
-                        // P0: take_profit must be structured array or absent — never scalar
-                        'take_profit' => ($takeProfit > 0) ? ['enabled' => true, 'roi_pct' => round($takeProfit * 100, 4)] : null,
+                        // P0: Omit take_profit entirely when trailing covers exit.
+                        // When trailing is NOT active, emit structured format or null — never scalar.
                         'trailing' => [
                             'enabled' => $exitPolicy['trailing_enabled'] ?? false,
                             'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.03,

@@ -131,11 +131,12 @@ $filteredResults = array_values($filteredResults);
                     <th>Symbol</th>
                     <th>Side</th>
                     <th>State</th>
+                    <th>Stage</th>
                     <th>Result</th>
                     <th>Reason</th>
+                    <th>Exch?</th>
                     <th>Protection</th>
                     <th>Trailing</th>
-                    <th>Processed</th>
                     <th>Details</th>
                 </tr>
             </thead>
@@ -168,13 +169,17 @@ $filteredResults = array_values($filteredResults);
                         </span>
                     </td>
                     <td><span class="badge bg-<?= $stateBadge ?>"><?= htmlspecialchars($irState) ?></span></td>
+                    <td class="small"><?= htmlspecialchars($ir['execution_stage'] ?? '-') ?></td>
                     <td class="small"><?= htmlspecialchars($ir['execution_result'] ?? '') ?></td>
                     <td class="small text-danger">
                         <?= htmlspecialchars($ir['rejection_reason'] ?? $ir['close_reason'] ?? $ir['debug_message'] ?? '') ?>
+                        <?php if (!empty($ir['missing_fields_preview'])): ?>
+                        <br><small class="text-warning">[<?= htmlspecialchars(implode(', ', $ir['missing_fields_preview'])) ?>]</small>
+                        <?php endif; ?>
                     </td>
+                    <td class="small text-center"><?= !empty($ir['exchange_submit_attempted']) ? '<span class="text-info">✓</span>' : '<span class="text-muted">✗</span>' ?></td>
                     <td class="small"><?= htmlspecialchars($ir['protection_status'] ?? '-') ?></td>
                     <td class="small"><?= htmlspecialchars($ir['trailing_status'] ?? '-') ?></td>
-                    <td class="small text-muted"><?= htmlspecialchars($ir['processed_at'] ?? '') ?></td>
                     <td>
                         <button class="btn btn-sm btn-outline-light"
                                 data-json="<?= htmlspecialchars(json_encode($ir, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8') ?>"

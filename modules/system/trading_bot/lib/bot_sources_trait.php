@@ -1066,6 +1066,15 @@ trait BotSourcesTrait
             'trailing_status' => $trailingStatus,
             'source_status' => $intent['source'] ?? 'brain_live_intent',
             'debug_message' => $execResult['error'] ?? null,
+            // P0.1: Execution stage audit - exact stage where chain stopped
+            'execution_stage' => $execResult['execution_stage'] ?? 'unknown',
+            // P0.3: Exchange submit visibility per intent
+            'exchange_submit_attempted' => (bool)($execResult['exchange_submit_attempted'] ?? false),
+            'exchange_response_code' => $execResult['exchange_response_code'] ?? null,
+            'exchange_response_message' => $execResult['exchange_response_message'] ?? null,
+            // P0.6: Validation rejection detail
+            'validation_error_summary' => $execResult['validation_error_summary'] ?? null,
+            'missing_fields_preview' => $execResult['missing_fields_preview'] ?? [],
         ];
 
         if ($lifecycleState === 'rejected') {

@@ -94,6 +94,111 @@ $effectiveTrailingContract = is_array($lastRunBot['effective_trailing_contract']
     <?php endif; ?>
 </div>
 
+<!-- P0.3: Execution Audit — Exchange Submit Visibility -->
+<?php
+$exchSubmitAttempted = (int)($lastRunBot['exchange_submit_attempted_count'] ?? 0);
+$exchSubmitFailed = (int)($lastRunBot['exchange_submit_failed_count'] ?? 0);
+$exchSubmitSuccess = (int)($lastRunBot['exchange_submit_success_count'] ?? 0);
+$posOpenConfirmed = (int)($lastRunBot['position_open_confirmed_count'] ?? 0);
+$protApplyFailed = (int)($lastRunBot['protection_apply_failed_count'] ?? 0);
+$execGuardBlocked = (int)($lastRunBot['execution_guard_blocked_count'] ?? 0);
+$executableAfterDedupe = (int)($lastRunBot['executable_after_dedupe'] ?? 0);
+$latestExchErrCode = $lastRunBot['latest_exchange_error_code'] ?? null;
+$latestExchErrMsg = (string)($lastRunBot['latest_exchange_error_message'] ?? '');
+$lastFailedSym = (string)($lastRunBot['last_failed_symbol'] ?? '');
+$lastFailedStg = (string)($lastRunBot['last_failed_stage'] ?? '');
+$approvedLoaded = (int)($lastRunBot['approved_intents_loaded'] ?? 0);
+$dupSkipped = (int)($lastRunBot['duplicate_skipped'] ?? 0);
+$intentsRejected = (int)($lastRunBot['intents_rejected'] ?? 0);
+$intentsRejectedExec = (int)($lastRunBot['intents_rejected_exec'] ?? 0);
+$noOrderPreview = is_array($lastRunBot['no_order_path_preview'] ?? null) ? $lastRunBot['no_order_path_preview'] : [];
+?>
+<?php if ($approvedLoaded > 0 || $exchSubmitAttempted > 0 || $latestExchErrCode !== null): ?>
+<div class="card mb-4" style="border-color: <?= $exchSubmitAttempted > 0 && $exchSubmitSuccess === 0 ? '#dc3545' : ($exchSubmitSuccess > 0 ? '#198754' : '#6c757d') ?>;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard-check me-2"></i>Execution Audit — Exchange Submit Visibility</span>
+        <?php if ($exchSubmitSuccess > 0): ?>
+            <span class="badge bg-success">Orders Placed</span>
+        <?php elseif ($exchSubmitAttempted > 0): ?>
+            <span class="badge bg-danger">Submit Failed</span>
+        <?php elseif ($approvedLoaded > 0): ?>
+            <span class="badge bg-warning text-dark">No Exchange Submit</span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 text-center" style="font-size: 0.85rem;">
+            <div class="col">
+                <small class="text-muted d-block">Loaded</small>
+                <strong><?= $approvedLoaded ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Duplicates</small>
+                <strong class="text-secondary"><?= $dupSkipped ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">After Dedupe</small>
+                <strong><?= $executableAfterDedupe ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Guard Blocked</small>
+                <strong class="text-warning"><?= $execGuardBlocked ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Exch. Attempted</small>
+                <strong class="text-info"><?= $exchSubmitAttempted ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Exch. Success</small>
+                <strong class="text-success"><?= $exchSubmitSuccess ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Exch. Failed</small>
+                <strong class="text-danger"><?= $exchSubmitFailed ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Protection Fail</small>
+                <strong class="text-danger"><?= $protApplyFailed ?></strong>
+            </div>
+        </div>
+        <?php if ($latestExchErrCode !== null || $latestExchErrMsg !== ''): ?>
+        <div class="alert alert-danger py-1 px-2 mb-2" style="font-size: 0.80rem;">
+            <i class="bi bi-exclamation-octagon me-1"></i>
+            <strong>Latest Exchange Error:</strong>
+            <?php if ($latestExchErrCode !== null): ?>
+                code=<code><?= htmlspecialchars((string)$latestExchErrCode) ?></code>
+            <?php endif; ?>
+            <?php if ($latestExchErrMsg !== ''): ?>
+                — <?= htmlspecialchars($latestExchErrMsg) ?>
+            <?php endif; ?>
+            <?php if ($lastFailedSym !== ''): ?>
+                (<?= htmlspecialchars($lastFailedSym) ?> @ <?= htmlspecialchars($lastFailedStg) ?>)
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($noOrderPreview)): ?>
+        <details style="font-size: 0.80rem;">
+            <summary class="text-warning mb-1"><i class="bi bi-bug me-1"></i>No-Order Debug Preview (<?= count($noOrderPreview) ?> intents)</summary>
+            <table class="table table-sm table-dark mb-0" style="font-size: 0.78rem;">
+                <thead><tr><th>Symbol</th><th>Intent ID</th><th>Outcome</th><th>Stage</th><th>Reason</th><th>Exch?</th></tr></thead>
+                <tbody>
+                <?php foreach ($noOrderPreview as $nop): ?>
+                <tr>
+                    <td><?= htmlspecialchars((string)($nop['symbol'] ?? '')) ?></td>
+                    <td><code style="font-size:0.70rem;"><?= htmlspecialchars(substr((string)($nop['intent_id'] ?? ''), 0, 20)) ?></code></td>
+                    <td><span class="badge bg-<?= ($nop['final_outcome'] ?? '') === 'rejected' ? 'danger' : 'warning' ?>"><?= htmlspecialchars((string)($nop['final_outcome'] ?? '')) ?></span></td>
+                    <td><?= htmlspecialchars((string)($nop['execution_stage'] ?? '')) ?></td>
+                    <td><?= htmlspecialchars(substr((string)($nop['main_reason'] ?? ''), 0, 50)) ?></td>
+                    <td><?= !empty($nop['exchange_attempted']) ? '✓' : '✗' ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 
 <!-- Active Positions (Exchange) -->
 <?php

@@ -678,6 +678,95 @@ final class TradingBotService
             }
 
             // ============================================================
+            // P0.3: Exchange submit visibility counters
+            // Derived from finalized intent_results (single source of truth).
+            // ============================================================
+            $exchangeSubmitAttempted = 0;
+            $exchangeSubmitFailed = 0;
+            $exchangeSubmitSuccess = 0;
+            $positionOpenConfirmed = 0;
+            $protectionApplyFailed = 0;
+            $latestExchangeErrorCode = null;
+            $latestExchangeErrorMessage = null;
+            $lastFailedSymbol = null;
+            $lastFailedStage = null;
+            $executionGuardBlockedCount = 0;
+            $executionStageStats = [];
+            $noOrderPathPreview = [];
+
+            foreach ($result['intent_results'] as $ir) {
+                // Exchange submit tracking
+                if (!empty($ir['exchange_submit_attempted'])) {
+                    $exchangeSubmitAttempted++;
+                    $ls = $ir['lifecycle_state'] ?? '';
+                    if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
+                        $exchangeSubmitSuccess++;
+                    } elseif (in_array($ls, ['rejected', 'failed'], true)) {
+                        $exchangeSubmitFailed++;
+                    }
+                }
+
+                // Position open confirmed
+                $stage = $ir['execution_stage'] ?? '';
+                if (in_array($stage, ['position_open_confirmed', 'protection_apply_started', 'finished'], true)) {
+                    $positionOpenConfirmed++;
+                }
+                if ($stage === 'protection_apply_failed') {
+                    $protectionApplyFailed++;
+                }
+                if ($stage === 'execution_guard_blocked') {
+                    $executionGuardBlockedCount++;
+                }
+
+                // Execution stage stats
+                if ($stage !== '') {
+                    $executionStageStats[$stage] = ($executionStageStats[$stage] ?? 0) + 1;
+                }
+
+                // P0.4: Latest exchange error (last encountered)
+                if ($ir['exchange_response_code'] !== null || $ir['exchange_response_message'] !== null) {
+                    $latestExchangeErrorCode = $ir['exchange_response_code'];
+                    $latestExchangeErrorMessage = $ir['exchange_response_message'];
+                    $lastFailedSymbol = $ir['symbol'] ?? null;
+                    $lastFailedStage = $stage;
+                }
+
+                // P0.9: No-order-path debug preview (first 5 not-opened intents)
+                $ls = $ir['lifecycle_state'] ?? '';
+                if (!in_array($ls, ['opened', 'protected', 'trailing_active'], true) && count($noOrderPathPreview) < 5) {
+                    $noOrderPathPreview[] = [
+                        'symbol' => $ir['symbol'] ?? '',
+                        'intent_id' => $ir['intent_id'] ?? null,
+                        'final_outcome' => $ls,
+                        'execution_stage' => $stage,
+                        'main_reason' => $ir['rejection_reason'] ?? ($ir['debug_message'] ?? ''),
+                        'exchange_attempted' => !empty($ir['exchange_submit_attempted']),
+                    ];
+                }
+            }
+
+            // P0.5: executable_after_dedupe = loaded - duplicate_skipped
+            $result['executable_after_dedupe'] = max(0, ($result['approved_intents_loaded'] ?? 0) - ($result['duplicate_skipped'] ?? 0));
+
+            // P0.3: Exchange submit visibility
+            $result['exchange_submit_attempted_count'] = $exchangeSubmitAttempted;
+            $result['exchange_submit_failed_count'] = $exchangeSubmitFailed;
+            $result['exchange_submit_success_count'] = $exchangeSubmitSuccess;
+            $result['position_open_confirmed_count'] = $positionOpenConfirmed;
+            $result['protection_apply_failed_count'] = $protectionApplyFailed;
+            $result['execution_guard_blocked_count'] = $executionGuardBlockedCount;
+            $result['execution_stage_stats'] = $executionStageStats;
+
+            // P0.4: Latest exchange error visibility in runtime
+            $result['latest_exchange_error_code'] = $latestExchangeErrorCode;
+            $result['latest_exchange_error_message'] = $latestExchangeErrorMessage;
+            $result['last_failed_symbol'] = $lastFailedSymbol;
+            $result['last_failed_stage'] = $lastFailedStage;
+
+            // P0.9: No-order-path debug preview
+            $result['no_order_path_preview'] = $noOrderPathPreview;
+
+            // ============================================================
             // Active protection summary (normalized detection).
             // trailing_active is a stronger sub-state of protected:
             //   protected_positions_count includes trailing_active trades.

@@ -78,6 +78,12 @@ trait BotExecutorTrait
             'trade_id' => null,
             'status' => 'pending',
             'error' => null,
+            // P0.1: Execution stage audit — tracks exactly where the chain stopped
+            'execution_stage' => 'source_loaded',
+            // P0.3: Exchange submit visibility
+            'exchange_submit_attempted' => false,
+            'exchange_response_code' => null,
+            'exchange_response_message' => null,
         ];        $signalId = $intent['signal_id'] ?? ($intent['id'] ?? 'unknown');
         $symbol = (string)($intent['symbol'] ?? '');
         $side = (string)($intent['side'] ?? '');
@@ -146,19 +152,29 @@ trait BotExecutorTrait
             // ============================================================
             // Step 1: Validate intent + risk
             // ============================================================
+            $result['execution_stage'] = 'validation_started';
             $intentValidation = $this->validator->validateIntent($intent);
             if (!$intentValidation['valid']) {
+                $result['execution_stage'] = 'validation_rejected';
+                // P0.6: Include missing/invalid fields preview for debugging
+                $result['validation_error_summary'] = $intentValidation['reason'] ?? 'unknown';
+                $result['missing_fields_preview'] = $intentValidation['missing_fields'] ?? [];
+                $result['invalid_fields_preview'] = $intentValidation['invalid_fields'] ?? [];
                 return $this->rejectIntent($intent, 'rejected_validation', $intentValidation['reason'], $result);
             }
             
             $riskValidation = $this->riskEngine->validateRisk($risk);
             if (!$riskValidation['valid']) {
+                $result['execution_stage'] = 'validation_rejected';
+                $result['validation_error_summary'] = $riskValidation['reason'] ?? 'unknown';
+                $result['missing_fields_preview'] = $riskValidation['missing_fields'] ?? [];
                 return $this->rejectIntent($intent, 'rejected_validation', $riskValidation['reason'], $result);
             }
             
             // ============================================================
             // Step 2: P3 Exchange Guard - check for orphan positions
             // ============================================================
+            $result['execution_stage'] = 'execution_guard_check';
             $activeTrades = $this->store->loadActiveTrades();
             $localSymbols = array_map(function($t) { return $t['symbol'] ?? ''; }, $activeTrades);
             
@@ -172,6 +188,7 @@ trait BotExecutorTrait
                         // Position exists on exchange for this symbol
                         if (!in_array($symbol, $localSymbols, true)) {
                             // Not in local trades - this is an ORPHAN position
+                            $result['execution_stage'] = 'execution_guard_blocked';
                             return $this->rejectIntent($intent, 'rejected_orphan_exchange_position_exists', 
                                 "Orphan position on exchange for {$symbol}", $result, [
                                     'exchange_position' => [
@@ -186,6 +203,7 @@ trait BotExecutorTrait
                                 ]);
                         } else {
                             // Symbol is already being tracked - reject as busy
+                            $result['execution_stage'] = 'execution_guard_blocked';
                             return $this->rejectIntent($intent, 'rejected_limits', 
                                 "symbol_busy:{$symbol}", $result);
                         }
@@ -220,6 +238,7 @@ trait BotExecutorTrait
                 $brainOnePerSymbol = (bool)($brainLimits['live_one_trade_per_symbol'] ?? true);
 
                 if ($brainMaxPositions > 0 && count($effectiveActiveTrades) >= $brainMaxPositions) {
+                    $result['execution_stage'] = 'execution_guard_blocked';
                     return $this->rejectIntent($intent, 'rejected_live_max_positions_reached',
                         "Brain limit: max {$brainMaxPositions} positions reached (current: " . count($effectiveActiveTrades) . ")", $result, [
                             'effective_live_max_positions' => $brainMaxPositions,
@@ -229,6 +248,7 @@ trait BotExecutorTrait
                 }
 
                 if ($brainOnePerSymbol && in_array($symbol, $effectiveOpenSymbols, true)) {
+                    $result['execution_stage'] = 'execution_guard_blocked';
                     return $this->rejectIntent($intent, 'rejected_live_one_trade_per_symbol',
                         "Brain limit: one trade per symbol — {$symbol} already open", $result, [
                             'effective_live_one_trade_per_symbol' => true,
@@ -240,6 +260,7 @@ trait BotExecutorTrait
 
             $limitsCheck = $this->riskEngine->checkLimits($risk, count($effectiveActiveTrades), $effectiveOpenSymbols, $symbol);
             if (!$limitsCheck['allowed']) {
+                $result['execution_stage'] = 'execution_guard_blocked';
                 return $this->rejectIntent($intent, 'rejected_limits', $limitsCheck['reason'], $result);
             }
             
@@ -365,10 +386,12 @@ trait BotExecutorTrait
             // ============================================================
             // Step 4b: Set leverage - LIVE only
             // ============================================================
+            $result['execution_stage'] = 'exchange_prepare_started';
             if ($mode === 'live') {
                 $leverage = (int)($risk['leverage'] ?? 1);
                 $leverageResult = $this->setLeverageOnExchange($symbol, $leverage);
                 if (!$leverageResult['success']) {
+                    $result['execution_stage'] = 'exchange_prepare_failed';
                     // Provide full context for UI explainability (no SSH needed)
                     $ctx = [
                         'leverage_requested' => $leverage,
@@ -376,9 +399,11 @@ trait BotExecutorTrait
                     ];
                     if (isset($leverageResult['ret_code'])) {
                         $ctx['leverage_ret_code'] = $leverageResult['ret_code'];
+                        $result['exchange_response_code'] = $leverageResult['ret_code'];
                     }
                     if (isset($leverageResult['ret_msg'])) {
                         $ctx['leverage_ret_msg'] = $leverageResult['ret_msg'];
+                        $result['exchange_response_message'] = $leverageResult['ret_msg'];
                     }
                     if (isset($leverageResult['response'])) {
                         $ctx['leverage_response'] = $leverageResult['response'];
@@ -425,27 +450,36 @@ trait BotExecutorTrait
             // ============================================================
             // Step 5: Submit market order
             // ============================================================
+            $result['execution_stage'] = 'exchange_submit_started';
             $orderLinkId = 'tb_' . substr($signalId, 0, 32);
             $order = $this->buildOrder($intent, $positionSize, $risk, $orderLinkId);
             
             if ($mode === 'live') {
+                $result['exchange_submit_attempted'] = true;
                 $orderResult = $this->submitOrder($order);
             } else {
+                $result['exchange_submit_attempted'] = true;
                 $orderResult = $this->simulateOrder($order);
             }
             
             if (!$orderResult['ok']) {
+                $result['execution_stage'] = 'exchange_submit_failed';
+                // P0.4: Capture exchange error details for runtime visibility
+                $result['exchange_response_code'] = $orderResult['ret_code'] ?? ($orderResult['response']['retCode'] ?? null);
+                $result['exchange_response_message'] = $orderResult['error'] ?? ($orderResult['response']['retMsg'] ?? null);
                 return $this->rejectIntent($intent, 'rejected_order_failed', $orderResult['error'] ?? 'unknown', $result);
             }
             
             $result['order_id'] = $orderResult['order_id'] ?? null;
             $result['opened'] = true;
             $result['filled'] = $orderResult['filled'] ?? false;
+            $result['execution_stage'] = 'order_submitted';
             
             // ============================================================
             // Step 6: Post-open reconcile (LIVE only)
             // ============================================================
             if ($mode === 'live') {
+                $result['execution_stage'] = 'position_open_confirmed';
                 $positionData = $this->fetchOpenPosition($symbol, $side);
                 
                 if ($positionData === null || !$this->isValidPositionData($positionData)) {
@@ -465,10 +499,12 @@ trait BotExecutorTrait
                 // ============================================================
                 // Step 7: Calculate protection
                 // ============================================================
+                $result['execution_stage'] = 'protection_apply_started';
                 $sl = $this->riskEngine->calculateStopLossFromLiq($risk, $entryAvg, $liqPrice, $side);
                 
                 if ($sl === null) {
                     // Cannot calculate SL - fail-safe close
+                    $result['execution_stage'] = 'protection_apply_failed';
                     $this->performFailSafeClose($intent, $symbol, $side, $actualQty, 'sl_calculation_failed', [
                         'order_result' => $orderResult,
                         'position_data' => $positionData,
@@ -512,6 +548,7 @@ trait BotExecutorTrait
                 
                 if (!$tradingStopResult['success']) {
                     // P6: SL failed to set - fail-safe close
+                    $result['execution_stage'] = 'protection_apply_failed';
                     $this->performFailSafeClose($intent, $symbol, $side, $actualQty, 'sl_set_failed', [
                         'order_result' => $orderResult,
                         'position_data' => $positionData,
@@ -530,6 +567,7 @@ trait BotExecutorTrait
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_protected';
                 $result['ok'] = true;
+                $result['execution_stage'] = 'finished';
                 
                 $executionKey = $this->getExecutionIdentityKey($intent);
                 $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
@@ -543,6 +581,7 @@ trait BotExecutorTrait
                 
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_dry';
+                $result['execution_stage'] = 'finished';
                 
                 $executionKey = $this->getExecutionIdentityKey($intent);
                 $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';

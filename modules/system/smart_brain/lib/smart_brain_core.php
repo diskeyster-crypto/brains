@@ -1169,6 +1169,24 @@ final class SmartBrainCore
             'source_status' => null,
             'source_error_message' => null,
             'bot_last_updated_at' => null,
+            // P0.3: Exchange submit visibility
+            'executable_after_dedupe' => null,
+            'exchange_submit_attempted_count' => null,
+            'exchange_submit_failed_count' => null,
+            'exchange_submit_success_count' => null,
+            'position_open_confirmed_count' => null,
+            'protection_apply_failed_count' => null,
+            'execution_guard_blocked_count' => null,
+            // P0.4: Latest exchange error
+            'latest_exchange_error_code' => null,
+            'latest_exchange_error_message' => null,
+            'last_failed_symbol' => null,
+            'last_failed_stage' => null,
+            // P0.8: Top blocker reason
+            'top_rejection_reason' => null,
+            'top_execution_block_reason' => null,
+            // P0.9: No-order-path debug preview
+            'no_order_path_preview' => [],
         ];
 
         try {
@@ -1214,6 +1232,52 @@ final class SmartBrainCore
             $mirror['source_status'] = (string)($botData['source_status'] ?? 'unknown');
             $mirror['source_error_message'] = (string)($botData['source_error_message'] ?? '');
             $mirror['bot_last_updated_at'] = (string)($botData['timestamp'] ?? $botData['updated_at'] ?? '');
+
+            // P0.3: Exchange submit visibility
+            $mirror['executable_after_dedupe'] = (int)($botData['executable_after_dedupe'] ?? 0);
+            $mirror['exchange_submit_attempted_count'] = (int)($botData['exchange_submit_attempted_count'] ?? 0);
+            $mirror['exchange_submit_failed_count'] = (int)($botData['exchange_submit_failed_count'] ?? 0);
+            $mirror['exchange_submit_success_count'] = (int)($botData['exchange_submit_success_count'] ?? 0);
+            $mirror['position_open_confirmed_count'] = (int)($botData['position_open_confirmed_count'] ?? 0);
+            $mirror['protection_apply_failed_count'] = (int)($botData['protection_apply_failed_count'] ?? 0);
+            $mirror['execution_guard_blocked_count'] = (int)($botData['execution_guard_blocked_count'] ?? 0);
+
+            // P0.4: Latest exchange error
+            $mirror['latest_exchange_error_code'] = $botData['latest_exchange_error_code'] ?? null;
+            $mirror['latest_exchange_error_message'] = (string)($botData['latest_exchange_error_message'] ?? '');
+            $mirror['last_failed_symbol'] = (string)($botData['last_failed_symbol'] ?? '');
+            $mirror['last_failed_stage'] = (string)($botData['last_failed_stage'] ?? '');
+
+            // P0.8: Top blocker reasons
+            $rejStats = (array)($botData['rejection_reason_stats'] ?? []);
+            $topRejection = '';
+            $topRejCount = 0;
+            foreach ($rejStats as $reason => $cnt) {
+                if ((int)$cnt > $topRejCount) {
+                    $topRejection = (string)$reason;
+                    $topRejCount = (int)$cnt;
+                }
+            }
+            $mirror['top_rejection_reason'] = $topRejection !== '' ? $topRejection : null;
+
+            // Determine top execution block reason from execution_stage_stats
+            $stageStats = (array)($botData['execution_stage_stats'] ?? []);
+            $blockReasons = ['validation_rejected', 'execution_guard_blocked', 'exchange_prepare_failed', 'exchange_submit_failed', 'protection_apply_failed'];
+            $topBlockReason = '';
+            $topBlockCount = 0;
+            foreach ($blockReasons as $blockStage) {
+                $cnt = (int)($stageStats[$blockStage] ?? 0);
+                if ($cnt > $topBlockCount) {
+                    $topBlockReason = $blockStage;
+                    $topBlockCount = $cnt;
+                }
+            }
+            $mirror['top_execution_block_reason'] = $topBlockReason !== '' ? $topBlockReason : null;
+
+            // P0.9: No-order-path debug preview
+            $mirror['no_order_path_preview'] = is_array($botData['no_order_path_preview'] ?? null)
+                ? array_slice($botData['no_order_path_preview'], 0, 5)
+                : [];
 
         } catch (\Throwable $e) {
             $mirror['error'] = 'exception: ' . $e->getMessage();

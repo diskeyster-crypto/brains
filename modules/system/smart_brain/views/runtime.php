@@ -191,6 +191,10 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <span class="text-secondary"><?= (int)($botMirror['duplicate_skipped'] ?? 0) ?></span>
                 </div>
                 <div class="col-md-2 mb-2">
+                    <strong>After Dedupe:</strong>
+                    <span class="text-primary"><?= (int)($botMirror['executable_after_dedupe'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
                     <strong>Opened:</strong>
                     <span class="text-success"><?= (int)($botMirror['intents_opened'] ?? 0) ?></span>
                 </div>
@@ -199,18 +203,61 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <span class="text-danger"><?= (int)($botMirror['intents_rejected'] ?? 0) ?></span>
                 </div>
                 <div class="col-md-2 mb-2">
-                    <strong>Failed:</strong>
+                    <strong>Failed / Deferred:</strong>
                     <span class="text-danger"><?= (int)($botMirror['intents_failed'] ?? 0) ?></span>
+                    <span class="text-warning"> / <?= (int)($botMirror['intents_deferred'] ?? 0) ?></span>
                 </div>
-                <div class="col-md-2 mb-2">
-                    <strong>Deferred:</strong>
-                    <span class="text-warning"><?= (int)($botMirror['intents_deferred'] ?? 0) ?></span>
+            </div>
+            <!-- P0.3: Exchange Submit Visibility -->
+            <div class="row mb-2" style="font-size: 0.85rem;">
+                <div class="col-md-2 mb-1">
+                    <strong>Guard Blocked:</strong>
+                    <span class="text-warning"><?= (int)($botMirror['execution_guard_blocked_count'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <strong>Exch. Attempted:</strong>
+                    <span class="text-info"><?= (int)($botMirror['exchange_submit_attempted_count'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <strong>Exch. Success:</strong>
+                    <span class="text-success"><?= (int)($botMirror['exchange_submit_success_count'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <strong>Exch. Failed:</strong>
+                    <span class="text-danger"><?= (int)($botMirror['exchange_submit_failed_count'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <strong>Protection Fail:</strong>
+                    <span class="text-danger"><?= (int)($botMirror['protection_apply_failed_count'] ?? 0) ?></span>
                 </div>
             </div>
             <?php
                 $botRejReasons = (array)($botMirror['rejection_reason_stats'] ?? []);
                 $botSourceError = (string)($botMirror['source_error_message'] ?? '');
+                $botTopBlocker = (string)($botMirror['top_rejection_reason'] ?? '');
+                $botTopExecBlock = (string)($botMirror['top_execution_block_reason'] ?? '');
+                $botExchErrCode = $botMirror['latest_exchange_error_code'] ?? null;
+                $botExchErrMsg = (string)($botMirror['latest_exchange_error_message'] ?? '');
+                $botNoOrderPreview = is_array($botMirror['no_order_path_preview'] ?? null) ? $botMirror['no_order_path_preview'] : [];
             ?>
+            <?php if ($botTopBlocker !== '' || $botTopExecBlock !== ''): ?>
+            <div class="mb-2 small">
+                <?php if ($botTopBlocker !== ''): ?>
+                <span class="badge bg-danger bg-opacity-25 text-danger me-1"><i class="bi bi-exclamation-triangle me-1"></i>Top Blocker: <?= htmlspecialchars($botTopBlocker) ?></span>
+                <?php endif; ?>
+                <?php if ($botTopExecBlock !== ''): ?>
+                <span class="badge bg-warning bg-opacity-25 text-warning me-1"><i class="bi bi-shield-exclamation me-1"></i>Guard: <?= htmlspecialchars($botTopExecBlock) ?></span>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($botExchErrCode !== null || $botExchErrMsg !== ''): ?>
+            <div class="mb-2 small text-danger">
+                <i class="bi bi-exclamation-octagon me-1"></i>
+                <strong>Latest Exchange Error:</strong>
+                <?= $botExchErrCode !== null ? 'code=' . htmlspecialchars((string)$botExchErrCode) : '' ?>
+                <?= $botExchErrMsg !== '' ? ' — ' . htmlspecialchars($botExchErrMsg) : '' ?>
+            </div>
+            <?php endif; ?>
             <?php if (!empty($botRejReasons)): ?>
             <div class="mb-2 small">
                 <strong class="text-danger">Rejection Reasons:</strong>
@@ -221,6 +268,14 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             <?php endif; ?>
             <?php if ($botSourceError !== ''): ?>
             <div class="text-danger small mb-2"><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($botSourceError) ?></div>
+            <?php endif; ?>
+            <?php if (!empty($botNoOrderPreview)): ?>
+            <details class="mb-2" style="font-size: 0.78rem;">
+                <summary class="text-warning"><i class="bi bi-bug me-1"></i>No-Order Debug Preview (<?= count($botNoOrderPreview) ?> intents)</summary>
+                <?php foreach ($botNoOrderPreview as $nop): ?>
+                <div class="ps-3 text-muted"><?= htmlspecialchars((string)($nop['symbol'] ?? '')) ?> → <span class="text-danger"><?= htmlspecialchars((string)($nop['final_outcome'] ?? '')) ?></span> @ <?= htmlspecialchars((string)($nop['execution_stage'] ?? '')) ?> — <?= htmlspecialchars(substr((string)($nop['main_reason'] ?? ''), 0, 60)) ?> <?= !empty($nop['exchange_attempted']) ? '(exch: ✓)' : '(exch: ✗)' ?></div>
+                <?php endforeach; ?>
+            </details>
             <?php endif; ?>
             <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
             <div class="text-secondary mb-2" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>

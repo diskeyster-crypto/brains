@@ -624,7 +624,7 @@ final class TradingBotService
                 $tradesBySymbolSide[$key] = $t;
             }
             foreach ($result['intent_results'] as &$ir) {
-                if (in_array($ir['lifecycle_state'], ['opened', 'protected'], true)) {
+                if (in_array($ir['lifecycle_state'] ?? '', ['opened', 'protected'], true)) {
                     $key = ($ir['symbol'] ?? '') . '_' . strtolower($ir['side'] ?? '');
                     if (isset($tradesBySymbolSide[$key])) {
                         $trade = $tradesBySymbolSide[$key];

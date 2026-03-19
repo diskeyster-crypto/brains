@@ -711,6 +711,15 @@ final class SmartBrainCore
         }
         $result['rejection_reason_stats'] = $reasonStats;
 
+        // P0.4: FINAL DEFENSIVE GUARD — sanitize all intents before writing.
+        // Ensure no scalar take_profit can ever reach live_intents.json.
+        foreach ($intents as &$intentRef) {
+            if (isset($intentRef['risk']['take_profit']) && !is_array($intentRef['risk']['take_profit'])) {
+                unset($intentRef['risk']['take_profit']);
+            }
+        }
+        unset($intentRef);
+
         // Write live_intents.json
         $payload = [
             'schema_version' => 'live_intents_v1',
@@ -770,15 +779,20 @@ final class SmartBrainCore
         // Prefer structured risk block if present and non-empty
         $risk = $signal['risk'] ?? [];
         if (is_array($risk) && !empty($risk) && !empty($risk['leverage'])) {
-            // P0: Defensive guard — if take_profit leaked in as scalar, convert or remove it
-            if (isset($risk['take_profit']) && !is_array($risk['take_profit'])) {
-                $raw = $risk['take_profit'];
-                if (is_numeric($raw) && (float)$raw > 0) {
+            // P0: Defensive guard — take_profit must be a valid array or absent.
+            // Remove any scalar, null, or invalid take_profit from the risk block.
+            if (array_key_exists('take_profit', $risk)) {
+                $tp = $risk['take_profit'];
+                if (is_array($tp) && !empty($tp)) {
+                    // Valid structured take_profit — keep it
+                } elseif (is_numeric($tp) && (float)$tp > 0) {
+                    // Scalar ratio leaked in — convert to structured format
                     $risk['take_profit'] = [
                         'enabled' => true,
-                        'roi_pct' => round((float)$raw * 100, 4),
+                        'roi_pct' => round((float)$tp * 100, 4),
                     ];
                 } else {
+                    // null, zero, empty array, or invalid — remove entirely
                     unset($risk['take_profit']);
                 }
             }
@@ -799,14 +813,15 @@ final class SmartBrainCore
         ];
 
         // P0: take_profit must be structured or absent — never scalar
-        $rawTp = $signal['take_profit'] ?? null;
-        if (is_numeric($rawTp) && (float)$rawTp > 0) {
+        // Check both legacy 'take_profit' and renamed 'take_profit_ratio' flat fields
+        $rawTp = $signal['take_profit'] ?? $signal['take_profit_ratio'] ?? null;
+        if (is_array($rawTp) && !empty($rawTp)) {
+            $normalized['take_profit'] = $rawTp;
+        } elseif (is_numeric($rawTp) && (float)$rawTp > 0) {
             $normalized['take_profit'] = [
                 'enabled' => true,
                 'roi_pct' => round((float)$rawTp * 100, 4),
             ];
-        } elseif (is_array($rawTp) && !empty($rawTp)) {
-            $normalized['take_profit'] = $rawTp;
         }
         // else: omit take_profit entirely (optional field)
 
@@ -875,16 +890,16 @@ final class SmartBrainCore
         // F. profile_id: active profile key
         $profileId = (string)($risk['profile_id'] ?? $profileKey);
 
-        // G. take_profit: convert Brain scalar ratio to bot-expected structured array
-        //    Brain risk.take_profit is a corridor-based ratio (e.g. 0.028 = 2.8% ROI).
-        //    Bot validator expects: array with {enabled: bool, roi_pct: float} or absent.
-        $rawTakeProfit = $risk['take_profit'] ?? $signal['take_profit'] ?? null;
+        // G. take_profit: use ONLY from normalized risk block (never from flat signal field).
+        //    normalizeRiskBlock() already ensures take_profit is structured or absent.
+        //    Do NOT read $signal['take_profit'] as it may be a scalar ratio.
+        $rawTakeProfit = $risk['take_profit'] ?? null;
         $takeProfitBlock = null;
-        if (is_array($rawTakeProfit)) {
+        if (is_array($rawTakeProfit) && !empty($rawTakeProfit)) {
             // Already structured — pass through
             $takeProfitBlock = $rawTakeProfit;
         } elseif (is_numeric($rawTakeProfit) && (float)$rawTakeProfit > 0) {
-            // Scalar ratio → convert to structured format (ratio × 100 → roi_pct)
+            // Safety net: scalar somehow survived normalizeRiskBlock — convert
             $takeProfitBlock = [
                 'enabled' => true,
                 'roi_pct' => round((float)$rawTakeProfit * 100, 4),

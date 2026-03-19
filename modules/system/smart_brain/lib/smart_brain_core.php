@@ -470,14 +470,31 @@ final class SmartBrainCore
         }
 
         $intents = [];
-        $signalsList = $signals['signals'] ?? [];
-        if (!is_array($signalsList)) {
+
+        // Extract signal list from both supported container shapes:
+        // A. Wrapped: ['signals' => [signal1, signal2, ...]]
+        // B. Plain list: [signal1, signal2, ...]
+        // Previous logic used $signals['signals'] ?? [] which returns []
+        // for plain arrays (numeric keys), and [] is_array so fallback never ran.
+        if (is_array($signals) && isset($signals['signals']) && is_array($signals['signals'])) {
+            $signalsList = $signals['signals'];
+        } elseif (is_array($signals)) {
             $signalsList = $signals;
+        } else {
+            $signalsList = [];
         }
 
         $result['signals_seen'] = count($signalsList);
 
         foreach ($signalsList as $signal) {
+            // Defensive: skip non-array entries
+            if (!is_array($signal)) {
+                $result['signals_processed']++;
+                $this->rejectLiveSignal($result, '', '', 'invalid_signal_payload', $selectionMode);
+                $result['live_invalid_payload_count']++;
+                continue;
+            }
+
             $result['signals_processed']++;
             $symbol = (string)($signal['symbol'] ?? '');
             $signalIdSource = 'original';

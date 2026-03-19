@@ -373,8 +373,10 @@ final class SmartBrainCore
             'live_trading_enabled' => $liveConfig['live_trading_enabled'],
             'brain_controlled_live_mode' => (bool)($liveConfig['live_trading_enabled'] ?? false),
             'live_signal_selection_mode' => $liveConfig['live_signal_selection_mode'],
+            'live_signals_processed' => $liveIntentResult['signals_processed'],
             'live_candidates_approved_count' => $liveIntentResult['approved_count'],
             'live_candidates_rejected_count' => $liveIntentResult['rejected_count'],
+            'live_missing_id_fallback_used' => $liveIntentResult['fallback_id_used'],
             'live_rejection_reasons' => $liveIntentResult['rejection_reasons'],
             'live_intents_created_count' => $liveIntentResult['intents_created'],
             'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
@@ -402,7 +404,7 @@ final class SmartBrainCore
      * @param array  $signals    Approved signals from RiskEngine
      * @param array  $liveConfig Effective live trading config from buildLiveConfig()
      * @param array  $userLimits User limits from config
-     * @return array{approved_count:int,rejected_count:int,rejection_reasons:array,intents_created:int,intents_written:int,approvals:array}
+     * @return array{approved_count:int,rejected_count:int,rejection_reasons:array,intents_created:int,intents_written:int,approvals:array,signals_processed:int,fallback_id_used:int}
      */
     private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits): array
     {
@@ -413,6 +415,8 @@ final class SmartBrainCore
             'intents_created' => 0,
             'intents_written' => 0,
             'approvals' => [],
+            'signals_processed' => 0,
+            'fallback_id_used' => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -448,10 +452,28 @@ final class SmartBrainCore
         }
 
         foreach ($signalsList as $signal) {
+            $result['signals_processed']++;
             $symbol = (string)($signal['symbol'] ?? '');
-            $signalId = (string)($signal['id'] ?? '');
-            if ($symbol === '' || $signalId === '') {
+            $signalIdSource = 'original';
+
+            // Reject signals with missing symbol — cannot proceed without it
+            if ($symbol === '') {
+                $result['rejected_count']++;
+                $result['rejection_reasons'][] = [
+                    'symbol' => '',
+                    'signal_id' => '',
+                    'reason' => 'missing_symbol',
+                    'selection_mode' => $selectionMode,
+                ];
                 continue;
+            }
+
+            // Handle missing signal ID: generate deterministic fallback
+            $signalId = (string)($signal['id'] ?? '');
+            if ($signalId === '') {
+                $signalId = $this->buildDeterministicSignalId($signal);
+                $signalIdSource = 'generated_fallback';
+                $result['fallback_id_used']++;
             }
 
             // Apply live signal selection mode
@@ -534,6 +556,7 @@ final class SmartBrainCore
                 'schema_version' => 'live_intent_v1',
                 'intent_id' => 'li_' . $signalId . '_' . substr(md5($signalId . $symbol . $side . $entryPolicy), 0, 8),
                 'signal_id' => $signalId,
+                'signal_id_source' => $signalIdSource,
                 'symbol' => $symbol,
                 'side' => $side,
                 'entry_action' => $entryPolicy,
@@ -566,7 +589,7 @@ final class SmartBrainCore
             }
 
             $intents[] = $intent;
-            $result['approvals'][] = ['symbol' => $symbol, 'signal_id' => $signalId, 'reason' => $approvalReason];
+            $result['approvals'][] = ['symbol' => $symbol, 'signal_id' => $signalId, 'signal_id_source' => $signalIdSource, 'reason' => $approvalReason];
         }
 
         $result['intents_created'] = count($intents);
@@ -588,6 +611,32 @@ final class SmartBrainCore
         }
 
         return $result;
+    }
+
+    /**
+     * Build a deterministic signal ID from stable signal fields.
+     *
+     * Used when signal['id'] is missing. The generated ID is stable:
+     * the same signal payload produces the same fallback ID across runs.
+     *
+     * @param array<string,mixed> $signal Signal data
+     * @return string Deterministic fallback signal ID (prefixed with 'fb_')
+     */
+    private function buildDeterministicSignalId(array $signal): string
+    {
+        $parts = [
+            'symbol' => (string)($signal['symbol'] ?? ''),
+            'side' => (string)($signal['side'] ?? ''),
+            'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+            'signal_mode' => (string)($signal['signal_mode'] ?? ''),
+            'corridor_low' => (string)($signal['corridor_low'] ?? ''),
+            'corridor_high' => (string)($signal['corridor_high'] ?? ''),
+            'entry_zone_low' => (string)($signal['entry_zone_low'] ?? ''),
+            'entry_zone_high' => (string)($signal['entry_zone_high'] ?? ''),
+        ];
+
+        $hashInput = implode('|', $parts);
+        return 'fb_' . substr(md5($hashInput), 0, 16);
     }
 
     /**

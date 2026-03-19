@@ -471,12 +471,12 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         </div>
                         <div class="mb-3">
                             <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI</label>
-                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_activation_roi" name="trailing_activation_roi" value="<?= $v('trailing_activation_roi', '0.02') ?>">
+                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_activation_roi" name="trailing_activation_roi" value="<?= $v('trailing_activation_roi', '0.03') ?>">
                             <small class="text-secondary">ROI threshold to activate trailing (>= 0)</small>
                         </div>
                         <div class="mb-3">
                             <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI</label>
-                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_min_lock_roi" name="trailing_min_lock_roi" value="<?= $v('trailing_min_lock_roi', '0.005') ?>">
+                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_min_lock_roi" name="trailing_min_lock_roi" value="<?= $v('trailing_min_lock_roi', '0.008') ?>">
                             <small class="text-secondary">Minimum ROI to lock when trailing (>= 0)</small>
                         </div>
                         <div class="mb-3">
@@ -510,7 +510,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         </div>
                         <div class="mb-3">
                             <label for="break_even_activation_roi" class="form-label">Break-Even Activation ROI</label>
-                            <input type="number" step="0.001" min="0" class="form-control" id="break_even_activation_roi" name="break_even_activation_roi" value="<?= $v('break_even_activation_roi', '0.01') ?>">
+                            <input type="number" step="0.001" min="0" class="form-control" id="break_even_activation_roi" name="break_even_activation_roi" value="<?= $v('break_even_activation_roi', '0.015') ?>">
                             <small class="text-secondary">ROI to activate break-even (>= 0)</small>
                         </div>
                     </div>

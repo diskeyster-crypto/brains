@@ -195,6 +195,14 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <span class="text-primary"><?= (int)($botMirror['executable_after_dedupe'] ?? 0) ?></span>
                 </div>
                 <div class="col-md-2 mb-2">
+                    <strong>Busy Skipped:</strong>
+                    <span class="text-warning"><?= (int)($botMirror['busy_skipped'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <strong>After Busy:</strong>
+                    <span class="text-primary"><?= (int)($botMirror['executable_after_busy'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
                     <strong>Opened:</strong>
                     <span class="text-success"><?= (int)($botMirror['intents_opened'] ?? 0) ?></span>
                 </div>
@@ -277,8 +285,29 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <?php endforeach; ?>
             </details>
             <?php endif; ?>
+            <!-- Active Protection State (Live Audit) -->
+            <?php
+                $rtActivePosCount = (int)($botMirror['active_positions_count'] ?? 0);
+                $rtProtPosCount = (int)($botMirror['protected_positions_count'] ?? 0);
+                $rtTrailActCount = (int)($botMirror['trailing_active_count'] ?? 0);
+                $rtBeArmedCount = (int)($botMirror['break_even_armed_count'] ?? 0);
+                $rtBeAppliedCount = (int)($botMirror['break_even_applied_count'] ?? 0);
+                $rtProtErrCount = (int)($botMirror['protection_errors_count'] ?? 0);
+            ?>
+            <?php if ($rtActivePosCount > 0): ?>
+            <div class="mb-2 small">
+                <strong><i class="bi bi-shield-check me-1"></i>Active Protection State:</strong>
+                <div class="row mt-1">
+                    <div class="col-md-2"><small class="text-secondary">Positions</small><br><strong class="text-info"><?= $rtActivePosCount ?></strong></div>
+                    <div class="col-md-2"><small class="text-secondary">Protected</small><br><strong class="text-success"><?= $rtProtPosCount ?></strong></div>
+                    <div class="col-md-2"><small class="text-secondary">Trailing Active</small><br><strong class="text-primary"><?= $rtTrailActCount ?></strong></div>
+                    <div class="col-md-2"><small class="text-secondary">BE Armed</small><br><strong class="text-warning"><?= $rtBeArmedCount ?></strong></div>
+                    <div class="col-md-2"><small class="text-secondary">BE Applied</small><br><strong class="text-success"><?= $rtBeAppliedCount ?></strong></div>
+                    <div class="col-md-2"><small class="text-secondary">Prot. Errors</small><br><strong class="text-danger"><?= $rtProtErrCount ?></strong></div>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
-            <div class="text-secondary mb-2" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>
             <?php endif; ?>
             <div>
                 <a href="/admin/trading_bot" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>Trading Bot Dashboard</a>

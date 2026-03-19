@@ -11,7 +11,7 @@ return [
                 'max_leverage' => 5,
                 'stop_loss_range' => 0.35,
                 'slippage_bps' => 20,
-                'trailing_activate_roi' => 0.03,
+                'trailing_activate_roi' => 0.04,
                 'take_profit_roi' => 0.85,
             ],
         ],

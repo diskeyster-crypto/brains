@@ -934,25 +934,31 @@ final class SmartBrainCore
         if (is_array($trailing) && !empty($trailing)) {
             $botReady['trailing'] = [
                 'enabled' => (bool)($trailing['enabled'] ?? false),
-                'activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0.03),
+                'activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0.04),
                 'drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0.5),
-                'min_step' => (float)($trailing['min_step'] ?? 0.005),
-                'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.008),
+                'min_step' => (float)($trailing['min_step'] ?? 0.0075),
+                'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.01),
                 'break_even_enabled' => (bool)($trailing['break_even_enabled'] ?? false),
-                'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0.015),
+                'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0.02),
                 'exit_mode' => (string)($trailing['exit_mode'] ?? 'trailing_tp'),
+                'fixed_take_profit_roi' => (float)($trailing['fixed_take_profit_roi'] ?? 0.03),
+                'hybrid_tp_share' => (float)($trailing['hybrid_tp_share'] ?? 0.40),
+                'brain_trailing_applied' => true,
             ];
         } else {
             // Default trailing block (disabled)
             $botReady['trailing'] = [
                 'enabled' => false,
-                'activation_roi_pct' => 0.03,
+                'activation_roi_pct' => 0.04,
                 'drawdown_factor' => 0.5,
-                'min_step' => 0.005,
-                'min_lock_roi' => 0.008,
+                'min_step' => 0.0075,
+                'min_lock_roi' => 0.01,
                 'break_even_enabled' => false,
-                'break_even_activation_roi' => 0.015,
+                'break_even_activation_roi' => 0.02,
                 'exit_mode' => 'trailing_tp',
+                'fixed_take_profit_roi' => 0.03,
+                'hybrid_tp_share' => 0.40,
+                'brain_trailing_applied' => false,
             ];
         }
 
@@ -1253,6 +1259,8 @@ final class SmartBrainCore
             'bot_last_updated_at' => null,
             // P0.3: Exchange submit visibility
             'executable_after_dedupe' => null,
+            'busy_skipped' => null,
+            'executable_after_busy' => null,
             'exchange_submit_attempted_count' => null,
             'exchange_submit_failed_count' => null,
             'exchange_submit_success_count' => null,
@@ -1269,6 +1277,13 @@ final class SmartBrainCore
             'top_execution_block_reason' => null,
             // P0.9: No-order-path debug preview
             'no_order_path_preview' => [],
+            // Active protection state mirror
+            'active_positions_count' => 0,
+            'protected_positions_count' => 0,
+            'trailing_active_count' => 0,
+            'break_even_armed_count' => 0,
+            'break_even_applied_count' => 0,
+            'protection_errors_count' => 0,
         ];
 
         try {
@@ -1317,6 +1332,8 @@ final class SmartBrainCore
 
             // P0.3: Exchange submit visibility
             $mirror['executable_after_dedupe'] = (int)($botData['executable_after_dedupe'] ?? 0);
+            $mirror['busy_skipped'] = (int)($botData['busy_skipped'] ?? 0);
+            $mirror['executable_after_busy'] = (int)($botData['executable_after_busy'] ?? 0);
             $mirror['exchange_submit_attempted_count'] = (int)($botData['exchange_submit_attempted_count'] ?? 0);
             $mirror['exchange_submit_failed_count'] = (int)($botData['exchange_submit_failed_count'] ?? 0);
             $mirror['exchange_submit_success_count'] = (int)($botData['exchange_submit_success_count'] ?? 0);
@@ -1355,6 +1372,15 @@ final class SmartBrainCore
                 }
             }
             $mirror['top_execution_block_reason'] = $topBlockReason !== '' ? $topBlockReason : null;
+
+            // Active protection state mirror (Part 6/8 — live audit)
+            $activeProtSummary = is_array($botData['active_protection_summary'] ?? null) ? $botData['active_protection_summary'] : [];
+            $mirror['active_positions_count'] = (int)($activeProtSummary['active_positions_count'] ?? 0);
+            $mirror['protected_positions_count'] = (int)($activeProtSummary['protected_positions_count'] ?? 0);
+            $mirror['trailing_active_count'] = (int)($activeProtSummary['trailing_active_count'] ?? 0);
+            $mirror['break_even_armed_count'] = (int)($activeProtSummary['break_even_armed_count'] ?? 0);
+            $mirror['break_even_applied_count'] = (int)($activeProtSummary['break_even_applied_count'] ?? 0);
+            $mirror['protection_errors_count'] = (int)($activeProtSummary['protection_errors_count'] ?? 0);
 
             // P0.9: No-order-path debug preview
             $mirror['no_order_path_preview'] = is_array($botData['no_order_path_preview'] ?? null)

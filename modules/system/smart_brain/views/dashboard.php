@@ -204,6 +204,10 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                     <strong class="text-secondary"><?= (int)($botMirror['duplicate_skipped'] ?? 0) ?></strong>
                 </div>
                 <div class="col-md-1">
+                    <small class="text-secondary d-block">Busy</small>
+                    <strong class="text-warning"><?= (int)($botMirror['busy_skipped'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-1">
                     <small class="text-secondary d-block">Exch. Try</small>
                     <strong class="text-info"><?= (int)($botMirror['exchange_submit_attempted_count'] ?? 0) ?></strong>
                 </div>
@@ -266,6 +270,30 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <div class="ps-3 text-muted"><?= htmlspecialchars((string)($nop['symbol'] ?? '')) ?> → <span class="text-danger"><?= htmlspecialchars((string)($nop['final_outcome'] ?? '')) ?></span> @ <?= htmlspecialchars((string)($nop['execution_stage'] ?? '')) ?> — <?= htmlspecialchars(substr((string)($nop['main_reason'] ?? ''), 0, 60)) ?> <?= !empty($nop['exchange_attempted']) ? '(exch: ✓)' : '(exch: ✗)' ?></div>
                 <?php endforeach; ?>
             </details>
+            <?php endif; ?>
+            <!-- Active Protection State -->
+            <?php
+                $activePosCount = (int)($botMirror['active_positions_count'] ?? 0);
+                $protPosCount = (int)($botMirror['protected_positions_count'] ?? 0);
+                $trailActCount = (int)($botMirror['trailing_active_count'] ?? 0);
+                $beArmedCount = (int)($botMirror['break_even_armed_count'] ?? 0);
+                $beAppliedCount = (int)($botMirror['break_even_applied_count'] ?? 0);
+                $protErrCount = (int)($botMirror['protection_errors_count'] ?? 0);
+            ?>
+            <?php if ($activePosCount > 0): ?>
+            <div class="mt-2 small">
+                <strong><i class="bi bi-shield-check me-1"></i>Protection State:</strong>
+                <span class="badge bg-info bg-opacity-25 text-info me-1">Active: <?= $activePosCount ?></span>
+                <span class="badge bg-success bg-opacity-25 text-success me-1">Protected: <?= $protPosCount ?></span>
+                <span class="badge bg-primary bg-opacity-25 text-primary me-1">Trailing: <?= $trailActCount ?></span>
+                <span class="badge bg-warning bg-opacity-25 text-warning me-1">BE Armed: <?= $beArmedCount ?></span>
+                <?php if ($beAppliedCount > 0): ?>
+                <span class="badge bg-success bg-opacity-25 text-success me-1">BE Applied: <?= $beAppliedCount ?></span>
+                <?php endif; ?>
+                <?php if ($protErrCount > 0): ?>
+                <span class="badge bg-danger bg-opacity-25 text-danger me-1">Errors: <?= $protErrCount ?></span>
+                <?php endif; ?>
+            </div>
             <?php endif; ?>
             <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
             <div class="mt-1 text-secondary" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>

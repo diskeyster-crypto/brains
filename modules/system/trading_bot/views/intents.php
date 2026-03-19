@@ -173,6 +173,15 @@ $filteredResults = array_values($filteredResults);
                     <td class="small"><?= htmlspecialchars($ir['execution_result'] ?? '') ?></td>
                     <td class="small text-danger">
                         <?= htmlspecialchars($ir['rejection_reason'] ?? $ir['close_reason'] ?? $ir['debug_message'] ?? '') ?>
+                        <?php if (!empty($ir['blocked_symbol'])): ?>
+                        <br><small class="text-warning"><i class="bi bi-lock-fill"></i> blocked: <?= htmlspecialchars($ir['blocked_symbol']) ?></small>
+                        <?php endif; ?>
+                        <?php if (!empty($ir['related_active_trade_id'])): ?>
+                        <br><small class="text-info">trade: <?= htmlspecialchars(substr($ir['related_active_trade_id'], 0, 12)) ?></small>
+                        <?php endif; ?>
+                        <?php if (!empty($ir['open_since'])): ?>
+                        <br><small class="text-muted">since: <?= htmlspecialchars($ir['open_since']) ?></small>
+                        <?php endif; ?>
                         <?php if (!empty($ir['missing_fields_preview'])): ?>
                         <br><small class="text-warning">[<?= htmlspecialchars(implode(', ', $ir['missing_fields_preview'])) ?>]</small>
                         <?php endif; ?>

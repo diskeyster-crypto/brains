@@ -750,6 +750,15 @@ final class TradingBotService
             // P0.5: executable_after_dedupe = loaded - duplicate_skipped
             $result['executable_after_dedupe'] = max(0, ($result['approved_intents_loaded'] ?? 0) - ($result['duplicate_skipped'] ?? 0));
 
+            // P0.6: busy_skipped = count of symbol_busy + active_trade_exists + exchange_position_exists + max_positions_reached
+            $busyReasons = ['skipped_symbol_busy', 'skipped_active_trade_exists', 'skipped_exchange_position_exists', 'skipped_max_positions_reached'];
+            $busySkipped = 0;
+            foreach ($busyReasons as $br) {
+                $busySkipped += ($result['rejection_reason_stats'][$br] ?? 0);
+            }
+            $result['busy_skipped'] = $busySkipped;
+            $result['executable_after_busy'] = max(0, ($result['executable_after_dedupe'] ?? 0) - $busySkipped);
+
             // P0.3: Exchange submit visibility
             $result['exchange_submit_attempted_count'] = $exchangeSubmitAttempted;
             $result['exchange_submit_failed_count'] = $exchangeSubmitFailed;
@@ -777,9 +786,14 @@ final class TradingBotService
             $protectedCount = 0;
             $trailingActiveCount = 0;
             $protectionErrorsCount = 0;
+            $breakEvenArmedCount = 0;
+            $breakEvenAppliedCount = 0;
+            $activePositionProtectionDetails = [];
             foreach ($activeTrades as $t) {
                 $rt = is_array($t['runtime'] ?? null) ? $t['runtime'] : [];
                 $prot = is_array($t['protection'] ?? null) ? $t['protection'] : [];
+                $risk = is_array($t['risk'] ?? null) ? $t['risk'] : [];
+                $trailing = is_array($risk['trailing'] ?? null) ? $risk['trailing'] : [];
 
                 // Protected = SL price is set (either in protection block or from exchange)
                 if ((float)($prot['stop_loss_price'] ?? 0) > 0) {
@@ -787,9 +801,17 @@ final class TradingBotService
                 }
 
                 // Trailing active: normalized detection via helper
-                if ($this->isTrailingActive($t)) {
+                $isTrailingActive = $this->isTrailingActive($t);
+                if ($isTrailingActive) {
                     $trailingActiveCount++;
                 }
+
+                // Break-even detection
+                $beEnabled = (bool)($trailing['break_even_enabled'] ?? false);
+                $beArmed = (bool)($rt['break_even_armed'] ?? false);
+                $beApplied = (bool)($rt['break_even_applied'] ?? false);
+                if ($beArmed) $breakEvenArmedCount++;
+                if ($beApplied) $breakEvenAppliedCount++;
 
                 // Protection errors: SL repair attempted but failed
                 if (!empty($rt['sl_repair_attempted']) && empty($rt['sl_repair_result']['ok'])) {
@@ -799,13 +821,37 @@ final class TradingBotService
                 if (!empty($rt['dumb_trailing_last_error'])) {
                     $protectionErrorsCount++;
                 }
+
+                // Per-trade protection state detail (for audit)
+                $activePositionProtectionDetails[] = [
+                    'symbol' => $t['symbol'] ?? '',
+                    'side' => $t['side'] ?? '',
+                    'entry_price' => (float)($t['entry_price'] ?? 0),
+                    'stop_loss_applied' => (float)($prot['stop_loss_price'] ?? 0) > 0,
+                    'trailing_enabled' => (bool)($trailing['enabled'] ?? false),
+                    'trailing_active' => $isTrailingActive,
+                    'trailing_activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0),
+                    'trailing_drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0),
+                    'trailing_drawdown_factor_source' => (string)($trailing['drawdown_factor_source'] ?? 'unknown'),
+                    'break_even_enabled' => $beEnabled,
+                    'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0),
+                    'break_even_armed' => $beArmed,
+                    'break_even_applied' => $beApplied,
+                    'exit_mode' => (string)($trailing['exit_mode'] ?? ''),
+                    'best_roi_seen' => (float)($rt['best_roi_seen'] ?? 0),
+                    'effective_trailing_contract_source' => (string)($trailing['brain_trailing_applied'] ?? false ? 'brain_trailing_contract' : 'bot_local_config'),
+                    'open_since' => $t['opened_at'] ?? $t['created_at'] ?? null,
+                ];
             }
             $result['active_protection_summary'] = [
                 'active_positions_count' => count($activeTrades),
                 'protected_positions_count' => $protectedCount,
                 'trailing_active_count' => $trailingActiveCount,
+                'break_even_armed_count' => $breakEvenArmedCount,
+                'break_even_applied_count' => $breakEvenAppliedCount,
                 'protection_errors_count' => $protectionErrorsCount,
             ];
+            $result['active_position_protection_details'] = $activePositionProtectionDetails;
             
             // Step 6: Safety checks
             $safetyResult = $this->performSafetyChecks();

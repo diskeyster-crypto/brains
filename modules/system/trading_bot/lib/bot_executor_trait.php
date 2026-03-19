@@ -189,8 +189,9 @@ trait BotExecutorTrait
                         if (!in_array($symbol, $localSymbols, true)) {
                             // Not in local trades - this is an ORPHAN position
                             $result['execution_stage'] = 'execution_guard_blocked';
-                            return $this->rejectIntent($intent, 'rejected_orphan_exchange_position_exists', 
+                            return $this->rejectIntent($intent, 'skipped_exchange_position_exists', 
                                 "Orphan position on exchange for {$symbol}", $result, [
+                                    'blocked_symbol' => $symbol,
                                     'exchange_position' => [
                                         'symbol' => $exSymbol,
                                         'side' => $exPos['side'] ?? 'unknown',
@@ -204,8 +205,21 @@ trait BotExecutorTrait
                         } else {
                             // Symbol is already being tracked - reject as busy
                             $result['execution_stage'] = 'execution_guard_blocked';
-                            return $this->rejectIntent($intent, 'rejected_limits', 
-                                "symbol_busy:{$symbol}", $result);
+                            // Find the active trade for linkage
+                            $relatedTrade = null;
+                            foreach ($activeTrades as $at) {
+                                if (($at['symbol'] ?? '') === $symbol) {
+                                    $relatedTrade = $at;
+                                    break;
+                                }
+                            }
+                            return $this->rejectIntent($intent, 'skipped_symbol_busy', 
+                                "symbol_busy:{$symbol} — already has active exchange position and local trade", $result, [
+                                    'blocked_symbol' => $symbol,
+                                    'related_active_trade_id' => $relatedTrade['id'] ?? null,
+                                    'related_position_symbol' => $symbol,
+                                    'open_since' => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                ]);
                         }
                     }
                 }
@@ -239,7 +253,7 @@ trait BotExecutorTrait
 
                 if ($brainMaxPositions > 0 && count($effectiveActiveTrades) >= $brainMaxPositions) {
                     $result['execution_stage'] = 'execution_guard_blocked';
-                    return $this->rejectIntent($intent, 'rejected_live_max_positions_reached',
+                    return $this->rejectIntent($intent, 'skipped_max_positions_reached',
                         "Brain limit: max {$brainMaxPositions} positions reached (current: " . count($effectiveActiveTrades) . ")", $result, [
                             'effective_live_max_positions' => $brainMaxPositions,
                             'current_positions' => count($effectiveActiveTrades),
@@ -249,10 +263,21 @@ trait BotExecutorTrait
 
                 if ($brainOnePerSymbol && in_array($symbol, $effectiveOpenSymbols, true)) {
                     $result['execution_stage'] = 'execution_guard_blocked';
-                    return $this->rejectIntent($intent, 'rejected_live_one_trade_per_symbol',
+                    // Find related active trade for linkage
+                    $relatedTrade = null;
+                    foreach ($activeTrades as $at) {
+                        if (($at['symbol'] ?? '') === $symbol) {
+                            $relatedTrade = $at;
+                            break;
+                        }
+                    }
+                    return $this->rejectIntent($intent, 'skipped_active_trade_exists',
                         "Brain limit: one trade per symbol — {$symbol} already open", $result, [
                             'effective_live_one_trade_per_symbol' => true,
-                            'symbol' => $symbol,
+                            'blocked_symbol' => $symbol,
+                            'related_active_trade_id' => $relatedTrade['id'] ?? null,
+                            'related_position_symbol' => $symbol,
+                            'open_since' => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
                             'limits_controlled_by_brain' => true,
                         ]);
                 }

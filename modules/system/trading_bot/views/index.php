@@ -109,6 +109,8 @@ $lastFailedSym = (string)($lastRunBot['last_failed_symbol'] ?? '');
 $lastFailedStg = (string)($lastRunBot['last_failed_stage'] ?? '');
 $approvedLoaded = (int)($lastRunBot['approved_intents_loaded'] ?? 0);
 $dupSkipped = (int)($lastRunBot['duplicate_skipped'] ?? 0);
+$busySkipped = (int)($lastRunBot['busy_skipped'] ?? 0);
+$executableAfterBusy = (int)($lastRunBot['executable_after_busy'] ?? 0);
 $intentsRejected = (int)($lastRunBot['intents_rejected'] ?? 0);
 $intentsRejectedExec = (int)($lastRunBot['intents_rejected_exec'] ?? 0);
 $noOrderPreview = is_array($lastRunBot['no_order_path_preview'] ?? null) ? $lastRunBot['no_order_path_preview'] : [];
@@ -138,6 +140,14 @@ $noOrderPreview = is_array($lastRunBot['no_order_path_preview'] ?? null) ? $last
             <div class="col">
                 <small class="text-muted d-block">After Dedupe</small>
                 <strong><?= $executableAfterDedupe ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Busy Skipped</small>
+                <strong class="text-warning"><?= $busySkipped ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">After Busy</small>
+                <strong><?= $executableAfterBusy ?></strong>
             </div>
             <div class="col">
                 <small class="text-muted d-block">Guard Blocked</small>
@@ -493,6 +503,14 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                     <div class="col-6">
                         <div class="text-muted">Trailing Active</div>
                         <div class="fw-semibold text-info"><?= (int)($protSummary['trailing_active_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Break-Even Armed</div>
+                        <div class="fw-semibold text-warning"><?= (int)($protSummary['break_even_armed_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Break-Even Applied</div>
+                        <div class="fw-semibold text-success"><?= (int)($protSummary['break_even_applied_count'] ?? 0) ?></div>
                     </div>
                     <div class="col-6">
                         <div class="text-muted">Protection Errors</div>

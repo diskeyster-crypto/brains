@@ -388,6 +388,7 @@ final class SmartBrainCore
             'live_missing_risk_count' => $liveIntentResult['live_missing_risk_count'],
             'live_missing_entry_count' => $liveIntentResult['live_missing_entry_count'],
             'live_mode_filter_rejected_count' => $liveIntentResult['live_mode_filter_rejected_count'],
+            'live_invalid_risk_contract_count' => $liveIntentResult['live_invalid_risk_contract_count'],
             'live_debug_preview' => $liveIntentResult['live_debug_preview'],
             'effective_execution_limits' => [
                 'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
@@ -415,6 +416,10 @@ final class SmartBrainCore
      *
      * Every signal must end as approved or rejected — no silent skip.
      *
+     * P0 FIX: Builds full bot-ready risk contract with all mandatory execution fields
+     * (profile_id, budget_usdt_per_trade, stop_from_liq_range_pct, slippage_bps,
+     * fees_bps, order_type, limits) so Trading Bot validator accepts the intent.
+     *
      * @param array  $signals    Approved signals from RiskEngine
      * @param array  $liveConfig Effective live trading config from buildLiveConfig()
      * @param array  $userLimits User limits from config
@@ -439,6 +444,7 @@ final class SmartBrainCore
             'live_missing_risk_count' => 0,
             'live_missing_entry_count' => 0,
             'live_mode_filter_rejected_count' => 0,
+            'live_invalid_risk_contract_count' => 0,
             'live_debug_preview' => [],
         ];
 
@@ -604,7 +610,6 @@ final class SmartBrainCore
             }
 
             // === APPROVED: build bot-ready live intent ===
-            $result['approved_count']++;
 
             $sideOriginal = $side;
             if ($reverseEnabled && ($side === 'long' || $side === 'short')) {
@@ -612,6 +617,31 @@ final class SmartBrainCore
             }
 
             $trailing = $liveConfig['trailing_contract'] ?? [];
+
+            // P0 FIX: Build full bot-ready risk contract from Brain signal risk + config
+            $botReadyRisk = $this->buildBotReadyRiskBlock($risk, $signal, $liveConfig, $userLimits);
+
+            // P0.5: Validate bot-ready risk contract before writing
+            $contractValidation = $this->validateBotReadyRiskContract($botReadyRisk);
+            if (!$contractValidation['valid']) {
+                $this->rejectLiveSignal($result, $symbol, $signalId, $contractValidation['reason'], $selectionMode);
+                $result['live_invalid_risk_contract_count']++;
+                // Debug preview
+                if (count($result['live_debug_preview']) < 10) {
+                    $result['live_debug_preview'][] = [
+                        'symbol' => $symbol,
+                        'signal_id_source' => $signalIdSource,
+                        'outcome' => 'rejected',
+                        'reason' => $contractValidation['reason'],
+                        'profile_id_present' => !empty($botReadyRisk['profile_id']),
+                        'limits_present' => !empty($botReadyRisk['limits']),
+                    ];
+                }
+                continue;
+            }
+
+            // Increment approved count only after bot-ready validation passes
+            $result['approved_count']++;
 
             $intent = [
                 'schema_version' => 'live_intent_v1',
@@ -623,7 +653,7 @@ final class SmartBrainCore
                 'entry_action' => $entryPolicy,
                 'entry_timeout_minutes' => (int)($signal['entry_timeout_minutes'] ?? 8),
                 'entry_price_reference' => $entryPriceRef,
-                'risk' => $risk,
+                'risk' => $botReadyRisk,
                 'trailing' => $trailing,
                 'stop_policy' => [
                     'stop_control_mode' => (string)($signal['stop_control_mode'] ?? ($trailing['stop_control_mode'] ?? 'auto')),
@@ -663,6 +693,10 @@ final class SmartBrainCore
                     'signal_id_source' => $signalIdSource,
                     'outcome' => 'approved',
                     'reason' => $approvalReason,
+                    'profile_id' => $botReadyRisk['profile_id'] ?? null,
+                    'budget_usdt_per_trade' => $botReadyRisk['budget_usdt_per_trade'] ?? null,
+                    'order_type' => $botReadyRisk['order_type'] ?? null,
+                    'has_limits' => !empty($botReadyRisk['limits']),
                 ];
             }
         }
@@ -763,6 +797,174 @@ final class SmartBrainCore
         ];
 
         return $normalized;
+    }
+
+    /**
+     * P0.2: Build a full bot-ready risk block from Brain signal risk + config.
+     *
+     * Maps Brain signal/risk fields into the complete execution contract
+     * that Trading Bot validator (bot_risk_engine.php) requires:
+     *   profile_id, budget_usdt_per_trade, leverage, stop_from_liq_range_pct,
+     *   slippage_bps, fees_bps, order_type, limits, trailing.
+     *
+     * @param array $risk       Normalized risk block from normalizeRiskBlock()
+     * @param array $signal     Original signal data
+     * @param array $liveConfig Effective live config from buildLiveConfig()
+     * @param array $userLimits User limits from config
+     * @return array Full bot-ready risk block
+     */
+    private function buildBotReadyRiskBlock(array $risk, array $signal, array $liveConfig, array $userLimits): array
+    {
+        $profilesCfg = $this->config->getEffective('profiles');
+        $profileKey = (string)($profilesCfg['default_profile'] ?? '111');
+        $profile = (array)($profilesCfg['profiles'][$profileKey] ?? []);
+
+        // A. budget mapping: Brain risk.budget → bot risk.budget_usdt_per_trade
+        $budget = (float)($risk['budget'] ?? $signal['budget'] ?? $profile['budget'] ?? 10.0);
+
+        // B. stop mapping: Brain risk.stop_loss (corridor-based) → bot stop_from_liq_range_pct
+        //    Brain stop_loss is a corridor_width ratio. Bot expects a % distance from liquidation price.
+        //    Conversion: use profile stop_loss_range or a documented default.
+        //    If Brain provides stop_loss as a ratio (e.g. 0.05 = 5% of corridor),
+        //    convert to stop_from_liq_range_pct which means "SL placed X% away from liquidation".
+        $stopLossRatio = (float)($risk['stop_loss'] ?? $signal['stop_loss'] ?? 0);
+        $profileStopLossRange = (float)($profile['stop_loss_range'] ?? 0.35);
+        // Use the Brain-computed stop_loss if available, else profile default
+        $stopFromLiqRangePct = $stopLossRatio > 0
+            ? round($stopLossRatio * 100, 2)
+            : round($profileStopLossRange * 100, 2);
+        // Ensure minimum viable value (> 0, <= 100)
+        $stopFromLiqRangePct = max(1.0, min(100.0, $stopFromLiqRangePct));
+
+        // C. slippage / fees defaults from profile or documented defaults
+        $slippageBps = (int)($risk['slippage_bps'] ?? $profile['slippage_bps'] ?? 20);
+        $feesBps = (int)($risk['fees_bps'] ?? $profile['fees_bps'] ?? 12);
+
+        // D. order_type: live bot uses market execution
+        $orderType = (string)($risk['order_type'] ?? 'market');
+
+        // E. limits block from live config
+        $limits = [
+            'max_open_trades' => (int)($liveConfig['live_max_positions'] ?? 3),
+            'one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
+        ];
+
+        // F. profile_id: active profile key
+        $profileId = (string)($risk['profile_id'] ?? $profileKey);
+
+        // Build the complete bot-ready risk block
+        $botReady = [
+            'profile_id' => $profileId,
+            'budget_usdt_per_trade' => round($budget, 2),
+            'leverage' => (int)($risk['leverage'] ?? 1),
+            'stop_from_liq_range_pct' => $stopFromLiqRangePct,
+            'slippage_bps' => $slippageBps,
+            'fees_bps' => $feesBps,
+            'order_type' => $orderType,
+            'limits' => $limits,
+            // Preserve original Brain risk fields for audit
+            'stop_loss' => (float)($risk['stop_loss'] ?? 0),
+            'take_profit' => (float)($risk['take_profit'] ?? 0),
+            'budget' => round($budget, 2),
+        ];
+
+        // Trailing block: merge Brain trailing into bot-expected format
+        $trailing = $risk['trailing'] ?? [];
+        if (is_array($trailing) && !empty($trailing)) {
+            $botReady['trailing'] = [
+                'enabled' => (bool)($trailing['enabled'] ?? false),
+                'activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0.02),
+                'drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0.5),
+                'min_step' => (float)($trailing['min_step'] ?? 0.005),
+                'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.005),
+                'break_even_enabled' => (bool)($trailing['break_even_enabled'] ?? false),
+                'exit_mode' => (string)($trailing['exit_mode'] ?? 'fixed_tp'),
+            ];
+        } else {
+            // Default trailing block (disabled)
+            $botReady['trailing'] = [
+                'enabled' => false,
+                'activation_roi_pct' => 0.02,
+                'drawdown_factor' => 0.5,
+                'min_step' => 0.005,
+                'min_lock_roi' => 0.005,
+                'break_even_enabled' => false,
+                'exit_mode' => 'fixed_tp',
+            ];
+        }
+
+        return $botReady;
+    }
+
+    /**
+     * P0.5: Validate that a risk block has all mandatory bot execution fields.
+     * Should be called before writing a live intent to live_intents.json.
+     *
+     * @param array $risk Bot-ready risk block
+     * @return array{valid:bool,reason:string}
+     */
+    private function validateBotReadyRiskContract(array $risk): array
+    {
+        $requiredFields = [
+            'profile_id',
+            'budget_usdt_per_trade',
+            'leverage',
+            'stop_from_liq_range_pct',
+            'slippage_bps',
+            'fees_bps',
+            'order_type',
+            'limits',
+            'trailing',
+        ];
+
+        $missing = [];
+        foreach ($requiredFields as $field) {
+            if (!isset($risk[$field]) || $risk[$field] === '' || $risk[$field] === null) {
+                $missing[] = $field;
+            }
+        }
+
+        if (!empty($missing)) {
+            return [
+                'valid' => false,
+                'reason' => 'invalid_risk_contract:missing_' . implode(',', $missing),
+            ];
+        }
+
+        // Validate limits is an array with required sub-fields
+        if (!is_array($risk['limits'])) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:missing_limits'];
+        }
+        if (!isset($risk['limits']['max_open_trades'])) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:missing_limits.max_open_trades'];
+        }
+        if (!isset($risk['limits']['one_trade_per_symbol'])) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:missing_limits.one_trade_per_symbol'];
+        }
+
+        // Validate trailing is an array
+        if (!is_array($risk['trailing'])) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:missing_trailing'];
+        }
+
+        // Validate numeric ranges
+        if ((float)($risk['budget_usdt_per_trade'] ?? 0) <= 0) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:invalid_budget_usdt_per_trade'];
+        }
+        if ((int)($risk['leverage'] ?? 0) < 1) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:invalid_leverage'];
+        }
+        if ((float)($risk['stop_from_liq_range_pct'] ?? 0) <= 0 || (float)($risk['stop_from_liq_range_pct'] ?? 0) > 100) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:invalid_stop_from_liq_range_pct'];
+        }
+        if ((int)($risk['slippage_bps'] ?? -1) < 0) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:invalid_slippage_bps'];
+        }
+        if ((int)($risk['fees_bps'] ?? -1) < 0) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:invalid_fees_bps'];
+        }
+
+        return ['valid' => true, 'reason' => ''];
     }
 
     /**
@@ -934,6 +1136,129 @@ final class SmartBrainCore
         return $prices;
     }
 
+    // =========================================================================
+    // P1: Trading Bot Execution Mirror
+    // =========================================================================
+
+    /**
+     * P1.1: Read the latest Trading Bot runtime summary for mirror display.
+     *
+     * Reads bot storage/last_run.json safely and extracts a compact summary.
+     * If bot runtime is unavailable, returns a graceful fallback.
+     *
+     * @return array<string,mixed> Compact bot execution mirror
+     */
+    private function readBotExecutionMirror(): array
+    {
+        $mirror = [
+            'available' => false,
+            'error' => null,
+            'brain_controlled_live_mode' => null,
+            'bot_controlled_by_brain' => null,
+            'bot_input_source' => null,
+            'approved_intents_loaded' => null,
+            'duplicate_skipped' => null,
+            'intents_processed' => null,
+            'intents_opened' => null,
+            'intents_skipped' => null,
+            'intents_rejected' => null,
+            'intents_failed' => null,
+            'intents_deferred' => null,
+            'rejection_reason_stats' => [],
+            'close_reason_stats' => [],
+            'source_status' => null,
+            'source_error_message' => null,
+            'bot_last_updated_at' => null,
+        ];
+
+        try {
+            // Resolve Trading Bot storage path relative to Smart Brain module
+            $botStoragePath = $this->resolveBotStoragePath();
+            if ($botStoragePath === null) {
+                $mirror['error'] = 'bot_storage_path_not_found';
+                return $mirror;
+            }
+
+            $botLastRunPath = $botStoragePath . '/last_run.json';
+            if (!is_file($botLastRunPath)) {
+                $mirror['error'] = 'bot_last_run_not_found';
+                return $mirror;
+            }
+
+            $content = @file_get_contents($botLastRunPath);
+            if ($content === false) {
+                $mirror['error'] = 'bot_last_run_read_failed';
+                return $mirror;
+            }
+
+            $botData = @json_decode($content, true);
+            if (!is_array($botData)) {
+                $mirror['error'] = 'bot_last_run_json_invalid';
+                return $mirror;
+            }
+
+            $mirror['available'] = true;
+            $mirror['brain_controlled_live_mode'] = (bool)($botData['brain_controlled_live_mode'] ?? false);
+            $mirror['bot_controlled_by_brain'] = (bool)($botData['controlled_by_brain'] ?? false);
+            $mirror['bot_input_source'] = (string)($botData['input_source'] ?? 'unknown');
+            $mirror['approved_intents_loaded'] = (int)($botData['approved_intents_loaded'] ?? 0);
+            $mirror['duplicate_skipped'] = (int)($botData['duplicate_skipped'] ?? 0);
+            $mirror['intents_processed'] = (int)($botData['intents_processed'] ?? 0);
+            $mirror['intents_opened'] = (int)($botData['intents_opened'] ?? 0);
+            $mirror['intents_skipped'] = (int)($botData['intents_skipped'] ?? 0);
+            $mirror['intents_rejected'] = (int)($botData['intents_rejected_exec'] ?? 0);
+            $mirror['intents_failed'] = (int)($botData['intents_failed_exec'] ?? 0);
+            $mirror['intents_deferred'] = (int)($botData['intents_deferred'] ?? 0);
+            $mirror['rejection_reason_stats'] = (array)($botData['rejection_reason_stats'] ?? []);
+            $mirror['close_reason_stats'] = (array)($botData['close_reason_stats'] ?? []);
+            $mirror['source_status'] = (string)($botData['source_status'] ?? 'unknown');
+            $mirror['source_error_message'] = (string)($botData['source_error_message'] ?? '');
+            $mirror['bot_last_updated_at'] = (string)($botData['timestamp'] ?? $botData['updated_at'] ?? '');
+
+        } catch (\Throwable $e) {
+            $mirror['error'] = 'exception: ' . $e->getMessage();
+        }
+
+        return $mirror;
+    }
+
+    /**
+     * Resolve Trading Bot storage path.
+     * Smart Brain lives at modules/system/smart_brain/, Bot at modules/system/trading_bot/.
+     *
+     * @return string|null Absolute path to bot storage, or null if not found
+     */
+    private function resolveBotStoragePath(): ?string
+    {
+        // Direct sibling: smart_brain → trading_bot
+        $candidate = realpath($this->moduleBase . '/../trading_bot/storage');
+        if ($candidate !== false && is_dir($candidate)) {
+            return $candidate;
+        }
+
+        // Try via SystemPaths if registered
+        try {
+            $paths = \Core\System\SystemPaths::instance();
+            if ($paths->has('system.trading_bot.storage')) {
+                $resolved = $paths->get('system.trading_bot.storage');
+                if (is_dir($resolved)) {
+                    return $resolved;
+                }
+            }
+            // Fallback: system.trading_bot module root + /storage
+            if ($paths->has('system.trading_bot')) {
+                $resolved = $paths->get('system.trading_bot') . '/storage';
+                if (is_dir($resolved)) {
+                    return $resolved;
+                }
+            }
+        } catch (\Throwable $e) {
+            // SystemPaths not available — rely on filesystem only
+        }
+
+        return null;
+    }
+
     /**
      * @return array<string,mixed>
      */
@@ -951,6 +1276,7 @@ final class SmartBrainCore
             'stats' => $this->state->readJson('storage/simulator/stats.json', []),
             'live_intents' => $this->state->readJson('storage/live_intents.json', []),
             'config_warnings' => $this->config->detectConfigConflicts(),
+            'bot_execution_mirror' => $this->readBotExecutionMirror(),
         ];
     }
 
@@ -966,6 +1292,7 @@ final class SmartBrainCore
             'stats' => $this->state->readJson('storage/simulator/stats.json', []),
             'live_intents' => $this->state->readJson('storage/live_intents.json', []),
             'config_warnings' => $this->config->detectConfigConflicts(),
+            'bot_execution_mirror' => $this->readBotExecutionMirror(),
         ];
     }
 

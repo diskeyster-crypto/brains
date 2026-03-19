@@ -130,6 +130,109 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         </div>
     </div>
 
+    <!-- P1: Trading Bot Execution Mirror -->
+    <?php
+        $botMirror = $bot_execution_mirror ?? [];
+        $botAvailable = (bool)($botMirror['available'] ?? false);
+        $botError = (string)($botMirror['error'] ?? '');
+    ?>
+    <div class="card mb-4" style="border-color: <?= $botAvailable ? '#3b82f6' : '#6b7280' ?>;">
+        <div class="card-header" style="background: <?= $botAvailable ? 'rgba(59,130,246,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
+            <h5 style="margin: 0;">
+                <i class="bi bi-robot me-1"></i> Trading Bot Execution Mirror
+                <?php if ($botAvailable && ($botMirror['bot_controlled_by_brain'] ?? false)): ?>
+                    <span class="badge bg-success ms-1">Brain-Controlled</span>
+                <?php elseif ($botAvailable): ?>
+                    <span class="badge bg-warning text-dark ms-1">Legacy Mode</span>
+                <?php else: ?>
+                    <span class="badge bg-secondary ms-1">Unavailable</span>
+                <?php endif; ?>
+            </h5>
+        </div>
+        <div class="card-body">
+            <?php if (!$botAvailable): ?>
+            <p class="text-secondary small mb-0"><i class="bi bi-info-circle me-1"></i>
+                Bot runtime unavailable<?= $botError !== '' ? ': ' . htmlspecialchars($botError) : '' ?>
+            </p>
+            <?php else: ?>
+            <div class="row mb-2">
+                <div class="col-md-3 mb-2">
+                    <strong>Input Source:</strong>
+                    <span class="text-info"><?= htmlspecialchars((string)($botMirror['bot_input_source'] ?? '-')) ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Source Status:</strong>
+                    <span class="text-info"><?= htmlspecialchars((string)($botMirror['source_status'] ?? '-')) ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Brain Mode:</strong>
+                    <?php if ($botMirror['brain_controlled_live_mode'] ?? false): ?>
+                    <span class="text-success">Active</span>
+                    <?php else: ?>
+                    <span class="text-secondary">Inactive</span>
+                    <?php endif; ?>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Controlled by Brain:</strong>
+                    <?php if ($botMirror['bot_controlled_by_brain'] ?? false): ?>
+                    <span class="text-success">Yes</span>
+                    <?php else: ?>
+                    <span class="text-secondary">No</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="row mb-2">
+                <div class="col-md-2 mb-2">
+                    <strong>Loaded:</strong>
+                    <span class="text-primary"><?= (int)($botMirror['approved_intents_loaded'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <strong>Duplicates:</strong>
+                    <span class="text-secondary"><?= (int)($botMirror['duplicate_skipped'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <strong>Opened:</strong>
+                    <span class="text-success"><?= (int)($botMirror['intents_opened'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <strong>Rejected:</strong>
+                    <span class="text-danger"><?= (int)($botMirror['intents_rejected'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <strong>Failed:</strong>
+                    <span class="text-danger"><?= (int)($botMirror['intents_failed'] ?? 0) ?></span>
+                </div>
+                <div class="col-md-2 mb-2">
+                    <strong>Deferred:</strong>
+                    <span class="text-warning"><?= (int)($botMirror['intents_deferred'] ?? 0) ?></span>
+                </div>
+            </div>
+            <?php
+                $botRejReasons = (array)($botMirror['rejection_reason_stats'] ?? []);
+                $botSourceError = (string)($botMirror['source_error_message'] ?? '');
+            ?>
+            <?php if (!empty($botRejReasons)): ?>
+            <div class="mb-2 small">
+                <strong class="text-danger">Rejection Reasons:</strong>
+                <?php foreach ($botRejReasons as $reason => $cnt): ?>
+                <span class="badge bg-danger bg-opacity-25 text-danger me-1"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($botSourceError !== ''): ?>
+            <div class="text-danger small mb-2"><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($botSourceError) ?></div>
+            <?php endif; ?>
+            <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
+            <div class="text-secondary mb-2" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>
+            <?php endif; ?>
+            <div>
+                <a href="/admin/trading_bot" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>Trading Bot Dashboard</a>
+                <a href="/admin/trading_bot/intents" class="btn btn-outline-secondary btn-sm ms-1"><i class="bi bi-list-task me-1"></i>Bot Intents</a>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- Simulator Stats Card -->
     <div class="card mb-4">
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-bar-chart me-1"></i> Simulator Statistics</h5></div>

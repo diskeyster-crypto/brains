@@ -165,6 +165,87 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         </div>
     </div>
 
+    <!-- P1: Trading Bot Execution Mirror -->
+    <?php
+        $botMirror = $bot_execution_mirror ?? [];
+        $botAvailable = (bool)($botMirror['available'] ?? false);
+        $botError = (string)($botMirror['error'] ?? '');
+    ?>
+    <div class="card mb-4" style="border-color: <?= $botAvailable ? '#3b82f6' : '#6b7280' ?>;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-robot me-1"></i> Trading Bot Execution Mirror</h5>
+            <?php if ($botAvailable): ?>
+                <?php if ($botMirror['bot_controlled_by_brain'] ?? false): ?>
+                <span class="badge bg-success">Brain-Controlled</span>
+                <?php else: ?>
+                <span class="badge bg-warning text-dark">Legacy Mode</span>
+                <?php endif; ?>
+            <?php else: ?>
+            <span class="badge bg-secondary">Unavailable</span>
+            <?php endif; ?>
+        </div>
+        <div class="card-body">
+            <?php if (!$botAvailable): ?>
+            <div class="text-secondary small"><i class="bi bi-info-circle me-1"></i>
+                Bot runtime unavailable<?= $botError !== '' ? ': ' . htmlspecialchars($botError) : '' ?>
+            </div>
+            <?php else: ?>
+            <div class="row text-center">
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Input Source</small>
+                    <strong><?= htmlspecialchars((string)($botMirror['bot_input_source'] ?? '-')) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Intents Loaded</small>
+                    <strong><?= (int)($botMirror['approved_intents_loaded'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-1">
+                    <small class="text-secondary d-block">Skipped</small>
+                    <strong class="text-secondary"><?= (int)($botMirror['duplicate_skipped'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Opened</small>
+                    <strong class="text-success"><?= (int)($botMirror['intents_opened'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Rejected</small>
+                    <strong class="text-danger"><?= (int)($botMirror['intents_rejected'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-1">
+                    <small class="text-secondary d-block">Failed</small>
+                    <strong class="text-danger"><?= (int)($botMirror['intents_failed'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Deferred</small>
+                    <strong class="text-warning"><?= (int)($botMirror['intents_deferred'] ?? 0) ?></strong>
+                </div>
+            </div>
+            <?php
+                $botRejReasons = (array)($botMirror['rejection_reason_stats'] ?? []);
+                $botSourceError = (string)($botMirror['source_error_message'] ?? '');
+            ?>
+            <?php if (!empty($botRejReasons)): ?>
+            <div class="mt-2 small">
+                <strong class="text-danger">Rejection Reasons:</strong>
+                <?php foreach ($botRejReasons as $reason => $cnt): ?>
+                <span class="badge bg-danger bg-opacity-25 text-danger me-1"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($botSourceError !== ''): ?>
+            <div class="mt-1 text-danger small"><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($botSourceError) ?></div>
+            <?php endif; ?>
+            <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
+            <div class="mt-1 text-secondary" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>
+            <?php endif; ?>
+            <div class="mt-2">
+                <a href="/admin/trading_bot" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>Trading Bot Dashboard</a>
+                <a href="/admin/trading_bot/intents" class="btn btn-outline-secondary btn-sm ms-1"><i class="bi bi-list-task me-1"></i>Bot Intents</a>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- Signal Diagnostics Card (Phase B) -->
     <?php
         $signalCount = (int)($last_run['signals'] ?? 0);

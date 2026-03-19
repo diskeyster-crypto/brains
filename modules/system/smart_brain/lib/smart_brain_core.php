@@ -770,6 +770,18 @@ final class SmartBrainCore
         // Prefer structured risk block if present and non-empty
         $risk = $signal['risk'] ?? [];
         if (is_array($risk) && !empty($risk) && !empty($risk['leverage'])) {
+            // P0: Defensive guard — if take_profit leaked in as scalar, convert or remove it
+            if (isset($risk['take_profit']) && !is_array($risk['take_profit'])) {
+                $raw = $risk['take_profit'];
+                if (is_numeric($raw) && (float)$raw > 0) {
+                    $risk['take_profit'] = [
+                        'enabled' => true,
+                        'roi_pct' => round((float)$raw * 100, 4),
+                    ];
+                } else {
+                    unset($risk['take_profit']);
+                }
+            }
             return $risk;
         }
 
@@ -784,15 +796,26 @@ final class SmartBrainCore
             'leverage' => (int)($leverage ?? 1),
             'budget' => (float)($budget ?? 0),
             'stop_loss' => (float)($signal['stop_loss'] ?? 0),
-            'take_profit' => (float)($signal['take_profit'] ?? 0),
         ];
+
+        // P0: take_profit must be structured or absent — never scalar
+        $rawTp = $signal['take_profit'] ?? null;
+        if (is_numeric($rawTp) && (float)$rawTp > 0) {
+            $normalized['take_profit'] = [
+                'enabled' => true,
+                'roi_pct' => round((float)$rawTp * 100, 4),
+            ];
+        } elseif (is_array($rawTp) && !empty($rawTp)) {
+            $normalized['take_profit'] = $rawTp;
+        }
+        // else: omit take_profit entirely (optional field)
 
         // Build trailing sub-block from flat exit policy fields
         $trailingEnabled = (bool)($signal['trailing_enabled'] ?? false);
         $normalized['trailing'] = [
             'enabled' => $trailingEnabled,
-            'activation_roi_pct' => (float)($signal['trailing_activation_roi'] ?? 0.02),
-            'min_lock_roi' => (float)($signal['trailing_min_lock_roi'] ?? 0.005),
+            'activation_roi_pct' => (float)($signal['trailing_activation_roi'] ?? 0.03),
+            'min_lock_roi' => (float)($signal['trailing_min_lock_roi'] ?? 0.008),
             'min_step' => (float)($signal['trailing_min_step'] ?? 0.005),
         ];
 
@@ -894,23 +917,25 @@ final class SmartBrainCore
         if (is_array($trailing) && !empty($trailing)) {
             $botReady['trailing'] = [
                 'enabled' => (bool)($trailing['enabled'] ?? false),
-                'activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0.02),
+                'activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0.03),
                 'drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0.5),
                 'min_step' => (float)($trailing['min_step'] ?? 0.005),
-                'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.005),
+                'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.008),
                 'break_even_enabled' => (bool)($trailing['break_even_enabled'] ?? false),
-                'exit_mode' => (string)($trailing['exit_mode'] ?? 'fixed_tp'),
+                'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0.015),
+                'exit_mode' => (string)($trailing['exit_mode'] ?? 'trailing_tp'),
             ];
         } else {
             // Default trailing block (disabled)
             $botReady['trailing'] = [
                 'enabled' => false,
-                'activation_roi_pct' => 0.02,
+                'activation_roi_pct' => 0.03,
                 'drawdown_factor' => 0.5,
                 'min_step' => 0.005,
-                'min_lock_roi' => 0.005,
+                'min_lock_roi' => 0.008,
                 'break_even_enabled' => false,
-                'exit_mode' => 'fixed_tp',
+                'break_even_activation_roi' => 0.015,
+                'exit_mode' => 'trailing_tp',
             ];
         }
 

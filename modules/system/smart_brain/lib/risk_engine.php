@@ -87,16 +87,16 @@ final class RiskEngine
 
         // Exit policy fields from user limits
         $exitPolicy = [
-            'exit_mode'                  => (string)($userLimits['exit_mode'] ?? 'fixed_tp'),
+            'exit_mode'                  => (string)($userLimits['exit_mode'] ?? 'trailing_tp'),
             'stop_floor_type'            => (string)($userLimits['stop_floor_type'] ?? 'roi_percent'),
             'stop_floor_value'           => (float)($userLimits['stop_floor_value'] ?? 0.03),
             'trailing_enabled'           => (bool)($userLimits['trailing_enabled'] ?? false),
-            'trailing_activation_roi'    => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
-            'trailing_min_lock_roi'      => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
+            'trailing_activation_roi'    => (float)($userLimits['trailing_activation_roi'] ?? 0.03),
+            'trailing_min_lock_roi'      => (float)($userLimits['trailing_min_lock_roi'] ?? 0.008),
             'trailing_min_step'          => (float)($userLimits['trailing_min_step'] ?? 0.005),
             'fixed_take_profit_roi'      => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
             'break_even_enabled'         => (bool)($userLimits['break_even_enabled'] ?? false),
-            'break_even_activation_roi'  => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
+            'break_even_activation_roi'  => (float)($userLimits['break_even_activation_roi'] ?? 0.015),
             // Stop Loss Engine V2
             'stop_mode'                    => (string)($userLimits['stop_mode'] ?? 'brain_managed'),
             'simple_stop_liq_factor'       => (float)($userLimits['simple_stop_liq_factor'] ?? 0.15),
@@ -259,11 +259,12 @@ final class RiskEngine
                         'leverage' => $leverage,
                         'budget' => $budget,
                         'stop_loss' => $stopLoss,
-                        'take_profit' => $takeProfit,
+                        // P0: take_profit must be structured array or absent — never scalar
+                        'take_profit' => ($takeProfit > 0) ? ['enabled' => true, 'roi_pct' => round($takeProfit * 100, 4)] : null,
                         'trailing' => [
                             'enabled' => $exitPolicy['trailing_enabled'] ?? false,
-                            'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.02,
-                            'min_lock_roi' => $exitPolicy['trailing_min_lock_roi'] ?? 0.005,
+                            'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.03,
+                            'min_lock_roi' => $exitPolicy['trailing_min_lock_roi'] ?? 0.008,
                             'min_step' => $exitPolicy['trailing_min_step'] ?? 0.005,
                         ],
                     ],
@@ -350,11 +351,12 @@ final class RiskEngine
                         'leverage' => $leverage,
                         'budget' => $budget,
                         'stop_loss' => $stopLoss,
-                        'take_profit' => $takeProfit,
+                        // P0: take_profit must be structured array or absent — never scalar
+                        'take_profit' => ($takeProfit > 0) ? ['enabled' => true, 'roi_pct' => round($takeProfit * 100, 4)] : null,
                         'trailing' => [
                             'enabled' => $exitPolicy['trailing_enabled'] ?? false,
-                            'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.02,
-                            'min_lock_roi' => $exitPolicy['trailing_min_lock_roi'] ?? 0.005,
+                            'activation_roi_pct' => $exitPolicy['trailing_activation_roi'] ?? 0.03,
+                            'min_lock_roi' => $exitPolicy['trailing_min_lock_roi'] ?? 0.008,
                             'min_step' => $exitPolicy['trailing_min_step'] ?? 0.005,
                         ],
                     ],

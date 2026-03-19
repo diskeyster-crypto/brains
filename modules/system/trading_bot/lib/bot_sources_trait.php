@@ -282,6 +282,7 @@ trait BotSourcesTrait
                 $data = @json_decode($content, true);
                 if (is_array($data)) {
                     $liveEnabled = $data['live_trading']['live_trading_enabled']
+                        ?? $data['user_limits']['live_trading_enabled']
                         ?? $data['live_trading_enabled']
                         ?? null;
                     if ($liveEnabled !== null) {
@@ -306,7 +307,24 @@ trait BotSourcesTrait
             }
         }
 
-        // If neither config provides a definitive answer, default to false.
+        // Method 3: Check live_intents.json itself for authoritative Brain hints
+        $liveIntentsPath = $brainBase . '/live_intents.json';
+        if (is_file($liveIntentsPath)) {
+            $content = @file_get_contents($liveIntentsPath);
+            if ($content !== false) {
+                $data = @json_decode($content, true);
+                if (is_array($data)) {
+                    $liveEnabled = $data['brain_controlled_live_mode']
+                        ?? $data['live_trading_enabled']
+                        ?? null;
+                    if ($liveEnabled !== null) {
+                        return (bool)$liveEnabled;
+                    }
+                }
+            }
+        }
+
+        // If no config provides a definitive answer, default to false.
         // Legacy fallback is allowed when mode cannot be determined.
         return false;
     }
@@ -419,9 +437,16 @@ trait BotSourcesTrait
                 return $result;
             }
             
-            // Extract signals array
-            $signals = $data['signals'] ?? [];
-            if (!is_array($signals)) {
+            // Extract signals array — support both container shapes:
+            // A. Wrapped: {"signals": [signal1, signal2, ...]}
+            // B. Plain list: [signal1, signal2, ...]
+            // Previous logic used $data['signals'] ?? [] which returns []
+            // for plain arrays (numeric keys), and [] is_array so fallback never ran.
+            if (is_array($data) && isset($data['signals']) && is_array($data['signals'])) {
+                $signals = $data['signals'];
+            } elseif (is_array($data)) {
+                $signals = $data;
+            } else {
                 $signals = [];
             }
             

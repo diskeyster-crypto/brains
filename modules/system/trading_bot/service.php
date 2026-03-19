@@ -133,6 +133,8 @@ final class TradingBotService
             'intents_valid' => 0,
             'intents_rejected' => 0,
             // P6.7: Separate rejected (validation) from rejected (execution) and failed (errors)
+            // NOTE: intents_rejected_exec and intents_failed_exec are derived from
+            // finalized intent_results after post-processing (single source of truth).
             'intents_rejected_exec' => 0,
             'intents_failed_exec' => 0,
             'intents_rejected_total' => 0,
@@ -155,12 +157,12 @@ final class TradingBotService
             'intents_preview' => [],
             'intents_preview_total' => 0,
             // Observability: per-intent result records and lifecycle tracking
+            // All summary counts below are re-derived from finalized intent_results
+            // after post-processing (see "Derive execution summary counts" block).
             'intent_results' => [],
             'intents_processed' => 0,
             'intents_opened' => 0,
             'intents_skipped' => 0,
-            'intents_rejected_exec' => 0,
-            'intents_failed_exec' => 0,
             'rejection_reason_stats' => [],
             'close_reason_stats' => [],
         ];

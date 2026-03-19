@@ -15,6 +15,17 @@ use Core\System\SystemPaths;
 trait BotSourcesTrait
 {
     /**
+     * Runtime marker: proves which version of bot_sources_trait.php actually executed.
+     * If last_run does not show this marker, the server is running a stale/different file.
+     */
+    private const BOT_SOURCES_RUNTIME_MARKER = 'brain_detect_v3_diag_2026_03_19';
+
+    /** @var array Step-by-step diagnostic trace from last detectBrainControlledMode() call */
+    private array $brainDetectionTrace = [];
+
+    /** @var array Resolved Brain/SmartBrain paths from last detection */
+    private array $brainResolvedPaths = [];
+    /**
      * Load Brain-approved live intents (preferred source).
      * Brain generates live_intents.json with only approved, filtered intents.
      * Bot must consume these instead of raw signals when available.
@@ -54,7 +65,12 @@ trait BotSourcesTrait
             }
 
             $brainBase = $paths->get($brainKey);
-            $liveIntentsPath = $brainBase . '/live_intents.json';
+
+            // V3: Use resolveLiveIntentsPath() to check Smart Brain storage first,
+            // then Brain module storage. This fixes the path mismatch where Smart Brain
+            // writes live_intents.json to smart_brain/storage/ but bot was only
+            // checking brain/storage/.
+            $liveIntentsPath = $this->resolveLiveIntentsPath() ?? ($brainBase . '/live_intents.json');
 
             // ================================================================
             // Determine brain_controlled mode from EFFECTIVE CONFIG,
@@ -259,74 +275,287 @@ trait BotSourcesTrait
      * Must be called BEFORE any source loading so service.php can branch
      * the execution flow explicitly.
      *
+     * V3 DIAGNOSTIC: Also checks Smart Brain module paths (smart_brain/) in addition
+     * to the Brain module paths (brain/). Smart Brain writes effective_config.json
+     * to its own runtime/ directory and live_intents.json to its own storage/.
+     * Previous versions only checked the brain/ module path, missing Smart Brain output.
+     *
+     * Stores step-by-step diagnostic trace in $this->brainDetectionTrace.
+     *
      * @return bool true when Brain-controlled live mode is active
      */
     protected function detectBrainControlledMode(): bool
+    {
+        $trace = [];
+        $resolvedPaths = [];
+        $flagsFound = [];
+        $result = false;
+
+        try {
+            $paths = SystemPaths::instance();
+            $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+
+            if (!$paths->has($brainKey)) {
+                $trace[] = ['step' => 'resolve_brain_key', 'key' => $brainKey, 'exists' => false, 'error' => 'Brain storage path key not registered'];
+                $this->brainDetectionTrace = $trace;
+                $this->brainResolvedPaths = $resolvedPaths;
+                return false;
+            }
+
+            $brainBase = $paths->get($brainKey);
+            $resolvedPaths['brain_storage_base'] = $brainBase;
+            $trace[] = ['step' => 'resolve_brain_key', 'key' => $brainKey, 'exists' => true, 'resolved' => $brainBase];
+
+            // Derive Smart Brain paths: smart_brain module is a sibling of brain module
+            // brain/storage → ../../smart_brain/ for the smart_brain module root
+            $smartBrainBase = realpath($brainBase . '/../../smart_brain') ?: ($brainBase . '/../../smart_brain');
+            $resolvedPaths['smart_brain_base_derived'] = $smartBrainBase;
+            $resolvedPaths['smart_brain_base_exists'] = is_dir($smartBrainBase);
+
+            // Also try SystemPaths for smart_brain if registered
+            $smartBrainStorageFromPaths = null;
+            if ($paths->has('system.smart_brain.storage')) {
+                $smartBrainStorageFromPaths = $paths->get('system.smart_brain.storage');
+                $resolvedPaths['smart_brain_storage_from_systempaths'] = $smartBrainStorageFromPaths;
+            }
+
+            // Build list of candidate directories to check for config/intents files
+            // Priority: Smart Brain paths first (where current Smart Brain actually writes),
+            // then Brain module paths (legacy/fallback).
+            $configSearchPaths = [];
+            $intentsSearchPaths = [];
+
+            // Smart Brain runtime (derived)
+            $configSearchPaths[] = $smartBrainBase . '/runtime';
+            // Smart Brain storage (derived) for live_intents.json
+            $intentsSearchPaths[] = $smartBrainBase . '/storage';
+            // Smart Brain storage from SystemPaths
+            if ($smartBrainStorageFromPaths !== null) {
+                $intentsSearchPaths[] = $smartBrainStorageFromPaths;
+            }
+
+            // Brain module paths (original/legacy)
+            $configSearchPaths[] = $brainBase . '/../runtime';
+            $intentsSearchPaths[] = $brainBase;
+
+            $resolvedPaths['config_search_paths'] = $configSearchPaths;
+            $resolvedPaths['intents_search_paths'] = $intentsSearchPaths;
+
+            // ================================================================
+            // Check effective_config.json across all candidate paths
+            // ================================================================
+            foreach ($configSearchPaths as $configDir) {
+                $effectiveConfigPath = $configDir . '/effective_config.json';
+                $resolvedPaths['effective_config_checked'][] = $effectiveConfigPath;
+                $stepResult = $this->checkConfigFileForLiveFlag($effectiveConfigPath, 'effective_config', [
+                    'live_trading.live_trading_enabled',
+                    'user_limits.live_trading_enabled',
+                    'live_trading_enabled',
+                ]);
+                $trace[] = $stepResult;
+                if ($stepResult['flag_found'] && $stepResult['flag_value'] === true) {
+                    $flagsFound[] = $stepResult;
+                    $result = true;
+                }
+            }
+
+            // ================================================================
+            // Check user_config.json across all candidate paths
+            // ================================================================
+            foreach ($configSearchPaths as $configDir) {
+                $userConfigPath = $configDir . '/user_config.json';
+                $resolvedPaths['user_config_checked'][] = $userConfigPath;
+                $stepResult = $this->checkConfigFileForLiveFlag($userConfigPath, 'user_config', [
+                    'live_trading_enabled',
+                ]);
+                $trace[] = $stepResult;
+                if ($stepResult['flag_found'] && $stepResult['flag_value'] === true) {
+                    $flagsFound[] = $stepResult;
+                    $result = true;
+                }
+            }
+
+            // ================================================================
+            // Check live_intents.json for authoritative Brain hints
+            // ================================================================
+            foreach ($intentsSearchPaths as $intentsDir) {
+                $liveIntentsPath = $intentsDir . '/live_intents.json';
+                $resolvedPaths['live_intents_checked'][] = $liveIntentsPath;
+                $stepResult = $this->checkConfigFileForLiveFlag($liveIntentsPath, 'live_intents', [
+                    'brain_controlled_live_mode',
+                    'live_trading_enabled',
+                ]);
+                $trace[] = $stepResult;
+                if ($stepResult['flag_found'] && $stepResult['flag_value'] === true) {
+                    $flagsFound[] = $stepResult;
+                    $result = true;
+                }
+            }
+
+            $trace[] = [
+                'step' => 'final_decision',
+                'result' => $result,
+                'flags_found_count' => count($flagsFound),
+                'reason' => $result
+                    ? 'At least one authoritative Brain live flag is true'
+                    : 'No authoritative Brain live flag found in any checked location',
+            ];
+
+        } catch (\Throwable $e) {
+            $trace[] = ['step' => 'exception', 'error' => $e->getMessage()];
+            $result = false;
+        }
+
+        $this->brainDetectionTrace = $trace;
+        $this->brainResolvedPaths = $resolvedPaths;
+        return $result;
+    }
+
+    /**
+     * Check a single config file for any of the specified live flag key paths.
+     *
+     * @param string $filePath Absolute path to JSON config file
+     * @param string $sourceLabel Label for trace (e.g. 'effective_config')
+     * @param list<string> $flagKeys Dot-separated or plain keys to check
+     * @return array Diagnostic step result
+     */
+    private function checkConfigFileForLiveFlag(string $filePath, string $sourceLabel, array $flagKeys): array
+    {
+        $step = [
+            'step' => 'check_' . $sourceLabel,
+            'path' => $filePath,
+            'exists' => false,
+            'parse_ok' => false,
+            'flag_found' => false,
+            'flag_value' => null,
+            'flag_key' => null,
+        ];
+
+        if (!is_file($filePath)) {
+            return $step;
+        }
+        $step['exists'] = true;
+
+        $content = @file_get_contents($filePath);
+        if ($content === false) {
+            $step['error'] = 'read_failed';
+            return $step;
+        }
+
+        $data = @json_decode($content, true);
+        if (!is_array($data)) {
+            $step['error'] = 'json_invalid';
+            return $step;
+        }
+        $step['parse_ok'] = true;
+
+        // Check each flag key path
+        foreach ($flagKeys as $keyPath) {
+            $value = $this->resolveNestedKey($data, $keyPath);
+            if ($value !== null) {
+                $step['flag_found'] = true;
+                $step['flag_value'] = (bool)$value;
+                $step['flag_key'] = $keyPath;
+                return $step;
+            }
+        }
+
+        return $step;
+    }
+
+    /**
+     * Resolve a potentially dot-separated key from a nested array.
+     * E.g. 'live_trading.live_trading_enabled' checks $data['live_trading']['live_trading_enabled']
+     * Falls back to flat key check: $data['live_trading.live_trading_enabled']
+     *
+     * @param array $data Source array
+     * @param string $keyPath Dot-separated or plain key
+     * @return mixed|null Value if found, null otherwise
+     */
+    private function resolveNestedKey(array $data, string $keyPath)
+    {
+        // Try dot-separated nested access
+        $parts = explode('.', $keyPath);
+        if (count($parts) > 1) {
+            $current = $data;
+            foreach ($parts as $part) {
+                if (!is_array($current) || !array_key_exists($part, $current)) {
+                    // Fall through to flat key check
+                    $current = null;
+                    break;
+                }
+                $current = $current[$part];
+            }
+            if ($current !== null) {
+                return $current;
+            }
+        }
+
+        // Try flat key
+        return $data[$keyPath] ?? null;
+    }
+
+    /**
+     * Get diagnostic information from the last detectBrainControlledMode() call.
+     * Includes step-by-step trace, resolved paths, and runtime marker.
+     *
+     * @return array Diagnostic payload for runtime/last_run output
+     */
+    protected function getBrainDetectionDiagnostics(): array
+    {
+        return [
+            'bot_sources_trait_runtime_marker' => self::BOT_SOURCES_RUNTIME_MARKER,
+            'php_file_used_bot_sources_trait' => __FILE__,
+            'brain_resolved_paths' => $this->brainResolvedPaths,
+            'brain_detection_trace' => $this->brainDetectionTrace,
+        ];
+    }
+
+    /**
+     * Resolve the best path for Brain live_intents.json.
+     *
+     * Checks Smart Brain storage first (where current Smart Brain writes),
+     * then falls back to Brain module storage (legacy).
+     *
+     * @return string|null Absolute path to live_intents.json or null if not found
+     */
+    private function resolveLiveIntentsPath(): ?string
     {
         try {
             $paths = SystemPaths::instance();
             $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
             if (!$paths->has($brainKey)) {
-                return false;
+                return null;
             }
             $brainBase = $paths->get($brainKey);
+
+            // Smart Brain storage (derived from brain module path)
+            $smartBrainStorage = realpath($brainBase . '/../../smart_brain/storage');
+            if ($smartBrainStorage !== false) {
+                $candidate = $smartBrainStorage . '/live_intents.json';
+                if (is_file($candidate)) {
+                    return $candidate;
+                }
+            }
+
+            // Smart Brain storage from SystemPaths
+            if ($paths->has('system.smart_brain.storage')) {
+                $candidate = $paths->get('system.smart_brain.storage') . '/live_intents.json';
+                if (is_file($candidate)) {
+                    return $candidate;
+                }
+            }
+
+            // Brain module storage (legacy/original)
+            $candidate = $brainBase . '/live_intents.json';
+            if (is_file($candidate)) {
+                return $candidate;
+            }
         } catch (\Throwable $e) {
-            return false;
+            // Silently fail — caller handles missing path
         }
 
-        // Method 1: Check effective_config.json (written by Smart Brain each cycle)
-        $effectiveConfigPath = $brainBase . '/../runtime/effective_config.json';
-        if (is_file($effectiveConfigPath)) {
-            $content = @file_get_contents($effectiveConfigPath);
-            if ($content !== false) {
-                $data = @json_decode($content, true);
-                if (is_array($data)) {
-                    $liveEnabled = $data['live_trading']['live_trading_enabled']
-                        ?? $data['user_limits']['live_trading_enabled']
-                        ?? $data['live_trading_enabled']
-                        ?? null;
-                    if ($liveEnabled !== null) {
-                        return (bool)$liveEnabled;
-                    }
-                }
-            }
-        }
-
-        // Method 2: Check user_config.json directly
-        $userConfigPath = $brainBase . '/../runtime/user_config.json';
-        if (is_file($userConfigPath)) {
-            $content = @file_get_contents($userConfigPath);
-            if ($content !== false) {
-                $data = @json_decode($content, true);
-                if (is_array($data)) {
-                    $liveEnabled = $data['live_trading_enabled'] ?? null;
-                    if ($liveEnabled !== null) {
-                        return (bool)$liveEnabled;
-                    }
-                }
-            }
-        }
-
-        // Method 3: Check live_intents.json itself for authoritative Brain hints
-        $liveIntentsPath = $brainBase . '/live_intents.json';
-        if (is_file($liveIntentsPath)) {
-            $content = @file_get_contents($liveIntentsPath);
-            if ($content !== false) {
-                $data = @json_decode($content, true);
-                if (is_array($data)) {
-                    $liveEnabled = $data['brain_controlled_live_mode']
-                        ?? $data['live_trading_enabled']
-                        ?? null;
-                    if ($liveEnabled !== null) {
-                        return (bool)$liveEnabled;
-                    }
-                }
-            }
-        }
-
-        // If no config provides a definitive answer, default to false.
-        // Legacy fallback is allowed when mode cannot be determined.
-        return false;
+        return null;
     }
 
     /**

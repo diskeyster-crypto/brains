@@ -285,6 +285,18 @@ final class TradingBotService
             $result['executable_intents_count'] = $intentsResult['count'] ?? 0;
             $result['duplicate_skipped'] = $intentsResult['duplicate_skipped'] ?? 0;
 
+            // V3 DIAGNOSTIC: Include Brain detection diagnostics for runtime observability
+            $brainDiag = $this->getBrainDetectionDiagnostics();
+            $result['brain_detection_diagnostics'] = [
+                'bot_sources_trait_runtime_marker' => $brainDiag['bot_sources_trait_runtime_marker'] ?? null,
+                'php_file_used_bot_sources_trait' => $brainDiag['php_file_used_bot_sources_trait'] ?? null,
+                'brain_storage_path_resolved' => $brainDiag['brain_resolved_paths']['brain_storage_base'] ?? null,
+                'smart_brain_base_derived' => $brainDiag['brain_resolved_paths']['smart_brain_base_derived'] ?? null,
+                'smart_brain_base_exists' => $brainDiag['brain_resolved_paths']['smart_brain_base_exists'] ?? null,
+                'brain_detection_result' => $brainControlled,
+                'brain_detection_trace' => $brainDiag['brain_detection_trace'] ?? [],
+            ];
+
             // Observability: merge duplicate-skipped intent result records
             $dupRecords = $intentsResult['duplicate_skipped_records'] ?? [];
             if (!empty($dupRecords) && is_array($dupRecords)) {

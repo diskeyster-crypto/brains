@@ -852,6 +852,23 @@ final class SmartBrainCore
         // F. profile_id: active profile key
         $profileId = (string)($risk['profile_id'] ?? $profileKey);
 
+        // G. take_profit: convert Brain scalar ratio to bot-expected structured array
+        //    Brain risk.take_profit is a corridor-based ratio (e.g. 0.028 = 2.8% ROI).
+        //    Bot validator expects: array with {enabled: bool, roi_pct: float} or absent.
+        $rawTakeProfit = $risk['take_profit'] ?? $signal['take_profit'] ?? null;
+        $takeProfitBlock = null;
+        if (is_array($rawTakeProfit)) {
+            // Already structured — pass through
+            $takeProfitBlock = $rawTakeProfit;
+        } elseif (is_numeric($rawTakeProfit) && (float)$rawTakeProfit > 0) {
+            // Scalar ratio → convert to structured format (ratio × 100 → roi_pct)
+            $takeProfitBlock = [
+                'enabled' => true,
+                'roi_pct' => round((float)$rawTakeProfit * 100, 4),
+            ];
+        }
+        // If null/zero/missing → omit take_profit entirely (it's optional in bot validator)
+
         // Build the complete bot-ready risk block
         $botReady = [
             'profile_id' => $profileId,
@@ -864,9 +881,13 @@ final class SmartBrainCore
             'limits' => $limits,
             // Preserve original Brain risk fields for audit
             'stop_loss' => (float)($risk['stop_loss'] ?? 0),
-            'take_profit' => (float)($risk['take_profit'] ?? 0),
             'budget' => round($budget, 2),
         ];
+
+        // Only include take_profit if structured and valid
+        if (is_array($takeProfitBlock) && !empty($takeProfitBlock)) {
+            $botReady['take_profit'] = $takeProfitBlock;
+        }
 
         // Trailing block: merge Brain trailing into bot-expected format
         $trailing = $risk['trailing'] ?? [];
@@ -945,6 +966,11 @@ final class SmartBrainCore
         // Validate trailing is an array
         if (!is_array($risk['trailing'])) {
             return ['valid' => false, 'reason' => 'invalid_risk_contract:missing_trailing'];
+        }
+
+        // Validate take_profit format (optional, but if present must be an array)
+        if (isset($risk['take_profit']) && !is_array($risk['take_profit'])) {
+            return ['valid' => false, 'reason' => 'invalid_risk_contract:invalid_take_profit_format'];
         }
 
         // Validate numeric ranges

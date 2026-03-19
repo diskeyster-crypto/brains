@@ -192,6 +192,12 @@ trait BotSourcesTrait
                         'trailing_status' => 'disabled',
                         'source_status' => 'brain_live_intent',
                         'debug_message' => 'Already processed (execution key exists in executed_index)',
+                        'execution_stage' => 'duplicate_skipped',
+                        'exchange_submit_attempted' => false,
+                        'exchange_response_code' => null,
+                        'exchange_response_message' => null,
+                        'validation_error_summary' => null,
+                        'missing_fields_preview' => [],
                     ];
                     continue;
                 }

@@ -724,9 +724,11 @@ final class TradingBotService
                 }
 
                 // P0.4: Latest exchange error (last encountered)
-                if ($ir['exchange_response_code'] !== null || $ir['exchange_response_message'] !== null) {
-                    $latestExchangeErrorCode = $ir['exchange_response_code'];
-                    $latestExchangeErrorMessage = $ir['exchange_response_message'];
+                $irExchangeCode = $ir['exchange_response_code'] ?? null;
+                $irExchangeMessage = $ir['exchange_response_message'] ?? null;
+                if ($irExchangeCode !== null || $irExchangeMessage !== null) {
+                    $latestExchangeErrorCode = $irExchangeCode;
+                    $latestExchangeErrorMessage = $irExchangeMessage;
                     $lastFailedSymbol = $ir['symbol'] ?? null;
                     $lastFailedStage = $stage;
                 }

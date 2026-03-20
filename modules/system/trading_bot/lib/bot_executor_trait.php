@@ -1012,9 +1012,20 @@ trait BotExecutorTrait
         array $trailing
     ): array {
         $entryAvg = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? $intent['entry_price']);
-        
+
+        $riskTrailing = $intent['risk']['trailing'] ?? [];
+        $trailingEnabled = (bool)($riskTrailing['enabled'] ?? false);
+        $exitMode = (string)($riskTrailing['exit_mode'] ?? 'unknown');
+        $beEnabled = (bool)($riskTrailing['break_even_enabled'] ?? false);
+        $initialProtectionState = ($sl > 0) ? 'opened_protected' : 'opened_unprotected';
+        $effectiveSource = !empty($riskTrailing['brain_trailing_applied'])
+            ? 'brain_trailing_contract'
+            : (!empty($riskTrailing['effective_trailing_contract_source'])
+                ? $riskTrailing['effective_trailing_contract_source']
+                : 'bot_local_config');
+
         return [
-            'schema_version' => 'trade_live_v1',
+            'schema_version' => 'trade_live_v2',
             'trade_id' => $intent['signal_id'] ?? $intent['id'],
             'signal_id' => $intent['signal_id'] ?? $intent['id'],
             'symbol' => $intent['symbol'],
@@ -1038,6 +1049,22 @@ trait BotExecutorTrait
                 'trailing_stop' => $trailing['trailing_stop'] ?? null,
                 'active_price' => $trailing['active_price'] ?? null,
             ],
+            // Top-level effective post-entry contract (mirrors runtime, consistent from creation)
+            'protection_state' => $initialProtectionState,
+            'trailing_enabled' => $trailingEnabled,
+            'trailing_active' => false,
+            'break_even_enabled' => $beEnabled,
+            'break_even_armed' => false,
+            'break_even_applied' => false,
+            'effective_exit_mode' => $exitMode,
+            'effective_trailing_activation' => (float)($riskTrailing['activation_roi_pct'] ?? 0),
+            'effective_break_even_activation' => $beEnabled ? (float)($riskTrailing['break_even_activation_roi'] ?? 0) : null,
+            'effective_drawdown_factor' => (float)($riskTrailing['drawdown_factor'] ?? 0),
+            'effective_hybrid_tp_share' => $exitMode === 'hybrid_tp'
+                ? (float)($riskTrailing['hybrid_tp_share'] ?? 0)
+                : null,
+            'effective_fixed_take_profit_roi' => (float)($riskTrailing['fixed_take_profit_roi'] ?? 0),
+            'effective_trailing_contract_source' => $effectiveSource,
             // Legacy fields for compatibility
             'entry_price' => $entryAvg,
             'position_size' => (float)($positionData['size'] ?? $order['qty']),
@@ -1155,6 +1182,26 @@ trait BotExecutorTrait
                 $runtime['effective_fixed_take_profit_roi'] = (float)($riskTrailing['fixed_take_profit_roi'] ?? 0);
 
                 $trade['runtime'] = $runtime;
+
+                // Mirror runtime truth into top-level fields (Option A: no conflicting nulls)
+                $trade['protection_state'] = $runtime['protection_state'];
+                $trade['trailing_enabled'] = $runtime['trailing_enabled'];
+                $trade['trailing_active'] = $runtime['trailing_active'];
+                $trade['break_even_enabled'] = $runtime['break_even_enabled'];
+                $trade['break_even_armed'] = !empty($runtime['break_even_armed']);
+                $trade['break_even_applied'] = !empty($runtime['break_even_applied']);
+                $trade['effective_exit_mode'] = $runtime['effective_exit_mode'];
+                $trade['effective_trailing_activation'] = $runtime['effective_trailing_activation'];
+                $trade['effective_break_even_activation'] = $runtime['break_even_enabled']
+                    ? $runtime['effective_break_even_activation']
+                    : null;
+                $trade['effective_drawdown_factor'] = $runtime['effective_drawdown_factor'];
+                $trade['effective_hybrid_tp_share'] = $runtime['effective_hybrid_tp_share'];
+                $trade['effective_fixed_take_profit_roi'] = $runtime['effective_fixed_take_profit_roi'];
+                $trade['effective_trailing_contract_source'] = $runtime['effective_trailing_contract_source'];
+                if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
+                    $trade['schema_version'] = 'trade_live_v2';
+                }
 
                 // Logical stop check: strategy invalidation exit
                 $logicalStop = $trade['risk']['logical_stop'] ?? [];

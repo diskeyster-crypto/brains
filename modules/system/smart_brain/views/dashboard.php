@@ -336,6 +336,16 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <?php if ($dashStopPrice !== null): ?>
                     | stop price: <code><?= number_format((float)$dashStopPrice, 4) ?></code>
                 <?php endif; ?>
+                <?php
+                $dashInitialStop = $botMirror['initial_computed_stop_price'] ?? null;
+                $dashStopMoved = (bool)($botMirror['stop_moved_from_initial'] ?? false);
+                ?>
+                <?php if ($dashInitialStop !== null): ?>
+                    | initial stop: <code><?= number_format((float)$dashInitialStop, 4) ?></code>
+                <?php endif; ?>
+                <?php if ($dashStopMoved): ?>
+                    <span class="badge bg-warning text-dark" style="font-size:0.65rem;">moved</span>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
             <?php
@@ -345,7 +355,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <summary class="text-secondary" style="cursor:pointer;"><small>Per-Trade Protection Details (<?= count($dashProtDetails) ?>)</small></summary>
                 <div class="table-responsive mt-1">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Exit Mode</th><th>Trailing</th><th>BE</th><th>Stop Mode</th><th>Stop Price</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Exit Mode</th><th>Trailing</th><th>BE</th><th>Stop Mode</th><th>Initial Stop</th><th>Current Stop</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($dashProtDetails as $dpd): ?>
                             <tr>
@@ -362,9 +372,20 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                                     <?php endif; ?>
                                 </td>
                                 <td>
+                                    <?php $dpdInitialStop = $dpd['initial_computed_stop_price'] ?? null; ?>
+                                    <?php if ($dpdInitialStop !== null): ?>
+                                        <small><?= number_format((float)$dpdInitialStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
                                     <?php $dpdStopPrice = $dpd['effective_stop_price'] ?? null; ?>
                                     <?php if ($dpdStopPrice !== null): ?>
                                         <small><?= number_format((float)$dpdStopPrice, 4) ?></small>
+                                        <?php if ($dpd['stop_moved_from_initial'] ?? false): ?>
+                                            <span class="badge bg-warning text-dark" style="font-size:0.55rem;">moved</span>
+                                        <?php endif; ?>
                                     <?php else: ?>
                                         <small class="text-muted">—</small>
                                     <?php endif; ?>

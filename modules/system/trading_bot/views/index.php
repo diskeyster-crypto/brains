@@ -87,8 +87,11 @@ $effectiveTrailingContract = is_array($lastRunBot['effective_trailing_contract']
         <?php
         $effectiveStopControlMode = (string)($lastRunBot['effective_stop_control_mode'] ?? 'auto');
         $effectiveEntryRoi = $lastRunBot['effective_stop_loss_from_entry_roi'] ?? null;
+        $runtimeInitialStop = $lastRunBot['initial_computed_stop_price'] ?? null;
+        $runtimeCurrentStop = $lastRunBot['effective_stop_price'] ?? null;
+        $runtimeStopMoved = (bool)($lastRunBot['stop_moved_from_initial'] ?? false);
         ?>
-        <br><small>Stop control: <code><?= htmlspecialchars($effectiveStopControlMode) ?></code><?php if ($effectiveStopControlMode === 'entry_roi' && $effectiveEntryRoi !== null): ?> — SL from entry: <code><?= round((float)$effectiveEntryRoi * 100, 1) ?>%</code><?php endif; ?></small>
+        <br><small>Stop control: <code><?= htmlspecialchars($effectiveStopControlMode) ?></code><?php if ($effectiveStopControlMode === 'entry_roi' && $effectiveEntryRoi !== null): ?> — SL from entry: <code><?= round((float)$effectiveEntryRoi * 100, 1) ?>%</code><?php endif; ?><?php if ($runtimeInitialStop !== null): ?> | initial stop: <code><?= number_format((float)$runtimeInitialStop, 4) ?></code><?php endif; ?><?php if ($runtimeCurrentStop !== null): ?> | current stop: <code><?= number_format((float)$runtimeCurrentStop, 4) ?></code><?php endif; ?><?php if ($runtimeStopMoved): ?> <span class="badge bg-warning text-dark" style="font-size:0.65rem;">moved</span><?php endif; ?></small>
         <br><small>Execution identity key: <code><?= htmlspecialchars($executionIdentityKey) ?></code> | Dedupe basis: <code><?= htmlspecialchars($dedupeBasis) ?></code></small>
         <br><small>Source status: <code><?= htmlspecialchars($sourceLoadStatus) ?></code><?= $sourceErrorMessage !== '' ? ' — <span class="text-warning">' . htmlspecialchars($sourceErrorMessage) . '</span>' : '' ?></small>
     <?php else: ?>
@@ -547,7 +550,7 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                 <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Stop Price</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Initial Stop</th><th>Current Stop</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($idxProtDetails as $ipd): ?>
                             <tr>
@@ -573,9 +576,20 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                     <?php endif; ?>
                                 </td>
                                 <td>
+                                    <?php $ipdInitialStop = $ipd['initial_computed_stop_price'] ?? null; ?>
+                                    <?php if ($ipdInitialStop !== null): ?>
+                                        <small><?= number_format((float)$ipdInitialStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
                                     <?php $ipdStopPrice = $ipd['effective_stop_price'] ?? null; ?>
                                     <?php if ($ipdStopPrice !== null): ?>
                                         <small><?= number_format((float)$ipdStopPrice, 4) ?></small>
+                                        <?php if ($ipd['stop_moved_from_initial'] ?? false): ?>
+                                            <span class="badge bg-warning text-dark" style="font-size:0.55rem;">moved</span>
+                                        <?php endif; ?>
                                     <?php else: ?>
                                         <small class="text-muted">—</small>
                                     <?php endif; ?>

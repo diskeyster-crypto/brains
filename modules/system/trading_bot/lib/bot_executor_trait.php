@@ -1102,6 +1102,9 @@ trait BotExecutorTrait
                 ? (float)($intent['risk']['stop_control']['stop_loss_from_entry_roi'] ?? 0)
                 : null,
             'effective_stop_price' => ($sl > 0) ? round($sl, 8) : null,
+            // Initial vs current stop separation: initial is frozen at entry, never overwritten by BE/trailing
+            'initial_computed_stop_price' => ($sl > 0) ? round($sl, 8) : null,
+            'stop_moved_from_initial' => false,
             // Contract generation tracking (Part 1-3: opened_with vs current)
             'opened_with_exit_mode' => $exitMode,
             'opened_with_contract_generation' => $contractGeneration,
@@ -1234,6 +1237,15 @@ trait BotExecutorTrait
                     ? round((float)$prot['stop_loss_price'], 8)
                     : null;
 
+                // Preserve initial_computed_stop_price: set once at trade open, never overwritten
+                if (!isset($runtime['initial_computed_stop_price'])) {
+                    $runtime['initial_computed_stop_price'] = $trade['initial_computed_stop_price'] ?? $runtime['effective_stop_price'];
+                }
+                // Compute stop_moved_from_initial flag
+                $initialStop = $runtime['initial_computed_stop_price'];
+                $currentStop = $runtime['effective_stop_price'];
+                $runtime['stop_moved_from_initial'] = ($initialStop !== null && $currentStop !== null && abs($initialStop - $currentStop) > 0.0000001);
+
                 $trade['runtime'] = $runtime;
 
                 // Mirror runtime truth into top-level fields (Option A: no conflicting nulls)
@@ -1256,6 +1268,9 @@ trait BotExecutorTrait
                 $trade['effective_stop_control_mode'] = $runtime['effective_stop_control_mode'];
                 $trade['effective_stop_loss_from_entry_roi'] = $runtime['effective_stop_loss_from_entry_roi'];
                 $trade['effective_stop_price'] = $runtime['effective_stop_price'];
+                // Initial vs current stop separation: mirror into top-level
+                $trade['initial_computed_stop_price'] = $runtime['initial_computed_stop_price'];
+                $trade['stop_moved_from_initial'] = $runtime['stop_moved_from_initial'];
                 if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
                     $trade['schema_version'] = 'trade_live_v2';
                 }

@@ -954,6 +954,9 @@ final class TradingBotService
                     'effective_stop_price' => (float)($prot['stop_loss_price'] ?? 0) > 0
                         ? round((float)$prot['stop_loss_price'], 8)
                         : null,
+                    // Initial vs current stop separation
+                    'initial_computed_stop_price' => $t['initial_computed_stop_price'] ?? ($t['runtime']['initial_computed_stop_price'] ?? null),
+                    'stop_moved_from_initial' => (bool)($t['stop_moved_from_initial'] ?? ($t['runtime']['stop_moved_from_initial'] ?? false)),
                 ];
             }
             $result['active_protection_summary'] = [
@@ -970,8 +973,12 @@ final class TradingBotService
             if (!empty($activePositionProtectionDetails)) {
                 $firstTradeProt = $activePositionProtectionDetails[0];
                 $result['effective_stop_price'] = $firstTradeProt['effective_stop_price'] ?? null;
+                $result['initial_computed_stop_price'] = $firstTradeProt['initial_computed_stop_price'] ?? null;
+                $result['stop_moved_from_initial'] = (bool)($firstTradeProt['stop_moved_from_initial'] ?? false);
             } else {
                 $result['effective_stop_price'] = null;
+                $result['initial_computed_stop_price'] = null;
+                $result['stop_moved_from_initial'] = false;
             }
 
             // Contract generation mix stats (Part 5: operator must see mixed generations)

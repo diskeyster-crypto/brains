@@ -1553,6 +1553,9 @@ final class SmartBrainCore
             $mirror['effective_stop_control_mode'] = $botData['effective_stop_control_mode'] ?? 'auto';
             $mirror['effective_stop_loss_from_entry_roi'] = $botData['effective_stop_loss_from_entry_roi'] ?? null;
             $mirror['effective_stop_price'] = $botData['effective_stop_price'] ?? null;
+            // Initial vs current stop separation mirror
+            $mirror['initial_computed_stop_price'] = $botData['initial_computed_stop_price'] ?? null;
+            $mirror['stop_moved_from_initial'] = (bool)($botData['stop_moved_from_initial'] ?? false);
 
         } catch (\Throwable $e) {
             $mirror['error'] = 'exception: ' . $e->getMessage();

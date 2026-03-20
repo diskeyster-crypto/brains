@@ -366,6 +366,16 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <?php if ($mirrorStopPrice !== null): ?>
                     | stop price: <code><?= number_format((float)$mirrorStopPrice, 4) ?></code>
                 <?php endif; ?>
+                <?php
+                $mirrorInitialStop = $botMirror['initial_computed_stop_price'] ?? null;
+                $mirrorStopMoved = (bool)($botMirror['stop_moved_from_initial'] ?? false);
+                ?>
+                <?php if ($mirrorInitialStop !== null): ?>
+                    | initial stop: <code><?= number_format((float)$mirrorInitialStop, 4) ?></code>
+                <?php endif; ?>
+                <?php if ($mirrorStopMoved): ?>
+                    <span class="badge bg-warning text-dark" style="font-size:0.65rem;">moved</span>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
             <?php
@@ -387,7 +397,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <th>Trailing</th>
                                 <th>Break-Even</th>
                                 <th>Stop Mode</th>
-                                <th>Stop Price</th>
+                                <th>Initial Stop</th>
+                                <th>Current Stop</th>
                                 <th>Source</th>
                             </tr>
                         </thead>
@@ -428,9 +439,20 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                     <?php endif; ?>
                                 </td>
                                 <td>
+                                    <?php $pdInitialStop = $pd['initial_computed_stop_price'] ?? null; ?>
+                                    <?php if ($pdInitialStop !== null): ?>
+                                        <small><?= number_format((float)$pdInitialStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
                                     <?php $pdStopPrice = $pd['effective_stop_price'] ?? null; ?>
                                     <?php if ($pdStopPrice !== null): ?>
                                         <small><?= number_format((float)$pdStopPrice, 4) ?></small>
+                                        <?php if ($pd['stop_moved_from_initial'] ?? false): ?>
+                                            <span class="badge bg-warning text-dark" style="font-size:0.55rem;">moved</span>
+                                        <?php endif; ?>
                                     <?php else: ?>
                                         <small class="text-muted">—</small>
                                     <?php endif; ?>

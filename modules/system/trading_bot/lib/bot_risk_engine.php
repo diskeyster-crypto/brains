@@ -166,12 +166,29 @@ class BotRiskEngine
             return $result;
         }
         
-        // P1.2: stop_from_liq_range_pct must be > 0 and <= 100
+        // P1.2: stop_from_liq_range_pct validation — relaxed for entry_roi mode
+        // When stop_control_mode=entry_roi, the exchange SL is computed from entry price,
+        // so stop_from_liq_range_pct is used only as emergency fallback (still required > 0).
+        $stopControlMode = (string)($risk['stop_control']['stop_control_mode'] ?? ($risk['stop_control_mode'] ?? 'auto'));
         $stopFromLiqPct = (float)($risk['stop_from_liq_range_pct'] ?? 0);
         if ($stopFromLiqPct <= 0 || $stopFromLiqPct > 100) {
-            $result['valid'] = false;
-            $result['reason'] = 'invalid_stop_from_liq_range_pct:' . $stopFromLiqPct;
-            return $result;
+            if ($stopControlMode !== 'entry_roi') {
+                $result['valid'] = false;
+                $result['reason'] = 'invalid_stop_from_liq_range_pct:' . $stopFromLiqPct;
+                return $result;
+            }
+            // In entry_roi mode, warn but don't reject — emergency stop may not be needed
+            $result['missing_fields'][] = 'stop_from_liq_range_pct_zero_in_entry_roi_mode';
+        }
+        
+        // Validate entry_roi mode fields
+        if ($stopControlMode === 'entry_roi') {
+            $entryRoi = (float)($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0);
+            if ($entryRoi <= 0 || $entryRoi > 1.0) {
+                $result['valid'] = false;
+                $result['reason'] = 'invalid_stop_loss_from_entry_roi:' . $entryRoi;
+                return $result;
+            }
         }
         
         // P1.2: slippage_bps >= 0 (must be set and non-negative)
@@ -299,6 +316,47 @@ class BotRiskEngine
         }
         
         // Round to 8 decimals
+        return round($sl, 8);
+    }
+    
+    /**
+     * Calculate stop loss from entry price (entry_roi mode)
+     * 
+     * Formula:
+     * - LONG: sl = entryPrice * (1 - stop_loss_from_entry_roi)
+     * - SHORT: sl = entryPrice * (1 + stop_loss_from_entry_roi)
+     * 
+     * @param array $risk Risk block
+     * @param float $entryPrice Entry price from exchange
+     * @param string $side Position side (long|short)
+     * @return float|null Stop loss price or null if invalid
+     */
+    public function calculateStopLossFromEntry(array $risk, float $entryPrice, string $side): ?float
+    {
+        if ($entryPrice <= 0) {
+            return null;
+        }
+        
+        $stopControl = $risk['stop_control'] ?? [];
+        $entryRoi = (float)($stopControl['stop_loss_from_entry_roi'] ?? 0);
+        if ($entryRoi <= 0 || $entryRoi > 1.0) {
+            return null;
+        }
+        
+        $side = strtolower($side);
+        
+        if ($side === 'long') {
+            // LONG: SL below entry
+            $sl = $entryPrice * (1 - $entryRoi);
+        } else {
+            // SHORT: SL above entry
+            $sl = $entryPrice * (1 + $entryRoi);
+        }
+        
+        if ($sl <= 0) {
+            return null;
+        }
+        
         return round($sl, 8);
     }
     

@@ -133,6 +133,7 @@ final class SmartBrainConfig
             // Stop Control
             'stop_control_mode'            => (string)($values['stop_control_mode'] ?? 'auto'),
             'manual_stop_loss_roi'         => (float)($values['manual_stop_loss_roi'] ?? 0.03),
+            'stop_loss_from_entry_roi'     => (float)($values['stop_loss_from_entry_roi'] ?? 0.10),
             // Symbol Intelligence
             'symbol_intelligence_enabled'  => !empty($values['symbol_intelligence_enabled']),
             'symbol_filter_mode'           => (string)($values['symbol_filter_mode'] ?? 'all'),
@@ -318,12 +319,15 @@ final class SmartBrainConfig
             }
         }
         // Stop Control validation
-        $validStopControlModes = ['manual', 'auto'];
+        $validStopControlModes = ['manual', 'auto', 'entry_roi'];
         if (isset($values['stop_control_mode']) && !in_array((string)$values['stop_control_mode'], $validStopControlModes, true)) {
-            $errors[] = 'stop_control_mode must be one of: manual, auto';
+            $errors[] = 'stop_control_mode must be one of: manual, auto, entry_roi';
         }
         if (isset($values['manual_stop_loss_roi']) && (float)$values['manual_stop_loss_roi'] <= 0) {
             $errors[] = 'manual_stop_loss_roi must be > 0';
+        }
+        if (isset($values['stop_loss_from_entry_roi']) && ((float)$values['stop_loss_from_entry_roi'] <= 0 || (float)$values['stop_loss_from_entry_roi'] > 1.0)) {
+            $errors[] = 'stop_loss_from_entry_roi must be > 0 and <= 1.0';
         }
 
         // Symbol Intelligence validation
@@ -593,6 +597,7 @@ final class SmartBrainConfig
                 'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
                 'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+                'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
             ],
             'leverage_mode' => (string)($userLimits['leverage_mode'] ?? 'auto'),
             'manual_leverage' => (int)($userLimits['manual_leverage'] ?? 3),
@@ -685,6 +690,7 @@ final class SmartBrainConfig
             'stop_control' => [
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
                 'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+                'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
             ],
             'symbol_intelligence' => [
                 'symbol_intelligence_enabled' => (bool)($userLimits['symbol_intelligence_enabled'] ?? false),
@@ -725,6 +731,7 @@ final class SmartBrainConfig
                     'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
                     'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
                     'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+                    'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
                 ],
             ],
             'pattern_selection' => [

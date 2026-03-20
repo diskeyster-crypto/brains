@@ -42,6 +42,10 @@ return [
         'break_even_enabled' => true,
         'break_even_activation_roi' => 0.025,
         'logical_stop_roi' => 0.03,
+        // Stop Control
+        'stop_control_mode' => 'auto',
+        'manual_stop_loss_roi' => 0.03,
+        'stop_loss_from_entry_roi' => 0.10,
         // Stop Loss Engine V2
         'stop_mode' => 'brain_managed',
         'simple_stop_liq_factor' => 0.15,

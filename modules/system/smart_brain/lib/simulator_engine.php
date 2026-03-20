@@ -117,6 +117,7 @@ final class SimulatorEngine
                 'leverage_mode'              => $signal['leverage_mode'] ?? 'auto',
                 'stop_control_mode'          => $signal['stop_control_mode'] ?? 'auto',
                 'manual_stop_loss_roi'       => $signal['manual_stop_loss_roi'] ?? 0.03,
+                'stop_loss_from_entry_roi'   => $signal['stop_loss_from_entry_roi'] ?? 0.10,
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -155,6 +156,11 @@ final class SimulatorEngine
                     $manualStopLossRoi = (float)($w['manual_stop_loss_roi'] ?? 0.03);
                     if ($manualStopLossRoi > 0.0) {
                         $effectiveSL = $manualStopLossRoi;
+                    }
+                } elseif ($stopControlMode === 'entry_roi') {
+                    $entryRoi = (float)($w['stop_loss_from_entry_roi'] ?? 0.10);
+                    if ($entryRoi > 0.0) {
+                        $effectiveSL = $entryRoi;
                     }
                 }
 
@@ -210,6 +216,7 @@ final class SimulatorEngine
                     'leverage_mode'              => $w['leverage_mode'] ?? 'auto',
                     'stop_control_mode'          => $w['stop_control_mode'] ?? 'auto',
                     'manual_stop_loss_roi'       => $w['manual_stop_loss_roi'] ?? 0.03,
+                    'stop_loss_from_entry_roi'   => $w['stop_loss_from_entry_roi'] ?? 0.10,
                 ];
                 $activeSymbols[$symbol] = true;
             } else {
@@ -394,6 +401,7 @@ final class SimulatorEngine
                     'leverage_mode'              => $a['leverage_mode'] ?? 'auto',
                     'stop_control_mode'          => $a['stop_control_mode'] ?? 'auto',
                     'manual_stop_loss_roi'       => $a['manual_stop_loss_roi'] ?? 0.03,
+                    'stop_loss_from_entry_roi'   => $a['stop_loss_from_entry_roi'] ?? 0.10,
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);
@@ -606,10 +614,10 @@ final class SimulatorEngine
         }
 
         // Stop control mode stats
-        $stopControlStats = ['manual' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0]];
+        $stopControlStats = ['manual' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0], 'entry_roi' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0]];
         foreach ($closed as $trade) {
             $scm = (string)($trade['stop_control_mode'] ?? 'auto');
-            $key = ($scm === 'manual') ? 'manual' : 'auto';
+            $key = in_array($scm, ['manual', 'entry_roi'], true) ? $scm : 'auto';
             $stopControlStats[$key]['count']++;
             $tradeRoi = (float)($trade['roi'] ?? 0.0);
             if ($tradeRoi >= 0) { $stopControlStats[$key]['wins']++; }

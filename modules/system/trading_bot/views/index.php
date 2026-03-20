@@ -84,6 +84,11 @@ $effectiveTrailingContract = is_array($lastRunBot['effective_trailing_contract']
         <?php if ($effectiveTrailingContract !== null): ?>
         <br><small>Effective exit contract: mode=<code><?= htmlspecialchars((string)($effectiveTrailingContract['exit_mode'] ?? 'n/a')) ?></code> | trailing=<b><?= ($effectiveTrailingContract['enabled'] ?? false) ? 'ON' : 'OFF' ?></b> | activation=<code><?= htmlspecialchars((string)($effectiveTrailingContract['activation_roi_pct'] ?? 'n/a')) ?>%</code> | drawdown=<code><?= htmlspecialchars((string)($effectiveTrailingContract['drawdown_factor'] ?? 'n/a')) ?></code> | min_step=<code><?= htmlspecialchars((string)($effectiveTrailingContract['min_step'] ?? 'n/a')) ?></code> | BE=<b><?= ($effectiveTrailingContract['break_even_enabled'] ?? false) ? 'ON' : 'OFF' ?></b> @ <code><?= htmlspecialchars((string)($effectiveTrailingContract['break_even_activation_roi'] ?? 'n/a')) ?>%</code><?php if (($effectiveTrailingContract['exit_mode'] ?? '') === 'hybrid_tp'): ?> | hybrid: <code><?= round(((float)($effectiveTrailingContract['hybrid_tp_share'] ?? 0)) * 100) ?>%</code> @ <code><?= htmlspecialchars((string)($effectiveTrailingContract['fixed_take_profit_roi'] ?? '')) ?></code><?php endif; ?></small>
         <?php endif; ?>
+        <?php
+        $effectiveStopControlMode = (string)($lastRunBot['effective_stop_control_mode'] ?? 'auto');
+        $effectiveEntryRoi = $lastRunBot['effective_stop_loss_from_entry_roi'] ?? null;
+        ?>
+        <br><small>Stop control: <code><?= htmlspecialchars($effectiveStopControlMode) ?></code><?php if ($effectiveStopControlMode === 'entry_roi' && $effectiveEntryRoi !== null): ?> — SL from entry: <code><?= round((float)$effectiveEntryRoi * 100, 1) ?>%</code><?php endif; ?></small>
         <br><small>Execution identity key: <code><?= htmlspecialchars($executionIdentityKey) ?></code> | Dedupe basis: <code><?= htmlspecialchars($dedupeBasis) ?></code></small>
         <br><small>Source status: <code><?= htmlspecialchars($sourceLoadStatus) ?></code><?= $sourceErrorMessage !== '' ? ' — <span class="text-warning">' . htmlspecialchars($sourceErrorMessage) . '</span>' : '' ?></small>
     <?php else: ?>
@@ -542,7 +547,7 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                 <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($idxProtDetails as $ipd): ?>
                             <tr>
@@ -560,6 +565,12 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                 <td>
                                     <small><?= htmlspecialchars((string)($ipd['contract_generation'] ?? '')) ?></small>
                                     <?php if ($ipd['contract_migrated'] ?? false): ?><span class="badge bg-info" style="font-size:0.6rem;">migrated</span><?php endif; ?>
+                                </td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($ipd['stop_control_mode'] ?? 'auto')) ?></small>
+                                    <?php if (($ipd['stop_control_mode'] ?? 'auto') === 'entry_roi' && ($ipd['stop_loss_from_entry_roi'] ?? null) !== null): ?>
+                                        <small>(<?= round((float)$ipd['stop_loss_from_entry_roi'] * 100, 1) ?>%)</small>
+                                    <?php endif; ?>
                                 </td>
                                 <td><small><?= htmlspecialchars((string)($ipd['effective_trailing_contract_source'] ?? '')) ?></small></td>
                             </tr>

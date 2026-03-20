@@ -354,6 +354,14 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <?php endif; ?>
                 | logical stop: <code><?= htmlspecialchars((string)($rtEffectiveContract['logical_stop_roi'] ?? 'n/a')) ?></code>
                 | source: <code><?= htmlspecialchars($mirrorSource) ?></code>
+                <?php
+                $mirrorStopControlMode = (string)($botMirror['effective_stop_control_mode'] ?? 'auto');
+                $mirrorEntryRoi = $botMirror['effective_stop_loss_from_entry_roi'] ?? null;
+                ?>
+                | stop: <code><?= htmlspecialchars($mirrorStopControlMode) ?></code>
+                <?php if ($mirrorStopControlMode === 'entry_roi' && $mirrorEntryRoi !== null): ?>
+                    (<code><?= round((float)$mirrorEntryRoi * 100, 1) ?>%</code> from entry)
+                <?php endif; ?>
             </div>
             <?php endif; ?>
             <?php
@@ -374,6 +382,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <th>Contract</th>
                                 <th>Trailing</th>
                                 <th>Break-Even</th>
+                                <th>Stop Mode</th>
                                 <th>Source</th>
                             </tr>
                         </thead>
@@ -405,6 +414,12 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                         ⏳ Enabled
                                     <?php else: ?>
                                         ⚪ Off
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($pd['stop_control_mode'] ?? 'auto')) ?></small>
+                                    <?php if (($pd['stop_control_mode'] ?? 'auto') === 'entry_roi' && ($pd['stop_loss_from_entry_roi'] ?? null) !== null): ?>
+                                        <small>(<?= round((float)$pd['stop_loss_from_entry_roi'] * 100, 1) ?>%)</small>
                                     <?php endif; ?>
                                 </td>
                                 <td><small><?= htmlspecialchars((string)($pd['effective_trailing_contract_source'] ?? 'unknown')) ?></small></td>

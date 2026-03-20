@@ -663,6 +663,7 @@ final class SmartBrainCore
                 'drawdown_factor' => (float)($canonicalTrailing['drawdown_factor'] ?? 0.5),
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
                 'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+                'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
                 'logical_stop_roi' => (float)($userLimits['logical_stop_roi'] ?? 0.03),
                 'canonical_source' => 'risk_trailing_derived',
             ];
@@ -704,6 +705,7 @@ final class SmartBrainCore
                 'stop_policy' => [
                     'stop_control_mode' => (string)($signal['stop_control_mode'] ?? ($trailing['stop_control_mode'] ?? 'auto')),
                     'manual_stop_loss_roi' => (float)($signal['manual_stop_loss_roi'] ?? ($trailing['manual_stop_loss_roi'] ?? 0.03)),
+                    'stop_loss_from_entry_roi' => (float)($signal['stop_loss_from_entry_roi'] ?? ($trailing['stop_loss_from_entry_roi'] ?? 0.10)),
                 ],
                 'selection_mode_used' => $selectionMode,
                 'selection_source' => $selectionSource,
@@ -1024,6 +1026,20 @@ final class SmartBrainCore
             'enabled' => true,
             'stop_from_liq_range_pct' => $stopFromLiqRangePct,
             'mode' => 'liquidation_safety_net',
+            'source' => 'brain_config',
+        ];
+
+        // Stop control mode: determines how exchange SL is calculated
+        // auto = liquidation-based (stop_from_liq_range_pct)
+        // manual = fixed ROI from entry (manual_stop_loss_roi)
+        // entry_roi = percentage from entry price (stop_loss_from_entry_roi)
+        $stopControlMode = (string)($userLimits['stop_control_mode'] ?? 'auto');
+        $stopLossFromEntryRoi = (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10);
+        $manualStopLossRoi = (float)($userLimits['manual_stop_loss_roi'] ?? 0.03);
+        $botReady['stop_control'] = [
+            'stop_control_mode' => $stopControlMode,
+            'stop_loss_from_entry_roi' => $stopLossFromEntryRoi,
+            'manual_stop_loss_roi' => $manualStopLossRoi,
             'source' => 'brain_config',
         ];
 
@@ -1532,6 +1548,10 @@ final class SmartBrainCore
             $mirror['effective_drawdown_factor'] = $botData['effective_drawdown_factor'] ?? ($botEffectiveContract['drawdown_factor'] ?? null);
             $mirror['effective_hybrid_tp_share'] = $botData['effective_hybrid_tp_share'] ?? ($botEffectiveContract['hybrid_tp_share'] ?? null);
             $mirror['effective_trailing_contract_source'] = (string)($botData['effective_trailing_contract_source'] ?? 'unknown');
+
+            // Stop control mode mirror
+            $mirror['effective_stop_control_mode'] = $botData['effective_stop_control_mode'] ?? 'auto';
+            $mirror['effective_stop_loss_from_entry_roi'] = $botData['effective_stop_loss_from_entry_roi'] ?? null;
 
         } catch (\Throwable $e) {
             $mirror['error'] = 'exception: ' . $e->getMessage();

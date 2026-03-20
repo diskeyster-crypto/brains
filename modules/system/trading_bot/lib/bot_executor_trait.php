@@ -525,7 +525,20 @@ trait BotExecutorTrait
                 // Step 7: Calculate protection
                 // ============================================================
                 $result['execution_stage'] = 'protection_apply_started';
-                $sl = $this->riskEngine->calculateStopLossFromLiq($risk, $entryAvg, $liqPrice, $side);
+                
+                // Determine stop control mode from risk block
+                $stopControlMode = (string)($risk['stop_control']['stop_control_mode'] ?? ($risk['stop_control_mode'] ?? 'auto'));
+                
+                if ($stopControlMode === 'entry_roi') {
+                    // Entry-based stop: SL = entry price ± stop_loss_from_entry_roi
+                    $sl = $this->riskEngine->calculateStopLossFromEntry($risk, $entryAvg, $side);
+                    $result['stop_control_mode_used'] = 'entry_roi';
+                    $result['stop_loss_from_entry_roi'] = (float)($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0);
+                } else {
+                    // Legacy/auto: SL from liquidation distance
+                    $sl = $this->riskEngine->calculateStopLossFromLiq($risk, $entryAvg, $liqPrice, $side);
+                    $result['stop_control_mode_used'] = $stopControlMode;
+                }
                 
                 if ($sl === null) {
                     // Cannot calculate SL - fail-safe close
@@ -1062,6 +1075,10 @@ trait BotExecutorTrait
                 'trailing_enabled' => $trailing['enabled'] ?? false,
                 'trailing_stop' => $trailing['trailing_stop'] ?? null,
                 'active_price' => $trailing['active_price'] ?? null,
+                'stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
+                'stop_loss_from_entry_roi' => ($intent['risk']['stop_control']['stop_control_mode'] ?? 'auto') === 'entry_roi'
+                    ? (float)($intent['risk']['stop_control']['stop_loss_from_entry_roi'] ?? 0)
+                    : null,
             ],
             // Top-level effective post-entry contract (mirrors runtime, consistent from creation)
             'protection_state' => $initialProtectionState,

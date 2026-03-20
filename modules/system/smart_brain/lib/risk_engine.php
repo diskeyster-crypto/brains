@@ -255,6 +255,7 @@ final class RiskEngine
                     'leverage_mode' => $leverageMode,
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
+                    'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
                     'risk' => [
                         'leverage' => $leverage,
                         'budget' => $budget,
@@ -347,6 +348,7 @@ final class RiskEngine
                     'leverage_mode' => $leverageMode,
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
+                    'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
                     'risk' => [
                         'leverage' => $leverage,
                         'budget' => $budget,

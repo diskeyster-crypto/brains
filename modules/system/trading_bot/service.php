@@ -173,6 +173,9 @@ final class TradingBotService
             'effective_trailing_enabled' => null,
             'effective_drawdown_factor' => null,
             'effective_hybrid_tp_share' => null,
+            // Stop control mode (entry_roi / auto / manual)
+            'effective_stop_control_mode' => null,
+            'effective_stop_loss_from_entry_roi' => null,
         ];
         
         try {
@@ -422,6 +425,20 @@ final class TradingBotService
                 $result['effective_hybrid_tp_share'] = ($exitMode === 'hybrid_tp')
                     ? (float)($etc['hybrid_tp_share'] ?? 0)
                     : null;
+            }
+
+            // Populate effective stop control mode from risk contract
+            if ($brainControlled && !empty($intentsResult['intents'])) {
+                $firstIntent = $intentsResult['intents'][0] ?? [];
+                $firstRisk = is_array($firstIntent['risk'] ?? null) ? $firstIntent['risk'] : [];
+                $firstStopControl = is_array($firstRisk['stop_control'] ?? null) ? $firstRisk['stop_control'] : [];
+                $result['effective_stop_control_mode'] = (string)($firstStopControl['stop_control_mode'] ?? 'auto');
+                $result['effective_stop_loss_from_entry_roi'] = ($firstStopControl['stop_control_mode'] ?? 'auto') === 'entry_roi'
+                    ? (float)($firstStopControl['stop_loss_from_entry_roi'] ?? 0)
+                    : null;
+            } else {
+                $result['effective_stop_control_mode'] = 'auto';
+                $result['effective_stop_loss_from_entry_roi'] = null;
             }
             
             // Step 3: Validate intents
@@ -928,6 +945,11 @@ final class TradingBotService
                     'contract_generation' => $openedWithGen,
                     'current_effective_contract_generation' => $currentGen,
                     'contract_migrated' => $isMigrated,
+                    // Stop control mode per-trade
+                    'stop_control_mode' => (string)($prot['stop_control_mode'] ?? ($risk['stop_control']['stop_control_mode'] ?? 'auto')),
+                    'stop_loss_from_entry_roi' => ($prot['stop_control_mode'] ?? ($risk['stop_control']['stop_control_mode'] ?? 'auto')) === 'entry_roi'
+                        ? (float)($prot['stop_loss_from_entry_roi'] ?? ($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0))
+                        : null,
                 ];
             }
             $result['active_protection_summary'] = [

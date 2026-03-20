@@ -143,12 +143,13 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                     <div class="card-body">
                         <p class="text-secondary mb-3" style="font-size: 0.85rem;">
                             Режим «auto» — стоп-лосс рассчитывается мозгом автоматически.<br>
-                            Режим «manual» — используется фиксированный стоп-лосс ROI.
+                            Режим «manual» — используется фиксированный стоп-лосс ROI.<br>
+                            Режим «entry_roi» — стоп-лосс как % от цены входа.
                         </p>
                         <div class="mb-3">
                             <label for="stop_control_mode" class="form-label fw-bold">Stop Control Mode</label>
                             <select class="form-select" id="stop_control_mode" name="stop_control_mode">
-                                <?php foreach (['auto' => 'Auto', 'manual' => 'Manual'] as $sc => $scLabel): ?>
+                                <?php foreach (['auto' => 'Auto (Liquidation-based)', 'manual' => 'Manual (Fixed ROI)', 'entry_roi' => 'Entry ROI (% from entry price)'] as $sc => $scLabel): ?>
                                 <option value="<?= $sc ?>" <?= ($form_values['stop_control_mode'] ?? 'auto') === $sc ? 'selected' : '' ?>><?= $scLabel ?></option>
                                 <?php endforeach; ?>
                             </select>
@@ -158,6 +159,11 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             <label for="manual_stop_loss_roi" class="form-label">Manual Stop Loss ROI</label>
                             <input type="number" step="0.001" min="0.001" class="form-control" id="manual_stop_loss_roi" name="manual_stop_loss_roi" value="<?= $v('manual_stop_loss_roi', '0.03') ?>">
                             <small class="text-secondary">Фиксированный стоп-лосс ROI (например, 0.03 = 3%)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stop_loss_from_entry_roi" class="form-label">Stop Loss from Entry ROI</label>
+                            <input type="number" step="0.01" min="0.01" max="1.0" class="form-control" id="stop_loss_from_entry_roi" name="stop_loss_from_entry_roi" value="<?= $v('stop_loss_from_entry_roi', '0.10') ?>">
+                            <small class="text-secondary">% от цены входа для стоп-лосса (0.10 = 10%). Только для режима entry_roi.</small>
                         </div>
                     </div>
                 </div>

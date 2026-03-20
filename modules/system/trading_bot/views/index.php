@@ -547,7 +547,7 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                 <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Stop Price</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($idxProtDetails as $ipd): ?>
                             <tr>
@@ -570,6 +570,14 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                     <small><?= htmlspecialchars((string)($ipd['stop_control_mode'] ?? 'auto')) ?></small>
                                     <?php if (($ipd['stop_control_mode'] ?? 'auto') === 'entry_roi' && ($ipd['stop_loss_from_entry_roi'] ?? null) !== null): ?>
                                         <small>(<?= round((float)$ipd['stop_loss_from_entry_roi'] * 100, 1) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php $ipdStopPrice = $ipd['effective_stop_price'] ?? null; ?>
+                                    <?php if ($ipdStopPrice !== null): ?>
+                                        <small><?= number_format((float)$ipdStopPrice, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
                                     <?php endif; ?>
                                 </td>
                                 <td><small><?= htmlspecialchars((string)($ipd['effective_trailing_contract_source'] ?? '')) ?></small></td>

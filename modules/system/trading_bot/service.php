@@ -950,6 +950,10 @@ final class TradingBotService
                     'stop_loss_from_entry_roi' => ($prot['stop_control_mode'] ?? ($risk['stop_control']['stop_control_mode'] ?? 'auto')) === 'entry_roi'
                         ? (float)($prot['stop_loss_from_entry_roi'] ?? ($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0))
                         : null,
+                    // Computed stop price (operator observability)
+                    'effective_stop_price' => (float)($prot['stop_loss_price'] ?? 0) > 0
+                        ? round((float)$prot['stop_loss_price'], 8)
+                        : null,
                 ];
             }
             $result['active_protection_summary'] = [
@@ -961,6 +965,14 @@ final class TradingBotService
                 'protection_errors_count' => $protectionErrorsCount,
             ];
             $result['active_position_protection_details'] = $activePositionProtectionDetails;
+
+            // Expose effective_stop_price from first active trade for runtime-level observability
+            if (!empty($activePositionProtectionDetails)) {
+                $firstTradeProt = $activePositionProtectionDetails[0];
+                $result['effective_stop_price'] = $firstTradeProt['effective_stop_price'] ?? null;
+            } else {
+                $result['effective_stop_price'] = null;
+            }
 
             // Contract generation mix stats (Part 5: operator must see mixed generations)
             // Determine what "current" generation is (from effective trailing contract in this run)

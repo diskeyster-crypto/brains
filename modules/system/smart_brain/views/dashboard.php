@@ -324,6 +324,18 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <?php endif; ?>
                 | logical stop: <code><?= htmlspecialchars((string)($effectiveContract['logical_stop_roi'] ?? 'n/a')) ?></code>
                 | source: <code><?= htmlspecialchars($dashSource) ?></code>
+                <?php
+                $dashStopControlMode = (string)($botMirror['effective_stop_control_mode'] ?? 'auto');
+                $dashEntryRoi = $botMirror['effective_stop_loss_from_entry_roi'] ?? null;
+                $dashStopPrice = $botMirror['effective_stop_price'] ?? null;
+                ?>
+                | stop: <code><?= htmlspecialchars($dashStopControlMode) ?></code>
+                <?php if ($dashStopControlMode === 'entry_roi' && $dashEntryRoi !== null): ?>
+                    (<code><?= round((float)$dashEntryRoi * 100, 1) ?>%</code> from entry)
+                <?php endif; ?>
+                <?php if ($dashStopPrice !== null): ?>
+                    | stop price: <code><?= number_format((float)$dashStopPrice, 4) ?></code>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
             <?php
@@ -333,7 +345,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <summary class="text-secondary" style="cursor:pointer;"><small>Per-Trade Protection Details (<?= count($dashProtDetails) ?>)</small></summary>
                 <div class="table-responsive mt-1">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Exit Mode</th><th>Trailing</th><th>BE</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Exit Mode</th><th>Trailing</th><th>BE</th><th>Stop Mode</th><th>Stop Price</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($dashProtDetails as $dpd): ?>
                             <tr>
@@ -343,6 +355,20 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                                 <td><small><?= htmlspecialchars((string)($dpd['exit_mode'] ?? '')) ?></small></td>
                                 <td><?= ($dpd['trailing_active'] ?? false) ? '🟢' : (($dpd['trailing_enabled'] ?? false) ? '⏳' : '⚪') ?></td>
                                 <td><?= ($dpd['break_even_applied'] ?? false) ? '✅' : (($dpd['break_even_armed'] ?? false) ? '🔶' : '⚪') ?></td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($dpd['stop_control_mode'] ?? 'auto')) ?></small>
+                                    <?php if (($dpd['stop_control_mode'] ?? 'auto') === 'entry_roi' && ($dpd['stop_loss_from_entry_roi'] ?? null) !== null): ?>
+                                        <small>(<?= round((float)$dpd['stop_loss_from_entry_roi'] * 100, 1) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php $dpdStopPrice = $dpd['effective_stop_price'] ?? null; ?>
+                                    <?php if ($dpdStopPrice !== null): ?>
+                                        <small><?= number_format((float)$dpdStopPrice, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                </td>
                                 <td><small><?= htmlspecialchars((string)($dpd['effective_trailing_contract_source'] ?? '')) ?></small></td>
                             </tr>
                         <?php endforeach; ?>

@@ -362,6 +362,10 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <?php if ($mirrorStopControlMode === 'entry_roi' && $mirrorEntryRoi !== null): ?>
                     (<code><?= round((float)$mirrorEntryRoi * 100, 1) ?>%</code> from entry)
                 <?php endif; ?>
+                <?php $mirrorStopPrice = $botMirror['effective_stop_price'] ?? null; ?>
+                <?php if ($mirrorStopPrice !== null): ?>
+                    | stop price: <code><?= number_format((float)$mirrorStopPrice, 4) ?></code>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
             <?php
@@ -383,6 +387,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <th>Trailing</th>
                                 <th>Break-Even</th>
                                 <th>Stop Mode</th>
+                                <th>Stop Price</th>
                                 <th>Source</th>
                             </tr>
                         </thead>
@@ -420,6 +425,14 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                     <small><?= htmlspecialchars((string)($pd['stop_control_mode'] ?? 'auto')) ?></small>
                                     <?php if (($pd['stop_control_mode'] ?? 'auto') === 'entry_roi' && ($pd['stop_loss_from_entry_roi'] ?? null) !== null): ?>
                                         <small>(<?= round((float)$pd['stop_loss_from_entry_roi'] * 100, 1) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php $pdStopPrice = $pd['effective_stop_price'] ?? null; ?>
+                                    <?php if ($pdStopPrice !== null): ?>
+                                        <small><?= number_format((float)$pdStopPrice, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
                                     <?php endif; ?>
                                 </td>
                                 <td><small><?= htmlspecialchars((string)($pd['effective_trailing_contract_source'] ?? 'unknown')) ?></small></td>

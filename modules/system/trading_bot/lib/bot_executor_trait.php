@@ -1096,6 +1096,12 @@ trait BotExecutorTrait
                 : null,
             'effective_fixed_take_profit_roi' => (float)($riskTrailing['fixed_take_profit_roi'] ?? 0),
             'effective_trailing_contract_source' => $effectiveSource,
+            // Stop mode truth (top-level for operator observability)
+            'effective_stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
+            'effective_stop_loss_from_entry_roi' => ($intent['risk']['stop_control']['stop_control_mode'] ?? 'auto') === 'entry_roi'
+                ? (float)($intent['risk']['stop_control']['stop_loss_from_entry_roi'] ?? 0)
+                : null,
+            'effective_stop_price' => ($sl > 0) ? round($sl, 8) : null,
             // Contract generation tracking (Part 1-3: opened_with vs current)
             'opened_with_exit_mode' => $exitMode,
             'opened_with_contract_generation' => $contractGeneration,
@@ -1217,6 +1223,17 @@ trait BotExecutorTrait
                     : null;
                 $runtime['effective_fixed_take_profit_roi'] = (float)($riskTrailing['fixed_take_profit_roi'] ?? 0);
 
+                // Stop mode truth: persist into runtime for observability
+                $tradeStopControl = is_array($trade['risk']['stop_control'] ?? null) ? $trade['risk']['stop_control'] : [];
+                $tradeStopMode = (string)($prot['stop_control_mode'] ?? ($tradeStopControl['stop_control_mode'] ?? 'auto'));
+                $runtime['effective_stop_control_mode'] = $tradeStopMode;
+                $runtime['effective_stop_loss_from_entry_roi'] = $tradeStopMode === 'entry_roi'
+                    ? (float)($prot['stop_loss_from_entry_roi'] ?? ($tradeStopControl['stop_loss_from_entry_roi'] ?? 0))
+                    : null;
+                $runtime['effective_stop_price'] = (float)($prot['stop_loss_price'] ?? 0) > 0
+                    ? round((float)$prot['stop_loss_price'], 8)
+                    : null;
+
                 $trade['runtime'] = $runtime;
 
                 // Mirror runtime truth into top-level fields (Option A: no conflicting nulls)
@@ -1235,6 +1252,10 @@ trait BotExecutorTrait
                 $trade['effective_hybrid_tp_share'] = $runtime['effective_hybrid_tp_share'];
                 $trade['effective_fixed_take_profit_roi'] = $runtime['effective_fixed_take_profit_roi'];
                 $trade['effective_trailing_contract_source'] = $runtime['effective_trailing_contract_source'];
+                // Stop mode truth: mirror into top-level
+                $trade['effective_stop_control_mode'] = $runtime['effective_stop_control_mode'];
+                $trade['effective_stop_loss_from_entry_roi'] = $runtime['effective_stop_loss_from_entry_roi'];
+                $trade['effective_stop_price'] = $runtime['effective_stop_price'];
                 if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
                     $trade['schema_version'] = 'trade_live_v2';
                 }

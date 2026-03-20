@@ -138,6 +138,7 @@ $filteredResults = array_values($filteredResults);
                     <th>Protection</th>
                     <th>Exit Mode</th>
                     <th>Trailing</th>
+                    <th>Stop</th>
                     <th>Details</th>
                 </tr>
             </thead>
@@ -201,6 +202,20 @@ $filteredResults = array_values($filteredResults);
                         <?php $irTrailSource = $ir['effective_trailing_contract_source'] ?? ''; ?>
                         <?php if ($irTrailSource !== '' && $irTrailSource !== 'unknown'): ?>
                             <br><small class="text-muted"><?= htmlspecialchars($irTrailSource) ?></small>
+                        <?php endif; ?>
+                    </td>
+                    <td class="small">
+                        <?php
+                        $irStopMode = $ir['stop_control_mode_used'] ?? ($ir['stop_control_mode'] ?? '');
+                        $irStopRoi = $ir['stop_loss_from_entry_roi'] ?? null;
+                        ?>
+                        <?php if ($irStopMode !== ''): ?>
+                            <small><?= htmlspecialchars($irStopMode) ?></small>
+                            <?php if ($irStopMode === 'entry_roi' && $irStopRoi !== null): ?>
+                                <small>(<?= round((float)$irStopRoi * 100, 1) ?>%)</small>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <small class="text-muted">—</small>
                         <?php endif; ?>
                     </td>
                     <td>

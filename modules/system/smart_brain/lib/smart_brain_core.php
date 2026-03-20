@@ -1409,6 +1409,8 @@ final class SmartBrainCore
             'effective_drawdown_factor' => null,
             'effective_hybrid_tp_share' => null,
             'effective_trailing_contract_source' => null,
+            // P7: Per-symbol exit statistics
+            'symbol_exit_stats' => [],
         ];
 
         try {
@@ -1534,6 +1536,10 @@ final class SmartBrainCore
                 'winrate' => (float)($expectancy['winrate'] ?? 0),
                 'expectancy' => (float)($expectancy['expectancy'] ?? 0),
             ];
+
+            // P7: Per-symbol exit statistics mirror
+            $mirror['symbol_exit_stats'] = is_array($botData['symbol_exit_stats'] ?? null)
+                ? $botData['symbol_exit_stats'] : [];
 
             // P5: Effective trailing contract mirror from bot runtime
             $botEffectiveContract = is_array($botData['effective_trailing_contract'] ?? null) ? $botData['effective_trailing_contract'] : [];

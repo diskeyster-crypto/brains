@@ -473,6 +473,84 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         </div>
     </div>
 
+    <!-- P7: Per-Symbol Exit Statistics (Runtime Detail) -->
+    <?php
+        $symbolExitStats = $botMirror['symbol_exit_stats'] ?? [];
+        if (!empty($symbolExitStats)):
+            uasort($symbolExitStats, function($a, $b) {
+                return ($b['trades_count'] ?? 0) <=> ($a['trades_count'] ?? 0);
+            });
+    ?>
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-bar-chart-line me-2"></i>Per-Symbol Exit Behavior</h5>
+            <span class="badge bg-primary"><?= count($symbolExitStats) ?> symbols</span>
+        </div>
+        <div class="card-body">
+            <div class="mb-2 small" style="background:rgba(15,23,42,0.5); border:1px solid var(--border-color, #334155); border-radius:0.5rem; padding:0.5rem 0.75rem;">
+                <i class="bi bi-info-circle me-1 text-info"></i>
+                <strong>Trailing activation rate</strong> = % trades where trailing became active |
+                <strong>BE apply rate</strong> = % trades where stop moved to entry |
+                <strong>Stop hit</strong> = closed by logical/emergency stop |
+                <strong>Median ROI</strong> = robust central measure (less sensitive to outliers)
+            </div>
+            <div class="table-responsive">
+                <table class="table table-dark table-sm table-hover mb-0" style="font-size:0.8rem;">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th class="text-center">Trades</th>
+                            <th class="text-center">W/L</th>
+                            <th class="text-center">WR</th>
+                            <th class="text-end">Avg ROI</th>
+                            <th class="text-end">Med ROI</th>
+                            <th class="text-end">P25</th>
+                            <th class="text-end">P75</th>
+                            <th class="text-end">Expect</th>
+                            <th class="text-center">Stop</th>
+                            <th class="text-center">Trail%</th>
+                            <th class="text-center">Trail Cl</th>
+                            <th class="text-center">BE%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($symbolExitStats as $sym => $ss): ?>
+                        <?php
+                            $cnt = (int)($ss['trades_count'] ?? 0);
+                            $wr = (float)($ss['winrate'] ?? 0);
+                            $avgR = (float)($ss['avg_roi'] ?? 0);
+                            $medR = (float)($ss['roi_stats']['median'] ?? 0);
+                            $p25 = (float)($ss['roi_stats']['p25'] ?? 0);
+                            $p75 = (float)($ss['roi_stats']['p75'] ?? 0);
+                            $exp = (float)($ss['expectancy'] ?? 0);
+                            $wrCls = $wr >= 0.5 ? 'text-success' : ($wr >= 0.35 ? 'text-warning' : 'text-danger');
+                            $expCls = $exp > 0 ? 'text-success' : ($exp == 0 ? 'text-secondary' : 'text-danger');
+                        ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($sym) ?></strong>
+                                <?php if ($cnt < 10): ?><span class="badge bg-secondary" style="font-size:0.6rem;">low sample</span><?php endif; ?>
+                            </td>
+                            <td class="text-center"><?= $cnt ?></td>
+                            <td class="text-center"><span class="text-success"><?= (int)($ss['wins'] ?? 0) ?></span>/<span class="text-danger"><?= (int)($ss['losses'] ?? 0) ?></span></td>
+                            <td class="text-center <?= $wrCls ?>"><?= round($wr * 100, 1) ?>%</td>
+                            <td class="text-end"><code><?= number_format($avgR, 2) ?>%</code></td>
+                            <td class="text-end"><code><?= number_format($medR, 2) ?>%</code></td>
+                            <td class="text-end text-secondary"><code><?= number_format($p25, 2) ?>%</code></td>
+                            <td class="text-end text-secondary"><code><?= number_format($p75, 2) ?>%</code></td>
+                            <td class="text-end <?= $expCls ?>"><code><?= number_format($exp, 4) ?>%</code></td>
+                            <td class="text-center"><?= (int)($ss['stop_hit_count'] ?? 0) ?></td>
+                            <td class="text-center"><?= round((float)($ss['trailing_activation_rate'] ?? 0) * 100, 0) ?>%</td>
+                            <td class="text-center"><?= (int)($ss['trailing_close_count'] ?? 0) ?></td>
+                            <td class="text-center"><?= round((float)($ss['break_even_apply_rate'] ?? 0) * 100, 0) ?>%</td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Simulator Stats Card -->
     <div class="card mb-4">
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-bar-chart me-1"></i> Simulator Statistics</h5></div>

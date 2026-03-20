@@ -699,6 +699,130 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             </table>
         </div>
     </div>
+
+    <!-- ================================================ -->
+    <!-- P7: Per-Symbol Exit Statistics Panel -->
+    <!-- ================================================ -->
+    <?php
+        $symbolExitStats = $botMirror['symbol_exit_stats'] ?? [];
+        if (!empty($symbolExitStats)):
+            // Sort by trades count desc
+            uasort($symbolExitStats, function($a, $b) {
+                return ($b['trades_count'] ?? 0) <=> ($a['trades_count'] ?? 0);
+            });
+    ?>
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-bar-chart-line me-2"></i>Per-Symbol Exit Statistics</h5>
+            <span class="badge bg-primary"><?= count($symbolExitStats) ?> symbols</span>
+        </div>
+        <div class="card-body">
+            <!-- Explanation Legend -->
+            <div class="mb-3 small" style="background:rgba(15,23,42,0.5); border:1px solid var(--border-color, #334155); border-radius:0.5rem; padding:0.75rem 1rem;">
+                <strong><i class="bi bi-info-circle me-1"></i>Как читать:</strong>
+                <span class="text-secondary">WR</span> = винрейт |
+                <span class="text-secondary">Exp</span> = ожидание (expectancy) |
+                <span class="text-secondary">Stop Hit</span> = закрытий по стопу |
+                <span class="text-secondary">Trail Act%</span> = % активации трейлинга |
+                <span class="text-secondary">Trail Close</span> = закрытий трейлингом |
+                <span class="text-secondary">BE Apply%</span> = % применения безубытка
+            </div>
+            <div class="table-responsive">
+                <table class="table table-dark table-sm table-hover mb-0" style="font-size:0.82rem;">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th class="text-center">Trades</th>
+                            <th class="text-center">W / L</th>
+                            <th class="text-center">WR</th>
+                            <th class="text-end">Avg ROI</th>
+                            <th class="text-end">Med ROI</th>
+                            <th class="text-end">Exp</th>
+                            <th class="text-center">Stop Hit</th>
+                            <th class="text-center">Trail Act%</th>
+                            <th class="text-center">Trail Close</th>
+                            <th class="text-center">BE Apply%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($symbolExitStats as $sym => $ss): ?>
+                        <?php
+                            $ssCount = (int)($ss['trades_count'] ?? 0);
+                            $ssWins = (int)($ss['wins'] ?? 0);
+                            $ssLosses = (int)($ss['losses'] ?? 0);
+                            $ssWR = (float)($ss['winrate'] ?? 0);
+                            $ssAvg = (float)($ss['avg_roi'] ?? 0);
+                            $ssMed = (float)($ss['roi_stats']['median'] ?? 0);
+                            $ssExp = (float)($ss['expectancy'] ?? 0);
+                            $ssStopHit = (int)($ss['stop_hit_count'] ?? 0);
+                            $ssTrailRate = (float)($ss['trailing_activation_rate'] ?? 0);
+                            $ssTrailClose = (int)($ss['trailing_close_count'] ?? 0);
+                            $ssBERate = (float)($ss['break_even_apply_rate'] ?? 0);
+                            $wrClass = $ssWR >= 0.5 ? 'text-success' : ($ssWR >= 0.35 ? 'text-warning' : 'text-danger');
+                            $expClass = $ssExp > 0 ? 'text-success' : ($ssExp == 0 ? 'text-secondary' : 'text-danger');
+                        ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($sym) ?></strong></td>
+                            <td class="text-center"><?= $ssCount ?></td>
+                            <td class="text-center"><span class="text-success"><?= $ssWins ?></span> / <span class="text-danger"><?= $ssLosses ?></span></td>
+                            <td class="text-center <?= $wrClass ?>"><?= round($ssWR * 100, 1) ?>%</td>
+                            <td class="text-end"><code><?= number_format($ssAvg, 2) ?>%</code></td>
+                            <td class="text-end"><code><?= number_format($ssMed, 2) ?>%</code></td>
+                            <td class="text-end <?= $expClass ?>"><code><?= number_format($ssExp, 4) ?>%</code></td>
+                            <td class="text-center"><?= $ssStopHit > 0 ? '<span class="text-danger">' . $ssStopHit . '</span>' : '<span class="text-secondary">0</span>' ?></td>
+                            <td class="text-center"><?= round($ssTrailRate * 100, 0) ?>%</td>
+                            <td class="text-center"><?= $ssTrailClose ?></td>
+                            <td class="text-center"><?= round($ssBERate * 100, 0) ?>%</td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Per-symbol detail (expandable) -->
+            <?php foreach ($symbolExitStats as $sym => $ss): ?>
+            <?php if (($ss['trades_count'] ?? 0) >= 3): // Only show detail for symbols with enough trades ?>
+            <details class="mt-2" style="font-size:0.8rem;">
+                <summary class="text-secondary" style="cursor:pointer;"><strong><?= htmlspecialchars($sym) ?></strong> — side split &amp; exit reasons</summary>
+                <div class="row mt-2 ms-2">
+                    <!-- Side split -->
+                    <div class="col-md-6">
+                        <table class="table table-dark table-sm mb-2" style="font-size:0.78rem;">
+                            <thead><tr><th>Side</th><th>Trades</th><th>WR</th><th>Avg ROI</th><th>Med ROI</th></tr></thead>
+                            <tbody>
+                            <?php foreach (['long', 'short'] as $sideKey):
+                                $sd = $ss['by_side'][$sideKey] ?? null;
+                                if ($sd && ($sd['trades'] ?? 0) > 0):
+                                    $sdWR = (float)($sd['winrate'] ?? 0);
+                            ?>
+                                <tr>
+                                    <td><span class="badge <?= $sideKey === 'long' ? 'bg-success bg-opacity-25 text-success' : 'bg-danger bg-opacity-25 text-danger' ?>"><?= strtoupper($sideKey) ?></span></td>
+                                    <td><?= (int)$sd['trades'] ?></td>
+                                    <td class="<?= $sdWR >= 0.5 ? 'text-success' : 'text-warning' ?>"><?= round($sdWR * 100, 1) ?>%</td>
+                                    <td><code><?= number_format((float)($sd['avg_roi'] ?? 0), 2) ?>%</code></td>
+                                    <td><code><?= number_format((float)($sd['roi_stats']['median'] ?? 0), 2) ?>%</code></td>
+                                </tr>
+                            <?php endif; endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Exit reasons -->
+                    <div class="col-md-6">
+                        <div class="mb-1"><strong class="text-secondary">Exit Reasons:</strong></div>
+                        <?php foreach (($ss['close_reason_distribution'] ?? []) as $reason => $cnt): ?>
+                            <span class="badge bg-secondary bg-opacity-25 text-light me-1 mb-1"><?= htmlspecialchars($reason) ?>: <?= $cnt ?></span>
+                        <?php endforeach; ?>
+                        <?php if (!empty($ss['stop_distance_stats'])): ?>
+                        <div class="mt-1 text-secondary">Stop distance: med <code><?= number_format((float)($ss['stop_distance_stats']['median'] ?? 0) * 100, 2) ?>%</code>, p25-p75: <code><?= number_format((float)($ss['stop_distance_stats']['p25'] ?? 0) * 100, 2) ?>% – <?= number_format((float)($ss['stop_distance_stats']['p75'] ?? 0) * 100, 2) ?>%</code></div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </details>
+            <?php endif; ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 <?php
 };
 

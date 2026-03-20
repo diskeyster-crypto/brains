@@ -759,6 +759,13 @@ final class TradingBotService
             $result['expectancy_metrics'] = $expectancyMetrics;
 
             // ============================================================
+            // P7: Per-symbol exit statistics
+            // Comprehensive per-symbol stop/trailing/break-even behavior,
+            // exit reason distribution, side split, robust stats.
+            // ============================================================
+            $result['symbol_exit_stats'] = $this->computePerSymbolExitStats($closedTrades);
+
+            // ============================================================
             // P0.3: Exchange submit visibility counters
             // Derived from finalized intent_results (single source of truth).
             // ============================================================
@@ -1218,6 +1225,237 @@ final class TradingBotService
         }
 
         return $metrics;
+    }
+
+    /**
+     * Compute per-symbol exit statistics from closed trades.
+     *
+     * Produces symbol-level breakdown of stop/trailing/break-even behavior,
+     * exit reason distribution, side split, and robust stats (median/percentiles).
+     *
+     * @param array $closedTrades Array of closed trade records
+     * @return array Keyed by symbol, each containing exit behavior stats
+     */
+    private function computePerSymbolExitStats(array $closedTrades): array
+    {
+        if (empty($closedTrades)) {
+            return [];
+        }
+
+        // Phase 1: Collect raw data per symbol
+        $raw = [];
+        foreach ($closedTrades as $trade) {
+            $symbol = (string)($trade['symbol'] ?? 'unknown');
+            $side = (string)($trade['side'] ?? 'unknown');
+            $closeReason = (string)($trade['close_reason'] ?? 'unknown');
+            $roi = (float)($trade['realized_roi'] ?? $trade['roi_pct'] ?? $trade['pnl_pct'] ?? 0);
+            $entryPrice = (float)($trade['entry_price'] ?? 0);
+            $closePrice = (float)($trade['close_price'] ?? 0);
+            $initialStop = (float)($trade['initial_computed_stop_price'] ?? $trade['effective_stop_price'] ?? 0);
+
+            if (!isset($raw[$symbol])) {
+                $raw[$symbol] = [
+                    'rois' => [],
+                    'rois_long' => [],
+                    'rois_short' => [],
+                    'close_reasons' => [],
+                    'trailing_enabled_count' => 0,
+                    'trailing_active_count' => 0,
+                    'break_even_enabled_count' => 0,
+                    'break_even_armed_count' => 0,
+                    'break_even_applied_count' => 0,
+                    'stop_distances' => [],
+                    'wins' => 0,
+                    'losses' => 0,
+                    'win_rois' => [],
+                    'loss_rois' => [],
+                    'sides' => ['long' => ['rois' => [], 'wins' => 0, 'losses' => 0, 'reasons' => []], 'short' => ['rois' => [], 'wins' => 0, 'losses' => 0, 'reasons' => []]],
+                ];
+            }
+
+            $raw[$symbol]['rois'][] = $roi;
+
+            if ($roi > 0) {
+                $raw[$symbol]['wins']++;
+                $raw[$symbol]['win_rois'][] = $roi;
+            } else {
+                $raw[$symbol]['losses']++;
+                $raw[$symbol]['loss_rois'][] = $roi;
+            }
+
+            // Close reason distribution
+            $raw[$symbol]['close_reasons'][$closeReason] = ($raw[$symbol]['close_reasons'][$closeReason] ?? 0) + 1;
+
+            // Protection state flags
+            if (!empty($trade['trailing_enabled'])) {
+                $raw[$symbol]['trailing_enabled_count']++;
+            }
+            if (!empty($trade['trailing_active'])) {
+                $raw[$symbol]['trailing_active_count']++;
+            }
+            if (!empty($trade['break_even_enabled'])) {
+                $raw[$symbol]['break_even_enabled_count']++;
+            }
+            if (!empty($trade['break_even_armed'])) {
+                $raw[$symbol]['break_even_armed_count']++;
+            }
+            if (!empty($trade['break_even_applied'])) {
+                $raw[$symbol]['break_even_applied_count']++;
+            }
+
+            // Stop distance from entry (ratio)
+            if ($entryPrice > 0 && $initialStop > 0) {
+                $raw[$symbol]['stop_distances'][] = round(abs($initialStop - $entryPrice) / $entryPrice, 6);
+            }
+
+            // Side split
+            $sideKey = ($side === 'long' || $side === 'short') ? $side : 'unknown';
+            if ($sideKey === 'long' || $sideKey === 'short') {
+                $raw[$symbol]['sides'][$sideKey]['rois'][] = $roi;
+                $raw[$symbol]['sides'][$sideKey][$roi > 0 ? 'wins' : 'losses']++;
+                $raw[$symbol]['sides'][$sideKey]['reasons'][$closeReason] = ($raw[$symbol]['sides'][$sideKey]['reasons'][$closeReason] ?? 0) + 1;
+                if ($sideKey === 'long') {
+                    $raw[$symbol]['rois_long'][] = $roi;
+                } else {
+                    $raw[$symbol]['rois_short'][] = $roi;
+                }
+            }
+        }
+
+        // Phase 2: Build finalized stats with robust metrics
+        $stats = [];
+        foreach ($raw as $symbol => $d) {
+            $count = count($d['rois']);
+            if ($count === 0) {
+                continue;
+            }
+
+            $winrate = $count > 0 ? round($d['wins'] / $count, 4) : 0;
+            $avgWin = count($d['win_rois']) > 0 ? round(array_sum($d['win_rois']) / count($d['win_rois']), 4) : 0;
+            $avgLoss = count($d['loss_rois']) > 0 ? round(array_sum($d['loss_rois']) / count($d['loss_rois']), 4) : 0;
+            $expectancy = round(($winrate * $avgWin) + ((1 - $winrate) * $avgLoss), 4);
+
+            $trailingActivationRate = $d['trailing_enabled_count'] > 0
+                ? round($d['trailing_active_count'] / $d['trailing_enabled_count'], 4) : 0;
+            $trailingCloseCount = ($d['close_reasons']['closed_by_trailing'] ?? 0);
+            $beApplyRate = $d['break_even_enabled_count'] > 0
+                ? round($d['break_even_applied_count'] / $d['break_even_enabled_count'], 4) : 0;
+
+            $stopHitCount = ($d['close_reasons']['closed_by_logical_stop'] ?? 0)
+                + ($d['close_reasons']['close_stop_loss'] ?? 0)
+                + ($d['close_reasons']['stop_loss'] ?? 0);
+
+            $entry = [
+                'symbol' => $symbol,
+                'trades_count' => $count,
+                'wins' => $d['wins'],
+                'losses' => $d['losses'],
+                'winrate' => $winrate,
+                'avg_roi' => round(array_sum($d['rois']) / $count, 4),
+                'roi_stats' => $this->computeRobustStats($d['rois']),
+                'average_win' => $avgWin,
+                'average_loss' => $avgLoss,
+                'expectancy' => $expectancy,
+                'close_reason_distribution' => $d['close_reasons'],
+                'stop_hit_count' => $stopHitCount,
+                'trailing_enabled_count' => $d['trailing_enabled_count'],
+                'trailing_active_count' => $d['trailing_active_count'],
+                'trailing_activation_rate' => $trailingActivationRate,
+                'trailing_close_count' => $trailingCloseCount,
+                'break_even_enabled_count' => $d['break_even_enabled_count'],
+                'break_even_armed_count' => $d['break_even_armed_count'],
+                'break_even_applied_count' => $d['break_even_applied_count'],
+                'break_even_apply_rate' => $beApplyRate,
+            ];
+
+            // Stop distance stats (only if we have data)
+            if (!empty($d['stop_distances'])) {
+                $entry['stop_distance_stats'] = $this->computeRobustStats($d['stop_distances']);
+            }
+
+            // Side split
+            $sides = [];
+            foreach (['long', 'short'] as $s) {
+                $sideData = $d['sides'][$s];
+                $sideCount = count($sideData['rois']);
+                if ($sideCount > 0) {
+                    $sideWinrate = round($sideData['wins'] / $sideCount, 4);
+                    $sides[$s] = [
+                        'trades' => $sideCount,
+                        'wins' => $sideData['wins'],
+                        'losses' => $sideData['losses'],
+                        'winrate' => $sideWinrate,
+                        'avg_roi' => round(array_sum($sideData['rois']) / $sideCount, 4),
+                        'roi_stats' => $this->computeRobustStats($sideData['rois']),
+                        'close_reasons' => $sideData['reasons'],
+                    ];
+                }
+            }
+            $entry['by_side'] = $sides;
+
+            $stats[$symbol] = $entry;
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Compute robust statistics for a numeric array.
+     *
+     * Returns avg, median, p25, p75, min, max, count.
+     * Safe for empty arrays.
+     *
+     * @param array $values Numeric values
+     * @return array Robust stats
+     */
+    private function computeRobustStats(array $values): array
+    {
+        $count = count($values);
+        if ($count === 0) {
+            return ['avg' => 0, 'median' => 0, 'p25' => 0, 'p75' => 0, 'min' => 0, 'max' => 0, 'count' => 0];
+        }
+
+        sort($values);
+        $sum = array_sum($values);
+
+        return [
+            'avg' => round($sum / $count, 4),
+            'median' => round($this->percentile($values, 50), 4),
+            'p25' => round($this->percentile($values, 25), 4),
+            'p75' => round($this->percentile($values, 75), 4),
+            'min' => round(min($values), 4),
+            'max' => round(max($values), 4),
+            'count' => $count,
+        ];
+    }
+
+    /**
+     * Compute percentile from a sorted array.
+     *
+     * @param array $sorted Sorted numeric array
+     * @param float $p Percentile (0-100)
+     * @return float
+     */
+    private function percentile(array $sorted, float $p): float
+    {
+        $count = count($sorted);
+        if ($count === 0) {
+            return 0.0;
+        }
+        if ($count === 1) {
+            return (float)$sorted[0];
+        }
+
+        $rank = ($p / 100) * ($count - 1);
+        $lower = (int)floor($rank);
+        $upper = (int)ceil($rank);
+        $frac = $rank - $lower;
+
+        if ($lower === $upper || $upper >= $count) {
+            return (float)$sorted[$lower];
+        }
+
+        return (float)$sorted[$lower] + $frac * ((float)$sorted[$upper] - (float)$sorted[$lower]);
     }
 
     /**

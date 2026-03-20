@@ -853,6 +853,10 @@ final class TradingBotService
             $breakEvenArmedCount = 0;
             $breakEvenAppliedCount = 0;
             $activePositionProtectionDetails = [];
+            $contractGenerationCounts = [];
+            $legacyActiveTradesCount = 0;
+            $currentContractActiveTradesCount = 0;
+            $migratedActiveTradesCount = 0;
             foreach ($activeTrades as $t) {
                 $rt = is_array($t['runtime'] ?? null) ? $t['runtime'] : [];
                 $prot = is_array($t['protection'] ?? null) ? $t['protection'] : [];
@@ -886,6 +890,15 @@ final class TradingBotService
                     $protectionErrorsCount++;
                 }
 
+                // Contract generation tracking (Part 5-6: per-trade generation stats)
+                $openedWithGen = (string)($t['opened_with_contract_generation'] ?? 'legacy_unknown');
+                $currentGen = (string)($t['current_effective_contract_generation'] ?? 'legacy_unknown');
+                $isMigrated = (bool)($t['contract_migrated'] ?? false);
+                $contractGenerationCounts[$openedWithGen] = ($contractGenerationCounts[$openedWithGen] ?? 0) + 1;
+                if ($isMigrated) {
+                    $migratedActiveTradesCount++;
+                }
+
                 // Per-trade protection state detail (for audit)
                 $activePositionProtectionDetails[] = [
                     'symbol' => $t['symbol'] ?? '',
@@ -910,6 +923,11 @@ final class TradingBotService
                     'logical_stop_enabled' => (bool)($risk['logical_stop']['enabled'] ?? false),
                     'logical_stop_roi' => (float)($risk['logical_stop']['logical_stop_roi'] ?? 0),
                     'open_since' => $t['opened_at'] ?? $t['created_at'] ?? null,
+                    // Contract generation per-trade (Part 6)
+                    'opened_with_exit_mode' => (string)($t['opened_with_exit_mode'] ?? 'unknown'),
+                    'contract_generation' => $openedWithGen,
+                    'current_effective_contract_generation' => $currentGen,
+                    'contract_migrated' => $isMigrated,
                 ];
             }
             $result['active_protection_summary'] = [
@@ -921,6 +939,28 @@ final class TradingBotService
                 'protection_errors_count' => $protectionErrorsCount,
             ];
             $result['active_position_protection_details'] = $activePositionProtectionDetails;
+
+            // Contract generation mix stats (Part 5: operator must see mixed generations)
+            // Determine what "current" generation is (from effective trailing contract in this run)
+            $botCurrentGeneration = 'unknown';
+            $effectiveExitModeNow = (string)($result['effective_exit_mode'] ?? 'unknown');
+            $genMap = ['hybrid_tp' => 'v3_hybrid', 'trailing_tp' => 'v2_trailing', 'fixed_tp' => 'v1_fixed'];
+            $botCurrentGeneration = $genMap[$effectiveExitModeNow] ?? 'v1_fixed';
+            foreach ($contractGenerationCounts as $gen => $cnt) {
+                if ($gen === $botCurrentGeneration) {
+                    $currentContractActiveTradesCount += $cnt;
+                } else {
+                    $legacyActiveTradesCount += $cnt;
+                }
+            }
+            $result['active_trade_contract_generation_stats'] = [
+                'generation_counts' => $contractGenerationCounts,
+                'current_bot_generation' => $botCurrentGeneration,
+                'current_contract_active_trades_count' => $currentContractActiveTradesCount,
+                'legacy_active_trades_count' => $legacyActiveTradesCount,
+                'migrated_active_trades_count' => $migratedActiveTradesCount,
+                'mixed_generations' => count($contractGenerationCounts) > 1,
+            ];
             
             // Step 6: Safety checks
             $safetyResult = $this->performSafetyChecks();

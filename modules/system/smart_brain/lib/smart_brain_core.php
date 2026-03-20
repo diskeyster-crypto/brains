@@ -1382,6 +1382,8 @@ final class SmartBrainCore
             'protection_errors_count' => 0,
             'active_protection_summary' => [],
             'active_position_protection_details' => [],
+            // Contract generation mix stats (Part 7: Brain mirror must not flatten mixed generations)
+            'active_trade_contract_generation_stats' => [],
             // Flat effective post-entry contract fields (from bot runtime)
             'effective_exit_mode' => null,
             'effective_break_even_enabled' => null,
@@ -1493,6 +1495,11 @@ final class SmartBrainCore
             $mirror['active_protection_summary'] = $activeProtSummary;
             $mirror['active_position_protection_details'] = is_array($botData['active_position_protection_details'] ?? null)
                 ? $botData['active_position_protection_details']
+                : [];
+
+            // Contract generation mix stats (Part 7: Brain must not flatten mixed generations)
+            $mirror['active_trade_contract_generation_stats'] = is_array($botData['active_trade_contract_generation_stats'] ?? null)
+                ? $botData['active_trade_contract_generation_stats']
                 : [];
 
             // P0.9: No-order-path debug preview

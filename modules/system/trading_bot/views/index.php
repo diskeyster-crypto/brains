@@ -519,12 +519,30 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                 </div>
                 <?php
                 $idxProtDetails = is_array($lastRunBot['active_position_protection_details'] ?? null) ? $lastRunBot['active_position_protection_details'] : [];
-                if (!empty($idxProtDetails)): ?>
+                $genStats = is_array($lastRunBot['active_trade_contract_generation_stats'] ?? null) ? $lastRunBot['active_trade_contract_generation_stats'] : [];
+                $isMixedGen = (bool)($genStats['mixed_generations'] ?? false);
+                if ($isMixedGen): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Contract Generation Mix</small>
+                <div class="small mb-2">
+                    <span class="badge bg-warning text-dark">⚠ Mixed generations</span>
+                    <?php foreach ((array)($genStats['generation_counts'] ?? []) as $gen => $cnt): ?>
+                        <span class="badge bg-secondary ms-1"><?= htmlspecialchars((string)$gen) ?>: <?= (int)$cnt ?></span>
+                    <?php endforeach; ?>
+                    <?php if ((int)($genStats['migrated_active_trades_count'] ?? 0) > 0): ?>
+                        <span class="badge bg-info ms-1">Migrated: <?= (int)$genStats['migrated_active_trades_count'] ?></span>
+                    <?php endif; ?>
+                </div>
+                <?php elseif (!empty($genStats) && (int)($protSummary['active_positions_count'] ?? 0) > 0): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Contract Generation: <span class="badge bg-success"><?= htmlspecialchars((string)($genStats['current_bot_generation'] ?? 'unknown')) ?></span></small>
+                <?php endif; ?>
+                <?php if (!empty($idxProtDetails)): ?>
                 <hr>
                 <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($idxProtDetails as $ipd): ?>
                             <tr>
@@ -539,6 +557,10 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                     <?php endif; ?>
                                 </td>
                                 <td><?= ($ipd['break_even_applied'] ?? false) ? '✅' : (($ipd['break_even_armed'] ?? false) ? '🔶' : '⚪') ?></td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($ipd['contract_generation'] ?? '')) ?></small>
+                                    <?php if ($ipd['contract_migrated'] ?? false): ?><span class="badge bg-info" style="font-size:0.6rem;">migrated</span><?php endif; ?>
+                                </td>
                                 <td><small><?= htmlspecialchars((string)($ipd['effective_trailing_contract_source'] ?? '')) ?></small></td>
                             </tr>
                         <?php endforeach; ?>

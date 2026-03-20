@@ -1001,6 +1001,19 @@ trait BotExecutorTrait
     }
     
     /**
+     * Derive contract generation label from exit mode string.
+     */
+    private function deriveContractGeneration(string $exitMode): string
+    {
+        return match ($exitMode) {
+            'hybrid_tp' => 'v3_hybrid',
+            'trailing_tp' => 'v2_trailing',
+            'fixed_tp' => 'v1_fixed',
+            default => 'v1_fixed',
+        };
+    }
+
+    /**
      * Build trade for LIVE Phase-1 (trade_live_v1 schema)
      */
     private function buildTradeLiveV1(
@@ -1018,6 +1031,7 @@ trait BotExecutorTrait
         $exitMode = (string)($riskTrailing['exit_mode'] ?? 'unknown');
         $beEnabled = (bool)($riskTrailing['break_even_enabled'] ?? false);
         $initialProtectionState = ($sl > 0) ? 'opened_protected' : 'opened_unprotected';
+        $contractGeneration = $this->deriveContractGeneration($exitMode);
         $effectiveSource = !empty($riskTrailing['brain_trailing_applied'])
             ? 'brain_trailing_contract'
             : (!empty($riskTrailing['effective_trailing_contract_source'])
@@ -1065,6 +1079,11 @@ trait BotExecutorTrait
                 : null,
             'effective_fixed_take_profit_roi' => (float)($riskTrailing['fixed_take_profit_roi'] ?? 0),
             'effective_trailing_contract_source' => $effectiveSource,
+            // Contract generation tracking (Part 1-3: opened_with vs current)
+            'opened_with_exit_mode' => $exitMode,
+            'opened_with_contract_generation' => $contractGeneration,
+            'current_effective_contract_generation' => $contractGeneration,
+            'contract_migrated' => false,
             // Legacy fields for compatibility
             'entry_price' => $entryAvg,
             'position_size' => (float)($positionData['size'] ?? $order['qty']),
@@ -1202,6 +1221,23 @@ trait BotExecutorTrait
                 if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
                     $trade['schema_version'] = 'trade_live_v2';
                 }
+
+                // Contract generation tracking (Part 1-4: distinguish "opened with" from "currently managed as")
+                $currentExitMode = $runtime['effective_exit_mode'];
+                $currentGeneration = $this->deriveContractGeneration($currentExitMode);
+                $trade['current_effective_contract_generation'] = $currentGeneration;
+
+                // Backfill opened_with_* for legacy trades that predate contract generation tracking
+                if (!isset($trade['opened_with_exit_mode'])) {
+                    // Legacy trade: record its original exit_mode from the trade's own risk block as "opened_with"
+                    $originalExitMode = (string)($trade['risk']['trailing']['exit_mode'] ?? 'unknown');
+                    $trade['opened_with_exit_mode'] = $originalExitMode;
+                    $trade['opened_with_contract_generation'] = $this->deriveContractGeneration($originalExitMode);
+                }
+
+                // Detect if the trade's currently applied contract differs from what it was opened with
+                $openedGeneration = (string)($trade['opened_with_contract_generation'] ?? 'unknown');
+                $trade['contract_migrated'] = ($openedGeneration !== $currentGeneration);
 
                 // Logical stop check: strategy invalidation exit
                 $logicalStop = $trade['risk']['logical_stop'] ?? [];

@@ -308,6 +308,23 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             </div>
             <?php endif; ?>
             <?php
+                // Contract generation mix notice (Part 7: Brain mirror must not flatten mixed generations)
+                $rtGenStats = is_array($botMirror['active_trade_contract_generation_stats'] ?? null) ? $botMirror['active_trade_contract_generation_stats'] : [];
+                $rtMixedGen = (bool)($rtGenStats['mixed_generations'] ?? false);
+                if ($rtMixedGen): ?>
+            <div class="mb-2 small">
+                <strong><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Contract Generation Mix:</strong>
+                <span class="badge bg-warning text-dark">Mixed generations detected</span>
+                <?php foreach ((array)($rtGenStats['generation_counts'] ?? []) as $gen => $cnt): ?>
+                    <span class="badge bg-secondary ms-1"><?= htmlspecialchars((string)$gen) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+                <?php if ((int)($rtGenStats['migrated_active_trades_count'] ?? 0) > 0): ?>
+                    <span class="badge bg-info ms-1">Migrated: <?= (int)$rtGenStats['migrated_active_trades_count'] ?></span>
+                <?php endif; ?>
+                <br><small class="text-muted">Some active trades were opened under a previous contract generation.</small>
+            </div>
+            <?php endif; ?>
+            <?php
                 // Effective Exit Contract Summary (Runtime)
                 // Priority: bot mirror flat fields (always populated), then nested contract, then last_run
                 $rtEffectiveContract = $botMirror['effective_trailing_contract'] ?? ($last_run['effective_trailing_contract'] ?? []);
@@ -354,6 +371,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <th>SL</th>
                                 <th>Protection</th>
                                 <th>Exit Mode</th>
+                                <th>Contract</th>
                                 <th>Trailing</th>
                                 <th>Break-Even</th>
                                 <th>Source</th>
@@ -368,6 +386,10 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <td><?= ($pd['stop_loss_applied'] ?? false) ? '✅' : '❌' ?></td>
                                 <td><span class="badge bg-<?= ($pd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($pd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($pd['protection_state'] ?? 'unknown')) ?></span></td>
                                 <td><small><?= htmlspecialchars((string)($pd['exit_mode'] ?? 'n/a')) ?></small></td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($pd['contract_generation'] ?? '')) ?></small>
+                                    <?php if ($pd['contract_migrated'] ?? false): ?><span class="badge bg-info" style="font-size:0.6rem;">migrated</span><?php endif; ?>
+                                </td>
                                 <td>
                                     <?= ($pd['trailing_active'] ?? false) ? '🟢 Active' : (($pd['trailing_enabled'] ?? false) ? '⏳ Enabled' : '⚪ Off') ?>
                                     <?php if ($pd['trailing_activation_roi_pct'] ?? 0): ?>

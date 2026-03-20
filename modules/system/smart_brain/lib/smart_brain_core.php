@@ -930,37 +930,70 @@ final class SmartBrainCore
         ];
 
         // Trailing block: merge Brain trailing into bot-expected format
+        // UNIT AUDIT: Brain config stores ratios (0.04 = 4%). Bot engines expect percent (4.0 = 4%).
+        // activation_roi_pct and break_even_activation_roi must be converted ratio→percent.
+        // drawdown_factor is a 0-1 multiplier, NOT a percent — stays as-is.
+        // min_step, min_lock_roi stay as ratios (used only for comparison with other ratios).
+        // fixed_take_profit_roi stays as ratio.
+        // hybrid_tp_share stays as ratio (0.40 = 40%).
         $trailing = $risk['trailing'] ?? [];
         if (is_array($trailing) && !empty($trailing)) {
+            $rawActivation = (float)($trailing['activation_roi_pct'] ?? 0.04);
+            $rawBreakEvenActivation = (float)($trailing['break_even_activation_roi'] ?? 0.02);
+            
+            // Convert ratio to percent if value looks like ratio (< 1.0)
+            // This handles both cases: already-percent and still-ratio
+            $activationPct = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
+            $breakEvenActivationPct = ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation;
+            
             $botReady['trailing'] = [
                 'enabled' => (bool)($trailing['enabled'] ?? false),
-                'activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0.04),
+                'activation_roi_pct' => $activationPct,
                 'drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0.5),
                 'min_step' => (float)($trailing['min_step'] ?? 0.0075),
                 'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.01),
                 'break_even_enabled' => (bool)($trailing['break_even_enabled'] ?? false),
-                'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0.02),
+                'break_even_activation_roi' => $breakEvenActivationPct,
                 'exit_mode' => (string)($trailing['exit_mode'] ?? 'trailing_tp'),
                 'fixed_take_profit_roi' => (float)($trailing['fixed_take_profit_roi'] ?? 0.03),
                 'hybrid_tp_share' => (float)($trailing['hybrid_tp_share'] ?? 0.40),
                 'brain_trailing_applied' => true,
+                'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
             ];
         } else {
             // Default trailing block (disabled)
             $botReady['trailing'] = [
                 'enabled' => false,
-                'activation_roi_pct' => 0.04,
+                'activation_roi_pct' => 4.0,  // 4% in percent (was 0.04 ratio)
                 'drawdown_factor' => 0.5,
                 'min_step' => 0.0075,
                 'min_lock_roi' => 0.01,
                 'break_even_enabled' => false,
-                'break_even_activation_roi' => 0.02,
+                'break_even_activation_roi' => 2.0,  // 2% in percent (was 0.02 ratio)
                 'exit_mode' => 'trailing_tp',
                 'fixed_take_profit_roi' => 0.03,
                 'hybrid_tp_share' => 0.40,
                 'brain_trailing_applied' => false,
+                'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
             ];
         }
+
+        // Logical stop vs emergency stop separation
+        // Emergency stop = existing stop_from_liq_range_pct (liquidation-based safety net)
+        // Logical stop = strategy invalidation stop (closer, based on corridor/structure)
+        $logicalStopRoi = (float)($userLimits['logical_stop_roi'] ?? 0.03);
+        $botReady['logical_stop'] = [
+            'enabled' => true,
+            'logical_stop_roi' => $logicalStopRoi,
+            'mode' => 'strategy_invalidation',
+            'source' => 'brain_config',
+        ];
+        $botReady['emergency_stop'] = [
+            'enabled' => true,
+            'stop_from_liq_range_pct' => $stopFromLiqRangePct,
+            'mode' => 'liquidation_safety_net',
+            'source' => 'brain_config',
+        ];
 
         // P0 Part 3: Trailing mode compatibility — when exit_mode is trailing_tp
         // or trailing is enabled, do NOT include direct take_profit.

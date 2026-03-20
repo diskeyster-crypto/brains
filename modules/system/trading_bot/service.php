@@ -412,13 +412,13 @@ final class TradingBotService
             // These must never be null when the contract is known — null means "not applicable".
             $etc = is_array($result['effective_trailing_contract'] ?? null) ? $result['effective_trailing_contract'] : [];
             if (!empty($etc)) {
-                $result['effective_exit_mode'] = (string)($etc['exit_mode'] ?? 'unknown');
+                $exitMode = (string)($etc['exit_mode'] ?? 'unknown');
+                $result['effective_exit_mode'] = $exitMode;
                 $result['effective_break_even_enabled'] = (bool)($etc['break_even_enabled'] ?? false);
                 $result['effective_break_even_activation'] = (float)($etc['break_even_activation_roi'] ?? 0);
                 $result['effective_trailing_activation'] = (float)($etc['activation_roi_pct'] ?? 0);
                 $result['effective_trailing_enabled'] = (bool)($etc['enabled'] ?? false);
                 $result['effective_drawdown_factor'] = (float)($etc['drawdown_factor'] ?? 0);
-                $exitMode = $etc['exit_mode'] ?? '';
                 $result['effective_hybrid_tp_share'] = ($exitMode === 'hybrid_tp')
                     ? (float)($etc['hybrid_tp_share'] ?? 0)
                     : null;

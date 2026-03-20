@@ -658,8 +658,30 @@ final class SmartBrainCore
                 $side = ($side === 'long') ? 'short' : 'long';
             }
 
+            // P7: Per-symbol exit hints — apply bounded adjustments from execution profile
+            $symbolHints = $this->computePerSymbolHints($symbol, $userLimits);
+            $effectiveLimits = $userLimits;
+            if ($symbolHints['applied']) {
+                $h = $symbolHints['hints'];
+                if (isset($h['suggested_logical_stop_roi'])) {
+                    $effectiveLimits['logical_stop_roi'] = $h['suggested_logical_stop_roi'];
+                }
+                if (isset($h['suggested_trailing_activation_roi'])) {
+                    $effectiveLimits['trailing_activation_roi'] = $h['suggested_trailing_activation_roi'];
+                }
+                if (isset($h['suggested_break_even_activation_roi'])) {
+                    $effectiveLimits['break_even_activation_roi'] = $h['suggested_break_even_activation_roi'];
+                }
+                if (isset($h['suggested_exit_mode'])) {
+                    $effectiveLimits['exit_mode'] = $h['suggested_exit_mode'];
+                }
+                if (isset($h['suggested_hybrid_tp_share'])) {
+                    $effectiveLimits['hybrid_tp_share'] = $h['suggested_hybrid_tp_share'];
+                }
+            }
+
             // P0 FIX: Build full bot-ready risk contract from Brain signal risk + config
-            $botReadyRisk = $this->buildBotReadyRiskBlock($risk, $signal, $liveConfig, $userLimits);
+            $botReadyRisk = $this->buildBotReadyRiskBlock($risk, $signal, $liveConfig, $effectiveLimits);
 
             // UNIFIED EXIT CONTRACT: Derive the top-level trailing block from the canonical
             // risk.trailing that was just built, reverse-mapped to Brain field names.
@@ -737,6 +759,11 @@ final class SmartBrainCore
 
             if ($reverseEnabled && $sideOriginal !== $side) {
                 $intent['side_original'] = $sideOriginal;
+            }
+
+            // P7: Attach per-symbol hint metadata for audit trail
+            if ($symbolHints['applied']) {
+                $intent['symbol_hints'] = $symbolHints;
             }
 
             if (isset($signal['schema_version'])) {
@@ -1877,5 +1904,116 @@ final class SmartBrainCore
             'passports' => $passports,
             'count' => count($passports),
         ];
+    }
+
+    /**
+     * Compute sample-gated per-symbol exit hints from passport execution profiles.
+     *
+     * Returns bounded adjustments to trailing/stop parameters based on the symbol's
+     * historical execution behavior. Only returns hints when sample size is sufficient.
+     *
+     * All hints are:
+     * - explainable (reason provided)
+     * - bounded (clamped to safe min/max)
+     * - sample-size gated (minimum threshold)
+     * - overrideable (applied as soft suggestions, not hard overrides)
+     *
+     * @param string $symbol Symbol name
+     * @param array $userLimits Current user limits for reference/clamping
+     * @param int $minSampleSize Minimum closed trades to produce hints
+     * @return array{hints: array, applied: bool, reason: string}
+     */
+    private function computePerSymbolHints(string $symbol, array $userLimits, int $minSampleSize = 10): array
+    {
+        $result = ['hints' => [], 'applied' => false, 'reason' => 'no_profile'];
+
+        // Read passport for this symbol
+        $passportPath = 'storage/passports/' . $symbol . '.json';
+        $passport = $this->state->readJson($passportPath, []);
+        $ep = $passport['execution_profile'] ?? null;
+
+        if (!is_array($ep) || empty($ep)) {
+            return $result;
+        }
+
+        $sampleSize = (int)($ep['sample_size'] ?? 0);
+        if ($sampleSize < $minSampleSize) {
+            $result['reason'] = 'low_sample_size (' . $sampleSize . '/' . $minSampleSize . ')';
+            return $result;
+        }
+
+        if (empty($ep['actionable'])) {
+            $result['reason'] = 'profile_not_actionable';
+            return $result;
+        }
+
+        $hints = [];
+
+        // 1. Stop sensitivity adjustment
+        $stopSens = (float)($ep['stop_sensitivity_score'] ?? 0);
+        if ($stopSens > 0.6) {
+            // High stop sensitivity: symbol is noisy, suggest slightly wider logical stop
+            $currentStop = (float)($userLimits['logical_stop_roi'] ?? 0.03);
+            $suggestedStop = min(0.06, $currentStop * 1.2); // Max 20% wider, capped at 6%
+            if ($suggestedStop > $currentStop) {
+                $hints['suggested_logical_stop_roi'] = round($suggestedStop, 4);
+                $hints['logical_stop_reason'] = 'high_stop_sensitivity (' . number_format($stopSens, 2) . ')';
+            }
+        }
+
+        // 2. Trailing friendliness adjustment
+        $trailScore = (float)($ep['trailing_friendliness_score'] ?? 0);
+        $trailActivationRate = (float)($ep['trailing_behavior']['trailing_activation_rate'] ?? 0);
+
+        if ($trailScore < 0.3 && $trailActivationRate < 0.2) {
+            // Symbol rarely benefits from trailing: suggest fixed TP instead
+            $hints['suggested_exit_mode'] = 'fixed_tp';
+            $hints['exit_mode_reason'] = 'low_trailing_friendliness (' . number_format($trailScore, 2) . '), trail_act_rate=' . number_format($trailActivationRate, 2);
+        } elseif ($trailScore > 0.7 && $trailActivationRate > 0.5) {
+            // Symbol trails well: suggest slightly lower trailing activation for earlier engagement
+            $currentActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
+            $suggestedActivation = max(0.02, $currentActivation * 0.85); // Max 15% lower, floor at 2%
+            if ($suggestedActivation < $currentActivation) {
+                $hints['suggested_trailing_activation_roi'] = round($suggestedActivation, 4);
+                $hints['trailing_activation_reason'] = 'high_trailing_friendliness (' . number_format($trailScore, 2) . ')';
+            }
+        }
+
+        // 3. Break-even adjustment
+        $beApplyRate = (float)($ep['break_even_behavior']['break_even_apply_rate'] ?? 0);
+        if ($beApplyRate > 0.6) {
+            // BE frequently applies: suggest slightly lower BE activation
+            $currentBE = (float)($userLimits['break_even_activation_roi'] ?? 0.025);
+            $suggestedBE = max(0.01, $currentBE * 0.85); // Max 15% lower, floor at 1%
+            if ($suggestedBE < $currentBE) {
+                $hints['suggested_break_even_activation_roi'] = round($suggestedBE, 4);
+                $hints['be_activation_reason'] = 'high_be_apply_rate (' . number_format($beApplyRate, 2) . ')';
+            }
+        }
+
+        // 4. Hybrid TP share adjustment based on exit distribution
+        $exitDist = $ep['exit_reason_distribution'] ?? [];
+        $trailCloseCount = (int)($ep['trailing_behavior']['trailing_close_count'] ?? 0);
+        $stopHitCount = (int)($ep['stop_behavior']['stop_hit_count'] ?? 0);
+        if ($sampleSize >= 20 && $trailCloseCount > 0 && $stopHitCount > 0) {
+            $trailToStopRatio = $trailCloseCount / max(1, $stopHitCount);
+            if ($trailToStopRatio > 2.0) {
+                // Trailing closes way more than stops: suggest more trailing share
+                $currentHybrid = (float)($userLimits['hybrid_tp_share'] ?? 0.40);
+                $suggestedHybrid = min(0.60, max(0.20, $currentHybrid - 0.10)); // Shift 10% more to trailing
+                $hints['suggested_hybrid_tp_share'] = round($suggestedHybrid, 2);
+                $hints['hybrid_reason'] = 'trail_to_stop_ratio=' . number_format($trailToStopRatio, 2);
+            }
+        }
+
+        if (!empty($hints)) {
+            $result['hints'] = $hints;
+            $result['applied'] = true;
+            $result['reason'] = 'profile_based_hints (sample=' . $sampleSize . ')';
+        } else {
+            $result['reason'] = 'no_adjustments_needed';
+        }
+
+        return $result;
     }
 }

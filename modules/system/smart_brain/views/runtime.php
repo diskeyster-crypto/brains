@@ -307,7 +307,57 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 </div>
             </div>
             <?php endif; ?>
-            <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
+            <?php
+            $protDetails = $botMirror['active_position_protection_details'] ?? [];
+            if (!empty($protDetails)): ?>
+            <div class="mb-2 small">
+                <strong><i class="bi bi-shield-fill-check me-1"></i>Active Position Protection Details</strong>
+                <div class="table-responsive mt-1">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Entry</th>
+                                <th>SL</th>
+                                <th>Protection</th>
+                                <th>Trailing</th>
+                                <th>Break-Even</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($protDetails as $pd): ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string)($pd['symbol'] ?? '')) ?></td>
+                                <td><span class="badge bg-<?= ($pd['side'] ?? '') === 'long' ? 'success' : 'danger' ?>"><?= htmlspecialchars(strtoupper((string)($pd['side'] ?? ''))) ?></span></td>
+                                <td><?= number_format((float)($pd['entry_price'] ?? 0), 4) ?></td>
+                                <td><?= ($pd['stop_loss_applied'] ?? false) ? '✅' : '❌' ?></td>
+                                <td><span class="badge bg-<?= ($pd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($pd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($pd['protection_state'] ?? 'unknown')) ?></span></td>
+                                <td>
+                                    <?= ($pd['trailing_active'] ?? false) ? '🟢 Active' : (($pd['trailing_enabled'] ?? false) ? '⏳ Enabled' : '⚪ Off') ?>
+                                    <?php if ($pd['trailing_activation_roi_pct'] ?? 0): ?>
+                                        <small>(<?= number_format((float)($pd['trailing_activation_roi_pct'] ?? 0), 2) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($pd['break_even_applied'] ?? false): ?>
+                                        ✅ Applied
+                                    <?php elseif ($pd['break_even_armed'] ?? false): ?>
+                                        🔶 Armed
+                                    <?php elseif ($pd['break_even_enabled'] ?? false): ?>
+                                        ⏳ Enabled
+                                    <?php else: ?>
+                                        ⚪ Off
+                                    <?php endif; ?>
+                                </td>
+                                <td><small><?= htmlspecialchars((string)($pd['effective_trailing_contract_source'] ?? 'unknown')) ?></small></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             <?php endif; ?>
             <div>
                 <a href="/admin/trading_bot" class="btn btn-outline-primary btn-sm"><i class="bi bi-box-arrow-up-right me-1"></i>Trading Bot Dashboard</a>

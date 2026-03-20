@@ -517,6 +517,35 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         <div class="fw-semibold <?= (int)($protSummary['protection_errors_count'] ?? 0) > 0 ? 'text-danger' : '' ?>"><?= (int)($protSummary['protection_errors_count'] ?? 0) ?></div>
                     </div>
                 </div>
+                <?php
+                $idxProtDetails = is_array($lastRunBot['active_position_protection_details'] ?? null) ? $lastRunBot['active_position_protection_details'] : [];
+                if (!empty($idxProtDetails)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Source</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($idxProtDetails as $ipd): ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string)($ipd['symbol'] ?? '')) ?></td>
+                                <td><span class="badge bg-<?= ($ipd['side'] ?? '') === 'long' ? 'success' : 'danger' ?>"><?= htmlspecialchars(strtoupper((string)($ipd['side'] ?? ''))) ?></span></td>
+                                <td><?= number_format((float)($ipd['entry_price'] ?? 0), 4) ?></td>
+                                <td><span class="badge bg-<?= ($ipd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($ipd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($ipd['protection_state'] ?? 'unknown')) ?></span></td>
+                                <td>
+                                    <?= ($ipd['trailing_active'] ?? false) ? '🟢' : (($ipd['trailing_enabled'] ?? false) ? '⏳' : '⚪') ?>
+                                    <?php if ($ipd['trailing_activation_roi_pct'] ?? 0): ?>
+                                        <small>(<?= number_format((float)($ipd['trailing_activation_roi_pct'] ?? 0), 2) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= ($ipd['break_even_applied'] ?? false) ? '✅' : (($ipd['break_even_armed'] ?? false) ? '🔶' : '⚪') ?></td>
+                                <td><small><?= htmlspecialchars((string)($ipd['effective_trailing_contract_source'] ?? '')) ?></small></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

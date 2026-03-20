@@ -168,7 +168,13 @@ $filteredResults = array_values($filteredResults);
                             <?= strtoupper($ir['side'] ?? '') ?>
                         </span>
                     </td>
-                    <td><span class="badge bg-<?= $stateBadge ?>"><?= htmlspecialchars($irState) ?></span></td>
+                    <td><span class="badge bg-<?= $stateBadge ?>"><?= htmlspecialchars($irState) ?></span>
+                    <?php
+                    $irProtState = $ir['protection_state'] ?? '';
+                    if ($irProtState !== '' && in_array($irState, ['opened', 'protected', 'trailing_active'])): ?>
+                        <span class="badge bg-<?= $irProtState === 'trailing_active' ? 'success' : ($irProtState === 'opened_protected' ? 'info' : 'warning') ?> ms-1"><?= htmlspecialchars($irProtState) ?></span>
+                    <?php endif; ?>
+                    </td>
                     <td class="small"><?= htmlspecialchars($ir['execution_stage'] ?? '-') ?></td>
                     <td class="small"><?= htmlspecialchars($ir['execution_result'] ?? '') ?></td>
                     <td class="small text-danger">
@@ -188,7 +194,13 @@ $filteredResults = array_values($filteredResults);
                     </td>
                     <td class="small text-center"><?= !empty($ir['exchange_submit_attempted']) ? '<span class="text-info">✓</span>' : '<span class="text-muted">✗</span>' ?></td>
                     <td class="small"><?= htmlspecialchars($ir['protection_status'] ?? '-') ?></td>
-                    <td class="small"><?= htmlspecialchars($ir['trailing_status'] ?? '-') ?></td>
+                    <td class="small">
+                        <?= htmlspecialchars($ir['trailing_status'] ?? '-') ?>
+                        <?php $irTrailSource = $ir['effective_trailing_contract_source'] ?? ''; ?>
+                        <?php if ($irTrailSource !== '' && $irTrailSource !== 'unknown'): ?>
+                            <br><small class="text-muted"><?= htmlspecialchars($irTrailSource) ?></small>
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <button class="btn btn-sm btn-outline-light"
                                 data-json="<?= htmlspecialchars(json_encode($ir, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), ENT_QUOTES, 'UTF-8') ?>"

@@ -294,6 +294,30 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <span class="badge bg-danger bg-opacity-25 text-danger me-1">Errors: <?= $protErrCount ?></span>
                 <?php endif; ?>
             </div>
+            <?php
+            $dashProtDetails = $botMirror['active_position_protection_details'] ?? [];
+            if (!empty($dashProtDetails)): ?>
+            <details class="mt-1">
+                <summary class="text-secondary" style="cursor:pointer;"><small>Per-Trade Protection Details (<?= count($dashProtDetails) ?>)</small></summary>
+                <div class="table-responsive mt-1">
+                    <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Source</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($dashProtDetails as $dpd): ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string)($dpd['symbol'] ?? '')) ?></td>
+                                <td><span class="badge bg-<?= ($dpd['side'] ?? '') === 'long' ? 'success' : 'danger' ?>"><?= htmlspecialchars(strtoupper((string)($dpd['side'] ?? ''))) ?></span></td>
+                                <td><span class="badge bg-<?= ($dpd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($dpd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($dpd['protection_state'] ?? 'unknown')) ?></span></td>
+                                <td><?= ($dpd['trailing_active'] ?? false) ? '🟢' : (($dpd['trailing_enabled'] ?? false) ? '⏳' : '⚪') ?></td>
+                                <td><?= ($dpd['break_even_applied'] ?? false) ? '✅' : (($dpd['break_even_armed'] ?? false) ? '🔶' : '⚪') ?></td>
+                                <td><small><?= htmlspecialchars((string)($dpd['effective_trailing_contract_source'] ?? '')) ?></small></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            <?php endif; ?>
             <?php endif; ?>
             <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
             <div class="mt-1 text-secondary" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>

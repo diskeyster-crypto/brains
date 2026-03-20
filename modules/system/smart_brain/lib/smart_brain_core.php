@@ -1317,6 +1317,8 @@ final class SmartBrainCore
             'break_even_armed_count' => 0,
             'break_even_applied_count' => 0,
             'protection_errors_count' => 0,
+            'active_protection_summary' => [],
+            'active_position_protection_details' => [],
         ];
 
         try {
@@ -1414,6 +1416,12 @@ final class SmartBrainCore
             $mirror['break_even_armed_count'] = (int)($activeProtSummary['break_even_armed_count'] ?? 0);
             $mirror['break_even_applied_count'] = (int)($activeProtSummary['break_even_applied_count'] ?? 0);
             $mirror['protection_errors_count'] = (int)($activeProtSummary['protection_errors_count'] ?? 0);
+
+            // Per-trade protection details (protection_state, trailing source, logical stop)
+            $mirror['active_protection_summary'] = $activeProtSummary;
+            $mirror['active_position_protection_details'] = is_array($botData['active_position_protection_details'] ?? null)
+                ? $botData['active_position_protection_details']
+                : [];
 
             // P0.9: No-order-path debug preview
             $mirror['no_order_path_preview'] = is_array($botData['no_order_path_preview'] ?? null)

@@ -1068,15 +1068,19 @@ trait BotExecutorTrait
         $result = [
             'updated' => 0,
             'closed' => 0,
+            'closed_by_logical_stop' => 0,
+            'closed_by_exchange' => 0,
             'errors' => [],
             'warnings' => [],
             'trailing_applied' => 0,
             'trailing_failed' => 0,
             'trailing_skipped' => 0,
-        'step_trailing_applied' => 0,
+            'step_trailing_applied' => 0,
             'step_trailing_failed' => 0,
             'step_trailing_skipped' => 0,
-            ];
+            'break_even_applied' => 0,
+            'hybrid_partial_applied' => 0,
+        ];
         
         if ($mode !== 'live') {
             return $result;
@@ -1090,11 +1094,22 @@ trait BotExecutorTrait
                 $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
                 
                 if ($position === null || (float)($position['size'] ?? 0) <= 0) {
-                    // Position closed on exchange
+                    // Position closed on exchange — determine close reason
+                    $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $closeReason = 'exchange_closed';
+                    if (!empty($rt['dumb_trailing_applied'])) {
+                        $closeReason = 'closed_by_trailing';
+                    } elseif (!empty($rt['break_even_applied'])) {
+                        $closeReason = 'closed_by_break_even';
+                    } elseif (!empty($rt['close_trigger']) && $rt['close_trigger'] === 'logical_stop') {
+                        $closeReason = 'closed_by_logical_stop';
+                    }
                     $result['closed']++;
+                    $result['closed_by_exchange']++;
                     $this->store->moveTradeToClosedDir($tradeId, array_merge($trade, [
                         'closed_at' => date('c'),
-                        'close_reason' => 'exchange_closed',
+                        'close_reason' => $closeReason,
+                        'close_protection_state' => (string)($rt['protection_state'] ?? 'unknown'),
                     ]));
                     continue;
                 }
@@ -1550,6 +1565,142 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                         }
                     } else {
                         $result['step_trailing_skipped']++;
+                    }
+                }
+
+                // ============================================================
+                // Break-Even Execution
+                // When ROI reaches break_even_activation_roi, move SL to entry price.
+                // This is a one-time operation per trade.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $beEnabled = (bool)($trailingCfg['break_even_enabled'] ?? false);
+                    $beApplied = (bool)($runtime['break_even_applied'] ?? false);
+
+                    if ($beEnabled && !$beApplied) {
+                        $beActivationRoi = (float)($trailingCfg['break_even_activation_roi'] ?? 0);
+                        if ($beActivationRoi > 0) {
+                            $positionIM = (float)($position['positionIM'] ?? 0);
+                            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                            $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                            if ($roiBybit >= $beActivationRoi) {
+                                $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+                                $side = strtolower((string)($trade['side'] ?? 'long'));
+                                if ($side === 'buy') $side = 'long';
+                                if ($side === 'sell') $side = 'short';
+
+                                if ($entryAvg > 0) {
+                                    // Move SL to entry price (break-even)
+                                    $beSL = $entryAvg;
+                                    $currentExchangeSL = (float)($position['stopLoss'] ?? 0);
+
+                                    // Only move SL if it would be an improvement (ratchet logic)
+                                    $shouldApply = false;
+                                    if ($side === 'long') {
+                                        $shouldApply = ($currentExchangeSL <= 0 || $beSL > $currentExchangeSL);
+                                    } else {
+                                        $shouldApply = ($currentExchangeSL <= 0 || $beSL < $currentExchangeSL);
+                                    }
+
+                                    if ($shouldApply) {
+                                        $positionIdx = (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0)));
+                                        $beOpts = [
+                                            'position_idx' => $positionIdx,
+                                            'stop_loss' => $beSL,
+                                        ];
+                                        $beResult = $this->gateway->setTradingStop($trade['symbol'], $side, $beOpts);
+
+                                        if (($beResult['success'] ?? false) === true) {
+                                            $runtime['break_even_armed'] = true;
+                                            $runtime['break_even_applied'] = true;
+                                            $runtime['break_even_applied_at'] = date('c');
+                                            $runtime['break_even_sl_price'] = $beSL;
+                                            $runtime['break_even_roi_at_trigger'] = round($roiBybit, 2);
+                                            $runtime['protection_state'] = 'break_even_applied';
+                                            $trade['protection']['stop_loss_price'] = $beSL;
+                                            $trade['runtime'] = $runtime;
+                                            $result['warnings'][] = "Break-even applied for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, SL→{$beSL})";
+                                        } else {
+                                            $runtime['break_even_last_error'] = $beResult;
+                                            $trade['runtime'] = $runtime;
+                                            $result['warnings'][] = "Break-even failed for {$trade['symbol']}: " . ($beResult['error'] ?? 'unknown');
+                                        }
+                                    } else {
+                                        // SL already better than entry — mark as applied
+                                        $runtime['break_even_armed'] = true;
+                                        $runtime['break_even_applied'] = true;
+                                        $runtime['break_even_applied_at'] = date('c');
+                                        $runtime['break_even_note'] = 'sl_already_beyond_entry';
+                                        $trade['runtime'] = $runtime;
+                                    }
+                                }
+                            } else {
+                                // ROI not yet at threshold — arm if approaching
+                                if ($roiBybit > 0 && $roiBybit >= ($beActivationRoi * 0.5)) {
+                                    $runtime['break_even_armed'] = true;
+                                    $trade['runtime'] = $runtime;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // Hybrid Exit: Partial Take Profit + Runner
+                // When exit_mode=hybrid_tp and ROI reaches fixed_take_profit_roi,
+                // close hybrid_tp_share portion and let the rest trail.
+                // One-time operation per trade.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $exitMode = (string)($trailingCfg['exit_mode'] ?? '');
+                    $hybridApplied = (bool)($runtime['hybrid_partial_applied'] ?? false);
+
+                    if ($exitMode === 'hybrid_tp' && !$hybridApplied) {
+                        $fixedTpRoi = (float)($trailingCfg['fixed_take_profit_roi'] ?? 0);
+                        $hybridShare = (float)($trailingCfg['hybrid_tp_share'] ?? 0.4);
+
+                        if ($fixedTpRoi > 0 && $hybridShare > 0 && $hybridShare < 1.0) {
+                            $positionIM = (float)($position['positionIM'] ?? 0);
+                            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                            $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                            // Convert fixedTpRoi from ratio to percent for comparison
+                            $fixedTpRoiPct = ($fixedTpRoi < 1.0) ? $fixedTpRoi * 100 : $fixedTpRoi;
+
+                            if ($roiBybit >= $fixedTpRoiPct) {
+                                $side = strtolower((string)($trade['side'] ?? 'long'));
+                                if ($side === 'buy') $side = 'long';
+                                if ($side === 'sell') $side = 'short';
+
+                                $totalQty = (float)($position['size'] ?? $trade['position_size'] ?? $trade['qty'] ?? 0);
+                                $closeQty = round($totalQty * $hybridShare, 8);
+
+                                if ($closeQty > 0 && $this->gateway && $this->gateway->isInitialized()) {
+                                    $closeResult = $this->gateway->closePosition($trade['symbol'], $side, $closeQty);
+
+                                    if (($closeResult['success'] ?? false) === true) {
+                                        $runtime['hybrid_partial_applied'] = true;
+                                        $runtime['hybrid_partial_applied_at'] = date('c');
+                                        $runtime['hybrid_partial_qty_closed'] = $closeQty;
+                                        $runtime['hybrid_partial_roi_at_trigger'] = round($roiBybit, 2);
+                                        $runtime['hybrid_remaining_qty'] = round($totalQty - $closeQty, 8);
+                                        $trade['runtime'] = $runtime;
+                                        $result['warnings'][] = "Hybrid partial TP applied for {$trade['symbol']} (closed {$closeQty}/{$totalQty} at ROI " . round($roiBybit, 2) . "%)";
+                                    } else {
+                                        $runtime['hybrid_partial_last_error'] = $closeResult;
+                                        $trade['runtime'] = $runtime;
+                                        $result['warnings'][] = "Hybrid partial TP failed for {$trade['symbol']}: " . ($closeResult['error'] ?? 'unknown');
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

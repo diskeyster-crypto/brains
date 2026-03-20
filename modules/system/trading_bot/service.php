@@ -602,14 +602,22 @@ final class TradingBotService
 
             $result['positions_updated'] = $updateResult['updated'] ?? 0;
             $result['positions_closed'] = $updateResult['closed'] ?? 0;
+            $result['positions_closed_by_logical_stop'] = $updateResult['closed_by_logical_stop'] ?? 0;
+            $result['positions_closed_by_exchange'] = $updateResult['closed_by_exchange'] ?? 0;
+            $result['break_even_applied_count'] = $updateResult['break_even_applied'] ?? 0;
+            $result['hybrid_partial_applied_count'] = $updateResult['hybrid_partial_applied'] ?? 0;
             $result['steps'][] = [
                 'step' => 'update_positions',
                 'status' => 'ok',
                 'updated' => $updateResult['updated'] ?? 0,
                 'closed' => $updateResult['closed'] ?? 0,
+                'closed_by_logical_stop' => $updateResult['closed_by_logical_stop'] ?? 0,
+                'closed_by_exchange' => $updateResult['closed_by_exchange'] ?? 0,
                 'trailing_applied' => $updateResult['trailing_applied'] ?? 0,
                 'trailing_failed' => $updateResult['trailing_failed'] ?? 0,
                 'trailing_skipped' => $updateResult['trailing_skipped'] ?? 0,
+                'break_even_applied' => $updateResult['break_even_applied'] ?? 0,
+                'hybrid_partial_applied' => $updateResult['hybrid_partial_applied'] ?? 0,
             ];
 
             // ============================================================

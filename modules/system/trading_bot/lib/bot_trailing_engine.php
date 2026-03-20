@@ -43,7 +43,7 @@ class BotTrailingEngine
      * 
      * @param array $trade Trade data
      * @param float $currentPrice Current market price
-     * @return array Check result
+     * @return array Check result with close_reason if triggered
      */
     public function checkTrailing(array $trade, float $currentPrice): array
     {
@@ -51,6 +51,7 @@ class BotTrailingEngine
             'triggered' => false,
             'updated' => false,
             'changes' => [],
+            'close_reason' => null,
         ];
         
         $risk = $trade['risk'] ?? [];
@@ -82,6 +83,8 @@ class BotTrailingEngine
             $result['changes']['trailing_activated'] = true;
             $result['changes']['trailing_activated_at'] = date('c');
             $result['changes']['trailing_activated_price'] = $currentPrice;
+            $result['changes']['trailing_activation_roi_threshold'] = $activationRoiPct;
+            $result['changes']['trailing_roi_at_activation'] = round($roi, 4);
             $trailingActivated = true;
         }
         
@@ -107,10 +110,12 @@ class BotTrailingEngine
             $trailingStopPrice = $entryPrice * (1 + $trailingStopRoi / 100);
             
             $result['changes']['trailing_stop_price'] = $trailingStopPrice;
+            $result['changes']['best_roi_seen'] = round($maxProfit, 4);
             
             // Check if triggered
             if ($currentPrice <= $trailingStopPrice) {
                 $result['triggered'] = true;
+                $result['close_reason'] = 'closed_by_trailing';
                 $result['changes']['trailing_triggered_at'] = date('c');
                 $result['changes']['trailing_triggered_price'] = $currentPrice;
             }
@@ -129,13 +134,66 @@ class BotTrailingEngine
             $trailingStopPrice = $entryPrice * (1 - $trailingStopRoi / 100);
             
             $result['changes']['trailing_stop_price'] = $trailingStopPrice;
+            $result['changes']['best_roi_seen'] = round($maxProfit, 4);
             
             // Check if triggered
             if ($currentPrice >= $trailingStopPrice) {
                 $result['triggered'] = true;
+                $result['close_reason'] = 'closed_by_trailing';
                 $result['changes']['trailing_triggered_at'] = date('c');
                 $result['changes']['trailing_triggered_price'] = $currentPrice;
             }
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Check break-even conditions for trade
+     * 
+     * @param array $trade Trade data
+     * @param float $currentRoiPct Current ROI in percent
+     * @return array Break-even check result
+     */
+    public function checkBreakEven(array $trade, float $currentRoiPct): array
+    {
+        $result = [
+            'should_apply' => false,
+            'armed' => false,
+            'reason' => null,
+        ];
+        
+        $risk = $trade['risk'] ?? [];
+        $trailing = $risk['trailing'] ?? [];
+        $runtime = $trade['runtime'] ?? [];
+        
+        $beEnabled = (bool)($trailing['break_even_enabled'] ?? false);
+        if (!$beEnabled) {
+            return $result;
+        }
+        
+        $beActivationRoi = (float)($trailing['break_even_activation_roi'] ?? 0);
+        if ($beActivationRoi <= 0) {
+            return $result;
+        }
+        
+        // Already applied?
+        if (!empty($runtime['break_even_applied'])) {
+            $result['armed'] = true;
+            $result['reason'] = 'already_applied';
+            return $result;
+        }
+        
+        // Arm when approaching threshold (50% of activation)
+        if ($currentRoiPct >= $beActivationRoi * 0.5) {
+            $result['armed'] = true;
+        }
+        
+        // Apply when threshold is reached
+        if ($currentRoiPct >= $beActivationRoi) {
+            $result['should_apply'] = true;
+            $result['armed'] = true;
+            $result['reason'] = 'threshold_reached';
         }
         
         return $result;
@@ -182,8 +240,11 @@ class BotTrailingEngine
 }
 
 /* RULES
-- TrailingEngine handles trailing stop calculations
+- TrailingEngine handles trailing stop calculations and break-even checks
 - Phase-1: "Dumb" trailing - set once on exchange, don't track
 - Trailing activation includes leverage in ROI calculation
 - NO local price tracking - exchange handles trailing
+- Break-even check is used by bot_executor_trait.php for SL→entry moves
+- Close reasons: closed_by_trailing, closed_by_break_even, closed_by_logical_stop
+- Unit system: activation_roi_pct = percent (4.0 = 4%), drawdown_factor = ratio (0.5)
 */

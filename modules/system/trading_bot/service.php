@@ -942,10 +942,8 @@ final class TradingBotService
 
             // Contract generation mix stats (Part 5: operator must see mixed generations)
             // Determine what "current" generation is (from effective trailing contract in this run)
-            $botCurrentGeneration = 'unknown';
             $effectiveExitModeNow = (string)($result['effective_exit_mode'] ?? 'unknown');
-            $genMap = ['hybrid_tp' => 'v3_hybrid', 'trailing_tp' => 'v2_trailing', 'fixed_tp' => 'v1_fixed'];
-            $botCurrentGeneration = $genMap[$effectiveExitModeNow] ?? 'v1_fixed';
+            $botCurrentGeneration = $this->deriveContractGeneration($effectiveExitModeNow);
             foreach ($contractGenerationCounts as $gen => $cnt) {
                 if ($gen === $botCurrentGeneration) {
                     $currentContractActiveTradesCount += $cnt;

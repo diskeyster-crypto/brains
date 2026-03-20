@@ -309,22 +309,34 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             <?php endif; ?>
             <?php
                 // Effective Exit Contract Summary (Runtime)
-                $rtEffectiveContract = $last_run['effective_trailing_contract'] ?? [];
-                if (!empty($rtEffectiveContract)):
+                // Priority: bot mirror flat fields (always populated), then nested contract, then last_run
+                $rtEffectiveContract = $botMirror['effective_trailing_contract'] ?? ($last_run['effective_trailing_contract'] ?? []);
+                $mirrorExitMode = $botMirror['effective_exit_mode'] ?? ($rtEffectiveContract['exit_mode'] ?? null);
+                $mirrorTrailingEnabled = $botMirror['effective_trailing_enabled'] ?? ($rtEffectiveContract['enabled'] ?? null);
+                $mirrorBEEnabled = $botMirror['effective_break_even_enabled'] ?? ($rtEffectiveContract['break_even_enabled'] ?? null);
+                $mirrorTrailingActivation = $botMirror['effective_trailing_activation'] ?? ($rtEffectiveContract['activation_roi_pct'] ?? ($rtEffectiveContract['trailing_activation_roi_pct'] ?? null));
+                $mirrorBEActivation = $botMirror['effective_break_even_activation'] ?? ($rtEffectiveContract['break_even_activation_roi'] ?? ($rtEffectiveContract['break_even_activation_roi_pct'] ?? null));
+                $mirrorDrawdown = $botMirror['effective_drawdown_factor'] ?? ($rtEffectiveContract['drawdown_factor'] ?? null);
+                $mirrorHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($rtEffectiveContract['hybrid_tp_share'] ?? null);
+                $mirrorSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
+                $hasContract = ($mirrorExitMode !== null);
+                if ($hasContract):
             ?>
             <div class="mb-2 small">
                 <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
-                <code><?= htmlspecialchars((string)($rtEffectiveContract['exit_mode'] ?? 'n/a')) ?></code>
-                | trailing: <code><?= !empty($rtEffectiveContract['trailing_enabled']) ? 'ON' : 'OFF' ?></code>
-                | activation: <code><?= htmlspecialchars((string)($rtEffectiveContract['trailing_activation_roi_pct'] ?? ($rtEffectiveContract['trailing_activation_roi'] ?? 'n/a'))) ?>%</code>
-                | BE: <code><?= !empty($rtEffectiveContract['break_even_enabled']) ? 'ON' : 'OFF' ?></code>
-                <?php if (!empty($rtEffectiveContract['break_even_enabled'])): ?>
-                @ <code><?= htmlspecialchars((string)($rtEffectiveContract['break_even_activation_roi_pct'] ?? ($rtEffectiveContract['break_even_activation_roi'] ?? ''))) ?>%</code>
+                <code><?= htmlspecialchars((string)$mirrorExitMode) ?></code>
+                | trailing: <code><?= $mirrorTrailingEnabled ? 'ON' : 'OFF' ?></code>
+                | activation: <code><?= htmlspecialchars((string)($mirrorTrailingActivation ?? 'n/a')) ?>%</code>
+                | drawdown: <code><?= htmlspecialchars((string)($mirrorDrawdown ?? 'n/a')) ?></code>
+                | BE: <code><?= $mirrorBEEnabled ? 'ON' : 'OFF' ?></code>
+                <?php if ($mirrorBEEnabled): ?>
+                @ <code><?= htmlspecialchars((string)($mirrorBEActivation ?? '')) ?>%</code>
                 <?php endif; ?>
-                <?php if (($rtEffectiveContract['exit_mode'] ?? '') === 'hybrid_tp'): ?>
-                | hybrid: <code><?= round(((float)($rtEffectiveContract['hybrid_tp_share'] ?? 0)) * 100) ?>%</code> @ <code><?= htmlspecialchars((string)($rtEffectiveContract['fixed_take_profit_roi'] ?? '')) ?></code>
+                <?php if ($mirrorExitMode === 'hybrid_tp'): ?>
+                | hybrid: <code><?= $mirrorHybridShare !== null ? round(((float)$mirrorHybridShare) * 100) : 'n/a' ?>%</code> @ <code><?= htmlspecialchars((string)($rtEffectiveContract['fixed_take_profit_roi'] ?? '')) ?></code>
                 <?php endif; ?>
                 | logical stop: <code><?= htmlspecialchars((string)($rtEffectiveContract['logical_stop_roi'] ?? 'n/a')) ?></code>
+                | source: <code><?= htmlspecialchars($mirrorSource) ?></code>
             </div>
             <?php endif; ?>
             <?php

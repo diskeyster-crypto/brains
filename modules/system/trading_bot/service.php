@@ -165,6 +165,14 @@ final class TradingBotService
             'intents_skipped' => 0,
             'rejection_reason_stats' => [],
             'close_reason_stats' => [],
+            // Effective post-entry contract fields (flat, always populated)
+            'effective_exit_mode' => null,
+            'effective_break_even_enabled' => null,
+            'effective_break_even_activation' => null,
+            'effective_trailing_activation' => null,
+            'effective_trailing_enabled' => null,
+            'effective_drawdown_factor' => null,
+            'effective_hybrid_tp_share' => null,
         ];
         
         try {
@@ -379,7 +387,41 @@ final class TradingBotService
                 $result['execution_key_basis'] = 'legacy_signal_id';
                 $result['dedupe_basis'] = 'legacy_signal_id';
                 $result['normalized_drawdown_factor_source'] = 'legacy_non_brain_mode';
-                $result['effective_trailing_contract'] = null;
+                // Non-brain mode: derive effective contract from bot local trailing config
+                $localTrailingCfg = $this->config['execution']['trailing'] ?? [];
+                $localDumbTrailingCfg = $this->config['execution']['dumb_trailing'] ?? [];
+                $localTrailingEnabled = (bool)($localTrailingCfg['enabled'] ?? $localDumbTrailingCfg['enabled'] ?? false);
+                $result['effective_trailing_contract'] = [
+                    'enabled' => $localTrailingEnabled,
+                    'activation_roi_pct' => (float)($localTrailingCfg['activation_roi_pct'] ?? 0),
+                    'drawdown_factor' => (float)($localDumbTrailingCfg['drawdown_factor_default'] ?? 0.5),
+                    'min_step' => (float)($localTrailingCfg['min_step'] ?? 0),
+                    'min_lock_roi' => (float)($localTrailingCfg['min_lock_roi'] ?? 0),
+                    'break_even_enabled' => (bool)($localTrailingCfg['break_even_enabled'] ?? false),
+                    'break_even_activation_roi' => (float)($localTrailingCfg['break_even_activation_roi'] ?? 0),
+                    'exit_mode' => (string)($localTrailingCfg['exit_mode'] ?? 'trailing_tp'),
+                    'fixed_take_profit_roi' => (float)($localTrailingCfg['fixed_take_profit_roi'] ?? 0),
+                    'hybrid_tp_share' => (float)($localTrailingCfg['hybrid_tp_share'] ?? 0),
+                    'brain_trailing_applied' => false,
+                    'effective_trailing_contract_source' => 'bot_local_config',
+                    'unit_system' => 'activation_pct=percent,drawdown_factor=ratio',
+                ];
+            }
+
+            // Populate flat effective post-entry contract fields from effective_trailing_contract.
+            // These must never be null when the contract is known — null means "not applicable".
+            $etc = is_array($result['effective_trailing_contract'] ?? null) ? $result['effective_trailing_contract'] : [];
+            if (!empty($etc)) {
+                $result['effective_exit_mode'] = (string)($etc['exit_mode'] ?? 'unknown');
+                $result['effective_break_even_enabled'] = (bool)($etc['break_even_enabled'] ?? false);
+                $result['effective_break_even_activation'] = (float)($etc['break_even_activation_roi'] ?? 0);
+                $result['effective_trailing_activation'] = (float)($etc['activation_roi_pct'] ?? 0);
+                $result['effective_trailing_enabled'] = (bool)($etc['enabled'] ?? false);
+                $result['effective_drawdown_factor'] = (float)($etc['drawdown_factor'] ?? 0);
+                $exitMode = $etc['exit_mode'] ?? '';
+                $result['effective_hybrid_tp_share'] = ($exitMode === 'hybrid_tp')
+                    ? (float)($etc['hybrid_tp_share'] ?? 0)
+                    : null;
             }
             
             // Step 3: Validate intents
@@ -858,7 +900,7 @@ final class TradingBotService
                     'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0),
                     'break_even_armed' => $beArmed,
                     'break_even_applied' => $beApplied,
-                    'exit_mode' => (string)($trailing['exit_mode'] ?? ''),
+                    'exit_mode' => (string)($trailing['exit_mode'] ?? ($rt['effective_exit_mode'] ?? '')),
                     'fixed_take_profit_roi' => (float)($trailing['fixed_take_profit_roi'] ?? 0),
                     'hybrid_tp_share' => (float)($trailing['hybrid_tp_share'] ?? 0),
                     'best_roi_seen' => (float)($rt['best_roi_seen'] ?? 0),

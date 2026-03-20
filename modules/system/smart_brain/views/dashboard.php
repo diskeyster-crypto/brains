@@ -296,22 +296,34 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             </div>
             <?php
                 // Effective Exit Contract Summary
-                $effectiveContract = $last_run['effective_trailing_contract'] ?? [];
-                if (!empty($effectiveContract)):
+                // Priority: bot mirror flat fields (always populated), then nested contract, then last_run
+                $effectiveContract = $botMirror['effective_trailing_contract'] ?? ($last_run['effective_trailing_contract'] ?? []);
+                $dashExitMode = $botMirror['effective_exit_mode'] ?? ($effectiveContract['exit_mode'] ?? null);
+                $dashTrailingEnabled = $botMirror['effective_trailing_enabled'] ?? ($effectiveContract['enabled'] ?? null);
+                $dashBEEnabled = $botMirror['effective_break_even_enabled'] ?? ($effectiveContract['break_even_enabled'] ?? null);
+                $dashTrailingActivation = $botMirror['effective_trailing_activation'] ?? ($effectiveContract['activation_roi_pct'] ?? ($effectiveContract['trailing_activation_roi_pct'] ?? null));
+                $dashBEActivation = $botMirror['effective_break_even_activation'] ?? ($effectiveContract['break_even_activation_roi'] ?? ($effectiveContract['break_even_activation_roi_pct'] ?? null));
+                $dashDrawdown = $botMirror['effective_drawdown_factor'] ?? ($effectiveContract['drawdown_factor'] ?? null);
+                $dashHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($effectiveContract['hybrid_tp_share'] ?? null);
+                $dashSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
+                $dashHasContract = ($dashExitMode !== null);
+                if ($dashHasContract):
             ?>
             <div class="mt-2 small">
                 <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
-                <code><?= htmlspecialchars((string)($effectiveContract['exit_mode'] ?? 'n/a')) ?></code>
-                | trailing: <code><?= !empty($effectiveContract['trailing_enabled']) ? 'ON' : 'OFF' ?></code>
-                | activation: <code><?= htmlspecialchars((string)($effectiveContract['trailing_activation_roi_pct'] ?? ($effectiveContract['trailing_activation_roi'] ?? 'n/a'))) ?>%</code>
-                | BE: <code><?= !empty($effectiveContract['break_even_enabled']) ? 'ON' : 'OFF' ?></code>
-                <?php if (!empty($effectiveContract['break_even_enabled'])): ?>
-                @ <code><?= htmlspecialchars((string)($effectiveContract['break_even_activation_roi_pct'] ?? ($effectiveContract['break_even_activation_roi'] ?? ''))) ?>%</code>
+                <code><?= htmlspecialchars((string)$dashExitMode) ?></code>
+                | trailing: <code><?= $dashTrailingEnabled ? 'ON' : 'OFF' ?></code>
+                | activation: <code><?= htmlspecialchars((string)($dashTrailingActivation ?? 'n/a')) ?>%</code>
+                | drawdown: <code><?= htmlspecialchars((string)($dashDrawdown ?? 'n/a')) ?></code>
+                | BE: <code><?= $dashBEEnabled ? 'ON' : 'OFF' ?></code>
+                <?php if ($dashBEEnabled): ?>
+                @ <code><?= htmlspecialchars((string)($dashBEActivation ?? '')) ?>%</code>
                 <?php endif; ?>
-                <?php if (($effectiveContract['exit_mode'] ?? '') === 'hybrid_tp'): ?>
-                | hybrid: <code><?= round(((float)($effectiveContract['hybrid_tp_share'] ?? 0)) * 100) ?>%</code> @ <code><?= htmlspecialchars((string)($effectiveContract['fixed_take_profit_roi'] ?? '')) ?></code>
+                <?php if ($dashExitMode === 'hybrid_tp'): ?>
+                | hybrid: <code><?= $dashHybridShare !== null ? round(((float)$dashHybridShare) * 100) : 'n/a' ?>%</code> @ <code><?= htmlspecialchars((string)($effectiveContract['fixed_take_profit_roi'] ?? '')) ?></code>
                 <?php endif; ?>
                 | logical stop: <code><?= htmlspecialchars((string)($effectiveContract['logical_stop_roi'] ?? 'n/a')) ?></code>
+                | source: <code><?= htmlspecialchars($dashSource) ?></code>
             </div>
             <?php endif; ?>
             <?php

@@ -1139,6 +1139,21 @@ trait BotExecutorTrait
                     : (!empty($riskTrailing['effective_trailing_contract_source'])
                         ? $riskTrailing['effective_trailing_contract_source']
                         : 'bot_local_config');
+
+                // Persist effective post-entry contract fields from risk.trailing into trade runtime.
+                // These evolve each cycle so the active trade snapshot always reflects real state.
+                $runtime['trailing_enabled'] = (bool)($riskTrailing['enabled'] ?? false);
+                $runtime['trailing_active'] = ($protectionState === 'trailing_active');
+                $runtime['break_even_enabled'] = (bool)($riskTrailing['break_even_enabled'] ?? false);
+                $runtime['effective_exit_mode'] = (string)($riskTrailing['exit_mode'] ?? 'unknown');
+                $runtime['effective_trailing_activation'] = (float)($riskTrailing['activation_roi_pct'] ?? 0);
+                $runtime['effective_break_even_activation'] = (float)($riskTrailing['break_even_activation_roi'] ?? 0);
+                $runtime['effective_drawdown_factor'] = (float)($riskTrailing['drawdown_factor'] ?? 0);
+                $runtime['effective_hybrid_tp_share'] = ($riskTrailing['exit_mode'] ?? '') === 'hybrid_tp'
+                    ? (float)($riskTrailing['hybrid_tp_share'] ?? 0)
+                    : null;
+                $runtime['effective_fixed_take_profit_roi'] = (float)($riskTrailing['fixed_take_profit_roi'] ?? 0);
+
                 $trade['runtime'] = $runtime;
 
                 // Logical stop check: strategy invalidation exit

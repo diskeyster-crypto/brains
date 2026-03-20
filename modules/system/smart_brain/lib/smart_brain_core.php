@@ -1382,6 +1382,15 @@ final class SmartBrainCore
             'protection_errors_count' => 0,
             'active_protection_summary' => [],
             'active_position_protection_details' => [],
+            // Flat effective post-entry contract fields (from bot runtime)
+            'effective_exit_mode' => null,
+            'effective_break_even_enabled' => null,
+            'effective_break_even_activation' => null,
+            'effective_trailing_activation' => null,
+            'effective_trailing_enabled' => null,
+            'effective_drawdown_factor' => null,
+            'effective_hybrid_tp_share' => null,
+            'effective_trailing_contract_source' => null,
         ];
 
         try {
@@ -1506,6 +1515,16 @@ final class SmartBrainCore
             // P5: Effective trailing contract mirror from bot runtime
             $botEffectiveContract = is_array($botData['effective_trailing_contract'] ?? null) ? $botData['effective_trailing_contract'] : [];
             $mirror['effective_trailing_contract'] = $botEffectiveContract;
+
+            // Flat effective post-entry contract fields (directly from bot last_run)
+            $mirror['effective_exit_mode'] = $botData['effective_exit_mode'] ?? ($botEffectiveContract['exit_mode'] ?? null);
+            $mirror['effective_break_even_enabled'] = $botData['effective_break_even_enabled'] ?? ($botEffectiveContract['break_even_enabled'] ?? null);
+            $mirror['effective_break_even_activation'] = $botData['effective_break_even_activation'] ?? ($botEffectiveContract['break_even_activation_roi'] ?? null);
+            $mirror['effective_trailing_activation'] = $botData['effective_trailing_activation'] ?? ($botEffectiveContract['activation_roi_pct'] ?? null);
+            $mirror['effective_trailing_enabled'] = $botData['effective_trailing_enabled'] ?? ($botEffectiveContract['enabled'] ?? null);
+            $mirror['effective_drawdown_factor'] = $botData['effective_drawdown_factor'] ?? ($botEffectiveContract['drawdown_factor'] ?? null);
+            $mirror['effective_hybrid_tp_share'] = $botData['effective_hybrid_tp_share'] ?? ($botEffectiveContract['hybrid_tp_share'] ?? null);
+            $mirror['effective_trailing_contract_source'] = (string)($botData['effective_trailing_contract_source'] ?? 'unknown');
 
         } catch (\Throwable $e) {
             $mirror['error'] = 'exception: ' . $e->getMessage();

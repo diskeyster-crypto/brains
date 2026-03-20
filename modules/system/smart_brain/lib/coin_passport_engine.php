@@ -148,4 +148,105 @@ final class CoinPassportEngine
         }
         return 'slow';
     }
+
+    /**
+     * Enrich passports with execution profiles from live trading bot stats.
+     *
+     * Merges per-symbol exit behavior (stop/trailing/BE stats) into each
+     * passport's execution_profile section. Only writes when sample size
+     * meets the minimum threshold.
+     *
+     * @param array<string,array<string,mixed>> $symbolExitStats Keyed by symbol
+     * @param int $minSampleSize Minimum trades to write a meaningful profile
+     */
+    public function enrichWithExecutionProfile(array $symbolExitStats, int $minSampleSize = 10): void
+    {
+        if (empty($symbolExitStats)) {
+            return;
+        }
+
+        foreach ($symbolExitStats as $symbol => $stats) {
+            $count = (int)($stats['trades_count'] ?? 0);
+            if ($count < 3) {
+                continue; // Not enough trades to store anything
+            }
+
+            $passportPath = 'storage/passports/' . $symbol . '.json';
+            $passport = $this->state->readJson($passportPath, []);
+            if (empty($passport)) {
+                continue; // No passport exists yet
+            }
+
+            $profile = [
+                'sample_size' => $count,
+                'actionable' => $count >= $minSampleSize,
+                'stop_behavior' => [
+                    'stop_hit_count' => (int)($stats['stop_hit_count'] ?? 0),
+                    'stop_hit_rate' => $count > 0
+                        ? round((int)($stats['stop_hit_count'] ?? 0) / $count, 4) : 0,
+                ],
+                'trailing_behavior' => [
+                    'trailing_enabled_count' => (int)($stats['trailing_enabled_count'] ?? 0),
+                    'trailing_active_count' => (int)($stats['trailing_active_count'] ?? 0),
+                    'trailing_activation_rate' => (float)($stats['trailing_activation_rate'] ?? 0),
+                    'trailing_close_count' => (int)($stats['trailing_close_count'] ?? 0),
+                ],
+                'break_even_behavior' => [
+                    'break_even_enabled_count' => (int)($stats['break_even_enabled_count'] ?? 0),
+                    'break_even_applied_count' => (int)($stats['break_even_applied_count'] ?? 0),
+                    'break_even_apply_rate' => (float)($stats['break_even_apply_rate'] ?? 0),
+                ],
+                'exit_reason_distribution' => $stats['close_reason_distribution'] ?? [],
+                'expectancy' => (float)($stats['expectancy'] ?? 0),
+                'winrate' => (float)($stats['winrate'] ?? 0),
+                'avg_roi' => (float)($stats['avg_roi'] ?? 0),
+                'roi_stats' => $stats['roi_stats'] ?? [],
+                'by_side' => [],
+                'updated_at' => date('c'),
+            ];
+
+            // Add side breakdown if available
+            foreach (['long', 'short'] as $side) {
+                $sd = $stats['by_side'][$side] ?? null;
+                if ($sd && ($sd['trades'] ?? 0) > 0) {
+                    $profile['by_side'][$side] = [
+                        'trades' => (int)$sd['trades'],
+                        'winrate' => (float)($sd['winrate'] ?? 0),
+                        'avg_roi' => (float)($sd['avg_roi'] ?? 0),
+                    ];
+                }
+            }
+
+            // Derived scores (only meaningful with enough data)
+            if ($count >= $minSampleSize) {
+                $trailRate = (float)($stats['trailing_activation_rate'] ?? 0);
+                $beRate = (float)($stats['break_even_apply_rate'] ?? 0);
+                $stopRate = $profile['stop_behavior']['stop_hit_rate'];
+
+                // trailing_friendliness: high trail activation + low stop hit = trailing-friendly
+                $profile['trailing_friendliness_score'] = round(
+                    min(1.0, max(0.0, $trailRate * 0.6 + (1 - $stopRate) * 0.4)),
+                    4
+                );
+                // break_even_friendliness: high BE apply rate
+                $profile['break_even_friendliness_score'] = round(
+                    min(1.0, max(0.0, $beRate)),
+                    4
+                );
+                // stop_sensitivity: high stop hit rate = high sensitivity (noisy symbol)
+                $profile['stop_sensitivity_score'] = round(
+                    min(1.0, max(0.0, $stopRate)),
+                    4
+                );
+            }
+
+            // Stop distance stats
+            if (!empty($stats['stop_distance_stats'])) {
+                $profile['stop_distance_stats'] = $stats['stop_distance_stats'];
+            }
+
+            $passport['execution_profile'] = $profile;
+            $this->state->writeJson($passportPath, $passport);
+        }
+    }
 }

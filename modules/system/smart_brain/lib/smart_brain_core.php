@@ -273,6 +273,23 @@ final class SmartBrainCore
         $passports = new CoinPassportEngine($this->state);
         $passports->update($monitors);
 
+        // P7: Enrich passports with live bot execution profile
+        try {
+            $botStoragePath = $this->resolveBotStoragePath();
+            if ($botStoragePath !== null) {
+                $botLastRunPath = $botStoragePath . '/last_run.json';
+                if (file_exists($botLastRunPath)) {
+                    $botRunRaw = (string)file_get_contents($botLastRunPath);
+                    $botRunData = json_decode($botRunRaw, true);
+                    if (is_array($botRunData) && !empty($botRunData['symbol_exit_stats'])) {
+                        $passports->enrichWithExecutionProfile($botRunData['symbol_exit_stats']);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal: passport enrichment failure does not break pipeline
+        }
+
         $risk = new RiskEngine($riskCfg, $profilesCfg, $this->state);
         $signals = $risk->apply($monitors, $prices, $userLimits);
         $this->state->writeJson('storage/signals.json', $signals);

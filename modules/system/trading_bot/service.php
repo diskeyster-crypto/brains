@@ -839,7 +839,11 @@ final class TradingBotService
                     'break_even_applied' => $beApplied,
                     'exit_mode' => (string)($trailing['exit_mode'] ?? ''),
                     'best_roi_seen' => (float)($rt['best_roi_seen'] ?? 0),
-                    'effective_trailing_contract_source' => (string)($trailing['brain_trailing_applied'] ?? false ? 'brain_trailing_contract' : 'bot_local_config'),
+                    'protection_state' => (string)($rt['protection_state'] ?? 'unknown'),
+                    'effective_trailing_contract_source' => (string)($rt['effective_trailing_contract_source'] ?? ($trailing['effective_trailing_contract_source'] ?? 'unknown')),
+                    'trailing_stop_price' => (float)($prot['trailing_stop'] ?? 0),
+                    'logical_stop_enabled' => (bool)($risk['logical_stop']['enabled'] ?? false),
+                    'logical_stop_roi' => (float)($risk['logical_stop']['logical_stop_roi'] ?? 0),
                     'open_since' => $t['opened_at'] ?? $t['created_at'] ?? null,
                 ];
             }

@@ -612,11 +612,13 @@ trait BotSourcesTrait
             'min_lock_roi' => (float)($brainTrailing['trailing_min_lock_roi'] ?? 0),
             'min_step' => (float)($brainTrailing['trailing_min_step'] ?? 0),
             'break_even_enabled' => (bool)($brainTrailing['break_even_enabled'] ?? false),
-            'break_even_activation_roi' => (float)($brainTrailing['break_even_activation_roi'] ?? 0),
+            // Brain uses ratio (e.g. 0.025 = 2.5%), bot expects percentage (e.g. 2.5 = 2.5%)
+            'break_even_activation_roi' => (float)($brainTrailing['break_even_activation_roi'] ?? 0) * 100,
             'exit_mode' => (string)($brainTrailing['exit_mode'] ?? 'fixed_tp'),
             'fixed_take_profit_roi' => (float)($brainTrailing['fixed_take_profit_roi'] ?? 0),
             'hybrid_tp_share' => (float)($brainTrailing['hybrid_tp_share'] ?? 0),
             'brain_trailing_applied' => true,
+            'effective_trailing_contract_source' => 'brain_trailing_contract_normalized',
         ];
 
         $risk['trailing'] = $normalized;

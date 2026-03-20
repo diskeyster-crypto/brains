@@ -141,6 +141,16 @@ class BotRiskEngine
             }
         }
         
+        // Validate logical_stop block if present
+        $logicalStop = $risk['logical_stop'] ?? null;
+        if (is_array($logicalStop) && ($logicalStop['enabled'] ?? false)) {
+            $logicalStopRoi = (float)($logicalStop['logical_stop_roi'] ?? 0);
+            if ($logicalStopRoi <= 0 || $logicalStopRoi > 1.0) {
+                // Don't reject — just warn. Logical stop is optional enhancement.
+                $result['missing_fields'][] = 'logical_stop.logical_stop_roi_invalid:' . $logicalStopRoi;
+            }
+        }
+
         // P1.2: Validate numeric values with proper ranges
         $budget = (float)($risk['budget_usdt_per_trade'] ?? 0);
         if ($budget <= 0) {

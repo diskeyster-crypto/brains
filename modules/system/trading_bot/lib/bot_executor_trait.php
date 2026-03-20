@@ -1098,7 +1098,70 @@ trait BotExecutorTrait
                     ]));
                     continue;
                 }
-                
+
+                // Compute protection state for this trade
+                $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+                $riskTrailing = $trade['risk']['trailing'] ?? [];
+
+                $protectionState = 'opened_unprotected';
+                if ((float)($prot['stop_loss_price'] ?? 0) > 0) {
+                    $protectionState = 'opened_protected';
+                }
+                if (!empty($runtime['break_even_armed'])) {
+                    $protectionState = 'break_even_armed';
+                }
+                if (!empty($runtime['break_even_applied'])) {
+                    $protectionState = 'break_even_applied';
+                }
+                if (!empty($runtime['dumb_trailing_applied']) || !empty($prot['trailing_stop'])) {
+                    $protectionState = 'trailing_active';
+                }
+
+                $runtime['protection_state'] = $protectionState;
+                $runtime['effective_trailing_contract_source'] = !empty($riskTrailing['brain_trailing_applied'])
+                    ? 'brain_trailing_contract'
+                    : (!empty($riskTrailing['effective_trailing_contract_source'])
+                        ? $riskTrailing['effective_trailing_contract_source']
+                        : 'bot_local_config');
+                $trade['runtime'] = $runtime;
+
+                // Logical stop check: strategy invalidation exit
+                $logicalStop = $trade['risk']['logical_stop'] ?? [];
+                if (($logicalStop['enabled'] ?? false)) {
+                    $logicalStopRoi = (float)($logicalStop['logical_stop_roi'] ?? 0);
+                    if ($logicalStopRoi > 0) {
+                        $entryPriceLS = (float)($trade['entry_price'] ?? 0);
+                        $sideLS = strtolower($trade['side'] ?? '');
+                        $markPriceLS = (float)($position['markPrice'] ?? $position['lastPrice'] ?? 0);
+
+                        if ($entryPriceLS > 0 && $markPriceLS > 0) {
+                            $currentRoiLS = 0;
+                            if ($sideLS === 'long') {
+                                $currentRoiLS = ($markPriceLS - $entryPriceLS) / $entryPriceLS;
+                            } else {
+                                $currentRoiLS = ($entryPriceLS - $markPriceLS) / $entryPriceLS;
+                            }
+
+                            // Logical stop: close if ROI drops below negative threshold
+                            if ($currentRoiLS <= -$logicalStopRoi) {
+                                $runtime['close_trigger'] = 'logical_stop';
+                                $runtime['close_roi_at_trigger'] = round($currentRoiLS * 100, 4);
+                                $runtime['logical_stop_roi_threshold'] = $logicalStopRoi;
+
+                                $result['closed']++;
+                                $this->store->moveTradeToClosedDir($tradeId, array_merge($trade, [
+                                    'closed_at' => date('c'),
+                                    'close_reason' => 'closed_by_logical_stop',
+                                    'close_roi' => round($currentRoiLS * 100, 4),
+                                    'runtime' => $runtime,
+                                ]));
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 // Phase-1 safety: Check if SL is set on exchange
                 $exchangeSL = (float)($position['stopLoss'] ?? 0);
                 
@@ -1267,6 +1330,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
                                     if (($trailRes['success'] ?? false) === true) {
                                         $runtime['dumb_trailing_applied'] = true;
+                                        $runtime['protection_state'] = 'trailing_active';
                                         if ($hasExchangeTrailing) {
                                             $runtime['dumb_trailing_rearmed'] = true;
                                         }

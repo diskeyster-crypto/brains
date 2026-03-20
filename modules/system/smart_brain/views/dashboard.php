@@ -295,19 +295,40 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <?php endif; ?>
             </div>
             <?php
+                // Effective Exit Contract Summary
+                $effectiveContract = $last_run['effective_trailing_contract'] ?? [];
+                if (!empty($effectiveContract)):
+            ?>
+            <div class="mt-2 small">
+                <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
+                <code><?= htmlspecialchars((string)($effectiveContract['exit_mode'] ?? 'n/a')) ?></code>
+                | trailing: <code><?= !empty($effectiveContract['trailing_enabled']) ? 'ON' : 'OFF' ?></code>
+                | activation: <code><?= htmlspecialchars((string)($effectiveContract['trailing_activation_roi_pct'] ?? ($effectiveContract['trailing_activation_roi'] ?? 'n/a'))) ?>%</code>
+                | BE: <code><?= !empty($effectiveContract['break_even_enabled']) ? 'ON' : 'OFF' ?></code>
+                <?php if (!empty($effectiveContract['break_even_enabled'])): ?>
+                @ <code><?= htmlspecialchars((string)($effectiveContract['break_even_activation_roi_pct'] ?? ($effectiveContract['break_even_activation_roi'] ?? ''))) ?>%</code>
+                <?php endif; ?>
+                <?php if (($effectiveContract['exit_mode'] ?? '') === 'hybrid_tp'): ?>
+                | hybrid: <code><?= round(((float)($effectiveContract['hybrid_tp_share'] ?? 0)) * 100) ?>%</code> @ <code><?= htmlspecialchars((string)($effectiveContract['fixed_take_profit_roi'] ?? '')) ?></code>
+                <?php endif; ?>
+                | logical stop: <code><?= htmlspecialchars((string)($effectiveContract['logical_stop_roi'] ?? 'n/a')) ?></code>
+            </div>
+            <?php endif; ?>
+            <?php
             $dashProtDetails = $botMirror['active_position_protection_details'] ?? [];
             if (!empty($dashProtDetails)): ?>
             <details class="mt-1">
                 <summary class="text-secondary" style="cursor:pointer;"><small>Per-Trade Protection Details (<?= count($dashProtDetails) ?>)</small></summary>
                 <div class="table-responsive mt-1">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Protection</th><th>Exit Mode</th><th>Trailing</th><th>BE</th><th>Source</th></tr></thead>
                         <tbody>
                         <?php foreach ($dashProtDetails as $dpd): ?>
                             <tr>
                                 <td><?= htmlspecialchars((string)($dpd['symbol'] ?? '')) ?></td>
                                 <td><span class="badge bg-<?= ($dpd['side'] ?? '') === 'long' ? 'success' : 'danger' ?>"><?= htmlspecialchars(strtoupper((string)($dpd['side'] ?? ''))) ?></span></td>
                                 <td><span class="badge bg-<?= ($dpd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($dpd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($dpd['protection_state'] ?? 'unknown')) ?></span></td>
+                                <td><small><?= htmlspecialchars((string)($dpd['exit_mode'] ?? '')) ?></small></td>
                                 <td><?= ($dpd['trailing_active'] ?? false) ? '🟢' : (($dpd['trailing_enabled'] ?? false) ? '⏳' : '⚪') ?></td>
                                 <td><?= ($dpd['break_even_applied'] ?? false) ? '✅' : (($dpd['break_even_armed'] ?? false) ? '🔶' : '⚪') ?></td>
                                 <td><small><?= htmlspecialchars((string)($dpd['effective_trailing_contract_source'] ?? '')) ?></small></td>
@@ -318,6 +339,22 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 </div>
             </details>
             <?php endif; ?>
+            <?php endif; ?>
+            <?php
+                // P6: Expectancy Metrics Display
+                $expectancyMetrics = $botMirror['expectancy_metrics'] ?? [];
+                $totalClosed = (int)($expectancyMetrics['total_closed'] ?? 0);
+                if ($totalClosed > 0):
+            ?>
+            <div class="mt-2 small">
+                <strong><i class="bi bi-graph-up me-1"></i>Expectancy Metrics (<?= $totalClosed ?> trades):</strong>
+                <span class="badge bg-success bg-opacity-25 text-success me-1">Wins: <?= (int)($expectancyMetrics['wins'] ?? 0) ?></span>
+                <span class="badge bg-danger bg-opacity-25 text-danger me-1">Losses: <?= (int)($expectancyMetrics['losses'] ?? 0) ?></span>
+                | WR: <code><?= round(((float)($expectancyMetrics['winrate'] ?? 0)) * 100, 1) ?>%</code>
+                | Avg Win: <code><?= number_format((float)($expectancyMetrics['average_win'] ?? 0), 2) ?>%</code>
+                | Avg Loss: <code><?= number_format((float)($expectancyMetrics['average_loss'] ?? 0), 2) ?>%</code>
+                | <strong>Expectancy: <code><?= number_format((float)($expectancyMetrics['expectancy'] ?? 0), 4) ?>%</code></strong>
+            </div>
             <?php endif; ?>
             <?php if ($botMirror['bot_last_updated_at'] ?? ''): ?>
             <div class="mt-1 text-secondary" style="font-size:0.75rem;">Bot last run: <?= htmlspecialchars((string)$botMirror['bot_last_updated_at']) ?></div>

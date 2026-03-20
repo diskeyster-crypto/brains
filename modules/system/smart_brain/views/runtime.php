@@ -308,6 +308,26 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             </div>
             <?php endif; ?>
             <?php
+                // Effective Exit Contract Summary (Runtime)
+                $rtEffectiveContract = $last_run['effective_trailing_contract'] ?? [];
+                if (!empty($rtEffectiveContract)):
+            ?>
+            <div class="mb-2 small">
+                <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
+                <code><?= htmlspecialchars((string)($rtEffectiveContract['exit_mode'] ?? 'n/a')) ?></code>
+                | trailing: <code><?= !empty($rtEffectiveContract['trailing_enabled']) ? 'ON' : 'OFF' ?></code>
+                | activation: <code><?= htmlspecialchars((string)($rtEffectiveContract['trailing_activation_roi_pct'] ?? ($rtEffectiveContract['trailing_activation_roi'] ?? 'n/a'))) ?>%</code>
+                | BE: <code><?= !empty($rtEffectiveContract['break_even_enabled']) ? 'ON' : 'OFF' ?></code>
+                <?php if (!empty($rtEffectiveContract['break_even_enabled'])): ?>
+                @ <code><?= htmlspecialchars((string)($rtEffectiveContract['break_even_activation_roi_pct'] ?? ($rtEffectiveContract['break_even_activation_roi'] ?? ''))) ?>%</code>
+                <?php endif; ?>
+                <?php if (($rtEffectiveContract['exit_mode'] ?? '') === 'hybrid_tp'): ?>
+                | hybrid: <code><?= round(((float)($rtEffectiveContract['hybrid_tp_share'] ?? 0)) * 100) ?>%</code> @ <code><?= htmlspecialchars((string)($rtEffectiveContract['fixed_take_profit_roi'] ?? '')) ?></code>
+                <?php endif; ?>
+                | logical stop: <code><?= htmlspecialchars((string)($rtEffectiveContract['logical_stop_roi'] ?? 'n/a')) ?></code>
+            </div>
+            <?php endif; ?>
+            <?php
             $protDetails = $botMirror['active_position_protection_details'] ?? [];
             if (!empty($protDetails)): ?>
             <div class="mb-2 small">
@@ -321,6 +341,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <th>Entry</th>
                                 <th>SL</th>
                                 <th>Protection</th>
+                                <th>Exit Mode</th>
                                 <th>Trailing</th>
                                 <th>Break-Even</th>
                                 <th>Source</th>
@@ -334,6 +355,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <td><?= number_format((float)($pd['entry_price'] ?? 0), 4) ?></td>
                                 <td><?= ($pd['stop_loss_applied'] ?? false) ? '✅' : '❌' ?></td>
                                 <td><span class="badge bg-<?= ($pd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($pd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($pd['protection_state'] ?? 'unknown')) ?></span></td>
+                                <td><small><?= htmlspecialchars((string)($pd['exit_mode'] ?? 'n/a')) ?></small></td>
                                 <td>
                                     <?= ($pd['trailing_active'] ?? false) ? '🟢 Active' : (($pd['trailing_enabled'] ?? false) ? '⏳ Enabled' : '⚪ Off') ?>
                                     <?php if ($pd['trailing_activation_roi_pct'] ?? 0): ?>

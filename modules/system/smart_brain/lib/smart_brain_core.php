@@ -394,7 +394,7 @@ final class SmartBrainCore
                 'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
                 'live_one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
             ],
-            'effective_trailing_contract' => $liveConfig['trailing_contract'] ?? [],
+            'effective_trailing_contract' => $this->buildEffectiveTrailingContractSummary($userLimits),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -609,6 +609,31 @@ final class SmartBrainCore
                 continue;
             }
 
+            // === VALIDATION GATE 5: Weak Entry Quality Filter (P3) ===
+            // Reject late entries (signal age > threshold)
+            $signalCreatedTs = (int)($signal['created_ts'] ?? 0);
+            $lateEntryThresholdMinutes = (int)($userLimits['late_entry_max_minutes'] ?? 15);
+            if ($signalCreatedTs > 0 && $lateEntryThresholdMinutes > 0) {
+                $signalAgeMinutes = (time() - $signalCreatedTs) / 60;
+                if ($signalAgeMinutes > $lateEntryThresholdMinutes) {
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'late_entry_rejected', $selectionMode);
+                    $result['late_entry_rejected_count'] = ($result['late_entry_rejected_count'] ?? 0) + 1;
+                    continue;
+                }
+            }
+
+            // Early failure guard: reject if signal has adverse initial momentum
+            $earlyFailureEnabled = (bool)($userLimits['early_failure_enabled'] ?? true);
+            if ($earlyFailureEnabled) {
+                $maxAdverseRoi = (float)($userLimits['early_failure_max_adverse_roi'] ?? -0.008);
+                $signalInitialRoi = (float)($signal['initial_roi'] ?? $signal['entry_roi'] ?? 0);
+                if ($signalInitialRoi < $maxAdverseRoi) {
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'early_failure_adverse_roi', $selectionMode);
+                    $result['early_failure_rejected_count'] = ($result['early_failure_rejected_count'] ?? 0) + 1;
+                    continue;
+                }
+            }
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -616,10 +641,31 @@ final class SmartBrainCore
                 $side = ($side === 'long') ? 'short' : 'long';
             }
 
-            $trailing = $liveConfig['trailing_contract'] ?? [];
-
             // P0 FIX: Build full bot-ready risk contract from Brain signal risk + config
             $botReadyRisk = $this->buildBotReadyRiskBlock($risk, $signal, $liveConfig, $userLimits);
+
+            // UNIFIED EXIT CONTRACT: Derive the top-level trailing block from the canonical
+            // risk.trailing that was just built, reverse-mapped to Brain field names.
+            // This eliminates contradictions: both blocks come from the same canonical source.
+            $canonicalTrailing = $botReadyRisk['trailing'] ?? [];
+            $trailing = [
+                'trailing_enabled' => (bool)($canonicalTrailing['enabled'] ?? false),
+                // Reverse: percent→ratio for Brain traceability (5.0% → 0.05)
+                'trailing_activation_roi' => ($canonicalTrailing['activation_roi_pct'] ?? 0) / 100,
+                'trailing_min_lock_roi' => (float)($canonicalTrailing['min_lock_roi'] ?? 0),
+                'trailing_min_step' => (float)($canonicalTrailing['min_step'] ?? 0),
+                'break_even_enabled' => (bool)($canonicalTrailing['break_even_enabled'] ?? false),
+                // Reverse: percent→ratio for Brain traceability (2.5% → 0.025)
+                'break_even_activation_roi' => ($canonicalTrailing['break_even_activation_roi'] ?? 0) / 100,
+                'exit_mode' => (string)($canonicalTrailing['exit_mode'] ?? 'hybrid_tp'),
+                'fixed_take_profit_roi' => (float)($canonicalTrailing['fixed_take_profit_roi'] ?? 0),
+                'hybrid_tp_share' => (float)($canonicalTrailing['hybrid_tp_share'] ?? 0),
+                'drawdown_factor' => (float)($canonicalTrailing['drawdown_factor'] ?? 0.5),
+                'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
+                'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
+                'logical_stop_roi' => (float)($userLimits['logical_stop_roi'] ?? 0.03),
+                'canonical_source' => 'risk_trailing_derived',
+            ];
 
             // P0.5: Validate bot-ready risk contract before writing
             $contractValidation = $this->validateBotReadyRiskContract($botReadyRisk);
@@ -836,9 +882,9 @@ final class SmartBrainCore
         $trailingEnabled = (bool)($signal['trailing_enabled'] ?? false);
         $normalized['trailing'] = [
             'enabled' => $trailingEnabled,
-            'activation_roi_pct' => (float)($signal['trailing_activation_roi'] ?? 0.03),
-            'min_lock_roi' => (float)($signal['trailing_min_lock_roi'] ?? 0.008),
-            'min_step' => (float)($signal['trailing_min_step'] ?? 0.005),
+            'activation_roi_pct' => (float)($signal['trailing_activation_roi'] ?? 0.05),
+            'min_lock_roi' => (float)($signal['trailing_min_lock_roi'] ?? 0.012),
+            'min_step' => (float)($signal['trailing_min_step'] ?? 0.01),
         ];
 
         // P0 Part 3: When trailing covers exit, remove take_profit to avoid hybrid.
@@ -929,54 +975,40 @@ final class SmartBrainCore
             'budget' => round($budget, 2),
         ];
 
-        // Trailing block: merge Brain trailing into bot-expected format
-        // UNIT AUDIT: Brain config stores ratios (0.04 = 4%). Bot engines expect percent (4.0 = 4%).
-        // activation_roi_pct and break_even_activation_roi must be converted ratio→percent.
-        // drawdown_factor is a 0-1 multiplier, NOT a percent — stays as-is.
-        // min_step, min_lock_roi stay as ratios (used only for comparison with other ratios).
-        // fixed_take_profit_roi stays as ratio.
-        // hybrid_tp_share stays as ratio (0.40 = 40%).
-        $trailing = $risk['trailing'] ?? [];
-        if (is_array($trailing) && !empty($trailing)) {
-            $rawActivation = (float)($trailing['activation_roi_pct'] ?? 0.04);
-            $rawBreakEvenActivation = (float)($trailing['break_even_activation_roi'] ?? 0.02);
-            
-            // Convert ratio to percent if value looks like ratio (< 1.0)
-            // This handles both cases: already-percent and still-ratio
-            $activationPct = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
-            $breakEvenActivationPct = ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation;
-            
-            $botReady['trailing'] = [
-                'enabled' => (bool)($trailing['enabled'] ?? false),
-                'activation_roi_pct' => $activationPct,
-                'drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0.5),
-                'min_step' => (float)($trailing['min_step'] ?? 0.0075),
-                'min_lock_roi' => (float)($trailing['min_lock_roi'] ?? 0.01),
-                'break_even_enabled' => (bool)($trailing['break_even_enabled'] ?? false),
-                'break_even_activation_roi' => $breakEvenActivationPct,
-                'exit_mode' => (string)($trailing['exit_mode'] ?? 'trailing_tp'),
-                'fixed_take_profit_roi' => (float)($trailing['fixed_take_profit_roi'] ?? 0.03),
-                'hybrid_tp_share' => (float)($trailing['hybrid_tp_share'] ?? 0.40),
-                'brain_trailing_applied' => true,
-                'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
-            ];
-        } else {
-            // Default trailing block (disabled)
-            $botReady['trailing'] = [
-                'enabled' => false,
-                'activation_roi_pct' => 4.0,  // 4% in percent (was 0.04 ratio)
-                'drawdown_factor' => 0.5,
-                'min_step' => 0.0075,
-                'min_lock_roi' => 0.01,
-                'break_even_enabled' => false,
-                'break_even_activation_roi' => 2.0,  // 2% in percent (was 0.02 ratio)
-                'exit_mode' => 'trailing_tp',
-                'fixed_take_profit_roi' => 0.03,
-                'hybrid_tp_share' => 0.40,
-                'brain_trailing_applied' => false,
-                'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
-            ];
-        }
+        // ============================================================
+        // CANONICAL TRAILING BLOCK — ONE SOURCE OF TRUTH
+        // ============================================================
+        // Build trailing from $userLimits (the canonical config source) so that
+        // risk.trailing and the top-level trailing on the intent always agree.
+        //
+        // UNIT AUDIT: Brain config stores ratios (0.05 = 5%). Bot engines expect percent (5.0 = 5%).
+        // activation_roi_pct and break_even_activation_roi: converted ratio→percent here.
+        // drawdown_factor: 0–1 multiplier, NOT a percent — stays as-is.
+        // min_step, min_lock_roi: stay as ratios.
+        // fixed_take_profit_roi: stays as ratio.
+        // hybrid_tp_share: stays as ratio (0.40 = 40%).
+        $trailingEnabled = (bool)($userLimits['trailing_enabled'] ?? false);
+        $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
+        $rawBreakEvenActivation = (float)($userLimits['break_even_activation_roi'] ?? 0.025);
+
+        // Convert ratio→percent: if value < 1.0, it's a ratio (0.05 = 5%)
+        $activationPct = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
+        $breakEvenActivationPct = ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation;
+
+        $botReady['trailing'] = [
+            'enabled' => $trailingEnabled,
+            'activation_roi_pct' => $activationPct,
+            'drawdown_factor' => 0.5,
+            'min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
+            'min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
+            'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
+            'break_even_activation_roi' => $breakEvenActivationPct,
+            'exit_mode' => (string)($userLimits['exit_mode'] ?? 'hybrid_tp'),
+            'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.03),
+            'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.40),
+            'brain_trailing_applied' => true,
+            'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
+        ];
 
         // Logical stop vs emergency stop separation
         // Emergency stop = existing stop_from_liq_range_pct (liquidation-based safety net)
@@ -1010,6 +1042,37 @@ final class SmartBrainCore
         }
 
         return $botReady;
+    }
+
+    /**
+     * Build a consistent effective trailing contract summary from userLimits.
+     * Used for runtime display and Brain→Bot contract traceability.
+     *
+     * @param array $userLimits User limits from config
+     * @return array Effective trailing contract summary
+     */
+    private function buildEffectiveTrailingContractSummary(array $userLimits): array
+    {
+        $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
+        $rawBreakEvenActivation = (float)($userLimits['break_even_activation_roi'] ?? 0.025);
+
+        return [
+            'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+            'trailing_activation_roi' => $rawActivation,
+            'trailing_activation_roi_pct' => ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation,
+            'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
+            'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
+            'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
+            'break_even_activation_roi' => $rawBreakEvenActivation,
+            'break_even_activation_roi_pct' => ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation,
+            'exit_mode' => (string)($userLimits['exit_mode'] ?? 'hybrid_tp'),
+            'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.03),
+            'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.40),
+            'logical_stop_roi' => (float)($userLimits['logical_stop_roi'] ?? 0.03),
+            'drawdown_factor' => 0.5,
+            'canonical_source' => 'brain_user_limits',
+            'unit_system' => 'activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
+        ];
     }
 
     /**
@@ -1427,6 +1490,22 @@ final class SmartBrainCore
             $mirror['no_order_path_preview'] = is_array($botData['no_order_path_preview'] ?? null)
                 ? array_slice($botData['no_order_path_preview'], 0, 5)
                 : [];
+
+            // P6: Expectancy metrics mirror
+            $expectancy = is_array($botData['expectancy_metrics'] ?? null) ? $botData['expectancy_metrics'] : [];
+            $mirror['expectancy_metrics'] = [
+                'total_closed' => (int)($expectancy['total_closed'] ?? 0),
+                'wins' => (int)($expectancy['wins'] ?? 0),
+                'losses' => (int)($expectancy['losses'] ?? 0),
+                'average_win' => (float)($expectancy['average_win'] ?? 0),
+                'average_loss' => (float)($expectancy['average_loss'] ?? 0),
+                'winrate' => (float)($expectancy['winrate'] ?? 0),
+                'expectancy' => (float)($expectancy['expectancy'] ?? 0),
+            ];
+
+            // P5: Effective trailing contract mirror from bot runtime
+            $botEffectiveContract = is_array($botData['effective_trailing_contract'] ?? null) ? $botData['effective_trailing_contract'] : [];
+            $mirror['effective_trailing_contract'] = $botEffectiveContract;
 
         } catch (\Throwable $e) {
             $mirror['error'] = 'exception: ' . $e->getMessage();

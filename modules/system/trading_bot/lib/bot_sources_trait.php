@@ -585,6 +585,16 @@ trait BotSourcesTrait
      */
     private function normalizeBrainTrailingIntoRisk(array $risk, array $brainTrailing): array
     {
+        // UNIFIED EXIT CONTRACT GUARD: If risk.trailing was already built by Brain's
+        // buildBotReadyRiskBlock() from the canonical config source, do NOT overwrite it.
+        // This prevents contradictions between the top-level trailing (Brain naming) and
+        // risk.trailing (bot naming) — they both derive from the same canonical source.
+        if (!empty($risk['trailing']['brain_trailing_applied'])) {
+            // Already a canonical contract — add source tracking and return as-is
+            $risk['trailing']['effective_trailing_contract_source'] = 'brain_canonical_risk_trailing';
+            return $risk;
+        }
+
         if (empty($brainTrailing)) {
             return $risk;
         }
@@ -614,7 +624,7 @@ trait BotSourcesTrait
             'break_even_enabled' => (bool)($brainTrailing['break_even_enabled'] ?? false),
             // Brain uses ratio (e.g. 0.025 = 2.5%), bot expects percentage (e.g. 2.5 = 2.5%)
             'break_even_activation_roi' => (float)($brainTrailing['break_even_activation_roi'] ?? 0) * 100,
-            'exit_mode' => (string)($brainTrailing['exit_mode'] ?? 'fixed_tp'),
+            'exit_mode' => (string)($brainTrailing['exit_mode'] ?? 'hybrid_tp'),
             'fixed_take_profit_roi' => (float)($brainTrailing['fixed_take_profit_roi'] ?? 0),
             'hybrid_tp_share' => (float)($brainTrailing['hybrid_tp_share'] ?? 0),
             'brain_trailing_applied' => true,

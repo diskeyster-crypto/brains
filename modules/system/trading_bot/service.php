@@ -351,17 +351,22 @@ final class TradingBotService
                     $firstRisk = is_array($firstIntent['risk'] ?? null) ? $firstIntent['risk'] : [];
                     $firstTrailing = is_array($firstRisk['trailing'] ?? null) ? $firstRisk['trailing'] : [];
                     $result['normalized_drawdown_factor_source'] = $firstTrailing['drawdown_factor_source'] ?? 'n/a';
-                    // V4: Include effective trailing contract snapshot for runtime debug truth
+                    // V5: Include effective trailing contract snapshot for runtime truth
+                    // This snapshot must match what bot_executor actually uses for execution
                     $result['effective_trailing_contract'] = [
                         'enabled' => $firstTrailing['enabled'] ?? null,
                         'activation_roi_pct' => $firstTrailing['activation_roi_pct'] ?? null,
                         'drawdown_factor' => $firstTrailing['drawdown_factor'] ?? null,
-                        'drawdown_factor_source' => $firstTrailing['drawdown_factor_source'] ?? null,
                         'min_step' => $firstTrailing['min_step'] ?? null,
                         'min_lock_roi' => $firstTrailing['min_lock_roi'] ?? null,
                         'break_even_enabled' => $firstTrailing['break_even_enabled'] ?? null,
+                        'break_even_activation_roi' => $firstTrailing['break_even_activation_roi'] ?? null,
                         'exit_mode' => $firstTrailing['exit_mode'] ?? null,
+                        'fixed_take_profit_roi' => $firstTrailing['fixed_take_profit_roi'] ?? null,
+                        'hybrid_tp_share' => $firstTrailing['hybrid_tp_share'] ?? null,
                         'brain_trailing_applied' => $firstTrailing['brain_trailing_applied'] ?? null,
+                        'effective_trailing_contract_source' => $firstTrailing['effective_trailing_contract_source'] ?? 'brain_risk_trailing',
+                        'unit_system' => $firstTrailing['unit_system'] ?? null,
                     ];
                 }
             } else {
@@ -686,6 +691,15 @@ final class TradingBotService
             }
 
             // ============================================================
+            // P6: ROI Expectancy Metrics
+            // Compute average win, average loss, winrate, expectancy
+            // from closed trade results for measurable ROI analysis.
+            // ============================================================
+            $closedTrades = $this->store->loadClosedTrades(200);
+            $expectancyMetrics = $this->computeExpectancyMetrics($closedTrades);
+            $result['expectancy_metrics'] = $expectancyMetrics;
+
+            // ============================================================
             // P0.3: Exchange submit visibility counters
             // Derived from finalized intent_results (single source of truth).
             // ============================================================
@@ -840,12 +854,13 @@ final class TradingBotService
                     'trailing_active' => $isTrailingActive,
                     'trailing_activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0),
                     'trailing_drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0),
-                    'trailing_drawdown_factor_source' => (string)($trailing['drawdown_factor_source'] ?? 'unknown'),
                     'break_even_enabled' => $beEnabled,
                     'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0),
                     'break_even_armed' => $beArmed,
                     'break_even_applied' => $beApplied,
                     'exit_mode' => (string)($trailing['exit_mode'] ?? ''),
+                    'fixed_take_profit_roi' => (float)($trailing['fixed_take_profit_roi'] ?? 0),
+                    'hybrid_tp_share' => (float)($trailing['hybrid_tp_share'] ?? 0),
                     'best_roi_seen' => (float)($rt['best_roi_seen'] ?? 0),
                     'protection_state' => (string)($rt['protection_state'] ?? 'unknown'),
                     'effective_trailing_contract_source' => (string)($rt['effective_trailing_contract_source'] ?? ($trailing['effective_trailing_contract_source'] ?? 'unknown')),
@@ -962,8 +977,14 @@ final class TradingBotService
                     'activation_roi_pct' => $trailing['activation_roi_pct'] ?? null,
                     'mode' => $trailing['mode'] ?? null,
                     'drawdown_factor' => $trailing['drawdown_factor'] ?? null,
-                    'drawdown_factor_source' => $trailing['drawdown_factor_source'] ?? null,
                     'min_step' => $trailing['min_step'] ?? null,
+                    'min_lock_roi' => $trailing['min_lock_roi'] ?? null,
+                    'break_even_enabled' => $trailing['break_even_enabled'] ?? null,
+                    'break_even_activation_roi' => $trailing['break_even_activation_roi'] ?? null,
+                    'exit_mode' => $trailing['exit_mode'] ?? null,
+                    'fixed_take_profit_roi' => $trailing['fixed_take_profit_roi'] ?? null,
+                    'hybrid_tp_share' => $trailing['hybrid_tp_share'] ?? null,
+                    'brain_trailing_applied' => $trailing['brain_trailing_applied'] ?? null,
                 ],
                 'limits' => [
                     'max_open_trades' => $limits['max_open_trades'] ?? null,
@@ -972,7 +993,112 @@ final class TradingBotService
             ],
         ];
     }
-    
+
+    /**
+     * P6: Compute expectancy metrics from closed trades.
+     *
+     * Returns: average_win, average_loss, winrate, expectancy,
+     * close_reason_stats, roi_by_symbol, roi_by_side, roi_by_pattern.
+     *
+     * @param array $closedTrades Array of closed trade records
+     * @return array Expectancy metrics
+     */
+    private function computeExpectancyMetrics(array $closedTrades): array
+    {
+        $metrics = [
+            'total_closed' => 0,
+            'wins' => 0,
+            'losses' => 0,
+            'total_win_roi' => 0.0,
+            'total_loss_roi' => 0.0,
+            'average_win' => 0.0,
+            'average_loss' => 0.0,
+            'winrate' => 0.0,
+            'expectancy' => 0.0,
+            'close_reason_stats' => [],
+            'roi_by_symbol' => [],
+            'roi_by_side' => [],
+            'roi_by_pattern' => [],
+            'roi_by_pattern_side' => [],
+        ];
+
+        if (empty($closedTrades)) {
+            return $metrics;
+        }
+
+        foreach ($closedTrades as $trade) {
+            $roi = (float)($trade['realized_roi'] ?? $trade['roi_pct'] ?? $trade['pnl_pct'] ?? 0);
+            $symbol = (string)($trade['symbol'] ?? 'unknown');
+            $side = (string)($trade['side'] ?? 'unknown');
+            $pattern = (string)($trade['pattern_algorithm'] ?? $trade['pattern'] ?? 'unknown');
+            $closeReason = (string)($trade['close_reason'] ?? 'unknown');
+
+            $metrics['total_closed']++;
+
+            if ($roi > 0) {
+                $metrics['wins']++;
+                $metrics['total_win_roi'] += $roi;
+            } else {
+                $metrics['losses']++;
+                $metrics['total_loss_roi'] += $roi;
+            }
+
+            // Close reason stats
+            $metrics['close_reason_stats'][$closeReason] = ($metrics['close_reason_stats'][$closeReason] ?? 0) + 1;
+
+            // ROI by symbol
+            if (!isset($metrics['roi_by_symbol'][$symbol])) {
+                $metrics['roi_by_symbol'][$symbol] = ['total_roi' => 0.0, 'count' => 0, 'wins' => 0, 'losses' => 0];
+            }
+            $metrics['roi_by_symbol'][$symbol]['total_roi'] += $roi;
+            $metrics['roi_by_symbol'][$symbol]['count']++;
+            $metrics['roi_by_symbol'][$symbol][$roi > 0 ? 'wins' : 'losses']++;
+
+            // ROI by side
+            if (!isset($metrics['roi_by_side'][$side])) {
+                $metrics['roi_by_side'][$side] = ['total_roi' => 0.0, 'count' => 0, 'wins' => 0, 'losses' => 0];
+            }
+            $metrics['roi_by_side'][$side]['total_roi'] += $roi;
+            $metrics['roi_by_side'][$side]['count']++;
+            $metrics['roi_by_side'][$side][$roi > 0 ? 'wins' : 'losses']++;
+
+            // ROI by pattern
+            if (!isset($metrics['roi_by_pattern'][$pattern])) {
+                $metrics['roi_by_pattern'][$pattern] = ['total_roi' => 0.0, 'count' => 0, 'wins' => 0, 'losses' => 0];
+            }
+            $metrics['roi_by_pattern'][$pattern]['total_roi'] += $roi;
+            $metrics['roi_by_pattern'][$pattern]['count']++;
+            $metrics['roi_by_pattern'][$pattern][$roi > 0 ? 'wins' : 'losses']++;
+
+            // ROI by pattern × side
+            $patternSide = $pattern . '×' . $side;
+            if (!isset($metrics['roi_by_pattern_side'][$patternSide])) {
+                $metrics['roi_by_pattern_side'][$patternSide] = ['total_roi' => 0.0, 'count' => 0, 'wins' => 0, 'losses' => 0];
+            }
+            $metrics['roi_by_pattern_side'][$patternSide]['total_roi'] += $roi;
+            $metrics['roi_by_pattern_side'][$patternSide]['count']++;
+            $metrics['roi_by_pattern_side'][$patternSide][$roi > 0 ? 'wins' : 'losses']++;
+        }
+
+        // Compute averages and expectancy
+        if ($metrics['wins'] > 0) {
+            $metrics['average_win'] = round($metrics['total_win_roi'] / $metrics['wins'], 4);
+        }
+        if ($metrics['losses'] > 0) {
+            $metrics['average_loss'] = round($metrics['total_loss_roi'] / $metrics['losses'], 4);
+        }
+        if ($metrics['total_closed'] > 0) {
+            $metrics['winrate'] = round($metrics['wins'] / $metrics['total_closed'], 4);
+            // Expectancy = (winrate * avg_win) + ((1-winrate) * avg_loss)
+            $metrics['expectancy'] = round(
+                ($metrics['winrate'] * $metrics['average_win']) + ((1 - $metrics['winrate']) * $metrics['average_loss']),
+                4
+            );
+        }
+
+        return $metrics;
+    }
+
     /**
      * Acquire run-lock (prevents concurrent executions)
      * 

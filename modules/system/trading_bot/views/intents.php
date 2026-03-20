@@ -136,6 +136,7 @@ $filteredResults = array_values($filteredResults);
                     <th>Reason</th>
                     <th>Exch?</th>
                     <th>Protection</th>
+                    <th>Exit Mode</th>
                     <th>Trailing</th>
                     <th>Details</th>
                 </tr>
@@ -194,6 +195,7 @@ $filteredResults = array_values($filteredResults);
                     </td>
                     <td class="small text-center"><?= !empty($ir['exchange_submit_attempted']) ? '<span class="text-info">✓</span>' : '<span class="text-muted">✗</span>' ?></td>
                     <td class="small"><?= htmlspecialchars($ir['protection_status'] ?? '-') ?></td>
+                    <td class="small"><?= htmlspecialchars($ir['exit_mode'] ?? $ir['effective_exit_mode'] ?? '-') ?></td>
                     <td class="small">
                         <?= htmlspecialchars($ir['trailing_status'] ?? '-') ?>
                         <?php $irTrailSource = $ir['effective_trailing_contract_source'] ?? ''; ?>

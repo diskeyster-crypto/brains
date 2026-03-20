@@ -113,10 +113,11 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         <h5 style="margin: 0;">Leverage Control</h5>
                     </div>
                     <div class="card-body">
-                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
-                            Режим «auto» — плечо рассчитывается мозгом автоматически.<br>
-                            Режим «manual» — используется фиксированное плечо.
-                        </p>
+                        <div class="cfg-legend mb-3">
+                            <h6><i class="bi bi-info-circle me-1"></i> Плечо и риск</h6>
+                            <p class="mb-0">Режим «auto» — плечо рассчитывается мозгом. «Manual» — фиксированное плечо.<br>
+                            <span class="text-warning">⚠ Чем выше плечо, тем ближе ликвидация и тем меньше % движения цены нужен для стоп-лосса по ROI.</span></p>
+                        </div>
                         <div class="mb-3">
                             <label for="leverage_mode" class="form-label fw-bold">Leverage Mode</label>
                             <select class="form-select" id="leverage_mode" name="leverage_mode">
@@ -124,12 +125,14 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 <option value="<?= $lm ?>" <?= ($form_values['leverage_mode'] ?? 'auto') === $lm ? 'selected' : '' ?>><?= $lmLabel ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <small class="text-secondary">Режим выбора плеча</small>
+                            <div class="cfg-hint">Режим выбора плеча</div>
                         </div>
                         <div class="mb-3">
-                            <label for="manual_leverage" class="form-label">Manual Leverage</label>
+                            <label for="manual_leverage" class="form-label">Manual Leverage
+                                <i class="bi bi-question-circle cfg-info" title="Фиксированное плечо. При 5x, ROI 10% стоп ≈ 2% движения цены."></i>
+                            </label>
                             <input type="number" step="1" min="1" class="form-control" id="manual_leverage" name="manual_leverage" value="<?= $v('manual_leverage', '3') ?>">
-                            <small class="text-secondary">Фиксированное плечо (используется в режиме manual)</small>
+                            <div class="cfg-hint">Фиксированное плечо (только в режиме Manual). Пример: <code>5</code> = 5x.</div>
                         </div>
                     </div>
                 </div>
@@ -141,11 +144,15 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         <h5 style="margin: 0;">Stop Control</h5>
                     </div>
                     <div class="card-body">
-                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
-                            Режим «auto» — стоп-лосс рассчитывается мозгом автоматически.<br>
-                            Режим «manual» — используется фиксированный стоп-лосс ROI.<br>
-                            Режим «entry_roi» — стоп-лосс как % от цены входа.
-                        </p>
+                        <!-- Stop Modes Explanation -->
+                        <div class="cfg-legend mb-3">
+                            <h6><i class="bi bi-info-circle me-1"></i> Режимы стоп-лосса</h6>
+                            <ul class="mb-0 ps-3">
+                                <li><strong class="text-info">Auto</strong> — стоп рассчитывается от ликвидационной цены. Brain управляет автоматически.</li>
+                                <li><strong class="text-warning">Manual</strong> — стоп по ROI позиции (зависит от плеча). Пример: <code>0.03</code> = -3% ROI; при 5x ≈ -0.6% движения цены.</li>
+                                <li><strong class="text-success">Entry ROI</strong> — стоп как % от цены входа (не зависит от плеча). Пример: <code>0.10</code> = 10% от цены входа.</li>
+                            </ul>
+                        </div>
                         <div class="mb-3">
                             <label for="stop_control_mode" class="form-label fw-bold">Stop Control Mode</label>
                             <select class="form-select" id="stop_control_mode" name="stop_control_mode">
@@ -153,17 +160,28 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 <option value="<?= $sc ?>" <?= ($form_values['stop_control_mode'] ?? 'auto') === $sc ? 'selected' : '' ?>><?= $scLabel ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <small class="text-secondary">Режим управления стоп-лоссом</small>
+                            <div class="cfg-hint">Режим управления стоп-лоссом</div>
                         </div>
-                        <div class="mb-3">
-                            <label for="manual_stop_loss_roi" class="form-label">Manual Stop Loss ROI</label>
+                        <?php $activeStopMode = $form_values['stop_control_mode'] ?? 'auto'; ?>
+                        <div class="mb-3<?= $activeStopMode !== 'manual' ? ' cfg-muted-field' : '' ?>" id="manual_stop_group">
+                            <label for="manual_stop_loss_roi" class="form-label">Manual Stop Loss ROI
+                                <i class="bi bi-question-circle cfg-info" title="Стоп по ROI позиции. Зависит от плеча: ROI_stop / leverage ≈ % движения цены."></i>
+                            </label>
                             <input type="number" step="0.001" min="0.001" class="form-control" id="manual_stop_loss_roi" name="manual_stop_loss_roi" value="<?= $v('manual_stop_loss_roi', '0.03') ?>">
-                            <small class="text-secondary">Фиксированный стоп-лосс ROI (например, 0.03 = 3%)</small>
+                            <div class="cfg-hint">Фиксированный ROI стоп (<code>0.03</code> = 3% ROI). При 5x ≈ 0.6% цены.</div>
+                            <?php if ($activeStopMode !== 'manual'): ?>
+                            <div class="cfg-mode-note">⚠ Используется только в режиме Manual</div>
+                            <?php endif; ?>
                         </div>
-                        <div class="mb-3">
-                            <label for="stop_loss_from_entry_roi" class="form-label">Stop Loss from Entry ROI</label>
+                        <div class="mb-3<?= $activeStopMode !== 'entry_roi' ? ' cfg-muted-field' : '' ?>" id="entry_roi_stop_group">
+                            <label for="stop_loss_from_entry_roi" class="form-label">Stop Loss from Entry ROI
+                                <i class="bi bi-question-circle cfg-info" title="% от цены входа. Не зависит от плеча. 0.10 = стоп на 10% от цены входа."></i>
+                            </label>
                             <input type="number" step="0.01" min="0.01" max="1.0" class="form-control" id="stop_loss_from_entry_roi" name="stop_loss_from_entry_roi" value="<?= $v('stop_loss_from_entry_roi', '0.10') ?>">
-                            <small class="text-secondary">% от цены входа для стоп-лосса (0.10 = 10%). Только для режима entry_roi.</small>
+                            <div class="cfg-hint">% от цены входа (<code>0.10</code> = 10% от цены). Не зависит от плеча.</div>
+                            <?php if ($activeStopMode !== 'entry_roi'): ?>
+                            <div class="cfg-mode-note">⚠ Используется только в режиме Entry ROI</div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -420,14 +438,25 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         <h5 style="margin: 0;">Exit Policy</h5>
                     </div>
                     <div class="card-body">
+                        <!-- Exit Modes Explanation -->
+                        <div class="cfg-legend mb-3">
+                            <h6><i class="bi bi-info-circle me-1"></i> Режимы выхода</h6>
+                            <ul class="mb-0 ps-3">
+                                <li><strong class="text-info">Fixed TP</strong> — фиксированный тейк-профит при достижении ROI цели.</li>
+                                <li><strong class="text-success">Trailing TP</strong> — трейлинг-стоп следит за максимальной прибылью и фиксирует при откате.</li>
+                                <li><strong class="text-warning">Hybrid</strong> — часть позиции закрывается по Fixed TP, остальное — по трейлингу.</li>
+                            </ul>
+                        </div>
                         <div class="mb-3">
-                            <label for="exit_mode" class="form-label">Exit Mode</label>
+                            <label for="exit_mode" class="form-label fw-bold">Exit Mode
+                                <i class="bi bi-question-circle cfg-info" title="fixed_tp = фиксированный тейк. trailing_tp = динамический трейлинг. hybrid = часть + трейлинг."></i>
+                            </label>
                             <select class="form-select" id="exit_mode" name="exit_mode">
                                 <?php foreach (['fixed_tp' => 'Fixed TP', 'trailing_tp' => 'Trailing TP', 'hybrid' => 'Hybrid'] as $em => $emLabel): ?>
                                 <option value="<?= $em ?>" <?= ($form_values['exit_mode'] ?? 'fixed_tp') === $em ? 'selected' : '' ?>><?= $emLabel ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <small class="text-secondary">How take-profit is handled</small>
+                            <div class="cfg-hint">Как управляется тейк-профит</div>
                         </div>
                         <div class="mb-3">
                             <label for="stop_floor_type" class="form-label">Stop Floor Type</label>
@@ -436,27 +465,35 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 <option value="<?= $sf ?>" <?= ($form_values['stop_floor_type'] ?? 'roi_percent') === $sf ? 'selected' : '' ?>><?= $sfLabel ?></option>
                                 <?php endforeach; ?>
                             </select>
-                            <small class="text-secondary">How minimum stop protection is calculated</small>
+                            <div class="cfg-hint">Метод расчёта минимальной стоп-защиты</div>
                         </div>
                         <div class="mb-3">
                             <label for="stop_floor_value" class="form-label">Stop Floor Value</label>
                             <input type="number" step="0.001" min="0.001" class="form-control" id="stop_floor_value" name="stop_floor_value" value="<?= $v('stop_floor_value', '0.03') ?>">
-                            <small class="text-secondary">Minimum stop protection (> 0)</small>
+                            <div class="cfg-hint">Минимальная стоп-защита (<code>0.03</code> = 3%)</div>
                         </div>
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="brain_may_tighten_stop" name="brain_may_tighten_stop" value="1" <?= $checked('brain_may_tighten_stop') ?>>
                             <label class="form-check-label" for="brain_may_tighten_stop">Brain May Tighten Stop</label>
-                            <br><small class="text-secondary">Allow brain to tighten stop (never weaken below floor)</small>
+                            <br><div class="cfg-hint">Brain может ужесточить стоп (но никогда не ослабит ниже floor)</div>
                         </div>
+                        <?php $activeExitMode = $form_values['exit_mode'] ?? 'fixed_tp'; ?>
                         <div class="mb-3">
-                            <label for="fixed_take_profit_roi" class="form-label">Fixed Take Profit ROI</label>
+                            <label for="fixed_take_profit_roi" class="form-label">Fixed Take Profit ROI
+                                <i class="bi bi-question-circle cfg-info" title="Целевой ROI для фиксированного тейк-профита. 0.03 = +3% ROI."></i>
+                            </label>
                             <input type="number" step="0.001" min="0" class="form-control" id="fixed_take_profit_roi" name="fixed_take_profit_roi" value="<?= $v('fixed_take_profit_roi', '0.05') ?>">
-                            <small class="text-secondary">ROI target for fixed TP mode (>= 0)</small>
+                            <div class="cfg-hint">ROI для фиксированного TP (<code>0.03</code> = +3% ROI). Используется в Fixed TP и Hybrid.</div>
                         </div>
-                        <div class="mb-3">
-                            <label for="hybrid_tp_share" class="form-label">Hybrid TP Share</label>
+                        <div class="mb-3<?= $activeExitMode !== 'hybrid' ? ' cfg-muted-field' : '' ?>">
+                            <label for="hybrid_tp_share" class="form-label">Hybrid TP Share
+                                <i class="bi bi-question-circle cfg-info" title="Доля позиции для Fixed TP в Hybrid режиме. 0.40 = 40% позиции."></i>
+                            </label>
                             <input type="number" step="0.01" min="0" max="1" class="form-control" id="hybrid_tp_share" name="hybrid_tp_share" value="<?= $v('hybrid_tp_share', '0.5') ?>">
-                            <small class="text-secondary">Share of position for fixed TP in hybrid mode (0..1)</small>
+                            <div class="cfg-hint">Доля позиции для Fixed TP в Hybrid (<code>0.40</code> = 40%). Остальное — по трейлингу.</div>
+                            <?php if ($activeExitMode !== 'hybrid'): ?>
+                            <div class="cfg-mode-note">⚠ Используется только в режиме Hybrid</div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -470,30 +507,41 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         <h5 style="margin: 0;">Trailing Stop</h5>
                     </div>
                     <div class="card-body">
+                        <!-- Trailing Parameter Legend -->
+                        <div class="cfg-legend mb-3">
+                            <h6><i class="bi bi-info-circle me-1"></i> Как работает трейлинг</h6>
+                            <p class="mb-0">Трейлинг следит за максимумом прибыли и подтягивает стоп при росте. Если цена откатится от максимума на <code>drawdown_factor</code> × максимальный ROI — позиция закрывается.</p>
+                        </div>
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="trailing_enabled" name="trailing_enabled" value="1" <?= $checked('trailing_enabled') ?>>
                             <label class="form-check-label" for="trailing_enabled">Trailing Enabled</label>
-                            <br><small class="text-secondary">Enable trailing stop for profit locking</small>
+                            <br><div class="cfg-hint">Включить трейлинг-стоп для фиксации прибыли</div>
                         </div>
                         <div class="mb-3">
-                            <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI</label>
+                            <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI
+                                <i class="bi bi-question-circle cfg-info" title="Трейлинг начинает работать после достижения этого ROI. 0.05 = +5% ROI."></i>
+                            </label>
                             <input type="number" step="0.001" min="0" class="form-control" id="trailing_activation_roi" name="trailing_activation_roi" value="<?= $v('trailing_activation_roi', '0.03') ?>">
-                            <small class="text-secondary">ROI threshold to activate trailing (>= 0)</small>
+                            <div class="cfg-hint">Порог ROI для активации трейлинга (<code>0.05</code> = после +5% ROI)</div>
                         </div>
                         <div class="mb-3">
-                            <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI</label>
+                            <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI
+                                <i class="bi bi-question-circle cfg-info" title="Минимальная прибыль, которую трейлинг зафиксирует. 0.012 = +1.2% ROI."></i>
+                            </label>
                             <input type="number" step="0.001" min="0" class="form-control" id="trailing_min_lock_roi" name="trailing_min_lock_roi" value="<?= $v('trailing_min_lock_roi', '0.008') ?>">
-                            <small class="text-secondary">Minimum ROI to lock when trailing (>= 0)</small>
+                            <div class="cfg-hint">Минимальная фиксируемая прибыль (<code>0.012</code> = зафиксировать не менее +1.2% ROI)</div>
                         </div>
                         <div class="mb-3">
-                            <label for="trailing_min_step" class="form-label">Trailing Min Step</label>
+                            <label for="trailing_min_step" class="form-label">Trailing Min Step
+                                <i class="bi bi-question-circle cfg-info" title="Минимальный шаг подтягивания стопа. 0.01 = стоп сдвигается при изменении на 1%."></i>
+                            </label>
                             <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_min_step" name="trailing_min_step" value="<?= $v('trailing_min_step', '0.005') ?>">
-                            <small class="text-secondary">Minimum trailing step size (> 0)</small>
+                            <div class="cfg-hint">Минимальный шаг подтягивания стопа (<code>0.01</code> = шаг 1%)</div>
                         </div>
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="brain_may_delay_trailing" name="brain_may_delay_trailing" value="1" <?= $checked('brain_may_delay_trailing') ?>>
                             <label class="form-check-label" for="brain_may_delay_trailing">Brain May Delay Trailing</label>
-                            <br><small class="text-secondary">Allow brain to delay trailing activation</small>
+                            <br><div class="cfg-hint">Brain может задержать активацию трейлинга</div>
                         </div>
                     </div>
                 </div>
@@ -511,13 +559,21 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                     <div class="card-body">
                         <div class="mb-3 form-check form-switch">
                             <input class="form-check-input" type="checkbox" role="switch" id="break_even_enabled" name="break_even_enabled" value="1" <?= $checked('break_even_enabled') ?>>
-                            <label class="form-check-label" for="break_even_enabled">Break-Even Enabled</label>
-                            <br><small class="text-secondary">Move stop to break-even after ROI threshold</small>
+                            <label class="form-check-label" for="break_even_enabled">Break-Even Enabled
+                                <i class="bi bi-question-circle cfg-info" title="Переместить стоп на цену входа (безубыток) после достижения порога ROI."></i>
+                            </label>
+                            <br><div class="cfg-hint">Переместить стоп на цену входа (безубыток) после достижения ROI порога</div>
                         </div>
-                        <div class="mb-3">
-                            <label for="break_even_activation_roi" class="form-label">Break-Even Activation ROI</label>
+                        <?php $beEnabled = !empty($form_values['break_even_enabled']); ?>
+                        <div class="mb-3<?= !$beEnabled ? ' cfg-muted-field' : '' ?>">
+                            <label for="break_even_activation_roi" class="form-label">Break-Even Activation ROI
+                                <i class="bi bi-question-circle cfg-info" title="ROI, при котором стоп перемещается на безубыток. 0.025 = после +2.5% ROI."></i>
+                            </label>
                             <input type="number" step="0.001" min="0" class="form-control" id="break_even_activation_roi" name="break_even_activation_roi" value="<?= $v('break_even_activation_roi', '0.015') ?>">
-                            <small class="text-secondary">ROI to activate break-even (>= 0)</small>
+                            <div class="cfg-hint">ROI для активации безубытка (<code>0.025</code> = после +2.5% ROI стоп → цена входа)</div>
+                            <?php if (!$beEnabled): ?>
+                            <div class="cfg-mode-note">⚠ Используется только когда Break-Even включён</div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -683,6 +739,182 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
+        <!-- ================================================ -->
+        <!-- Stop / ROI / Leverage Reference Table -->
+        <!-- ================================================ -->
+        <div class="row">
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-table me-2"></i>
+                        <h5 style="margin: 0;">Stop / ROI / Leverage — Справочная таблица</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Manual (Fixed ROI) Reference -->
+                            <div class="col-md-6 mb-3">
+                                <div class="cfg-legend">
+                                    <h6 class="text-warning"><i class="bi bi-calculator me-1"></i> Manual (Fixed ROI) — зависит от плеча</h6>
+                                    <p>ROI стоп = % убытка по позиции. Реальное движение цены = <code>ROI / leverage</code></p>
+                                    <table>
+                                        <thead><tr><th>ROI Stop</th><th>Leverage</th><th>≈ Движение цены</th></tr></thead>
+                                        <tbody>
+                                            <tr><td><code>0.05</code> (5%)</td><td>3x</td><td>≈ 1.67%</td></tr>
+                                            <tr><td><code>0.05</code> (5%)</td><td>5x</td><td>≈ 1.0%</td></tr>
+                                            <tr><td><code>0.05</code> (5%)</td><td>10x</td><td>≈ 0.5%</td></tr>
+                                            <tr><td><code>0.10</code> (10%)</td><td>3x</td><td>≈ 3.33%</td></tr>
+                                            <tr><td><code>0.10</code> (10%)</td><td>5x</td><td>≈ 2.0%</td></tr>
+                                            <tr><td><code>0.10</code> (10%)</td><td>10x</td><td>≈ 1.0%</td></tr>
+                                            <tr><td><code>0.15</code> (15%)</td><td>5x</td><td>≈ 3.0%</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <!-- Entry ROI Reference -->
+                            <div class="col-md-6 mb-3">
+                                <div class="cfg-legend">
+                                    <h6 class="text-success"><i class="bi bi-pin-angle me-1"></i> Entry ROI — не зависит от плеча</h6>
+                                    <p>Стоп = процент от цены входа. Одинаковое расстояние от входа при любом плече.</p>
+                                    <table>
+                                        <thead><tr><th>Значение</th><th>Расстояние от цены входа</th><th>Пример (вход $60000)</th></tr></thead>
+                                        <tbody>
+                                            <tr><td><code>0.02</code></td><td>2% от цены</td><td>SL ≈ $58800 (long)</td></tr>
+                                            <tr><td><code>0.05</code></td><td>5% от цены</td><td>SL ≈ $57000 (long)</td></tr>
+                                            <tr><td><code>0.10</code></td><td>10% от цены</td><td>SL ≈ $54000 (long)</td></tr>
+                                            <tr><td><code>0.20</code></td><td>20% от цены</td><td>SL ≈ $48000 (long)</td></tr>
+                                            <tr><td><code>0.40</code></td><td>40% от цены</td><td>SL ≈ $36000 (long)</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <!-- Trailing/BE Reference -->
+                            <div class="col-md-6 mb-3">
+                                <div class="cfg-legend">
+                                    <h6 class="text-info"><i class="bi bi-graph-up me-1"></i> Trailing / Break-Even — активация</h6>
+                                    <table>
+                                        <thead><tr><th>Параметр</th><th>Значение</th><th>Что значит</th></tr></thead>
+                                        <tbody>
+                                            <tr><td>trailing_activation_roi</td><td><code>0.05</code></td><td>Трейлинг стартует после +5% ROI</td></tr>
+                                            <tr><td>break_even_activation_roi</td><td><code>0.025</code></td><td>Безубыток после +2.5% ROI</td></tr>
+                                            <tr><td>trailing_min_lock_roi</td><td><code>0.012</code></td><td>Зафиксировать мин. +1.2% ROI</td></tr>
+                                            <tr><td>trailing_min_step</td><td><code>0.01</code></td><td>Подтягивать стоп шагом 1%</td></tr>
+                                            <tr><td>fixed_take_profit_roi</td><td><code>0.03</code></td><td>Фиксированный TP на +3% ROI</td></tr>
+                                            <tr><td>hybrid_tp_share</td><td><code>0.40</code></td><td>40% по Fixed TP, 60% по трейлингу</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <!-- Key Difference -->
+                            <div class="col-md-6 mb-3">
+                                <div class="cfg-legend">
+                                    <h6 class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i> ROI vs Движение цены — не путайте!</h6>
+                                    <ul class="mb-2 ps-3">
+                                        <li><strong>ROI %</strong> = доход/убыток по позиции с учётом плеча. <code>ROI = price_move × leverage</code></li>
+                                        <li><strong>Price move %</strong> = фактическое изменение цены актива.</li>
+                                        <li><strong>Entry ROI</strong> = % от цены входа (не зависит от плеча, это price move).</li>
+                                    </ul>
+                                    <p class="mb-0"><strong>Пример:</strong> При 5x плече, <code>-2%</code> движения цены = <code>-10%</code> ROI.<br>
+                                    Manual stop <code>0.10</code> при 5x → стоп на 2% от цены.<br>
+                                    Entry ROI <code>0.10</code> при 5x → стоп на 10% от цены.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================================================ -->
+        <!-- Bottom Legend -->
+        <!-- ================================================ -->
+        <div class="row">
+            <div class="col-12 mb-4">
+                <div class="card border-secondary">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-book me-2"></i>
+                        <h5 style="margin: 0;">Легенда / Как читать параметры</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- 1. Stop Modes -->
+                            <div class="col-md-4 mb-3">
+                                <div class="cfg-legend h-100">
+                                    <h6>1. Режимы стоп-лосса</h6>
+                                    <ul class="ps-3 mb-0">
+                                        <li><strong>Auto</strong> — Brain рассчитывает от ликвидации</li>
+                                        <li><strong>Manual</strong> — по ROI позиции (зависит от плеча)</li>
+                                        <li><strong>Entry ROI</strong> — % от цены входа (не зависит от плеча)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <!-- 2. Exit Modes -->
+                            <div class="col-md-4 mb-3">
+                                <div class="cfg-legend h-100">
+                                    <h6>2. Режимы выхода</h6>
+                                    <ul class="ps-3 mb-0">
+                                        <li><strong>Fixed TP</strong> — закрыть при достижении ROI цели</li>
+                                        <li><strong>Trailing TP</strong> — трейлинг следит за максимумом</li>
+                                        <li><strong>Hybrid</strong> — часть по Fixed, остальное по трейлингу</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <!-- 3. Break-Even & Trailing -->
+                            <div class="col-md-4 mb-3">
+                                <div class="cfg-legend h-100">
+                                    <h6>3. Безубыток и трейлинг</h6>
+                                    <ul class="ps-3 mb-0">
+                                        <li><strong>Break-Even</strong> — стоп → цена входа при ROI порога</li>
+                                        <li><strong>Trailing</strong> — подтягивание стопа за ценой</li>
+                                        <li><strong>Min Lock</strong> — мин. гарантированная прибыль</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <!-- 4. Units -->
+                            <div class="col-md-4 mb-3">
+                                <div class="cfg-legend h-100">
+                                    <h6>4. Единицы измерения</h6>
+                                    <ul class="ps-3 mb-0">
+                                        <li>Все значения — <strong>ratio</strong> (0.10 = 10%)</li>
+                                        <li>ROI = позиционный доход (с учётом плеча)</li>
+                                        <li>Entry ROI = % от цены (без влияния плеча)</li>
+                                        <li><code>price_move ≈ ROI / leverage</code></li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <!-- 5. Leverage Impact -->
+                            <div class="col-md-4 mb-3">
+                                <div class="cfg-legend h-100">
+                                    <h6>5. Влияние плеча</h6>
+                                    <ul class="ps-3 mb-0">
+                                        <li>При <strong>3x</strong>: 1% цены = 3% ROI</li>
+                                        <li>При <strong>5x</strong>: 1% цены = 5% ROI</li>
+                                        <li>При <strong>10x</strong>: 1% цены = 10% ROI</li>
+                                        <li>Чем выше плечо, тем меньше «места» для стопа</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <!-- 6. Quick Examples -->
+                            <div class="col-md-4 mb-3">
+                                <div class="cfg-legend h-100">
+                                    <h6>6. Быстрые примеры</h6>
+                                    <ul class="ps-3 mb-0">
+                                        <li>Entry ROI <code>0.10</code> = стоп на 10% от цены</li>
+                                        <li>Manual <code>0.10</code> при 5x = стоп на 2% от цены</li>
+                                        <li>Trailing <code>0.05</code> = старт после +5% ROI</li>
+                                        <li>BE <code>0.025</code> = безубыток после +2.5% ROI</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Action Buttons -->
         <div class="d-flex gap-2 mb-4">
             <button type="submit" class="btn btn-primary">
@@ -696,6 +928,30 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </a>
         </div>
     </form>
+    <script>
+    // Dynamic mode-specific field highlighting
+    document.addEventListener('DOMContentLoaded', function() {
+        // Stop control mode visibility
+        var stopModeSelect = document.getElementById('stop_control_mode');
+        if (stopModeSelect) {
+            stopModeSelect.addEventListener('change', function() {
+                var mode = this.value;
+                var manualGroup = document.getElementById('manual_stop_group');
+                var entryGroup = document.getElementById('entry_roi_stop_group');
+                if (manualGroup) {
+                    manualGroup.classList.toggle('cfg-muted-field', mode !== 'manual');
+                    var manualNote = manualGroup.querySelector('.cfg-mode-note');
+                    if (manualNote) manualNote.style.display = mode !== 'manual' ? '' : 'none';
+                }
+                if (entryGroup) {
+                    entryGroup.classList.toggle('cfg-muted-field', mode !== 'entry_roi');
+                    var entryNote = entryGroup.querySelector('.cfg-mode-note');
+                    if (entryNote) entryNote.style.display = mode !== 'entry_roi' ? '' : 'none';
+                }
+            });
+        }
+    });
+    </script>
 <?php
 };
 

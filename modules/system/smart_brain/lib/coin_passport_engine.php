@@ -274,7 +274,12 @@ final class CoinPassportEngine
                     $sideMae = $sd['mae_winners_stats'];
                     $sideCount = (int)($sideMae['count'] ?? 0);
                     $sideP75 = (float)($sideMae['p75'] ?? 0);
+                    // Side-specific total trades and winning trades for strict side-aware gating
+                    $sideTotalTrades = (int)($sd['trades'] ?? 0);
+                    $sideWins = (int)($sd['wins'] ?? 0);
                     $profile['by_side'][$side]['mae_stop_profile'] = [
+                        'sample_size' => $sideTotalTrades,
+                        'winning_sample_size' => $sideWins,
                         'mae_winners_count' => $sideCount,
                         'mae_winners_median' => (float)($sideMae['median'] ?? 0),
                         'mae_winners_p75' => $sideP75,

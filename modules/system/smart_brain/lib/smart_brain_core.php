@@ -2001,32 +2001,57 @@ final class SmartBrainCore
         $maeStopApplied = false;
 
         if ($maeStopEnabled) {
-            // Side-aware MAE resolution: prefer symbol+side, fall back to symbol-level
+            // Side-aware MAE resolution with strict side-specific gating:
+            // 1. symbol+side adaptive (if side thresholds pass)
+            // 2. symbol-level adaptive (if symbol thresholds pass)
+            // 3. fallback/default
             $sideNorm = ($side === 'long' || $side === 'short') ? $side : '';
             $maeProfile = null;
             $maeSource = 'none';
+            // Diagnostic fields for threshold explainability
+            $sideSampleSize = 0;
+            $sideWinnersCount = 0;
+            $sideThresholdPassed = false;
+            $symbolThresholdPassed = false;
 
-            // Try per-side MAE profile first (symbol + side)
+            // Try per-side MAE profile first (symbol + side) with STRICT side-specific gating
             if ($sideNorm !== '') {
                 $sideProfile = $ep['by_side'][$sideNorm]['mae_stop_profile'] ?? null;
-                if (is_array($sideProfile) && (int)($sideProfile['mae_winners_count'] ?? 0) >= $maeMinWinners) {
-                    $maeProfile = $sideProfile;
-                    $maeSource = 'mae_adaptive_side';
+                if (is_array($sideProfile)) {
+                    $sideWinnersCount = (int)($sideProfile['mae_winners_count'] ?? 0);
+                    // Use side-specific sample_size for total trades threshold
+                    $sideSampleSize = (int)($sideProfile['sample_size'] ?? 0);
+                    // Backward compat: if sample_size not stored, fall back to by_side trades count
+                    if ($sideSampleSize === 0) {
+                        $sideSampleSize = (int)($ep['by_side'][$sideNorm]['trades'] ?? 0);
+                    }
+                    // STRICT: both thresholds must be side-specific
+                    if ($sideSampleSize >= $maeMinTrades && $sideWinnersCount >= $maeMinWinners) {
+                        $maeProfile = $sideProfile;
+                        $maeSource = 'mae_adaptive_side';
+                        $sideThresholdPassed = true;
+                    }
                 }
             }
 
             // Fall back to symbol-level MAE profile if side data insufficient
             if ($maeProfile === null) {
                 $symbolProfile = $ep['mae_stop_profile'] ?? null;
-                if (is_array($symbolProfile) && (int)($symbolProfile['mae_winners_count'] ?? 0) >= $maeMinWinners) {
-                    $maeProfile = $symbolProfile;
-                    $maeSource = 'mae_adaptive_symbol';
+                if (is_array($symbolProfile)) {
+                    $symWinners = (int)($symbolProfile['mae_winners_count'] ?? 0);
+                    if ($sampleSize >= $maeMinTrades && $symWinners >= $maeMinWinners) {
+                        $maeProfile = $symbolProfile;
+                        $maeSource = 'mae_adaptive_symbol';
+                        $symbolThresholdPassed = true;
+                    }
                 }
             }
 
             $winnersCount = (int)($maeProfile['mae_winners_count'] ?? 0);
+            // Effective sample size depends on source: side-level or symbol-level
+            $effectiveSampleSize = ($maeSource === 'mae_adaptive_side') ? $sideSampleSize : $sampleSize;
 
-            if ($maeProfile !== null && $winnersCount >= $maeMinWinners && $sampleSize >= $maeMinTrades) {
+            if ($maeProfile !== null) {
                 // Use the configured percentile (p75 by default, p80 also available)
                 $maeBaseline = ($maePercentile >= 80)
                     ? (float)($maeProfile['mae_winners_p80'] ?? $maeProfile['mae_winners_p75'] ?? 0)
@@ -2044,6 +2069,7 @@ final class SmartBrainCore
                         . number_format($maeBaseline, 4)
                         . ' clamped=[' . number_format($maeStopFloor, 2) . ',' . number_format($maeStopCap, 2) . ']'
                         . ' winners=' . $winnersCount
+                        . ' sample=' . $effectiveSampleSize
                         . ' source=' . $maeSource;
                     $hints['mae_baseline_raw'] = round($maeBaseline, 4);
                     $hints['mae_winners_count'] = $winnersCount;
@@ -2054,15 +2080,30 @@ final class SmartBrainCore
                     $hints['mae_hard_cap_used'] = ($maeBaseline > $maeStopCap);
                     $hints['mae_floor_used'] = ($maeBaseline < $maeStopFloor);
                     $hints['mae_fallback_used'] = false;
+                    // Diagnostic: threshold details
+                    $hints['side_sample_size'] = $sideSampleSize;
+                    $hints['side_winners_count'] = $sideWinnersCount;
+                    $hints['side_threshold_passed'] = $sideThresholdPassed;
+                    $hints['symbol_sample_size'] = $sampleSize;
+                    $hints['symbol_threshold_passed'] = $symbolThresholdPassed;
                     $maeStopApplied = true;
                 }
-            } else {
+            }
+
+            if (!$maeStopApplied) {
                 // Insufficient sample: fall back to default
                 $hints['mae_fallback_used'] = true;
                 $hints['logical_stop_source'] = 'fallback_default';
-                $hints['mae_fallback_reason'] = 'insufficient_sample (trades=' . $sampleSize
-                    . ', winners=' . $winnersCount . ', need=' . $maeMinTrades . '/' . $maeMinWinners . ')'
-                    . ($sideNorm !== '' ? ' side=' . $sideNorm : '');
+                $hints['mae_fallback_reason'] = 'insufficient_sample'
+                    . ($sideNorm !== '' ? ' side=' . $sideNorm . ' (side_trades=' . $sideSampleSize . ', side_winners=' . $sideWinnersCount . ')' : '')
+                    . ' symbol_trades=' . $sampleSize
+                    . ' need=' . $maeMinTrades . '/' . $maeMinWinners;
+                // Diagnostic: threshold details even on fallback
+                $hints['side_sample_size'] = $sideSampleSize;
+                $hints['side_winners_count'] = $sideWinnersCount;
+                $hints['side_threshold_passed'] = $sideThresholdPassed;
+                $hints['symbol_sample_size'] = $sampleSize;
+                $hints['symbol_threshold_passed'] = $symbolThresholdPassed;
             }
         }
 

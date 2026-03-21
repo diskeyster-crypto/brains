@@ -1253,6 +1253,11 @@ final class TradingBotService
             $closePrice = (float)($trade['close_price'] ?? 0);
             $initialStop = (float)($trade['initial_computed_stop_price'] ?? $trade['effective_stop_price'] ?? 0);
 
+            // MAE: maximum adverse excursion (ROI-based, as ratio)
+            $mae = (float)($trade['mae_roi'] ?? $trade['mae_pct'] ?? $trade['mae'] ?? 0);
+            // Normalize: MAE should be positive (absolute adverse move)
+            $maeAbs = abs($mae);
+
             if (!isset($raw[$symbol])) {
                 $raw[$symbol] = [
                     'rois' => [],
@@ -1269,7 +1274,12 @@ final class TradingBotService
                     'losses' => 0,
                     'win_rois' => [],
                     'loss_rois' => [],
-                    'sides' => ['long' => ['rois' => [], 'wins' => 0, 'losses' => 0, 'reasons' => []], 'short' => ['rois' => [], 'wins' => 0, 'losses' => 0, 'reasons' => []]],
+                    'mae_winners' => [],
+                    'mae_losers' => [],
+                    'sides' => [
+                        'long' => ['rois' => [], 'wins' => 0, 'losses' => 0, 'reasons' => [], 'mae_winners' => [], 'mae_losers' => []],
+                        'short' => ['rois' => [], 'wins' => 0, 'losses' => 0, 'reasons' => [], 'mae_winners' => [], 'mae_losers' => []],
+                    ],
                 ];
             }
 
@@ -1278,9 +1288,15 @@ final class TradingBotService
             if ($roi > 0) {
                 $raw[$symbol]['wins']++;
                 $raw[$symbol]['win_rois'][] = $roi;
+                if ($maeAbs > 0) {
+                    $raw[$symbol]['mae_winners'][] = $maeAbs;
+                }
             } else {
                 $raw[$symbol]['losses']++;
                 $raw[$symbol]['loss_rois'][] = $roi;
+                if ($maeAbs > 0) {
+                    $raw[$symbol]['mae_losers'][] = $maeAbs;
+                }
             }
 
             // Close reason distribution
@@ -1318,6 +1334,14 @@ final class TradingBotService
                     $raw[$symbol]['rois_long'][] = $roi;
                 } else {
                     $raw[$symbol]['rois_short'][] = $roi;
+                }
+                // MAE per side for winning/losing trades
+                if ($maeAbs > 0) {
+                    if ($roi > 0) {
+                        $raw[$symbol]['sides'][$sideKey]['mae_winners'][] = $maeAbs;
+                    } else {
+                        $raw[$symbol]['sides'][$sideKey]['mae_losers'][] = $maeAbs;
+                    }
                 }
             }
         }
@@ -1373,6 +1397,18 @@ final class TradingBotService
                 $entry['stop_distance_stats'] = $this->computeRobustStats($d['stop_distances']);
             }
 
+            // MAE stats for winning trades (key for adaptive logical stop)
+            if (!empty($d['mae_winners'])) {
+                $maeWinStats = $this->computeRobustStats($d['mae_winners']);
+                // Add p80 for MAE-based stop recommendation
+                sort($d['mae_winners']);
+                $maeWinStats['p80'] = round($this->percentile($d['mae_winners'], 80), 4);
+                $entry['mae_winners_stats'] = $maeWinStats;
+            }
+            if (!empty($d['mae_losers'])) {
+                $entry['mae_losers_stats'] = $this->computeRobustStats($d['mae_losers']);
+            }
+
             // Side split
             $sides = [];
             foreach (['long', 'short'] as $s) {
@@ -1380,7 +1416,7 @@ final class TradingBotService
                 $sideCount = count($sideData['rois']);
                 if ($sideCount > 0) {
                     $sideWinrate = round($sideData['wins'] / $sideCount, 4);
-                    $sides[$s] = [
+                    $sideEntry = [
                         'trades' => $sideCount,
                         'wins' => $sideData['wins'],
                         'losses' => $sideData['losses'],
@@ -1389,6 +1425,17 @@ final class TradingBotService
                         'roi_stats' => $this->computeRobustStats($sideData['rois']),
                         'close_reasons' => $sideData['reasons'],
                     ];
+                    // MAE stats per side for winning trades
+                    if (!empty($sideData['mae_winners'])) {
+                        $sideMaeWinStats = $this->computeRobustStats($sideData['mae_winners']);
+                        sort($sideData['mae_winners']);
+                        $sideMaeWinStats['p80'] = round($this->percentile($sideData['mae_winners'], 80), 4);
+                        $sideEntry['mae_winners_stats'] = $sideMaeWinStats;
+                    }
+                    if (!empty($sideData['mae_losers'])) {
+                        $sideEntry['mae_losers_stats'] = $this->computeRobustStats($sideData['mae_losers']);
+                    }
+                    $sides[$s] = $sideEntry;
                 }
             }
             $entry['by_side'] = $sides;

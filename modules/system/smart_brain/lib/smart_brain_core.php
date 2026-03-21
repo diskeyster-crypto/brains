@@ -703,7 +703,7 @@ final class SmartBrainCore
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
                 'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
                 'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
-                'logical_stop_roi' => (float)($userLimits['logical_stop_roi'] ?? 0.03),
+                'logical_stop_roi' => (float)($effectiveLimits['logical_stop_roi'] ?? 0.03),
                 'canonical_source' => 'risk_trailing_derived',
             ];
 
@@ -1059,12 +1059,15 @@ final class SmartBrainCore
         // Logical stop vs emergency stop separation
         // Emergency stop = existing stop_from_liq_range_pct (liquidation-based safety net)
         // Logical stop = strategy invalidation stop (closer, based on corridor/structure)
+        // When MAE-adaptive stop is active, logical_stop_roi comes from symbol-side p75 MAE winners
         $logicalStopRoi = (float)($userLimits['logical_stop_roi'] ?? 0.03);
+        $maeStopCfgDefault = 0.03;
+        $logicalStopSource = ($logicalStopRoi !== $maeStopCfgDefault) ? 'mae_adaptive' : 'brain_config';
         $botReady['logical_stop'] = [
             'enabled' => true,
             'logical_stop_roi' => $logicalStopRoi,
             'mode' => 'strategy_invalidation',
-            'source' => 'brain_config',
+            'source' => $logicalStopSource,
         ];
         $botReady['emergency_stop'] = [
             'enabled' => true,
@@ -1949,9 +1952,54 @@ final class SmartBrainCore
 
         $hints = [];
 
-        // 1. Stop sensitivity adjustment
+        // 1. MAE-based adaptive logical stop (primary recommendation)
+        // Use p75 of winning trade MAE as baseline, clamped to floor/cap
+        $maeStopEnabled = (bool)($userLimits['mae_stop_enabled'] ?? true);
+        $maeStopFloor = (float)($userLimits['mae_stop_floor'] ?? 0.03);
+        $maeStopCap = (float)($userLimits['mae_stop_cap'] ?? 0.08);
+        $maeMinTrades = (int)($userLimits['mae_stop_min_trades'] ?? 10);
+        $maeMinWinners = (int)($userLimits['mae_stop_min_winners'] ?? 5);
+        $maePercentile = (int)($userLimits['mae_stop_percentile'] ?? 75);
+        $maeStopApplied = false;
+
+        if ($maeStopEnabled) {
+            $maeProfile = $ep['mae_stop_profile'] ?? null;
+            $winnersCount = (int)($maeProfile['mae_winners_count'] ?? 0);
+
+            if (is_array($maeProfile) && $winnersCount >= $maeMinWinners && $sampleSize >= $maeMinTrades) {
+                // Use the configured percentile (p75 by default, p80 also available)
+                $maeBaseline = ($maePercentile >= 80)
+                    ? (float)($maeProfile['mae_winners_p80'] ?? $maeProfile['mae_winners_p75'] ?? 0)
+                    : (float)($maeProfile['mae_winners_p75'] ?? 0);
+
+                if ($maeBaseline > 0) {
+                    // Clamp to floor/cap
+                    $suggestedStop = max($maeStopFloor, min($maeStopCap, $maeBaseline));
+                    $currentStop = (float)($userLimits['logical_stop_roi'] ?? 0.03);
+
+                    $hints['suggested_logical_stop_roi'] = round($suggestedStop, 4);
+                    $hints['logical_stop_source'] = 'mae_adaptive';
+                    $hints['logical_stop_reason'] = 'p' . $maePercentile . '_mae_winners='
+                        . number_format($maeBaseline, 4)
+                        . ' clamped=[' . number_format($maeStopFloor, 2) . ',' . number_format($maeStopCap, 2) . ']'
+                        . ' winners=' . $winnersCount;
+                    $hints['mae_baseline_raw'] = round($maeBaseline, 4);
+                    $hints['mae_hard_cap_used'] = ($maeBaseline > $maeStopCap);
+                    $hints['mae_floor_used'] = ($maeBaseline < $maeStopFloor);
+                    $hints['mae_fallback_used'] = false;
+                    $maeStopApplied = true;
+                }
+            } else {
+                // Insufficient sample: fall back to default
+                $hints['mae_fallback_used'] = true;
+                $hints['mae_fallback_reason'] = 'insufficient_sample (trades=' . $sampleSize
+                    . ', winners=' . $winnersCount . ', need=' . $maeMinTrades . '/' . $maeMinWinners . ')';
+            }
+        }
+
+        // 2. Stop sensitivity adjustment (fallback when MAE stop not applied)
         $stopSens = (float)($ep['stop_sensitivity_score'] ?? 0);
-        if ($stopSens > 0.6) {
+        if (!$maeStopApplied && $stopSens > 0.6) {
             // High stop sensitivity: symbol is noisy, suggest slightly wider logical stop
             $currentStop = (float)($userLimits['logical_stop_roi'] ?? 0.03);
             $suggestedStop = min(0.06, $currentStop * 1.2); // Max 20% wider, capped at 6%
@@ -1961,7 +2009,7 @@ final class SmartBrainCore
             }
         }
 
-        // 2. Trailing friendliness adjustment
+        // 3. Trailing friendliness adjustment
         $trailScore = (float)($ep['trailing_friendliness_score'] ?? 0);
         $trailActivationRate = (float)($ep['trailing_behavior']['trailing_activation_rate'] ?? 0);
 
@@ -1979,7 +2027,7 @@ final class SmartBrainCore
             }
         }
 
-        // 3. Break-even adjustment
+        // 4. Break-even adjustment
         $beApplyRate = (float)($ep['break_even_behavior']['break_even_apply_rate'] ?? 0);
         if ($beApplyRate > 0.6) {
             // BE frequently applies: suggest slightly lower BE activation
@@ -1991,7 +2039,7 @@ final class SmartBrainCore
             }
         }
 
-        // 4. Hybrid TP share adjustment based on exit distribution
+        // 5. Hybrid TP share adjustment based on exit distribution
         $exitDist = $ep['exit_reason_distribution'] ?? [];
         $trailCloseCount = (int)($ep['trailing_behavior']['trailing_close_count'] ?? 0);
         $stopHitCount = (int)($ep['stop_behavior']['stop_hit_count'] ?? 0);

@@ -42,6 +42,13 @@ return [
         'break_even_enabled' => true,
         'break_even_activation_roi' => 0.025,
         'logical_stop_roi' => 0.03,
+        // MAE-based adaptive logical stop
+        'mae_stop_enabled' => true,
+        'mae_stop_floor' => 0.03,
+        'mae_stop_cap' => 0.08,
+        'mae_stop_min_trades' => 10,
+        'mae_stop_min_winners' => 5,
+        'mae_stop_percentile' => 75,
         // Stop Control
         'stop_control_mode' => 'auto',
         'manual_stop_loss_roi' => 0.03,

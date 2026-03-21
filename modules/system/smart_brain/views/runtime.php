@@ -492,7 +492,9 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <strong>Trailing activation rate</strong> = % trades where trailing became active |
                 <strong>BE apply rate</strong> = % trades where stop moved to entry |
                 <strong>Stop hit</strong> = closed by logical/emergency stop |
-                <strong>Median ROI</strong> = robust central measure (less sensitive to outliers)
+                <strong>Median ROI</strong> = robust central measure |
+                <strong>MAE p75 Win</strong> = how much adverse move 75% of winning trades survived |
+                <strong>Sug. Stop</strong> = recommended working stop for this symbol, clamped to [3%–8%]
             </div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm table-hover mb-0" style="font-size:0.8rem;">
@@ -511,6 +513,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                             <th class="text-center">Trail%</th>
                             <th class="text-center">Trail Cl</th>
                             <th class="text-center">BE%</th>
+                            <th class="text-end">MAE p75 Win</th>
+                            <th class="text-end">Sug. Stop</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -525,6 +529,12 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                             $exp = (float)($ss['expectancy'] ?? 0);
                             $wrCls = $wr >= 0.5 ? 'text-success' : ($wr >= 0.35 ? 'text-warning' : 'text-danger');
                             $expCls = $exp > 0 ? 'text-success' : ($exp == 0 ? 'text-secondary' : 'text-danger');
+                            // MAE-based stop
+                            $maeP75W = (float)($ss['mae_winners_stats']['p75'] ?? 0);
+                            $maeWinN = (int)($ss['mae_winners_stats']['count'] ?? 0);
+                            $sugStop = ($maeWinN >= 5 && $maeP75W > 0)
+                                ? max(0.03, min(0.08, $maeP75W)) : 0;
+                            $fallback = ($maeWinN < 5 || $maeP75W <= 0);
                         ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($sym) ?></strong>
@@ -542,6 +552,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                             <td class="text-center"><?= round((float)($ss['trailing_activation_rate'] ?? 0) * 100, 0) ?>%</td>
                             <td class="text-center"><?= (int)($ss['trailing_close_count'] ?? 0) ?></td>
                             <td class="text-center"><?= round((float)($ss['break_even_apply_rate'] ?? 0) * 100, 0) ?>%</td>
+                            <td class="text-end"><?php if ($maeP75W > 0): ?><code><?= number_format($maeP75W * 100, 2) ?>%</code> <span class="text-secondary" style="font-size:0.65rem;">n=<?= $maeWinN ?></span><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
+                            <td class="text-end"><?php if ($sugStop > 0): ?><code class="text-info"><?= number_format($sugStop * 100, 2) ?>%</code><?php if ($fallback): ?> <span class="badge bg-warning text-dark" style="font-size:0.55rem;">fallback</span><?php endif; ?><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

@@ -245,6 +245,32 @@ final class CoinPassportEngine
                 $profile['stop_distance_stats'] = $stats['stop_distance_stats'];
             }
 
+            // MAE-based adaptive stop profile (per symbol overall)
+            if (!empty($stats['mae_winners_stats'])) {
+                $mws = $stats['mae_winners_stats'];
+                $profile['mae_stop_profile'] = [
+                    'mae_winners_count' => (int)($mws['count'] ?? 0),
+                    'mae_winners_median' => (float)($mws['median'] ?? 0),
+                    'mae_winners_p75' => (float)($mws['p75'] ?? 0),
+                    'mae_winners_p80' => (float)($mws['p80'] ?? 0),
+                    'mae_winners_avg' => (float)($mws['avg'] ?? 0),
+                ];
+            }
+
+            // MAE-based stop profile per side
+            foreach (['long', 'short'] as $side) {
+                $sd = $stats['by_side'][$side] ?? null;
+                if ($sd && !empty($sd['mae_winners_stats'])) {
+                    $sideMae = $sd['mae_winners_stats'];
+                    $profile['by_side'][$side]['mae_stop_profile'] = [
+                        'mae_winners_count' => (int)($sideMae['count'] ?? 0),
+                        'mae_winners_median' => (float)($sideMae['median'] ?? 0),
+                        'mae_winners_p75' => (float)($sideMae['p75'] ?? 0),
+                        'mae_winners_p80' => (float)($sideMae['p80'] ?? 0),
+                    ];
+                }
+            }
+
             $passport['execution_profile'] = $profile;
             $this->state->writeJson($passportPath, $passport);
         }

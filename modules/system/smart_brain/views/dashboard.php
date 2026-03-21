@@ -725,7 +725,9 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <span class="text-secondary">Stop Hit</span> = закрытий по стопу |
                 <span class="text-secondary">Trail Act%</span> = % активации трейлинга |
                 <span class="text-secondary">Trail Close</span> = закрытий трейлингом |
-                <span class="text-secondary">BE Apply%</span> = % применения безубытка
+                <span class="text-secondary">BE Apply%</span> = % применения безубытка |
+                <span class="text-secondary">MAE p75 Win</span> = 75-й перцентиль неблагоприятного хода выигрышных сделок |
+                <span class="text-secondary">Sug. Stop</span> = рекомендуемый адаптивный логический стоп (на основе MAE)
             </div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm table-hover mb-0" style="font-size:0.82rem;">
@@ -742,6 +744,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                             <th class="text-center">Trail Act%</th>
                             <th class="text-center">Trail Close</th>
                             <th class="text-center">BE Apply%</th>
+                            <th class="text-end">MAE p75 Win</th>
+                            <th class="text-end">Sug. Stop</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -760,6 +764,13 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                             $ssBERate = (float)($ss['break_even_apply_rate'] ?? 0);
                             $wrClass = $ssWR >= 0.5 ? 'text-success' : ($ssWR >= 0.35 ? 'text-warning' : 'text-danger');
                             $expClass = $ssExp > 0 ? 'text-success' : ($ssExp == 0 ? 'text-secondary' : 'text-danger');
+                            // MAE-based stop data
+                            $maeP75Win = (float)($ss['mae_winners_stats']['p75'] ?? 0);
+                            $maeWinnersCount = (int)($ss['mae_winners_stats']['count'] ?? 0);
+                            $maeStopFloor = 0.03;
+                            $maeStopCap = 0.08;
+                            $sugStop = ($maeWinnersCount >= 5 && $maeP75Win > 0)
+                                ? max($maeStopFloor, min($maeStopCap, $maeP75Win)) : 0;
                         ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($sym) ?></strong></td>
@@ -773,6 +784,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                             <td class="text-center"><?= round($ssTrailRate * 100, 0) ?>%</td>
                             <td class="text-center"><?= $ssTrailClose ?></td>
                             <td class="text-center"><?= round($ssBERate * 100, 0) ?>%</td>
+                            <td class="text-end"><?php if ($maeP75Win > 0): ?><code><?= number_format($maeP75Win * 100, 2) ?>%</code><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
+                            <td class="text-end"><?php if ($sugStop > 0): ?><code class="text-info"><?= number_format($sugStop * 100, 2) ?>%</code><?php if ($maeWinnersCount < 5): ?><span class="badge bg-secondary" style="font-size:0.55rem;">low</span><?php endif; ?><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -783,17 +796,20 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             <?php foreach ($symbolExitStats as $sym => $ss): ?>
             <?php if (($ss['trades_count'] ?? 0) >= 3): // Only show detail for symbols with enough trades ?>
             <details class="mt-2" style="font-size:0.8rem;">
-                <summary class="text-secondary" style="cursor:pointer;"><strong><?= htmlspecialchars($sym) ?></strong> — side split &amp; exit reasons</summary>
+                <summary class="text-secondary" style="cursor:pointer;"><strong><?= htmlspecialchars($sym) ?></strong> — side split, exit reasons &amp; MAE stop profile</summary>
                 <div class="row mt-2 ms-2">
                     <!-- Side split -->
                     <div class="col-md-6">
                         <table class="table table-dark table-sm mb-2" style="font-size:0.78rem;">
-                            <thead><tr><th>Side</th><th>Trades</th><th>WR</th><th>Avg ROI</th><th>Med ROI</th></tr></thead>
+                            <thead><tr><th>Side</th><th>Trades</th><th>WR</th><th>Avg ROI</th><th>Med ROI</th><th>MAE Win p75</th><th>Sug. Stop</th></tr></thead>
                             <tbody>
                             <?php foreach (['long', 'short'] as $sideKey):
                                 $sd = $ss['by_side'][$sideKey] ?? null;
                                 if ($sd && ($sd['trades'] ?? 0) > 0):
                                     $sdWR = (float)($sd['winrate'] ?? 0);
+                                    $sdMaeP75 = (float)($sd['mae_winners_stats']['p75'] ?? 0);
+                                    $sdMaeCount = (int)($sd['mae_winners_stats']['count'] ?? 0);
+                                    $sdSugStop = ($sdMaeCount >= 5 && $sdMaeP75 > 0) ? max(0.03, min(0.08, $sdMaeP75)) : 0;
                             ?>
                                 <tr>
                                     <td><span class="badge <?= $sideKey === 'long' ? 'bg-success bg-opacity-25 text-success' : 'bg-danger bg-opacity-25 text-danger' ?>"><?= strtoupper($sideKey) ?></span></td>
@@ -801,6 +817,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                                     <td class="<?= $sdWR >= 0.5 ? 'text-success' : 'text-warning' ?>"><?= round($sdWR * 100, 1) ?>%</td>
                                     <td><code><?= number_format((float)($sd['avg_roi'] ?? 0), 2) ?>%</code></td>
                                     <td><code><?= number_format((float)($sd['roi_stats']['median'] ?? 0), 2) ?>%</code></td>
+                                    <td><?php if ($sdMaeP75 > 0): ?><code><?= number_format($sdMaeP75 * 100, 2) ?>%</code> <span class="text-secondary">(n=<?= $sdMaeCount ?>)</span><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
+                                    <td><?php if ($sdSugStop > 0): ?><code class="text-info"><?= number_format($sdSugStop * 100, 2) ?>%</code><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
                                 </tr>
                             <?php endif; endforeach; ?>
                             </tbody>

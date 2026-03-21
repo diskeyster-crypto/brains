@@ -274,15 +274,28 @@ final class SmartBrainCore
         $passports->update($monitors);
 
         // P7: Enrich passports with live bot execution profile
+        $botStatsLoaded = false;
+        $botStatsParseOk = false;
+        $botStatsSymbolsCount = 0;
+        $botStatsSourcePath = null;
+        $passportEnrichResult = [
+            'passports_updated_count' => 0,
+            'passports_with_mae_profile_count' => 0,
+            'passport_mae_symbols_preview' => [],
+        ];
         try {
             $botStoragePath = $this->resolveBotStoragePath();
             if ($botStoragePath !== null) {
                 $botLastRunPath = $botStoragePath . '/last_run.json';
+                $botStatsSourcePath = $botLastRunPath;
                 if (file_exists($botLastRunPath)) {
                     $botRunRaw = (string)file_get_contents($botLastRunPath);
                     $botRunData = json_decode($botRunRaw, true);
-                    if (is_array($botRunData) && !empty($botRunData['symbol_exit_stats'])) {
-                        $passports->enrichWithExecutionProfile($botRunData['symbol_exit_stats']);
+                    $botStatsParseOk = is_array($botRunData);
+                    if ($botStatsParseOk && !empty($botRunData['symbol_exit_stats'])) {
+                        $botStatsLoaded = true;
+                        $botStatsSymbolsCount = count($botRunData['symbol_exit_stats']);
+                        $passportEnrichResult = $passports->enrichWithExecutionProfile($botRunData['symbol_exit_stats']);
                     }
                 }
             }
@@ -412,6 +425,22 @@ final class SmartBrainCore
                 'live_one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
             ],
             'effective_trailing_contract' => $this->buildEffectiveTrailingContractSummary($userLimits),
+            // ── MAE ADAPTIVE STOP: RUNTIME PROOF ─────────────────────────
+            // Part 1: Bot stats load status
+            'bot_symbol_exit_stats_loaded' => $botStatsLoaded,
+            'bot_symbol_exit_stats_symbols_count' => $botStatsSymbolsCount,
+            'bot_symbol_exit_stats_source_path' => $botStatsSourcePath,
+            'bot_symbol_exit_stats_parse_ok' => $botStatsParseOk,
+            // Part 4: Passport write counts
+            'passports_updated_count' => $passportEnrichResult['passports_updated_count'],
+            'passports_with_mae_profile_count' => $passportEnrichResult['passports_with_mae_profile_count'],
+            'passport_mae_symbols_preview' => $passportEnrichResult['passport_mae_symbols_preview'],
+            // Part 5: MAE hint counters (from live intent generation)
+            'mae_stop_hints_available_count' => $liveIntentResult['mae_stop_hints_available_count'] ?? 0,
+            'mae_stop_hints_applied_count' => $liveIntentResult['mae_stop_hints_applied_count'] ?? 0,
+            'mae_stop_hints_fallback_count' => $liveIntentResult['mae_stop_hints_fallback_count'] ?? 0,
+            // Part 2: MAE debug preview (first few symbol/side cases)
+            'mae_stop_debug_preview' => $liveIntentResult['mae_stop_debug_preview'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -463,6 +492,11 @@ final class SmartBrainCore
             'live_mode_filter_rejected_count' => 0,
             'live_invalid_risk_contract_count' => 0,
             'live_debug_preview' => [],
+            // MAE adaptive stop runtime proof counters
+            'mae_stop_hints_available_count' => 0,
+            'mae_stop_hints_applied_count' => 0,
+            'mae_stop_hints_fallback_count' => 0,
+            'mae_stop_debug_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -682,6 +716,29 @@ final class SmartBrainCore
                 }
                 if (isset($h['suggested_hybrid_tp_share'])) {
                     $effectiveLimits['hybrid_tp_share'] = $h['suggested_hybrid_tp_share'];
+                }
+
+                // ── MAE RUNTIME PROOF: count hint application ──
+                $hintSource = $h['logical_stop_source'] ?? '';
+                if ($hintSource === 'mae_adaptive_side' || $hintSource === 'mae_adaptive_symbol') {
+                    $result['mae_stop_hints_applied_count']++;
+                } elseif ($hintSource === 'fallback_default' || !empty($h['mae_fallback_used'])) {
+                    $result['mae_stop_hints_fallback_count']++;
+                }
+                $result['mae_stop_hints_available_count']++;
+
+                // MAE debug preview (first 5 cases)
+                if (count($result['mae_stop_debug_preview']) < 5) {
+                    $result['mae_stop_debug_preview'][] = [
+                        'symbol' => $symbol,
+                        'side' => $side,
+                        'source' => $hintSource,
+                        'side_sample_size' => (int)($h['side_sample_size'] ?? 0),
+                        'side_winners_count' => (int)($h['side_winners_count'] ?? 0),
+                        'symbol_sample_size' => (int)($h['symbol_sample_size'] ?? 0),
+                        'suggested_logical_stop_roi' => $h['suggested_logical_stop_roi'] ?? null,
+                        'fallback_used' => (bool)($h['mae_fallback_used'] ?? false),
+                    ];
                 }
             }
 

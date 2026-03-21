@@ -174,11 +174,18 @@ final class CoinPassportEngine
      *
      * @param array<string,array<string,mixed>> $symbolExitStats Keyed by symbol
      * @param int $minSampleSize Minimum trades to write a meaningful profile
+     * @return array{passports_updated_count: int, passports_with_mae_profile_count: int, passport_mae_symbols_preview: list<string>}
      */
-    public function enrichWithExecutionProfile(array $symbolExitStats, int $minSampleSize = 10): void
+    public function enrichWithExecutionProfile(array $symbolExitStats, int $minSampleSize = 10): array
     {
+        $result = [
+            'passports_updated_count' => 0,
+            'passports_with_mae_profile_count' => 0,
+            'passport_mae_symbols_preview' => [],
+        ];
+
         if (empty($symbolExitStats)) {
-            return;
+            return $result;
         }
 
         foreach ($symbolExitStats as $symbol => $stats) {
@@ -311,6 +318,17 @@ final class CoinPassportEngine
 
             $passport['execution_profile'] = $profile;
             $this->state->writeJson($passportPath, $passport);
+            $result['passports_updated_count']++;
+
+            // Track passports that received an mae_stop_profile
+            if (!empty($profile['mae_stop_profile'])) {
+                $result['passports_with_mae_profile_count']++;
+                if (count($result['passport_mae_symbols_preview']) < 5) {
+                    $result['passport_mae_symbols_preview'][] = $symbol;
+                }
+            }
         }
+
+        return $result;
     }
 }

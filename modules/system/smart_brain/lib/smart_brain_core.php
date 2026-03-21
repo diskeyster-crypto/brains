@@ -425,7 +425,7 @@ final class SmartBrainCore
     // =========================================================================
 
     /** Runtime signature for live-stage code version verification */
-    private const LIVE_STAGE_VERSION = 'live_stage_v2_audit_2026-03-19';
+    private const LIVE_STAGE_VERSION = 'live_stage_v3_cleanup_2026-03-21';
 
     /**
      * Generate Brain-approved live intents from signals.
@@ -744,13 +744,16 @@ final class SmartBrainCore
                 'entry_action' => $entryPolicy,
                 'entry_timeout_minutes' => (int)($signal['entry_timeout_minutes'] ?? 8),
                 'entry_price_reference' => $entryPriceRef,
+                // ── CANONICAL SOURCES OF TRUTH ──────────────────────────────
+                // risk       → bot-ready execution contract (budget, stop, trailing, logical/emergency stop)
+                //               Built by buildBotReadyRiskBlock(). Bot consumes risk.trailing, risk.stop_control,
+                //               risk.logical_stop, risk.emergency_stop directly.
+                // trailing   → Brain-naming mirror of risk.trailing for traceability/UI.
+                //               Derived from the SAME canonical risk.trailing (reverse percent→ratio).
+                //               NOT a competing source of truth — just a read-friendly representation.
+                // Stop policy fields live inside risk.stop_control — no separate stop_policy block needed.
                 'risk' => $botReadyRisk,
                 'trailing' => $trailing,
-                'stop_policy' => [
-                    'stop_control_mode' => (string)($signal['stop_control_mode'] ?? ($trailing['stop_control_mode'] ?? 'auto')),
-                    'manual_stop_loss_roi' => (float)($signal['manual_stop_loss_roi'] ?? ($trailing['manual_stop_loss_roi'] ?? 0.03)),
-                    'stop_loss_from_entry_roi' => (float)($signal['stop_loss_from_entry_roi'] ?? ($trailing['stop_loss_from_entry_roi'] ?? 0.10)),
-                ],
                 'selection_mode_used' => $selectionMode,
                 'selection_source' => $selectionSource,
                 'approval_reason' => $approvalReason,
@@ -877,6 +880,11 @@ final class SmartBrainCore
 
     /**
      * Normalize risk block from signal.
+     *
+     * Canonical source priority:
+     *   1. Structured risk block from signal (risk.leverage, risk.budget, risk.trailing, …)
+     *   2. Flat signal fields as legacy fallback (signal.leverage, signal.budget, …)
+     *
      * If signal has structured risk block, return it.
      * Otherwise, build risk block from flat signal fields.
      *
@@ -908,7 +916,9 @@ final class SmartBrainCore
             return $risk;
         }
 
-        // Fallback: build risk block from flat signal fields
+        // Legacy fallback: build risk block from flat signal fields
+        // @legacy — flat signal fields (signal.leverage, signal.budget) supported for backward
+        // compatibility with older signal generators. New signals should use structured risk block.
         $leverage = $signal['leverage'] ?? null;
         $budget = $signal['budget'] ?? null;
         if ($leverage === null && $budget === null) {
@@ -947,7 +957,23 @@ final class SmartBrainCore
     }
 
     /**
-     * P0.2: Build a full bot-ready risk block from Brain signal risk + config.
+     * Build a full bot-ready risk block from Brain signal risk + config.
+     *
+     * ── CANONICAL SOURCE OF TRUTH FOR BOT EXECUTION CONTRACT ─────────────
+     * This function is the SINGLE canonical builder for the risk execution
+     * contract that flows: Brain → live_intents.json → Trading Bot.
+     *
+     * Canonical fields produced:
+     *   risk.trailing           → exit/trailing/BE contract (percent units for bot)
+     *   risk.logical_stop       → strategy invalidation stop (separate from emergency)
+     *   risk.emergency_stop     → liquidation safety net (independent of logical stop)
+     *   risk.stop_control       → stop calculation mode (auto/manual/entry_roi)
+     *
+     * Unit convention (AUDIT):
+     *   Brain config stores RATIOS (0.05 = 5%).
+     *   Bot engines expect PERCENT (5.0 = 5%) for activation/BE fields.
+     *   drawdown_factor is 0–1 multiplier, NOT percent — stays as-is.
+     *   min_step, min_lock_roi, fixed_take_profit_roi, hybrid_tp_share stay as ratios.
      *
      * Maps Brain signal/risk fields into the complete execution contract
      * that Trading Bot validator (bot_risk_engine.php) requires:
@@ -1021,7 +1047,8 @@ final class SmartBrainCore
             'fees_bps' => $feesBps,
             'order_type' => $orderType,
             'limits' => $limits,
-            // Preserve original Brain risk fields for audit
+            // @legacy — original Brain risk fields preserved for audit/traceability.
+            // Canonical values are budget_usdt_per_trade and stop_from_liq_range_pct above.
             'stop_loss' => (float)($risk['stop_loss'] ?? 0),
             'budget' => round($budget, 2),
         ];
@@ -1392,11 +1419,27 @@ final class SmartBrainCore
     }
 
     // =========================================================================
-    // P1: Trading Bot Execution Mirror
+    // Trading Bot Execution Mirror
     // =========================================================================
 
     /**
-     * P1.1: Read the latest Trading Bot runtime summary for mirror display.
+     * Read the latest Trading Bot runtime summary for mirror display.
+     *
+     * ── MIRROR LAYER CANONICAL MAP ──────────────────────────────────────
+     * Source of truth: Trading Bot → storage/last_run.json
+     * Mirror consumer: Brain dashboard + runtime views
+     *
+     * Mirrored fields (all read-only, never written back to bot):
+     *   - Execution counters: intents_processed/opened/skipped/rejected/failed
+     *   - Exchange submit stats: exchange_submit_attempted/failed/success_count
+     *   - Active protection: active_positions_count, trailing_active_count, etc.
+     *   - Contract generation mix: active_trade_contract_generation_stats
+     *   - Flat effective contract: effective_exit_mode, effective_trailing_*, etc.
+     *   - Symbol exit stats (P7): per-symbol closed trade statistics + MAE data
+     *   - Expectancy metrics (P6): winrate, average_win/loss, expectancy
+     *
+     * Flat effective_* fields use bot's flat last_run fields with fallback to
+     * nested effective_trailing_contract for older bot versions.
      *
      * Reads bot storage/last_run.json safely and extracts a compact summary.
      * If bot runtime is unavailable, returns a graceful fallback.
@@ -1624,11 +1667,15 @@ final class SmartBrainCore
             $mirror['mae_stop_hints_available_count'] = $maeHintsAvailable;
             $mirror['mae_stop_hints_fallback_count'] = $maeHintsFallback;
 
-            // P5: Effective trailing contract mirror from bot runtime
+            // Effective trailing contract mirror from bot runtime
+            // @legacy — nested effective_trailing_contract kept as fallback for older bot versions
+            // that don't expose flat effective_* fields at the top level of last_run.json.
+            // Remove after all active bot instances emit flat fields directly.
             $botEffectiveContract = is_array($botData['effective_trailing_contract'] ?? null) ? $botData['effective_trailing_contract'] : [];
             $mirror['effective_trailing_contract'] = $botEffectiveContract;
 
-            // Flat effective post-entry contract fields (directly from bot last_run)
+            // Flat effective post-entry contract fields (canonical: directly from bot last_run)
+            // Fallback to nested effective_trailing_contract for older bot versions.
             $mirror['effective_exit_mode'] = $botData['effective_exit_mode'] ?? ($botEffectiveContract['exit_mode'] ?? null);
             $mirror['effective_break_even_enabled'] = $botData['effective_break_even_enabled'] ?? ($botEffectiveContract['break_even_enabled'] ?? null);
             $mirror['effective_break_even_activation'] = $botData['effective_break_even_activation'] ?? ($botEffectiveContract['break_even_activation_roi'] ?? null);
@@ -1951,6 +1998,21 @@ final class SmartBrainCore
      * Returns bounded adjustments to trailing/stop parameters based on the symbol's
      * historical execution behavior. Only returns hints when sample size is sufficient.
      *
+     * ── MAE ADAPTIVE STOP — STRICT SIDE-AWARE GATING ───────────────────
+     * Fallback chain for logical stop source:
+     *   1. mae_adaptive_side   — per-symbol + side (requires BOTH side_sample_size >= min_trades
+     *                            AND side_winners_count >= min_winners)
+     *   2. mae_adaptive_symbol — per-symbol aggregate (requires symbol sample thresholds)
+     *   3. fallback_default    — insufficient data, default logical_stop_roi used
+     *   4. fallback_stop_sensitivity — high stop sensitivity score triggers wider stop
+     *
+     * Long and short qualify independently — symbol-level sample does NOT satisfy
+     * side-specific thresholds.
+     *
+     * Diagnostic fields (side_sample_size, side_winners_count, side_threshold_passed,
+     * symbol_sample_size, symbol_threshold_passed) are always included in hint metadata
+     * for threshold explainability.
+     *
      * All hints are:
      * - explainable (reason provided)
      * - bounded (clamped to safe min/max)
@@ -2021,7 +2083,8 @@ final class SmartBrainCore
                     $sideWinnersCount = (int)($sideProfile['mae_winners_count'] ?? 0);
                     // Use side-specific sample_size for total trades threshold
                     $sideSampleSize = (int)($sideProfile['sample_size'] ?? 0);
-                    // Backward compat: if sample_size not stored, fall back to by_side trades count
+                    // @legacy — backward compat: if sample_size not yet stored in passport,
+                    // fall back to by_side trades count. Remove after all passports refreshed.
                     if ($sideSampleSize === 0) {
                         $sideSampleSize = (int)($ep['by_side'][$sideNorm]['trades'] ?? 0);
                     }

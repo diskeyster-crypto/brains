@@ -1027,7 +1027,17 @@ trait BotExecutorTrait
     }
 
     /**
-     * Build trade for LIVE Phase-1 (trade_live_v1 schema)
+     * Build trade snapshot for LIVE execution (trade_live_v2 schema).
+     *
+     * ── ACTIVE TRADE SNAPSHOT SCHEMA ────────────────────────────────────
+     * Schema version: trade_live_v2
+     * Previous: trade_live_v1 (auto-upgraded on first update cycle)
+     *
+     * Top-level effective_* fields are mirrored from runtime.* each update
+     * cycle to keep the snapshot self-describing without deep nesting.
+     *
+     * @legacy — function name still says "V1" for git-blame traceability,
+     * but produces trade_live_v2 schema since the v1→v2 migration.
      */
     private function buildTradeLiveV1(
         array $intent,
@@ -1271,18 +1281,20 @@ trait BotExecutorTrait
                 // Initial vs current stop separation: mirror into top-level
                 $trade['initial_computed_stop_price'] = $runtime['initial_computed_stop_price'];
                 $trade['stop_moved_from_initial'] = $runtime['stop_moved_from_initial'];
+                // @legacy — v1→v2 schema upgrade for active trades. Remove after all active
+                // v1 snapshot trades have been closed or cycled out.
                 if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
                     $trade['schema_version'] = 'trade_live_v2';
                 }
 
-                // Contract generation tracking (Part 1-4: distinguish "opened with" from "currently managed as")
+                // Contract generation tracking: distinguish "opened with" from "currently managed as"
                 $currentExitMode = $runtime['effective_exit_mode'];
                 $currentGeneration = $this->deriveContractGeneration($currentExitMode);
                 $trade['current_effective_contract_generation'] = $currentGeneration;
 
-                // Backfill opened_with_* for legacy trades that predate contract generation tracking
+                // @legacy — backfill opened_with_* for trades that predate contract generation
+                // tracking. Remove after all pre-generation trades have been closed.
                 if (!isset($trade['opened_with_exit_mode'])) {
-                    // Legacy trade: record its original exit_mode from the trade's own risk block as "opened_with"
                     $originalExitMode = (string)($trade['risk']['trailing']['exit_mode'] ?? 'unknown');
                     $trade['opened_with_exit_mode'] = $originalExitMode;
                     $trade['opened_with_contract_generation'] = $this->deriveContractGeneration($originalExitMode);

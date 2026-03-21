@@ -1233,6 +1233,16 @@ final class TradingBotService
      * Produces symbol-level breakdown of stop/trailing/break-even behavior,
      * exit reason distribution, side split, and robust stats (median/percentiles).
      *
+     * ── MAE DATA FLOW ───────────────────────────────────────────────────
+     * This function is the PRIMARY data source for MAE adaptive logical stop:
+     *   1. Reads MAE from closed trades (mae_roi → mae_pct → mae fallback chain)
+     *   2. Splits into mae_winners / mae_losers arrays per symbol + side
+     *   3. Computes robust stats (median, p25, p75, p80) via computeRobustStats()
+     *   4. Stored in bot's last_run.json as symbol_exit_stats
+     *   5. Mirrored to Brain via readBotExecutionMirror()
+     *   6. Persisted in passport by CoinPassportEngine::enrichWithExecutionProfile()
+     *   7. Consumed by computePerSymbolHints() for adaptive stop suggestion
+     *
      * @param array $closedTrades Array of closed trade records
      * @return array Keyed by symbol, each containing exit behavior stats
      */

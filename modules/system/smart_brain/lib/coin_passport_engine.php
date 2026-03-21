@@ -156,6 +156,22 @@ final class CoinPassportEngine
      * passport's execution_profile section. Only writes when sample size
      * meets the minimum threshold.
      *
+     * ── PASSPORT EXECUTION PROFILE SCHEMA ───────────────────────────────
+     * execution_profile:
+     *   sample_size              → total closed trades for this symbol
+     *   actionable               → true if sample_size >= minSampleSize
+     *   mae_stop_profile:        → symbol-level MAE adaptive stop data
+     *     mae_winners_count, mae_winners_median, mae_winners_p75, mae_winners_p80
+     *     suggested_logical_stop_roi, fallback_used, last_updated_ts
+     *   by_side:
+     *     long/short:
+     *       trades, wins, losses, winrate, avg_roi, roi_stats, close_reasons
+     *       mae_stop_profile:    → side-specific MAE adaptive stop data
+     *         sample_size          → side total closed trades (for strict side gating)
+     *         winning_sample_size  → side winning trades (for strict side gating)
+     *         mae_winners_count, mae_winners_median, mae_winners_p75, mae_winners_p80
+     *         suggested_logical_stop_roi, fallback_used, last_updated_ts
+     *
      * @param array<string,array<string,mixed>> $symbolExitStats Keyed by symbol
      * @param int $minSampleSize Minimum trades to write a meaningful profile
      */

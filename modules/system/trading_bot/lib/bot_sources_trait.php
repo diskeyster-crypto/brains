@@ -565,16 +565,26 @@ trait BotSourcesTrait
     }
 
     /**
-     * V2: Normalize Brain trailing contract into risk.trailing format
+     * Normalize Brain trailing contract into risk.trailing format
      * that bot execution engines (BotRiskEngine, BotTrailingEngine) expect.
+     *
+     * ── CANONICAL SOURCE GUARD ──────────────────────────────────────────
+     * When Brain's buildBotReadyRiskBlock() has already built risk.trailing
+     * (indicated by brain_trailing_applied=true), this function is a no-op.
+     * This prevents contradictions between the intent's top-level trailing
+     * (Brain naming, ratio units) and risk.trailing (bot naming, percent units).
+     *
+     * @legacy — this normalization path is only active for intents that were NOT
+     * built by the canonical buildBotReadyRiskBlock(). Once all signal sources
+     * produce canonical risk blocks, this function becomes a pass-through guard.
      *
      * Brain contract fields → Bot execution fields mapping:
      * - trailing.trailing_enabled → risk.trailing.enabled
-     * - trailing.trailing_activation_roi → risk.trailing.activation_roi_pct (converted to %)
+     * - trailing.trailing_activation_roi → risk.trailing.activation_roi_pct (×100 ratio→percent)
      * - trailing.trailing_min_lock_roi → risk.trailing.min_lock_roi
      * - trailing.trailing_min_step → risk.trailing.min_step
      * - trailing.break_even_enabled → risk.trailing.break_even_enabled
-     * - trailing.break_even_activation_roi → risk.trailing.break_even_activation_roi
+     * - trailing.break_even_activation_roi → risk.trailing.break_even_activation_roi (×100)
      * - trailing.exit_mode → risk.trailing.exit_mode
      * - trailing.fixed_take_profit_roi → risk.trailing.fixed_take_profit_roi
      * - trailing.hybrid_tp_share → risk.trailing.hybrid_tp_share
@@ -636,8 +646,12 @@ trait BotSourcesTrait
     }
 
     /**
-     * Load intents from Brain signals (legacy fallback)
-     * 
+     * Load intents from Brain signals (legacy fallback).
+     *
+     * @legacy — this path is only used when Brain's live_intents.json is unavailable
+     * or when the bot is not in Brain-controlled mode. Once Brain is the sole signal
+     * source, this function can be retired.
+     *
      * @return array Result with intents
      */
     protected function loadIntentsFromSignals(): array

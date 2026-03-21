@@ -1,0 +1,68 @@
+{
+    "symbols": {
+        "HOOKUSDT": {
+            "trades_total": 1,
+            "wins": 0,
+            "losses": 1,
+            "winrate": 0,
+            "average_roi": -0.011206000000000001,
+            "average_mae": 0.011206000000000001,
+            "average_mfe": 0,
+            "average_duration": 1,
+            "long_count": 0,
+            "short_count": 1,
+            "stop_loss_count": 0,
+            "early_failure_count": 1,
+            "trailing_stop_count": 0,
+            "break_even_stop_count": 0,
+            "take_profit_count": 0,
+            "pattern_distribution": {
+                "double_top": 1
+            },
+            "last_trade_at": "2026-03-21T10:54:05+00:00",
+            "last_roi": -0.011206000000000001,
+            "status": "watchlist",
+            "symbol_score": -0.13919999999999999,
+            "recent_trades_total": 1,
+            "recent_wins": 0,
+            "recent_losses": 1,
+            "recent_winrate": 0,
+            "recent_avg_roi": -0.011206000000000001
+        },
+        "CELOUSDT": {
+            "trades_total": 1,
+            "wins": 0,
+            "losses": 1,
+            "winrate": 0,
+            "average_roi": -0.010234,
+            "average_mae": 0.010234,
+            "average_mfe": 0.0027690000000000002,
+            "average_duration": 4,
+            "long_count": 1,
+            "short_count": 0,
+            "stop_loss_count": 0,
+            "early_failure_count": 1,
+            "trailing_stop_count": 0,
+            "break_even_stop_count": 0,
+            "take_profit_count": 0,
+            "pattern_distribution": {
+                "double_bottom": 1
+            },
+            "last_trade_at": "2026-03-21T10:57:06+00:00",
+            "last_roi": -0.010234,
+            "status": "watchlist",
+            "symbol_score": -0.1358,
+            "recent_trades_total": 1,
+            "recent_wins": 0,
+            "recent_losses": 1,
+            "recent_winrate": 0,
+            "recent_avg_roi": -0.010234
+        }
+    },
+    "whitelist_count": 0,
+    "soft_whitelist_count": 0,
+    "blacklist_count": 0,
+    "watchlist_count": 2,
+    "total_symbols": 2,
+    "updated_at": "2026-03-21T11:24:05+00:00"
+}

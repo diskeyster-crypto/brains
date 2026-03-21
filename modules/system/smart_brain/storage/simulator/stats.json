@@ -1,0 +1,80 @@
+{
+    "total_trades": 2,
+    "winrate": 0,
+    "average_roi": -0.01072,
+    "median_mae": 0.01072,
+    "median_mfe": 0.0013849999999999999,
+    "median_duration": 2.5,
+    "signal_to_entry_conversion": 1,
+    "waiting_count": 0,
+    "active_count": 103,
+    "closed_count": 2,
+    "pattern_stats": {
+        "double_top": {
+            "trades_total": 1,
+            "wins": 0,
+            "losses": 1,
+            "winrate": 0,
+            "average_roi": -0.011206000000000001,
+            "average_mae": 0.011206000000000001,
+            "average_mfe": 0,
+            "average_duration": 1,
+            "long_count": 0,
+            "short_count": 1,
+            "stop_loss_count": 0,
+            "early_failure_count": 1,
+            "trailing_stop_count": 0,
+            "break_even_stop_count": 0,
+            "take_profit_count": 0,
+            "average_leverage": 10
+        },
+        "double_bottom": {
+            "trades_total": 1,
+            "wins": 0,
+            "losses": 1,
+            "winrate": 0,
+            "average_roi": -0.010234,
+            "average_mae": 0.010234,
+            "average_mfe": 0.0027690000000000002,
+            "average_duration": 4,
+            "long_count": 1,
+            "short_count": 0,
+            "stop_loss_count": 0,
+            "early_failure_count": 1,
+            "trailing_stop_count": 0,
+            "break_even_stop_count": 0,
+            "take_profit_count": 0,
+            "average_leverage": 10
+        }
+    },
+    "leverage_mode_stats": {
+        "manual": {
+            "count": 2,
+            "wins": 0,
+            "roi_sum": -0.021440000000000001
+        },
+        "auto": {
+            "count": 0,
+            "wins": 0,
+            "roi_sum": 0
+        }
+    },
+    "stop_control_stats": {
+        "manual": {
+            "count": 0,
+            "wins": 0,
+            "mae_sum": 0
+        },
+        "auto": {
+            "count": 0,
+            "wins": 0,
+            "mae_sum": 0
+        },
+        "entry_roi": {
+            "count": 2,
+            "wins": 0,
+            "mae_sum": 0.021440000000000001
+        }
+    },
+    "updated_at": "2026-03-21T11:29:38+00:00"
+}

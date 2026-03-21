@@ -1399,9 +1399,9 @@ final class TradingBotService
 
             // MAE stats for winning trades (key for adaptive logical stop)
             if (!empty($d['mae_winners'])) {
+                sort($d['mae_winners']); // Pre-sort once for all percentile computations
                 $maeWinStats = $this->computeRobustStats($d['mae_winners']);
-                // Add p80 for MAE-based stop recommendation
-                sort($d['mae_winners']);
+                // Add p80 — array already sorted above
                 $maeWinStats['p80'] = round($this->percentile($d['mae_winners'], 80), 4);
                 $entry['mae_winners_stats'] = $maeWinStats;
             }
@@ -1427,8 +1427,8 @@ final class TradingBotService
                     ];
                     // MAE stats per side for winning trades
                     if (!empty($sideData['mae_winners'])) {
+                        sort($sideData['mae_winners']); // Pre-sort once for all percentile computations
                         $sideMaeWinStats = $this->computeRobustStats($sideData['mae_winners']);
-                        sort($sideData['mae_winners']);
                         $sideMaeWinStats['p80'] = round($this->percentile($sideData['mae_winners'], 80), 4);
                         $sideEntry['mae_winners_stats'] = $sideMaeWinStats;
                     }

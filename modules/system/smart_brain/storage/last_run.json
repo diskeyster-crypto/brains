@@ -1,18 +1,18 @@
 {
     "ok": true,
-    "updated_at": "2026-03-21T11:24:05+00:00",
+    "updated_at": "2026-03-21T11:29:38+00:00",
     "status": "ok",
-    "source": "cron",
-    "duration_ms": 3654,
-    "candidates": 495,
-    "monitors": 495,
+    "source": "manual",
+    "duration_ms": 3445,
+    "candidates": 493,
+    "monitors": 493,
     "signals": 50,
     "error_message": "",
-    "monitoring_count": 415,
-    "entry_zone_count": 71,
+    "monitoring_count": 421,
+    "entry_zone_count": 63,
     "triggered_count": 0,
     "invalidated_count": 9,
-    "rejected_not_entry_zone": 424,
+    "rejected_not_entry_zone": 430,
     "rejected_low_reliability": 0,
     "rejected_missing_passport": 0,
     "rejected_missing_price": 0,
@@ -22,10 +22,10 @@
     "normal_signals_count": 0,
     "symbol_intel_filtered": 0,
     "symbol_filter_mode": "all",
-    "raw_candidates_count": 495,
-    "after_manual_filter_count": 495,
-    "after_symbol_filter_count": 495,
-    "filtered_candidates_count": 495,
+    "raw_candidates_count": 493,
+    "after_manual_filter_count": 493,
+    "after_symbol_filter_count": 493,
+    "filtered_candidates_count": 493,
     "filter_stage_that_removed_all": "none",
     "zero_output_reason": "",
     "restrictive_si_skipped": false,
@@ -70,17 +70,7 @@
             "has_limits": true
         },
         {
-            "symbol": "HUMAUSDT",
-            "signal_id_source": "original",
-            "outcome": "approved",
-            "reason": "mode=all",
-            "profile_id": "111",
-            "budget_usdt_per_trade": 11,
-            "order_type": "market",
-            "has_limits": true
-        },
-        {
-            "symbol": "ANKRUSDT",
+            "symbol": "PHAUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -91,6 +81,16 @@
         },
         {
             "symbol": "XAIUSDT",
+            "signal_id_source": "original",
+            "outcome": "approved",
+            "reason": "mode=all",
+            "profile_id": "111",
+            "budget_usdt_per_trade": 11,
+            "order_type": "market",
+            "has_limits": true
+        },
+        {
+            "symbol": "HUMAUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -120,6 +120,16 @@
             "has_limits": true
         },
         {
+            "symbol": "ARCUSDT",
+            "signal_id_source": "original",
+            "outcome": "approved",
+            "reason": "mode=all",
+            "profile_id": "111",
+            "budget_usdt_per_trade": 11,
+            "order_type": "market",
+            "has_limits": true
+        },
+        {
             "symbol": "PIXELUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
@@ -130,7 +140,7 @@
             "has_limits": true
         },
         {
-            "symbol": "RPLUSDT",
+            "symbol": "ATHUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -140,17 +150,7 @@
             "has_limits": true
         },
         {
-            "symbol": "CELOUSDT",
-            "signal_id_source": "original",
-            "outcome": "approved",
-            "reason": "mode=all",
-            "profile_id": "111",
-            "budget_usdt_per_trade": 11,
-            "order_type": "market",
-            "has_limits": true
-        },
-        {
-            "symbol": "JCTUSDT",
+            "symbol": "TRIAUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",

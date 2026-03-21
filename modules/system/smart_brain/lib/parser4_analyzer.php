@@ -5,6 +5,8 @@ require_once __DIR__ . '/patterns/pattern_detector_interface.php';
 require_once __DIR__ . '/patterns/double_bottom_detector.php';
 require_once __DIR__ . '/patterns/double_top_detector.php';
 require_once __DIR__ . '/patterns/pullback_trend_continue_detector.php';
+require_once __DIR__ . '/patterns/double_bottom_confirm_v2_detector.php';
+require_once __DIR__ . '/patterns/double_top_confirm_v2_detector.php';
 
 /**
  * Parser4 Analyzer — Smart Brain Market Structure Analyzer
@@ -12,7 +14,8 @@ require_once __DIR__ . '/patterns/pullback_trend_continue_detector.php';
  * Pattern-First Decision Flow.
  *
  * Reads Parser3 symbols + Parser2 price history.
- * Runs enabled pattern detectors (double_bottom, double_top, pullback_trend_continue).
+ * Runs enabled pattern detectors (double_bottom, double_top, pullback_trend_continue,
+ *   double_bottom_confirm_v2, double_top_confirm_v2).
  * Computes trend_match_score, corridor_fit_score, entry_quality_score.
  * Calculates weighted analyzer_score; applies analyzer_pass threshold.
  * Outputs corridor/volatility/strength/trend candidates with full decision fields.
@@ -72,6 +75,8 @@ final class Parser4Analyzer
             'double_bottom' => static fn() => new DoubleBottomDetector(),
             'double_top' => static fn() => new DoubleTopDetector(),
             'pullback_trend_continue' => static fn() => new PullbackTrendContinueDetector(),
+            'double_bottom_confirm_v2' => static fn() => new DoubleBottomConfirmV2Detector(),
+            'double_top_confirm_v2' => static fn() => new DoubleTopConfirmV2Detector(),
         ];
 
         $detectors = [];
@@ -290,7 +295,9 @@ final class Parser4Analyzer
      * Derive explicit trade side from pattern algorithm and trend_bias.
      *
      * double_bottom                → long
+     * double_bottom_confirm_v2     → long
      * double_top                   → short
+     * double_top_confirm_v2        → short
      * pullback_trend_continue up   → long
      * pullback_trend_continue down → short
      *
@@ -299,8 +306,8 @@ final class Parser4Analyzer
     private function deriveSideFromPattern(string $patternAlgorithm, string $trendBias): ?string
     {
         return match ($patternAlgorithm) {
-            'double_bottom' => 'long',
-            'double_top' => 'short',
+            'double_bottom', 'double_bottom_confirm_v2' => 'long',
+            'double_top', 'double_top_confirm_v2' => 'short',
             'pullback_trend_continue' => match ($trendBias) {
                 'up' => 'long',
                 'down' => 'short',

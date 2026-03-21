@@ -97,7 +97,7 @@ final class SimulationAudit
      */
     private function computePatternStats(array $closed, array $signals, array $waiting, array $active): array
     {
-        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', '_unknown'];
+        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', '_unknown'];
 
         $stats = [];
         foreach ($algorithms as $algo) {

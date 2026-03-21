@@ -63,7 +63,7 @@ $pageContent = function() use ($candidates, $signals, $monitors, $last_run, $sma
         $ps = $pattern_selection ?? [];
         $psEnabled = (array)($ps['enabled'] ?? []);
         $psMode = (string)($ps['mode'] ?? '-');
-        $patternLabels = ['double_bottom' => 'Double Bottom', 'double_top' => 'Double Top', 'pullback_trend_continue' => 'Pullback Trend Continue'];
+        $patternLabels = ['double_bottom' => 'Double Bottom', 'double_top' => 'Double Top', 'pullback_trend_continue' => 'Pullback Trend Continue', 'double_bottom_confirm_v2' => 'Double Bottom V2', 'double_top_confirm_v2' => 'Double Top V2'];
     ?>
     <div class="mb-3">
         <small class="text-secondary me-2">Паттерны:</small>

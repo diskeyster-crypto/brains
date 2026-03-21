@@ -160,5 +160,59 @@
         "error": "insufficient_margin",
         "execution_identity_key": "li_sig_4480ebf7d5970b64_390a79dc",
         "dedupe_basis": "intent_id"
+    },
+    "li_sig_1fbcf6cf4e74b5ed_025dd495": {
+        "executed_at": "2026-03-21T11:29:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_1fbcf6cf4e74b5ed_025dd495",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6bdd7576decdf691_401ccf43": {
+        "executed_at": "2026-03-21T11:31:05+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved down 1.3862287837359% > threshold 1.25%",
+        "execution_identity_key": "li_sig_6bdd7576decdf691_401ccf43",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b216178bc328293d_2f0d8012": {
+        "executed_at": "2026-03-21T11:33:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_b216178bc328293d_2f0d8012",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_78c376cdd67e64e5_76725fe3": {
+        "executed_at": "2026-03-21T11:35:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_78c376cdd67e64e5_76725fe3",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_961b30b823876a48_6ccc9b46": {
+        "executed_at": "2026-03-21T11:37:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_961b30b823876a48_6ccc9b46",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a3b97b330efaf5ef_1e43e6ac": {
+        "executed_at": "2026-03-21T11:39:08+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_a3b97b330efaf5ef_1e43e6ac",
+        "dedupe_basis": "intent_id"
     }
 }

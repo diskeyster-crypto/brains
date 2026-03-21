@@ -494,7 +494,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <strong>Stop hit</strong> = closed by logical/emergency stop |
                 <strong>Median ROI</strong> = robust central measure |
                 <strong>MAE p75 Win</strong> = how much adverse move 75% of winning trades survived |
-                <strong>Sug. Stop</strong> = recommended working stop for this symbol, clamped to [3%–8%]
+                <strong>Sug. Stop</strong> = recommended working stop for this symbol+side, clamped to [3%–8%]. Emergency stop remains separate and wider
             </div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm table-hover mb-0" style="font-size:0.8rem;">
@@ -555,6 +555,36 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                             <td class="text-end"><?php if ($maeP75W > 0): ?><code><?= number_format($maeP75W * 100, 2) ?>%</code> <span class="text-secondary" style="font-size:0.65rem;">n=<?= $maeWinN ?></span><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
                             <td class="text-end"><?php if ($sugStop > 0): ?><code class="text-info"><?= number_format($sugStop * 100, 2) ?>%</code><?php if ($fallback): ?> <span class="badge bg-warning text-dark" style="font-size:0.55rem;">fallback</span><?php endif; ?><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
                         </tr>
+                        <?php // Per-side MAE detail row (compact)
+                        $hasSideData = false;
+                        foreach (['long', 'short'] as $rtSideKey) {
+                            $rtSd = $ss['by_side'][$rtSideKey] ?? null;
+                            if ($rtSd && ($rtSd['trades'] ?? 0) > 0 && !empty($rtSd['mae_winners_stats'])) {
+                                $hasSideData = true;
+                                break;
+                            }
+                        }
+                        if ($hasSideData): ?>
+                        <tr style="font-size:0.72rem; background:rgba(15,23,42,0.4);">
+                            <td colspan="13" class="text-end text-secondary" style="padding:2px 6px;">
+                                <?php foreach (['long', 'short'] as $rtSideKey):
+                                    $rtSd = $ss['by_side'][$rtSideKey] ?? null;
+                                    if ($rtSd && ($rtSd['trades'] ?? 0) > 0):
+                                        $rtSdMaeP75 = (float)($rtSd['mae_winners_stats']['p75'] ?? 0);
+                                        $rtSdMaeN = (int)($rtSd['mae_winners_stats']['count'] ?? 0);
+                                        $rtSdSugStop = ($rtSdMaeN >= 5 && $rtSdMaeP75 > 0) ? max(0.03, min(0.08, $rtSdMaeP75)) : 0;
+                                ?>
+                                <span class="badge <?= $rtSideKey === 'long' ? 'bg-success bg-opacity-25 text-success' : 'bg-danger bg-opacity-25 text-danger' ?>" style="font-size:0.65rem;"><?= strtoupper($rtSideKey) ?></span>
+                                <?= (int)$rtSd['trades'] ?>t
+                                <?php if ($rtSdMaeP75 > 0): ?>MAE p75=<code><?= number_format($rtSdMaeP75 * 100, 2) ?>%</code>(n=<?= $rtSdMaeN ?>)<?php endif; ?>
+                                <?php if ($rtSdSugStop > 0): ?>→<code class="text-info"><?= number_format($rtSdSugStop * 100, 2) ?>%</code><?php endif; ?>
+                                &nbsp;
+                                <?php endif; endforeach; ?>
+                            </td>
+                            <td class="text-end text-secondary" style="padding:2px 6px;">&nbsp;</td>
+                            <td class="text-end text-secondary" style="padding:2px 6px;">&nbsp;</td>
+                        </tr>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                     </tbody>
                 </table>

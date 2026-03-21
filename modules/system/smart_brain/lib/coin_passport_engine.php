@@ -246,14 +246,24 @@ final class CoinPassportEngine
             }
 
             // MAE-based adaptive stop profile (per symbol overall)
+            $maeStopFloor = 0.03;
+            $maeStopCap = 0.08;
+            $maeMinWinners = 5;
             if (!empty($stats['mae_winners_stats'])) {
                 $mws = $stats['mae_winners_stats'];
+                $mwCount = (int)($mws['count'] ?? 0);
+                $mwP75 = (float)($mws['p75'] ?? 0);
                 $profile['mae_stop_profile'] = [
-                    'mae_winners_count' => (int)($mws['count'] ?? 0),
+                    'mae_winners_count' => $mwCount,
                     'mae_winners_median' => (float)($mws['median'] ?? 0),
-                    'mae_winners_p75' => (float)($mws['p75'] ?? 0),
+                    'mae_winners_p75' => $mwP75,
                     'mae_winners_p80' => (float)($mws['p80'] ?? 0),
                     'mae_winners_avg' => (float)($mws['avg'] ?? 0),
+                    // Persist computed suggestion so passport is self-explanatory
+                    'suggested_logical_stop_roi' => ($mwCount >= $maeMinWinners && $mwP75 > 0)
+                        ? round(max($maeStopFloor, min($maeStopCap, $mwP75)), 4) : null,
+                    'fallback_used' => ($mwCount < $maeMinWinners || $mwP75 <= 0),
+                    'last_updated_ts' => time(),
                 ];
             }
 
@@ -262,11 +272,18 @@ final class CoinPassportEngine
                 $sd = $stats['by_side'][$side] ?? null;
                 if ($sd && !empty($sd['mae_winners_stats'])) {
                     $sideMae = $sd['mae_winners_stats'];
+                    $sideCount = (int)($sideMae['count'] ?? 0);
+                    $sideP75 = (float)($sideMae['p75'] ?? 0);
                     $profile['by_side'][$side]['mae_stop_profile'] = [
-                        'mae_winners_count' => (int)($sideMae['count'] ?? 0),
+                        'mae_winners_count' => $sideCount,
                         'mae_winners_median' => (float)($sideMae['median'] ?? 0),
-                        'mae_winners_p75' => (float)($sideMae['p75'] ?? 0),
+                        'mae_winners_p75' => $sideP75,
                         'mae_winners_p80' => (float)($sideMae['p80'] ?? 0),
+                        // Persist per-side computed suggestion
+                        'suggested_logical_stop_roi' => ($sideCount >= $maeMinWinners && $sideP75 > 0)
+                            ? round(max($maeStopFloor, min($maeStopCap, $sideP75)), 4) : null,
+                        'fallback_used' => ($sideCount < $maeMinWinners || $sideP75 <= 0),
+                        'last_updated_ts' => time(),
                     ];
                 }
             }

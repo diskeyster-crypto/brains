@@ -727,7 +727,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <span class="text-secondary">Trail Close</span> = закрытий трейлингом |
                 <span class="text-secondary">BE Apply%</span> = % применения безубытка |
                 <span class="text-secondary">MAE p75 Win</span> = 75-й перцентиль неблагоприятного хода выигрышных сделок |
-                <span class="text-secondary">Sug. Stop</span> = рекомендуемый адаптивный логический стоп (на основе MAE)
+                <span class="text-secondary">Sug. Stop</span> = рекомендуемый адаптивный логический стоп (на основе MAE, по символу+стороне). Аварийный стоп остаётся отдельно
             </div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm table-hover mb-0" style="font-size:0.82rem;">

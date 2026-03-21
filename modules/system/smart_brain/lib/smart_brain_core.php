@@ -659,12 +659,17 @@ final class SmartBrainCore
             }
 
             // P7: Per-symbol exit hints — apply bounded adjustments from execution profile
-            $symbolHints = $this->computePerSymbolHints($symbol, $userLimits);
+            // Pass $side so hints can use per-side MAE data (symbol+side aware)
+            $symbolHints = $this->computePerSymbolHints($symbol, $userLimits, 10, $side);
             $effectiveLimits = $userLimits;
             if ($symbolHints['applied']) {
                 $h = $symbolHints['hints'];
                 if (isset($h['suggested_logical_stop_roi'])) {
                     $effectiveLimits['logical_stop_roi'] = $h['suggested_logical_stop_roi'];
+                }
+                // Pass through real source for logical_stop block traceability
+                if (isset($h['logical_stop_source'])) {
+                    $effectiveLimits['_logical_stop_source'] = $h['logical_stop_source'];
                 }
                 if (isset($h['suggested_trailing_activation_roi'])) {
                     $effectiveLimits['trailing_activation_roi'] = $h['suggested_trailing_activation_roi'];
@@ -1061,8 +1066,11 @@ final class SmartBrainCore
         // Logical stop = strategy invalidation stop (closer, based on corridor/structure)
         // When MAE-adaptive stop is active, logical_stop_roi comes from symbol-side p75 MAE winners
         $logicalStopRoi = (float)($userLimits['logical_stop_roi'] ?? 0.03);
-        $maeStopCfgDefault = 0.03;
-        $logicalStopSource = ($logicalStopRoi !== $maeStopCfgDefault) ? 'mae_adaptive' : 'brain_config';
+        // Use real source from per-symbol hints if available, otherwise determine from value
+        $logicalStopSource = (string)($userLimits['_logical_stop_source'] ?? '');
+        if ($logicalStopSource === '') {
+            $logicalStopSource = ($logicalStopRoi !== 0.03) ? 'mae_adaptive' : 'brain_config';
+        }
         $botReady['logical_stop'] = [
             'enabled' => true,
             'logical_stop_roi' => $logicalStopRoi,
@@ -1588,6 +1596,34 @@ final class SmartBrainCore
             $mirror['symbol_exit_stats'] = is_array($botData['symbol_exit_stats'] ?? null)
                 ? $botData['symbol_exit_stats'] : [];
 
+            // MAE stop diagnostics: track whether bot stats were loaded and how many hints are possible
+            $symExitStats = $mirror['symbol_exit_stats'];
+            $mirror['bot_symbol_exit_stats_loaded'] = !empty($symExitStats);
+            $mirror['bot_symbol_exit_stats_symbols_count'] = is_array($symExitStats) ? count($symExitStats) : 0;
+            $maeHintsAvailable = 0;
+            $maeHintsFallback = 0;
+            $maeMinWinners = 5;
+            foreach ($symExitStats as $sym => $ss) {
+                if (!is_array($ss)) {
+                    continue;
+                }
+                foreach (['long', 'short'] as $sideKey) {
+                    $sideData = $ss['by_side'][$sideKey] ?? null;
+                    if (is_array($sideData) && !empty($sideData['mae_winners_stats'])) {
+                        $wc = (int)($sideData['mae_winners_stats']['count'] ?? 0);
+                        if ($wc >= $maeMinWinners) {
+                            $maeHintsAvailable++;
+                        } else {
+                            $maeHintsFallback++;
+                        }
+                    } else {
+                        $maeHintsFallback++;
+                    }
+                }
+            }
+            $mirror['mae_stop_hints_available_count'] = $maeHintsAvailable;
+            $mirror['mae_stop_hints_fallback_count'] = $maeHintsFallback;
+
             // P5: Effective trailing contract mirror from bot runtime
             $botEffectiveContract = is_array($botData['effective_trailing_contract'] ?? null) ? $botData['effective_trailing_contract'] : [];
             $mirror['effective_trailing_contract'] = $botEffectiveContract;
@@ -1924,9 +1960,10 @@ final class SmartBrainCore
      * @param string $symbol Symbol name
      * @param array $userLimits Current user limits for reference/clamping
      * @param int $minSampleSize Minimum closed trades to produce hints
+     * @param string $side Signal side ('long' or 'short') for side-aware MAE stop
      * @return array{hints: array, applied: bool, reason: string}
      */
-    private function computePerSymbolHints(string $symbol, array $userLimits, int $minSampleSize = 10): array
+    private function computePerSymbolHints(string $symbol, array $userLimits, int $minSampleSize = 10, string $side = ''): array
     {
         $result = ['hints' => [], 'applied' => false, 'reason' => 'no_profile'];
 
@@ -1954,6 +1991,7 @@ final class SmartBrainCore
 
         // 1. MAE-based adaptive logical stop (primary recommendation)
         // Use p75 of winning trade MAE as baseline, clamped to floor/cap
+        // SIDE-AWARE: prefer per-side MAE data when signal side is known
         $maeStopEnabled = (bool)($userLimits['mae_stop_enabled'] ?? true);
         $maeStopFloor = (float)($userLimits['mae_stop_floor'] ?? 0.03);
         $maeStopCap = (float)($userLimits['mae_stop_cap'] ?? 0.08);
@@ -1963,10 +2001,32 @@ final class SmartBrainCore
         $maeStopApplied = false;
 
         if ($maeStopEnabled) {
-            $maeProfile = $ep['mae_stop_profile'] ?? null;
+            // Side-aware MAE resolution: prefer symbol+side, fall back to symbol-level
+            $sideNorm = ($side === 'long' || $side === 'short') ? $side : '';
+            $maeProfile = null;
+            $maeSource = 'none';
+
+            // Try per-side MAE profile first (symbol + side)
+            if ($sideNorm !== '') {
+                $sideProfile = $ep['by_side'][$sideNorm]['mae_stop_profile'] ?? null;
+                if (is_array($sideProfile) && (int)($sideProfile['mae_winners_count'] ?? 0) >= $maeMinWinners) {
+                    $maeProfile = $sideProfile;
+                    $maeSource = 'mae_adaptive_side';
+                }
+            }
+
+            // Fall back to symbol-level MAE profile if side data insufficient
+            if ($maeProfile === null) {
+                $symbolProfile = $ep['mae_stop_profile'] ?? null;
+                if (is_array($symbolProfile) && (int)($symbolProfile['mae_winners_count'] ?? 0) >= $maeMinWinners) {
+                    $maeProfile = $symbolProfile;
+                    $maeSource = 'mae_adaptive_symbol';
+                }
+            }
+
             $winnersCount = (int)($maeProfile['mae_winners_count'] ?? 0);
 
-            if (is_array($maeProfile) && $winnersCount >= $maeMinWinners && $sampleSize >= $maeMinTrades) {
+            if ($maeProfile !== null && $winnersCount >= $maeMinWinners && $sampleSize >= $maeMinTrades) {
                 // Use the configured percentile (p75 by default, p80 also available)
                 $maeBaseline = ($maePercentile >= 80)
                     ? (float)($maeProfile['mae_winners_p80'] ?? $maeProfile['mae_winners_p75'] ?? 0)
@@ -1978,12 +2038,19 @@ final class SmartBrainCore
                     $currentStop = (float)($userLimits['logical_stop_roi'] ?? 0.03);
 
                     $hints['suggested_logical_stop_roi'] = round($suggestedStop, 4);
-                    $hints['logical_stop_source'] = 'mae_adaptive';
+                    $hints['logical_stop_source'] = $maeSource;
+                    $hints['logical_stop_side'] = $sideNorm ?: 'any';
                     $hints['logical_stop_reason'] = 'p' . $maePercentile . '_mae_winners='
                         . number_format($maeBaseline, 4)
                         . ' clamped=[' . number_format($maeStopFloor, 2) . ',' . number_format($maeStopCap, 2) . ']'
-                        . ' winners=' . $winnersCount;
+                        . ' winners=' . $winnersCount
+                        . ' source=' . $maeSource;
                     $hints['mae_baseline_raw'] = round($maeBaseline, 4);
+                    $hints['mae_winners_count'] = $winnersCount;
+                    $hints['mae_winners_median'] = (float)($maeProfile['mae_winners_median'] ?? 0);
+                    $hints['mae_winners_p75'] = (float)($maeProfile['mae_winners_p75'] ?? 0);
+                    $hints['mae_winners_p80'] = (float)($maeProfile['mae_winners_p80'] ?? 0);
+                    $hints['mae_selected_percentile'] = $maePercentile;
                     $hints['mae_hard_cap_used'] = ($maeBaseline > $maeStopCap);
                     $hints['mae_floor_used'] = ($maeBaseline < $maeStopFloor);
                     $hints['mae_fallback_used'] = false;
@@ -1992,8 +2059,10 @@ final class SmartBrainCore
             } else {
                 // Insufficient sample: fall back to default
                 $hints['mae_fallback_used'] = true;
+                $hints['logical_stop_source'] = 'fallback_default';
                 $hints['mae_fallback_reason'] = 'insufficient_sample (trades=' . $sampleSize
-                    . ', winners=' . $winnersCount . ', need=' . $maeMinTrades . '/' . $maeMinWinners . ')';
+                    . ', winners=' . $winnersCount . ', need=' . $maeMinTrades . '/' . $maeMinWinners . ')'
+                    . ($sideNorm !== '' ? ' side=' . $sideNorm : '');
             }
         }
 

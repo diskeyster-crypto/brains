@@ -7,20 +7,38 @@
             "history_key": "parser.parser2_history_accumulator.storage",
             "corridor_window_minutes": 120,
             "min_history_points": 40,
-            "strength_threshold": 0.5,
-            "max_candidates": 200
+            "strength_threshold": 0.40000000000000002,
+            "max_candidates": 500
         },
         "auto_rules": {
             "allow_brain_override": false,
             "override_fields": []
+        },
+        "pattern_algorithms": {
+            "enabled": [
+                "double_bottom",
+                "double_top",
+                "pullback_trend_continue"
+            ],
+            "mode": "any"
+        },
+        "analyzer_decision": {
+            "enabled": true,
+            "threshold": 0.45000000000000001,
+            "weights": {
+                "pattern_confidence": 0.5,
+                "trend_match_score": 0.20000000000000001,
+                "corridor_fit_score": 0.10000000000000001,
+                "entry_quality_score": 0.20000000000000001
+            }
         }
     },
     "corridor": {
         "mode": "manual",
         "settings": {
             "enabled": true,
-            "entry_zone_percent": 0.2,
-            "max_wait_minutes": 60,
+            "entry_zone_percent": 0.22,
+            "max_wait_minutes": 120,
             "rebuild_interval_seconds": 5
         },
         "auto_rules": {
@@ -32,44 +50,117 @@
         "mode": "manual",
         "settings": {
             "enabled": true,
-            "max_leverage": 15,
-            "max_budget_per_coin": 20,
             "risk_levels": [
                 {
                     "max_corridor_width": 0.01,
-                    "leverage": 15,
-                    "budget_factor": 1
+                    "leverage": 6,
+                    "budget_factor": 0.90000000000000002
                 },
                 {
-                    "max_corridor_width": 0.03,
-                    "leverage": 10,
-                    "budget_factor": 0.8
-                },
-                {
-                    "max_corridor_width": 0.06,
+                    "max_corridor_width": 0.025000000000000001,
                     "leverage": 5,
-                    "budget_factor": 0.6
+                    "budget_factor": 0.75
+                },
+                {
+                    "max_corridor_width": 0.050000000000000003,
+                    "leverage": 4,
+                    "budget_factor": 0.59999999999999998
                 },
                 {
                     "max_corridor_width": 1,
                     "leverage": 3,
-                    "budget_factor": 0.4
+                    "budget_factor": 0.45000000000000001
                 }
             ],
-            "default_stop_loss_percent": 0.05
+            "default_stop_loss_percent": 0.050000000000000003
         },
         "auto_rules": {
             "allow_brain_override": false,
             "override_fields": []
+        },
+        "user_limits": {
+            "max_budget_per_coin": 20,
+            "max_active_tasks": 50,
+            "max_leverage": 10,
+            "brain_mode": "balanced",
+            "bootstrap_enabled": true,
+            "bootstrap_max_signals": 100,
+            "bootstrap_budget_factor": 0.55000000000000004,
+            "bootstrap_max_leverage": 10,
+            "min_reliability_after_warmup": 0.12,
+            "warmup_min_trades": 10,
+            "stop_floor_type": "corridor_percent",
+            "stop_floor_value": 0.29999999999999999,
+            "brain_may_tighten_stop": true,
+            "trailing_enabled": true,
+            "trailing_activation_roi": 0.050000000000000003,
+            "trailing_min_lock_roi": 0.012,
+            "trailing_min_step": 0.01,
+            "brain_may_delay_trailing": true,
+            "fixed_take_profit_roi": 0.029999999999999999,
+            "exit_mode": "trailing_tp",
+            "hybrid_tp_share": 0.40000000000000002,
+            "break_even_enabled": true,
+            "break_even_activation_roi": 0.025000000000000001,
+            "logical_stop_roi": 0.029999999999999999,
+            "mae_stop_enabled": true,
+            "mae_stop_floor": 0.029999999999999999,
+            "mae_stop_cap": 0.080000000000000002,
+            "mae_stop_min_trades": 10,
+            "mae_stop_min_winners": 5,
+            "mae_stop_percentile": 75,
+            "stop_control_mode": "entry_roi",
+            "manual_stop_loss_roi": 0.029999999999999999,
+            "stop_loss_from_entry_roi": 0.10000000000000001,
+            "stop_mode": "brain_managed",
+            "simple_stop_liq_factor": 0.14999999999999999,
+            "brain_stop_corridor_factor": 0.25,
+            "brain_stop_volatility_factor": 0.5,
+            "brain_stop_liq_safety_factor": 0.29999999999999999,
+            "early_failure_enabled": true,
+            "early_failure_window_minutes": 5,
+            "early_failure_max_adverse_roi": -0.0080000000000000002,
+            "leverage_mode": "manual",
+            "manual_leverage": 10,
+            "symbol_intelligence_enabled": true,
+            "symbol_filter_mode": "all",
+            "whitelist_min_trades": 3,
+            "whitelist_min_winrate": 0.5,
+            "whitelist_min_avg_roi": 2,
+            "blacklist_min_trades": 2,
+            "blacklist_max_winrate": 0.29999999999999999,
+            "blacklist_max_early_failure_ratio": 0.59999999999999998,
+            "soft_whitelist_enabled": true,
+            "soft_whitelist_min_trades": 1,
+            "soft_whitelist_min_winrate": 0.5,
+            "soft_whitelist_min_avg_roi": 0.0050000000000000001,
+            "symbol_recent_window": 50,
+            "manual_symbol_universe_enabled": false,
+            "manual_symbol_list": "",
+            "manual_symbol_mode": "manual_only",
+            "live_trading_enabled": true,
+            "live_signal_selection_mode": "all",
+            "live_max_positions": 5,
+            "live_one_trade_per_symbol": true,
+            "live_entry_policy": "enter_now",
+            "live_reverse_side_enabled": false,
+            "patterns": {
+                "enabled": [
+                    "double_bottom",
+                    "double_top",
+                    "pullback_trend_continue"
+                ],
+                "mode": "any"
+            }
         }
     },
     "simulator": {
         "mode": "manual",
         "settings": {
             "enabled": true,
-            "max_positions": 50,
+            "max_positions": 5,
             "take_profit_enabled": true,
-            "trailing_enabled": false
+            "trailing_enabled": true
         },
         "auto_rules": {
             "allow_brain_override": false,
@@ -82,12 +173,12 @@
             "default_profile": "111",
             "profiles": {
                 "111": {
-                    "budget": 15,
+                    "budget": 10,
                     "max_leverage": 5,
-                    "stop_loss_range": 0.2,
+                    "stop_loss_range": 0.34999999999999998,
                     "slippage_bps": 20,
-                    "trailing_activate_roi": 0.06,
-                    "take_profit_roi": 5.55
+                    "trailing_activate_roi": 0.040000000000000001,
+                    "take_profit_roi": 0.84999999999999998
                 }
             }
         },
@@ -97,15 +188,8 @@
         }
     },
     "ui": {
-        "mode": "manual",
-        "settings": {
-            "title": "Smart Brain",
-            "refresh_seconds": 5
-        },
-        "auto_rules": {
-            "allow_brain_override": false,
-            "override_fields": []
-        }
+        "title": "Smart Brain",
+        "refresh_seconds": 5
     },
-    "updated_at": "2026-03-13T15:58:51+00:00"
+    "updated_at": "2026-03-21T11:24:05+00:00"
 }

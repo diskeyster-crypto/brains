@@ -1,0 +1,7 @@
+{
+    "updated_at": "2026-03-21T11:21:08+00:00",
+    "count": 1,
+    "errors": [
+        "symbol_busy:PIXELUSDT — already has active exchange position and local trade"
+    ]
+}

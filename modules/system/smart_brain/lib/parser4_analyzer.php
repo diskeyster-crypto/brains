@@ -268,7 +268,67 @@ final class Parser4Analyzer
 
         $this->state->writeJson('storage/candidates.json', $candidates);
 
+        // Persist V2 stage counters for reversal comparison layer
+        $this->persistV2StageCounters();
+
         return $candidates;
+    }
+
+    /**
+     * Collect and persist V2 detector stage counters.
+     *
+     * Writes per-algorithm and family-aggregate V2 funnel metrics
+     * to storage/v2_stage_counters.json for consumption by
+     * simulator_engine and simulation_audit comparison layers.
+     */
+    private function persistV2StageCounters(): void
+    {
+        $v2CountersByAlgo = [];
+        $familySetup = 0;
+        $familyConfirmed = 0;
+        $familyRejected = 0;
+
+        foreach ($this->detectors as $detector) {
+            if (!method_exists($detector, 'getStageCounters')) {
+                continue;
+            }
+            $name = $detector->getName();
+            $counters = $detector->getStageCounters();
+
+            $setup = (int)($counters['setup_candidates'] ?? 0);
+            $confirmed = (int)($counters['confirmed'] ?? 0);
+            $rejected = (int)($counters['confirm_rejected'] ?? 0);
+
+            $v2CountersByAlgo[$name] = [
+                'setup_candidates_count'   => $setup,
+                'confirmed_signals_count'  => $confirmed,
+                'confirm_rejected_count'   => $rejected,
+                'confirmation_rate'        => $setup > 0 ? round($confirmed / $setup, 4) : 0.0,
+                'rejection_rate'           => $setup > 0 ? round($rejected / $setup, 4) : 0.0,
+            ];
+
+            $familySetup += $setup;
+            $familyConfirmed += $confirmed;
+            $familyRejected += $rejected;
+        }
+
+        if ($v2CountersByAlgo === []) {
+            return;
+        }
+
+        $payload = [
+            'by_algorithm' => $v2CountersByAlgo,
+            'reversal_v2_aggregate' => [
+                'setup_candidates_count'   => $familySetup,
+                'confirmed_signals_count'  => $familyConfirmed,
+                'confirm_rejected_count'   => $familyRejected,
+                'confirmation_rate'        => $familySetup > 0 ? round($familyConfirmed / $familySetup, 4) : 0.0,
+                'rejection_rate'           => $familySetup > 0 ? round($familyRejected / $familySetup, 4) : 0.0,
+            ],
+            'updated_at' => date('c'),
+        ];
+
+        $this->state->writeJson('storage/v2_stage_counters.json', $payload);
     }
 
     /**

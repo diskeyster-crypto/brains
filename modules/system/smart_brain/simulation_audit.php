@@ -706,14 +706,43 @@ final class SimulationAudit
         $topV1 = $this->computeReversalFamilyStats($closed, ['double_top']);
         $topV2 = $this->computeReversalFamilyStats($closed, ['double_top_confirm_v2']);
 
+        // V2 stage counters (setup → confirm funnel)
+        $v2StageCounters = $this->loadV2StageCounters();
+
         return [
             'v1_aggregate' => $v1Stats,
             'v2_aggregate' => $v2Stats,
             'bottom_patterns' => ['v1' => $bottomV1, 'v2' => $bottomV2],
             'top_patterns' => ['v1' => $topV1, 'v2' => $topV2],
+            'v2_stage_counters' => $v2StageCounters,
             'compare_mode_active' => true,
             'evaluation_note' => 'V2 is under shadow evaluation. Promotion requires statistical evidence.',
         ];
+    }
+
+    /**
+     * Load V2 stage counters persisted by parser4_analyzer.
+     *
+     * @return array<string,mixed>
+     */
+    private function loadV2StageCounters(): array
+    {
+        $data = $this->state->readJson('storage/v2_stage_counters.json', []);
+        if ($data === []) {
+            return [
+                'by_algorithm' => [],
+                'reversal_v2_aggregate' => [
+                    'setup_candidates_count' => 0,
+                    'confirmed_signals_count' => 0,
+                    'confirm_rejected_count' => 0,
+                    'confirmation_rate' => 0.0,
+                    'rejection_rate' => 0.0,
+                ],
+                'available' => false,
+            ];
+        }
+        $data['available'] = true;
+        return $data;
     }
 
     /**

@@ -287,6 +287,12 @@ $pageContent = function() use (
     $rcTopV1 = (array)(($rc['top_patterns'] ?? [])['v1'] ?? []);
     $rcTopV2 = (array)(($rc['top_patterns'] ?? [])['v2'] ?? []);
     $compareActive = !empty($rc['compare_mode_active']);
+
+    // V2 stage counters (setup → confirm funnel)
+    $v2sc = (array)($rc['v2_stage_counters'] ?? []);
+    $v2scAvailable = !empty($v2sc['available']);
+    $v2scByAlgo = (array)($v2sc['by_algorithm'] ?? []);
+    $v2scAggregate = (array)($v2sc['reversal_v2_aggregate'] ?? []);
     ?>
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -382,6 +388,77 @@ $pageContent = function() use (
                 </tbody>
             </table>
             </div>
+
+            <!-- V2 Setup → Confirm Funnel -->
+            <?php if ($v2scAvailable): ?>
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-funnel me-1"></i> V2 Воронка: Сетап → Подтверждение</h6>
+                <p class="text-secondary mb-2" style="font-size:0.75rem;">
+                    <em>Показывает сколько сетапов V2 найдено, сколько подтверждено, и сколько отклонено на этапе подтверждения.
+                    Помогает ответить: V2 лучше потому что фильтрует мусор, или потому что почти не торгует?</em>
+                </p>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Алгоритм</th>
+                    <th class="text-end" title="Кол-во раз когда Stage 1 нашёл валидный сетап">Сетапов</th>
+                    <th class="text-end" title="Кол-во подтверждённых сигналов (Stage 2 прошёл)">Подтверж.</th>
+                    <th class="text-end" title="Сетапов не прошедших подтверждение">Отклонено</th>
+                    <th class="text-end" title="Доля подтверждённых от общего числа сетапов">Подтв. %</th>
+                    <th class="text-end" title="Доля отклонённых от общего числа сетапов">Откл. %</th>
+                </tr></thead>
+                <tbody>
+                <?php
+                // Per-algorithm rows
+                $v2AlgoRows = [
+                    'double_bottom_confirm_v2' => 'double_bottom_confirm_v2',
+                    'double_top_confirm_v2' => 'double_top_confirm_v2',
+                ];
+                foreach ($v2AlgoRows as $algoKey => $algoLabel):
+                    $ac = (array)($v2scByAlgo[$algoKey] ?? []);
+                    $acSetup = (int)($ac['setup_candidates_count'] ?? 0);
+                    $acConfirm = (int)($ac['confirmed_signals_count'] ?? 0);
+                    $acReject = (int)($ac['confirm_rejected_count'] ?? 0);
+                    $acConfRate = (float)($ac['confirmation_rate'] ?? 0);
+                    $acRejRate = (float)($ac['rejection_rate'] ?? 0);
+                ?>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($algoLabel) ?></td>
+                        <td class="text-end"><?= $acSetup ?></td>
+                        <td class="text-end roi-positive"><?= $acConfirm ?></td>
+                        <td class="text-end roi-negative"><?= $acReject ?></td>
+                        <td class="text-end"><?= number_format($acConfRate * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format($acRejRate * 100, 1) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php
+                // Family aggregate row
+                $aggSetup = (int)($v2scAggregate['setup_candidates_count'] ?? 0);
+                $aggConfirm = (int)($v2scAggregate['confirmed_signals_count'] ?? 0);
+                $aggReject = (int)($v2scAggregate['confirm_rejected_count'] ?? 0);
+                $aggConfRate = (float)($v2scAggregate['confirmation_rate'] ?? 0);
+                $aggRejRate = (float)($v2scAggregate['rejection_rate'] ?? 0);
+                ?>
+                    <tr class="table-active fw-bold">
+                        <td>Reversal V2 (итого)</td>
+                        <td class="text-end"><?= $aggSetup ?></td>
+                        <td class="text-end roi-positive"><?= $aggConfirm ?></td>
+                        <td class="text-end roi-negative"><?= $aggReject ?></td>
+                        <td class="text-end"><?= number_format($aggConfRate * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format($aggRejRate * 100, 1) ?>%</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+            <?php else: ?>
+            <div class="px-3 py-2">
+                <p class="text-secondary mb-0" style="font-size:0.75rem;">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Данные воронки V2 (сетап → подтверждение) будут доступны после следующего запуска анализатора.
+                </p>
+            </div>
+            <?php endif; ?>
 
             <!-- Promotion Criteria Verdict -->
             <?php if (!empty($rcPromo)): ?>

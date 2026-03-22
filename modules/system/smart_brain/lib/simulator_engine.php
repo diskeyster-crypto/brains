@@ -686,15 +686,47 @@ final class SimulatorEngine
         // Promotion criteria evaluation
         $promotion = $this->evaluatePromotionCriteria($v1Aggregate, $v2Aggregate);
 
+        // V2 stage counters (setup → confirm funnel)
+        $v2StageCounters = $this->loadV2StageCounters();
+
         return [
             'v1_aggregate' => $v1Aggregate,
             'v2_aggregate' => $v2Aggregate,
             'bottom_patterns' => $bottomComparison,
             'top_patterns' => $topComparison,
             'promotion_criteria' => $promotion,
+            'v2_stage_counters' => $v2StageCounters,
             'compare_mode_active' => true,
             'evaluation_note' => 'V2 is under shadow evaluation. Do not promote without statistical evidence.',
         ];
+    }
+
+    /**
+     * Load V2 stage counters persisted by parser4_analyzer.
+     *
+     * Returns per-algorithm and family-aggregate setup/confirm/reject
+     * counts that explain V2's internal two-stage filtering behavior.
+     *
+     * @return array<string,mixed>
+     */
+    private function loadV2StageCounters(): array
+    {
+        $data = $this->state->readJson('storage/v2_stage_counters.json', []);
+        if ($data === []) {
+            return [
+                'by_algorithm' => [],
+                'reversal_v2_aggregate' => [
+                    'setup_candidates_count' => 0,
+                    'confirmed_signals_count' => 0,
+                    'confirm_rejected_count' => 0,
+                    'confirmation_rate' => 0.0,
+                    'rejection_rate' => 0.0,
+                ],
+                'available' => false,
+            ];
+        }
+        $data['available'] = true;
+        return $data;
     }
 
     /**

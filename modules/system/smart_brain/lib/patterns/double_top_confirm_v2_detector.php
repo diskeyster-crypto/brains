@@ -23,12 +23,45 @@ final class DoubleTopConfirmV2Detector implements PatternDetectorInterface
     /** Minimum bars after second high required for confirmation window */
     private int $confirmationMinBars;
 
+    /**
+     * V2 stage counters — accumulated across detect() calls.
+     *
+     * setup_candidates: stage 1 passed (valid double-top setup found)
+     * confirmed:        stage 2 passed (confirmation after setup)
+     * confirm_rejected: stage 1 passed but stage 2 failed
+     */
+    private int $stageSetupCandidates = 0;
+    private int $stageConfirmed = 0;
+    private int $stageConfirmRejected = 0;
+
     public function __construct(
         float $highTolerance = 0.015,
         int $confirmationMinBars = 3
     ) {
         $this->highTolerance = $highTolerance;
         $this->confirmationMinBars = $confirmationMinBars;
+    }
+
+    /**
+     * Return accumulated V2 stage counters since last reset.
+     *
+     * @return array{setup_candidates:int,confirmed:int,confirm_rejected:int}
+     */
+    public function getStageCounters(): array
+    {
+        return [
+            'setup_candidates'  => $this->stageSetupCandidates,
+            'confirmed'         => $this->stageConfirmed,
+            'confirm_rejected'  => $this->stageConfirmRejected,
+        ];
+    }
+
+    /** Reset stage counters (call before a new analyzer run). */
+    public function resetStageCounters(): void
+    {
+        $this->stageSetupCandidates = 0;
+        $this->stageConfirmed = 0;
+        $this->stageConfirmRejected = 0;
     }
 
     public function getName(): string
@@ -63,6 +96,8 @@ final class DoubleTopConfirmV2Detector implements PatternDetectorInterface
 
         // Try pairs of highs (latest first) — look for best confirmed setup
         $bestResult = null;
+        $setupFoundThisCall = false;
+        $confirmPassedThisCall = false;
 
         for ($i = count($highs) - 1; $i >= 1; $i--) {
             $high2Idx = $highs[$i];
@@ -73,6 +108,12 @@ final class DoubleTopConfirmV2Detector implements PatternDetectorInterface
             $setup = $this->evaluateSetup($segment, $segLen, $high1Idx, $high2Idx);
             if ($setup === null) {
                 continue;
+            }
+
+            // Stage 1 passed — count as setup candidate (once per detect call)
+            if (!$setupFoundThisCall) {
+                $this->stageSetupCandidates++;
+                $setupFoundThisCall = true;
             }
 
             // ── Stage 2: Confirmation ──
@@ -87,6 +128,9 @@ final class DoubleTopConfirmV2Detector implements PatternDetectorInterface
             if ($confirmation === null) {
                 continue;
             }
+
+            // Stage 2 passed
+            $confirmPassedThisCall = true;
 
             // ── Composite Confidence ──
 
@@ -104,6 +148,13 @@ final class DoubleTopConfirmV2Detector implements PatternDetectorInterface
                     'neckline_price'        => round($setup['neckline'], 6),
                 ];
             }
+        }
+
+        // Track confirmation outcome for this detect() call
+        if ($setupFoundThisCall && $confirmPassedThisCall) {
+            $this->stageConfirmed++;
+        } elseif ($setupFoundThisCall && !$confirmPassedThisCall) {
+            $this->stageConfirmRejected++;
         }
 
         return $bestResult;

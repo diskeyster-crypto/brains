@@ -624,6 +624,9 @@ final class SimulatorEngine
             $stopControlStats[$key]['mae_sum'] += (float)($trade['mae'] ?? 0.0);
         }
 
+        // Reversal V1 vs V2 comparison
+        $reversalComparison = $this->computeReversalComparison($closed, $patternStatsResult);
+
         $stats = [
             'total_trades'               => $totalClosed,
             'winrate'                    => $winrate,
@@ -636,6 +639,7 @@ final class SimulatorEngine
             'active_count'               => count($active),
             'closed_count'               => $totalClosed,
             'pattern_stats'              => $patternStatsResult,
+            'reversal_comparison'        => $reversalComparison,
             'leverage_mode_stats'        => $leverageModeStats,
             'stop_control_stats'         => $stopControlStats,
             'updated_at'                 => date('c'),
@@ -644,6 +648,235 @@ final class SimulatorEngine
         $this->state->writeJson('storage/simulator/stats.json', $stats);
 
         return $stats;
+    }
+
+    /**
+     * Compute reversal V1 vs V2 comparison metrics.
+     *
+     * Includes: family aggregation, false reversal proxy, expectancy,
+     * median ROI, and promotion criteria evaluation.
+     *
+     * False reversal proxy:
+     *   A trade is considered a "false reversal" if it was closed by
+     *   stop_loss or early_failure — meaning the reversal hypothesis
+     *   was invalidated quickly without meaningful favorable excursion.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @param array<string,array<string,mixed>> $patternStatsResult
+     * @return array<string,mixed>
+     */
+    private function computeReversalComparison(array $closed, array $patternStatsResult): array
+    {
+        $v1Patterns = ['double_bottom', 'double_top'];
+        $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
+
+        $v1Aggregate = $this->computeFamilyAggregate($closed, $v1Patterns);
+        $v2Aggregate = $this->computeFamilyAggregate($closed, $v2Patterns);
+
+        // Per-type comparison: bottom V1 vs V2, top V1 vs V2
+        $bottomComparison = [
+            'v1' => $patternStatsResult['double_bottom'] ?? [],
+            'v2' => $patternStatsResult['double_bottom_confirm_v2'] ?? [],
+        ];
+        $topComparison = [
+            'v1' => $patternStatsResult['double_top'] ?? [],
+            'v2' => $patternStatsResult['double_top_confirm_v2'] ?? [],
+        ];
+
+        // Promotion criteria evaluation
+        $promotion = $this->evaluatePromotionCriteria($v1Aggregate, $v2Aggregate);
+
+        return [
+            'v1_aggregate' => $v1Aggregate,
+            'v2_aggregate' => $v2Aggregate,
+            'bottom_patterns' => $bottomComparison,
+            'top_patterns' => $topComparison,
+            'promotion_criteria' => $promotion,
+            'compare_mode_active' => true,
+            'evaluation_note' => 'V2 is under shadow evaluation. Do not promote without statistical evidence.',
+        ];
+    }
+
+    /**
+     * Aggregate metrics for a reversal family (V1 or V2).
+     *
+     * Computes: trades, winrate, avg/median ROI, expectancy,
+     * false reversal count/rate, stop hit rate, avg MAE/MFE, avg duration.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @param array<int,string> $patterns
+     * @return array<string,mixed>
+     */
+    private function computeFamilyAggregate(array $closed, array $patterns): array
+    {
+        $trades = array_filter($closed, fn($t) => in_array((string)($t['pattern_algorithm'] ?? ''), $patterns, true));
+        $trades = array_values($trades);
+        $count = count($trades);
+
+        $result = [
+            'patterns' => $patterns,
+            'trades_total' => 0,
+            'wins' => 0,
+            'losses' => 0,
+            'winrate' => 0.0,
+            'avg_roi' => 0.0,
+            'median_roi' => 0.0,
+            'avg_win' => 0.0,
+            'avg_loss' => 0.0,
+            'expectancy' => 0.0,
+            'false_reversal_count' => 0,
+            'false_reversal_rate' => 0.0,
+            'stop_hit_count' => 0,
+            'stop_hit_rate' => 0.0,
+            'avg_mae' => 0.0,
+            'avg_mfe' => 0.0,
+            'avg_duration' => 0.0,
+            'long_count' => 0,
+            'short_count' => 0,
+        ];
+
+        if ($count === 0) {
+            return $result;
+        }
+
+        $rois = [];
+        $winRois = [];
+        $lossRois = [];
+        $maes = [];
+        $mfes = [];
+        $durations = [];
+        $wins = 0;
+        $losses = 0;
+        $falseReversals = 0;
+        $stopHits = 0;
+        $longCount = 0;
+        $shortCount = 0;
+
+        foreach ($trades as $t) {
+            $roi = (float)($t['roi'] ?? 0.0);
+            $rois[] = $roi;
+            $maes[] = (float)($t['mae'] ?? 0.0);
+            $mfes[] = (float)($t['mfe'] ?? 0.0);
+            $durations[] = (float)($t['duration'] ?? 0.0);
+
+            if ($roi >= 0) {
+                $wins++;
+                $winRois[] = $roi;
+            } else {
+                $losses++;
+                $lossRois[] = $roi;
+            }
+
+            $side = (string)($t['side'] ?? '');
+            if ($side === 'long') { $longCount++; }
+            if ($side === 'short') { $shortCount++; }
+
+            $reason = (string)($t['reason'] ?? '');
+
+            // False reversal proxy: stop_loss or early_failure
+            // These indicate the reversal hypothesis was immediately invalidated
+            if ($reason === 'stop_loss' || $reason === 'early_failure') {
+                $falseReversals++;
+            }
+
+            // Stop hit: stop_loss specifically
+            if ($reason === 'stop_loss') {
+                $stopHits++;
+            }
+        }
+
+        $avgWin = count($winRois) > 0 ? round(array_sum($winRois) / count($winRois), 6) : 0.0;
+        $avgLoss = count($lossRois) > 0 ? round(array_sum($lossRois) / count($lossRois), 6) : 0.0;
+        $winrate = round($wins / $count, 4);
+
+        // Expectancy = (winrate × avg_win) + ((1 - winrate) × avg_loss)
+        // avg_loss is negative, so this naturally subtracts
+        $expectancy = round(($winrate * $avgWin) + ((1 - $winrate) * $avgLoss), 6);
+
+        $result['trades_total'] = $count;
+        $result['wins'] = $wins;
+        $result['losses'] = $losses;
+        $result['winrate'] = $winrate;
+        $result['avg_roi'] = round(array_sum($rois) / $count, 6);
+        $result['median_roi'] = $this->median($rois);
+        $result['avg_win'] = $avgWin;
+        $result['avg_loss'] = $avgLoss;
+        $result['expectancy'] = $expectancy;
+        $result['false_reversal_count'] = $falseReversals;
+        $result['false_reversal_rate'] = round($falseReversals / $count, 4);
+        $result['stop_hit_count'] = $stopHits;
+        $result['stop_hit_rate'] = round($stopHits / $count, 4);
+        $result['avg_mae'] = round(array_sum($maes) / $count, 6);
+        $result['avg_mfe'] = round(array_sum($mfes) / $count, 6);
+        $result['avg_duration'] = round(array_sum($durations) / $count, 2);
+        $result['long_count'] = $longCount;
+        $result['short_count'] = $shortCount;
+
+        return $result;
+    }
+
+    /**
+     * Evaluate V2 promotion criteria against V1 baseline.
+     *
+     * V2 can be considered better only if on meaningful sample it shows:
+     * - expectancy >= V1
+     * - false reversal rate lower than V1
+     * - stop hit rate lower or healthier than V1
+     * - signal count not catastrophically low (>= 25% of V1)
+     * - median ROI not materially worse
+     *
+     * @param array<string,mixed> $v1
+     * @param array<string,mixed> $v2
+     * @return array<string,mixed>
+     */
+    private function evaluatePromotionCriteria(array $v1, array $v2): array
+    {
+        $v1Trades = (int)($v1['trades_total'] ?? 0);
+        $v2Trades = (int)($v2['trades_total'] ?? 0);
+        $minSample = 10;
+
+        $sufficient_sample = ($v1Trades >= $minSample && $v2Trades >= $minSample);
+
+        $v1Expectancy = (float)($v1['expectancy'] ?? 0);
+        $v2Expectancy = (float)($v2['expectancy'] ?? 0);
+        $v1FalseRate = (float)($v1['false_reversal_rate'] ?? 0);
+        $v2FalseRate = (float)($v2['false_reversal_rate'] ?? 0);
+        $v1StopRate = (float)($v1['stop_hit_rate'] ?? 0);
+        $v2StopRate = (float)($v2['stop_hit_rate'] ?? 0);
+        $v1MedianRoi = (float)($v1['median_roi'] ?? 0);
+        $v2MedianRoi = (float)($v2['median_roi'] ?? 0);
+
+        // Signal count not catastrophically low: V2 >= 25% of V1 trades
+        $signalCountOk = ($v1Trades === 0) || ($v2Trades >= $v1Trades * 0.25);
+
+        $criteria = [
+            'sufficient_sample' => $sufficient_sample,
+            'min_sample_required' => $minSample,
+            'expectancy_pass' => $sufficient_sample && $v2Expectancy >= $v1Expectancy,
+            'false_reversal_pass' => $sufficient_sample && $v2FalseRate <= $v1FalseRate,
+            'stop_hit_pass' => $sufficient_sample && $v2StopRate <= $v1StopRate,
+            'signal_count_ok' => $signalCountOk,
+            'median_roi_pass' => $sufficient_sample && $v2MedianRoi >= $v1MedianRoi * 0.8,
+            'v1_trades' => $v1Trades,
+            'v2_trades' => $v2Trades,
+        ];
+
+        // Overall verdict
+        if (!$sufficient_sample) {
+            $criteria['verdict'] = 'insufficient_data';
+            $criteria['verdict_label'] = 'Недостаточно данных для оценки';
+        } elseif ($criteria['expectancy_pass'] && $criteria['false_reversal_pass'] && $criteria['stop_hit_pass'] && $criteria['signal_count_ok']) {
+            $criteria['verdict'] = 'v2_promoted';
+            $criteria['verdict_label'] = 'V2 превосходит V1 — рекомендуется повышение';
+        } elseif ($criteria['expectancy_pass'] && $criteria['false_reversal_pass']) {
+            $criteria['verdict'] = 'v2_promising';
+            $criteria['verdict_label'] = 'V2 перспективен — продолжить наблюдение';
+        } else {
+            $criteria['verdict'] = 'v1_baseline';
+            $criteria['verdict_label'] = 'V1 остаётся базовым — V2 не доказал преимущество';
+        }
+
+        return $criteria;
     }
 
     /**

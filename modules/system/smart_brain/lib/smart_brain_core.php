@@ -2005,6 +2005,7 @@ final class SmartBrainCore
             'roi_buckets' => $roiBuckets,
             'side_summary' => $sideSummary,
             'pattern_stats' => (array)($stats['pattern_stats'] ?? []),
+            'reversal_comparison' => (array)($stats['reversal_comparison'] ?? []),
             'leverage_mode_stats' => (array)($stats['leverage_mode_stats'] ?? ['manual' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'roi_sum' => 0.0]]),
             'stop_control_stats' => (array)($stats['stop_control_stats'] ?? ['manual' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0], 'auto' => ['count' => 0, 'wins' => 0, 'mae_sum' => 0.0]]),
             // Symbol Intelligence data

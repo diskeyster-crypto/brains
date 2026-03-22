@@ -87,6 +87,9 @@ final class SimulationAudit
         // Part 10: Config Audit
         $report['config_audit'] = $this->auditConfig($effectiveCfg, $userCfg);
 
+        // Part 11: Reversal V1 vs V2 Comparison
+        $report['reversal_comparison'] = $this->auditReversalComparison($closed);
+
         return $report;
     }
 
@@ -238,6 +241,8 @@ final class SimulationAudit
         $expectedSide = [
             'double_bottom' => 'long',
             'double_top' => 'short',
+            'double_bottom_confirm_v2' => 'long',
+            'double_top_confirm_v2' => 'short',
         ];
 
         // Count sides by pattern for closed trades
@@ -671,6 +676,146 @@ final class SimulationAudit
         sort($p4Enabled);
         return $selEnabled === $p4Enabled
             && (string)($selection['mode'] ?? '') === (string)($parser4['mode'] ?? '');
+    }
+
+    /**
+     * Part 11: Reversal V1 vs V2 Comparison
+     *
+     * Computes side-by-side metrics for reversal pattern families
+     * including false reversal proxy, expectancy, and promotion criteria.
+     *
+     * False reversal proxy definition:
+     *   A closed trade is classified as a "false reversal" if exit reason
+     *   is stop_loss or early_failure — indicating the reversal hypothesis
+     *   was invalidated without meaningful favorable movement.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @return array<string,mixed>
+     */
+    private function auditReversalComparison(array $closed): array
+    {
+        $v1Patterns = ['double_bottom', 'double_top'];
+        $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
+
+        $v1Stats = $this->computeReversalFamilyStats($closed, $v1Patterns);
+        $v2Stats = $this->computeReversalFamilyStats($closed, $v2Patterns);
+
+        // Per-type breakdown
+        $bottomV1 = $this->computeReversalFamilyStats($closed, ['double_bottom']);
+        $bottomV2 = $this->computeReversalFamilyStats($closed, ['double_bottom_confirm_v2']);
+        $topV1 = $this->computeReversalFamilyStats($closed, ['double_top']);
+        $topV2 = $this->computeReversalFamilyStats($closed, ['double_top_confirm_v2']);
+
+        return [
+            'v1_aggregate' => $v1Stats,
+            'v2_aggregate' => $v2Stats,
+            'bottom_patterns' => ['v1' => $bottomV1, 'v2' => $bottomV2],
+            'top_patterns' => ['v1' => $topV1, 'v2' => $topV2],
+            'compare_mode_active' => true,
+            'evaluation_note' => 'V2 is under shadow evaluation. Promotion requires statistical evidence.',
+        ];
+    }
+
+    /**
+     * Compute aggregate stats for a reversal family.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @param array<int,string> $patterns
+     * @return array<string,mixed>
+     */
+    private function computeReversalFamilyStats(array $closed, array $patterns): array
+    {
+        $trades = array_filter($closed, fn($t) => in_array((string)($t['pattern_algorithm'] ?? ''), $patterns, true));
+        $trades = array_values($trades);
+        $count = count($trades);
+
+        $result = [
+            'patterns' => $patterns,
+            'trades_total' => 0,
+            'wins' => 0,
+            'losses' => 0,
+            'winrate' => 0.0,
+            'avg_roi' => 0.0,
+            'median_roi' => 0.0,
+            'avg_win' => 0.0,
+            'avg_loss' => 0.0,
+            'expectancy' => 0.0,
+            'false_reversal_count' => 0,
+            'false_reversal_rate' => 0.0,
+            'stop_hit_count' => 0,
+            'stop_hit_rate' => 0.0,
+            'avg_mae' => 0.0,
+            'avg_mfe' => 0.0,
+            'avg_duration' => 0.0,
+        ];
+
+        if ($count === 0) {
+            return $result;
+        }
+
+        $rois = [];
+        $winRois = [];
+        $lossRois = [];
+        $maes = [];
+        $mfes = [];
+        $durations = [];
+        $wins = 0;
+        $falseReversals = 0;
+        $stopHits = 0;
+
+        foreach ($trades as $t) {
+            $roi = (float)($t['roi'] ?? 0.0);
+            $rois[] = $roi;
+            $maes[] = (float)($t['mae'] ?? 0.0);
+            $mfes[] = (float)($t['mfe'] ?? 0.0);
+            $durations[] = (float)($t['duration'] ?? 0.0);
+
+            if ($roi >= 0) {
+                $wins++;
+                $winRois[] = $roi;
+            } else {
+                $lossRois[] = $roi;
+            }
+
+            $reason = (string)($t['reason'] ?? '');
+            if ($reason === 'stop_loss' || $reason === 'early_failure') {
+                $falseReversals++;
+            }
+            if ($reason === 'stop_loss') {
+                $stopHits++;
+            }
+        }
+
+        $losses = $count - $wins;
+        $avgWin = count($winRois) > 0 ? round(array_sum($winRois) / count($winRois), 6) : 0.0;
+        $avgLoss = count($lossRois) > 0 ? round(array_sum($lossRois) / count($lossRois), 6) : 0.0;
+        $winrate = round($wins / $count, 4);
+        $expectancy = round(($winrate * $avgWin) + ((1 - $winrate) * $avgLoss), 6);
+
+        sort($rois);
+        $mid = intdiv($count, 2);
+        $medianRoi = ($count % 2 === 0)
+            ? round(($rois[$mid - 1] + $rois[$mid]) / 2.0, 6)
+            : round($rois[$mid], 6);
+
+        $result['trades_total'] = $count;
+        $result['wins'] = $wins;
+        $result['losses'] = $losses;
+        $result['winrate'] = $winrate;
+        $result['avg_roi'] = round(array_sum($rois) / $count, 6);
+        $result['median_roi'] = $medianRoi;
+        $result['avg_win'] = $avgWin;
+        $result['avg_loss'] = $avgLoss;
+        $result['expectancy'] = $expectancy;
+        $result['false_reversal_count'] = $falseReversals;
+        $result['false_reversal_rate'] = round($falseReversals / $count, 4);
+        $result['stop_hit_count'] = $stopHits;
+        $result['stop_hit_rate'] = round($stopHits / $count, 4);
+        $result['avg_mae'] = round(array_sum($maes) / $count, 6);
+        $result['avg_mfe'] = round(array_sum($mfes) / $count, 6);
+        $result['avg_duration'] = round(array_sum($durations) / $count, 2);
+
+        return $result;
     }
 
     /**

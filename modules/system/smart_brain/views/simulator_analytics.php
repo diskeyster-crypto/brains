@@ -22,6 +22,7 @@
 /** @var array<string,int> $roi_buckets */
 /** @var array<string,array<string,mixed>> $side_summary */
 /** @var array<string,array<string,mixed>> $pattern_stats */
+/** @var array<string,mixed> $reversal_comparison */
 /** @var array<string,array<string,mixed>> $leverage_mode_stats */
 /** @var array<string,array<string,mixed>> $stop_control_stats */
 /** @var array<string,mixed> $symbol_intelligence */
@@ -270,6 +271,174 @@ $pageContent = function() use (
                     </tbody>
                 </table>
                 </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- ===== REVERSAL V1 vs V2 COMPARISON ===== -->
+    <?php
+    /** @var array<string,mixed> $reversal_comparison */
+    $rc = $reversal_comparison ?? [];
+    $rcV1 = (array)($rc['v1_aggregate'] ?? []);
+    $rcV2 = (array)($rc['v2_aggregate'] ?? []);
+    $rcPromo = (array)($rc['promotion_criteria'] ?? []);
+    $rcBottomV1 = (array)(($rc['bottom_patterns'] ?? [])['v1'] ?? []);
+    $rcBottomV2 = (array)(($rc['bottom_patterns'] ?? [])['v2'] ?? []);
+    $rcTopV1 = (array)(($rc['top_patterns'] ?? [])['v1'] ?? []);
+    $rcTopV2 = (array)(($rc['top_patterns'] ?? [])['v2'] ?? []);
+    $compareActive = !empty($rc['compare_mode_active']);
+    ?>
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin:0;">
+                <i class="bi bi-diagram-3 me-1"></i> Сравнение V1 vs V2 Разворотных паттернов
+            </h5>
+            <?php if ($compareActive): ?>
+                <span class="badge bg-info">🔬 Shadow Eval Active</span>
+            <?php endif; ?>
+        </div>
+        <div class="card-body p-0">
+            <?php if (((int)($rcV1['trades_total'] ?? 0)) === 0 && ((int)($rcV2['trades_total'] ?? 0)) === 0): ?>
+                <p class="text-secondary text-center py-4">Нет данных для сравнения разворотных паттернов</p>
+            <?php else: ?>
+
+            <!-- Family Aggregate Comparison Table -->
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Семейство</th>
+                    <th class="text-end">Сделок</th>
+                    <th class="text-end">Винрейт</th>
+                    <th class="text-end">Ср. ROI</th>
+                    <th class="text-end">Мед. ROI</th>
+                    <th class="text-end">Ожидание</th>
+                    <th class="text-end" title="Ложный разворот: стоп-лосс или ранний провал">Ложн. разв.</th>
+                    <th class="text-end" title="Доля ложных разворотов от общего числа">Ложн. %</th>
+                    <th class="text-end">Стоп %</th>
+                    <th class="text-end">Ср. MAE</th>
+                    <th class="text-end">Ср. MFE</th>
+                    <th class="text-end">Ср. длит.</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ([
+                    'Reversal V1 (baseline)' => $rcV1,
+                    'Reversal V2 (confirm)' => $rcV2,
+                ] as $label => $data): ?>
+                    <?php $t = (int)($data['trades_total'] ?? 0); ?>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($label) ?></td>
+                        <td class="text-end"><?= $t ?></td>
+                        <td class="text-end"><?= number_format((float)($data['winrate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($data['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($data['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end <?= (float)($data['median_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($data['median_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end <?= (float)($data['expectancy'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($data['expectancy'] ?? 0) * 100, 3) ?>%</td>
+                        <td class="text-end roi-negative"><?= (int)($data['false_reversal_count'] ?? 0) ?></td>
+                        <td class="text-end roi-negative"><?= number_format((float)($data['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($data['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($data['avg_mae'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($data['avg_mfe'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($data['avg_duration'] ?? 0), 1) ?> мин</td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+
+            <!-- Per-Type Breakdown: Bottom V1 vs V2, Top V1 vs V2 -->
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-arrow-down-up me-1"></i> Детализация по типам</h6>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Паттерн</th>
+                    <th class="text-end">Сделок</th>
+                    <th class="text-end">Винрейт</th>
+                    <th class="text-end">Ср. ROI</th>
+                    <th class="text-end">Мед. ROI</th>
+                    <th class="text-end">Ожидание</th>
+                    <th class="text-end">Ложн. %</th>
+                    <th class="text-end">Стоп %</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ([
+                    'double_bottom (V1)' => $rcBottomV1,
+                    'double_bottom_confirm_v2 (V2)' => $rcBottomV2,
+                    'double_top (V1)' => $rcTopV1,
+                    'double_top_confirm_v2 (V2)' => $rcTopV2,
+                ] as $label => $data): ?>
+                    <?php $t = (int)($data['trades_total'] ?? 0); ?>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($label) ?></td>
+                        <td class="text-end"><?= $t ?></td>
+                        <td class="text-end"><?= number_format((float)($data['winrate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($data['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($data['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end <?= (float)($data['median_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($data['median_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end <?= (float)($data['expectancy'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($data['expectancy'] ?? 0) * 100, 3) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($data['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($data['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+
+            <!-- Promotion Criteria Verdict -->
+            <?php if (!empty($rcPromo)): ?>
+            <div class="px-3 py-3">
+                <h6 class="mb-2"><i class="bi bi-award me-1"></i> Критерии продвижения V2</h6>
+                <?php
+                $verdict = (string)($rcPromo['verdict'] ?? 'unknown');
+                $verdictLabel = (string)($rcPromo['verdict_label'] ?? '');
+                $verdictClass = match ($verdict) {
+                    'v2_promoted' => 'success',
+                    'v2_promising' => 'info',
+                    'insufficient_data' => 'warning',
+                    default => 'secondary',
+                };
+                ?>
+                <div class="alert alert-<?= $verdictClass ?> py-2 mb-2">
+                    <strong>Вердикт:</strong> <?= htmlspecialchars($verdictLabel) ?>
+                    <small class="d-block mt-1 text-secondary">
+                        V1: <?= (int)($rcPromo['v1_trades'] ?? 0) ?> сделок |
+                        V2: <?= (int)($rcPromo['v2_trades'] ?? 0) ?> сделок |
+                        Мин. выборка: <?= (int)($rcPromo['min_sample_required'] ?? 10) ?>
+                    </small>
+                </div>
+                <div class="row g-2">
+                    <?php
+                    $criteriaItems = [
+                        ['label' => 'Ожидание V2 ≥ V1', 'key' => 'expectancy_pass'],
+                        ['label' => 'Ложн. разв. V2 ≤ V1', 'key' => 'false_reversal_pass'],
+                        ['label' => 'Стоп-хит V2 ≤ V1', 'key' => 'stop_hit_pass'],
+                        ['label' => 'Кол-во сигналов ≥ 25% V1', 'key' => 'signal_count_ok'],
+                        ['label' => 'Мед. ROI V2 ≥ 80% V1', 'key' => 'median_roi_pass'],
+                    ];
+                    foreach ($criteriaItems as $ci):
+                        $pass = !empty($rcPromo[$ci['key']]);
+                        $hasSample = !empty($rcPromo['sufficient_sample']);
+                    ?>
+                    <div class="col-md-4 col-lg-3">
+                        <div class="d-flex align-items-center gap-1">
+                            <?php if (!$hasSample): ?>
+                                <span class="badge bg-secondary">—</span>
+                            <?php elseif ($pass): ?>
+                                <span class="badge bg-success">✓</span>
+                            <?php else: ?>
+                                <span class="badge bg-danger">✗</span>
+                            <?php endif; ?>
+                            <small><?= htmlspecialchars($ci['label']) ?></small>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <p class="text-secondary mt-2 mb-0" style="font-size:0.75rem;">
+                    <em>Оценка качества, а не количества: меньшее кол-во сигналов V2 допустимо при лучшем ожидании.
+                    V2 не повышается автоматически — только по данным.</em>
+                </p>
+            </div>
+            <?php endif; ?>
+
             <?php endif; ?>
         </div>
     </div>

@@ -16,9 +16,7 @@
         },
         "pattern_algorithms": {
             "enabled": [
-                "double_bottom",
-                "double_top",
-                "pullback_trend_continue"
+                "double_bottom"
             ],
             "mode": "any"
         },
@@ -79,7 +77,7 @@
             "override_fields": []
         },
         "user_limits": {
-            "max_budget_per_coin": 20,
+            "max_budget_per_coin": 6,
             "max_active_tasks": 50,
             "max_leverage": 10,
             "brain_mode": "balanced",
@@ -93,8 +91,8 @@
             "stop_floor_value": 0.29999999999999999,
             "brain_may_tighten_stop": true,
             "trailing_enabled": true,
-            "trailing_activation_roi": 0.050000000000000003,
-            "trailing_min_lock_roi": 0.012,
+            "trailing_activation_roi": 0.070000000000000007,
+            "trailing_min_lock_roi": 0.021999999999999999,
             "trailing_min_step": 0.01,
             "brain_may_delay_trailing": true,
             "fixed_take_profit_roi": 0.029999999999999999,
@@ -111,7 +109,7 @@
             "mae_stop_percentile": 75,
             "stop_control_mode": "entry_roi",
             "manual_stop_loss_roi": 0.029999999999999999,
-            "stop_loss_from_entry_roi": 0.10000000000000001,
+            "stop_loss_from_entry_roi": 0.050000000000000003,
             "stop_mode": "brain_managed",
             "simple_stop_liq_factor": 0.14999999999999999,
             "brain_stop_corridor_factor": 0.25,
@@ -121,7 +119,7 @@
             "early_failure_window_minutes": 5,
             "early_failure_max_adverse_roi": -0.0080000000000000002,
             "leverage_mode": "manual",
-            "manual_leverage": 10,
+            "manual_leverage": 5,
             "symbol_intelligence_enabled": true,
             "symbol_filter_mode": "all",
             "whitelist_min_trades": 3,
@@ -146,9 +144,7 @@
             "live_reverse_side_enabled": false,
             "patterns": {
                 "enabled": [
-                    "double_bottom",
-                    "double_top",
-                    "pullback_trend_continue"
+                    "double_bottom"
                 ],
                 "mode": "any"
             }
@@ -191,5 +187,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "updated_at": "2026-03-21T11:24:05+00:00"
+    "updated_at": "2026-03-22T08:38:05+00:00"
 }

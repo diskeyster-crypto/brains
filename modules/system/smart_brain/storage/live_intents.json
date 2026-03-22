@@ -1,6 +1,6 @@
 {
     "schema_version": "live_intents_v1",
-    "generated_at": "2026-03-22T08:38:05+00:00",
+    "generated_at": "2026-03-22T09:23:06+00:00",
     "live_trading_enabled": true,
     "brain_controlled_live_mode": true,
     "live_stage_runtime_signature": "live_stage_v3_cleanup_2026-03-21",
@@ -10,7 +10,7 @@
         "live_max_positions": 5,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
-        "live_reverse_side_enabled": false,
+        "live_reverse_side_enabled": true,
         "trailing_contract": {
             "trailing_enabled": true,
             "trailing_activation_roi": 0.070000000000000007,
@@ -32,19 +32,19 @@
     "intents": [
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_c829724f3595bc53_a62ddeae",
-            "signal_id": "sig_c829724f3595bc53",
+            "intent_id": "li_sig_2eb4a8db86021bef_7cb3585b",
+            "signal_id": "sig_2eb4a8db86021bef",
             "signal_id_source": "original",
-            "symbol": "USUSDT",
-            "side": "long",
+            "symbol": "RESOLVUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0030699299999999998,
+            "entry_price_reference": 0.052380799999999998,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 8.9399999999999995,
+                "stop_from_liq_range_pct": 5.6299999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -52,7 +52,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.089434,
+                "stop_loss": 0.056305000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -76,7 +76,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 8.9399999999999995,
+                    "stop_from_liq_range_pct": 5.6299999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -107,29 +107,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_1210a94dc82c20ca_95f98098",
-            "signal_id": "sig_1210a94dc82c20ca",
+            "intent_id": "li_sig_644863bf5e529890_63fd2499",
+            "signal_id": "sig_644863bf5e529890",
             "signal_id_source": "original",
-            "symbol": "PIPPINUSDT",
+            "symbol": "LYNUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.093937400000000004,
+            "entry_price_reference": 0.085503300000000004,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 2.3799999999999999,
+                "stop_from_liq_range_pct": 15.35,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -137,7 +138,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.023799000000000001,
+                "stop_loss": 0.15348800000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -161,7 +162,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 2.3799999999999999,
+                    "stop_from_liq_range_pct": 15.35,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -192,29 +193,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_2019b873fb1796dd_6e8fa713",
-            "signal_id": "sig_2019b873fb1796dd",
+            "intent_id": "li_sig_e87af3e57b662ce5_c9a1791d",
+            "signal_id": "sig_e87af3e57b662ce5",
             "signal_id_source": "original",
-            "symbol": "WETUSDT",
-            "side": "long",
+            "symbol": "UAIUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.10447770000000001,
+            "entry_price_reference": 0.28653640000000002,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.71,
+                "stop_from_liq_range_pct": 7.0199999999999996,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -222,7 +224,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.017076000000000001,
+                "stop_loss": 0.070211999999999997,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -246,7 +248,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.71,
+                    "stop_from_liq_range_pct": 7.0199999999999996,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -277,21 +279,280 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_0007979773a71911_f852a672",
+            "intent_id": "li_sig_dd8bc5d5b4423659_5ec141d4",
+            "signal_id": "sig_dd8bc5d5b4423659",
+            "signal_id_source": "original",
+            "symbol": "SXPUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.0081390999999999998,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 3.52,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.035216999999999998,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 3.52,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_17768574db6384ab_ec5f33b6",
+            "signal_id": "sig_17768574db6384ab",
+            "signal_id_source": "original",
+            "symbol": "NTRNUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.0061306399999999997,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 6.5499999999999998,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.065490000000000007,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 6.5499999999999998,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_89b6fa6a55a61296_3c6e2508",
+            "signal_id": "sig_89b6fa6a55a61296",
+            "signal_id_source": "original",
+            "symbol": "TSTBSCUSDT",
+            "side": "long",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.0088633700000000006,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 3.5899999999999999,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.035895999999999997,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 3.5899999999999999,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "short",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_0007979773a71911_d2338840",
             "signal_id": "sig_0007979773a71911",
             "signal_id_source": "original",
             "symbol": "ROAMUSDT",
-            "side": "long",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
             "entry_price_reference": 0.043727330000000002,
@@ -362,29 +623,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_673f2674c06f3e48_33571d02",
-            "signal_id": "sig_673f2674c06f3e48",
+            "intent_id": "li_sig_a95b72de21b672a0_e75a3c90",
+            "signal_id": "sig_a95b72de21b672a0",
             "signal_id_source": "original",
-            "symbol": "PEAQUSDT",
+            "symbol": "DYDXUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.015074270000000001,
+            "entry_price_reference": 0.082362699999999997,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.53,
+                "stop_from_liq_range_pct": 1.0600000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -392,7 +654,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.015328,
+                "stop_loss": 0.010605,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -416,7 +678,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.53,
+                    "stop_from_liq_range_pct": 1.0600000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -447,704 +709,25 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_610bd382aade91f3_939965c0",
-            "signal_id": "sig_610bd382aade91f3",
+            "intent_id": "li_sig_e0638fe9e6d155ed_47b72dc1",
+            "signal_id": "sig_e0638fe9e6d155ed",
             "signal_id_source": "original",
-            "symbol": "CAMPUSDT",
+            "symbol": "KSMUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0021053399999999998,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 4.96,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.049638000000000002,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 4.96,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_c4cbd8ae8b8c298f_3b77f507",
-            "signal_id": "sig_c4cbd8ae8b8c298f",
-            "signal_id_source": "original",
-            "symbol": "EDENUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.032034600000000003,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 3.1600000000000001,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.031557000000000002,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 3.1600000000000001,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_f6e2d1682ee3d24b_0265f656",
-            "signal_id": "sig_f6e2d1682ee3d24b",
-            "signal_id_source": "original",
-            "symbol": "MERLUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0303684,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.6699999999999999,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.016683,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.6699999999999999,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_7e6cbd3f58291cfa_711bbabe",
-            "signal_id": "sig_7e6cbd3f58291cfa",
-            "signal_id_source": "original",
-            "symbol": "GIGGLEUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 24.5154,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 3.0800000000000001,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.030848,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 3.0800000000000001,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_e06c907464c24def_88e42cfc",
-            "signal_id": "sig_e06c907464c24def",
-            "signal_id_source": "original",
-            "symbol": "KAVAUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.052453699999999999,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.79,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.017916000000000001,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.79,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_5c8fc60a58957fc4_28a08740",
-            "signal_id": "sig_5c8fc60a58957fc4",
-            "signal_id_source": "original",
-            "symbol": "VELVETUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.077751500000000001,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 2.5600000000000001,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.025638999999999999,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 2.5600000000000001,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_f83a5be9a47bf0a5_86cf7dba",
-            "signal_id": "sig_f83a5be9a47bf0a5",
-            "signal_id_source": "original",
-            "symbol": "WHITEWHALEUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0293928,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.77,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.017722000000000002,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.77,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_7d61080ec86c2d7b_9cb10018",
-            "signal_id": "sig_7d61080ec86c2d7b",
-            "signal_id_source": "original",
-            "symbol": "MEWUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.00058547999999999998,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.1899999999999999,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.011880999999999999,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.1899999999999999,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_f357a33729fc6d70_53ffa798",
-            "signal_id": "sig_f357a33729fc6d70",
-            "signal_id_source": "original",
-            "symbol": "OPNUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.26702500000000001,
+            "entry_price_reference": 4.4320000000000004,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
@@ -1157,7 +740,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.009861,
+                "stop_loss": 0.0080590000000000002,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1212,29 +795,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_f72e9e5c033e396b_7a5eb1b2",
-            "signal_id": "sig_f72e9e5c033e396b",
+            "intent_id": "li_sig_a884ec965a671563_ec9f51e4",
+            "signal_id": "sig_a884ec965a671563",
             "signal_id_source": "original",
-            "symbol": "LITUSDT",
+            "symbol": "RVNUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 1.016518,
+            "entry_price_reference": 0.0057052600000000002,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.52,
+                "stop_from_liq_range_pct": 2.1600000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1242,7 +826,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.015153,
+                "stop_loss": 0.021616,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1266,7 +850,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.52,
+                    "stop_from_liq_range_pct": 2.1600000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1297,21 +881,108 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_df424d25233cbd99_61d1b70b",
+            "intent_id": "li_sig_8b7617311fd1bcfc_76045f22",
+            "signal_id": "sig_8b7617311fd1bcfc",
+            "signal_id_source": "original",
+            "symbol": "BBUSDT",
+            "side": "long",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.024189499999999999,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0081220000000000007,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "short",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_df424d25233cbd99_3ce9c960",
             "signal_id": "sig_df424d25233cbd99",
             "signal_id_source": "original",
             "symbol": "BSUUSDT",
-            "side": "long",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
             "entry_price_reference": 0.0503662,
@@ -1382,29 +1053,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_be44ea4cbd074304_5f5c4772",
-            "signal_id": "sig_be44ea4cbd074304",
+            "intent_id": "li_sig_0e2236548b1e60df_9db7f938",
+            "signal_id": "sig_0e2236548b1e60df",
             "signal_id_source": "original",
-            "symbol": "WIFUSDT",
+            "symbol": "LABUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.17166960000000001,
+            "entry_price_reference": 0.22642180000000001,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.51,
+                "stop_from_liq_range_pct": 3.6499999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1412,7 +1084,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.015077,
+                "stop_loss": 0.036524000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1436,7 +1108,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.51,
+                    "stop_from_liq_range_pct": 3.6499999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1467,29 +1139,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_e30a0f53859ca529_af864ccb",
-            "signal_id": "sig_e30a0f53859ca529",
+            "intent_id": "li_sig_c12880e57b790ed1_a8f44ed6",
+            "signal_id": "sig_c12880e57b790ed1",
             "signal_id_source": "original",
-            "symbol": "XCNUSDT",
-            "side": "long",
+            "symbol": "ACUUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0050764299999999998,
+            "entry_price_reference": 0.083734000000000003,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.48,
+                "stop_from_liq_range_pct": 1.4299999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1497,7 +1170,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.014754,
+                "stop_loss": 0.014274999999999999,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1521,7 +1194,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.48,
+                    "stop_from_liq_range_pct": 1.4299999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1552,29 +1225,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_a05bd702127665cc_fb013e63",
-            "signal_id": "sig_a05bd702127665cc",
+            "intent_id": "li_sig_c4ba985394b1673a_d0051b0c",
+            "signal_id": "sig_c4ba985394b1673a",
             "signal_id_source": "original",
-            "symbol": "ANIMEUSDT",
+            "symbol": "ACXUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0050225299999999999,
+            "entry_price_reference": 0.042192599999999997,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 2.98,
+                "stop_from_liq_range_pct": 1.1399999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1582,7 +1256,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.029753000000000002,
+                "stop_loss": 0.011439,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1606,7 +1280,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 2.98,
+                    "stop_from_liq_range_pct": 1.1399999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1637,29 +1311,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_84e70e2e08c498b3_65c65ae1",
-            "signal_id": "sig_84e70e2e08c498b3",
+            "intent_id": "li_sig_673f2674c06f3e48_3d2ebac9",
+            "signal_id": "sig_673f2674c06f3e48",
             "signal_id_source": "original",
-            "symbol": "BLESSUSDT",
-            "side": "long",
+            "symbol": "PEAQUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0053329600000000003,
+            "entry_price_reference": 0.015074270000000001,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.5600000000000001,
+                "stop_from_liq_range_pct": 1.53,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1667,7 +1342,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.015565000000000001,
+                "stop_loss": 0.015328,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1691,7 +1366,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.5600000000000001,
+                    "stop_from_liq_range_pct": 1.53,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1722,29 +1397,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_e6d70537fe791af9_71cd932c",
-            "signal_id": "sig_e6d70537fe791af9",
+            "intent_id": "li_sig_28a2901637a54139_47ba0e4c",
+            "signal_id": "sig_28a2901637a54139",
             "signal_id_source": "original",
-            "symbol": "AGIUSDT",
+            "symbol": "ZAMAUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.011998470000000001,
+            "entry_price_reference": 0.022651000000000001,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.3999999999999999,
+                "stop_from_liq_range_pct": 1.4399999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1752,7 +1428,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.013976000000000001,
+                "stop_loss": 0.014416999999999999,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1776,7 +1452,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.3999999999999999,
+                    "stop_from_liq_range_pct": 1.4399999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1807,29 +1483,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_1d609a34d45caabd_cd56ff75",
-            "signal_id": "sig_1d609a34d45caabd",
+            "intent_id": "li_sig_51ed711ea4838980_8d6efb76",
+            "signal_id": "sig_51ed711ea4838980",
             "signal_id_source": "original",
-            "symbol": "SKYUSDT",
-            "side": "long",
+            "symbol": "ENJUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.073136400000000004,
+            "entry_price_reference": 0.0223217,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.5600000000000001,
+                "stop_from_liq_range_pct": 1.3700000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1837,7 +1514,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.015580999999999999,
+                "stop_loss": 0.0137,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1861,7 +1538,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.5600000000000001,
+                    "stop_from_liq_range_pct": 1.3700000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1892,29 +1569,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_b0bca0a103913e62_6667c5ea",
-            "signal_id": "sig_b0bca0a103913e62",
+            "intent_id": "li_sig_ece4392100ba451b_c2d9874e",
+            "signal_id": "sig_ece4392100ba451b",
             "signal_id_source": "original",
-            "symbol": "COOKIEUSDT",
-            "side": "long",
+            "symbol": "PIEVERSEUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.017227079999999999,
+            "entry_price_reference": 0.534802,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.0800000000000001,
+                "stop_from_liq_range_pct": 1.2,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -1922,7 +1600,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.010763999999999999,
+                "stop_loss": 0.011956,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -1946,7 +1624,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.0800000000000001,
+                    "stop_from_liq_range_pct": 1.2,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -1977,29 +1655,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_7ea35f27b723c65c_127a2a09",
-            "signal_id": "sig_7ea35f27b723c65c",
+            "intent_id": "li_sig_8f43f995578e26f4_c502e467",
+            "signal_id": "sig_8f43f995578e26f4",
             "signal_id_source": "original",
-            "symbol": "DEXEUSDT",
-            "side": "long",
+            "symbol": "SPACEUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 6.3701739999999996,
+            "entry_price_reference": 0.0061041200000000002,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.6200000000000001,
+                "stop_from_liq_range_pct": 1.6799999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -2007,7 +1686,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.016202999999999999,
+                "stop_loss": 0.016832,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -2031,7 +1710,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.6200000000000001,
+                    "stop_from_liq_range_pct": 1.6799999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -2062,29 +1741,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_fe68fec44f9512c7_77ef3b61",
-            "signal_id": "sig_fe68fec44f9512c7",
+            "intent_id": "li_sig_62a91f98c762afb8_877628d6",
+            "signal_id": "sig_62a91f98c762afb8",
             "signal_id_source": "original",
-            "symbol": "PARTIUSDT",
+            "symbol": "IOTXUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0809063,
+            "entry_price_reference": 0.0053105699999999997,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.01,
+                "stop_from_liq_range_pct": 2.1800000000000002,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -2092,7 +1772,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.010111999999999999,
+                "stop_loss": 0.021770999999999999,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -2116,7 +1796,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.01,
+                    "stop_from_liq_range_pct": 2.1800000000000002,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -2147,29 +1827,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_2c584028f11fc176_3572c43a",
-            "signal_id": "sig_2c584028f11fc176",
+            "intent_id": "li_sig_09c22722f455d02c_3975f6cb",
+            "signal_id": "sig_09c22722f455d02c",
             "signal_id_source": "original",
-            "symbol": "BRETTUSDT",
-            "side": "long",
+            "symbol": "WETUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0065549600000000003,
+            "entry_price_reference": 0.104006,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.27,
+                "stop_from_liq_range_pct": 1.8999999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -2177,7 +1858,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.012651000000000001,
+                "stop_loss": 0.018957000000000002,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -2201,7 +1882,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.27,
+                    "stop_from_liq_range_pct": 1.8999999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -2232,109 +1913,25 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_ba9646f1b75a7e64_8c420c4e",
-            "signal_id": "sig_ba9646f1b75a7e64",
+            "intent_id": "li_sig_7f20f1cf5c8baf2e_6d8ca2c3",
+            "signal_id": "sig_7f20f1cf5c8baf2e",
             "signal_id_source": "original",
-            "symbol": "KMNOUSDT",
+            "symbol": "XMRUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.020718199999999999,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.05,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.010508,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.05,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_c2b949a5002cf001_8adbbe38",
-            "signal_id": "sig_c2b949a5002cf001",
-            "signal_id_source": "original",
-            "symbol": "HIPPOUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.00055522999999999998,
+            "entry_price_reference": 343.33780000000002,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
@@ -2347,7 +1944,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.0093570000000000007,
+                "stop_loss": 0.0051850000000000004,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -2402,531 +1999,22 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_bf598a2a2e959985_5cf8b149",
-            "signal_id": "sig_bf598a2a2e959985",
-            "signal_id_source": "original",
-            "symbol": "ENSOUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 1.1221810000000001,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.1599999999999999,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.011613,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.1599999999999999,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_de0802be8219abd4_fa928a17",
-            "signal_id": "sig_de0802be8219abd4",
-            "signal_id_source": "original",
-            "symbol": "VINEUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.016299339999999999,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.5,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.014973,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.5,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_4630a96fe8542aec_4dbe20bb",
-            "signal_id": "sig_4630a96fe8542aec",
-            "signal_id_source": "original",
-            "symbol": "TRUMPUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 3.1823999999999999,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.55,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.015472,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.55,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_15292ecb02c4beed_371ca7f8",
-            "signal_id": "sig_15292ecb02c4beed",
-            "signal_id_source": "original",
-            "symbol": "ARCUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.049097700000000001,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.48,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.014825,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.48,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_04cc5551e9bfc0a0_2f1ea3e5",
-            "signal_id": "sig_04cc5551e9bfc0a0",
-            "signal_id_source": "original",
-            "symbol": "MOVEUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.019565099999999998,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.0073509999999999999,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_15e400af6431efd7_c624aa55",
-            "signal_id": "sig_15e400af6431efd7",
-            "signal_id_source": "original",
-            "symbol": "XVGUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0047340799999999999,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.0094920000000000004,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_a650985a327aec57_997cf0fb",
+            "intent_id": "li_sig_a650985a327aec57_dc997193",
             "signal_id": "sig_a650985a327aec57",
             "signal_id_source": "original",
             "symbol": "LAUSDT",
-            "side": "long",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
             "entry_price_reference": 0.21236959999999999,
@@ -2997,29 +2085,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_9d77ce61541834e4_61ab38ae",
-            "signal_id": "sig_9d77ce61541834e4",
+            "intent_id": "li_sig_7e6cbd3f58291cfa_cef77718",
+            "signal_id": "sig_7e6cbd3f58291cfa",
             "signal_id_source": "original",
-            "symbol": "XAIUSDT",
-            "side": "long",
+            "symbol": "GIGGLEUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.01020397,
+            "entry_price_reference": 24.5154,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.1299999999999999,
+                "stop_from_liq_range_pct": 3.0800000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3027,7 +2116,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.011256,
+                "stop_loss": 0.030848,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3051,7 +2140,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.1299999999999999,
+                    "stop_from_liq_range_pct": 3.0800000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3082,29 +2171,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_ec168d13086b4a1f_0b525bcf",
-            "signal_id": "sig_ec168d13086b4a1f",
+            "intent_id": "li_sig_d48d669f412c063e_5dd64382",
+            "signal_id": "sig_d48d669f412c063e",
             "signal_id_source": "original",
-            "symbol": "GALAUSDT",
+            "symbol": "ROBOUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0031190900000000001,
+            "entry_price_reference": 0.0247859,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.3400000000000001,
+                "stop_from_liq_range_pct": 1.9399999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3112,7 +2202,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.01341,
+                "stop_loss": 0.019411000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3136,7 +2226,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.3400000000000001,
+                    "stop_from_liq_range_pct": 1.9399999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3167,29 +2257,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_941d36b18ab47a3e_da3f0be9",
-            "signal_id": "sig_941d36b18ab47a3e",
+            "intent_id": "li_sig_8885b90ecfa17210_4e615cd8",
+            "signal_id": "sig_8885b90ecfa17210",
             "signal_id_source": "original",
-            "symbol": "ETHFIUSDT",
-            "side": "long",
+            "symbol": "HYPEUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.57317300000000004,
+            "entry_price_reference": 38.122109999999999,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.49,
+                "stop_from_liq_range_pct": 1.3799999999999999,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3197,7 +2288,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.014907999999999999,
+                "stop_loss": 0.013840999999999999,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3221,7 +2312,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.49,
+                    "stop_from_liq_range_pct": 1.3799999999999999,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3252,24 +2343,25 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_4514a05865cb1eba_f7c406a1",
-            "signal_id": "sig_4514a05865cb1eba",
+            "intent_id": "li_sig_e7907ea7919fb6d0_5e105964",
+            "signal_id": "sig_e7907ea7919fb6d0",
             "signal_id_source": "original",
-            "symbol": "COWUSDT",
+            "symbol": "BELUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.21706500000000001,
+            "entry_price_reference": 0.094977099999999995,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
@@ -3282,7 +2374,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.007273,
+                "stop_loss": 0.0090089999999999996,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3337,29 +2429,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_b27be51246260612_5a9a0719",
-            "signal_id": "sig_b27be51246260612",
+            "intent_id": "li_sig_6e7514650fd982bc_02c6414b",
+            "signal_id": "sig_6e7514650fd982bc",
             "signal_id_source": "original",
-            "symbol": "IPUSDT",
-            "side": "long",
+            "symbol": "USELESSUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.70133999999999996,
+            "entry_price_reference": 0.036470900000000001,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.71,
+                "stop_from_liq_range_pct": 2.1200000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3367,7 +2460,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.017059000000000001,
+                "stop_loss": 0.021156000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3391,7 +2484,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.71,
+                    "stop_from_liq_range_pct": 2.1200000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3422,29 +2515,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_3e849882253386c5_b4e44c3a",
-            "signal_id": "sig_3e849882253386c5",
+            "intent_id": "li_sig_8bbb5bab512b2b22_935a2a23",
+            "signal_id": "sig_8bbb5bab512b2b22",
             "signal_id_source": "original",
-            "symbol": "PENDLEUSDT",
-            "side": "long",
+            "symbol": "BLESSUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 1.200126,
+            "entry_price_reference": 0.0053285099999999998,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1,
+                "stop_from_liq_range_pct": 1.5900000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3452,7 +2546,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.0077770000000000001,
+                "stop_loss": 0.015909,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3476,7 +2570,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1,
+                    "stop_from_liq_range_pct": 1.5900000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3507,29 +2601,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_d6a9f8e7dbb41c12_fe1d9575",
-            "signal_id": "sig_d6a9f8e7dbb41c12",
+            "intent_id": "li_sig_de0802be8219abd4_3a981035",
+            "signal_id": "sig_de0802be8219abd4",
             "signal_id_source": "original",
-            "symbol": "SPORTFUNUSDT",
-            "side": "long",
+            "symbol": "VINEUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.031021300000000002,
+            "entry_price_reference": 0.016299339999999999,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1,
+                "stop_from_liq_range_pct": 1.5,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3537,7 +2632,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.0093919999999999993,
+                "stop_loss": 0.014973,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3561,7 +2656,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1,
+                    "stop_from_liq_range_pct": 1.5,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3592,29 +2687,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_6f08614534bb3890_cc6b6279",
-            "signal_id": "sig_6f08614534bb3890",
+            "intent_id": "li_sig_3e844f81e5026088_66ee164d",
+            "signal_id": "sig_3e844f81e5026088",
             "signal_id_source": "original",
-            "symbol": "THETAUSDT",
+            "symbol": "OLUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.16163630000000001,
+            "entry_price_reference": 0.015321370000000001,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1,
+                "stop_from_liq_range_pct": 1.75,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3622,7 +2718,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.0094039999999999992,
+                "stop_loss": 0.017489000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3646,7 +2742,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1,
+                    "stop_from_liq_range_pct": 1.75,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -3677,106 +2773,22 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_0c3768d2b44c9ef6_a379ec47",
-            "signal_id": "sig_0c3768d2b44c9ef6",
-            "signal_id_source": "original",
-            "symbol": "HYPERUSDT",
-            "side": "long",
-            "entry_action": "enter_now",
-            "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.092731400000000005,
-            "risk": {
-                "profile_id": "111",
-                "budget_usdt_per_trade": 3.2999999999999998,
-                "leverage": 5,
-                "stop_from_liq_range_pct": 1.04,
-                "slippage_bps": 20,
-                "fees_bps": 12,
-                "order_type": "market",
-                "limits": {
-                    "max_open_trades": 5,
-                    "one_trade_per_symbol": true
-                },
-                "stop_loss": 0.010375000000000001,
-                "budget": 3.2999999999999998,
-                "trailing": {
-                    "enabled": true,
-                    "activation_roi_pct": 7.0000000000000009,
-                    "drawdown_factor": 0.5,
-                    "min_step": 0.01,
-                    "min_lock_roi": 0.021999999999999999,
-                    "break_even_enabled": true,
-                    "break_even_activation_roi": 2.5,
-                    "exit_mode": "trailing_tp",
-                    "fixed_take_profit_roi": 0.029999999999999999,
-                    "hybrid_tp_share": 0.40000000000000002,
-                    "brain_trailing_applied": true,
-                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
-                },
-                "logical_stop": {
-                    "enabled": true,
-                    "logical_stop_roi": 0.029999999999999999,
-                    "mode": "strategy_invalidation",
-                    "source": "brain_config"
-                },
-                "emergency_stop": {
-                    "enabled": true,
-                    "stop_from_liq_range_pct": 1.04,
-                    "mode": "liquidation_safety_net",
-                    "source": "brain_config"
-                },
-                "stop_control": {
-                    "stop_control_mode": "entry_roi",
-                    "stop_loss_from_entry_roi": 0.050000000000000003,
-                    "manual_stop_loss_roi": 0.029999999999999999,
-                    "source": "brain_config"
-                }
-            },
-            "trailing": {
-                "trailing_enabled": true,
-                "trailing_activation_roi": 0.070000000000000007,
-                "trailing_min_lock_roi": 0.021999999999999999,
-                "trailing_min_step": 0.01,
-                "break_even_enabled": true,
-                "break_even_activation_roi": 0.025000000000000001,
-                "exit_mode": "trailing_tp",
-                "fixed_take_profit_roi": 0.029999999999999999,
-                "hybrid_tp_share": 0.40000000000000002,
-                "drawdown_factor": 0.5,
-                "stop_control_mode": "entry_roi",
-                "manual_stop_loss_roi": 0.029999999999999999,
-                "stop_loss_from_entry_roi": 0.050000000000000003,
-                "logical_stop_roi": 0.029999999999999999,
-                "canonical_source": "risk_trailing_derived"
-            },
-            "selection_mode_used": "all",
-            "selection_source": "all",
-            "approval_reason": "mode=all",
-            "created_ts": 1774168685,
-            "expires_at": 0,
-            "execution_limits_snapshot": {
-                "live_max_positions": 5,
-                "live_one_trade_per_symbol": true
-            },
-            "source_schema_version": "clean_signal_v1"
-        },
-        {
-            "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_1c28a278126688e1_3d827b39",
+            "intent_id": "li_sig_1c28a278126688e1_7aa21c81",
             "signal_id": "sig_1c28a278126688e1",
             "signal_id_source": "original",
             "symbol": "AIOZUSDT",
-            "side": "long",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
             "entry_price_reference": 0.062251399999999998,
@@ -3847,24 +2859,111 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_e83244fa4eda967f_221eb672",
-            "signal_id": "sig_e83244fa4eda967f",
+            "intent_id": "li_sig_e6b7e3f3ea6c4f74_8df5e35a",
+            "signal_id": "sig_e6b7e3f3ea6c4f74",
             "signal_id_source": "original",
-            "symbol": "ZRXUSDT",
+            "symbol": "STOUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.1006613,
+            "entry_price_reference": 0.1063732,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1.6699999999999999,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.016740000000000001,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1.6699999999999999,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "short",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_0f3f7778ad17c9dd_06f1f5dd",
+            "signal_id": "sig_0f3f7778ad17c9dd",
+            "signal_id_source": "original",
+            "symbol": "AEVOUSDT",
+            "side": "long",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.0245206,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
@@ -3877,7 +2976,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.0098700000000000003,
+                "stop_loss": 0.0078619999999999992,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3932,29 +3031,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_c838ea0781c2bd8a_f4e57414",
-            "signal_id": "sig_c838ea0781c2bd8a",
+            "intent_id": "li_sig_77e1c651ee9cee03_a4ffee71",
+            "signal_id": "sig_77e1c651ee9cee03",
             "signal_id_source": "original",
-            "symbol": "GOATUSDT",
-            "side": "long",
+            "symbol": "NIGHTUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.017127099999999999,
+            "entry_price_reference": 0.0427588,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.25,
+                "stop_from_liq_range_pct": 1,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -3962,7 +3062,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.012515,
+                "stop_loss": 0.0088649999999999996,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -3986,7 +3086,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.25,
+                    "stop_from_liq_range_pct": 1,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -4017,29 +3117,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_9182b4d3384b77fe_3982b8c6",
-            "signal_id": "sig_9182b4d3384b77fe",
+            "intent_id": "li_sig_71162f2c4e7f1cd5_a164ef1b",
+            "signal_id": "sig_71162f2c4e7f1cd5",
             "signal_id_source": "original",
-            "symbol": "HNTUSDT",
-            "side": "long",
+            "symbol": "XVSUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 1.1665749999999999,
+            "entry_price_reference": 2.7647699999999999,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.28,
+                "stop_from_liq_range_pct": 1.3600000000000001,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -4047,7 +3148,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.012801999999999999,
+                "stop_loss": 0.013603000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -4071,7 +3172,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.28,
+                    "stop_from_liq_range_pct": 1.3600000000000001,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -4102,29 +3203,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_8ffb1bf8b4a0b44d_62dce0fd",
-            "signal_id": "sig_8ffb1bf8b4a0b44d",
+            "intent_id": "li_sig_b27be51246260612_5165020c",
+            "signal_id": "sig_b27be51246260612",
             "signal_id_source": "original",
-            "symbol": "ZBCNUSDT",
-            "side": "long",
+            "symbol": "IPUSDT",
+            "side": "short",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 0.0023671,
+            "entry_price_reference": 0.70133999999999996,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 2.75,
+                "stop_from_liq_range_pct": 1.71,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -4132,7 +3234,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.027515999999999999,
+                "stop_loss": 0.017059000000000001,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -4156,7 +3258,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 2.75,
+                    "stop_from_liq_range_pct": 1.71,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -4187,29 +3289,30 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         },
         {
             "schema_version": "live_intent_v1",
-            "intent_id": "li_sig_4086a5f5203f3289_0b3825ce",
-            "signal_id": "sig_4086a5f5203f3289",
+            "intent_id": "li_sig_5005cc4f24d446c4_a69fe2c8",
+            "signal_id": "sig_5005cc4f24d446c4",
             "signal_id_source": "original",
-            "symbol": "ZROUSDT",
+            "symbol": "BCHUSDT",
             "side": "long",
             "entry_action": "enter_now",
             "entry_timeout_minutes": 8,
-            "entry_price_reference": 1.9475340000000001,
+            "entry_price_reference": 467.49000000000001,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.0700000000000001,
+                "stop_from_liq_range_pct": 1,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -4217,7 +3320,7 @@
                     "max_open_trades": 5,
                     "one_trade_per_symbol": true
                 },
-                "stop_loss": 0.010711,
+                "stop_loss": 0.0084119999999999993,
                 "budget": 3.2999999999999998,
                 "trailing": {
                     "enabled": true,
@@ -4241,7 +3344,7 @@
                 },
                 "emergency_stop": {
                     "enabled": true,
-                    "stop_from_liq_range_pct": 1.0700000000000001,
+                    "stop_from_liq_range_pct": 1,
                     "mode": "liquidation_safety_net",
                     "source": "brain_config"
                 },
@@ -4272,12 +3375,959 @@
             "selection_mode_used": "all",
             "selection_source": "all",
             "approval_reason": "mode=all",
-            "created_ts": 1774168685,
+            "created_ts": 1774171386,
             "expires_at": 0,
             "execution_limits_snapshot": {
                 "live_max_positions": 5,
                 "live_one_trade_per_symbol": true
             },
+            "side_original": "short",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_2d2749e728f04b56_16cc91d3",
+            "signal_id": "sig_2d2749e728f04b56",
+            "signal_id_source": "original",
+            "symbol": "ASPUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.026997400000000001,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0044140000000000004,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_b5434f5a557341c1_bbc8b79c",
+            "signal_id": "sig_b5434f5a557341c1",
+            "signal_id_source": "original",
+            "symbol": "AEROUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.30775799999999998,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0088950000000000001,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_d7df551b50c5205c_7e26b080",
+            "signal_id": "sig_d7df551b50c5205c",
+            "signal_id_source": "original",
+            "symbol": "BARDUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.47726200000000002,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 3.27,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.032747999999999999,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 3.27,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_9fb6fef37b3a15e3_a4b32af9",
+            "signal_id": "sig_9fb6fef37b3a15e3",
+            "signal_id_source": "original",
+            "symbol": "JUPUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.1520386,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0098370000000000003,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_7564b92b18175dcb_cb8f57d6",
+            "signal_id": "sig_7564b92b18175dcb",
+            "signal_id_source": "original",
+            "symbol": "CAMPUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.0021053399999999998,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 4.96,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.049638000000000002,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 4.96,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_b9ea2dceea9a3608_14b80f13",
+            "signal_id": "sig_b9ea2dceea9a3608",
+            "signal_id_source": "original",
+            "symbol": "SUIUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.923651,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0091579999999999995,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_024ca11b321d917b_d9c2a4d2",
+            "signal_id": "sig_024ca11b321d917b",
+            "signal_id_source": "original",
+            "symbol": "THETAUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.16160959999999999,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0094710000000000003,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_bb81f211fdb04646_c4c17176",
+            "signal_id": "sig_bb81f211fdb04646",
+            "signal_id_source": "original",
+            "symbol": "LTCUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 54.161200000000001,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0059560000000000004,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_30e9ae82f7cd059b_93455eb9",
+            "signal_id": "sig_30e9ae82f7cd059b",
+            "signal_id_source": "original",
+            "symbol": "XTZUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.38545800000000002,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.0070980000000000001,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_eff77798f2efca53_2a2bf6b6",
+            "signal_id": "sig_eff77798f2efca53",
+            "signal_id_source": "original",
+            "symbol": "HANAUSDT",
+            "side": "long",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.043332320000000001,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 2.21,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.022076999999999999,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 2.21,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "short",
+            "source_schema_version": "clean_signal_v1"
+        },
+        {
+            "schema_version": "live_intent_v1",
+            "intent_id": "li_sig_595352b0c4bd64d4_551b8d55",
+            "signal_id": "sig_595352b0c4bd64d4",
+            "signal_id_source": "original",
+            "symbol": "APTUSDT",
+            "side": "short",
+            "entry_action": "enter_now",
+            "entry_timeout_minutes": 8,
+            "entry_price_reference": 0.95475100000000002,
+            "risk": {
+                "profile_id": "111",
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "leverage": 5,
+                "stop_from_liq_range_pct": 1.26,
+                "slippage_bps": 20,
+                "fees_bps": 12,
+                "order_type": "market",
+                "limits": {
+                    "max_open_trades": 5,
+                    "one_trade_per_symbol": true
+                },
+                "stop_loss": 0.01255,
+                "budget": 3.2999999999999998,
+                "trailing": {
+                    "enabled": true,
+                    "activation_roi_pct": 7.0000000000000009,
+                    "drawdown_factor": 0.5,
+                    "min_step": 0.01,
+                    "min_lock_roi": 0.021999999999999999,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 2.5,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "brain_trailing_applied": true,
+                    "unit_system": "activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+                },
+                "logical_stop": {
+                    "enabled": true,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "mode": "strategy_invalidation",
+                    "source": "brain_config"
+                },
+                "emergency_stop": {
+                    "enabled": true,
+                    "stop_from_liq_range_pct": 1.26,
+                    "mode": "liquidation_safety_net",
+                    "source": "brain_config"
+                },
+                "stop_control": {
+                    "stop_control_mode": "entry_roi",
+                    "stop_loss_from_entry_roi": 0.050000000000000003,
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "source": "brain_config"
+                }
+            },
+            "trailing": {
+                "trailing_enabled": true,
+                "trailing_activation_roi": 0.070000000000000007,
+                "trailing_min_lock_roi": 0.021999999999999999,
+                "trailing_min_step": 0.01,
+                "break_even_enabled": true,
+                "break_even_activation_roi": 0.025000000000000001,
+                "exit_mode": "trailing_tp",
+                "fixed_take_profit_roi": 0.029999999999999999,
+                "hybrid_tp_share": 0.40000000000000002,
+                "drawdown_factor": 0.5,
+                "stop_control_mode": "entry_roi",
+                "manual_stop_loss_roi": 0.029999999999999999,
+                "stop_loss_from_entry_roi": 0.050000000000000003,
+                "logical_stop_roi": 0.029999999999999999,
+                "canonical_source": "risk_trailing_derived"
+            },
+            "selection_mode_used": "all",
+            "selection_source": "all",
+            "approval_reason": "mode=all",
+            "created_ts": 1774171386,
+            "expires_at": 0,
+            "execution_limits_snapshot": {
+                "live_max_positions": 5,
+                "live_one_trade_per_symbol": true
+            },
+            "side_original": "long",
             "source_schema_version": "clean_signal_v1"
         }
     ]

@@ -56,10 +56,14 @@
     "live_max_positions": 5,
     "live_one_trade_per_symbol": true,
     "live_entry_policy": "enter_now",
-    "live_reverse_side_enabled": false,
+    "live_reverse_side_enabled": true,
     "patterns": {
         "enabled": [
-            "double_bottom"
+            "double_bottom",
+            "double_top",
+            "pullback_trend_continue",
+            "double_bottom_confirm_v2",
+            "double_top_confirm_v2"
         ],
         "mode": "any"
     }

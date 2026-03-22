@@ -1,218 +1,794 @@
 {
-    "li_sig_2e045345792803e7_099b7ea7": {
-        "executed_at": "2026-03-21T10:53:02+00:00",
+    "li_sig_047ef3de128c6e46_66648ec8": {
+        "executed_at": "2026-03-22T05:53:02+00:00",
         "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "Brain limit: max 3 positions reached (current: 3)",
-        "execution_identity_key": "li_sig_2e045345792803e7_099b7ea7",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_047ef3de128c6e46_66648ec8",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_93f43e7cab6b10ff_bb7b8682": {
-        "executed_at": "2026-03-21T10:55:03+00:00",
+    "li_sig_ff247c3da81d3c44_40097785": {
+        "executed_at": "2026-03-22T05:54:06+00:00",
         "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "Brain limit: max 3 positions reached (current: 3)",
-        "execution_identity_key": "li_sig_93f43e7cab6b10ff_bb7b8682",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_ff247c3da81d3c44_40097785",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_28d1285d6c2918b7_d4c9cb66": {
-        "executed_at": "2026-03-21T10:57:07+00:00",
+    "li_sig_2c7e30e586533f42_f6432c99": {
+        "executed_at": "2026-03-22T05:56:03+00:00",
         "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "Brain limit: max 3 positions reached (current: 3)",
-        "execution_identity_key": "li_sig_28d1285d6c2918b7_d4c9cb66",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_2c7e30e586533f42_f6432c99",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_ae061eb681f150b4_5b581bde": {
-        "executed_at": "2026-03-21T10:59:04+00:00",
+    "li_sig_1a0f81840c3839d9_2e41057c": {
+        "executed_at": "2026-03-22T05:58:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_1a0f81840c3839d9_2e41057c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_49fe89d7677937ed_7cb801ae": {
+        "executed_at": "2026-03-22T06:00:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_49fe89d7677937ed_7cb801ae",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_92c61ca1ef44871b_baa1018d": {
+        "executed_at": "2026-03-22T06:02:04+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_92c61ca1ef44871b_baa1018d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_18ec691aeb6c5b0f_b8381dec": {
+        "executed_at": "2026-03-22T06:04:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_18ec691aeb6c5b0f_b8381dec",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1e32f8df2671ee32_3105c9c6": {
+        "executed_at": "2026-03-22T06:06:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_1e32f8df2671ee32_3105c9c6",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4718ba1e84d4b82b_e593cb7f": {
+        "executed_at": "2026-03-22T06:08:05+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_4718ba1e84d4b82b_e593cb7f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6610f1540dc0fcfc_c7066f5b": {
+        "executed_at": "2026-03-22T06:10:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_6610f1540dc0fcfc_c7066f5b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_278bc1171ce46f61_0ad4a288": {
+        "executed_at": "2026-03-22T06:12:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_278bc1171ce46f61_0ad4a288",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5dbca0c561a59ec4_e8b39a10": {
+        "executed_at": "2026-03-22T06:13:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_5dbca0c561a59ec4_e8b39a10",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_789bd7e11c18eb5e_c6a58eba": {
+        "executed_at": "2026-03-22T06:15:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_789bd7e11c18eb5e_c6a58eba",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c3b43f275e7605bd_0b2be43d": {
+        "executed_at": "2026-03-22T06:17:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c3b43f275e7605bd_0b2be43d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ceb1b44edd1ddaa7_931b1f38": {
+        "executed_at": "2026-03-22T06:19:03+00:00",
+        "result": "skipped_exchange_position_exists",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Orphan position on exchange for ROAMUSDT",
+        "execution_identity_key": "li_sig_ceb1b44edd1ddaa7_931b1f38",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_44caa4386c221593_71d0db39": {
+        "executed_at": "2026-03-22T06:21:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_44caa4386c221593_71d0db39",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6bc8db384722d1b8_20b47da7": {
+        "executed_at": "2026-03-22T06:23:05+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_6bc8db384722d1b8_20b47da7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9b93f4f5923dcfcf_ef3c27f7": {
+        "executed_at": "2026-03-22T06:25:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_9b93f4f5923dcfcf_ef3c27f7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d0970954a7d3f783_9dfceba4": {
+        "executed_at": "2026-03-22T06:27:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_d0970954a7d3f783_9dfceba4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_67a4028fa4cbbc27_d1732f8f": {
+        "executed_at": "2026-03-22T06:28:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_67a4028fa4cbbc27_d1732f8f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a95b72de21b672a0_e75a3c90": {
+        "executed_at": "2026-03-22T06:30:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_a95b72de21b672a0_e75a3c90",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4b600cae37d43107_825f7f85": {
+        "executed_at": "2026-03-22T06:32:07+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_4b600cae37d43107_825f7f85",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2ab3018e6918549d_7ce27ab6": {
+        "executed_at": "2026-03-22T06:34:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_2ab3018e6918549d_7ce27ab6",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3818f8fb52f7542e_8f188650": {
+        "executed_at": "2026-03-22T06:36:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_3818f8fb52f7542e_8f188650",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b9b5a107127a4d59_ba159856": {
+        "executed_at": "2026-03-22T06:38:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_b9b5a107127a4d59_ba159856",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3b6ccddccbe66271_5e68ca10": {
+        "executed_at": "2026-03-22T06:40:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_3b6ccddccbe66271_5e68ca10",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c1f08ba5151bed58_50b71176": {
+        "executed_at": "2026-03-22T06:42:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c1f08ba5151bed58_50b71176",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_25fbfd3a807035ac_e61806e3": {
+        "executed_at": "2026-03-22T06:43:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_25fbfd3a807035ac_e61806e3",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f74ceb2176c9ef91_5295b81f": {
+        "executed_at": "2026-03-22T06:45:04+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_f74ceb2176c9ef91_5295b81f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_757bdf9923b3c6f8_8583710e": {
+        "executed_at": "2026-03-22T06:47:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_757bdf9923b3c6f8_8583710e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_38910de21b636dd1_9d288e6f": {
+        "executed_at": "2026-03-22T06:49:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_38910de21b636dd1_9d288e6f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f16d9c082a7b5e02_ec2d3d5c": {
+        "executed_at": "2026-03-22T06:51:02+00:00",
+        "result": "skipped_exchange_position_exists",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Orphan position on exchange for PTBUSDT",
+        "execution_identity_key": "li_sig_f16d9c082a7b5e02_ec2d3d5c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_67e0b32dd132c3f9_3ccbbafc": {
+        "executed_at": "2026-03-22T06:52:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_67e0b32dd132c3f9_3ccbbafc",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3a9ddce42520e936_c573c735": {
+        "executed_at": "2026-03-22T06:54:04+00:00",
         "result": "opened_protected",
-        "order_id": "92dd1d68-51f1-4bf4-aca7-c4d361611d94",
-        "trade_id": "sig_ae061eb681f150b4",
+        "order_id": "d06c1159-adad-444e-a74f-711f20791e37",
+        "trade_id": "sig_3a9ddce42520e936",
         "error": null,
-        "execution_identity_key": "li_sig_ae061eb681f150b4_5b581bde",
+        "execution_identity_key": "li_sig_3a9ddce42520e936_c573c735",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_7922f213bdd4914f_1767fbb3": {
-        "executed_at": "2026-03-21T11:01:03+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_3739cd0c14be00e3_af7a915e": {
+        "executed_at": "2026-03-22T06:56:06+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_7922f213bdd4914f_1767fbb3",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_3739cd0c14be00e3_af7a915e",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_3f85242fd3514d9b_f5fd1a67": {
-        "executed_at": "2026-03-21T11:03:07+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_f8827454b613cf60_d2d8299f": {
+        "executed_at": "2026-03-22T06:58:02+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_3f85242fd3514d9b_f5fd1a67",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_f8827454b613cf60_d2d8299f",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_8e51eb262aeac8ce_3f03b250": {
-        "executed_at": "2026-03-21T11:05:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_6631d161a39b233c_e9567a41": {
+        "executed_at": "2026-03-22T07:00:02+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_8e51eb262aeac8ce_3f03b250",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_6631d161a39b233c_e9567a41",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_06a10e5dd06f8085_bb21afc9": {
-        "executed_at": "2026-03-21T11:07:03+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_65f9202f97beac1e_7580f934": {
+        "executed_at": "2026-03-22T07:02:05+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_06a10e5dd06f8085_bb21afc9",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_65f9202f97beac1e_7580f934",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_3983bc18aef94be4_84a346ec": {
-        "executed_at": "2026-03-21T11:09:08+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_17768574db6384ab_ec5f33b6": {
+        "executed_at": "2026-03-22T07:04:03+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_3983bc18aef94be4_84a346ec",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_17768574db6384ab_ec5f33b6",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_791b952fc9417045_8bb39211": {
-        "executed_at": "2026-03-21T11:11:06+00:00",
+    "li_sig_503d65c2cdd1ec8f_ae090eb5": {
+        "executed_at": "2026-03-22T07:06:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_503d65c2cdd1ec8f_ae090eb5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_644863bf5e529890_63fd2499": {
+        "executed_at": "2026-03-22T07:08:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_644863bf5e529890_63fd2499",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_aa0ebf4af403244b_4f8c492c": {
+        "executed_at": "2026-03-22T07:10:05+00:00",
         "result": "opened_protected",
-        "order_id": "b022f70b-f444-40fa-b206-ab9177831f74",
-        "trade_id": "sig_791b952fc9417045",
+        "order_id": "bbf6ac3a-d400-4b77-aa15-d4de15bdc7b9",
+        "trade_id": "sig_aa0ebf4af403244b",
         "error": null,
-        "execution_identity_key": "li_sig_791b952fc9417045_8bb39211",
+        "execution_identity_key": "li_sig_aa0ebf4af403244b_4f8c492c",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_d739ddc66ddf0a00_d8c4c30d": {
-        "executed_at": "2026-03-21T11:13:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_578b2e99c389ab8a_870b25a0": {
+        "executed_at": "2026-03-22T07:12:02+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_d739ddc66ddf0a00_d8c4c30d",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_578b2e99c389ab8a_870b25a0",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_0f25e0193f8a048e_325ec347": {
-        "executed_at": "2026-03-21T11:15:08+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_3199cbba5e712fd0_e325a17a": {
+        "executed_at": "2026-03-22T07:13:03+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_0f25e0193f8a048e_325ec347",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_3199cbba5e712fd0_e325a17a",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_4d450c3f361c4277_a92da01c": {
-        "executed_at": "2026-03-21T11:17:03+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_7594b051eb06b305_ba035f25": {
+        "executed_at": "2026-03-22T07:15:03+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_4d450c3f361c4277_a92da01c",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_7594b051eb06b305_ba035f25",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_2d7a5b0e3e0c6ce5_6b7e9e0b": {
-        "executed_at": "2026-03-21T11:19:03+00:00",
-        "result": "skipped_symbol_busy",
+    "li_sig_c088b1ea16c4eb7c_3652b999": {
+        "executed_at": "2026-03-22T07:17:06+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "symbol_busy:PIXELUSDT \u2014 already has active exchange position and local trade",
-        "execution_identity_key": "li_sig_2d7a5b0e3e0c6ce5_6b7e9e0b",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c088b1ea16c4eb7c_3652b999",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_c65b051e25bf1a9d_3c867b03": {
-        "executed_at": "2026-03-21T11:21:07+00:00",
-        "result": "skipped_symbol_busy",
+    "li_sig_c7154cc6f0bc9e93_b843930b": {
+        "executed_at": "2026-03-22T07:19:04+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "symbol_busy:PIXELUSDT \u2014 already has active exchange position and local trade",
-        "execution_identity_key": "li_sig_c65b051e25bf1a9d_3c867b03",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c7154cc6f0bc9e93_b843930b",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_a0ed65cddee1b8c4_0603a814": {
-        "executed_at": "2026-03-21T11:23:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_55472eb3fef4e740_7f366c57": {
+        "executed_at": "2026-03-22T07:21:02+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_a0ed65cddee1b8c4_0603a814",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_55472eb3fef4e740_7f366c57",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_a0fc1d8b09abbc2b_f218b58f": {
-        "executed_at": "2026-03-21T11:25:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_c9dd624834d54d2e_5cab41e8": {
+        "executed_at": "2026-03-22T07:23:07+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_a0fc1d8b09abbc2b_f218b58f",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c9dd624834d54d2e_5cab41e8",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_4480ebf7d5970b64_390a79dc": {
-        "executed_at": "2026-03-21T11:27:07+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_ddc2da991204e821_724489ee": {
+        "executed_at": "2026-03-22T07:25:02+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_4480ebf7d5970b64_390a79dc",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_ddc2da991204e821_724489ee",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_1fbcf6cf4e74b5ed_025dd495": {
-        "executed_at": "2026-03-21T11:29:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_9d30d26d0a5c2284_9d65b9ae": {
+        "executed_at": "2026-03-22T07:26:07+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_1fbcf6cf4e74b5ed_025dd495",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_9d30d26d0a5c2284_9d65b9ae",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_6bdd7576decdf691_401ccf43": {
-        "executed_at": "2026-03-21T11:31:05+00:00",
-        "result": "rejected_late_entry",
+    "li_sig_e933a0cc81ba548b_345b8cc9": {
+        "executed_at": "2026-03-22T07:28:03+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "Price moved down 1.3862287837359% > threshold 1.25%",
-        "execution_identity_key": "li_sig_6bdd7576decdf691_401ccf43",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_e933a0cc81ba548b_345b8cc9",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_b216178bc328293d_2f0d8012": {
-        "executed_at": "2026-03-21T11:33:06+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_261ed6228a7b6009_f43d7824": {
+        "executed_at": "2026-03-22T07:30:04+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_b216178bc328293d_2f0d8012",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_261ed6228a7b6009_f43d7824",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_78c376cdd67e64e5_76725fe3": {
-        "executed_at": "2026-03-21T11:35:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_15d62e09f101f765_d15c0ff4": {
+        "executed_at": "2026-03-22T07:32:07+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_78c376cdd67e64e5_76725fe3",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_15d62e09f101f765_d15c0ff4",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_961b30b823876a48_6ccc9b46": {
-        "executed_at": "2026-03-21T11:37:04+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_aec94d6e6cd90827_6d856ceb": {
+        "executed_at": "2026-03-22T07:34:03+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_961b30b823876a48_6ccc9b46",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_aec94d6e6cd90827_6d856ceb",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_a3b97b330efaf5ef_1e43e6ac": {
-        "executed_at": "2026-03-21T11:39:08+00:00",
-        "result": "rejected_insufficient_balance",
+    "li_sig_d8bb3945ce9da58a_2568ebcf": {
+        "executed_at": "2026-03-22T07:36:02+00:00",
+        "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
-        "error": "insufficient_margin",
-        "execution_identity_key": "li_sig_a3b97b330efaf5ef_1e43e6ac",
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_d8bb3945ce9da58a_2568ebcf",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1fa706219b4b9fe9_139b12bc": {
+        "executed_at": "2026-03-22T07:37:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_1fa706219b4b9fe9_139b12bc",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d090f2b9b62b3b68_5d43b486": {
+        "executed_at": "2026-03-22T07:39:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_d090f2b9b62b3b68_5d43b486",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a05bd702127665cc_49c1c963": {
+        "executed_at": "2026-03-22T07:41:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_a05bd702127665cc_49c1c963",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_660e6bfdf140e5d4_8b77aec8": {
+        "executed_at": "2026-03-22T07:43:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_660e6bfdf140e5d4_8b77aec8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_eed52d90104d525a_202a543e": {
+        "executed_at": "2026-03-22T07:44:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_eed52d90104d525a_202a543e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c3c5fbcef0642a50_536c0553": {
+        "executed_at": "2026-03-22T07:46:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c3c5fbcef0642a50_536c0553",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4955b75afb79b030_95cff1c5": {
+        "executed_at": "2026-03-22T07:48:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_4955b75afb79b030_95cff1c5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_dce3209fad3ffd60_6dd65b66": {
+        "executed_at": "2026-03-22T07:50:07+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_dce3209fad3ffd60_6dd65b66",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_400612fa10fd40f6_2416b26f": {
+        "executed_at": "2026-03-22T07:52:04+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_400612fa10fd40f6_2416b26f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_40f605b02c78f440_901d1972": {
+        "executed_at": "2026-03-22T07:54:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_40f605b02c78f440_901d1972",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4418787c8d211c2e_ae4dc579": {
+        "executed_at": "2026-03-22T07:56:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_4418787c8d211c2e_ae4dc579",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4771bf2cc02d58d4_694b4dd3": {
+        "executed_at": "2026-03-22T07:58:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_4771bf2cc02d58d4_694b4dd3",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_82acfa7016624055_840e6698": {
+        "executed_at": "2026-03-22T08:00:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_82acfa7016624055_840e6698",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1ea94eccae2befc8_dab96313": {
+        "executed_at": "2026-03-22T08:02:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_1ea94eccae2befc8_dab96313",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0007979773a71911_d2338840": {
+        "executed_at": "2026-03-22T08:04:04+00:00",
+        "result": "skipped_exchange_position_exists",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Orphan position on exchange for ROAMUSDT",
+        "execution_identity_key": "li_sig_0007979773a71911_d2338840",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2a00e5dbffdd223f_46ebf745": {
+        "executed_at": "2026-03-22T08:06:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_2a00e5dbffdd223f_46ebf745",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3b58c511b9bf410c_25ef627b": {
+        "executed_at": "2026-03-22T08:08:05+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_3b58c511b9bf410c_25ef627b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_644863bf5e529890_1ed63940": {
+        "executed_at": "2026-03-22T08:10:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_644863bf5e529890_1ed63940",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_047ef3de128c6e46_3e9e1ef4": {
+        "executed_at": "2026-03-22T08:11:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_047ef3de128c6e46_3e9e1ef4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_82acfa7016624055_2d75fb0f": {
+        "executed_at": "2026-03-22T08:13:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_82acfa7016624055_2d75fb0f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1e0e48487d59d728_189bb22e": {
+        "executed_at": "2026-03-22T08:15:04+00:00",
+        "result": "opened_protected",
+        "order_id": "1207a6fd-4ca3-4e1e-abcd-dfd6a64f94bc",
+        "trade_id": "sig_1e0e48487d59d728",
+        "error": null,
+        "execution_identity_key": "li_sig_1e0e48487d59d728_189bb22e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1210a94dc82c20ca_95f98098": {
+        "executed_at": "2026-03-22T08:17:07+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_1210a94dc82c20ca_95f98098",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c12880e57b790ed1_ad7f00df": {
+        "executed_at": "2026-03-22T08:19:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c12880e57b790ed1_ad7f00df",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a05bd702127665cc_fb013e63": {
+        "executed_at": "2026-03-22T08:21:04+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_a05bd702127665cc_fb013e63",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_093ec212f705d8c6_fc711c35": {
+        "executed_at": "2026-03-22T08:23:05+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_093ec212f705d8c6_fc711c35",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0007979773a71911_f852a672": {
+        "executed_at": "2026-03-22T08:25:03+00:00",
+        "result": "skipped_exchange_position_exists",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Orphan position on exchange for ROAMUSDT",
+        "execution_identity_key": "li_sig_0007979773a71911_f852a672",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_cf811e1310aef71f_77696101": {
+        "executed_at": "2026-03-22T08:27:02+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_cf811e1310aef71f_77696101",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_24907f307fc4b45b_d7785ec9": {
+        "executed_at": "2026-03-22T08:29:06+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_24907f307fc4b45b_d7785ec9",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c829724f3595bc53_a62ddeae": {
+        "executed_at": "2026-03-22T08:31:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_c829724f3595bc53_a62ddeae",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2019b873fb1796dd_6e8fa713": {
+        "executed_at": "2026-03-22T08:33:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_2019b873fb1796dd_6e8fa713",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_417e1b4284f8c18c_ffd35486": {
+        "executed_at": "2026-03-22T08:35:05+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_417e1b4284f8c18c_ffd35486",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_bb1670cc58d8cba8_9442d6c8": {
+        "executed_at": "2026-03-22T08:37:03+00:00",
+        "result": "skipped_max_positions_reached",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Brain limit: max 5 positions reached (current: 5)",
+        "execution_identity_key": "li_sig_bb1670cc58d8cba8_9442d6c8",
         "dedupe_basis": "intent_id"
     }
 }

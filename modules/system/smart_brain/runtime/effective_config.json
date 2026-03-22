@@ -64,10 +64,14 @@
         "live_max_positions": 5,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
-        "live_reverse_side_enabled": false,
+        "live_reverse_side_enabled": true,
         "patterns": {
             "enabled": [
-                "double_bottom"
+                "double_bottom",
+                "double_top",
+                "pullback_trend_continue",
+                "double_bottom_confirm_v2",
+                "double_top_confirm_v2"
             ],
             "mode": "any"
         }
@@ -143,7 +147,7 @@
         "live_max_positions": 5,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
-        "live_reverse_side_enabled": false,
+        "live_reverse_side_enabled": true,
         "live_trailing_contract": {
             "trailing_enabled": true,
             "trailing_activation_roi": 0.070000000000000007,
@@ -161,7 +165,11 @@
     },
     "pattern_selection": {
         "enabled": [
-            "double_bottom"
+            "double_bottom",
+            "double_top",
+            "pullback_trend_continue",
+            "double_bottom_confirm_v2",
+            "double_top_confirm_v2"
         ],
         "mode": "any"
     },
@@ -182,7 +190,11 @@
         },
         "pattern_algorithms": {
             "enabled": [
-                "double_bottom"
+                "double_bottom",
+                "double_top",
+                "pullback_trend_continue",
+                "double_bottom_confirm_v2",
+                "double_top_confirm_v2"
             ],
             "mode": "any"
         },
@@ -252,5 +264,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-22T08:38:01+00:00"
+    "generated_at": "2026-03-22T09:23:02+00:00"
 }

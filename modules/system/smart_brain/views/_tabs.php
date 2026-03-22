@@ -46,6 +46,11 @@ $activeTab = $activeTab ?? 'dashboard';
         </a>
     </li>
     <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'live_performance' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/live_performance">
+            <i class="bi bi-heart-pulse me-1"></i> Live Performance
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link <?= $activeTab === 'runtime' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/runtime">
             <i class="bi bi-activity me-1"></i> Runtime
         </a>

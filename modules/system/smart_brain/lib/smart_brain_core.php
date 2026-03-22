@@ -2051,6 +2051,89 @@ final class SmartBrainCore
     }
 
     /**
+     * Get data for Live Performance Analyzer page.
+     *
+     * Reads bot execution mirror, closed trades from trading bot storage,
+     * and coin passports, then runs LivePerformanceEngine for full analytics.
+     *
+     * @return array<string,mixed>
+     */
+    public function getLivePerformanceData(): array
+    {
+        $botMirror = $this->readBotExecutionMirror();
+
+        // Read closed trades from trading bot storage
+        $closedTrades = $this->readBotClosedTrades(200);
+
+        // Read passports
+        $passportsDir = $this->moduleBase . '/storage/passports';
+        $passports = [];
+        if (is_dir($passportsDir)) {
+            $files = glob($passportsDir . '/*.json') ?: [];
+            foreach ($files as $file) {
+                $data = @json_decode((string)@file_get_contents($file), true);
+                if (is_array($data) && !empty($data['symbol'])) {
+                    $passports[(string)$data['symbol']] = $data;
+                }
+            }
+        }
+
+        require_once __DIR__ . '/live_performance_engine.php';
+        $engine = new LivePerformanceEngine();
+        $analytics = $engine->compute($botMirror, $closedTrades, $passports);
+
+        return [
+            'analytics' => $analytics,
+            'bot_mirror_available' => (bool)($botMirror['available'] ?? false),
+            'bot_mirror_error' => $botMirror['error'] ?? null,
+            'closed_trades_count' => count($closedTrades),
+        ];
+    }
+
+    /**
+     * Read closed trade records from Trading Bot storage.
+     *
+     * @param int $limit Maximum number of most-recent trades to load
+     * @return array<int,array<string,mixed>>
+     */
+    private function readBotClosedTrades(int $limit = 200): array
+    {
+        $botStoragePath = $this->resolveBotStoragePath();
+        if ($botStoragePath === null) {
+            return [];
+        }
+
+        $closedDir = $botStoragePath . '/trades/closed';
+        if (!is_dir($closedDir)) {
+            return [];
+        }
+
+        $files = glob($closedDir . '/*.json') ?: [];
+        if (empty($files)) {
+            return [];
+        }
+
+        // Sort by modification time, newest first
+        usort($files, static function (string $a, string $b): int {
+            return (int)filemtime($b) - (int)filemtime($a);
+        });
+
+        $trades = [];
+        foreach (array_slice($files, 0, $limit) as $file) {
+            $content = @file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+            $trade = @json_decode($content, true);
+            if (is_array($trade)) {
+                $trades[] = $trade;
+            }
+        }
+
+        return $trades;
+    }
+
+    /**
      * Compute sample-gated per-symbol exit hints from passport execution profiles.
      *
      * Returns bounded adjustments to trailing/stop parameters based on the symbol's

@@ -44,7 +44,7 @@ $fmtWinrate = function ($wr): string {
 };
 
 $fmtRate = function ($rate): string {
-    return htmlspecialchars(number_format((float) $rate * 100, 1)) . '%';
+    return htmlspecialchars(number_format((float) $rate, 1)) . '%';
 };
 
 $sideBadge = function ($side): string {
@@ -111,12 +111,12 @@ $pageContent = function () use (
         ['label' => 'Avg ROI',           'value' => (float) ($overview['avg_roi'] ?? 0),         'fmt' => 'roi'],
         ['label' => 'Median ROI',        'value' => (float) ($overview['median_roi'] ?? 0),      'fmt' => 'roi'],
         ['label' => 'Expectancy',        'value' => (float) ($overview['expectancy'] ?? 0),      'fmt' => 'expectancy'],
-        ['label' => 'Active Positions',  'value' => (int) ($overview['active_positions'] ?? 0),  'fmt' => 'int',   'cls' => 'text-info'],
+        ['label' => 'Active Positions',  'value' => (int) ($overview['active_positions_count'] ?? 0),  'fmt' => 'int',   'cls' => 'text-info'],
         ['label' => 'Busy Skipped',      'value' => (int) ($overview['busy_skipped'] ?? 0),      'fmt' => 'int'],
         ['label' => 'Duplicate Skipped', 'value' => (int) ($overview['duplicate_skipped'] ?? 0), 'fmt' => 'int'],
-        ['label' => 'Exchange Failed',   'value' => (int) ($overview['exchange_failed'] ?? 0),   'fmt' => 'int',   'cls' => ($overview['exchange_failed'] ?? 0) > 0 ? 'roi-negative' : ''],
-        ['label' => 'Trailing Active',   'value' => (int) ($overview['trailing_active'] ?? 0),   'fmt' => 'int',   'cls' => 'text-info'],
-        ['label' => 'Break-Even Applied','value' => (int) ($overview['be_applied'] ?? 0),        'fmt' => 'int'],
+        ['label' => 'Exchange Failed',   'value' => (int) ($overview['exchange_submit_failed'] ?? 0),   'fmt' => 'int',   'cls' => ($overview['exchange_submit_failed'] ?? 0) > 0 ? 'roi-negative' : ''],
+        ['label' => 'Trailing Active',   'value' => (int) ($overview['trailing_active_count'] ?? 0),   'fmt' => 'int',   'cls' => 'text-info'],
+        ['label' => 'Break-Even Applied','value' => (int) ($overview['break_even_applied_count'] ?? 0),        'fmt' => 'int'],
     ];
     foreach ($statCards as $sc):
         $rawVal = $sc['value'];
@@ -240,12 +240,12 @@ $pageContent = function () use (
                     <td class="text-end"><?= $fmtRoi((float) ($ss['avg_roi'] ?? 0)) ?></td>
                     <td class="text-end"><?= $fmtRoi((float) ($ss['median_roi'] ?? 0)) ?></td>
                     <td class="text-end"><?= $fmtExpectancy($exp) ?></td>
-                    <td class="text-end"><?= (int) ($ss['stop_hits'] ?? 0) ?></td>
+                    <td class="text-end"><?= (int) ($ss['stop_hit_count'] ?? 0) ?></td>
                     <td class="text-end"><?= (int) ($ss['be_count'] ?? 0) ?></td>
-                    <td class="text-end"><?= (int) ($ss['trailing_close'] ?? 0) ?></td>
-                    <td class="text-end"><?= $fmtRoi((float) ($ss['mae_p75_win'] ?? 0)) ?></td>
+                    <td class="text-end"><?= (int) ($ss['trailing_close_count'] ?? 0) ?></td>
+                    <td class="text-end"><?= $fmtRoi((float) ($ss['mae_p75_winners'] ?? 0)) ?></td>
                     <td class="text-end"><?= $fmtRoi((float) ($ss['suggested_stop'] ?? 0)) ?></td>
-                    <td><?= !empty($ss['fallback']) ? '<span class="badge bg-warning text-dark">Fallback</span>' : '<span class="badge bg-secondary">No</span>' ?></td>
+                    <td><?= !empty($ss['fallback_flag']) ? '<span class="badge bg-warning text-dark">Fallback</span>' : '<span class="badge bg-secondary">No</span>' ?></td>
                 </tr>
 <?php endforeach; ?>
             </tbody>
@@ -264,8 +264,9 @@ $pageContent = function () use (
         <!-- Exit Reason Distribution -->
         <h6 class="mb-3"><i class="bi bi-door-open me-1"></i>Exit Reason Distribution</h6>
 <?php
-        $exitReasons = $exitAnalysis['exit_reasons'] ?? [];
-        if (empty($exitReasons)):
+        $reasonDist = $exitAnalysis['close_reason_distribution'] ?? [];
+        $reasonPct  = $exitAnalysis['close_reason_pct'] ?? [];
+        if (empty($reasonDist)):
 ?>
         <p class="text-secondary">No exit reason data available.</p>
 <?php else: ?>
@@ -278,12 +279,12 @@ $pageContent = function () use (
                 <th style="width:30%;">Distribution</th>
             </tr></thead>
             <tbody>
-<?php foreach ($exitReasons as $er): ?>
+<?php foreach ($reasonDist as $reason => $count): $pct = (float)($reasonPct[$reason] ?? 0); ?>
                 <tr>
-                    <td><?= htmlspecialchars((string) ($er['reason'] ?? '-')) ?></td>
-                    <td class="text-end"><?= (int) ($er['count'] ?? 0) ?></td>
-                    <td class="text-end"><?= htmlspecialchars(number_format((float) ($er['percentage'] ?? 0), 1)) ?>%</td>
-                    <td><span class="bar-indicator" style="width:<?= min(100, max(0, (float) ($er['percentage'] ?? 0))) ?>%;"></span></td>
+                    <td><?= htmlspecialchars((string)$reason) ?></td>
+                    <td class="text-end"><?= (int)$count ?></td>
+                    <td class="text-end"><?= htmlspecialchars(number_format($pct, 1)) ?>%</td>
+                    <td><span class="bar-indicator" style="width:<?= min(100, max(0, $pct)) ?>%;"></span></td>
                 </tr>
 <?php endforeach; ?>
             </tbody>
@@ -294,7 +295,6 @@ $pageContent = function () use (
         <!-- Protection Metrics -->
         <h6 class="mb-3"><i class="bi bi-shield-lock me-1"></i>Protection Metrics</h6>
 <?php
-        $protection = $exitAnalysis['protection_metrics'] ?? [];
         $protStats = [
             ['label' => 'Trailing Activation Rate', 'key' => 'trailing_activation_rate'],
             ['label' => 'BE Armed Rate',            'key' => 'be_armed_rate'],
@@ -306,7 +306,7 @@ $pageContent = function () use (
 <?php foreach ($protStats as $ps): ?>
             <div class="col-6 col-md-3">
                 <div class="stat-card">
-                    <div class="stat-value text-info"><?= $fmtRate((float) ($protection[$ps['key']] ?? 0)) ?></div>
+                    <div class="stat-value text-info"><?= htmlspecialchars(number_format((float)($exitAnalysis[$ps['key']] ?? 0), 1)) ?>%</div>
                     <div class="stat-label"><?= htmlspecialchars($ps['label']) ?></div>
                 </div>
             </div>
@@ -346,18 +346,18 @@ $pageContent = function () use (
         </div>
 
 <?php
-        $latestError = $executionQuality['latest_exchange_error'] ?? [];
-        if (!empty($latestError)):
+        $hasError = ($executionQuality['latest_exchange_error_code'] ?? null) !== null && ($executionQuality['latest_exchange_error_code'] ?? '') !== '';
+        if ($hasError):
 ?>
         <div class="alert alert-danger d-flex align-items-start">
             <i class="bi bi-exclamation-octagon-fill me-2 mt-1"></i>
             <div>
                 <strong>Latest Exchange Error</strong><br>
                 <small>
-                    Code: <code><?= htmlspecialchars((string) ($latestError['code'] ?? '-')) ?></code> &middot;
-                    Message: <?= htmlspecialchars((string) ($latestError['message'] ?? '-')) ?> &middot;
-                    Symbol: <?= htmlspecialchars((string) ($latestError['symbol'] ?? '-')) ?> &middot;
-                    Stage: <?= htmlspecialchars((string) ($latestError['stage'] ?? '-')) ?>
+                    Code: <code><?= htmlspecialchars((string) ($executionQuality['latest_exchange_error_code'] ?? '-')) ?></code> &middot;
+                    Message: <?= htmlspecialchars((string) ($executionQuality['latest_exchange_error_message'] ?? '-')) ?> &middot;
+                    Symbol: <?= htmlspecialchars((string) ($executionQuality['last_failed_symbol'] ?? '-')) ?> &middot;
+                    Stage: <?= htmlspecialchars((string) ($executionQuality['last_failed_stage'] ?? '-')) ?>
                 </small>
             </div>
         </div>
@@ -405,7 +405,19 @@ $pageContent = function () use (
                     <td><span class="badge bg-secondary"><?= htmlspecialchars((string) ($dr['type'] ?? '-')) ?></span></td>
                     <td><i class="bi <?= $sevIcon ?> me-1"></i><?= htmlspecialchars((string) ($dr['label'] ?? '-')) ?></td>
                     <td class="text-muted"><?= htmlspecialchars((string) ($dr['metric'] ?? '-')) ?></td>
-                    <td class="text-end fw-bold"><?= htmlspecialchars((string) ($dr['value'] ?? '-')) ?></td>
+                    <td class="text-end fw-bold"><?php
+                        $drMetric = (string)($dr['metric'] ?? '');
+                        $drValue = (float)($dr['value'] ?? 0);
+                        if ($drMetric === 'expectancy') {
+                            echo $fmtExpectancy($drValue);
+                        } elseif ($drMetric === 'winrate') {
+                            echo $fmtWinrate($drValue);
+                        } elseif ($drMetric === 'avg_roi') {
+                            echo $fmtRoi($drValue);
+                        } else {
+                            echo htmlspecialchars(number_format($drValue, 2));
+                        }
+                    ?></td>
                     <td class="text-end"><?= (int) ($dr['trades'] ?? 0) ?></td>
                     <td><span class="badge <?= $sevBadge ?>"><?= htmlspecialchars(ucfirst($severity)) ?></span></td>
                 </tr>
@@ -513,32 +525,28 @@ $pageContent = function () use (
             <table class="table table-dark table-sm mb-0">
                 <thead><tr>
                     <th>Symbol</th>
-                    <th>MAE Profile Status</th>
-                    <th class="text-end">Sample Size</th>
+                    <th>Side</th>
+                    <th class="text-end">Trades</th>
+                    <th class="text-end">Winrate</th>
+                    <th class="text-end">Avg ROI</th>
                     <th class="text-end">Suggested Stop</th>
-                    <th>Fallback</th>
                 </tr></thead>
                 <tbody>
-<?php foreach ($passportContext as $pc): ?>
-                    <tr>
-                        <td class="fw-bold"><?= htmlspecialchars((string) ($pc['symbol'] ?? '-')) ?></td>
-                        <td>
-<?php
-    $status = strtolower((string) ($pc['mae_profile_status'] ?? 'unknown'));
-    $statusCls = match ($status) {
-        'ready', 'active' => 'bg-success',
-        'pending', 'building' => 'bg-warning text-dark',
-        'missing', 'error' => 'bg-danger',
-        default => 'bg-secondary',
-    };
+<?php foreach ($passportContext as $pc):
+    $symbol = (string)($pc['symbol'] ?? '-');
+    $sides = $pc['sides'] ?? [];
+    foreach (['long', 'short'] as $s):
+        $sd = $sides[$s] ?? [];
 ?>
-                            <span class="badge <?= $statusCls ?>"><?= htmlspecialchars(ucfirst($status)) ?></span>
-                        </td>
-                        <td class="text-end"><?= (int) ($pc['sample_size'] ?? 0) ?></td>
-                        <td class="text-end"><?= $fmtRoi((float) ($pc['suggested_stop'] ?? 0)) ?></td>
-                        <td><?= !empty($pc['fallback']) ? '<span class="badge bg-warning text-dark">Yes</span>' : '<span class="badge bg-secondary">No</span>' ?></td>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($symbol) ?></td>
+                        <td><?= $sideBadge($s) ?></td>
+                        <td class="text-end"><?= (int)($sd['trades'] ?? 0) ?></td>
+                        <td class="text-end"><?= $fmtWinrate((float)($sd['winrate'] ?? 0)) ?></td>
+                        <td class="text-end"><?= $fmtRoi((float)($sd['avg_roi'] ?? 0)) ?></td>
+                        <td class="text-end"><?= ($sd['suggested_stop'] ?? null) !== null ? $fmtRoi((float)$sd['suggested_stop']) : '<span class="text-muted">N/A</span>' ?></td>
                     </tr>
-<?php endforeach; ?>
+<?php endforeach; endforeach; ?>
                 </tbody>
             </table>
             </div>

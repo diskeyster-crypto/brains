@@ -1048,6 +1048,11 @@ Router::get('/admin/smart_brain/passports', function () {
     $controller->passports();
 });
 
+Router::get('/admin/smart_brain/live_performance', function () {
+    $controller = new SmartBrainController();
+    $controller->livePerformance();
+});
+
 Router::get('/admin/smart_brain/runtime', function () {
     $controller = new SmartBrainController();
     $controller->runtimePage();

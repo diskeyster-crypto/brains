@@ -105,4 +105,12 @@ final class SmartBrainService
     {
         return $this->core->getPassportsData();
     }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getLivePerformanceData(): array
+    {
+        return $this->core->getLivePerformanceData();
+    }
 }

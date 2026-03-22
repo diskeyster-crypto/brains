@@ -184,6 +184,19 @@ final class SmartBrainController
     }
 
     /**
+     * Live Performance Analyzer page
+     * GET /admin/smart_brain/live_performance
+     */
+    public function livePerformance(): void
+    {
+        $data = $this->service->getLivePerformanceData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/live_performance.php';
+    }
+
+    /**
      * Runtime page
      * GET /admin/smart_brain/runtime
      */

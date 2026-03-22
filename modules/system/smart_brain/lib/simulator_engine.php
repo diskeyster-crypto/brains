@@ -627,6 +627,9 @@ final class SimulatorEngine
         // Reversal V1 vs V2 comparison
         $reversalComparison = $this->computeReversalComparison($closed, $patternStatsResult);
 
+        // Regression audit: short-side collapse analysis
+        $regressionAudit = $this->computeRegressionAudit($closed);
+
         $stats = [
             'total_trades'               => $totalClosed,
             'winrate'                    => $winrate,
@@ -640,6 +643,7 @@ final class SimulatorEngine
             'closed_count'               => $totalClosed,
             'pattern_stats'              => $patternStatsResult,
             'reversal_comparison'        => $reversalComparison,
+            'regression_audit'           => $regressionAudit,
             'leverage_mode_stats'        => $leverageModeStats,
             'stop_control_stats'         => $stopControlStats,
             'updated_at'                 => date('c'),
@@ -909,6 +913,276 @@ final class SimulatorEngine
         }
 
         return $criteria;
+    }
+
+    /**
+     * Compute regression audit: per-pattern per-side breakdown + what-if scenarios.
+     *
+     * Helps localize short-side collapse by producing:
+     * - Per-pattern × per-side matrix (trades, winrate, ROI, false reversal rate, stop rate)
+     * - What-if exclusion scenarios (disable problematic patterns)
+     * - Ranked severity list identifying worst contributors
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @return array<string,mixed>
+     */
+    private function computeRegressionAudit(array $closed): array
+    {
+        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'];
+        $sides = ['long', 'short'];
+
+        // ── Per-pattern × per-side matrix ──
+        $matrix = [];
+        foreach ($allPatterns as $pattern) {
+            foreach ($sides as $side) {
+                $key = $pattern . '/' . $side;
+                $matrix[$key] = $this->computeCellStats($closed, $pattern, $side);
+            }
+        }
+
+        // ── Per-pattern totals (both sides) ──
+        $patternTotals = [];
+        foreach ($allPatterns as $pattern) {
+            $patternTotals[$pattern] = $this->computeCellStats($closed, $pattern, null);
+        }
+
+        // ── Per-side totals (all patterns) ──
+        $sideTotals = [];
+        foreach ($sides as $side) {
+            $sideTotals[$side] = $this->computeCellStats($closed, null, $side);
+        }
+
+        // ── Overall total ──
+        $overallTotal = $this->computeCellStats($closed, null, null);
+
+        // ── What-if exclusion scenarios ──
+        $scenarios = $this->computeWhatIfScenarios($closed);
+
+        // ── Severity ranking: identify worst contributors ──
+        $severity = $this->computeSeverityRanking($matrix, $patternTotals, $overallTotal);
+
+        return [
+            'matrix' => $matrix,
+            'pattern_totals' => $patternTotals,
+            'side_totals' => $sideTotals,
+            'overall' => $overallTotal,
+            'what_if_scenarios' => $scenarios,
+            'severity_ranking' => $severity,
+            'has_data' => $overallTotal['trades'] > 0,
+        ];
+    }
+
+    /**
+     * Compute stats for a specific pattern/side cell in the regression matrix.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @param string|null $pattern  Pattern filter, null = all patterns
+     * @param string|null $side     Side filter, null = both sides
+     * @return array<string,mixed>
+     */
+    private function computeCellStats(array $closed, ?string $pattern, ?string $side): array
+    {
+        $trades = array_filter($closed, function ($t) use ($pattern, $side) {
+            if ($pattern !== null && (string)($t['pattern_algorithm'] ?? '') !== $pattern) {
+                return false;
+            }
+            if ($side !== null && (string)($t['side'] ?? '') !== $side) {
+                return false;
+            }
+            return true;
+        });
+        $trades = array_values($trades);
+        $count = count($trades);
+
+        $result = [
+            'trades' => 0,
+            'wins' => 0,
+            'losses' => 0,
+            'winrate' => 0.0,
+            'avg_roi' => 0.0,
+            'median_roi' => 0.0,
+            'false_reversal_count' => 0,
+            'false_reversal_rate' => 0.0,
+            'stop_hit_count' => 0,
+            'stop_hit_rate' => 0.0,
+            'early_failure_count' => 0,
+            'early_failure_rate' => 0.0,
+            'avg_mae' => 0.0,
+            'avg_mfe' => 0.0,
+            'avg_duration' => 0.0,
+        ];
+
+        if ($count === 0) {
+            return $result;
+        }
+
+        $rois = [];
+        $maes = [];
+        $mfes = [];
+        $durations = [];
+        $wins = 0;
+        $falseReversals = 0;
+        $stopHits = 0;
+        $earlyFailures = 0;
+
+        foreach ($trades as $t) {
+            $roi = (float)($t['roi'] ?? 0.0);
+            $rois[] = $roi;
+            $maes[] = (float)($t['mae'] ?? 0.0);
+            $mfes[] = (float)($t['mfe'] ?? 0.0);
+            $durations[] = (float)($t['duration'] ?? 0.0);
+
+            if ($roi >= 0) { $wins++; }
+
+            $reason = (string)($t['reason'] ?? '');
+            if ($reason === 'stop_loss' || $reason === 'early_failure') {
+                $falseReversals++;
+            }
+            if ($reason === 'stop_loss') { $stopHits++; }
+            if ($reason === 'early_failure') { $earlyFailures++; }
+        }
+
+        $result['trades'] = $count;
+        $result['wins'] = $wins;
+        $result['losses'] = $count - $wins;
+        $result['winrate'] = round($wins / $count, 4);
+        $result['avg_roi'] = round(array_sum($rois) / $count, 6);
+        $result['median_roi'] = $this->median($rois);
+        $result['false_reversal_count'] = $falseReversals;
+        $result['false_reversal_rate'] = round($falseReversals / $count, 4);
+        $result['stop_hit_count'] = $stopHits;
+        $result['stop_hit_rate'] = round($stopHits / $count, 4);
+        $result['early_failure_count'] = $earlyFailures;
+        $result['early_failure_rate'] = round($earlyFailures / $count, 4);
+        $result['avg_mae'] = round(array_sum($maes) / $count, 6);
+        $result['avg_mfe'] = round(array_sum($mfes) / $count, 6);
+        $result['avg_duration'] = round(array_sum($durations) / $count, 2);
+
+        return $result;
+    }
+
+    /**
+     * Compute what-if exclusion scenarios to identify minimal safe rollback.
+     *
+     * Tests: disable double_top only, pullback only, both,
+     * V1 long only + V2 short, V2 only.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @return array<string,array<string,mixed>>
+     */
+    private function computeWhatIfScenarios(array $closed): array
+    {
+        $scenarios = [];
+
+        // Scenario 1: disable double_top only
+        $scenarios['disable_double_top'] = $this->computeCellStats(
+            array_values(array_filter($closed, fn($t) => (string)($t['pattern_algorithm'] ?? '') !== 'double_top')),
+            null, null
+        );
+        $scenarios['disable_double_top']['description'] = 'Без double_top (V1 short reversal)';
+
+        // Scenario 2: disable pullback_trend_continue only
+        $scenarios['disable_pullback'] = $this->computeCellStats(
+            array_values(array_filter($closed, fn($t) => (string)($t['pattern_algorithm'] ?? '') !== 'pullback_trend_continue')),
+            null, null
+        );
+        $scenarios['disable_pullback']['description'] = 'Без pullback_trend_continue';
+
+        // Scenario 3: disable both double_top and pullback
+        $excludeBoth = ['double_top', 'pullback_trend_continue'];
+        $scenarios['disable_top_and_pullback'] = $this->computeCellStats(
+            array_values(array_filter($closed, fn($t) => !in_array((string)($t['pattern_algorithm'] ?? ''), $excludeBoth, true))),
+            null, null
+        );
+        $scenarios['disable_top_and_pullback']['description'] = 'Без double_top и pullback';
+
+        // Scenario 4: only double_bottom + V2 patterns
+        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2'];
+        $scenarios['bottom_plus_v2_only'] = $this->computeCellStats(
+            array_values(array_filter($closed, fn($t) => in_array((string)($t['pattern_algorithm'] ?? ''), $keepOnly, true))),
+            null, null
+        );
+        $scenarios['bottom_plus_v2_only']['description'] = 'Только double_bottom + V2';
+
+        // Scenario 5: V1 long only + V2 any side
+        $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
+        $scenarios['v1_long_v2_any'] = $this->computeCellStats(
+            array_values(array_filter($closed, function ($t) use ($v2Patterns) {
+                $algo = (string)($t['pattern_algorithm'] ?? '');
+                $side = (string)($t['side'] ?? '');
+                if (in_array($algo, $v2Patterns, true)) {
+                    return true; // keep all V2
+                }
+                return $side === 'long'; // V1 long only
+            })),
+            null, null
+        );
+        $scenarios['v1_long_v2_any']['description'] = 'V1 только long + V2 любой';
+
+        return $scenarios;
+    }
+
+    /**
+     * Rank pattern/side cells by severity of damage to overall stats.
+     *
+     * Identifies which pattern/side combinations are most responsible
+     * for poor performance, based on loss contribution.
+     *
+     * @param array<string,array<string,mixed>> $matrix
+     * @param array<string,array<string,mixed>> $patternTotals
+     * @param array<string,mixed> $overall
+     * @return array<int,array<string,mixed>>
+     */
+    private function computeSeverityRanking(array $matrix, array $patternTotals, array $overall): array
+    {
+        $overallTrades = (int)($overall['trades'] ?? 0);
+        if ($overallTrades === 0) {
+            return [];
+        }
+
+        $overallWinrate = (float)($overall['winrate'] ?? 0);
+
+        $ranking = [];
+        foreach ($matrix as $key => $cell) {
+            $cellTrades = (int)($cell['trades'] ?? 0);
+            if ($cellTrades === 0) {
+                continue;
+            }
+
+            $cellWinrate = (float)($cell['winrate'] ?? 0);
+            $cellAvgRoi = (float)($cell['avg_roi'] ?? 0);
+            $cellFalseRate = (float)($cell['false_reversal_rate'] ?? 0);
+
+            // Damage score: negative ROI contribution + below-average winrate penalty
+            $roiContribution = $cellAvgRoi * $cellTrades;
+            $winrateDelta = $cellWinrate - $overallWinrate;
+
+            // Higher damage score = more responsible for poor performance
+            $damageScore = 0.0;
+            if ($cellAvgRoi < 0) {
+                $damageScore += abs($roiContribution) * 100;
+            }
+            if ($cellWinrate < $overallWinrate && $overallWinrate > 0) {
+                $damageScore += (1 - $cellWinrate / max(0.01, $overallWinrate)) * $cellTrades;
+            }
+            $damageScore += $cellFalseRate * $cellTrades;
+
+            $ranking[] = [
+                'cell' => $key,
+                'trades' => $cellTrades,
+                'winrate' => $cellWinrate,
+                'avg_roi' => $cellAvgRoi,
+                'false_reversal_rate' => $cellFalseRate,
+                'roi_contribution' => round($roiContribution, 6),
+                'winrate_delta' => round($winrateDelta, 4),
+                'damage_score' => round($damageScore, 4),
+            ];
+        }
+
+        // Sort by damage score descending (worst first)
+        usort($ranking, fn($a, $b) => $b['damage_score'] <=> $a['damage_score']);
+
+        return $ranking;
     }
 
     /**

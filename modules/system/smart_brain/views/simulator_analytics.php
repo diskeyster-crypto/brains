@@ -520,6 +520,231 @@ $pageContent = function() use (
         </div>
     </div>
 
+    <!-- ===== REGRESSION AUDIT: SHORT-SIDE COLLAPSE ===== -->
+    <?php
+    $ra = (array)($stats['regression_audit'] ?? []);
+    $raHasData = !empty($ra['has_data']);
+    $raMatrix = (array)($ra['matrix'] ?? []);
+    $raPatternTotals = (array)($ra['pattern_totals'] ?? []);
+    $raSideTotals = (array)($ra['side_totals'] ?? []);
+    $raOverall = (array)($ra['overall'] ?? []);
+    $raScenarios = (array)($ra['what_if_scenarios'] ?? []);
+    $raSeverity = (array)($ra['severity_ranking'] ?? []);
+    ?>
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin:0;">
+                <i class="bi bi-bug me-1"></i> Регрессионный аудит: анализ просадки
+            </h5>
+            <?php if ($raHasData): ?>
+                <span class="badge bg-danger">🔍 Regression Audit</span>
+            <?php endif; ?>
+        </div>
+        <div class="card-body p-0">
+            <?php if (!$raHasData): ?>
+                <p class="text-secondary text-center py-4">Нет закрытых сделок для регрессионного аудита</p>
+            <?php else: ?>
+
+            <!-- Per-side totals -->
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-arrow-left-right me-1"></i> Long vs Short</h6>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Сторона</th>
+                    <th class="text-end">Сделок</th>
+                    <th class="text-end">Винрейт</th>
+                    <th class="text-end">Ср. ROI</th>
+                    <th class="text-end">Ложн. разв. %</th>
+                    <th class="text-end">Стоп %</th>
+                    <th class="text-end">Ранний провал %</th>
+                    <th class="text-end">Ср. MAE</th>
+                    <th class="text-end">Ср. MFE</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach (['long' => 'LONG', 'short' => 'SHORT'] as $sideKey => $sideLabel): ?>
+                    <?php $sd = (array)($raSideTotals[$sideKey] ?? []); $sdt = (int)($sd['trades'] ?? 0); ?>
+                    <tr>
+                        <td class="fw-bold"><span class="badge <?= $sideKey === 'long' ? 'badge-long' : 'badge-short' ?>"><?= $sideLabel ?></span></td>
+                        <td class="text-end"><?= $sdt ?></td>
+                        <td class="text-end"><?= number_format((float)($sd['winrate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($sd['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sd['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($sd['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($sd['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($sd['early_failure_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($sd['avg_mae'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($sd['avg_mfe'] ?? 0) * 100, 2) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                    <?php $ov = $raOverall; $ovt = (int)($ov['trades'] ?? 0); ?>
+                    <tr class="table-active fw-bold">
+                        <td>ИТОГО</td>
+                        <td class="text-end"><?= $ovt ?></td>
+                        <td class="text-end"><?= number_format((float)($ov['winrate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($ov['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($ov['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($ov['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($ov['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($ov['early_failure_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($ov['avg_mae'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($ov['avg_mfe'] ?? 0) * 100, 2) ?>%</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+
+            <!-- Per-pattern × per-side matrix -->
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-grid-3x3 me-1"></i> Матрица: Паттерн × Сторона</h6>
+                <p class="text-secondary mb-2" style="font-size:0.75rem;">
+                    <em>Помогает локализовать просадку: какой именно паттерн на какой стороне теряет больше всего.</em>
+                </p>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Паттерн / Сторона</th>
+                    <th class="text-end">Сделок</th>
+                    <th class="text-end">Винрейт</th>
+                    <th class="text-end">Ср. ROI</th>
+                    <th class="text-end">Ложн. разв. %</th>
+                    <th class="text-end">Стоп %</th>
+                    <th class="text-end">Ранний провал %</th>
+                </tr></thead>
+                <tbody>
+                <?php
+                $matrixPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'];
+                $matrixSides = ['long', 'short'];
+                foreach ($matrixPatterns as $mp):
+                    foreach ($matrixSides as $ms):
+                        $cellKey = $mp . '/' . $ms;
+                        $cell = (array)($raMatrix[$cellKey] ?? []);
+                        $ct = (int)($cell['trades'] ?? 0);
+                        if ($ct === 0) { continue; }
+                        $cellWr = (float)($cell['winrate'] ?? 0);
+                        $cellRoi = (float)($cell['avg_roi'] ?? 0);
+                ?>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($mp) ?> <span class="badge <?= $ms === 'long' ? 'badge-long' : 'badge-short' ?>" style="font-size:0.65rem;"><?= strtoupper($ms) ?></span></td>
+                        <td class="text-end"><?= $ct ?></td>
+                        <td class="text-end <?= $cellWr < 0.3 ? 'roi-negative' : '' ?>"><?= number_format($cellWr * 100, 1) ?>%</td>
+                        <td class="text-end <?= $cellRoi >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format($cellRoi * 100, 2) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($cell['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($cell['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($cell['early_failure_rate'] ?? 0) * 100, 1) ?>%</td>
+                    </tr>
+                <?php endforeach; endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+
+            <!-- What-if exclusion scenarios -->
+            <?php if (!empty($raScenarios)): ?>
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-toggles me-1"></i> Сценарии «Что если» (отключение паттернов)</h6>
+                <p class="text-secondary mb-2" style="font-size:0.75rem;">
+                    <em>Показывает как бы изменились результаты при отключении подозрительных паттернов.
+                    Помогает найти минимальный откат для восстановления качества.</em>
+                </p>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Сценарий</th>
+                    <th class="text-end">Сделок</th>
+                    <th class="text-end">Винрейт</th>
+                    <th class="text-end">Ср. ROI</th>
+                    <th class="text-end">Ложн. разв. %</th>
+                    <th class="text-end">Стоп %</th>
+                </tr></thead>
+                <tbody>
+                    <!-- Current baseline -->
+                    <tr class="table-active">
+                        <td class="fw-bold">Текущий базовый (все паттерны)</td>
+                        <td class="text-end"><?= (int)($raOverall['trades'] ?? 0) ?></td>
+                        <td class="text-end"><?= number_format((float)($raOverall['winrate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($raOverall['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($raOverall['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($raOverall['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($raOverall['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                    </tr>
+                <?php foreach ($raScenarios as $scenKey => $scen):
+                    $scen = (array)$scen;
+                    $st = (int)($scen['trades'] ?? 0);
+                    $scenLabel = (string)($scen['label'] ?? $scen['description'] ?? $scenKey);
+                    $scenWr = (float)($scen['winrate'] ?? 0);
+                    $scenRoi = (float)($scen['avg_roi'] ?? 0);
+                    $baseWr = (float)($raOverall['winrate'] ?? 0);
+                    $wrImproved = $scenWr > $baseWr;
+                ?>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($scenLabel) ?></td>
+                        <td class="text-end"><?= $st ?></td>
+                        <td class="text-end <?= $wrImproved ? 'roi-positive' : '' ?>"><?= number_format($scenWr * 100, 1) ?>%<?= $wrImproved ? ' ↑' : '' ?></td>
+                        <td class="text-end <?= $scenRoi >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format($scenRoi * 100, 2) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($scen['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($scen['stop_hit_rate'] ?? 0) * 100, 1) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php endif; ?>
+
+            <!-- Severity ranking -->
+            <?php if (!empty($raSeverity)): ?>
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i> Рейтинг урона (наиболее вредные ячейки)</h6>
+                <p class="text-secondary mb-2" style="font-size:0.75rem;">
+                    <em>Ранжировано по степени ущерба общим результатам. Первая строка — главный подозреваемый в просадке.</em>
+                </p>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>#</th>
+                    <th>Паттерн / Сторона</th>
+                    <th class="text-end">Сделок</th>
+                    <th class="text-end">Винрейт</th>
+                    <th class="text-end">Ср. ROI</th>
+                    <th class="text-end">Ложн. разв. %</th>
+                    <th class="text-end" title="Чем выше — тем больше вклад в общую просадку">Балл урона</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($raSeverity as $idx => $sev):
+                    $sev = (array)$sev;
+                    $sevCell = (string)($sev['cell'] ?? '');
+                    $sevParts = explode('/', $sevCell);
+                    $sevPattern = $sevParts[0] ?? '';
+                    $sevSide = $sevParts[1] ?? '';
+                    $sevDamage = (float)($sev['damage_score'] ?? 0);
+                ?>
+                    <tr <?= $idx === 0 ? 'class="table-danger"' : '' ?>>
+                        <td><?= $idx + 1 ?></td>
+                        <td class="fw-bold"><?= htmlspecialchars($sevPattern) ?> <span class="badge <?= $sevSide === 'long' ? 'badge-long' : 'badge-short' ?>" style="font-size:0.65rem;"><?= strtoupper($sevSide) ?></span></td>
+                        <td class="text-end"><?= (int)($sev['trades'] ?? 0) ?></td>
+                        <td class="text-end <?= (float)($sev['winrate'] ?? 0) < 0.3 ? 'roi-negative' : '' ?>"><?= number_format((float)($sev['winrate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($sev['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($sev['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end roi-negative"><?= number_format((float)($sev['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><strong><?= number_format($sevDamage, 2) ?></strong></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php endif; ?>
+
+            <div class="px-3 py-2">
+                <p class="text-secondary mb-0" style="font-size:0.75rem;">
+                    <em><i class="bi bi-info-circle me-1"></i>
+                    Регрессионный аудит — только объяснительный инструмент. Не отключайте паттерны автоматически.
+                    Используйте данные для оценки: просадка от плохих паттернов или от рыночного режима.</em>
+                </p>
+            </div>
+
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- ===== LEVERAGE MODE STATS ===== -->
     <div class="row mb-4">
         <div class="col-md-6">

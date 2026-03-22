@@ -1,18 +1,18 @@
 {
     "ok": true,
-    "updated_at": "2026-03-22T08:38:05+00:00",
+    "updated_at": "2026-03-22T09:23:06+00:00",
     "status": "ok",
     "source": "cron",
-    "duration_ms": 3702,
-    "candidates": 457,
-    "monitors": 457,
+    "duration_ms": 4243,
+    "candidates": 499,
+    "monitors": 499,
     "signals": 50,
     "error_message": "",
-    "monitoring_count": 283,
-    "entry_zone_count": 159,
+    "monitoring_count": 434,
+    "entry_zone_count": 54,
     "triggered_count": 0,
-    "invalidated_count": 15,
-    "rejected_not_entry_zone": 298,
+    "invalidated_count": 11,
+    "rejected_not_entry_zone": 445,
     "rejected_low_reliability": 0,
     "rejected_missing_passport": 0,
     "rejected_missing_price": 0,
@@ -22,10 +22,10 @@
     "normal_signals_count": 0,
     "symbol_intel_filtered": 0,
     "symbol_filter_mode": "all",
-    "raw_candidates_count": 457,
-    "after_manual_filter_count": 457,
-    "after_symbol_filter_count": 457,
-    "filtered_candidates_count": 457,
+    "raw_candidates_count": 499,
+    "after_manual_filter_count": 499,
+    "after_symbol_filter_count": 499,
+    "filtered_candidates_count": 499,
     "filter_stage_that_removed_all": "none",
     "zero_output_reason": "",
     "restrictive_si_skipped": false,
@@ -60,7 +60,7 @@
     "live_invalid_risk_contract_count": 0,
     "live_debug_preview": [
         {
-            "symbol": "USUSDT",
+            "symbol": "RESOLVUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -70,7 +70,7 @@
             "has_limits": true
         },
         {
-            "symbol": "PIPPINUSDT",
+            "symbol": "LYNUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -80,7 +80,37 @@
             "has_limits": true
         },
         {
-            "symbol": "WETUSDT",
+            "symbol": "UAIUSDT",
+            "signal_id_source": "original",
+            "outcome": "approved",
+            "reason": "mode=all",
+            "profile_id": "111",
+            "budget_usdt_per_trade": 3.2999999999999998,
+            "order_type": "market",
+            "has_limits": true
+        },
+        {
+            "symbol": "SXPUSDT",
+            "signal_id_source": "original",
+            "outcome": "approved",
+            "reason": "mode=all",
+            "profile_id": "111",
+            "budget_usdt_per_trade": 3.2999999999999998,
+            "order_type": "market",
+            "has_limits": true
+        },
+        {
+            "symbol": "NTRNUSDT",
+            "signal_id_source": "original",
+            "outcome": "approved",
+            "reason": "mode=all",
+            "profile_id": "111",
+            "budget_usdt_per_trade": 3.2999999999999998,
+            "order_type": "market",
+            "has_limits": true
+        },
+        {
+            "symbol": "TSTBSCUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -100,7 +130,7 @@
             "has_limits": true
         },
         {
-            "symbol": "PEAQUSDT",
+            "symbol": "DYDXUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -110,7 +140,7 @@
             "has_limits": true
         },
         {
-            "symbol": "CAMPUSDT",
+            "symbol": "KSMUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -120,37 +150,7 @@
             "has_limits": true
         },
         {
-            "symbol": "EDENUSDT",
-            "signal_id_source": "original",
-            "outcome": "approved",
-            "reason": "mode=all",
-            "profile_id": "111",
-            "budget_usdt_per_trade": 3.2999999999999998,
-            "order_type": "market",
-            "has_limits": true
-        },
-        {
-            "symbol": "MERLUSDT",
-            "signal_id_source": "original",
-            "outcome": "approved",
-            "reason": "mode=all",
-            "profile_id": "111",
-            "budget_usdt_per_trade": 3.2999999999999998,
-            "order_type": "market",
-            "has_limits": true
-        },
-        {
-            "symbol": "GIGGLEUSDT",
-            "signal_id_source": "original",
-            "outcome": "approved",
-            "reason": "mode=all",
-            "profile_id": "111",
-            "budget_usdt_per_trade": 3.2999999999999998,
-            "order_type": "market",
-            "has_limits": true
-        },
-        {
-            "symbol": "KAVAUSDT",
+            "symbol": "RVNUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -182,7 +182,7 @@
         "unit_system": "activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
     },
     "bot_symbol_exit_stats_loaded": true,
-    "bot_symbol_exit_stats_symbols_count": 1,
+    "bot_symbol_exit_stats_symbols_count": 4,
     "bot_symbol_exit_stats_source_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/trading_bot/storage/last_run.json",
     "bot_symbol_exit_stats_parse_ok": true,
     "passports_updated_count": 0,

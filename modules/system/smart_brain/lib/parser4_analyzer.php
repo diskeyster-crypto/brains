@@ -316,6 +316,7 @@ final class Parser4Analyzer
         $familyConfirmed = 0;
         $familyRejected = 0;
         $familyContextRejected = 0;
+        $familyContextPassed = 0;
 
         $contextDiagnostics = [];
 
@@ -330,18 +331,36 @@ final class Parser4Analyzer
             $confirmed = (int)($counters['confirmed'] ?? 0);
             $rejected = (int)($counters['confirm_rejected'] ?? 0);
             $contextRejected = (int)($counters['context_rejected'] ?? 0);
+            $contextPassed = (int)($counters['context_passed'] ?? 0);
+
+            $totalContextAttempts = $contextRejected + $contextPassed;
+            $contextPassRate = $totalContextAttempts > 0 ? round($contextPassed / $totalContextAttempts, 4) : 0.0;
 
             $v2CountersByAlgo[$name] = [
                 'setup_candidates_count'   => $setup,
                 'confirmed_signals_count'  => $confirmed,
                 'confirm_rejected_count'   => $rejected,
                 'context_rejected_count'   => $contextRejected,
+                'context_passed_count'     => $contextPassed,
+                'context_pass_rate'        => $contextPassRate,
                 'confirmation_rate'        => $setup > 0 ? round($confirmed / $setup, 4) : 0.0,
                 'rejection_rate'           => $setup > 0 ? round($rejected / $setup, 4) : 0.0,
             ];
 
-            // Collect reject reasons for contextual detectors
-            if (method_exists($detector, 'getLastRejectReasons')) {
+            // Collect reject reason distribution for contextual detectors
+            if (method_exists($detector, 'getRejectReasonDistribution')) {
+                $distribution = $detector->getRejectReasonDistribution();
+                $preview = method_exists($detector, 'getContextRejectPreview')
+                    ? $detector->getContextRejectPreview()
+                    : [];
+                $contextDiagnostics[$name] = [
+                    'reject_reason_distribution' => $distribution,
+                    'context_rejected_count'     => $contextRejected,
+                    'context_passed_count'       => $contextPassed,
+                    'context_pass_rate'          => $contextPassRate,
+                    'context_reject_preview'     => $preview,
+                ];
+            } elseif (method_exists($detector, 'getLastRejectReasons')) {
                 $reasons = $detector->getLastRejectReasons();
                 if ($reasons !== []) {
                     $reasonCounts = [];
@@ -359,11 +378,16 @@ final class Parser4Analyzer
             $familyConfirmed += $confirmed;
             $familyRejected += $rejected;
             $familyContextRejected += $contextRejected;
+            $familyContextPassed += $contextPassed;
         }
 
         if ($v2CountersByAlgo === []) {
             return;
         }
+
+        $totalFamilyContextAttempts = $familyContextRejected + $familyContextPassed;
+        $familyContextPassRate = $totalFamilyContextAttempts > 0
+            ? round($familyContextPassed / $totalFamilyContextAttempts, 4) : 0.0;
 
         $payload = [
             'by_algorithm' => $v2CountersByAlgo,
@@ -372,6 +396,8 @@ final class Parser4Analyzer
                 'confirmed_signals_count'  => $familyConfirmed,
                 'confirm_rejected_count'   => $familyRejected,
                 'context_rejected_count'   => $familyContextRejected,
+                'context_passed_count'     => $familyContextPassed,
+                'context_pass_rate'        => $familyContextPassRate,
                 'confirmation_rate'        => $familySetup > 0 ? round($familyConfirmed / $familySetup, 4) : 0.0,
                 'rejection_rate'           => $familySetup > 0 ? round($familyRejected / $familySetup, 4) : 0.0,
             ],

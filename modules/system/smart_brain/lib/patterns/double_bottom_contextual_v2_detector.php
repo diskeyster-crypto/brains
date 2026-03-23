@@ -46,18 +46,27 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
     private int $stageConfirmed       = 0;
     private int $stageConfirmRejected = 0;
     private int $stageContextRejected = 0;
+    private int $stageContextPassed   = 0;
 
     // ── Reject Tracking ──
 
     /** @var string[] */
     private array $lastRejectReasons = [];
 
+    /** @var array<string,int> Accumulated reject reason distribution across all calls in a run */
+    private array $rejectReasonDistribution = [];
+
+    /** @var array<int,array<string,mixed>> Debug preview of first N rejected context windows */
+    private array $contextRejectPreview = [];
+    private int   $contextRejectPreviewLimit = 5;
+
     public function __construct(array $params = [])
     {
-        $this->minDowntrendStrength      = (float) ($params['min_downtrend_strength']        ?? 0.3);
-        $this->maxNoiseScore             = (float) ($params['max_noise_score']                ?? 0.7);
-        $this->minTrendDurationBars      = (int)   ($params['min_trend_duration_bars']        ?? 15);
-        $this->minExhaustionScore        = (float) ($params['min_exhaustion_score']            ?? 0.2);
+        // V2 context gates: LOOSER than V3 — V2 is the "alive contextual pattern"
+        $this->minDowntrendStrength      = (float) ($params['min_downtrend_strength']        ?? 0.15);
+        $this->maxNoiseScore             = (float) ($params['max_noise_score']                ?? 0.80);
+        $this->minTrendDurationBars      = (int)   ($params['min_trend_duration_bars']        ?? 8);
+        $this->minExhaustionScore        = (float) ($params['min_exhaustion_score']            ?? 0.05);
         $this->lowSimilarityTolerancePct = (float) ($params['low_similarity_tolerance_pct']    ?? 0.015);
         $this->minReboundBetweenLowsPct  = (float) ($params['min_rebound_between_lows_pct']   ?? 0.005);
         $this->minSpacingBarsBetweenLows = (int)   ($params['min_spacing_bars_between_lows']   ?? 5);
@@ -74,15 +83,19 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
     }
 
     /**
-     * Set Parser2 market context for the next detect() call.
+     * Set Parser2 canonical market context for the next detect() call.
      *
-     * Expected keys (accepts both V2 and canonical field names):
-     *   trend_direction / regime_direction : 'down'|'weak_down'|'up'|'flat'
-     *   trend_strength / regime_strength   : float 0..1
-     *   noise_score                        : float 0..1
-     *   trend_duration_bars / regime_duration_bars : int
-     *   exhaustion_score                   : float 0..1
-     *   volatility                         : float
+     * Expected canonical keys:
+     *   regime_direction       : 'down'|'weak_down'|'up'|'flat'
+     *   regime_strength        : float 0..1
+     *   regime_duration_bars   : int
+     *   regime_depth_pct       : float (fractional, e.g. 0.15 = 15%)
+     *   noise_score            : float 0..1
+     *   exhaustion_score       : float 0..1
+     *   trend_maturity_score   : float 0..1
+     *   volatility_score       : float 0..1
+     *   stretch_score          : float 0..1
+     *   context_quality_score  : float 0..1
      *
      * @param array<string,mixed> $context
      */
@@ -94,7 +107,7 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
     /**
      * Return accumulated stage counters since last reset.
      *
-     * @return array{setup_candidates:int,confirmed:int,confirm_rejected:int,context_rejected:int}
+     * @return array{setup_candidates:int,confirmed:int,confirm_rejected:int,context_rejected:int,context_passed:int}
      */
     public function getStageCounters(): array
     {
@@ -103,16 +116,40 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
             'confirmed'        => $this->stageConfirmed,
             'confirm_rejected' => $this->stageConfirmRejected,
             'context_rejected' => $this->stageContextRejected,
+            'context_passed'   => $this->stageContextPassed,
         ];
     }
 
     /** Reset stage counters (call before a new analyzer run). */
     public function resetStageCounters(): void
     {
-        $this->stageSetupCandidates = 0;
-        $this->stageConfirmed       = 0;
-        $this->stageConfirmRejected = 0;
-        $this->stageContextRejected = 0;
+        $this->stageSetupCandidates    = 0;
+        $this->stageConfirmed          = 0;
+        $this->stageConfirmRejected    = 0;
+        $this->stageContextRejected    = 0;
+        $this->stageContextPassed      = 0;
+        $this->rejectReasonDistribution = [];
+        $this->contextRejectPreview    = [];
+    }
+
+    /**
+     * Return accumulated reject reason distribution across all calls in this run.
+     *
+     * @return array<string,int>
+     */
+    public function getRejectReasonDistribution(): array
+    {
+        return $this->rejectReasonDistribution;
+    }
+
+    /**
+     * Return debug preview of first N rejected context windows.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getContextRejectPreview(): array
+    {
+        return $this->contextRejectPreview;
     }
 
     /**
@@ -264,46 +301,69 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * Evaluate Parser2 context gates.
+     * Evaluate Parser2 canonical context gates.
+     *
+     * V2 uses LOOSER gates than V3 — this is intentional.
+     * V2 is the "alive contextual pattern" that should pass on moderately bearish regimes.
+     *
+     * Gate 1: Regime Direction — must be downtrend-compatible
+     * Gate 2: Regime Strength — basic minimum (lower than V3)
+     * Gate 3: Noise — market must not be too noisy (higher tolerance than V3)
+     * Gate 4: Duration — minimum trend duration (lower than V3)
+     * Gate 5: Exhaustion — soft gate (much lower than V3)
      *
      * @param float[] $prices  Full price array (used for computed scores)
-     * @return array{context_score:float,direction:string,noise_score:float,trend_duration:int,exhaustion_score:float}|null
+     * @return array{context_score:float,direction:string,noise_score:float,trend_duration:int,exhaustion_score:float,regime_strength:float}|null
      */
     private function evaluateContextGates(array $prices): ?array
     {
         $ctx = $this->context;
 
-        // Gate 1: Direction — must be downtrend (accept both V2 and canonical field names)
-        $direction = (string) ($ctx['trend_direction'] ?? ($ctx['regime_direction'] ?? ''));
+        // Gate 1: Direction — must be bearish-compatible (canonical naming)
+        $direction = (string) ($ctx['regime_direction'] ?? '');
         if ($direction !== 'down' && $direction !== 'weak_down' && $direction !== 'bearish') {
             $this->lastRejectReasons[] = 'reject_context_not_downtrend';
+            $this->trackRejectReason('reject_context_not_downtrend', $ctx);
             return null;
         }
 
-        // Gate 2: Noise — market must not be too noisy
+        // Gate 2: Regime Strength — basic minimum (V2 uses lower threshold than V3)
+        $regimeStrength = (float) ($ctx['regime_strength'] ?? 0.0);
+        if ($regimeStrength < $this->minDowntrendStrength) {
+            $this->lastRejectReasons[] = 'reject_context_trend_too_weak';
+            $this->trackRejectReason('reject_context_trend_too_weak', $ctx);
+            return null;
+        }
+
+        // Gate 3: Noise — market must not be too noisy (V2 allows higher noise than V3)
         $noiseScore = $this->resolveNoiseScore($prices);
         if ($noiseScore > $this->maxNoiseScore) {
             $this->lastRejectReasons[] = 'reject_noise_too_high';
+            $this->trackRejectReason('reject_noise_too_high', $ctx);
             return null;
         }
 
-        // Gate 3: Trend maturity — duration must be sufficient
-        $trendDuration = (int) ($ctx['trend_duration_bars'] ?? ($ctx['regime_duration_bars'] ?? 0));
+        // Gate 4: Duration — minimum trend duration (V2 uses lower minimum than V3)
+        $trendDuration = (int) ($ctx['regime_duration_bars'] ?? 0);
         if ($trendDuration < $this->minTrendDurationBars) {
-            $this->lastRejectReasons[] = 'reject_trend_too_immature';
+            $this->lastRejectReasons[] = 'reject_context_duration_too_short';
+            $this->trackRejectReason('reject_context_duration_too_short', $ctx);
             return null;
         }
 
-        // Gate 4: Exhaustion — downside should be weakening
+        // Gate 5: Exhaustion — soft gate for V2 (much lower threshold than V3)
         $exhaustionScore = $this->resolveExhaustionScore($prices);
         if ($exhaustionScore < $this->minExhaustionScore) {
             $this->lastRejectReasons[] = 'reject_no_exhaustion';
+            $this->trackRejectReason('reject_no_exhaustion', $ctx);
             return null;
         }
 
+        // ── Context passed — track passage ──
+        $this->stageContextPassed++;
+
         // ── Context score: composite quality of context conditions ──
-        $trendStrength = (float) ($ctx['trend_strength'] ?? ($ctx['regime_strength'] ?? $this->minDowntrendStrength));
-        $strengthScore = min(1.0, max(0.0, $trendStrength / 1.0));
+        $strengthScore = min(1.0, max(0.0, $regimeStrength / 1.0));
         $noiseQuality  = max(0.0, 1.0 - ($noiseScore / max(0.01, $this->maxNoiseScore)));
         $maturityScore = min(1.0, (float) $trendDuration / ($this->minTrendDurationBars * 2.0));
         $exhaustScore  = min(1.0, $exhaustionScore / 1.0);
@@ -316,10 +376,36 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
         return [
             'context_score'    => $contextScore,
             'direction'        => $direction,
+            'regime_strength'  => $regimeStrength,
             'noise_score'      => $noiseScore,
             'trend_duration'   => $trendDuration,
             'exhaustion_score' => $exhaustionScore,
         ];
+    }
+
+    /**
+     * Track a context reject reason in the accumulated distribution and debug preview.
+     *
+     * @param string $reason
+     * @param array<string,mixed>|null $ctx
+     */
+    private function trackRejectReason(string $reason, ?array $ctx = null): void
+    {
+        $this->rejectReasonDistribution[$reason] = ($this->rejectReasonDistribution[$reason] ?? 0) + 1;
+
+        if ($ctx !== null && count($this->contextRejectPreview) < $this->contextRejectPreviewLimit) {
+            $this->contextRejectPreview[] = [
+                'reject_reason'       => $reason,
+                'regime_direction'    => (string) ($ctx['regime_direction'] ?? ''),
+                'regime_strength'     => round((float) ($ctx['regime_strength'] ?? 0.0), 4),
+                'regime_depth_pct'    => round((float) ($ctx['regime_depth_pct'] ?? 0.0), 4),
+                'regime_duration_bars'=> (int) ($ctx['regime_duration_bars'] ?? 0),
+                'trend_maturity_score'=> round((float) ($ctx['trend_maturity_score'] ?? 0.0), 4),
+                'noise_score'         => round((float) ($ctx['noise_score'] ?? 0.0), 4),
+                'exhaustion_score'    => round((float) ($ctx['exhaustion_score'] ?? 0.0), 4),
+                'context_quality_score' => round((float) ($ctx['context_quality_score'] ?? 0.0), 4),
+            ];
+        }
     }
 
     /**
@@ -380,7 +466,7 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
             return (float) $this->context['exhaustion_score'];
         }
 
-        $trendDuration = (int) ($this->context['trend_duration_bars'] ?? 0);
+        $trendDuration = (int) ($this->context['regime_duration_bars'] ?? 0);
         $n = count($prices);
         $window = min($n, max(10, $trendDuration));
         if ($window < 6) {
@@ -617,7 +703,7 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
             return true;
         }
 
-        $direction = (string) ($this->context['trend_direction'] ?? '');
+        $direction = (string) ($this->context['regime_direction'] ?? '');
         if ($direction === 'up') {
             return true;
         }

@@ -297,6 +297,7 @@ $pageContent = function() use (
     $v2scAvailable = !empty($v2sc['available']);
     $v2scByAlgo = (array)($v2sc['by_algorithm'] ?? []);
     $v2scAggregate = (array)($v2sc['reversal_v2_aggregate'] ?? []);
+    $v2scContextDiag = (array)($v2sc['context_diagnostics'] ?? []);
     ?>
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -411,11 +412,12 @@ $pageContent = function() use (
                 <thead><tr>
                     <th>Алгоритм</th>
                     <th class="text-end" title="Кол-во раз когда контекст отклонён (не прошёл гейт)">Контекст откл.</th>
+                    <th class="text-end" title="Кол-во раз когда контекст прошёл гейт">Контекст ОК</th>
+                    <th class="text-end" title="Процент контекстных гейтов пройден">Конт. %</th>
                     <th class="text-end" title="Кол-во раз когда Stage 1 нашёл валидный сетап">Сетапов</th>
                     <th class="text-end" title="Кол-во подтверждённых сигналов (Stage 2 прошёл)">Подтверж.</th>
                     <th class="text-end" title="Сетапов не прошедших подтверждение">Отклонено</th>
                     <th class="text-end" title="Доля подтверждённых от общего числа сетапов">Подтв. %</th>
-                    <th class="text-end" title="Доля отклонённых от общего числа сетапов">Откл. %</th>
                 </tr></thead>
                 <tbody>
                 <?php
@@ -429,43 +431,83 @@ $pageContent = function() use (
                 foreach ($v2AlgoRows as $algoKey => $algoLabel):
                     $ac = (array)($v2scByAlgo[$algoKey] ?? []);
                     $acCtxReject = (int)($ac['context_rejected_count'] ?? 0);
+                    $acCtxPassed = (int)($ac['context_passed_count'] ?? 0);
+                    $acCtxPassRate = (float)($ac['context_pass_rate'] ?? 0);
                     $acSetup = (int)($ac['setup_candidates_count'] ?? 0);
                     $acConfirm = (int)($ac['confirmed_signals_count'] ?? 0);
                     $acReject = (int)($ac['confirm_rejected_count'] ?? 0);
                     $acConfRate = (float)($ac['confirmation_rate'] ?? 0);
-                    $acRejRate = (float)($ac['rejection_rate'] ?? 0);
                 ?>
                     <tr>
                         <td class="fw-bold"><?= htmlspecialchars($algoLabel) ?></td>
                         <td class="text-end <?= $acCtxReject > 0 ? 'roi-negative' : '' ?>"><?= $acCtxReject ?></td>
+                        <td class="text-end <?= $acCtxPassed > 0 ? 'roi-positive' : '' ?>"><?= $acCtxPassed ?></td>
+                        <td class="text-end"><?= number_format($acCtxPassRate * 100, 1) ?>%</td>
                         <td class="text-end"><?= $acSetup ?></td>
                         <td class="text-end roi-positive"><?= $acConfirm ?></td>
                         <td class="text-end roi-negative"><?= $acReject ?></td>
                         <td class="text-end"><?= number_format($acConfRate * 100, 1) ?>%</td>
-                        <td class="text-end"><?= number_format($acRejRate * 100, 1) ?>%</td>
                     </tr>
                 <?php endforeach; ?>
                 <?php
                 // Family aggregate row
                 $aggCtxReject = (int)($v2scAggregate['context_rejected_count'] ?? 0);
+                $aggCtxPassed = (int)($v2scAggregate['context_passed_count'] ?? 0);
+                $aggCtxPassRate = (float)($v2scAggregate['context_pass_rate'] ?? 0);
                 $aggSetup = (int)($v2scAggregate['setup_candidates_count'] ?? 0);
                 $aggConfirm = (int)($v2scAggregate['confirmed_signals_count'] ?? 0);
                 $aggReject = (int)($v2scAggregate['confirm_rejected_count'] ?? 0);
                 $aggConfRate = (float)($v2scAggregate['confirmation_rate'] ?? 0);
-                $aggRejRate = (float)($v2scAggregate['rejection_rate'] ?? 0);
                 ?>
                     <tr class="table-active fw-bold">
                         <td>Reversal V2/V3 (итого)</td>
                         <td class="text-end <?= $aggCtxReject > 0 ? 'roi-negative' : '' ?>"><?= $aggCtxReject ?></td>
+                        <td class="text-end <?= $aggCtxPassed > 0 ? 'roi-positive' : '' ?>"><?= $aggCtxPassed ?></td>
+                        <td class="text-end"><?= number_format($aggCtxPassRate * 100, 1) ?>%</td>
                         <td class="text-end"><?= $aggSetup ?></td>
                         <td class="text-end roi-positive"><?= $aggConfirm ?></td>
                         <td class="text-end roi-negative"><?= $aggReject ?></td>
                         <td class="text-end"><?= number_format($aggConfRate * 100, 1) ?>%</td>
-                        <td class="text-end"><?= number_format($aggRejRate * 100, 1) ?>%</td>
                     </tr>
                 </tbody>
             </table>
             </div>
+
+            <!-- Context Reject Distribution (contextual patterns only) -->
+            <?php
+            $ctxPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+            $hasCtxDiag = false;
+            foreach ($ctxPatterns as $cp) {
+                $diag = (array)($v2scContextDiag[$cp] ?? []);
+                if (!empty($diag['reject_reason_distribution'])) {
+                    $hasCtxDiag = true;
+                    break;
+                }
+            }
+            ?>
+            <?php if ($hasCtxDiag): ?>
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-bar-chart me-1"></i> Распределение причин отклонения контекста</h6>
+                <div class="row">
+                <?php foreach ($ctxPatterns as $cp):
+                    $diag = (array)($v2scContextDiag[$cp] ?? []);
+                    $dist = (array)($diag['reject_reason_distribution'] ?? []);
+                    if (empty($dist)) continue;
+                    arsort($dist);
+                ?>
+                    <div class="col-md-6 mb-3">
+                        <h6 class="text-light mb-1" style="font-size:0.8rem;"><?= htmlspecialchars($cp) ?></h6>
+                        <?php foreach ($dist as $reason => $count): ?>
+                            <div class="d-flex justify-content-between mb-1" style="font-size:0.75rem;">
+                                <span class="text-secondary"><?= htmlspecialchars((string)$reason) ?></span>
+                                <span class="badge bg-danger"><?= (int)$count ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php else: ?>
             <div class="px-3 py-2">
                 <p class="text-secondary mb-0" style="font-size:0.75rem;">

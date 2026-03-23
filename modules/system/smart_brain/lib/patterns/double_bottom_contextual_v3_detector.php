@@ -71,21 +71,29 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     private int $stageSetupCandidates = 0;
     private int $stageConfirmed       = 0;
     private int $stageConfirmRejected = 0;
+    private int $stageContextPassed   = 0;
 
     // ── Reject Tracking ──
 
     /** @var string[] */
     private array $lastRejectReasons = [];
 
+    /** @var array<string,int> Accumulated reject reason distribution across all calls in a run */
+    private array $rejectReasonDistribution = [];
+
+    /** @var array<int,array<string,mixed>> Debug preview of first N rejected context windows */
+    private array $contextRejectPreview = [];
+    private int   $contextRejectPreviewLimit = 5;
+
     public function __construct(array $params = [])
     {
-        // Context
-        $this->minDowntrendStrength      = (float) ($params['min_downtrend_strength']        ?? 0.3);
-        $this->maxNoiseScore             = (float) ($params['max_noise_score']                ?? 0.7);
-        $this->minTrendDurationBars      = (int)   ($params['min_trend_duration_bars']        ?? 15);
-        $this->minTrendDepthPct          = (float) ($params['min_trend_depth_pct']             ?? 0.01);
-        $this->minExhaustionScore        = (float) ($params['min_exhaustion_score']            ?? 0.2);
-        $this->minTrendMaturityScore     = (float) ($params['min_trend_maturity_score']        ?? 0.2);
+        // V3 context gates: STRICTER than V2 — V3 is the "regime-confirmed" pattern
+        $this->minDowntrendStrength      = (float) ($params['min_downtrend_strength']        ?? 0.25);
+        $this->maxNoiseScore             = (float) ($params['max_noise_score']                ?? 0.70);
+        $this->minTrendDurationBars      = (int)   ($params['min_trend_duration_bars']        ?? 12);
+        $this->minTrendDepthPct          = (float) ($params['min_trend_depth_pct']             ?? 0.008);
+        $this->minExhaustionScore        = (float) ($params['min_exhaustion_score']            ?? 0.15);
+        $this->minTrendMaturityScore     = (float) ($params['min_trend_maturity_score']        ?? 0.15);
 
         // Setup
         $this->lowSimilarityTolerancePct = (float) ($params['low_similarity_tolerance_pct']    ?? 0.015);
@@ -147,7 +155,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     /**
      * Return accumulated stage counters since last reset.
      *
-     * @return array{context_rejected:int,setup_candidates:int,confirmed:int,confirm_rejected:int}
+     * @return array{context_rejected:int,setup_candidates:int,confirmed:int,confirm_rejected:int,context_passed:int}
      */
     public function getStageCounters(): array
     {
@@ -156,16 +164,40 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             'setup_candidates' => $this->stageSetupCandidates,
             'confirmed'        => $this->stageConfirmed,
             'confirm_rejected' => $this->stageConfirmRejected,
+            'context_passed'   => $this->stageContextPassed,
         ];
     }
 
     /** Reset stage counters (call before a new analyzer run). */
     public function resetStageCounters(): void
     {
-        $this->stageContextRejected = 0;
-        $this->stageSetupCandidates = 0;
-        $this->stageConfirmed       = 0;
-        $this->stageConfirmRejected = 0;
+        $this->stageContextRejected    = 0;
+        $this->stageSetupCandidates    = 0;
+        $this->stageConfirmed          = 0;
+        $this->stageConfirmRejected    = 0;
+        $this->stageContextPassed      = 0;
+        $this->rejectReasonDistribution = [];
+        $this->contextRejectPreview    = [];
+    }
+
+    /**
+     * Return accumulated reject reason distribution across all calls in this run.
+     *
+     * @return array<string,int>
+     */
+    public function getRejectReasonDistribution(): array
+    {
+        return $this->rejectReasonDistribution;
+    }
+
+    /**
+     * Return debug preview of first N rejected context windows.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getContextRejectPreview(): array
+    {
+        return $this->contextRejectPreview;
     }
 
     /**
@@ -349,13 +381,15 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $direction = (string) ($ctx['regime_direction'] ?? '');
         if ($direction !== 'down' && $direction !== 'weak_down' && $direction !== 'bearish') {
             $this->addRejectReason('reject_context_not_downtrend');
+            $this->trackRejectReason('reject_context_not_downtrend', $ctx);
             return null;
         }
 
-        // Gate 2: Regime Strength — direct gate (V3 improvement over V2)
+        // Gate 2: Regime Strength — direct gate (V3 requires stronger than V2)
         $regimeStrength = (float) ($ctx['regime_strength'] ?? 0.0);
         if ($regimeStrength < $this->minDowntrendStrength) {
             $this->addRejectReason('reject_context_trend_too_weak');
+            $this->trackRejectReason('reject_context_trend_too_weak', $ctx);
             return null;
         }
 
@@ -363,6 +397,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $noiseScore = $this->resolveNoiseScore($prices);
         if ($noiseScore > $this->maxNoiseScore) {
             $this->addRejectReason('reject_noise_too_high');
+            $this->trackRejectReason('reject_noise_too_high', $ctx);
             return null;
         }
 
@@ -377,21 +412,27 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         if (!$durationMet && !$depthMet) {
             if ($trendDuration < $this->minTrendDurationBars && $regimeDepthPct < $this->minTrendDepthPct) {
                 $this->addRejectReason('reject_context_duration_too_short');
+                $this->trackRejectReason('reject_context_duration_too_short', $ctx);
             }
             return null;
         }
 
         if ($trendMaturity < $this->minTrendMaturityScore) {
             $this->addRejectReason('reject_context_not_mature');
+            $this->trackRejectReason('reject_context_not_mature', $ctx);
             return null;
         }
 
-        // Gate 5: Exhaustion — downside should be weakening
+        // Gate 5: Exhaustion — downside should be weakening (V3 requires explicit exhaustion)
         $exhaustionScore = $this->resolveExhaustionScore($prices);
         if ($exhaustionScore < $this->minExhaustionScore) {
             $this->addRejectReason('reject_no_exhaustion');
+            $this->trackRejectReason('reject_no_exhaustion', $ctx);
             return null;
         }
+
+        // ── Context passed — track passage ──
+        $this->stageContextPassed++;
 
         // ── Context score: composite quality of context conditions ──
         // Use adapter-supplied context_quality_score if available, else compute locally
@@ -994,6 +1035,31 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     {
         if ($this->emitRejectReasonEnabled) {
             $this->lastRejectReasons[] = $reason;
+        }
+    }
+
+    /**
+     * Track a context reject reason in the accumulated distribution and debug preview.
+     *
+     * @param string $reason
+     * @param array<string,mixed>|null $ctx
+     */
+    private function trackRejectReason(string $reason, ?array $ctx = null): void
+    {
+        $this->rejectReasonDistribution[$reason] = ($this->rejectReasonDistribution[$reason] ?? 0) + 1;
+
+        if ($ctx !== null && count($this->contextRejectPreview) < $this->contextRejectPreviewLimit) {
+            $this->contextRejectPreview[] = [
+                'reject_reason'       => $reason,
+                'regime_direction'    => (string) ($ctx['regime_direction'] ?? ''),
+                'regime_strength'     => round((float) ($ctx['regime_strength'] ?? 0.0), 4),
+                'regime_depth_pct'    => round((float) ($ctx['regime_depth_pct'] ?? 0.0), 4),
+                'regime_duration_bars'=> (int) ($ctx['regime_duration_bars'] ?? 0),
+                'trend_maturity_score'=> round((float) ($ctx['trend_maturity_score'] ?? 0.0), 4),
+                'noise_score'         => round((float) ($ctx['noise_score'] ?? 0.0), 4),
+                'exhaustion_score'    => round((float) ($ctx['exhaustion_score'] ?? 0.0), 4),
+                'context_quality_score' => round((float) ($ctx['context_quality_score'] ?? 0.0), 4),
+            ];
         }
     }
 }

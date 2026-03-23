@@ -735,9 +735,13 @@ final class SimulatorEngine
                     'setup_candidates_count' => 0,
                     'confirmed_signals_count' => 0,
                     'confirm_rejected_count' => 0,
+                    'context_rejected_count' => 0,
+                    'context_passed_count' => 0,
+                    'context_pass_rate' => 0.0,
                     'confirmation_rate' => 0.0,
                     'rejection_rate' => 0.0,
                 ],
+                'context_diagnostics' => [],
                 'available' => false,
             ];
         }

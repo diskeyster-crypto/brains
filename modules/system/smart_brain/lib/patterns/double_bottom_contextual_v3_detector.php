@@ -347,7 +347,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
 
         // Gate 1: Regime Direction — must be downtrend
         $direction = (string) ($ctx['regime_direction'] ?? '');
-        if ($direction !== 'down' && $direction !== 'bearish') {
+        if ($direction !== 'down' && $direction !== 'weak_down' && $direction !== 'bearish') {
             $this->addRejectReason('reject_context_not_downtrend');
             return null;
         }
@@ -375,12 +375,14 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $depthMet    = $regimeDepthPct >= $this->minTrendDepthPct;
 
         if (!$durationMet && !$depthMet) {
-            $this->addRejectReason('reject_trend_too_immature');
+            if ($trendDuration < $this->minTrendDurationBars && $regimeDepthPct < $this->minTrendDepthPct) {
+                $this->addRejectReason('reject_context_duration_too_short');
+            }
             return null;
         }
 
         if ($trendMaturity < $this->minTrendMaturityScore) {
-            $this->addRejectReason('reject_trend_too_immature');
+            $this->addRejectReason('reject_context_not_mature');
             return null;
         }
 
@@ -392,6 +394,9 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         }
 
         // ── Context score: composite quality of context conditions ──
+        // Use adapter-supplied context_quality_score if available, else compute locally
+        $adapterQuality = (float) ($ctx['context_quality_score'] ?? 0.0);
+
         $strengthScore   = min(1.0, max(0.0, $regimeStrength));
         $noiseQuality    = max(0.0, 1.0 - ($noiseScore / max(0.01, $this->maxNoiseScore)));
         $maturityScore   = min(1.0, (float) $trendDuration / ($this->minTrendDurationBars * 2.0));
@@ -406,6 +411,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
 
         return [
             'context_score'       => $contextScore,
+            'context_quality_score' => $adapterQuality > 0.0 ? $adapterQuality : $contextScore,
             'direction'           => $direction,
             'regime_strength'     => $regimeStrength,
             'noise_score'         => $noiseScore,
@@ -928,17 +934,20 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $ctx = $this->context ?? [];
 
         return [
-            'regime_direction'    => $contextResult['direction'],
-            'regime_strength'     => round($contextResult['regime_strength'], 4),
-            'regime_duration_bars'=> $contextResult['trend_duration'],
-            'regime_depth_pct'    => round($contextResult['regime_depth_pct'], 4),
-            'noise_score'         => round($contextResult['noise_score'], 4),
-            'noise_class'         => (string) ($ctx['noise_class'] ?? 'unknown'),
-            'volatility_state'    => (string) ($ctx['volatility_state'] ?? 'unknown'),
-            'exhaustion_score'    => round($contextResult['exhaustion_score'], 4),
-            'trend_maturity_score'=> round($contextResult['trend_maturity_score'], 4),
-            'stretch_score'       => round((float) ($ctx['stretch_score'] ?? 0.0), 4),
-            'context_version'     => (string) ($ctx['parser2_context_version'] ?? 'unknown'),
+            'regime_direction'      => $contextResult['direction'],
+            'regime_strength'       => round($contextResult['regime_strength'], 4),
+            'regime_duration_bars'  => $contextResult['trend_duration'],
+            'regime_depth_pct'      => round($contextResult['regime_depth_pct'], 4),
+            'noise_score'           => round($contextResult['noise_score'], 4),
+            'noise_class'           => (string) ($ctx['noise_class'] ?? 'unknown'),
+            'volatility_state'      => (string) ($ctx['volatility_state'] ?? 'unknown'),
+            'volatility_score'      => round((float) ($ctx['volatility_score'] ?? 0.0), 4),
+            'exhaustion_score'      => round($contextResult['exhaustion_score'], 4),
+            'trend_maturity_score'  => round($contextResult['trend_maturity_score'], 4),
+            'stretch_score'         => round((float) ($ctx['stretch_score'] ?? 0.0), 4),
+            'local_structure_score' => round((float) ($ctx['local_structure_score'] ?? 0.0), 4),
+            'context_quality_score' => round((float) ($contextResult['context_quality_score'] ?? 0.0), 4),
+            'context_version'       => (string) ($ctx['source_version'] ?? ($ctx['parser2_context_version'] ?? 'unknown')),
         ];
     }
 

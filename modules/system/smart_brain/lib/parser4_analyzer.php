@@ -9,6 +9,7 @@ require_once __DIR__ . '/patterns/double_bottom_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_top_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_contextual_v2_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_contextual_v3_detector.php';
+require_once __DIR__ . '/context/context_adapter.php';
 
 /**
  * Parser4 Analyzer — Smart Brain Market Structure Analyzer
@@ -43,6 +44,9 @@ final class Parser4Analyzer
     /** @var array<int,string> Debug rejection lines from last run */
     private array $analyzerDebugLines = [];
 
+    /** @var ContextAdapter Canonical context adapter for contextual patterns */
+    private ContextAdapter $contextAdapter;
+
     /**
      * @param array<string,mixed> $cfg  Full parser4 config (settings + pattern_algorithms + analyzer_decision)
      * @param StateManager $state
@@ -64,6 +68,7 @@ final class Parser4Analyzer
         $this->decisionCfg = (array)($cfg['analyzer_decision'] ?? []);
 
         $this->detectors = $this->buildDetectors($enabledAlgorithms);
+        $this->contextAdapter = new ContextAdapter();
     }
 
     /**
@@ -118,6 +123,9 @@ final class Parser4Analyzer
         }
 
         $this->analyzerDebugLines = [];
+
+        // Reset context adapter counters for this run
+        $this->contextAdapter->resetCounters();
 
         $minHistoryPoints = (int)($this->cfg['min_history_points'] ?? 40);
         $strengthThreshold = (float)($this->cfg['strength_threshold'] ?? 0.50);
@@ -368,6 +376,7 @@ final class Parser4Analyzer
                 'rejection_rate'           => $familySetup > 0 ? round($familyRejected / $familySetup, 4) : 0.0,
             ],
             'context_diagnostics' => $contextDiagnostics,
+            'context_adapter_counters' => $this->contextAdapter->getAdapterCounters(),
             'updated_at' => date('c'),
         ];
 
@@ -475,11 +484,14 @@ final class Parser4Analyzer
     /**
      * Inject Parser2 market context into contextual detectors.
      *
-     * Computes canonical context fields from price history and passes them
-     * to any detector that implements setContext(). Both V2 field names
-     * (trend_direction, trend_strength) and V3 canonical field names
-     * (regime_direction, regime_strength, regime_depth_pct, trend_maturity_score)
-     * are included so all detector generations receive the contract they expect.
+     * Uses the canonical ContextAdapter to compute multi-factor regime
+     * classification from price history, then passes the normalized
+     * context contract to any detector that implements setContext().
+     *
+     * Both V2 field names (trend_direction, trend_strength) and V3
+     * canonical field names (regime_direction, regime_strength, etc.)
+     * are included in the adapter output so all detector generations
+     * receive the contract they expect.
      *
      * @param array<int,array{ts_unix:int,price:float}> $history
      */
@@ -491,134 +503,15 @@ final class Parser4Analyzer
         }
 
         $prices = array_column($history, 'price');
-        $firstPrice = $prices[0];
-        $lastPrice = $prices[$n - 1];
 
-        // Trend strength: magnitude of directional price change relative to average price
-        $avgPrice = ($firstPrice + $lastPrice) / 2.0;
-        $trendStrength = $avgPrice > 0 ? abs($lastPrice - $firstPrice) / $avgPrice : 0.0;
-
-        // Trend duration: number of history bars
-        $trendDurationBars = $n;
-
-        // Regime depth: total price drop from high to low as fraction of high
-        $highPrice = max($prices);
-        $lowPrice  = min($prices);
-        $regimeDepthPct = $highPrice > 0.0 ? ($highPrice - $lowPrice) / $highPrice : 0.0;
-
-        // Trend maturity: normalized score based on duration relative to a mature threshold
-        $matureDurationRef = 60; // bars considered a mature trend
-        $trendMaturityScore = min(1.0, (float) $trendDurationBars / $matureDurationRef);
-
-        // Noise score: computed from price path efficiency
-        $noiseScore = $this->computeContextNoiseScore($prices);
-
-        // Exhaustion score: compare first-half vs second-half slope to detect weakening
-        $exhaustionScore = $this->computeContextExhaustionScore($prices);
-
-        // Context array for contextual detectors — includes both V2 and V3 field names
-        $context = [
-            // V2-compatible field names
-            'trend_direction'        => $trendBias,
-            'trend_strength'         => round($trendStrength, 4),
-            'trend_duration_bars'    => $trendDurationBars,
-            'volatility'             => $volatility,
-            // V3 canonical field names (regime_*)
-            'regime_direction'       => $trendBias,
-            'regime_strength'        => round($trendStrength, 4),
-            'regime_duration_bars'   => $trendDurationBars,
-            'regime_depth_pct'       => round($regimeDepthPct, 4),
-            'trend_maturity_score'   => round($trendMaturityScore, 4),
-            // Shared: real computed values instead of null
-            'noise_score'            => round($noiseScore, 4),
-            'exhaustion_score'       => round($exhaustionScore, 4),
-            // V3 optional enrichment
-            'parser2_context_available' => true,
-            'parser2_context_ts'     => time(),
-        ];
+        // Use canonical context adapter for multi-factor regime classification
+        $context = $this->contextAdapter->computeContext($prices, $volatility);
 
         foreach ($this->detectors as $detector) {
             if (method_exists($detector, 'setContext')) {
                 $detector->setContext($context);
             }
         }
-    }
-
-    /**
-     * Compute noise score from price path efficiency.
-     *
-     * Low efficiency (many reversals relative to net movement) = high noise.
-     * Range: 0.0 (clean trend) to 1.0 (pure noise).
-     *
-     * @param float[] $prices
-     */
-    private function computeContextNoiseScore(array $prices): float
-    {
-        $n = count($prices);
-        if ($n < 3) {
-            return 0.0;
-        }
-
-        $window = min($n, 50);
-        $slice  = array_slice($prices, $n - $window);
-        $len    = count($slice);
-
-        $directionalMove = abs($slice[$len - 1] - $slice[0]);
-        $totalPath       = 0.0;
-        for ($i = 1; $i < $len; $i++) {
-            $totalPath += abs($slice[$i] - $slice[$i - 1]);
-        }
-
-        if ($totalPath <= 0.0) {
-            return 0.0;
-        }
-
-        $efficiency = $directionalMove / $totalPath;
-
-        return max(0.0, min(1.0, 1.0 - $efficiency));
-    }
-
-    /**
-     * Compute exhaustion score by comparing first-half vs second-half slope.
-     *
-     * A weakening second half (less steep decline) indicates seller exhaustion.
-     * Range: 0.0 (no exhaustion) to 1.0 (strong exhaustion).
-     *
-     * @param float[] $prices
-     */
-    private function computeContextExhaustionScore(array $prices): float
-    {
-        $n = count($prices);
-        if ($n < 6) {
-            return 0.0;
-        }
-
-        $window = min($n, 50);
-        $slice  = array_slice($prices, $n - $window);
-        $half   = (int) (count($slice) / 2);
-
-        $firstHalf  = array_slice($slice, 0, $half);
-        $secondHalf = array_slice($slice, $half);
-
-        if (count($firstHalf) < 2 || count($secondHalf) < 2) {
-            return 0.0;
-        }
-
-        $slope1 = ($firstHalf[count($firstHalf) - 1] - $firstHalf[0]) / count($firstHalf);
-        $slope2 = ($secondHalf[count($secondHalf) - 1] - $secondHalf[0]) / count($secondHalf);
-
-        $refPrice = $firstHalf[0] > 0.0 ? $firstHalf[0] : 1.0;
-        $normSlope1 = $slope1 / $refPrice;
-        $normSlope2 = $slope2 / $refPrice;
-
-        // If first half is not declining, no downtrend exhaustion
-        if ($normSlope1 >= 0.0) {
-            return 0.0;
-        }
-
-        // Exhaustion = how much the decline weakened in the second half
-        $slopeDiff = $normSlope2 - $normSlope1; // positive if second half is less negative
-        return max(0.0, min(1.0, $slopeDiff * 10.0));
     }
 
     /**

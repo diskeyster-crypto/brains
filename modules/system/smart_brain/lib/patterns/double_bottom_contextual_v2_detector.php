@@ -76,13 +76,13 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
     /**
      * Set Parser2 market context for the next detect() call.
      *
-     * Expected keys:
-     *   trend_direction    : 'down'|'up'|'flat'
-     *   trend_strength     : float 0..1
-     *   noise_score        : float 0..1
-     *   trend_duration_bars: int
-     *   exhaustion_score   : float 0..1
-     *   volatility         : float
+     * Expected keys (accepts both V2 and canonical field names):
+     *   trend_direction / regime_direction : 'down'|'weak_down'|'up'|'flat'
+     *   trend_strength / regime_strength   : float 0..1
+     *   noise_score                        : float 0..1
+     *   trend_duration_bars / regime_duration_bars : int
+     *   exhaustion_score                   : float 0..1
+     *   volatility                         : float
      *
      * @param array<string,mixed> $context
      */
@@ -273,9 +273,9 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
     {
         $ctx = $this->context;
 
-        // Gate 1: Direction — must be downtrend
-        $direction = (string) ($ctx['trend_direction'] ?? '');
-        if ($direction !== 'down') {
+        // Gate 1: Direction — must be downtrend (accept both V2 and canonical field names)
+        $direction = (string) ($ctx['trend_direction'] ?? ($ctx['regime_direction'] ?? ''));
+        if ($direction !== 'down' && $direction !== 'weak_down' && $direction !== 'bearish') {
             $this->lastRejectReasons[] = 'reject_context_not_downtrend';
             return null;
         }
@@ -287,8 +287,8 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
             return null;
         }
 
-        // Gate 3: Trend maturity
-        $trendDuration = (int) ($ctx['trend_duration_bars'] ?? 0);
+        // Gate 3: Trend maturity — duration must be sufficient
+        $trendDuration = (int) ($ctx['trend_duration_bars'] ?? ($ctx['regime_duration_bars'] ?? 0));
         if ($trendDuration < $this->minTrendDurationBars) {
             $this->lastRejectReasons[] = 'reject_trend_too_immature';
             return null;
@@ -297,14 +297,14 @@ final class DoubleBottomContextualV2Detector implements PatternDetectorInterface
         // Gate 4: Exhaustion — downside should be weakening
         $exhaustionScore = $this->resolveExhaustionScore($prices);
         if ($exhaustionScore < $this->minExhaustionScore) {
-            $this->lastRejectReasons[] = 'reject_trend_too_immature';
+            $this->lastRejectReasons[] = 'reject_no_exhaustion';
             return null;
         }
 
         // ── Context score: composite quality of context conditions ──
-        $trendStrength = (float) ($ctx['trend_strength'] ?? $this->minDowntrendStrength);
+        $trendStrength = (float) ($ctx['trend_strength'] ?? ($ctx['regime_strength'] ?? $this->minDowntrendStrength));
         $strengthScore = min(1.0, max(0.0, $trendStrength / 1.0));
-        $noiseQuality  = max(0.0, 1.0 - ($noiseScore / $this->maxNoiseScore));
+        $noiseQuality  = max(0.0, 1.0 - ($noiseScore / max(0.01, $this->maxNoiseScore)));
         $maturityScore = min(1.0, (float) $trendDuration / ($this->minTrendDurationBars * 2.0));
         $exhaustScore  = min(1.0, $exhaustionScore / 1.0);
 

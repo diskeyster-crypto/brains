@@ -64,6 +64,18 @@ final class CorridorMonitor
                 ? $prices[$symbol]
                 : (float)($candidate['last_price'] ?? 0.0);
 
+            // Contextual patterns: confirmed reversal patterns use wider entry zone
+            // because price has already bounced from double-bottom lows after confirmation.
+            // V2 = looser/alive pattern → widest zone expansion
+            // V3 = stricter/regime-confirmed → moderate zone expansion
+            $patternAlgo = (string)($candidate['pattern_algorithm'] ?? '');
+            $effectiveEntryZonePercent = $entryZonePercent;
+            if ($patternAlgo === 'double_bottom_contextual_v2') {
+                $effectiveEntryZonePercent = max($entryZonePercent, 0.50);
+            } elseif ($patternAlgo === 'double_bottom_contextual_v3') {
+                $effectiveEntryZonePercent = max($entryZonePercent, 0.40);
+            }
+
             $range = $high - $low;
 
             // Side-aware entry zone boundaries:
@@ -71,14 +83,14 @@ final class CorridorMonitor
             //   SHORT zone = top slice of corridor
             if ($side === 'short') {
                 $entryZoneLow = ($range > 0.0)
-                    ? $high - ($range * $entryZonePercent)
+                    ? $high - ($range * $effectiveEntryZonePercent)
                     : $high;
                 $entryZoneHigh = $high;
             } else {
                 // Default to LONG logic (includes empty/unknown side for safety)
                 $entryZoneLow = $low;
                 $entryZoneHigh = ($range > 0.0)
-                    ? $low + ($range * $entryZonePercent)
+                    ? $low + ($range * $effectiveEntryZonePercent)
                     : $low;
             }
 
@@ -88,7 +100,7 @@ final class CorridorMonitor
                 : 0.5;  // default to mid if no data
 
             // Side-aware status determination
-            $status = $this->determineStatus($pricePosition, $entryZonePercent, $side);
+            $status = $this->determineStatus($pricePosition, $effectiveEntryZonePercent, $side);
 
             $monitors[] = [
                 'symbol' => $symbol,
@@ -100,7 +112,8 @@ final class CorridorMonitor
                 'price_position' => round($pricePosition, 4),
                 'status' => $status,
                 'side' => $side !== '' ? $side : (string)($candidate['side'] ?? ''),
-                'entry_zone_percent' => $entryZonePercent,
+                'entry_zone_percent' => $effectiveEntryZonePercent,
+                'entry_zone_widened' => ($effectiveEntryZonePercent !== $entryZonePercent),
                 'pattern_algorithm' => (string)($candidate['pattern_algorithm'] ?? 'none'),
                 'pattern_confidence' => (float)($candidate['pattern_confidence'] ?? 0.0),
                 'trend_match_score' => (float)($candidate['trend_match_score'] ?? 0.0),
@@ -108,6 +121,8 @@ final class CorridorMonitor
                 'entry_quality_score' => (float)($candidate['entry_quality_score'] ?? 0.0),
                 'analyzer_score' => (float)($candidate['analyzer_score'] ?? 0.0),
                 'volatility' => (float)($candidate['volatility'] ?? 0.0),
+                'zone_width_pct' => ($range > 0.0 && $low > 0.0) ? round(($entryZoneHigh - $entryZoneLow) / $low, 6) : 0.0,
+                'zone_distance_from_price' => ($currentPrice > 0.0 && $entryZoneHigh > 0.0) ? round(($currentPrice - $entryZoneHigh) / $currentPrice, 6) : 0.0,
             ];
         }
 

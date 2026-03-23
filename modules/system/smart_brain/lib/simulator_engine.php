@@ -712,6 +712,7 @@ final class SimulatorEngine
             'top_patterns' => $topComparison,
             'promotion_criteria' => $promotion,
             'v2_stage_counters' => $v2StageCounters,
+            'v2_downstream_funnel' => $this->loadV2DownstreamFunnel(),
             'compare_mode_active' => true,
             'evaluation_note' => 'V2/V3 under shadow evaluation. Do not promote without statistical evidence.',
         ];
@@ -746,6 +747,22 @@ final class SimulatorEngine
             ];
         }
         $data['available'] = true;
+        return $data;
+    }
+
+    /**
+     * Load V2 downstream funnel data (monitor → signal path diagnostics).
+     * @return array<string,mixed>
+     */
+    private function loadV2DownstreamFunnel(): array
+    {
+        $data = $this->state->readJson('storage/v2_downstream_funnel.json', []);
+        if (!is_array($data) || empty($data)) {
+            return [
+                'by_pattern' => [],
+                'failed_monitor_preview' => [],
+            ];
+        }
         return $data;
     }
 

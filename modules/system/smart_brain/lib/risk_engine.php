@@ -51,6 +51,11 @@ final class RiskEngine
     private array $debugLines = [];
     /** @var array<string,int> Signal mode counters from last apply() call */
     private array $signalModeCounters = [];
+    /** @var array<string,array<string,int>> Per-pattern rejection counters */
+    private array $perPatternRejections = [];
+    /** @var array<int,array<string,mixed>> Preview of first N failed monitors */
+    private array $failedMonitorPreview = [];
+    private int $failedMonitorPreviewLimit = 10;
 
     /**
      * Generate signals from monitors using passport-based risk parameters.
@@ -123,6 +128,8 @@ final class RiskEngine
             'rejected_side_unresolved' => 0,
         ];
         $this->debugLines = [];
+        $this->perPatternRejections = [];
+        $this->failedMonitorPreview = [];
         $this->signalModeCounters = [
             'bootstrap_signals_count' => 0,
             'normal_signals_count' => 0,
@@ -139,15 +146,37 @@ final class RiskEngine
             // Only generate signals for entry_zone monitors
             if ($status !== 'entry_zone') {
                 $this->rejectionCounters['rejected_not_entry_zone']++;
-                $this->addDebugLine($symbol, 'status=' . $status);
+                $algo = (string)($monitor['pattern_algorithm'] ?? 'none');
+                $this->perPatternRejections[$algo]['rejected_not_entry_zone'] = ($this->perPatternRejections[$algo]['rejected_not_entry_zone'] ?? 0) + 1;
+                // Store failed monitor preview (first N)
+                if (count($this->failedMonitorPreview) < $this->failedMonitorPreviewLimit) {
+                    $this->failedMonitorPreview[] = [
+                        'symbol' => $symbol,
+                        'pattern_algorithm' => $algo,
+                        'status' => $status,
+                        'price_position' => round((float)($monitor['price_position'] ?? 0), 4),
+                        'entry_zone_low' => (float)($monitor['entry_zone_low'] ?? 0),
+                        'entry_zone_high' => (float)($monitor['entry_zone_high'] ?? 0),
+                        'entry_zone_percent' => (float)($monitor['entry_zone_percent'] ?? 0),
+                        'entry_zone_widened' => (bool)($monitor['entry_zone_widened'] ?? false),
+                        'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0),
+                        'analyzer_score' => (float)($monitor['analyzer_score'] ?? 0),
+                        'reject_reason' => 'rejected_not_entry_zone',
+                        'zone_width_pct' => (float)($monitor['zone_width_pct'] ?? 0),
+                        'zone_distance_from_price' => (float)($monitor['zone_distance_from_price'] ?? 0),
+                    ];
+                }
+                $this->addDebugLine($symbol, 'status=' . $status . ' pattern=' . $algo);
                 continue;
             }
 
             // Resolve explicit side — reject if unresolvable (no silent long fallback)
             $side = $this->resolveExplicitSide($monitor);
             if ($side === null) {
+                $algo = (string)($monitor['pattern_algorithm'] ?? 'none');
                 $this->rejectionCounters['rejected_side_unresolved']++;
-                $this->addDebugLine($symbol, 'side unresolved (pattern=' . ($monitor['pattern_algorithm'] ?? 'none') . ', trend_bias=' . ($monitor['trend_bias'] ?? '') . ')');
+                $this->perPatternRejections[$algo]['rejected_side_unresolved'] = ($this->perPatternRejections[$algo]['rejected_side_unresolved'] ?? 0) + 1;
+                $this->addDebugLine($symbol, 'side unresolved (pattern=' . $algo . ', trend_bias=' . ($monitor['trend_bias'] ?? '') . ')');
                 continue;
             }
 
@@ -404,6 +433,24 @@ final class RiskEngine
     public function getSignalModeCounters(): array
     {
         return $this->signalModeCounters;
+    }
+
+    /**
+     * Get per-pattern rejection counters from the last apply() call.
+     * @return array<string,array<string,int>>
+     */
+    public function getPerPatternRejections(): array
+    {
+        return $this->perPatternRejections;
+    }
+
+    /**
+     * Get preview of first N failed monitors from the last apply() call.
+     * @return array<int,array<string,mixed>>
+     */
+    public function getFailedMonitorPreview(): array
+    {
+        return $this->failedMonitorPreview;
     }
 
     /**

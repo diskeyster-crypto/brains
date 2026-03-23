@@ -577,6 +577,93 @@ $pageContent = function() use (
         </div>
     </div>
 
+<?php
+// ── V2 Downstream Funnel (Monitor → Signal) ──
+$v2DownstreamFunnel = $rc['v2_downstream_funnel'] ?? [];
+$v2DfByPattern = $v2DownstreamFunnel['by_pattern'] ?? [];
+$v2DfPreview = $v2DownstreamFunnel['failed_monitor_preview'] ?? [];
+if (!empty($v2DfByPattern)):
+?>
+<div class="card mb-3">
+    <div class="card-header bg-info text-white">
+        <strong>V2 Downstream Funnel — Monitor → Signal</strong>
+    </div>
+    <div class="card-body p-2">
+        <table class="table table-sm table-bordered mb-2">
+            <thead class="table-light">
+                <tr>
+                    <th>Pattern</th>
+                    <th>Candidates</th>
+                    <th>Monitors</th>
+                    <th>Entry Zone</th>
+                    <th>Monitoring</th>
+                    <th>Invalidated</th>
+                    <th>Signals</th>
+                    <th>EZ Rate</th>
+                    <th>Conversion</th>
+                    <th>Avg Zone W%</th>
+                    <th>Top Reject</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($v2DfByPattern as $dfAlgo => $dfData): ?>
+                <tr>
+                    <td><code><?= htmlspecialchars((string)$dfAlgo) ?></code></td>
+                    <td><?= (int)($dfData['candidates_count'] ?? 0) ?></td>
+                    <td><?= (int)($dfData['monitors_count'] ?? 0) ?></td>
+                    <td class="<?= ((int)($dfData['entry_zone_count'] ?? 0)) > 0 ? 'text-success fw-bold' : 'text-danger' ?>"><?= (int)($dfData['entry_zone_count'] ?? 0) ?></td>
+                    <td><?= (int)($dfData['monitoring_count'] ?? (int)($dfData['monitoring_stalled_count'] ?? 0)) ?></td>
+                    <td><?= (int)($dfData['invalidated_count'] ?? 0) ?></td>
+                    <td class="<?= ((int)($dfData['signals_count'] ?? 0)) > 0 ? 'text-success fw-bold' : 'text-danger' ?>"><?= (int)($dfData['signals_count'] ?? 0) ?></td>
+                    <td><?= number_format((float)($dfData['entry_zone_rate'] ?? 0) * 100, 1) ?>%</td>
+                    <td><?= number_format((float)($dfData['overall_conversion_rate'] ?? 0) * 100, 1) ?>%</td>
+                    <td><?= number_format((float)($dfData['avg_zone_width_pct'] ?? 0) * 100, 3) ?>%</td>
+                    <td><small><?= htmlspecialchars((string)($dfData['top_reject_reason'] ?? 'none')) ?></small></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php if (!empty($v2DfPreview)): ?>
+        <details>
+            <summary class="text-muted small">Failed Monitor Preview (first <?= count($v2DfPreview) ?>)</summary>
+            <table class="table table-sm table-bordered mt-1 mb-0" style="font-size: 0.78rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Pattern</th>
+                        <th>Status</th>
+                        <th>Price Pos</th>
+                        <th>EZ Low</th>
+                        <th>EZ High</th>
+                        <th>EZ%</th>
+                        <th>Widened</th>
+                        <th>Confidence</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($v2DfPreview as $fp): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)($fp['symbol'] ?? '')) ?></td>
+                        <td><code><?= htmlspecialchars((string)($fp['pattern_algorithm'] ?? '')) ?></code></td>
+                        <td><?= htmlspecialchars((string)($fp['status'] ?? '')) ?></td>
+                        <td><?= number_format((float)($fp['price_position'] ?? 0), 4) ?></td>
+                        <td><?= number_format((float)($fp['entry_zone_low'] ?? 0), 8) ?></td>
+                        <td><?= number_format((float)($fp['entry_zone_high'] ?? 0), 8) ?></td>
+                        <td><?= number_format((float)($fp['entry_zone_percent'] ?? 0) * 100, 1) ?>%</td>
+                        <td><?= !empty($fp['entry_zone_widened']) ? '✓' : '' ?></td>
+                        <td><?= number_format((float)($fp['pattern_confidence'] ?? 0), 3) ?></td>
+                        <td><small><?= htmlspecialchars((string)($fp['reject_reason'] ?? '')) ?></small></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
     <!-- ===== REGRESSION AUDIT: SHORT-SIDE COLLAPSE ===== -->
     <?php
     $ra = (array)($stats['regression_audit'] ?? []);

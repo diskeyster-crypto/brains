@@ -723,6 +723,52 @@ final class SimulationAudit
         // V2 stage counters (setup → confirm funnel)
         $v2StageCounters = $this->loadV2StageCounters();
 
+        // V2 Downstream Funnel Audit
+        $v2DownstreamFunnelRaw = $this->loadV2DownstreamFunnel();
+        $v2ByPattern = $v2DownstreamFunnelRaw['by_pattern'] ?? [];
+        $v2FailedPreview = $v2DownstreamFunnelRaw['failed_monitor_preview'] ?? [];
+
+        $v2DownstreamFunnelAudit = [
+            'summary' => 'V2 contextual pattern monitor→signal funnel analysis',
+            'by_pattern' => [],
+            'failed_monitor_preview' => array_slice($v2FailedPreview, 0, 5),
+        ];
+
+        foreach ($v2ByPattern as $algo => $funnel) {
+            $monitorsCount = (int)($funnel['monitors_count'] ?? 0);
+            $entryZoneCount = (int)($funnel['entry_zone_count'] ?? 0);
+            $signalsCount = (int)($funnel['signals_count'] ?? 0);
+            $monitoringCount = (int)($funnel['monitoring_count'] ?? 0);
+            $invalidatedCount = (int)($funnel['invalidated_count'] ?? 0);
+
+            $entryZoneRate = $monitorsCount > 0 ? round($entryZoneCount / $monitorsCount, 4) : 0.0;
+            $signalRate = $entryZoneCount > 0 ? round($signalsCount / $entryZoneCount, 4) : 0.0;
+            $overallConversion = $monitorsCount > 0 ? round($signalsCount / $monitorsCount, 4) : 0.0;
+
+            $topRejectReason = 'none';
+            $rejectionReasons = $funnel['rejection_reasons'] ?? [];
+            if (!empty($rejectionReasons)) {
+                arsort($rejectionReasons);
+                $topRejectReason = array_key_first($rejectionReasons);
+            }
+
+            $v2DownstreamFunnelAudit['by_pattern'][$algo] = [
+                'candidates_count' => (int)($funnel['candidates_count'] ?? 0),
+                'monitors_count' => $monitorsCount,
+                'entry_zone_count' => $entryZoneCount,
+                'monitoring_stalled_count' => $monitoringCount,
+                'invalidated_count' => $invalidatedCount,
+                'signals_count' => $signalsCount,
+                'entry_zone_rate' => $entryZoneRate,
+                'signal_promotion_rate' => $signalRate,
+                'overall_conversion_rate' => $overallConversion,
+                'avg_zone_width_pct' => (float)($funnel['avg_zone_width_pct'] ?? 0),
+                'avg_zone_distance' => (float)($funnel['avg_zone_distance'] ?? 0),
+                'top_reject_reason' => $topRejectReason,
+                'rejection_reasons' => $rejectionReasons,
+            ];
+        }
+
         return [
             'v1_aggregate' => $v1Stats,
             'v2_aggregate' => $v2Stats,
@@ -731,6 +777,7 @@ final class SimulationAudit
             'bottom_patterns' => ['v1' => $bottomV1, 'v2' => $bottomV2, 'contextual_v2' => $bottomCtxV2, 'contextual_v3' => $bottomCtxV3],
             'top_patterns' => ['v1' => $topV1, 'v2' => $topV2],
             'v2_stage_counters' => $v2StageCounters,
+            'v2_downstream_funnel' => $v2DownstreamFunnelAudit,
             'compare_mode_active' => true,
             'evaluation_note' => 'V2 is under shadow evaluation. Promotion requires statistical evidence.',
         ];
@@ -762,6 +809,22 @@ final class SimulationAudit
             ];
         }
         $data['available'] = true;
+        return $data;
+    }
+
+    /**
+     * Load V2 downstream funnel data (monitor → signal path diagnostics).
+     * @return array<string,mixed>
+     */
+    private function loadV2DownstreamFunnel(): array
+    {
+        $data = $this->state->readJson('storage/v2_downstream_funnel.json', []);
+        if (!is_array($data) || empty($data)) {
+            return [
+                'by_pattern' => [],
+                'failed_monitor_preview' => [],
+            ];
+        }
         return $data;
     }
 

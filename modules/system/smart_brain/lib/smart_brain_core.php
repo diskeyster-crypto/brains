@@ -311,6 +311,8 @@ final class SmartBrainCore
         $rejectionCounters = $risk->getRejectionCounters();
         $debugLines = $risk->getDebugLines();
         $signalModeCounters = $risk->getSignalModeCounters();
+        $perPatternRejections = $risk->getPerPatternRejections();
+        $failedMonitorPreview = $risk->getFailedMonitorPreview();
 
         // Write debug signal log (Phase B, Part 3)
         $this->logger->writeDebugLog($debugLines);
@@ -353,6 +355,74 @@ final class SmartBrainCore
             };
         }
 
+        // V2 Downstream Funnel: per-pattern monitor status distribution
+        $v2DownstreamFunnel = [];
+        $contextualPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        foreach ($monitors as $m) {
+            $algo = (string)($m['pattern_algorithm'] ?? '');
+            if (!in_array($algo, $contextualPatterns, true)) {
+                continue;
+            }
+            if (!isset($v2DownstreamFunnel[$algo])) {
+                $v2DownstreamFunnel[$algo] = [
+                    'candidates_count' => 0,
+                    'monitors_count' => 0,
+                    'entry_zone_count' => 0,
+                    'monitoring_count' => 0,
+                    'invalidated_count' => 0,
+                    'signals_count' => 0,
+                    'avg_zone_width_pct' => 0.0,
+                    'avg_zone_distance' => 0.0,
+                    'zone_widths' => [],
+                    'zone_distances' => [],
+                ];
+            }
+            $v2DownstreamFunnel[$algo]['monitors_count']++;
+            $st = (string)($m['status'] ?? '');
+            match ($st) {
+                'entry_zone' => $v2DownstreamFunnel[$algo]['entry_zone_count']++,
+                'monitoring' => $v2DownstreamFunnel[$algo]['monitoring_count']++,
+                'invalidated' => $v2DownstreamFunnel[$algo]['invalidated_count']++,
+                default => null,
+            };
+            $v2DownstreamFunnel[$algo]['zone_widths'][] = (float)($m['zone_width_pct'] ?? 0);
+            $v2DownstreamFunnel[$algo]['zone_distances'][] = (float)($m['zone_distance_from_price'] ?? 0);
+        }
+
+        // Count candidates and signals per contextual pattern
+        foreach ($candidates as $c) {
+            $algo = (string)($c['pattern_algorithm'] ?? '');
+            if (isset($v2DownstreamFunnel[$algo])) {
+                $v2DownstreamFunnel[$algo]['candidates_count']++;
+            }
+        }
+        foreach ($signals as $s) {
+            $algo = (string)($s['pattern_algorithm'] ?? '');
+            if (isset($v2DownstreamFunnel[$algo])) {
+                $v2DownstreamFunnel[$algo]['signals_count']++;
+            }
+        }
+
+        // Compute averages and clean up temp arrays
+        foreach ($v2DownstreamFunnel as $algo => &$funnel) {
+            $widths = $funnel['zone_widths'];
+            $distances = $funnel['zone_distances'];
+            $funnel['avg_zone_width_pct'] = count($widths) > 0 ? round(array_sum($widths) / count($widths), 6) : 0.0;
+            $funnel['avg_zone_distance'] = count($distances) > 0 ? round(array_sum($distances) / count($distances), 6) : 0.0;
+            unset($funnel['zone_widths'], $funnel['zone_distances']);
+
+            // Add per-pattern rejection reasons
+            $funnel['rejection_reasons'] = $perPatternRejections[$algo] ?? [];
+        }
+        unset($funnel);
+
+        // Persist V2 downstream funnel
+        $this->state->writeJson('storage/v2_downstream_funnel.json', [
+            'by_pattern' => $v2DownstreamFunnel,
+            'failed_monitor_preview' => $failedMonitorPreview,
+            'updated_at' => date('c'),
+        ]);
+
         $result = [
             'ok' => true,
             'updated_at' => date('c'),
@@ -378,6 +448,8 @@ final class SmartBrainCore
             'bootstrap_signals_count' => $signalModeCounters['bootstrap_signals_count'] ?? 0,
             'warmup_symbols_count' => $signalModeCounters['warmup_symbols_count'] ?? 0,
             'normal_signals_count' => $signalModeCounters['normal_signals_count'] ?? 0,
+            // V2 downstream funnel
+            'v2_downstream_funnel' => $v2DownstreamFunnel,
             // Symbol Intelligence
             'symbol_intel_filtered' => $symbolIntelFiltered,
             'symbol_filter_mode' => $symbolFilterMode,

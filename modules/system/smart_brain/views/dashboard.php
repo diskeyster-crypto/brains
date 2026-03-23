@@ -317,7 +317,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 | trailing: <code><?= $dashTrailingEnabled ? 'ON' : 'OFF' ?></code>
                 | mode: <code><?= htmlspecialchars((string)$dashTrailingMode) ?></code>
                 | activation: <code><?= htmlspecialchars((string)($dashTrailingActivation ?? 'n/a')) ?>%</code>
-                <?php if ($dashTrailingMode === 'price_distance'): ?>
+                <?php if ($dashTrailingMode === 'price_distance' || $dashTrailingMode === 'price_distance_floor'): ?>
                 | distance: <code><?= htmlspecialchars((string)($dashPriceDistPct ?? 'n/a')) ?></code> <small class="text-info">(<?= $dashPriceDistPct !== null ? round(((float)$dashPriceDistPct) * 100, 1) : '?' ?>% from price)</small>
                 <?php
                     $dashExchangeDist = $effectiveContract['exchange_trailing_distance'] ?? null;
@@ -328,6 +328,22 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <?php endif; ?>
                 <?php if ($dashTheoStop !== null): ?>
                 | implied stop: <code><?= round((float)$dashTheoStop, 6) ?></code>
+                <?php endif; ?>
+                <?php if ($dashTrailingMode === 'price_distance_floor'): ?>
+                <?php
+                    $dashFloorLockActive = $effectiveContract['floor_lock_active'] ?? false;
+                    $dashFloorLockedRoi = $effectiveContract['floor_locked_roi'] ?? ($effectiveContract['trailing_floor_lock_roi'] ?? null);
+                    $dashFloorStopPrice = $effectiveContract['floor_stop_price'] ?? null;
+                    $dashStepMode = $effectiveContract['trailing_step_mode'] ?? 'fixed';
+                ?>
+                | <span class="badge bg-<?= $dashFloorLockActive ? 'success' : 'secondary' ?>">floor <?= $dashFloorLockActive ? 'ON' : 'OFF' ?></span>
+                <?php if ($dashFloorLockedRoi !== null): ?>
+                lock: <code><?= round((float)$dashFloorLockedRoi, 1) ?>%</code>
+                <?php endif; ?>
+                <?php if ($dashFloorStopPrice !== null): ?>
+                | floor stop: <code><?= round((float)$dashFloorStopPrice, 6) ?></code>
+                <?php endif; ?>
+                | step: <code><?= htmlspecialchars($dashStepMode) ?></code>
                 <?php endif; ?>
                 <?php else: ?>
                 | drawdown: <code><?= htmlspecialchars((string)($dashDrawdown ?? 'n/a')) ?></code>

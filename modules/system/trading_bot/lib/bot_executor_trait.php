@@ -1107,8 +1107,17 @@ trait BotExecutorTrait
             'effective_fixed_take_profit_roi' => (float)($riskTrailing['fixed_take_profit_roi'] ?? 0),
             'effective_trailing_contract_source' => $effectiveSource,
             'effective_trailing_mode' => (string)($riskTrailing['trailing_mode'] ?? 'roi_giveback'),
-            'effective_trailing_price_distance_pct' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance'
+            'effective_trailing_price_distance_pct' => in_array($riskTrailing['trailing_mode'] ?? 'roi_giveback', ['price_distance', 'price_distance_floor'], true)
                 ? (float)($riskTrailing['trailing_price_distance_pct'] ?? 0.02)
+                : null,
+            'effective_trailing_activation_floor_roi' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (float)($riskTrailing['trailing_activation_floor_roi'] ?? 4.0)
+                : null,
+            'effective_trailing_floor_lock_roi' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (float)($riskTrailing['trailing_floor_lock_roi'] ?? 3.0)
+                : null,
+            'effective_trailing_step_mode' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (string)($riskTrailing['trailing_step_mode'] ?? 'fixed')
                 : null,
             // Stop mode truth (top-level for operator observability)
             'effective_stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
@@ -1240,9 +1249,14 @@ trait BotExecutorTrait
                     : null;
                 $runtime['effective_fixed_take_profit_roi'] = (float)($riskTrailing['fixed_take_profit_roi'] ?? 0);
                 $runtime['effective_trailing_mode'] = (string)($riskTrailing['trailing_mode'] ?? 'roi_giveback');
-                $runtime['effective_trailing_price_distance_pct'] = ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance'
+                $runtime['effective_trailing_price_distance_pct'] = in_array($riskTrailing['trailing_mode'] ?? 'roi_giveback', ['price_distance', 'price_distance_floor'], true)
                     ? (float)($riskTrailing['trailing_price_distance_pct'] ?? 0.02)
                     : null;
+                if (($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor') {
+                    $runtime['effective_trailing_activation_floor_roi'] = (float)($riskTrailing['trailing_activation_floor_roi'] ?? 4.0);
+                    $runtime['effective_trailing_floor_lock_roi'] = (float)($riskTrailing['trailing_floor_lock_roi'] ?? 3.0);
+                    $runtime['effective_trailing_step_mode'] = (string)($riskTrailing['trailing_step_mode'] ?? 'fixed');
+                }
 
                 // Stop mode truth: persist into runtime for observability
                 $tradeStopControl = is_array($trade['risk']['stop_control'] ?? null) ? $trade['risk']['stop_control'] : [];

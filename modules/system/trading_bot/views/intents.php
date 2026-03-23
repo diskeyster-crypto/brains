@@ -202,6 +202,10 @@ $filteredResults = array_values($filteredResults);
                         <?php $irTrailMode = (string)($ir['trailing_mode'] ?? ''); ?>
                         <?php if ($irTrailMode === 'price_distance'): ?>
                             <br><small class="text-info">mode: price_distance (<?= round(((float)($ir['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                        <?php elseif ($irTrailMode === 'price_distance_floor'): ?>
+                            <br><small class="text-info">mode: price_distance_floor (<?= round(((float)($ir['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                            <?php $irFloorActive = (bool)($ir['floor_lock_active'] ?? false); ?>
+                            <br><small class="<?= $irFloorActive ? 'text-success' : 'text-muted' ?>">floor: <?= $irFloorActive ? 'ON' : 'OFF' ?><?php if ($irFloorActive): ?> lock: <?= round((float)($ir['floor_locked_roi'] ?? 0), 1) ?>%<?php endif; ?></small>
                         <?php endif; ?>
                         <?php $irTrailSource = $ir['effective_trailing_contract_source'] ?? ''; ?>
                         <?php if ($irTrailSource !== '' && $irTrailSource !== 'unknown'): ?>

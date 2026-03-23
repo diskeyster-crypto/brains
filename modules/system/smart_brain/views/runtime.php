@@ -347,7 +347,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 | trailing: <code><?= $mirrorTrailingEnabled ? 'ON' : 'OFF' ?></code>
                 | mode: <code><?= htmlspecialchars((string)$mirrorTrailingMode) ?></code>
                 | activation: <code><?= htmlspecialchars((string)($mirrorTrailingActivation ?? 'n/a')) ?>%</code>
-                <?php if ($mirrorTrailingMode === 'price_distance'): ?>
+                <?php if ($mirrorTrailingMode === 'price_distance' || $mirrorTrailingMode === 'price_distance_floor'): ?>
                 | distance: <code><?= htmlspecialchars((string)($mirrorPriceDistPct ?? 'n/a')) ?></code> <small class="text-info">(<?= $mirrorPriceDistPct !== null ? round(((float)$mirrorPriceDistPct) * 100, 1) : '?' ?>% from price)</small>
                 <?php
                     $rtExchangeDist = $rtEffectiveContract['exchange_trailing_distance'] ?? null;
@@ -358,6 +358,22 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <?php endif; ?>
                 <?php if ($rtTheoStop !== null): ?>
                 | implied stop: <code><?= round((float)$rtTheoStop, 6) ?></code>
+                <?php endif; ?>
+                <?php if ($mirrorTrailingMode === 'price_distance_floor'): ?>
+                <?php
+                    $rtFloorLockActive = $rtEffectiveContract['floor_lock_active'] ?? false;
+                    $rtFloorLockedRoi = $rtEffectiveContract['floor_locked_roi'] ?? ($rtEffectiveContract['trailing_floor_lock_roi'] ?? null);
+                    $rtFloorStopPrice = $rtEffectiveContract['floor_stop_price'] ?? null;
+                    $rtStepMode = $rtEffectiveContract['trailing_step_mode'] ?? 'fixed';
+                ?>
+                | <span class="badge bg-<?= $rtFloorLockActive ? 'success' : 'secondary' ?>">floor <?= $rtFloorLockActive ? 'ON' : 'OFF' ?></span>
+                <?php if ($rtFloorLockedRoi !== null): ?>
+                lock: <code><?= round((float)$rtFloorLockedRoi, 1) ?>%</code>
+                <?php endif; ?>
+                <?php if ($rtFloorStopPrice !== null): ?>
+                | floor stop: <code><?= round((float)$rtFloorStopPrice, 6) ?></code>
+                <?php endif; ?>
+                | step: <code><?= htmlspecialchars($rtStepMode) ?></code>
                 <?php endif; ?>
                 <?php else: ?>
                 | drawdown: <code><?= htmlspecialchars((string)($mirrorDrawdown ?? 'n/a')) ?></code>

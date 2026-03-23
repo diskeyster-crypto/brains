@@ -535,31 +535,85 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         </div>
                         <div class="mb-3">
                             <label for="trailing_mode" class="form-label">Trailing Mode
-                                <i class="bi bi-question-circle cfg-info" title="roi_giveback = classic drawdown-factor trailing. price_distance = fixed % distance from current price."></i>
+                                <i class="bi bi-question-circle cfg-info" title="roi_giveback = classic drawdown-factor trailing. price_distance = fixed % distance from current price. price_distance_floor = activation floor + locked ROI + price distance + step corridor."></i>
                             </label>
                             <select class="form-select" id="trailing_mode" name="trailing_mode">
                                 <?php $currentTrailingMode = $v('trailing_mode', 'roi_giveback'); ?>
                                 <option value="roi_giveback" <?= $currentTrailingMode === 'roi_giveback' ? 'selected' : '' ?>>ROI Giveback (classic)</option>
                                 <option value="price_distance" <?= $currentTrailingMode === 'price_distance' ? 'selected' : '' ?>>Price Distance (fixed % from price)</option>
+                                <option value="price_distance_floor" <?= $currentTrailingMode === 'price_distance_floor' ? 'selected' : '' ?>>Price Distance + Floor (activation floor + locked ROI + distance)</option>
                             </select>
                             <div class="cfg-hint">
                                 <code>roi_giveback</code> = стоп следит за drawdown_factor × макс. ROI.<br>
-                                <code>price_distance</code> = стоп держится на фиксированном расстоянии от текущей цены (например 2–3%)
+                                <code>price_distance</code> = стоп держится на фиксированном расстоянии от текущей цены (например 2–3%)<br>
+                                <code>price_distance_floor</code> = активация по порогу ROI → фиксация минимального профита → distance-trailing от лучшей цены + шаговый коридор
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="trailing_price_distance_pct" class="form-label">Trailing Price Distance %
-                                <i class="bi bi-question-circle cfg-info" title="Only used in price_distance mode. 0.02 = 2% from current price. Min 0.005, max 0.20."></i>
+                                <i class="bi bi-question-circle cfg-info" title="Used in price_distance and price_distance_floor modes. 0.02 = 2% from current price. Min 0.005, max 0.20."></i>
                             </label>
                             <input type="number" step="0.001" min="0.005" max="0.20" class="form-control" id="trailing_price_distance_pct" name="trailing_price_distance_pct" value="<?= $v('trailing_price_distance_pct', '0.02') ?>">
-                            <div class="cfg-hint">Расстояние от текущей цены (<code>0.02</code> = 2% от текущей цены). Используется только в режиме price_distance</div>
+                            <div class="cfg-hint">Расстояние от текущей цены (<code>0.02</code> = 2% от текущей цены). Используется в режимах price_distance и price_distance_floor</div>
                         </div>
                         <div class="mb-3">
                             <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI
                                 <i class="bi bi-question-circle cfg-info" title="Трейлинг начинает работать после достижения этого ROI. 0.05 = +5% ROI."></i>
                             </label>
                             <input type="number" step="0.001" min="0" class="form-control" id="trailing_activation_roi" name="trailing_activation_roi" value="<?= $v('trailing_activation_roi', '0.03') ?>">
-                            <div class="cfg-hint">Порог ROI для активации трейлинга (<code>0.05</code> = после +5% ROI)</div>
+                            <div class="cfg-hint">Порог ROI для активации трейлинга (<code>0.05</code> = после +5% ROI). Для roi_giveback и price_distance режимов</div>
+                        </div>
+
+                        <!-- Price Distance Floor specific fields -->
+                        <div class="mb-3" id="floor_trailing_fields_group">
+                            <div class="card border-info">
+                                <div class="card-header bg-info bg-opacity-10"><strong>Price Distance Floor Settings</strong>
+                                    <span class="badge bg-info ms-2">price_distance_floor mode</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-2">
+                                        <label for="trailing_activation_floor_roi" class="form-label">Floor Activation ROI
+                                            <i class="bi bi-question-circle cfg-info" title="ROI threshold to activate floor trailing. 0.04 = +4% ROI."></i>
+                                        </label>
+                                        <input type="number" step="0.001" min="0.005" class="form-control" id="trailing_activation_floor_roi" name="trailing_activation_floor_roi" value="<?= $v('trailing_activation_floor_roi', '0.04') ?>">
+                                        <div class="cfg-hint">Порог ROI для активации floor-трейлинга (<code>0.04</code> = после +4% ROI)</div>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label for="trailing_floor_lock_roi" class="form-label">Floor Lock ROI
+                                            <i class="bi bi-question-circle cfg-info" title="Minimum guaranteed protected ROI once trailing activates. Must be less than Floor Activation ROI. 0.03 = +3% ROI guaranteed."></i>
+                                        </label>
+                                        <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_floor_lock_roi" name="trailing_floor_lock_roi" value="<?= $v('trailing_floor_lock_roi', '0.03') ?>">
+                                        <div class="cfg-hint">Минимальная гарантированная защищённая прибыль (<code>0.03</code> = не менее +3% ROI после активации). Должно быть меньше Floor Activation ROI</div>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label for="trailing_step_mode" class="form-label">Step Mode
+                                            <i class="bi bi-question-circle cfg-info" title="fixed = use step_pct_min as fixed threshold. auto_strength = dynamic step based on move strength within corridor."></i>
+                                        </label>
+                                        <select class="form-select" id="trailing_step_mode" name="trailing_step_mode">
+                                            <?php $currentStepMode = $v('trailing_step_mode', 'fixed'); ?>
+                                            <option value="fixed" <?= $currentStepMode === 'fixed' ? 'selected' : '' ?>>Fixed</option>
+                                            <option value="auto_strength" <?= $currentStepMode === 'auto_strength' ? 'selected' : '' ?>>Auto Strength</option>
+                                        </select>
+                                        <div class="cfg-hint"><code>fixed</code> = фиксированный шаг обновления. <code>auto_strength</code> = динамический шаг по силе движения</div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-2">
+                                            <label for="trailing_step_pct_min" class="form-label">Step Min %
+                                                <i class="bi bi-question-circle cfg-info" title="Minimum step size for trailing updates. 0.005 = 0.5%."></i>
+                                            </label>
+                                            <input type="number" step="0.001" min="0.001" max="0.10" class="form-control" id="trailing_step_pct_min" name="trailing_step_pct_min" value="<?= $v('trailing_step_pct_min', '0.005') ?>">
+                                            <div class="cfg-hint">Мин. шаг обновления (<code>0.005</code> = 0.5%)</div>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <label for="trailing_step_pct_max" class="form-label">Step Max %
+                                                <i class="bi bi-question-circle cfg-info" title="Maximum step size for trailing updates. 0.02 = 2%."></i>
+                                            </label>
+                                            <input type="number" step="0.001" min="0.001" max="0.10" class="form-control" id="trailing_step_pct_max" name="trailing_step_pct_max" value="<?= $v('trailing_step_pct_max', '0.02') ?>">
+                                            <div class="cfg-hint">Макс. шаг обновления (<code>0.02</code> = 2%)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI
@@ -837,6 +891,10 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                             <tr><td>break_even_activation_roi</td><td><code>0.025</code></td><td>Безубыток после +2.5% ROI</td></tr>
                                             <tr><td>trailing_min_lock_roi</td><td><code>0.012</code></td><td>Зафиксировать мин. +1.2% ROI</td></tr>
                                             <tr><td>trailing_min_step</td><td><code>0.01</code></td><td>Подтягивать стоп шагом 1%</td></tr>
+                                            <tr><td>trailing_activation_floor_roi</td><td><code>0.04</code></td><td>Floor-трейлинг стартует после +4% ROI</td></tr>
+                                            <tr><td>trailing_floor_lock_roi</td><td><code>0.03</code></td><td>Гарантированная мин. прибыль +3% ROI (режим floor)</td></tr>
+                                            <tr><td>trailing_step_pct_min</td><td><code>0.005</code></td><td>Мин. шаг обновления 0.5% (режим floor)</td></tr>
+                                            <tr><td>trailing_step_pct_max</td><td><code>0.02</code></td><td>Макс. шаг обновления 2% (режим floor, auto_strength)</td></tr>
                                             <tr><td>fixed_take_profit_roi</td><td><code>0.03</code></td><td>Фиксированный TP на +3% ROI</td></tr>
                                             <tr><td>hybrid_tp_share</td><td><code>0.40</code></td><td>40% по Fixed TP, 60% по трейлингу</td></tr>
                                         </tbody>

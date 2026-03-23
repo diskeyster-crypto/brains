@@ -7,6 +7,7 @@ require_once __DIR__ . '/patterns/double_top_detector.php';
 require_once __DIR__ . '/patterns/pullback_trend_continue_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_top_confirm_v2_detector.php';
+require_once __DIR__ . '/patterns/double_bottom_contextual_v2_detector.php';
 
 /**
  * Parser4 Analyzer — Smart Brain Market Structure Analyzer
@@ -15,7 +16,7 @@ require_once __DIR__ . '/patterns/double_top_confirm_v2_detector.php';
  *
  * Reads Parser3 symbols + Parser2 price history.
  * Runs enabled pattern detectors (double_bottom, double_top, pullback_trend_continue,
- *   double_bottom_confirm_v2, double_top_confirm_v2).
+ *   double_bottom_confirm_v2, double_top_confirm_v2, double_bottom_contextual_v2).
  * Computes trend_match_score, corridor_fit_score, entry_quality_score.
  * Calculates weighted analyzer_score; applies analyzer_pass threshold.
  * Outputs corridor/volatility/strength/trend candidates with full decision fields.
@@ -77,6 +78,7 @@ final class Parser4Analyzer
             'pullback_trend_continue' => static fn() => new PullbackTrendContinueDetector(),
             'double_bottom_confirm_v2' => static fn() => new DoubleBottomConfirmV2Detector(),
             'double_top_confirm_v2' => static fn() => new DoubleTopConfirmV2Detector(),
+            'double_bottom_contextual_v2' => static fn() => new DoubleBottomContextualV2Detector(),
         ];
 
         $detectors = [];
@@ -165,6 +167,9 @@ final class Parser4Analyzer
 
             $trendBias = $this->calculateTrend($history);
             $lastPrice = $history[count($history) - 1]['price'];
+
+            // Prepare Parser2 context for contextual detectors
+            $this->injectContextToDetectors($history, $trendBias, $volatility);
 
             // STEP 1 — Pattern detection (primary gate)
             $patternResult = $this->runPatternDetection($history);
@@ -352,6 +357,50 @@ final class Parser4Analyzer
     }
 
     /**
+     * Inject Parser2 market context into contextual detectors.
+     *
+     * Computes trend_direction, trend_strength, noise proxy, trend_duration,
+     * and exhaustion proxy from the price history and passes them to any
+     * detector that implements setContext().
+     *
+     * @param array<int,array{ts_unix:int,price:float}> $history
+     */
+    private function injectContextToDetectors(array $history, string $trendBias, float $volatility): void
+    {
+        $n = count($history);
+        if ($n < 10) {
+            return;
+        }
+
+        $prices = array_column($history, 'price');
+        $firstPrice = $prices[0];
+        $lastPrice = $prices[$n - 1];
+
+        // Trend strength: magnitude of directional price change relative to average price
+        $avgPrice = ($firstPrice + $lastPrice) / 2.0;
+        $trendStrength = $avgPrice > 0 ? abs($lastPrice - $firstPrice) / $avgPrice : 0.0;
+
+        // Trend duration: number of history bars
+        $trendDurationBars = $n;
+
+        // Context array for contextual detectors
+        $context = [
+            'trend_direction'    => $trendBias,
+            'trend_strength'     => round($trendStrength, 4),
+            'noise_score'        => null, // let detector compute from prices
+            'trend_duration_bars'=> $trendDurationBars,
+            'exhaustion_score'   => null, // let detector compute from prices
+            'volatility'         => $volatility,
+        ];
+
+        foreach ($this->detectors as $detector) {
+            if (method_exists($detector, 'setContext')) {
+                $detector->setContext($context);
+            }
+        }
+    }
+
+    /**
      * Derive explicit trade side from pattern algorithm and trend_bias.
      *
      * double_bottom                → long
@@ -366,7 +415,7 @@ final class Parser4Analyzer
     private function deriveSideFromPattern(string $patternAlgorithm, string $trendBias): ?string
     {
         return match ($patternAlgorithm) {
-            'double_bottom', 'double_bottom_confirm_v2' => 'long',
+            'double_bottom', 'double_bottom_confirm_v2', 'double_bottom_contextual_v2' => 'long',
             'double_top', 'double_top_confirm_v2' => 'short',
             'pullback_trend_continue' => match ($trendBias) {
                 'up' => 'long',

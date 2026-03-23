@@ -106,7 +106,7 @@ final class SimulationAudit
      */
     private function computePatternStats(array $closed, array $signals, array $waiting, array $active): array
     {
-        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', '_unknown'];
+        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', '_unknown'];
 
         $stats = [];
         foreach ($algorithms as $algo) {
@@ -249,6 +249,7 @@ final class SimulationAudit
             'double_top' => 'short',
             'double_bottom_confirm_v2' => 'long',
             'double_top_confirm_v2' => 'short',
+            'double_bottom_contextual_v2' => 'long',
         ];
 
         // Count sides by pattern for closed trades
@@ -702,13 +703,16 @@ final class SimulationAudit
     {
         $v1Patterns = ['double_bottom', 'double_top'];
         $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
+        $ctxV2Patterns = ['double_bottom_contextual_v2'];
 
         $v1Stats = $this->computeReversalFamilyStats($closed, $v1Patterns);
         $v2Stats = $this->computeReversalFamilyStats($closed, $v2Patterns);
+        $ctxV2Stats = $this->computeReversalFamilyStats($closed, $ctxV2Patterns);
 
         // Per-type breakdown
         $bottomV1 = $this->computeReversalFamilyStats($closed, ['double_bottom']);
         $bottomV2 = $this->computeReversalFamilyStats($closed, ['double_bottom_confirm_v2']);
+        $bottomCtxV2 = $this->computeReversalFamilyStats($closed, ['double_bottom_contextual_v2']);
         $topV1 = $this->computeReversalFamilyStats($closed, ['double_top']);
         $topV2 = $this->computeReversalFamilyStats($closed, ['double_top_confirm_v2']);
 
@@ -718,7 +722,8 @@ final class SimulationAudit
         return [
             'v1_aggregate' => $v1Stats,
             'v2_aggregate' => $v2Stats,
-            'bottom_patterns' => ['v1' => $bottomV1, 'v2' => $bottomV2],
+            'contextual_v2_aggregate' => $ctxV2Stats,
+            'bottom_patterns' => ['v1' => $bottomV1, 'v2' => $bottomV2, 'contextual_v2' => $bottomCtxV2],
             'top_patterns' => ['v1' => $topV1, 'v2' => $topV2],
             'v2_stage_counters' => $v2StageCounters,
             'compare_mode_active' => true,
@@ -864,7 +869,7 @@ final class SimulationAudit
      */
     private function auditRegression(array $closed): array
     {
-        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'];
+        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
         $sides = ['long', 'short'];
 
         // Per-pattern × per-side matrix
@@ -917,7 +922,7 @@ final class SimulationAudit
         $scenarios['disable_top_and_pullback']['label'] = 'Без double_top и pullback';
 
         // Scenario 4: only bottom + V2
-        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2'];
+        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
         $scenarios['bottom_plus_v2_only'] = $this->computeRegressionCellStats(
             array_values(array_filter($closed, fn($t) => in_array($this->getAlgorithm($t), $keepOnly, true))),
             null, null

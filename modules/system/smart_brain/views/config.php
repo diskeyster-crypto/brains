@@ -129,7 +129,7 @@ $pageContent = function() use ($config, $user_limits, $brain_auto, $effective_co
                         $ps = (array)($effective_config['pattern_selection'] ?? []);
                         $psEnabled = (array)($ps['enabled'] ?? []);
                         $psMode = (string)($ps['mode'] ?? '-');
-                        $allPatterns = ['double_bottom' => 'Double Bottom', 'double_top' => 'Double Top', 'pullback_trend_continue' => 'Pullback Trend Continue', 'double_bottom_confirm_v2' => 'Double Bottom V2', 'double_top_confirm_v2' => 'Double Top V2'];
+                        $allPatterns = ['double_bottom' => 'Double Bottom', 'double_top' => 'Double Top', 'pullback_trend_continue' => 'Pullback Trend Continue', 'double_bottom_confirm_v2' => 'Double Bottom V2', 'double_top_confirm_v2' => 'Double Top V2', 'double_bottom_contextual_v2' => 'Double Bottom Contextual V2'];
                     ?>
                     <?php if (empty($effective_config)): ?>
                         <p class="text-secondary mb-0">Нет данных. Запустите Smart Brain для генерации effective config.</p>

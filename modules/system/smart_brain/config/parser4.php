@@ -24,6 +24,7 @@ return [
             'pullback_trend_continue',
             'double_bottom_confirm_v2',
             'double_top_confirm_v2',
+            'double_bottom_contextual_v2',
         ],
         'mode' => 'any',  // 'one' | 'any' | 'all'
     ],

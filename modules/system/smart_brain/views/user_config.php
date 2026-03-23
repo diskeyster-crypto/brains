@@ -97,6 +97,10 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 <input class="form-check-input" type="checkbox" id="pattern_double_top_v2" name="patterns_enabled[]" value="double_top_confirm_v2" <?= $patternChecked('double_top_confirm_v2') ?>>
                                 <label class="form-check-label" for="pattern_double_top_v2">Double Top V2 <small class="text-info">(confirmed)</small></label>
                             </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_ctx_v2" name="patterns_enabled[]" value="double_bottom_contextual_v2" <?= $patternChecked('double_bottom_contextual_v2') ?>>
+                                <label class="form-check-label" for="pattern_double_bottom_ctx_v2">Double Bottom Contextual V2 <small class="text-warning">(context-aware)</small></label>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="pattern_mode" class="form-label fw-bold">Pattern Mode</label>

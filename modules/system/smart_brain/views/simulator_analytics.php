@@ -281,9 +281,11 @@ $pageContent = function() use (
     $rc = $reversal_comparison ?? [];
     $rcV1 = (array)($rc['v1_aggregate'] ?? []);
     $rcV2 = (array)($rc['v2_aggregate'] ?? []);
+    $rcCtxV2 = (array)($rc['contextual_v2_aggregate'] ?? []);
     $rcPromo = (array)($rc['promotion_criteria'] ?? []);
     $rcBottomV1 = (array)(($rc['bottom_patterns'] ?? [])['v1'] ?? []);
     $rcBottomV2 = (array)(($rc['bottom_patterns'] ?? [])['v2'] ?? []);
+    $rcBottomCtxV2 = (array)(($rc['bottom_patterns'] ?? [])['contextual_v2'] ?? []);
     $rcTopV1 = (array)(($rc['top_patterns'] ?? [])['v1'] ?? []);
     $rcTopV2 = (array)(($rc['top_patterns'] ?? [])['v2'] ?? []);
     $compareActive = !empty($rc['compare_mode_active']);
@@ -370,6 +372,7 @@ $pageContent = function() use (
                 <?php foreach ([
                     'double_bottom (V1)' => $rcBottomV1,
                     'double_bottom_confirm_v2 (V2)' => $rcBottomV2,
+                    'double_bottom_contextual_v2 (Ctx)' => $rcBottomCtxV2,
                     'double_top (V1)' => $rcTopV1,
                     'double_top_confirm_v2 (V2)' => $rcTopV2,
                 ] as $label => $data): ?>
@@ -414,6 +417,7 @@ $pageContent = function() use (
                 $v2AlgoRows = [
                     'double_bottom_confirm_v2' => 'double_bottom_confirm_v2',
                     'double_top_confirm_v2' => 'double_top_confirm_v2',
+                    'double_bottom_contextual_v2' => 'double_bottom_contextual_v2',
                 ];
                 foreach ($v2AlgoRows as $algoKey => $algoLabel):
                     $ac = (array)($v2scByAlgo[$algoKey] ?? []);
@@ -613,7 +617,7 @@ $pageContent = function() use (
                 </tr></thead>
                 <tbody>
                 <?php
-                $matrixPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'];
+                $matrixPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
                 $matrixSides = ['long', 'short'];
                 foreach ($matrixPatterns as $mp):
                     foreach ($matrixSides as $ms):

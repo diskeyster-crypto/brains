@@ -1,0 +1,26 @@
+{
+    "by_algorithm": {
+        "double_bottom_contextual_v2": {
+            "setup_candidates_count": 10,
+            "confirmed_signals_count": 6,
+            "confirm_rejected_count": 4,
+            "confirmation_rate": 0.59999999999999998,
+            "rejection_rate": 0.40000000000000002
+        },
+        "double_bottom_contextual_v3": {
+            "setup_candidates_count": 0,
+            "confirmed_signals_count": 0,
+            "confirm_rejected_count": 0,
+            "confirmation_rate": 0,
+            "rejection_rate": 0
+        }
+    },
+    "reversal_v2_aggregate": {
+        "setup_candidates_count": 10,
+        "confirmed_signals_count": 6,
+        "confirm_rejected_count": 4,
+        "confirmation_rate": 0.59999999999999998,
+        "rejection_rate": 0.40000000000000002
+    },
+    "updated_at": "2026-03-23T11:46:04+00:00"
+}

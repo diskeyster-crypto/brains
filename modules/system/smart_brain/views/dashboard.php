@@ -304,6 +304,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $dashTrailingActivation = $botMirror['effective_trailing_activation'] ?? ($effectiveContract['activation_roi_pct'] ?? ($effectiveContract['trailing_activation_roi_pct'] ?? null));
                 $dashBEActivation = $botMirror['effective_break_even_activation'] ?? ($effectiveContract['break_even_activation_roi'] ?? ($effectiveContract['break_even_activation_roi_pct'] ?? null));
                 $dashDrawdown = $botMirror['effective_drawdown_factor'] ?? ($effectiveContract['drawdown_factor'] ?? null);
+                $dashTrailingMode = $effectiveContract['trailing_mode'] ?? 'roi_giveback';
+                $dashPriceDistPct = $effectiveContract['trailing_price_distance_pct'] ?? null;
                 $dashHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($effectiveContract['hybrid_tp_share'] ?? null);
                 $dashSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
                 $dashHasContract = ($dashExitMode !== null);
@@ -313,8 +315,13 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
                 <code><?= htmlspecialchars((string)$dashExitMode) ?></code>
                 | trailing: <code><?= $dashTrailingEnabled ? 'ON' : 'OFF' ?></code>
+                | mode: <code><?= htmlspecialchars((string)$dashTrailingMode) ?></code>
                 | activation: <code><?= htmlspecialchars((string)($dashTrailingActivation ?? 'n/a')) ?>%</code>
+                <?php if ($dashTrailingMode === 'price_distance'): ?>
+                | distance: <code><?= htmlspecialchars((string)($dashPriceDistPct ?? 'n/a')) ?></code> <small class="text-info">(<?= $dashPriceDistPct !== null ? round(((float)$dashPriceDistPct) * 100, 1) : '?' ?>% from price)</small>
+                <?php else: ?>
                 | drawdown: <code><?= htmlspecialchars((string)($dashDrawdown ?? 'n/a')) ?></code>
+                <?php endif; ?>
                 | BE: <code><?= $dashBEEnabled ? 'ON' : 'OFF' ?></code>
                 <?php if ($dashBEEnabled): ?>
                 @ <code><?= htmlspecialchars((string)($dashBEActivation ?? '')) ?>%</code>

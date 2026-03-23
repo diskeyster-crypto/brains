@@ -9,6 +9,12 @@ namespace Modules\System\TradingBot\Lib;
  * Trailing stop logic for Trading Bot.
  * Uses trailing parameters from the normalized risk.trailing block.
  *
+ * Supports two trailing modes:
+ *   - roi_giveback (default): trailing distance = max_profit * drawdown_factor
+ *   - price_distance: stop follows current best price at fixed pct distance
+ *     LONG:  stop = best_price * (1 - trailing_price_distance_pct)
+ *     SHORT: stop = best_price * (1 + trailing_price_distance_pct)
+ *
  * In Brain-controlled mode, risk.trailing is populated by
  * normalizeBrainTrailingIntoRisk() in bot_sources_trait.php.
  * Bot-local trailing toggles (enable_trailing_on_open, dumb_trailing_enabled)
@@ -16,18 +22,11 @@ namespace Modules\System\TradingBot\Lib;
  * that is bypassed when Brain-controlled mode is active.
  *
  * Key fields consumed from risk.trailing:
- *   enabled            — whether trailing is active (Brain-owned in Brain mode)
- *   activation_roi_pct — ROI % threshold to activate trailing
- *   drawdown_factor    — trailing distance multiplier (NOT the same as trailing_min_step)
- *
- * drawdown_factor semantics:
- *   Trailing distance = price_move * drawdown_factor
- *   This is a giveback ratio: 0.5 means trail gives back 50% of the max profit move.
- *   Source is tracked via drawdown_factor_source in the trailing block:
- *     - brain_trailing_contract: from Brain intent trailing contract
- *     - risk_block: from Brain signal risk block
- *     - documented_default: engine default 0.5 (normal mode)
- *     - legacy_non_brain_mode: bot-local config in non-Brain mode
+ *   enabled                    — whether trailing is active
+ *   activation_roi_pct         — ROI % threshold to activate trailing
+ *   trailing_mode              — 'roi_giveback' | 'price_distance'
+ *   drawdown_factor            — trailing distance multiplier (roi_giveback mode)
+ *   trailing_price_distance_pct — fixed distance ratio (price_distance mode, 0.02 = 2%)
  */
 class BotTrailingEngine
 {
@@ -40,6 +39,10 @@ class BotTrailingEngine
     
     /**
      * Check trailing stop for trade
+     * 
+     * Supports two trailing modes:
+     *   - roi_giveback (default): trailing distance = max_profit * drawdown_factor
+     *   - price_distance: trailing stop = current_price * (1 ± trailing_price_distance_pct)
      * 
      * @param array $trade Trade data
      * @param float $currentPrice Current market price
@@ -65,11 +68,7 @@ class BotTrailingEngine
         $side = $trade['side'];
         $entryPrice = $trade['entry_price'];
         $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
-        // Documented engine default: 0.5 (normal mode) — used only if upstream
-        // normalization did not provide an explicit drawdown_factor.
-        // In Brain-controlled mode, normalizeBrainTrailingIntoRisk() always provides
-        // this value with explicit source tracking via drawdown_factor_source.
-        $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0.5);
+        $trailingMode = (string)($trailing['trailing_mode'] ?? 'roi_giveback');
         
         // Calculate current ROI
         $roi = $this->calculateRoi($entryPrice, $currentPrice, $side);
@@ -85,6 +84,7 @@ class BotTrailingEngine
             $result['changes']['trailing_activated_price'] = $currentPrice;
             $result['changes']['trailing_activation_roi_threshold'] = $activationRoiPct;
             $result['changes']['trailing_roi_at_activation'] = round($roi, 4);
+            $result['changes']['trailing_mode'] = $trailingMode;
             $trailingActivated = true;
         }
         
@@ -92,6 +92,121 @@ class BotTrailingEngine
             return $result;
         }
         
+        // Dispatch to appropriate trailing mode
+        if ($trailingMode === 'price_distance') {
+            return $this->checkPriceDistanceTrailing($trade, $currentPrice, $result, $trailing, $side, $entryPrice);
+        }
+
+        return $this->checkRoiGivebackTrailing($trade, $currentPrice, $result, $trailing, $side, $entryPrice);
+    }
+
+    /**
+     * Price-distance trailing mode.
+     *
+     * Keeps stop at a fixed percentage distance from the current best price.
+     * For LONG: stop = best_price * (1 - trailing_price_distance_pct)
+     * For SHORT: stop = best_price * (1 + trailing_price_distance_pct)
+     *
+     * Monotonic: stop never moves backward (down for long, up for short).
+     */
+    private function checkPriceDistanceTrailing(
+        array $trade,
+        float $currentPrice,
+        array $result,
+        array $trailing,
+        string $side,
+        float $entryPrice
+    ): array {
+        $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+
+        // Retrieve previous trailing stop (monotonic protection)
+        $prevTrailingStop = (float)($trade['trailing_stop_price'] ?? 0.0);
+
+        if ($side === 'long') {
+            // Track high watermark
+            $trailingHighWatermark = (float)($trade['trailing_high_watermark'] ?? $currentPrice);
+            if ($currentPrice > $trailingHighWatermark) {
+                $result['updated'] = true;
+                $result['changes']['trailing_high_watermark'] = $currentPrice;
+                $trailingHighWatermark = $currentPrice;
+            }
+
+            // Price-distance stop from best price
+            $candidateStop = $trailingHighWatermark * (1.0 - $distancePct);
+
+            // Monotonic: stop can only move up for long
+            $trailingStopPrice = max($candidateStop, $prevTrailingStop);
+
+            $result['changes']['trailing_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['trailing_mode'] = 'price_distance';
+            $result['changes']['trailing_price_distance_pct'] = $distancePct;
+            $result['changes']['best_roi_seen'] = round(
+                $this->calculateRoi($entryPrice, $trailingHighWatermark, $side), 4
+            );
+
+            // Check if triggered
+            if ($currentPrice <= $trailingStopPrice) {
+                $result['triggered'] = true;
+                $result['close_reason'] = 'closed_by_trailing';
+                $result['changes']['trailing_triggered_at'] = date('c');
+                $result['changes']['trailing_triggered_price'] = $currentPrice;
+            }
+
+        } else {
+            // Track low watermark
+            $trailingLowWatermark = (float)($trade['trailing_low_watermark'] ?? $currentPrice);
+            if ($currentPrice < $trailingLowWatermark) {
+                $result['updated'] = true;
+                $result['changes']['trailing_low_watermark'] = $currentPrice;
+                $trailingLowWatermark = $currentPrice;
+            }
+
+            // Price-distance stop from best price
+            $candidateStop = $trailingLowWatermark * (1.0 + $distancePct);
+
+            // Monotonic: stop can only move down for short
+            if ($prevTrailingStop > 0.0) {
+                $trailingStopPrice = min($candidateStop, $prevTrailingStop);
+            } else {
+                $trailingStopPrice = $candidateStop;
+            }
+
+            $result['changes']['trailing_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['trailing_mode'] = 'price_distance';
+            $result['changes']['trailing_price_distance_pct'] = $distancePct;
+            $result['changes']['best_roi_seen'] = round(
+                $this->calculateRoi($entryPrice, $trailingLowWatermark, $side), 4
+            );
+
+            // Check if triggered
+            if ($currentPrice >= $trailingStopPrice) {
+                $result['triggered'] = true;
+                $result['close_reason'] = 'closed_by_trailing';
+                $result['changes']['trailing_triggered_at'] = date('c');
+                $result['changes']['trailing_triggered_price'] = $currentPrice;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * ROI-giveback trailing mode (original behavior).
+     *
+     * Trailing distance = max_profit * drawdown_factor.
+     */
+    private function checkRoiGivebackTrailing(
+        array $trade,
+        float $currentPrice,
+        array $result,
+        array $trailing,
+        string $side,
+        float $entryPrice
+    ): array {
+        // Documented engine default: 0.5 (normal mode) — used only if upstream
+        // normalization did not provide an explicit drawdown_factor.
+        $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0.5);
+
         // Update trailing stop level
         $trailingHighWatermark = $trade['trailing_high_watermark'] ?? $currentPrice;
         $trailingLowWatermark = $trade['trailing_low_watermark'] ?? $currentPrice;
@@ -110,6 +225,7 @@ class BotTrailingEngine
             $trailingStopPrice = $entryPrice * (1 + $trailingStopRoi / 100);
             
             $result['changes']['trailing_stop_price'] = $trailingStopPrice;
+            $result['changes']['trailing_mode'] = 'roi_giveback';
             $result['changes']['best_roi_seen'] = round($maxProfit, 4);
             
             // Check if triggered
@@ -134,6 +250,7 @@ class BotTrailingEngine
             $trailingStopPrice = $entryPrice * (1 - $trailingStopRoi / 100);
             
             $result['changes']['trailing_stop_price'] = $trailingStopPrice;
+            $result['changes']['trailing_mode'] = 'roi_giveback';
             $result['changes']['best_roi_seen'] = round($maxProfit, 4);
             
             // Check if triggered
@@ -241,10 +358,13 @@ class BotTrailingEngine
 
 /* RULES
 - TrailingEngine handles trailing stop calculations and break-even checks
+- Two trailing modes: roi_giveback (default), price_distance (fixed % from current price)
 - Phase-1: "Dumb" trailing - set once on exchange, don't track
 - Trailing activation includes leverage in ROI calculation
 - NO local price tracking - exchange handles trailing
 - Break-even check is used by bot_executor_trait.php for SL→entry moves
 - Close reasons: closed_by_trailing, closed_by_break_even, closed_by_logical_stop
-- Unit system: activation_roi_pct = percent (4.0 = 4%), drawdown_factor = ratio (0.5)
+- Unit system: activation_roi_pct = percent (4.0 = 4%), drawdown_factor = ratio (0.5),
+  trailing_price_distance_pct = ratio (0.02 = 2% from current price)
+- Monotonic rule: stop never moves backward (down for long, up for short) in either mode
 */

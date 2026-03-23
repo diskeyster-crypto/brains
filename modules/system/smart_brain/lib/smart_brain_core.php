@@ -1119,6 +1119,7 @@ final class SmartBrainCore
         // UNIT AUDIT: Brain config stores ratios (0.05 = 5%). Bot engines expect percent (5.0 = 5%).
         // activation_roi_pct and break_even_activation_roi: converted ratio→percent here.
         // drawdown_factor: 0–1 multiplier, NOT a percent — stays as-is.
+        // trailing_price_distance_pct: ratio (0.02 = 2%) — stays as-is.
         // min_step, min_lock_roi: stay as ratios.
         // fixed_take_profit_roi: stays as ratio.
         // hybrid_tp_share: stays as ratio (0.40 = 40%).
@@ -1130,10 +1131,24 @@ final class SmartBrainCore
         $activationPct = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
         $breakEvenActivationPct = ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation;
 
+        // Trailing mode: roi_giveback (default) or price_distance
+        $trailingMode = (string)($userLimits['trailing_mode'] ?? 'roi_giveback');
+        if (!in_array($trailingMode, ['roi_giveback', 'price_distance'], true)) {
+            $trailingMode = 'roi_giveback';
+        }
+
+        // Price-distance trailing: fixed pct from current price (ratio, 0.02 = 2%)
+        $trailingPriceDistancePct = (float)($userLimits['trailing_price_distance_pct'] ?? 0.02);
+        // Validate bounds: min 0.005 (0.5%), max 0.20 (20%)
+        if ($trailingPriceDistancePct < 0.005) { $trailingPriceDistancePct = 0.005; }
+        if ($trailingPriceDistancePct > 0.20) { $trailingPriceDistancePct = 0.20; }
+
         $botReady['trailing'] = [
             'enabled' => $trailingEnabled,
+            'trailing_mode' => $trailingMode,
             'activation_roi_pct' => $activationPct,
             'drawdown_factor' => 0.5,
+            'trailing_price_distance_pct' => $trailingPriceDistancePct,
             'min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
             'min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
             'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
@@ -1142,7 +1157,7 @@ final class SmartBrainCore
             'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.03),
             'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.40),
             'brain_trailing_applied' => true,
-            'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
+            'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,trailing_price_distance_pct=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
         ];
 
         // Logical stop vs emergency stop separation

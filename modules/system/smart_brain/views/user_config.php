@@ -530,6 +530,27 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             <br><div class="cfg-hint">Включить трейлинг-стоп для фиксации прибыли</div>
                         </div>
                         <div class="mb-3">
+                            <label for="trailing_mode" class="form-label">Trailing Mode
+                                <i class="bi bi-question-circle cfg-info" title="roi_giveback = classic drawdown-factor trailing. price_distance = fixed % distance from current price."></i>
+                            </label>
+                            <select class="form-select" id="trailing_mode" name="trailing_mode">
+                                <?php $currentTrailingMode = $v('trailing_mode', 'roi_giveback'); ?>
+                                <option value="roi_giveback" <?= $currentTrailingMode === 'roi_giveback' ? 'selected' : '' ?>>ROI Giveback (classic)</option>
+                                <option value="price_distance" <?= $currentTrailingMode === 'price_distance' ? 'selected' : '' ?>>Price Distance (fixed % from price)</option>
+                            </select>
+                            <div class="cfg-hint">
+                                <code>roi_giveback</code> = стоп следит за drawdown_factor × макс. ROI.<br>
+                                <code>price_distance</code> = стоп держится на фиксированном расстоянии от текущей цены (например 2–3%)
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="trailing_price_distance_pct" class="form-label">Trailing Price Distance %
+                                <i class="bi bi-question-circle cfg-info" title="Only used in price_distance mode. 0.02 = 2% from current price. Min 0.005, max 0.20."></i>
+                            </label>
+                            <input type="number" step="0.001" min="0.005" max="0.20" class="form-control" id="trailing_price_distance_pct" name="trailing_price_distance_pct" value="<?= $v('trailing_price_distance_pct', '0.02') ?>">
+                            <div class="cfg-hint">Расстояние от текущей цены (<code>0.02</code> = 2% от текущей цены). Используется только в режиме price_distance</div>
+                        </div>
+                        <div class="mb-3">
                             <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI
                                 <i class="bi bi-question-circle cfg-info" title="Трейлинг начинает работать после достижения этого ROI. 0.05 = +5% ROI."></i>
                             </label>

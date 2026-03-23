@@ -199,6 +199,10 @@ $filteredResults = array_values($filteredResults);
                     <td class="small"><?= htmlspecialchars($ir['exit_mode'] ?? $ir['effective_exit_mode'] ?? '-') ?></td>
                     <td class="small">
                         <?= htmlspecialchars($ir['trailing_status'] ?? '-') ?>
+                        <?php $irTrailMode = (string)($ir['trailing_mode'] ?? ''); ?>
+                        <?php if ($irTrailMode === 'price_distance'): ?>
+                            <br><small class="text-info">mode: price_distance (<?= round(((float)($ir['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                        <?php endif; ?>
                         <?php $irTrailSource = $ir['effective_trailing_contract_source'] ?? ''; ?>
                         <?php if ($irTrailSource !== '' && $irTrailSource !== 'unknown'): ?>
                             <br><small class="text-muted"><?= htmlspecialchars($irTrailSource) ?></small>

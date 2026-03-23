@@ -365,22 +365,19 @@ class BotRiskEngine
      * 
      * B3 FIX: ROI calculation INCLUDES leverage.
      * 
+     * Supports two trailing modes:
+     *   - roi_giveback (default): trailing distance based on drawdown_factor
+     *   - price_distance: trailing at fixed pct from current price
+     * 
      * If risk.trailing.enabled=false → ['enabled'=>false].
      * If enabled:
      * - activation_roi_pct = risk.trailing.activation_roi_pct (ROI including leverage)
-     * - drawdown_factor = risk.trailing.drawdown_factor
-     * - activePrice:
-     *   - LONG: entry * (1 + activation_roi_pct/100/leverage)
-     *   - SHORT: entry * (1 - activation_roi_pct/100/leverage)
-     * - trailingStop (distance in price):
-     *   - trail_dist_pct = (activation_roi_pct/100/leverage) * drawdown_factor
-     *   - trailingStop = entry * trail_dist_pct
-     * 
-     * drawdown_factor semantics:
-     *   trailing distance = price_move_pct * drawdown_factor
-     *   This is a giveback ratio, NOT the same as trailing_min_step.
-     *   In Brain-controlled mode, this value comes from the normalized
-     *   Brain trailing contract (via normalizeBrainTrailingIntoRisk).
+     * - For roi_giveback mode:
+     *   - drawdown_factor = risk.trailing.drawdown_factor
+     *   - trailingStop = entry * priceMovePct * drawdown_factor
+     * - For price_distance mode:
+     *   - trailing_price_distance_pct = risk.trailing.trailing_price_distance_pct
+     *   - trailingStop = entry * trailing_price_distance_pct
      * 
      * @param array $risk Risk block
      * @param float $entryAvg Average entry price
@@ -397,38 +394,57 @@ class BotRiskEngine
             return ['enabled' => false];
         }
         
-        // Get parameters — in Brain mode these come from normalized Brain contract
+        // Get common parameters
         $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
-        $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0);
         $leverage = (int)($risk['leverage'] ?? 1);
+        $trailingMode = (string)($trailing['trailing_mode'] ?? 'roi_giveback');
         
-        // Validate parameters
-        if ($activationRoiPct <= 0 || $drawdownFactor <= 0 || $leverage < 1 || $entryAvg <= 0) {
+        if ($activationRoiPct <= 0 || $leverage < 1 || $entryAvg <= 0) {
             return ['enabled' => false];
         }
         
         $side = strtolower($side);
         
         // B3 FIX: ROI includes leverage, so actual price move is smaller
-        // If user wants 10% ROI at 10x leverage, price needs to move only 1%
         $priceMovePct = $activationRoiPct / 100 / $leverage;
         
         // Calculate activePrice (price at which trailing activates)
         if ($side === 'long') {
-            // LONG: activates when price rises to target ROI
             $activePrice = $entryAvg * (1 + $priceMovePct);
         } else {
-            // SHORT: activates when price falls to target ROI
             $activePrice = $entryAvg * (1 - $priceMovePct);
         }
+
+        // Price-distance mode
+        if ($trailingMode === 'price_distance') {
+            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+            if ($distancePct <= 0 || $distancePct >= 1.0) {
+                return ['enabled' => false];
+            }
+            $trailingStop = $entryAvg * $distancePct;
+            return [
+                'enabled' => true,
+                'trailing_mode' => 'price_distance',
+                'activation_roi_pct' => $activationRoiPct,
+                'trailing_price_distance_pct' => $distancePct,
+                'leverage' => $leverage,
+                'active_price' => round($activePrice, 8),
+                'trailing_stop' => round($trailingStop, 8),
+            ];
+        }
+
+        // ROI-giveback mode (default)
+        $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0);
+        if ($drawdownFactor <= 0) {
+            return ['enabled' => false];
+        }
         
-        // Calculate trailingStop distance (in price units)
-        // Trailing distance = price move * drawdown_factor
         $trailDistPct = $priceMovePct * $drawdownFactor;
         $trailingStop = $entryAvg * $trailDistPct;
         
         return [
             'enabled' => true,
+            'trailing_mode' => 'roi_giveback',
             'activation_roi_pct' => $activationRoiPct,
             'drawdown_factor' => $drawdownFactor,
             'leverage' => $leverage,

@@ -334,6 +334,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $mirrorTrailingActivation = $botMirror['effective_trailing_activation'] ?? ($rtEffectiveContract['activation_roi_pct'] ?? ($rtEffectiveContract['trailing_activation_roi_pct'] ?? null));
                 $mirrorBEActivation = $botMirror['effective_break_even_activation'] ?? ($rtEffectiveContract['break_even_activation_roi'] ?? ($rtEffectiveContract['break_even_activation_roi_pct'] ?? null));
                 $mirrorDrawdown = $botMirror['effective_drawdown_factor'] ?? ($rtEffectiveContract['drawdown_factor'] ?? null);
+                $mirrorTrailingMode = $rtEffectiveContract['trailing_mode'] ?? 'roi_giveback';
+                $mirrorPriceDistPct = $rtEffectiveContract['trailing_price_distance_pct'] ?? null;
                 $mirrorHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($rtEffectiveContract['hybrid_tp_share'] ?? null);
                 $mirrorSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
                 $hasContract = ($mirrorExitMode !== null);
@@ -343,8 +345,13 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
                 <code><?= htmlspecialchars((string)$mirrorExitMode) ?></code>
                 | trailing: <code><?= $mirrorTrailingEnabled ? 'ON' : 'OFF' ?></code>
+                | mode: <code><?= htmlspecialchars((string)$mirrorTrailingMode) ?></code>
                 | activation: <code><?= htmlspecialchars((string)($mirrorTrailingActivation ?? 'n/a')) ?>%</code>
+                <?php if ($mirrorTrailingMode === 'price_distance'): ?>
+                | distance: <code><?= htmlspecialchars((string)($mirrorPriceDistPct ?? 'n/a')) ?></code> <small class="text-info">(<?= $mirrorPriceDistPct !== null ? round(((float)$mirrorPriceDistPct) * 100, 1) : '?' ?>% from price)</small>
+                <?php else: ?>
                 | drawdown: <code><?= htmlspecialchars((string)($mirrorDrawdown ?? 'n/a')) ?></code>
+                <?php endif; ?>
                 | BE: <code><?= $mirrorBEEnabled ? 'ON' : 'OFF' ?></code>
                 <?php if ($mirrorBEEnabled): ?>
                 @ <code><?= htmlspecialchars((string)($mirrorBEActivation ?? '')) ?>%</code>

@@ -366,8 +366,10 @@ final class TradingBotService
                     // This snapshot must match what bot_executor actually uses for execution
                     $result['effective_trailing_contract'] = [
                         'enabled' => $firstTrailing['enabled'] ?? null,
+                        'trailing_mode' => $firstTrailing['trailing_mode'] ?? 'roi_giveback',
                         'activation_roi_pct' => $firstTrailing['activation_roi_pct'] ?? null,
                         'drawdown_factor' => $firstTrailing['drawdown_factor'] ?? null,
+                        'trailing_price_distance_pct' => $firstTrailing['trailing_price_distance_pct'] ?? null,
                         'min_step' => $firstTrailing['min_step'] ?? null,
                         'min_lock_roi' => $firstTrailing['min_lock_roi'] ?? null,
                         'break_even_enabled' => $firstTrailing['break_even_enabled'] ?? null,
@@ -396,8 +398,10 @@ final class TradingBotService
                 $localTrailingEnabled = (bool)($localTrailingCfg['enabled'] ?? $localDumbTrailingCfg['enabled'] ?? false);
                 $result['effective_trailing_contract'] = [
                     'enabled' => $localTrailingEnabled,
+                    'trailing_mode' => 'roi_giveback',
                     'activation_roi_pct' => (float)($localTrailingCfg['activation_roi_pct'] ?? 0),
                     'drawdown_factor' => (float)($localDumbTrailingCfg['drawdown_factor_default'] ?? 0.5),
+                    'trailing_price_distance_pct' => null,
                     'min_step' => (float)($localTrailingCfg['min_step'] ?? 0),
                     'min_lock_roi' => (float)($localTrailingCfg['min_lock_roi'] ?? 0),
                     'break_even_enabled' => (bool)($localTrailingCfg['break_even_enabled'] ?? false),
@@ -931,8 +935,10 @@ final class TradingBotService
                     'stop_loss_applied' => (float)($prot['stop_loss_price'] ?? 0) > 0,
                     'trailing_enabled' => (bool)($trailing['enabled'] ?? false),
                     'trailing_active' => $isTrailingActive,
+                    'trailing_mode' => (string)($trailing['trailing_mode'] ?? 'roi_giveback'),
                     'trailing_activation_roi_pct' => (float)($trailing['activation_roi_pct'] ?? 0),
                     'trailing_drawdown_factor' => (float)($trailing['drawdown_factor'] ?? 0),
+                    'trailing_price_distance_pct' => ($trailing['trailing_price_distance_pct'] ?? null),
                     'break_even_enabled' => $beEnabled,
                     'break_even_activation_roi' => (float)($trailing['break_even_activation_roi'] ?? 0),
                     'break_even_armed' => $beArmed,

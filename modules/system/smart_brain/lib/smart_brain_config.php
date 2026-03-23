@@ -108,6 +108,8 @@ final class SmartBrainConfig
             'stop_floor_value'             => (float)$values['stop_floor_value'],
             'brain_may_tighten_stop'       => !empty($values['brain_may_tighten_stop']),
             'trailing_enabled'             => !empty($values['trailing_enabled']),
+            'trailing_mode'                => in_array((string)($values['trailing_mode'] ?? 'roi_giveback'), ['roi_giveback', 'price_distance'], true) ? (string)$values['trailing_mode'] : 'roi_giveback',
+            'trailing_price_distance_pct'  => max(0.005, min(0.20, (float)($values['trailing_price_distance_pct'] ?? 0.02))),
             'trailing_activation_roi'      => (float)$values['trailing_activation_roi'],
             'trailing_min_lock_roi'        => (float)$values['trailing_min_lock_roi'],
             'trailing_min_step'            => (float)$values['trailing_min_step'],
@@ -256,6 +258,15 @@ final class SmartBrainConfig
         }
         if (isset($values['trailing_activation_roi']) && (float)$values['trailing_activation_roi'] < 0) {
             $errors[] = 'trailing_activation_roi must be >= 0';
+        }
+        if (isset($values['trailing_mode']) && !in_array((string)$values['trailing_mode'], ['roi_giveback', 'price_distance'], true)) {
+            $errors[] = 'trailing_mode must be roi_giveback or price_distance';
+        }
+        if (isset($values['trailing_price_distance_pct'])) {
+            $distVal = (float)$values['trailing_price_distance_pct'];
+            if ($distVal < 0.005 || $distVal > 0.20) {
+                $errors[] = 'trailing_price_distance_pct must be between 0.005 (0.5%) and 0.20 (20%)';
+            }
         }
         if (isset($values['trailing_min_lock_roi']) && (float)$values['trailing_min_lock_roi'] < 0) {
             $errors[] = 'trailing_min_lock_roi must be >= 0';
@@ -587,6 +598,8 @@ final class SmartBrainConfig
             'live_reverse_side_enabled' => (bool)($userLimits['live_reverse_side_enabled'] ?? false),
             'trailing_contract' => [
                 'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+                'trailing_mode' => (string)($userLimits['trailing_mode'] ?? 'roi_giveback'),
+                'trailing_price_distance_pct' => (float)($userLimits['trailing_price_distance_pct'] ?? 0.02),
                 'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
                 'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
                 'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),
@@ -660,6 +673,8 @@ final class SmartBrainConfig
                 'stop_floor_value' => (float)($userLimits['stop_floor_value'] ?? 0.03),
                 'brain_may_tighten_stop' => (bool)($userLimits['brain_may_tighten_stop'] ?? true),
                 'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+                'trailing_mode' => (string)($userLimits['trailing_mode'] ?? 'roi_giveback'),
+                'trailing_price_distance_pct' => (float)($userLimits['trailing_price_distance_pct'] ?? 0.02),
                 'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
                 'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
                 'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),

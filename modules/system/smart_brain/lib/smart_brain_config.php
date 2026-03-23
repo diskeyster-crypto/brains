@@ -109,12 +109,15 @@ final class SmartBrainConfig
             'brain_may_tighten_stop'       => !empty($values['brain_may_tighten_stop']),
             'trailing_enabled'             => !empty($values['trailing_enabled']),
             'trailing_mode'                => in_array((string)($values['trailing_mode'] ?? 'roi_giveback'), ['roi_giveback', 'price_distance', 'price_distance_floor'], true) ? (string)$values['trailing_mode'] : 'roi_giveback',
+            // Active for price_distance + price_distance_floor modes
             'trailing_price_distance_pct'  => max(0.005, min(0.20, (float)($values['trailing_price_distance_pct'] ?? 0.02))),
+            // Active for price_distance_floor mode only
             'trailing_activation_floor_roi' => (float)($values['trailing_activation_floor_roi'] ?? 4.0),
             'trailing_floor_lock_roi'      => (float)($values['trailing_floor_lock_roi'] ?? 3.0),
             'trailing_step_mode'           => in_array((string)($values['trailing_step_mode'] ?? 'fixed'), ['fixed', 'auto_strength'], true) ? (string)$values['trailing_step_mode'] : 'fixed',
             'trailing_step_pct_min'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_min'] ?? 0.005))),
             'trailing_step_pct_max'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_max'] ?? 0.02))),
+            // Legacy: active for roi_giveback mode (kept for backward compatibility)
             'trailing_activation_roi'      => (float)$values['trailing_activation_roi'],
             'trailing_min_lock_roi'        => (float)$values['trailing_min_lock_roi'],
             'trailing_min_step'            => (float)$values['trailing_min_step'],
@@ -703,6 +706,58 @@ final class SmartBrainConfig
     }
 
     /**
+     * Get the list of active trailing field names for the given mode.
+     *
+     * @param string $trailingMode One of: roi_giveback, price_distance, price_distance_floor
+     * @return list<string>
+     */
+    private function getActiveTrailingFields(string $trailingMode): array
+    {
+        $shared = ['trailing_enabled', 'trailing_mode'];
+        switch ($trailingMode) {
+            case 'price_distance_floor':
+                return array_merge($shared, [
+                    'trailing_price_distance_pct',
+                    'trailing_activation_floor_roi',
+                    'trailing_floor_lock_roi',
+                    'trailing_step_mode',
+                    'trailing_step_pct_min',
+                    'trailing_step_pct_max',
+                ]);
+            case 'price_distance':
+                return array_merge($shared, [
+                    'trailing_price_distance_pct',
+                    'trailing_activation_roi',
+                ]);
+            case 'roi_giveback':
+            default:
+                return array_merge($shared, [
+                    'trailing_activation_roi',
+                    'trailing_min_lock_roi',
+                    'trailing_min_step',
+                    'brain_may_delay_trailing',
+                ]);
+        }
+    }
+
+    /**
+     * Check if legacy trailing fields (roi_giveback-specific) are present but inactive.
+     *
+     * @param string $trailingMode Current trailing mode
+     * @param array<string,mixed> $userLimits User config values
+     * @return bool True if legacy giveback fields exist but mode is not roi_giveback
+     */
+    private function hasLegacyTrailingFields(string $trailingMode, array $userLimits): bool
+    {
+        if ($trailingMode === 'roi_giveback') {
+            return false;
+        }
+        return isset($userLimits['trailing_activation_roi'])
+            || isset($userLimits['trailing_min_lock_roi'])
+            || isset($userLimits['trailing_min_step']);
+    }
+
+    /**
      * Build full effective config snapshot for runtime output.
      *
      * @return array<string,mixed>
@@ -710,6 +765,12 @@ final class SmartBrainConfig
     public function buildEffectiveSnapshot(): array
     {
         $userLimits = $this->getUserLimits();
+        $trailingMode = (string)($userLimits['trailing_mode'] ?? 'roi_giveback');
+
+        // Determine which trailing fields are active vs legacy based on mode
+        $activeTrailingFields = $this->getActiveTrailingFields($trailingMode);
+        $legacyFieldsPresent = $this->hasLegacyTrailingFields($trailingMode, $userLimits);
+
         return [
             'user_limits' => $userLimits,
             'brain_auto' => $this->getBrainAutoValues(),
@@ -719,19 +780,25 @@ final class SmartBrainConfig
                 'stop_floor_value' => (float)($userLimits['stop_floor_value'] ?? 0.03),
                 'brain_may_tighten_stop' => (bool)($userLimits['brain_may_tighten_stop'] ?? true),
                 'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
-                'trailing_mode' => (string)($userLimits['trailing_mode'] ?? 'roi_giveback'),
+                'trailing_mode' => $trailingMode,
+                // Active for price_distance + price_distance_floor modes
                 'trailing_price_distance_pct' => (float)($userLimits['trailing_price_distance_pct'] ?? 0.02),
+                // Active for price_distance_floor mode only
                 'trailing_activation_floor_roi' => (float)($userLimits['trailing_activation_floor_roi'] ?? 4.0),
                 'trailing_floor_lock_roi' => (float)($userLimits['trailing_floor_lock_roi'] ?? 3.0),
                 'trailing_step_mode' => (string)($userLimits['trailing_step_mode'] ?? 'fixed'),
                 'trailing_step_pct_min' => (float)($userLimits['trailing_step_pct_min'] ?? 0.005),
                 'trailing_step_pct_max' => (float)($userLimits['trailing_step_pct_max'] ?? 0.02),
+                // Legacy: active for roi_giveback mode (kept for backward compatibility)
                 'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
                 'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
                 'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),
                 'brain_may_delay_trailing' => (bool)($userLimits['brain_may_delay_trailing'] ?? false),
                 'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
                 'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
+                // Mode-aware metadata: which trailing fields are active for the selected mode
+                'active_trailing_fields' => $activeTrailingFields,
+                'legacy_trailing_fields_present' => $legacyFieldsPresent,
             ],
             'exit_safety' => [
                 'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
@@ -785,26 +852,15 @@ final class SmartBrainConfig
                 'live_one_trade_per_symbol' => (bool)($userLimits['live_one_trade_per_symbol'] ?? true),
                 'live_entry_policy' => (string)($userLimits['live_entry_policy'] ?? 'enter_now'),
                 'live_reverse_side_enabled' => (bool)($userLimits['live_reverse_side_enabled'] ?? false),
+                // Normalized: canonical trailing contract is in exit_policy above.
+                // This summary carries only the essential mode/enabled for quick reference.
                 'live_trailing_contract' => [
+                    'canonical_source' => 'exit_policy',
                     'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
-                    'trailing_mode' => (string)($userLimits['trailing_mode'] ?? 'roi_giveback'),
-                    'trailing_price_distance_pct' => (float)($userLimits['trailing_price_distance_pct'] ?? 0.02),
-                    'trailing_activation_floor_roi' => (float)($userLimits['trailing_activation_floor_roi'] ?? 4.0),
-                    'trailing_floor_lock_roi' => (float)($userLimits['trailing_floor_lock_roi'] ?? 3.0),
-                    'trailing_step_mode' => (string)($userLimits['trailing_step_mode'] ?? 'fixed'),
-                    'trailing_step_pct_min' => (float)($userLimits['trailing_step_pct_min'] ?? 0.005),
-                    'trailing_step_pct_max' => (float)($userLimits['trailing_step_pct_max'] ?? 0.02),
-                    'trailing_activation_roi' => (float)($userLimits['trailing_activation_roi'] ?? 0.02),
-                    'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.005),
-                    'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.005),
+                    'trailing_mode' => $trailingMode,
+                    'active_trailing_fields' => $activeTrailingFields,
                     'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
-                    'break_even_activation_roi' => (float)($userLimits['break_even_activation_roi'] ?? 0.01),
                     'exit_mode' => (string)($userLimits['exit_mode'] ?? 'fixed_tp'),
-                    'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.05),
-                    'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.5),
-                    'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
-                    'manual_stop_loss_roi' => (float)($userLimits['manual_stop_loss_roi'] ?? 0.03),
-                    'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
                 ],
             ],
             'pattern_selection' => [

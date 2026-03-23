@@ -549,13 +549,17 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 <code>price_distance_floor</code> = активация по порогу ROI → фиксация минимального профита → distance-trailing от лучшей цены + шаговый коридор
                             </div>
                         </div>
-                        <div class="mb-3">
+                        <!-- Price Distance field — active for price_distance and price_distance_floor modes -->
+                        <div class="mb-3<?= $currentTrailingMode === 'roi_giveback' ? ' cfg-muted-field' : '' ?>" id="price_distance_fields_group">
                             <label for="trailing_price_distance_pct" class="form-label">Trailing Price Distance %
                                 <i class="bi bi-question-circle cfg-info" title="Used in price_distance and price_distance_floor modes. 0.02 = 2% from current price. Min 0.005, max 0.20."></i>
                             </label>
                             <input type="number" step="0.001" min="0.005" max="0.20" class="form-control" id="trailing_price_distance_pct" name="trailing_price_distance_pct" value="<?= $v('trailing_price_distance_pct', '0.02') ?>">
                             <div class="cfg-hint">Расстояние от текущей цены (<code>0.02</code> = 2% от текущей цены). Используется в режимах price_distance и price_distance_floor</div>
+                            <div class="cfg-mode-note" style="<?= $currentTrailingMode === 'roi_giveback' ? '' : 'display:none' ?>">⚠ Активно только в режимах Price Distance / Floor</div>
                         </div>
+                        <!-- ROI Giveback specific fields — active for roi_giveback and price_distance modes -->
+                        <div id="roi_giveback_fields_group" class="<?= $currentTrailingMode === 'price_distance_floor' ? 'cfg-muted-field' : '' ?>">
                         <div class="mb-3">
                             <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI
                                 <i class="bi bi-question-circle cfg-info" title="Трейлинг начинает работать после достижения этого ROI. 0.05 = +5% ROI."></i>
@@ -563,9 +567,30 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             <input type="number" step="0.001" min="0" class="form-control" id="trailing_activation_roi" name="trailing_activation_roi" value="<?= $v('trailing_activation_roi', '0.03') ?>">
                             <div class="cfg-hint">Порог ROI для активации трейлинга (<code>0.05</code> = после +5% ROI). Для roi_giveback и price_distance режимов</div>
                         </div>
+                        <div class="mb-3">
+                            <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI
+                                <i class="bi bi-question-circle cfg-info" title="Минимальная прибыль, которую трейлинг зафиксирует. 0.012 = +1.2% ROI."></i>
+                            </label>
+                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_min_lock_roi" name="trailing_min_lock_roi" value="<?= $v('trailing_min_lock_roi', '0.008') ?>">
+                            <div class="cfg-hint">Минимальная фиксируемая прибыль (<code>0.012</code> = зафиксировать не менее +1.2% ROI)</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="trailing_min_step" class="form-label">Trailing Min Step
+                                <i class="bi bi-question-circle cfg-info" title="Минимальный шаг подтягивания стопа. 0.01 = стоп сдвигается при изменении на 1%."></i>
+                            </label>
+                            <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_min_step" name="trailing_min_step" value="<?= $v('trailing_min_step', '0.005') ?>">
+                            <div class="cfg-hint">Минимальный шаг подтягивания стопа (<code>0.01</code> = шаг 1%)</div>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="brain_may_delay_trailing" name="brain_may_delay_trailing" value="1" <?= $checked('brain_may_delay_trailing') ?>>
+                            <label class="form-check-label" for="brain_may_delay_trailing">Brain May Delay Trailing</label>
+                            <br><div class="cfg-hint">Brain может задержать активацию трейлинга</div>
+                        </div>
+                        <div class="cfg-mode-note" style="<?= $currentTrailingMode === 'price_distance_floor' ? '' : 'display:none' ?>">⚠ Поля выше активны только в режимах ROI Giveback / Price Distance</div>
+                        </div><!-- /roi_giveback_fields_group -->
 
-                        <!-- Price Distance Floor specific fields -->
-                        <div class="mb-3" id="floor_trailing_fields_group">
+                        <!-- Price Distance Floor specific fields — active only for price_distance_floor mode -->
+                        <div class="mb-3<?= $currentTrailingMode !== 'price_distance_floor' ? ' cfg-muted-field' : '' ?>" id="floor_trailing_fields_group">
                             <div class="card border-info">
                                 <div class="card-header bg-info bg-opacity-10"><strong>Price Distance Floor Settings</strong>
                                     <span class="badge bg-info ms-2">price_distance_floor mode</span>
@@ -614,25 +639,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="trailing_min_lock_roi" class="form-label">Trailing Min Lock ROI
-                                <i class="bi bi-question-circle cfg-info" title="Минимальная прибыль, которую трейлинг зафиксирует. 0.012 = +1.2% ROI."></i>
-                            </label>
-                            <input type="number" step="0.001" min="0" class="form-control" id="trailing_min_lock_roi" name="trailing_min_lock_roi" value="<?= $v('trailing_min_lock_roi', '0.008') ?>">
-                            <div class="cfg-hint">Минимальная фиксируемая прибыль (<code>0.012</code> = зафиксировать не менее +1.2% ROI)</div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="trailing_min_step" class="form-label">Trailing Min Step
-                                <i class="bi bi-question-circle cfg-info" title="Минимальный шаг подтягивания стопа. 0.01 = стоп сдвигается при изменении на 1%."></i>
-                            </label>
-                            <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_min_step" name="trailing_min_step" value="<?= $v('trailing_min_step', '0.005') ?>">
-                            <div class="cfg-hint">Минимальный шаг подтягивания стопа (<code>0.01</code> = шаг 1%)</div>
-                        </div>
-                        <div class="mb-3 form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch" id="brain_may_delay_trailing" name="brain_may_delay_trailing" value="1" <?= $checked('brain_may_delay_trailing') ?>>
-                            <label class="form-check-label" for="brain_may_delay_trailing">Brain May Delay Trailing</label>
-                            <br><div class="cfg-hint">Brain может задержать активацию трейлинга</div>
+                            <div class="cfg-mode-note" style="<?= $currentTrailingMode !== 'price_distance_floor' ? '' : 'display:none' ?>">⚠ Активно только в режиме Price Distance Floor</div>
                         </div>
                     </div>
                 </div>
@@ -1044,6 +1051,37 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                     if (entryNote) entryNote.style.display = mode !== 'entry_roi' ? '' : 'none';
                 }
             });
+        }
+
+        // Trailing mode visibility — show/mute fields by active mode
+        var trailingModeSelect = document.getElementById('trailing_mode');
+        if (trailingModeSelect) {
+            function updateTrailingModeVisibility() {
+                var mode = trailingModeSelect.value;
+                var floorGroup = document.getElementById('floor_trailing_fields_group');
+                var givebackGroup = document.getElementById('roi_giveback_fields_group');
+                var distanceGroup = document.getElementById('price_distance_fields_group');
+
+                // Floor fields: active only in price_distance_floor
+                if (floorGroup) {
+                    floorGroup.classList.toggle('cfg-muted-field', mode !== 'price_distance_floor');
+                    var floorNote = floorGroup.querySelector('.cfg-mode-note');
+                    if (floorNote) floorNote.style.display = mode !== 'price_distance_floor' ? '' : 'none';
+                }
+                // ROI Giveback fields: active in roi_giveback and price_distance, muted in floor
+                if (givebackGroup) {
+                    givebackGroup.classList.toggle('cfg-muted-field', mode === 'price_distance_floor');
+                    var gbNote = givebackGroup.querySelector('.cfg-mode-note');
+                    if (gbNote) gbNote.style.display = mode === 'price_distance_floor' ? '' : 'none';
+                }
+                // Price distance pct: active in price_distance and price_distance_floor
+                if (distanceGroup) {
+                    distanceGroup.classList.toggle('cfg-muted-field', mode === 'roi_giveback');
+                    var distNote = distanceGroup.querySelector('.cfg-mode-note');
+                    if (distNote) distNote.style.display = mode === 'roi_giveback' ? '' : 'none';
+                }
+            }
+            trailingModeSelect.addEventListener('change', updateTrailingModeVisibility);
         }
     });
     </script>

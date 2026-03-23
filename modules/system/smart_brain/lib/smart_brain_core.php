@@ -1250,13 +1250,22 @@ final class SmartBrainCore
     {
         $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
         $rawBreakEvenActivation = (float)($userLimits['break_even_activation_roi'] ?? 0.025);
+        $trailingMode = (string)($userLimits['trailing_mode'] ?? 'roi_giveback');
 
         return [
             'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
+            'trailing_mode' => $trailingMode,
             'trailing_activation_roi' => $rawActivation,
             'trailing_activation_roi_pct' => ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation,
             'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
             'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
+            // Price distance / floor fields
+            'trailing_price_distance_pct' => (float)($userLimits['trailing_price_distance_pct'] ?? 0.02),
+            'trailing_activation_floor_roi' => (float)($userLimits['trailing_activation_floor_roi'] ?? 0.04),
+            'trailing_floor_lock_roi' => (float)($userLimits['trailing_floor_lock_roi'] ?? 0.03),
+            'trailing_step_mode' => (string)($userLimits['trailing_step_mode'] ?? 'fixed'),
+            'trailing_step_pct_min' => (float)($userLimits['trailing_step_pct_min'] ?? 0.005),
+            'trailing_step_pct_max' => (float)($userLimits['trailing_step_pct_max'] ?? 0.02),
             'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
             'break_even_activation_roi' => $rawBreakEvenActivation,
             'break_even_activation_roi_pct' => ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation,
@@ -1266,7 +1275,7 @@ final class SmartBrainCore
             'logical_stop_roi' => (float)($userLimits['logical_stop_roi'] ?? 0.03),
             'drawdown_factor' => 0.5,
             'canonical_source' => 'brain_user_limits',
-            'unit_system' => 'activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
+            'unit_system' => 'activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio,trailing_price_distance_pct=ratio',
         ];
     }
 

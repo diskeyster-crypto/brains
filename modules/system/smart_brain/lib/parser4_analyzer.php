@@ -263,6 +263,13 @@ final class Parser4Analyzer
                 'pattern_algorithm' => $patternAlgorithm,
                 'pattern_confidence' => $patternConfidence,
                 'confirmation_score' => (float)($patternResult['confirmation_score'] ?? 0.0),
+                'setup_score' => (float)($patternResult['setup_score'] ?? 0.0),
+                'context_score' => (float)($patternResult['context_score'] ?? 0.0),
+                'hold_score' => (float)($patternResult['hold_score'] ?? 0.0),
+                'trigger_level' => (float)($patternResult['trigger_level'] ?? 0.0),
+                'setup_neckline_price' => (float)($patternResult['setup_neckline_price'] ?? 0.0),
+                'setup_low_1_price' => (float)($patternResult['setup_low_1_price'] ?? 0.0),
+                'setup_low_2_price' => (float)($patternResult['setup_low_2_price'] ?? 0.0),
                 'trend_match_score' => round($trendMatchScore, 4),
                 'corridor_fit_score' => round($corridorFitScore, 4),
                 'entry_quality_score' => round($entryQualityScore, 4),
@@ -816,6 +823,15 @@ final class Parser4Analyzer
                     'name' => $detector->getName(),
                     'confidence' => (float)($result['confidence'] ?? 0.0),
                     'trend_bias' => (string)($result['trend_bias'] ?? ''),
+                    // Preserve detector detail fields for downstream propagation
+                    'confirmation_score' => (float)($result['confirmation_score'] ?? 0.0),
+                    'setup_score' => (float)($result['setup_score'] ?? 0.0),
+                    'context_score' => (float)($result['context_score'] ?? 0.0),
+                    'hold_score' => (float)($result['hold_score'] ?? 0.0),
+                    'trigger_level' => (float)($result['trigger_level'] ?? 0.0),
+                    'setup_neckline_price' => (float)($result['setup_neckline_price'] ?? 0.0),
+                    'setup_low_1_price' => (float)($result['setup_low_1_price'] ?? 0.0),
+                    'setup_low_2_price' => (float)($result['setup_low_2_price'] ?? 0.0),
                 ];
             }
         }
@@ -825,26 +841,19 @@ final class Parser4Analyzer
         }
 
         // Apply mode logic
+        $best = null;
         switch ($this->patternMode) {
             case 'one':
                 // Use the first enabled detector's result (if detected)
                 // In mode=one only one algorithm should be enabled, pick best
                 $best = $results[0];
-                return [
-                    'pattern_algorithm' => $best['name'],
-                    'pattern_confidence' => round($best['confidence'], 2),
-                    'trend_bias' => $best['trend_bias'] ?: null,
-                ];
+                break;
 
             case 'any':
                 // Any enabled algorithm match → pick highest confidence
                 usort($results, static fn($a, $b) => $b['confidence'] <=> $a['confidence']);
                 $best = $results[0];
-                return [
-                    'pattern_algorithm' => $best['name'],
-                    'pattern_confidence' => round($best['confidence'], 2),
-                    'trend_bias' => $best['trend_bias'] ?: null,
-                ];
+                break;
 
             case 'all':
                 // All enabled algorithms must confirm
@@ -854,15 +863,25 @@ final class Parser4Analyzer
                 // All confirmed — pick highest confidence
                 usort($results, static fn($a, $b) => $b['confidence'] <=> $a['confidence']);
                 $best = $results[0];
-                return [
-                    'pattern_algorithm' => $best['name'],
-                    'pattern_confidence' => round($best['confidence'], 2),
-                    'trend_bias' => $best['trend_bias'] ?: null,
-                ];
+                break;
 
             default:
                 return $default;
         }
+
+        return [
+            'pattern_algorithm' => $best['name'],
+            'pattern_confidence' => round($best['confidence'], 2),
+            'trend_bias' => $best['trend_bias'] ?: null,
+            'confirmation_score' => $best['confirmation_score'],
+            'setup_score' => $best['setup_score'],
+            'context_score' => $best['context_score'],
+            'hold_score' => $best['hold_score'],
+            'trigger_level' => $best['trigger_level'],
+            'setup_neckline_price' => $best['setup_neckline_price'],
+            'setup_low_1_price' => $best['setup_low_1_price'],
+            'setup_low_2_price' => $best['setup_low_2_price'],
+        ];
     }
 
     // ------------------------------------------------------------------

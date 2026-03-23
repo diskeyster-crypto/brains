@@ -441,6 +441,17 @@ final class SmartBrainCore
             $funnel['avg_zone_distance'] = count($distances) > 0 ? round(array_sum($distances) / count($distances), 6) : 0.0;
             $funnel['avg_price_position'] = count($positions) > 0 ? round(array_sum($positions) / count($positions), 4) : 0.0;
             $funnel['avg_confirmation_score'] = count($confScores) > 0 ? round(array_sum($confScores) / count($confScores), 4) : 0.0;
+
+            // Sanity counters: detect zero-score regression for confirmed V2 patterns
+            $confScoreZeroOnConfirmed = 0;
+            foreach ($confScores as $cs) {
+                if ($cs <= 0.0) {
+                    $confScoreZeroOnConfirmed++;
+                }
+            }
+            $funnel['confirmation_score_zero_on_confirmed_count'] = $confScoreZeroOnConfirmed;
+            $funnel['confirmation_score_total_monitors'] = count($confScores);
+
             unset($funnel['zone_widths'], $funnel['zone_distances'], $funnel['price_positions'], $funnel['confirmation_scores']);
 
             // Add per-pattern rejection reasons

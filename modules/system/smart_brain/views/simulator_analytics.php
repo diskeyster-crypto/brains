@@ -699,6 +699,13 @@ if (!empty($v2DfByPattern)):
                     <span>Avg Zone Width: <strong><?= number_format((float)($diag['avg_zone_width_pct'] ?? 0) * 100, 3) ?>%</strong></span>
                     <span>Avg Zone Dist: <strong><?= number_format((float)($diag['avg_zone_distance'] ?? 0) * 100, 3) ?>%</strong></span>
                     <span>Avg Conf Score: <strong><?= number_format((float)($diag['avg_confirmation_score'] ?? 0), 3) ?></strong></span>
+                    <?php
+                        $csZero = (int)($diag['confirmation_score_zero_on_confirmed_count'] ?? 0);
+                        $csTotal = (int)($diag['confirmation_score_total_monitors'] ?? 0);
+                    ?>
+                    <?php if ($csTotal > 0 && $csZero > 0): ?>
+                    <span class="text-warning">⚠ Conf Score Zero: <strong><?= $csZero ?>/<?= $csTotal ?></strong></span>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -718,6 +725,7 @@ if (!empty($v2DfByPattern)):
                         <th>EZ Low</th>
                         <th>EZ High</th>
                         <th>EZ%</th>
+                        <th>Pat Conf</th>
                         <th>Conf Score</th>
                         <th>Cur Price</th>
                         <th>WI:EnterNow</th>
@@ -735,6 +743,7 @@ if (!empty($v2DfByPattern)):
                         <td><?= number_format((float)($fp['entry_zone_low'] ?? 0), 8) ?></td>
                         <td><?= number_format((float)($fp['entry_zone_high'] ?? 0), 8) ?></td>
                         <td><?= number_format((float)($fp['entry_zone_percent'] ?? 0) * 100, 1) ?>%</td>
+                        <td><?= number_format((float)($fp['pattern_confidence'] ?? 0), 3) ?></td>
                         <td><?= number_format((float)($fp['confirmation_score'] ?? 0), 3) ?></td>
                         <td><?= number_format((float)($fp['current_price_at_creation'] ?? 0), 8) ?></td>
                         <td class="<?= ((string)($fp['whatif_enter_now_status'] ?? '')) === 'entry_zone' ? 'text-success fw-bold' : '' ?>"><?= htmlspecialchars((string)($fp['whatif_enter_now_status'] ?? '')) ?></td>

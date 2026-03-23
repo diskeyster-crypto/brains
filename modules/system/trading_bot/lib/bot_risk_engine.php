@@ -365,9 +365,10 @@ class BotRiskEngine
      * 
      * B3 FIX: ROI calculation INCLUDES leverage.
      * 
-     * Supports two trailing modes:
+     * Supports three trailing modes:
      *   - roi_giveback (default): trailing distance based on drawdown_factor
      *   - price_distance: trailing at fixed pct from current price
+     *   - price_distance_floor: activation floor + locked ROI + price distance + step corridor
      * 
      * If risk.trailing.enabled=false → ['enabled'=>false].
      * If enabled:
@@ -378,6 +379,11 @@ class BotRiskEngine
      * - For price_distance mode:
      *   - trailing_price_distance_pct = risk.trailing.trailing_price_distance_pct
      *   - trailingStop = entry * trailing_price_distance_pct
+     * - For price_distance_floor mode:
+     *   - trailing_activation_floor_roi = activation threshold (percent)
+     *   - trailing_floor_lock_roi = minimum locked ROI (percent)
+     *   - trailing_price_distance_pct = distance from best price
+     *   - trailing_step_mode = 'fixed' | 'auto_strength'
      * 
      * @param array $risk Risk block
      * @param float $entryAvg Average entry price
@@ -413,6 +419,61 @@ class BotRiskEngine
             $activePrice = $entryAvg * (1 + $priceMovePct);
         } else {
             $activePrice = $entryAvg * (1 - $priceMovePct);
+        }
+
+        // Price-distance-floor mode (activation floor + locked ROI + price distance + step corridor)
+        if ($trailingMode === 'price_distance_floor') {
+            $floorActivationRoi = (float)($trailing['trailing_activation_floor_roi'] ?? $activationRoiPct);
+            $floorLockRoi = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
+            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+            $stepMode = (string)($trailing['trailing_step_mode'] ?? 'fixed');
+            $stepPctMin = (float)($trailing['trailing_step_pct_min'] ?? 0.005);
+            $stepPctMax = (float)($trailing['trailing_step_pct_max'] ?? 0.02);
+
+            if ($distancePct <= 0 || $distancePct >= 1.0) {
+                return ['enabled' => false];
+            }
+            if ($floorLockRoi >= $floorActivationRoi) {
+                // Floor lock must be less than activation threshold
+                return ['enabled' => false];
+            }
+
+            // Use floor activation ROI for activePrice
+            $floorPriceMovePct = $floorActivationRoi / 100 / $leverage;
+            if ($side === 'long') {
+                $activePrice = $entryAvg * (1 + $floorPriceMovePct);
+            } else {
+                $activePrice = $entryAvg * (1 - $floorPriceMovePct);
+            }
+
+            $trailingStop = $entryAvg * $distancePct;
+            // Compute floor stop price
+            $floorPriceMove = ($floorLockRoi / 100.0) / $leverage;
+            if ($side === 'long') {
+                $floorStopPrice = $entryAvg * (1.0 + $floorPriceMove);
+                $theoreticalStop = $activePrice * (1.0 - $distancePct);
+            } else {
+                $floorStopPrice = $entryAvg * (1.0 - $floorPriceMove);
+                $theoreticalStop = $activePrice * (1.0 + $distancePct);
+            }
+
+            return [
+                'enabled' => true,
+                'trailing_mode' => 'price_distance_floor',
+                'activation_roi_pct' => $floorActivationRoi,
+                'trailing_activation_floor_roi' => $floorActivationRoi,
+                'trailing_floor_lock_roi' => $floorLockRoi,
+                'trailing_price_distance_pct' => $distancePct,
+                'trailing_step_mode' => $stepMode,
+                'trailing_step_pct_min' => $stepPctMin,
+                'trailing_step_pct_max' => $stepPctMax,
+                'leverage' => $leverage,
+                'active_price' => round($activePrice, 8),
+                'trailing_stop' => round($trailingStop, 8),
+                'floor_stop_price' => round($floorStopPrice, 8),
+                'exchange_trailing_distance' => round($trailingStop, 8),
+                'theoretical_current_stop_price' => round($theoreticalStop, 8),
+            ];
         }
 
         // Price-distance mode

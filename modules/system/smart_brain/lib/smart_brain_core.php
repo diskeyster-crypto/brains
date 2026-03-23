@@ -1131,9 +1131,9 @@ final class SmartBrainCore
         $activationPct = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
         $breakEvenActivationPct = ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation;
 
-        // Trailing mode: roi_giveback (default) or price_distance
+        // Trailing mode: roi_giveback (default) or price_distance or price_distance_floor
         $trailingMode = (string)($userLimits['trailing_mode'] ?? 'roi_giveback');
-        if (!in_array($trailingMode, ['roi_giveback', 'price_distance'], true)) {
+        if (!in_array($trailingMode, ['roi_giveback', 'price_distance', 'price_distance_floor'], true)) {
             $trailingMode = 'roi_giveback';
         }
 
@@ -1143,12 +1143,37 @@ final class SmartBrainCore
         if ($trailingPriceDistancePct < 0.005) { $trailingPriceDistancePct = 0.005; }
         if ($trailingPriceDistancePct > 0.20) { $trailingPriceDistancePct = 0.20; }
 
+        // Price-distance-floor specific fields
+        $rawFloorActivation = (float)($userLimits['trailing_activation_floor_roi'] ?? 0.04);
+        $rawFloorLockRoi    = (float)($userLimits['trailing_floor_lock_roi'] ?? 0.03);
+        // Convert ratio→percent if needed
+        $floorActivationPct = ($rawFloorActivation > 0 && $rawFloorActivation < 1.0) ? $rawFloorActivation * 100 : $rawFloorActivation;
+        $floorLockRoiPct    = ($rawFloorLockRoi > 0 && $rawFloorLockRoi < 1.0) ? $rawFloorLockRoi * 100 : $rawFloorLockRoi;
+        // Validate: floor lock must be less than floor activation
+        if ($floorLockRoiPct >= $floorActivationPct && $floorActivationPct > 0) {
+            $floorLockRoiPct = $floorActivationPct * 0.75;
+        }
+        $trailingStepMode = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
+        if (!in_array($trailingStepMode, ['fixed', 'auto_strength'], true)) {
+            $trailingStepMode = 'fixed';
+        }
+        $trailingStepPctMin = (float)($userLimits['trailing_step_pct_min'] ?? 0.005);
+        $trailingStepPctMax = (float)($userLimits['trailing_step_pct_max'] ?? 0.02);
+        if ($trailingStepPctMin < 0.001) { $trailingStepPctMin = 0.001; }
+        if ($trailingStepPctMax < $trailingStepPctMin) { $trailingStepPctMax = $trailingStepPctMin; }
+        if ($trailingStepPctMax > 0.10) { $trailingStepPctMax = 0.10; }
+
         $botReady['trailing'] = [
             'enabled' => $trailingEnabled,
             'trailing_mode' => $trailingMode,
             'activation_roi_pct' => $activationPct,
             'drawdown_factor' => 0.5,
             'trailing_price_distance_pct' => $trailingPriceDistancePct,
+            'trailing_activation_floor_roi' => $floorActivationPct,
+            'trailing_floor_lock_roi' => $floorLockRoiPct,
+            'trailing_step_mode' => $trailingStepMode,
+            'trailing_step_pct_min' => $trailingStepPctMin,
+            'trailing_step_pct_max' => $trailingStepPctMax,
             'min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
             'min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
             'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
@@ -1157,7 +1182,7 @@ final class SmartBrainCore
             'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.03),
             'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.40),
             'brain_trailing_applied' => true,
-            'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,trailing_price_distance_pct=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
+            'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,trailing_price_distance_pct=ratio,floor_activation=percent,floor_lock=percent,step_pct=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
         ];
 
         // Logical stop vs emergency stop separation

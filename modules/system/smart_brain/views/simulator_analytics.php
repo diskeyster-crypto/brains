@@ -745,6 +745,316 @@ $pageContent = function() use (
         </div>
     </div>
 
+    <!-- ===== FOCUSED AUDIT: double_bottom / long ===== -->
+    <?php
+    $dbla = (array)($stats['double_bottom_long_audit'] ?? []);
+    $dblaHasData = !empty($dbla['has_data']);
+    $dblaLowSample = !empty($dbla['low_sample']);
+    $dblaCore = (array)($dbla['core_stats'] ?? []);
+    $dblaExit = (array)($dbla['exit_breakdown'] ?? []);
+    $dblaExitRates = (array)($dbla['exit_rates'] ?? []);
+    $dblaEntry = (array)($dbla['entry_quality'] ?? []);
+    $dblaSymbols = (array)($dbla['symbol_performance'] ?? []);
+    $dblaBaseline = (array)($dbla['baseline_comparison'] ?? []);
+    $dblaWhatIf = (array)($dbla['what_if_scenarios'] ?? []);
+    $dblaHypotheses = (array)($dbla['hypotheses'] ?? []);
+    $dblaMitigation = (array)($dbla['mitigation'] ?? []);
+    $dblaSeverity = (string)($dblaMitigation['severity'] ?? 'info');
+    ?>
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-<?= $dblaSeverity === 'critical' ? 'danger text-white' : ($dblaSeverity === 'warning' ? 'warning' : 'info text-white') ?>">
+                    <h5 style="margin:0;">
+                        <i class="bi bi-bullseye me-1"></i>
+                        Фокус-аудит: double_bottom / long
+                        <?php if ($dblaLowSample): ?>
+                            <span class="badge bg-secondary ms-2" style="font-size:0.65rem;">⚠ мало данных</span>
+                        <?php endif; ?>
+                        <?php if ($dblaSeverity === 'critical'): ?>
+                            <span class="badge bg-dark ms-2" style="font-size:0.65rem;">CRITICAL</span>
+                        <?php elseif ($dblaSeverity === 'warning'): ?>
+                            <span class="badge bg-dark ms-2" style="font-size:0.65rem;">WARNING</span>
+                        <?php endif; ?>
+                    </h5>
+                </div>
+                <div class="card-body">
+                <?php if (!$dblaHasData): ?>
+                    <p class="text-muted">Нет данных для double_bottom/long.</p>
+                <?php else: ?>
+
+                    <!-- Mitigation Recommendation -->
+                    <?php if (!empty($dblaMitigation['actions'])): ?>
+                    <div class="alert alert-<?= $dblaSeverity === 'critical' ? 'danger' : ($dblaSeverity === 'warning' ? 'warning' : 'info') ?> mb-3">
+                        <strong><i class="bi bi-shield-exclamation me-1"></i> Рекомендация:</strong>
+                        <ul class="mb-0 mt-1">
+                        <?php foreach ((array)($dblaMitigation['actions'] ?? []) as $action): ?>
+                            <li><?= htmlspecialchars((string)$action) ?></li>
+                        <?php endforeach; ?>
+                        </ul>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Core Metrics -->
+                    <div class="row mb-3">
+                        <?php
+                        $dblaMetrics = [
+                            ['label' => 'Сделки', 'value' => (int)($dblaCore['trades'] ?? 0), 'fmt' => 'int'],
+                            ['label' => 'Winrate', 'value' => (float)($dblaCore['winrate'] ?? 0) * 100, 'fmt' => 'pct', 'warn' => (float)($dblaCore['winrate'] ?? 0) < 0.35],
+                            ['label' => 'Avg ROI', 'value' => (float)($dblaCore['avg_roi'] ?? 0) * 100, 'fmt' => 'roi'],
+                            ['label' => 'Median ROI', 'value' => (float)($dblaCore['median_roi'] ?? 0) * 100, 'fmt' => 'roi'],
+                            ['label' => 'False Rev %', 'value' => (float)($dblaCore['false_reversal_rate'] ?? 0) * 100, 'fmt' => 'pct', 'warn' => (float)($dblaCore['false_reversal_rate'] ?? 0) > 0.4],
+                            ['label' => 'Stop Hit %', 'value' => (float)($dblaCore['stop_hit_rate'] ?? 0) * 100, 'fmt' => 'pct', 'warn' => (float)($dblaCore['stop_hit_rate'] ?? 0) > 0.3],
+                            ['label' => 'Avg MAE', 'value' => (float)($dblaCore['avg_mae'] ?? 0) * 100, 'fmt' => 'pct2'],
+                            ['label' => 'Avg MFE', 'value' => (float)($dblaCore['avg_mfe'] ?? 0) * 100, 'fmt' => 'pct2'],
+                            ['label' => 'Avg Duration', 'value' => (float)($dblaCore['avg_duration'] ?? 0), 'fmt' => 'min'],
+                        ];
+                        foreach ($dblaMetrics as $m): ?>
+                            <div class="col-auto mb-2">
+                                <div class="stat-card border rounded p-2" style="min-width:100px;">
+                                    <div class="stat-value <?= !empty($m['warn']) ? 'text-danger' : '' ?>" style="font-size:1.1rem;">
+                                    <?php
+                                    if ($m['fmt'] === 'int') echo (int)$m['value'];
+                                    elseif ($m['fmt'] === 'roi') echo '<span class="' . ($m['value'] >= 0 ? 'roi-positive' : 'roi-negative') . '">' . number_format($m['value'], 2) . '%</span>';
+                                    elseif ($m['fmt'] === 'pct') echo number_format($m['value'], 1) . '%';
+                                    elseif ($m['fmt'] === 'pct2') echo number_format($m['value'], 3) . '%';
+                                    elseif ($m['fmt'] === 'min') echo number_format($m['value'], 0) . ' мин';
+                                    ?>
+                                    </div>
+                                    <div class="stat-label"><?= htmlspecialchars($m['label']) ?></div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <!-- Baseline Comparison -->
+                    <h6 class="mt-3"><i class="bi bi-arrow-left-right me-1"></i> Сравнение с базой</h6>
+                    <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered align-middle" style="font-size:0.8rem;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Сегмент</th><th class="text-end">Сделки</th><th class="text-end">Winrate</th>
+                            <th class="text-end">Avg ROI</th><th class="text-end">False Rev %</th><th class="text-end">Stop Hit %</th>
+                            <th class="text-end">Avg MAE</th><th class="text-end">Avg MFE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $blLabels = [
+                        'double_bottom_long' => 'double_bottom / long',
+                        'double_bottom_short' => 'double_bottom / short',
+                        'double_bottom_all' => 'double_bottom (все)',
+                        'overall' => 'ИТОГО (все паттерны)',
+                    ];
+                    foreach ($blLabels as $blKey => $blLabel):
+                        $bl = (array)($dblaBaseline[$blKey] ?? []);
+                        $blTrades = (int)($bl['trades'] ?? 0);
+                        if ($blTrades === 0) continue;
+                        $blWr = (float)($bl['winrate'] ?? 0);
+                        $blRoi = (float)($bl['avg_roi'] ?? 0);
+                        $blFr = (float)($bl['false_reversal_rate'] ?? 0);
+                        $blSr = (float)($bl['stop_hit_rate'] ?? 0);
+                        $isFocused = ($blKey === 'double_bottom_long');
+                    ?>
+                        <tr class="<?= $isFocused ? 'table-warning' : '' ?>">
+                            <td class="<?= $isFocused ? 'fw-bold' : '' ?>"><?= htmlspecialchars($blLabel) ?></td>
+                            <td class="text-end"><?= $blTrades ?></td>
+                            <td class="text-end <?= $blWr < 0.3 ? 'roi-negative' : '' ?>"><?= number_format($blWr * 100, 1) ?>%</td>
+                            <td class="text-end <?= $blRoi >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format($blRoi * 100, 2) ?>%</td>
+                            <td class="text-end"><?= number_format($blFr * 100, 1) ?>%</td>
+                            <td class="text-end"><?= number_format($blSr * 100, 1) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($bl['avg_mae'] ?? 0) * 100, 3) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($bl['avg_mfe'] ?? 0) * 100, 3) ?>%</td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                    </table>
+                    </div>
+
+                    <div class="row mb-3">
+                        <!-- Exit Breakdown -->
+                        <div class="col-md-6">
+                            <h6><i class="bi bi-door-open me-1"></i> Распределение выходов</h6>
+                            <table class="table table-sm table-bordered" style="font-size:0.8rem;">
+                            <tbody>
+                            <?php
+                            $exitLabels = [
+                                'stop_loss' => ['Стоп-лосс', 'reason-stop_loss'],
+                                'early_failure' => ['Ранний выход', 'reason-early_failure'],
+                                'trailing_stop' => ['Трейлинг', 'reason-trailing_stop'],
+                                'break_even_stop' => ['Безубыток', 'reason-break_even_stop'],
+                                'take_profit' => ['Тейк-профит', 'reason-take_profit'],
+                                'other' => ['Прочие', ''],
+                            ];
+                            $dblaTargetTotal = (int)($dblaCore['trades'] ?? 0);
+                            foreach ($exitLabels as $exKey => $exInfo):
+                                $exCount = (int)($dblaExit[$exKey] ?? 0);
+                                $exPct = $dblaTargetTotal > 0 ? ($exCount / $dblaTargetTotal) * 100 : 0;
+                            ?>
+                                <tr>
+                                    <td><span class="badge <?= $exInfo[1] ?>" style="font-size:0.7rem;"><?= $exInfo[0] ?></span></td>
+                                    <td class="text-end"><?= $exCount ?></td>
+                                    <td class="text-end"><?= number_format($exPct, 1) ?>%</td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                            </table>
+                            <p class="text-muted" style="font-size:0.72rem;">
+                                Trailing activation: <?= number_format((float)($dblaExitRates['trailing_activation_rate'] ?? 0) * 100, 1) ?>% |
+                                BE activation: <?= number_format((float)($dblaExitRates['break_even_activation_rate'] ?? 0) * 100, 1) ?>%
+                            </p>
+                        </div>
+
+                        <!-- Entry Quality -->
+                        <div class="col-md-6">
+                            <h6><i class="bi bi-crosshair me-1"></i> Качество входа</h6>
+                            <table class="table table-sm table-bordered" style="font-size:0.8rem;">
+                            <tbody>
+                                <tr>
+                                    <td>Немедленный провал (≤5мин)</td>
+                                    <td class="text-end <?= (float)($dblaEntry['immediate_failure_rate'] ?? 0) > 0.15 ? 'text-danger fw-bold' : '' ?>">
+                                        <?= number_format((float)($dblaEntry['immediate_failure_rate'] ?? 0) * 100, 1) ?>%
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Быстрый стоп (≤15мин, убыток)</td>
+                                    <td class="text-end <?= (float)($dblaEntry['quick_stop_rate'] ?? 0) > 0.3 ? 'text-danger fw-bold' : '' ?>">
+                                        <?= number_format((float)($dblaEntry['quick_stop_rate'] ?? 0) * 100, 1) ?>%
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Никогда не в плюсе (MFE&lt;0.5%)</td>
+                                    <td class="text-end <?= (float)($dblaEntry['never_positive_rate'] ?? 0) > 0.4 ? 'text-danger fw-bold' : '' ?>">
+                                        <?= number_format((float)($dblaEntry['never_positive_rate'] ?? 0) * 100, 1) ?>%
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Avg MAE проигравших</td>
+                                    <td class="text-end"><?= number_format((float)($dblaEntry['avg_loser_mae'] ?? 0) * 100, 3) ?>%</td>
+                                </tr>
+                                <tr>
+                                    <td>Avg MFE проигравших</td>
+                                    <td class="text-end"><?= number_format((float)($dblaEntry['avg_loser_mfe'] ?? 0) * 100, 3) ?>%</td>
+                                </tr>
+                                <tr>
+                                    <td>Avg MFE победителей</td>
+                                    <td class="text-end roi-positive"><?= number_format((float)($dblaEntry['avg_winner_mfe'] ?? 0) * 100, 3) ?>%</td>
+                                </tr>
+                            </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Per-Symbol Breakdown -->
+                    <?php if (!empty($dblaSymbols)): ?>
+                    <h6><i class="bi bi-list-ol me-1"></i> По символам (худшие первые)</h6>
+                    <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered align-middle" style="font-size:0.8rem;">
+                    <thead class="table-light">
+                        <tr><th>Символ</th><th class="text-end">Сделки</th><th class="text-end">Winrate</th><th class="text-end">Avg ROI</th><th class="text-end">Avg MAE</th><th class="text-end">Avg MFE</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach (array_slice($dblaSymbols, 0, 10) as $symIdx => $symRow):
+                        $symLowSample = !empty($symRow['low_sample']);
+                    ?>
+                        <tr class="<?= $symIdx === 0 ? 'table-danger' : '' ?>">
+                            <td><?= htmlspecialchars((string)($symRow['symbol'] ?? '')) ?></td>
+                            <td class="text-end"><?= (int)($symRow['trades'] ?? 0) ?></td>
+                            <td class="text-end <?= (float)($symRow['winrate'] ?? 0) < 0.3 ? 'roi-negative' : '' ?>">
+                                <?= number_format((float)($symRow['winrate'] ?? 0) * 100, 1) ?>%
+                            </td>
+                            <td class="text-end <?= (float)($symRow['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>">
+                                <?= number_format((float)($symRow['avg_roi'] ?? 0) * 100, 2) ?>%
+                            </td>
+                            <td class="text-end"><?= number_format((float)($symRow['avg_mae'] ?? 0) * 100, 3) ?>%</td>
+                            <td class="text-end"><?= number_format((float)($symRow['avg_mfe'] ?? 0) * 100, 3) ?>%</td>
+                            <td><?= $symLowSample ? '<span class="badge bg-secondary" style="font-size:0.6rem;">мало</span>' : '' ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                    </table>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- What-if Scenarios -->
+                    <?php if (!empty($dblaWhatIf)): ?>
+                    <h6><i class="bi bi-toggles me-1"></i> Что-если (double_bottom/long)</h6>
+                    <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered align-middle" style="font-size:0.8rem;">
+                    <thead class="table-light">
+                        <tr><th>Сценарий</th><th class="text-end">Сделки</th><th class="text-end">Winrate</th><th class="text-end">Avg ROI</th><th class="text-end">False Rev %</th></tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    // Current baseline first
+                    $overallBl = (array)($dblaBaseline['overall'] ?? []);
+                    $overallBlWr = (float)($overallBl['winrate'] ?? 0);
+                    ?>
+                    <tr class="table-light">
+                        <td><em>Текущее состояние (все паттерны)</em></td>
+                        <td class="text-end"><?= (int)($overallBl['trades'] ?? 0) ?></td>
+                        <td class="text-end"><?= number_format($overallBlWr * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($overallBl['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($overallBl['avg_roi'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($overallBl['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                    </tr>
+                    <?php foreach ($dblaWhatIf as $scKey => $sc):
+                        $scWr = (float)($sc['winrate'] ?? 0);
+                        $scWrImproved = $scWr > $overallBlWr;
+                    ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)($sc['description'] ?? $scKey)) ?></td>
+                        <td class="text-end"><?= (int)($sc['trades'] ?? 0) ?></td>
+                        <td class="text-end <?= $scWrImproved ? 'roi-positive fw-bold' : '' ?>">
+                            <?= number_format($scWr * 100, 1) ?>%
+                            <?= $scWrImproved ? ' ↑' : '' ?>
+                        </td>
+                        <td class="text-end <?= (float)($sc['avg_roi'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>">
+                            <?= number_format((float)($sc['avg_roi'] ?? 0) * 100, 2) ?>%
+                        </td>
+                        <td class="text-end"><?= number_format((float)($sc['false_reversal_rate'] ?? 0) * 100, 1) ?>%</td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                    </table>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Ranked Root-Cause Hypotheses -->
+                    <?php if (!empty($dblaHypotheses)): ?>
+                    <h6><i class="bi bi-diagram-3 me-1"></i> Ранжированные гипотезы причин</h6>
+                    <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered align-middle" style="font-size:0.8rem;">
+                    <thead class="table-light">
+                        <tr><th style="width:30px;">#</th><th>Гипотеза</th><th>Обоснование</th><th class="text-end">Вес</th></tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($dblaHypotheses as $hIdx => $hyp): ?>
+                        <tr class="<?= $hIdx === 0 ? 'table-danger' : ($hIdx === 1 ? 'table-warning' : '') ?>">
+                            <td class="fw-bold"><?= (int)($hyp['rank'] ?? $hIdx + 1) ?></td>
+                            <td><?= htmlspecialchars((string)($hyp['label'] ?? '')) ?></td>
+                            <td class="text-muted" style="font-size:0.72rem;"><?= htmlspecialchars((string)($hyp['evidence'] ?? '')) ?></td>
+                            <td class="text-end"><strong><?= number_format((float)($hyp['score'] ?? 0), 0) ?></strong></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                    </table>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="px-3 py-2">
+                        <p class="text-secondary mb-0" style="font-size:0.75rem;">
+                            <em><i class="bi bi-info-circle me-1"></i>
+                            Фокус-аудит double_bottom/long — только наблюдение и рекомендации. Не отключайте паттерны автоматически.
+                            Сначала локализуйте причину, затем тестируйте минимальное изменение.</em>
+                        </p>
+                    </div>
+
+                <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== LEVERAGE MODE STATS ===== -->
     <div class="row mb-4">
         <div class="col-md-6">

@@ -630,6 +630,9 @@ final class SimulatorEngine
         // Regression audit: short-side collapse analysis
         $regressionAudit = $this->computeRegressionAudit($closed);
 
+        // Focused double_bottom/long regression audit
+        $doubleBottomLongAudit = $this->computeDoubleBottomLongAudit($closed);
+
         $stats = [
             'total_trades'               => $totalClosed,
             'winrate'                    => $winrate,
@@ -644,6 +647,7 @@ final class SimulatorEngine
             'pattern_stats'              => $patternStatsResult,
             'reversal_comparison'        => $reversalComparison,
             'regression_audit'           => $regressionAudit,
+            'double_bottom_long_audit'   => $doubleBottomLongAudit,
             'leverage_mode_stats'        => $leverageModeStats,
             'stop_control_stats'         => $stopControlStats,
             'updated_at'                 => date('c'),
@@ -913,6 +917,382 @@ final class SimulatorEngine
         }
 
         return $criteria;
+    }
+
+    /**
+     * Focused regression audit: double_bottom / long deep-dive.
+     *
+     * Produces:
+     * - Core metrics (trades, winrate, ROI, false reversal, stop hits, entry quality)
+     * - Exit behavior breakdown (reason distribution, trailing/BE activation rates)
+     * - Entry quality indicators (immediate failure rate, MFE before failure, MAE distribution)
+     * - Per-symbol breakdown within this pattern/side
+     * - Baseline comparison (double_bottom/long vs overall, vs double_bottom/short)
+     * - What-if scenarios specific to this path
+     * - Ranked root-cause hypotheses
+     * - Mitigation recommendation
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @return array<string,mixed>
+     */
+    private function computeDoubleBottomLongAudit(array $closed): array
+    {
+        // ── Filter double_bottom / long trades ──
+        $target = array_values(array_filter($closed, function ($t) {
+            return (string)($t['pattern_algorithm'] ?? '') === 'double_bottom'
+                && (string)($t['side'] ?? '') === 'long';
+        }));
+
+        $overall = $this->computeCellStats($closed, null, null);
+        $dbLong = $this->computeCellStats($closed, 'double_bottom', 'long');
+        $dbShort = $this->computeCellStats($closed, 'double_bottom', 'short');
+        $dbAll = $this->computeCellStats($closed, 'double_bottom', null);
+
+        $targetCount = count($target);
+        $hasData = $targetCount > 0;
+        $lowSample = $targetCount < 10;
+
+        // ── Exit behavior breakdown ──
+        $exitBreakdown = [
+            'stop_loss' => 0, 'early_failure' => 0, 'trailing_stop' => 0,
+            'break_even_stop' => 0, 'take_profit' => 0, 'other' => 0,
+        ];
+        $trailingActiveCount = 0;
+        $breakEvenActiveCount = 0;
+        $immediateFailures = 0;     // failed within first 5 min equivalent (duration <= 5)
+        $neverPositiveCount = 0;    // MFE near zero (never achieved meaningful profit)
+        $quickStopCount = 0;        // duration <= 15 min
+        $winnerMfes = [];
+        $loserMaes = [];
+        $loserMfes = [];
+        $allDurations = [];
+        $perSymbolBuckets = [];
+
+        foreach ($target as $t) {
+            $reason = (string)($t['reason'] ?? '');
+            if (isset($exitBreakdown[$reason])) {
+                $exitBreakdown[$reason]++;
+            } else {
+                $exitBreakdown['other']++;
+            }
+
+            if (!empty($t['trailing_active'])) { $trailingActiveCount++; }
+            if (!empty($t['break_even_active'])) { $breakEvenActiveCount++; }
+
+            $roi = (float)($t['roi'] ?? 0.0);
+            $mfe = (float)($t['mfe'] ?? 0.0);
+            $mae = (float)($t['mae'] ?? 0.0);
+            $duration = (float)($t['duration'] ?? 0.0);
+            $allDurations[] = $duration;
+
+            if ($duration <= 5) { $immediateFailures++; }
+            if ($duration <= 15 && $roi < 0) { $quickStopCount++; }
+            if ($mfe < 0.005 && $roi < 0) { $neverPositiveCount++; }
+
+            if ($roi >= 0) {
+                $winnerMfes[] = $mfe;
+            } else {
+                $loserMaes[] = $mae;
+                $loserMfes[] = $mfe;
+            }
+
+            // Per-symbol bucket
+            $symbol = (string)($t['symbol'] ?? '');
+            if ($symbol !== '') {
+                if (!isset($perSymbolBuckets[$symbol])) {
+                    $perSymbolBuckets[$symbol] = ['trades' => 0, 'wins' => 0, 'rois' => [], 'maes' => [], 'mfes' => []];
+                }
+                $perSymbolBuckets[$symbol]['trades']++;
+                if ($roi >= 0) { $perSymbolBuckets[$symbol]['wins']++; }
+                $perSymbolBuckets[$symbol]['rois'][] = $roi;
+                $perSymbolBuckets[$symbol]['maes'][] = $mae;
+                $perSymbolBuckets[$symbol]['mfes'][] = $mfe;
+            }
+        }
+
+        // ── Entry quality indicators ──
+        $entryQuality = [
+            'immediate_failure_count' => $immediateFailures,
+            'immediate_failure_rate' => $targetCount > 0 ? round($immediateFailures / $targetCount, 4) : 0.0,
+            'quick_stop_count' => $quickStopCount,
+            'quick_stop_rate' => $targetCount > 0 ? round($quickStopCount / $targetCount, 4) : 0.0,
+            'never_positive_count' => $neverPositiveCount,
+            'never_positive_rate' => $targetCount > 0 ? round($neverPositiveCount / $targetCount, 4) : 0.0,
+            'avg_loser_mae' => count($loserMaes) > 0 ? round(array_sum($loserMaes) / count($loserMaes), 6) : 0.0,
+            'median_loser_mae' => $this->median($loserMaes),
+            'avg_loser_mfe' => count($loserMfes) > 0 ? round(array_sum($loserMfes) / count($loserMfes), 6) : 0.0,
+            'median_loser_mfe' => $this->median($loserMfes),
+            'avg_winner_mfe' => count($winnerMfes) > 0 ? round(array_sum($winnerMfes) / count($winnerMfes), 6) : 0.0,
+            'median_winner_mfe' => $this->median($winnerMfes),
+            'avg_duration' => count($allDurations) > 0 ? round(array_sum($allDurations) / count($allDurations), 2) : 0.0,
+            'median_duration' => $this->median($allDurations),
+        ];
+
+        // ── Exit rates ──
+        $exitRates = [
+            'trailing_activation_rate' => $targetCount > 0 ? round($trailingActiveCount / $targetCount, 4) : 0.0,
+            'break_even_activation_rate' => $targetCount > 0 ? round($breakEvenActiveCount / $targetCount, 4) : 0.0,
+        ];
+
+        // ── Per-symbol performance (sorted by avg ROI, worst first) ──
+        $symbolPerformance = [];
+        foreach ($perSymbolBuckets as $sym => $bucket) {
+            $symTrades = $bucket['trades'];
+            $symWinrate = $symTrades > 0 ? round($bucket['wins'] / $symTrades, 4) : 0.0;
+            $symAvgRoi = $symTrades > 0 ? round(array_sum($bucket['rois']) / $symTrades, 6) : 0.0;
+            $symbolPerformance[] = [
+                'symbol' => $sym,
+                'trades' => $symTrades,
+                'wins' => $bucket['wins'],
+                'winrate' => $symWinrate,
+                'avg_roi' => $symAvgRoi,
+                'avg_mae' => $symTrades > 0 ? round(array_sum($bucket['maes']) / $symTrades, 6) : 0.0,
+                'avg_mfe' => $symTrades > 0 ? round(array_sum($bucket['mfes']) / $symTrades, 6) : 0.0,
+                'low_sample' => $symTrades < 5,
+            ];
+        }
+        usort($symbolPerformance, fn($a, $b) => $a['avg_roi'] <=> $b['avg_roi']);
+
+        // ── Baseline comparison ──
+        $baselineComparison = [
+            'double_bottom_long' => $dbLong,
+            'double_bottom_short' => $dbShort,
+            'double_bottom_all' => $dbAll,
+            'overall' => $overall,
+        ];
+
+        // ── What-if scenarios specific to double_bottom/long ──
+        $whatIfScenarios = [];
+
+        // Scenario 1: disable double_bottom/long only
+        $withoutDbLong = array_values(array_filter($closed, function ($t) {
+            return !((string)($t['pattern_algorithm'] ?? '') === 'double_bottom'
+                && (string)($t['side'] ?? '') === 'long');
+        }));
+        $whatIfScenarios['disable_double_bottom_long'] = $this->computeCellStats($withoutDbLong, null, null);
+        $whatIfScenarios['disable_double_bottom_long']['description'] = 'Без double_bottom/long';
+
+        // Scenario 2: keep double_bottom/long only when V2 bottom confirm also present
+        $v2Agrees = array_values(array_filter($closed, function ($t) {
+            $algo = (string)($t['pattern_algorithm'] ?? '');
+            $side = (string)($t['side'] ?? '');
+            // Keep everything EXCEPT double_bottom/long (those need V2 proxy)
+            if ($algo === 'double_bottom' && $side === 'long') {
+                // Keep only if high confidence (proxy for V2-like quality)
+                return (float)($t['pattern_confidence'] ?? 0.0) >= 0.7;
+            }
+            return true;
+        }));
+        $whatIfScenarios['db_long_high_confidence_only'] = $this->computeCellStats($v2Agrees, null, null);
+        $whatIfScenarios['db_long_high_confidence_only']['description'] = 'double_bottom/long только с confidence ≥ 0.7';
+
+        // Scenario 3: disable all double_bottom (both sides)
+        $withoutAllDb = array_values(array_filter($closed, function ($t) {
+            return (string)($t['pattern_algorithm'] ?? '') !== 'double_bottom';
+        }));
+        $whatIfScenarios['disable_all_double_bottom'] = $this->computeCellStats($withoutAllDb, null, null);
+        $whatIfScenarios['disable_all_double_bottom']['description'] = 'Без double_bottom (обе стороны)';
+
+        // Scenario 4: replace double_bottom/long with V2 only
+        $replaceWithV2 = array_values(array_filter($closed, function ($t) {
+            $algo = (string)($t['pattern_algorithm'] ?? '');
+            $side = (string)($t['side'] ?? '');
+            if ($algo === 'double_bottom' && $side === 'long') {
+                return false; // remove V1 bottom/long
+            }
+            return true; // keep everything else (including V2 bottom)
+        }));
+        $whatIfScenarios['replace_db_long_with_v2'] = $this->computeCellStats($replaceWithV2, null, null);
+        $whatIfScenarios['replace_db_long_with_v2']['description'] = 'Заменить double_bottom/long на V2 (убрать V1 long)';
+
+        // Scenario 5: disable worst 3 symbols in double_bottom/long
+        $worstSymbols = array_slice($symbolPerformance, 0, 3);
+        $worstSymbolNames = array_column($worstSymbols, 'symbol');
+        $withoutWorstSymbols = array_values(array_filter($closed, function ($t) use ($worstSymbolNames) {
+            $algo = (string)($t['pattern_algorithm'] ?? '');
+            $side = (string)($t['side'] ?? '');
+            $sym = (string)($t['symbol'] ?? '');
+            if ($algo === 'double_bottom' && $side === 'long' && in_array($sym, $worstSymbolNames, true)) {
+                return false;
+            }
+            return true;
+        }));
+        $whatIfScenarios['disable_worst_3_symbols'] = $this->computeCellStats($withoutWorstSymbols, null, null);
+        $worstSymStr = implode(', ', $worstSymbolNames);
+        $whatIfScenarios['disable_worst_3_symbols']['description'] = "Без 3 худших символов db/long: {$worstSymStr}";
+
+        // ── Ranked root-cause hypotheses ──
+        $hypotheses = $this->rankDoubleBottomLongHypotheses($dbLong, $overall, $entryQuality, $exitBreakdown, $exitRates, $targetCount);
+
+        // ── Mitigation recommendation ──
+        $mitigation = $this->buildDoubleBottomLongMitigation($dbLong, $overall, $hypotheses, $targetCount);
+
+        return [
+            'has_data' => $hasData,
+            'low_sample' => $lowSample,
+            'core_stats' => $dbLong,
+            'exit_breakdown' => $exitBreakdown,
+            'exit_rates' => $exitRates,
+            'entry_quality' => $entryQuality,
+            'symbol_performance' => $symbolPerformance,
+            'baseline_comparison' => $baselineComparison,
+            'what_if_scenarios' => $whatIfScenarios,
+            'hypotheses' => $hypotheses,
+            'mitigation' => $mitigation,
+        ];
+    }
+
+    /**
+     * Rank root-cause hypotheses for double_bottom/long regression.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function rankDoubleBottomLongHypotheses(
+        array $dbLong,
+        array $overall,
+        array $entryQuality,
+        array $exitBreakdown,
+        array $exitRates,
+        int $targetCount
+    ): array {
+        $hypotheses = [];
+
+        $dbWinrate = (float)($dbLong['winrate'] ?? 0);
+        $dbFalseRate = (float)($dbLong['false_reversal_rate'] ?? 0);
+        $dbStopRate = (float)($dbLong['stop_hit_rate'] ?? 0);
+        $overallWinrate = (float)($overall['winrate'] ?? 0);
+        $immFailRate = (float)($entryQuality['immediate_failure_rate'] ?? 0);
+        $neverPosRate = (float)($entryQuality['never_positive_rate'] ?? 0);
+        $trailingRate = (float)($exitRates['trailing_activation_rate'] ?? 0);
+        $beRate = (float)($exitRates['break_even_activation_rate'] ?? 0);
+
+        // H1: Entry too early — high immediate failure + never-positive rate
+        $h1Score = 0.0;
+        if ($immFailRate > 0.15) { $h1Score += 30; }
+        if ($neverPosRate > 0.4) { $h1Score += 25; }
+        if ($dbFalseRate > 0.5) { $h1Score += 15; }
+        $hypotheses[] = [
+            'rank' => 0,
+            'id' => 'entry_too_early',
+            'label' => 'Вход слишком ранний — до реального подтверждения разворота',
+            'evidence' => "immediate_failure_rate=" . round($immFailRate * 100, 1) . "%, never_positive_rate=" . round($neverPosRate * 100, 1) . "%",
+            'score' => $h1Score,
+        ];
+
+        // H2: Weak rebound / neckline condition
+        $h2Score = 0.0;
+        if ($dbFalseRate > 0.5) { $h2Score += 30; }
+        if ($dbWinrate < 0.35) { $h2Score += 20; }
+        $avgLoserMfe = (float)($entryQuality['avg_loser_mfe'] ?? 0);
+        if ($avgLoserMfe < 0.01) { $h2Score += 15; }
+        $hypotheses[] = [
+            'rank' => 0,
+            'id' => 'weak_rebound',
+            'label' => 'Слабый отскок / условие нэкляйн слишком слабое',
+            'evidence' => "false_reversal_rate=" . round($dbFalseRate * 100, 1) . "%, avg_loser_mfe=" . round($avgLoserMfe * 100, 3) . "%",
+            'score' => $h2Score,
+        ];
+
+        // H3: Market regime hostile to bottom-fishing
+        $h3Score = 0.0;
+        if ($dbWinrate < $overallWinrate * 0.7) { $h3Score += 25; }
+        if ($dbStopRate > 0.4) { $h3Score += 20; }
+        $hypotheses[] = [
+            'rank' => 0,
+            'id' => 'hostile_regime',
+            'label' => 'Текущий рыночный режим враждебен для ловли дна',
+            'evidence' => "db/long winrate=" . round($dbWinrate * 100, 1) . "% vs overall=" . round($overallWinrate * 100, 1) . "%, stop_hit_rate=" . round($dbStopRate * 100, 1) . "%",
+            'score' => $h3Score,
+        ];
+
+        // H4: Stop/exit logic unsuited for this pattern
+        $h4Score = 0.0;
+        if ($dbStopRate > 0.35) { $h4Score += 25; }
+        $stopLossCount = (int)($exitBreakdown['stop_loss'] ?? 0);
+        if ($targetCount > 0 && ($stopLossCount / $targetCount) > 0.4) { $h4Score += 20; }
+        if ($trailingRate < 0.1 && $targetCount > 5) { $h4Score += 10; }
+        $hypotheses[] = [
+            'rank' => 0,
+            'id' => 'stop_exit_mismatch',
+            'label' => 'Стоп/выход не подходит для данного паттерна',
+            'evidence' => "stop_hit_rate=" . round($dbStopRate * 100, 1) . "%, trailing_active=" . round($trailingRate * 100, 1) . "%",
+            'score' => $h4Score,
+        ];
+
+        // H5: Should use V2 confirmed path instead
+        $h5Score = 0.0;
+        if ($dbFalseRate > 0.45) { $h5Score += 25; }
+        if ($dbWinrate < 0.35) { $h5Score += 15; }
+        if ($immFailRate > 0.1) { $h5Score += 10; }
+        $hypotheses[] = [
+            'rank' => 0,
+            'id' => 'replace_with_v2',
+            'label' => 'Паттерн нужно заменить на V2-подтверждённый путь для long',
+            'evidence' => "false_reversal_rate=" . round($dbFalseRate * 100, 1) . "%, winrate=" . round($dbWinrate * 100, 1) . "%",
+            'score' => $h5Score,
+        ];
+
+        // Sort by score descending
+        usort($hypotheses, fn($a, $b) => $b['score'] <=> $a['score']);
+
+        // Assign ranks
+        foreach ($hypotheses as $i => &$h) {
+            $h['rank'] = $i + 1;
+        }
+        unset($h);
+
+        return $hypotheses;
+    }
+
+    /**
+     * Build minimal mitigation recommendation for double_bottom/long.
+     *
+     * @return array<string,mixed>
+     */
+    private function buildDoubleBottomLongMitigation(
+        array $dbLong,
+        array $overall,
+        array $hypotheses,
+        int $targetCount
+    ): array {
+        $actions = [];
+        $severity = 'info';
+
+        $dbWinrate = (float)($dbLong['winrate'] ?? 0);
+        $dbAvgRoi = (float)($dbLong['avg_roi'] ?? 0);
+        $dbFalseRate = (float)($dbLong['false_reversal_rate'] ?? 0);
+        $overallWinrate = (float)($overall['winrate'] ?? 0);
+
+        if ($targetCount < 5) {
+            $actions[] = 'Недостаточно данных для надёжного аудита double_bottom/long — выборка < 5 сделок';
+            $severity = 'info';
+        } elseif ($dbWinrate < 0.25 && $dbAvgRoi < -0.01) {
+            $actions[] = 'РЕКОМЕНДАЦИЯ: временно отключить double_bottom/long';
+            $actions[] = 'Альтернатива: оставить только в режиме наблюдения (shadow/monitor)';
+            $actions[] = 'Не трогать double_bottom/short и V2 паттерны';
+            $severity = 'critical';
+        } elseif ($dbWinrate < 0.35 && $dbFalseRate > 0.4) {
+            $actions[] = 'РЕКОМЕНДАЦИЯ: снизить приоритет double_bottom/long';
+            $actions[] = 'Рассмотреть замену на V2-подтверждённый путь для long';
+            $actions[] = 'Не отключать short сторону';
+            $severity = 'warning';
+        } elseif ($dbWinrate < $overallWinrate * 0.8) {
+            $actions[] = 'double_bottom/long ниже среднего — мониторинг';
+            $actions[] = 'Рассмотреть ужесточение условий входа';
+            $severity = 'watch';
+        } else {
+            $actions[] = 'double_bottom/long в пределах нормы — действий не требуется';
+            $severity = 'ok';
+        }
+
+        $topHypothesis = !empty($hypotheses) ? ($hypotheses[0]['id'] ?? 'unknown') : 'unknown';
+
+        return [
+            'severity' => $severity,
+            'actions' => $actions,
+            'top_hypothesis' => $topHypothesis,
+            'trades_analyzed' => $targetCount,
+        ];
     }
 
     /**

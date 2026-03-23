@@ -93,6 +93,9 @@ final class SimulationAudit
         // Part 12: Regression Audit — short-side collapse analysis
         $report['regression_audit'] = $this->auditRegression($closed);
 
+        // Part 13: Focused double_bottom/long regression audit
+        $report['double_bottom_long_audit'] = $this->auditDoubleBottomLong($closed);
+
         return $report;
     }
 
@@ -1046,6 +1049,189 @@ final class SimulationAudit
             return '_unknown';
         }
         return $algo;
+    }
+
+    // =========================================================================
+    // Part 13: Focused double_bottom / long regression audit
+    // =========================================================================
+
+    /**
+     * Dedicated deep-dive audit for double_bottom / long path.
+     *
+     * Covers: core metrics, exit breakdown, entry quality, per-symbol analysis,
+     * baseline comparison, what-if scenarios, ranked hypotheses, mitigation.
+     *
+     * @param array<int,array<string,mixed>> $closed
+     * @return array<string,mixed>
+     */
+    private function auditDoubleBottomLong(array $closed): array
+    {
+        $target = array_values(array_filter($closed, function ($t) {
+            return $this->getAlgorithm($t) === 'double_bottom'
+                && (string)($t['side'] ?? '') === 'long';
+        }));
+
+        $overallStats = $this->computeRegressionCellStats($closed, null, null);
+        $dbLongStats = $this->computeRegressionCellStats($closed, 'double_bottom', 'long');
+        $dbShortStats = $this->computeRegressionCellStats($closed, 'double_bottom', 'short');
+        $dbAllStats = $this->computeRegressionCellStats($closed, 'double_bottom', null);
+
+        $targetCount = count($target);
+        $hasData = $targetCount > 0;
+
+        // ── Exit behavior ──
+        $exitBreakdown = [
+            'stop_loss' => 0, 'early_failure' => 0, 'trailing_stop' => 0,
+            'break_even_stop' => 0, 'take_profit' => 0, 'other' => 0,
+        ];
+        $trailingActiveCount = 0;
+        $breakEvenActiveCount = 0;
+        $immediateFailures = 0;
+        $neverPositiveCount = 0;
+        $quickStopCount = 0;
+        $winnerMfes = [];
+        $loserMaes = [];
+        $loserMfes = [];
+        $durations = [];
+        $perSymbol = [];
+
+        foreach ($target as $t) {
+            $reason = (string)($t['reason'] ?? '');
+            if (isset($exitBreakdown[$reason])) {
+                $exitBreakdown[$reason]++;
+            } else {
+                $exitBreakdown['other']++;
+            }
+
+            if (!empty($t['trailing_active'])) { $trailingActiveCount++; }
+            if (!empty($t['break_even_active'])) { $breakEvenActiveCount++; }
+
+            $roi = (float)($t['roi'] ?? 0.0);
+            $mfe = (float)($t['mfe'] ?? 0.0);
+            $mae = (float)($t['mae'] ?? 0.0);
+            $dur = (float)($t['duration'] ?? 0.0);
+            $durations[] = $dur;
+
+            if ($dur <= 5) { $immediateFailures++; }
+            if ($dur <= 15 && $roi < 0) { $quickStopCount++; }
+            if ($mfe < 0.005 && $roi < 0) { $neverPositiveCount++; }
+
+            if ($roi >= 0) {
+                $winnerMfes[] = $mfe;
+            } else {
+                $loserMaes[] = $mae;
+                $loserMfes[] = $mfe;
+            }
+
+            $sym = (string)($t['symbol'] ?? '');
+            if ($sym !== '') {
+                if (!isset($perSymbol[$sym])) {
+                    $perSymbol[$sym] = ['trades' => 0, 'wins' => 0, 'rois' => []];
+                }
+                $perSymbol[$sym]['trades']++;
+                if ($roi >= 0) { $perSymbol[$sym]['wins']++; }
+                $perSymbol[$sym]['rois'][] = $roi;
+            }
+        }
+
+        $entryQuality = [
+            'immediate_failure_rate' => $targetCount > 0 ? round($immediateFailures / $targetCount, 4) : 0.0,
+            'quick_stop_rate' => $targetCount > 0 ? round($quickStopCount / $targetCount, 4) : 0.0,
+            'never_positive_rate' => $targetCount > 0 ? round($neverPositiveCount / $targetCount, 4) : 0.0,
+            'avg_loser_mae' => count($loserMaes) > 0 ? round(array_sum($loserMaes) / count($loserMaes), 6) : 0.0,
+            'avg_loser_mfe' => count($loserMfes) > 0 ? round(array_sum($loserMfes) / count($loserMfes), 6) : 0.0,
+            'avg_winner_mfe' => count($winnerMfes) > 0 ? round(array_sum($winnerMfes) / count($winnerMfes), 6) : 0.0,
+        ];
+
+        // ── Per-symbol ranking (worst first) ──
+        $symbolRanking = [];
+        foreach ($perSymbol as $sym => $bucket) {
+            $symT = $bucket['trades'];
+            $symbolRanking[] = [
+                'symbol' => $sym,
+                'trades' => $symT,
+                'winrate' => $symT > 0 ? round($bucket['wins'] / $symT, 4) : 0.0,
+                'avg_roi' => $symT > 0 ? round(array_sum($bucket['rois']) / $symT, 6) : 0.0,
+            ];
+        }
+        usort($symbolRanking, fn($a, $b) => $a['avg_roi'] <=> $b['avg_roi']);
+
+        // ── Baseline comparison ──
+        $baseline = [
+            'double_bottom_long' => $dbLongStats,
+            'double_bottom_short' => $dbShortStats,
+            'double_bottom_all' => $dbAllStats,
+            'overall' => $overallStats,
+        ];
+
+        // ── What-if: disable double_bottom/long ──
+        $withoutDbLong = array_values(array_filter($closed, function ($t) {
+            return !($this->getAlgorithm($t) === 'double_bottom' && (string)($t['side'] ?? '') === 'long');
+        }));
+        $scenarioDisable = $this->computeRegressionCellStats($withoutDbLong, null, null);
+        $scenarioDisable['description'] = 'Без double_bottom/long';
+
+        // ── Ranked hypotheses ──
+        $hypotheses = [];
+
+        $dbWr = (float)($dbLongStats['winrate'] ?? 0);
+        $dbFr = (float)($dbLongStats['false_reversal_rate'] ?? 0);
+        $dbSr = (float)($dbLongStats['stop_hit_rate'] ?? 0);
+        $oWr = (float)($overallStats['winrate'] ?? 0);
+        $immRate = (float)($entryQuality['immediate_failure_rate'] ?? 0);
+        $npRate = (float)($entryQuality['never_positive_rate'] ?? 0);
+
+        // H1: Entry too early
+        $s1 = ($immRate > 0.15 ? 30 : 0) + ($npRate > 0.4 ? 25 : 0) + ($dbFr > 0.5 ? 15 : 0);
+        $hypotheses[] = ['id' => 'entry_too_early', 'label' => 'Вход слишком ранний', 'score' => $s1];
+
+        // H2: Weak rebound
+        $s2 = ($dbFr > 0.5 ? 30 : 0) + ($dbWr < 0.35 ? 20 : 0);
+        $hypotheses[] = ['id' => 'weak_rebound', 'label' => 'Слабый отскок / нэкляйн', 'score' => $s2];
+
+        // H3: Hostile regime
+        $s3 = ($dbWr < $oWr * 0.7 ? 25 : 0) + ($dbSr > 0.4 ? 20 : 0);
+        $hypotheses[] = ['id' => 'hostile_regime', 'label' => 'Рыночный режим враждебен', 'score' => $s3];
+
+        // H4: Stop/exit mismatch
+        $s4 = ($dbSr > 0.35 ? 25 : 0);
+        $slCount = (int)($exitBreakdown['stop_loss'] ?? 0);
+        if ($targetCount > 0 && ($slCount / $targetCount) > 0.4) { $s4 += 20; }
+        $hypotheses[] = ['id' => 'stop_exit_mismatch', 'label' => 'Стоп/выход не подходит', 'score' => $s4];
+
+        // H5: Replace with V2
+        $s5 = ($dbFr > 0.45 ? 25 : 0) + ($dbWr < 0.35 ? 15 : 0);
+        $hypotheses[] = ['id' => 'replace_with_v2', 'label' => 'Заменить на V2-подтверждённый путь', 'score' => $s5];
+
+        usort($hypotheses, fn($a, $b) => $b['score'] <=> $a['score']);
+        foreach ($hypotheses as $i => &$h) { $h['rank'] = $i + 1; }
+        unset($h);
+
+        // ── Severity ──
+        $severity = 'ok';
+        if ($targetCount < 5) {
+            $severity = 'info';
+        } elseif ($dbWr < 0.25 && (float)($dbLongStats['avg_roi'] ?? 0) < -0.01) {
+            $severity = 'critical';
+        } elseif ($dbWr < 0.35 && $dbFr > 0.4) {
+            $severity = 'warning';
+        } elseif ($dbWr < $oWr * 0.8) {
+            $severity = 'watch';
+        }
+
+        return [
+            'has_data' => $hasData,
+            'low_sample' => $targetCount < 10,
+            'trades' => $targetCount,
+            'core_stats' => $dbLongStats,
+            'exit_breakdown' => $exitBreakdown,
+            'entry_quality' => $entryQuality,
+            'symbol_ranking' => $symbolRanking,
+            'baseline' => $baseline,
+            'what_if_disable' => $scenarioDisable,
+            'hypotheses' => $hypotheses,
+            'severity' => $severity,
+        ];
     }
 }
 

@@ -319,6 +319,16 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 | activation: <code><?= htmlspecialchars((string)($dashTrailingActivation ?? 'n/a')) ?>%</code>
                 <?php if ($dashTrailingMode === 'price_distance'): ?>
                 | distance: <code><?= htmlspecialchars((string)($dashPriceDistPct ?? 'n/a')) ?></code> <small class="text-info">(<?= $dashPriceDistPct !== null ? round(((float)$dashPriceDistPct) * 100, 1) : '?' ?>% from price)</small>
+                <?php
+                    $dashExchangeDist = $effectiveContract['exchange_trailing_distance'] ?? null;
+                    $dashTheoStop = $effectiveContract['theoretical_current_stop_price'] ?? null;
+                ?>
+                <?php if ($dashExchangeDist !== null): ?>
+                | exch.dist: <code><?= round((float)$dashExchangeDist, 4) ?></code>
+                <?php endif; ?>
+                <?php if ($dashTheoStop !== null): ?>
+                | implied stop: <code><?= round((float)$dashTheoStop, 6) ?></code>
+                <?php endif; ?>
                 <?php else: ?>
                 | drawdown: <code><?= htmlspecialchars((string)($dashDrawdown ?? 'n/a')) ?></code>
                 <?php endif; ?>

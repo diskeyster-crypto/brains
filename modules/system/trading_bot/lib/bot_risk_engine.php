@@ -422,6 +422,10 @@ class BotRiskEngine
                 return ['enabled' => false];
             }
             $trailingStop = $entryAvg * $distancePct;
+            // Compute theoretical stop price at activation point
+            $theoreticalStop = $side === 'long'
+                ? $activePrice * (1.0 - $distancePct)
+                : $activePrice * (1.0 + $distancePct);
             return [
                 'enabled' => true,
                 'trailing_mode' => 'price_distance',
@@ -430,6 +434,8 @@ class BotRiskEngine
                 'leverage' => $leverage,
                 'active_price' => round($activePrice, 8),
                 'trailing_stop' => round($trailingStop, 8),
+                'exchange_trailing_distance' => round($trailingStop, 8),
+                'theoretical_current_stop_price' => round($theoreticalStop, 8),
             ];
         }
 

@@ -143,6 +143,13 @@ class BotTrailingEngine
             $result['changes']['best_roi_seen'] = round(
                 $this->calculateRoi($entryPrice, $trailingHighWatermark, $side), 4
             );
+            // V3 enhanced trailing fields
+            $result['changes']['trailing_reference_price'] = round($trailingHighWatermark, 8);
+            $result['changes']['exchange_trailing_distance'] = round($trailingHighWatermark * $distancePct, 8);
+            $result['changes']['theoretical_current_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['current_effective_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['trailing_active'] = true;
+            $result['changes']['stop_moved_from_initial'] = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
 
             // Check if triggered
             if ($currentPrice <= $trailingStopPrice) {
@@ -177,6 +184,13 @@ class BotTrailingEngine
             $result['changes']['best_roi_seen'] = round(
                 $this->calculateRoi($entryPrice, $trailingLowWatermark, $side), 4
             );
+            // V3 enhanced trailing fields
+            $result['changes']['trailing_reference_price'] = round($trailingLowWatermark, 8);
+            $result['changes']['exchange_trailing_distance'] = round($trailingLowWatermark * $distancePct, 8);
+            $result['changes']['theoretical_current_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['current_effective_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['trailing_active'] = true;
+            $result['changes']['stop_moved_from_initial'] = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
 
             // Check if triggered
             if ($currentPrice >= $trailingStopPrice) {

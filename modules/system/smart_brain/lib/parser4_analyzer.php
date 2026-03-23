@@ -8,6 +8,7 @@ require_once __DIR__ . '/patterns/pullback_trend_continue_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_top_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_contextual_v2_detector.php';
+require_once __DIR__ . '/patterns/double_bottom_contextual_v3_detector.php';
 
 /**
  * Parser4 Analyzer — Smart Brain Market Structure Analyzer
@@ -16,7 +17,8 @@ require_once __DIR__ . '/patterns/double_bottom_contextual_v2_detector.php';
  *
  * Reads Parser3 symbols + Parser2 price history.
  * Runs enabled pattern detectors (double_bottom, double_top, pullback_trend_continue,
- *   double_bottom_confirm_v2, double_top_confirm_v2, double_bottom_contextual_v2).
+ *   double_bottom_confirm_v2, double_top_confirm_v2, double_bottom_contextual_v2,
+ *   double_bottom_contextual_v3).
  * Computes trend_match_score, corridor_fit_score, entry_quality_score.
  * Calculates weighted analyzer_score; applies analyzer_pass threshold.
  * Outputs corridor/volatility/strength/trend candidates with full decision fields.
@@ -79,6 +81,7 @@ final class Parser4Analyzer
             'double_bottom_confirm_v2' => static fn() => new DoubleBottomConfirmV2Detector(),
             'double_top_confirm_v2' => static fn() => new DoubleTopConfirmV2Detector(),
             'double_bottom_contextual_v2' => static fn() => new DoubleBottomContextualV2Detector(),
+            'double_bottom_contextual_v3' => static fn() => new DoubleBottomContextualV3Detector(),
         ];
 
         $detectors = [];

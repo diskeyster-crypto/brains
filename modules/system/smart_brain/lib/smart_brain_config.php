@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class SmartBrainConfig
 {
-    private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
+    private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
 
     private string $moduleBase;
     /** @var array<string,mixed> */

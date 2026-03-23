@@ -349,6 +349,16 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 | activation: <code><?= htmlspecialchars((string)($mirrorTrailingActivation ?? 'n/a')) ?>%</code>
                 <?php if ($mirrorTrailingMode === 'price_distance'): ?>
                 | distance: <code><?= htmlspecialchars((string)($mirrorPriceDistPct ?? 'n/a')) ?></code> <small class="text-info">(<?= $mirrorPriceDistPct !== null ? round(((float)$mirrorPriceDistPct) * 100, 1) : '?' ?>% from price)</small>
+                <?php
+                    $rtExchangeDist = $rtEffectiveContract['exchange_trailing_distance'] ?? null;
+                    $rtTheoStop = $rtEffectiveContract['theoretical_current_stop_price'] ?? null;
+                ?>
+                <?php if ($rtExchangeDist !== null): ?>
+                | exch.dist: <code><?= round((float)$rtExchangeDist, 4) ?></code>
+                <?php endif; ?>
+                <?php if ($rtTheoStop !== null): ?>
+                | implied stop: <code><?= round((float)$rtTheoStop, 6) ?></code>
+                <?php endif; ?>
                 <?php else: ?>
                 | drawdown: <code><?= htmlspecialchars((string)($mirrorDrawdown ?? 'n/a')) ?></code>
                 <?php endif; ?>

@@ -1106,6 +1106,10 @@ trait BotExecutorTrait
                 : null,
             'effective_fixed_take_profit_roi' => (float)($riskTrailing['fixed_take_profit_roi'] ?? 0),
             'effective_trailing_contract_source' => $effectiveSource,
+            'effective_trailing_mode' => (string)($riskTrailing['trailing_mode'] ?? 'roi_giveback'),
+            'effective_trailing_price_distance_pct' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance'
+                ? (float)($riskTrailing['trailing_price_distance_pct'] ?? 0.02)
+                : null,
             // Stop mode truth (top-level for operator observability)
             'effective_stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
             'effective_stop_loss_from_entry_roi' => ($intent['risk']['stop_control']['stop_control_mode'] ?? 'auto') === 'entry_roi'
@@ -1235,6 +1239,10 @@ trait BotExecutorTrait
                     ? (float)($riskTrailing['hybrid_tp_share'] ?? 0)
                     : null;
                 $runtime['effective_fixed_take_profit_roi'] = (float)($riskTrailing['fixed_take_profit_roi'] ?? 0);
+                $runtime['effective_trailing_mode'] = (string)($riskTrailing['trailing_mode'] ?? 'roi_giveback');
+                $runtime['effective_trailing_price_distance_pct'] = ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance'
+                    ? (float)($riskTrailing['trailing_price_distance_pct'] ?? 0.02)
+                    : null;
 
                 // Stop mode truth: persist into runtime for observability
                 $tradeStopControl = is_array($trade['risk']['stop_control'] ?? null) ? $trade['risk']['stop_control'] : [];
@@ -1274,6 +1282,8 @@ trait BotExecutorTrait
                 $trade['effective_hybrid_tp_share'] = $runtime['effective_hybrid_tp_share'];
                 $trade['effective_fixed_take_profit_roi'] = $runtime['effective_fixed_take_profit_roi'];
                 $trade['effective_trailing_contract_source'] = $runtime['effective_trailing_contract_source'];
+                $trade['effective_trailing_mode'] = $runtime['effective_trailing_mode'];
+                $trade['effective_trailing_price_distance_pct'] = $runtime['effective_trailing_price_distance_pct'];
                 // Stop mode truth: mirror into top-level
                 $trade['effective_stop_control_mode'] = $runtime['effective_stop_control_mode'];
                 $trade['effective_stop_loss_from_entry_roi'] = $runtime['effective_stop_loss_from_entry_roi'];

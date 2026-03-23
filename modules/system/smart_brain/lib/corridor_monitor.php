@@ -11,6 +11,10 @@ declare(strict_types=1);
  *   LONG  → entry zone = lower slice of corridor (near corridor_low)
  *   SHORT → entry zone = upper slice of corridor (near corridor_high)
  *
+ * V2 contextual patterns use progressive zone widening based on
+ * pattern_confidence — confirmed reversals with high confidence get
+ * wider entry zones because price has already bounced from lows.
+ *
  * Does NOT create final trade signals.
  */
 final class CorridorMonitor
@@ -29,22 +33,8 @@ final class CorridorMonitor
     /**
      * Build real monitors from candidates (side-aware).
      *
-     * For LONG candidates:
-     *   - entry_zone_low  = corridor_low
-     *   - entry_zone_high = corridor_low + range * entry_zone_percent
-     *   - entry_zone when price_position <= entry_zone_percent
-     *
-     * For SHORT candidates:
-     *   - entry_zone_low  = corridor_high - range * entry_zone_percent
-     *   - entry_zone_high = corridor_high
-     *   - entry_zone when price_position >= (1 - entry_zone_percent)
-     *
-     * price_position = (current_price - corridor_low) / (corridor_high - corridor_low)
-     * status = monitoring | entry_zone | invalidated
-     *
      * @param array<int,array<string,mixed>> $candidates
      * @param array<string,float>            $prices  Optional real-time prices (symbol→price).
-     *                                                 Falls back to candidate last_price if absent.
      * @return array<int,array<string,mixed>>
      */
     public function buildMonitors(array $candidates, array $prices = []): array
@@ -58,49 +48,49 @@ final class CorridorMonitor
             $high = (float)($candidate['corridor_high'] ?? 0.0);
             $corridorWidth = (float)($candidate['corridor_width'] ?? 0.0);
             $side = strtolower(trim((string)($candidate['side'] ?? '')));
+            $patternAlgo = (string)($candidate['pattern_algorithm'] ?? '');
+            $patternConfidence = (float)($candidate['pattern_confidence'] ?? 0.0);
+            $confirmationScore = (float)($candidate['confirmation_score'] ?? 0.0);
 
             // Use real price if available, otherwise fallback to candidate last_price
             $currentPrice = (isset($prices[$symbol]) && $prices[$symbol] > 0.0)
                 ? $prices[$symbol]
                 : (float)($candidate['last_price'] ?? 0.0);
 
-            // Contextual patterns: confirmed reversal patterns use wider entry zone
-            // because price has already bounced from double-bottom lows after confirmation.
-            // V2 = looser/alive pattern → widest zone expansion
-            // V3 = stricter/regime-confirmed → moderate zone expansion
-            $patternAlgo = (string)($candidate['pattern_algorithm'] ?? '');
-            $effectiveEntryZonePercent = $entryZonePercent;
-            if ($patternAlgo === 'double_bottom_contextual_v2') {
-                $effectiveEntryZonePercent = max($entryZonePercent, 0.50);
-            } elseif ($patternAlgo === 'double_bottom_contextual_v3') {
-                $effectiveEntryZonePercent = max($entryZonePercent, 0.40);
-            }
+            // Compute effective entry zone percent with pattern-specific widening
+            $effectiveEntryZonePercent = $this->computeEffectiveEntryZonePercent(
+                $entryZonePercent, $patternAlgo, $patternConfidence, $confirmationScore
+            );
 
             $range = $high - $low;
 
-            // Side-aware entry zone boundaries:
-            //   LONG  zone = bottom slice of corridor
-            //   SHORT zone = top slice of corridor
+            // Side-aware entry zone boundaries
             if ($side === 'short') {
-                $entryZoneLow = ($range > 0.0)
-                    ? $high - ($range * $effectiveEntryZonePercent)
-                    : $high;
+                $entryZoneLow = ($range > 0.0) ? $high - ($range * $effectiveEntryZonePercent) : $high;
                 $entryZoneHigh = $high;
             } else {
-                // Default to LONG logic (includes empty/unknown side for safety)
                 $entryZoneLow = $low;
-                $entryZoneHigh = ($range > 0.0)
-                    ? $low + ($range * $effectiveEntryZonePercent)
-                    : $low;
+                $entryZoneHigh = ($range > 0.0) ? $low + ($range * $effectiveEntryZonePercent) : $low;
             }
 
             // Price position: 0..1 inside corridor, <0 below, >1 above
             $pricePosition = ($range > 0.0 && $currentPrice > 0.0)
                 ? ($currentPrice - $low) / $range
-                : 0.5;  // default to mid if no data
+                : 0.5;
 
             // Side-aware status determination
             $status = $this->determineStatus($pricePosition, $effectiveEntryZonePercent, $side);
+
+            // Specific rejection detail for diagnostics
+            $rejectDetail = $this->computeRejectDetail($status, $pricePosition, $effectiveEntryZonePercent, $side, $currentPrice, $entryZoneHigh, $entryZoneLow);
+
+            // What-if: would this monitor be entry_zone with full corridor (1.0)?
+            $whatifEnterNowStatus = $this->determineStatus($pricePosition, 1.0, $side);
+            // What-if: would this monitor be entry_zone with wider zone (0.85)?
+            $whatifWiderZoneStatus = $this->determineStatus($pricePosition, 0.85, $side);
+
+            $zoneWidthPct = ($range > 0.0 && $low > 0.0) ? round(($entryZoneHigh - $entryZoneLow) / $low, 6) : 0.0;
+            $zoneDistanceFromPrice = ($currentPrice > 0.0 && $entryZoneHigh > 0.0) ? round(($currentPrice - $entryZoneHigh) / $currentPrice, 6) : 0.0;
 
             $monitors[] = [
                 'symbol' => $symbol,
@@ -114,15 +104,20 @@ final class CorridorMonitor
                 'side' => $side !== '' ? $side : (string)($candidate['side'] ?? ''),
                 'entry_zone_percent' => $effectiveEntryZonePercent,
                 'entry_zone_widened' => ($effectiveEntryZonePercent !== $entryZonePercent),
-                'pattern_algorithm' => (string)($candidate['pattern_algorithm'] ?? 'none'),
-                'pattern_confidence' => (float)($candidate['pattern_confidence'] ?? 0.0),
+                'pattern_algorithm' => $patternAlgo !== '' ? $patternAlgo : 'none',
+                'pattern_confidence' => $patternConfidence,
+                'confirmation_score' => $confirmationScore,
                 'trend_match_score' => (float)($candidate['trend_match_score'] ?? 0.0),
                 'corridor_fit_score' => (float)($candidate['corridor_fit_score'] ?? 0.0),
                 'entry_quality_score' => (float)($candidate['entry_quality_score'] ?? 0.0),
                 'analyzer_score' => (float)($candidate['analyzer_score'] ?? 0.0),
                 'volatility' => (float)($candidate['volatility'] ?? 0.0),
-                'zone_width_pct' => ($range > 0.0 && $low > 0.0) ? round(($entryZoneHigh - $entryZoneLow) / $low, 6) : 0.0,
-                'zone_distance_from_price' => ($currentPrice > 0.0 && $entryZoneHigh > 0.0) ? round(($currentPrice - $entryZoneHigh) / $currentPrice, 6) : 0.0,
+                'zone_width_pct' => $zoneWidthPct,
+                'zone_distance_from_price' => $zoneDistanceFromPrice,
+                'reject_detail' => $rejectDetail,
+                'whatif_enter_now_status' => $whatifEnterNowStatus,
+                'whatif_wider_zone_status' => $whatifWiderZoneStatus,
+                'current_price_at_creation' => round($currentPrice, 8),
             ];
         }
 
@@ -130,19 +125,89 @@ final class CorridorMonitor
     }
 
     /**
+     * Compute effective entry zone percent with pattern-specific progressive widening.
+     *
+     * V2 contextual patterns use confidence-based progressive widening:
+     *   - Base: max(config, 0.50)
+     *   - Medium confidence (≥0.5): 0.65
+     *   - High confidence (≥0.7): 0.80
+     *
+     * V3 remains at max(config, 0.40) — V2 must stay looser than V3.
+     */
+    private function computeEffectiveEntryZonePercent(
+        float $basePercent,
+        string $patternAlgo,
+        float $patternConfidence,
+        float $confirmationScore
+    ): float {
+        if ($patternAlgo === 'double_bottom_contextual_v2') {
+            // Progressive widening based on confidence
+            // Strong confirmation → price has already bounced significantly → wider zone needed
+            $effectiveConfidence = max($patternConfidence, $confirmationScore);
+            if ($effectiveConfidence >= 0.70) {
+                return max($basePercent, 0.80);
+            }
+            if ($effectiveConfidence >= 0.50) {
+                return max($basePercent, 0.65);
+            }
+            return max($basePercent, 0.50);
+        }
+
+        if ($patternAlgo === 'double_bottom_contextual_v3') {
+            return max($basePercent, 0.40);
+        }
+
+        return $basePercent;
+    }
+
+    /**
+     * Compute specific rejection detail for monitors not in entry_zone.
+     *
+     * @return string Specific reject reason or 'none' if in entry_zone
+     */
+    private function computeRejectDetail(
+        string $status,
+        float $pricePosition,
+        float $entryZonePercent,
+        string $side,
+        float $currentPrice,
+        float $entryZoneHigh,
+        float $entryZoneLow
+    ): string {
+        if ($status === 'entry_zone') {
+            return 'none';
+        }
+
+        if ($status === 'invalidated') {
+            if ($pricePosition < 0.0) {
+                return 'reject_invalidated_below_corridor';
+            }
+            return 'reject_invalidated_above_corridor';
+        }
+
+        // monitoring status — price is inside corridor but outside entry zone
+        if ($side === 'short') {
+            $zoneThreshold = 1.0 - $entryZonePercent;
+            if ($pricePosition < $zoneThreshold) {
+                return 'reject_price_below_zone';
+            }
+            return 'reject_monitoring_unknown';
+        }
+
+        // LONG: price is above entry zone
+        if ($pricePosition > $entryZonePercent) {
+            $distance = $pricePosition - $entryZonePercent;
+            if ($distance > 0.30) {
+                return 'reject_zone_too_far';
+            }
+            return 'reject_price_above_zone';
+        }
+
+        return 'reject_monitoring_unknown';
+    }
+
+    /**
      * Determine monitor status from price position (side-aware).
-     *
-     * LONG:
-     *   - price_position < 0                        → invalidated (below corridor)
-     *   - 0 <= pp <= entry_zone_percent              → entry_zone
-     *   - entry_zone_percent < pp < 1                → monitoring
-     *   - pp >= 1                                    → invalidated (above corridor)
-     *
-     * SHORT:
-     *   - price_position < 0                         → invalidated (below corridor)
-     *   - pp >= (1 - entry_zone_percent) AND pp < 1  → entry_zone
-     *   - 0 <= pp < (1 - entry_zone_percent)         → monitoring
-     *   - pp >= 1                                    → invalidated (above corridor)
      */
     private function determineStatus(float $pricePosition, float $entryZonePercent, string $side = ''): string
     {
@@ -155,14 +220,12 @@ final class CorridorMonitor
         }
 
         if ($side === 'short') {
-            // SHORT: entry zone is the upper slice of the corridor
             if ($pricePosition >= (1.0 - $entryZonePercent)) {
                 return 'entry_zone';
             }
             return 'monitoring';
         }
 
-        // LONG (default): entry zone is the lower slice of the corridor
         if ($pricePosition <= $entryZonePercent) {
             return 'entry_zone';
         }

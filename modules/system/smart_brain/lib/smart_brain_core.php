@@ -373,8 +373,15 @@ final class SmartBrainCore
                     'signals_count' => 0,
                     'avg_zone_width_pct' => 0.0,
                     'avg_zone_distance' => 0.0,
+                    'avg_price_position' => 0.0,
+                    'avg_confirmation_score' => 0.0,
+                    'whatif_enter_now_would_signal' => 0,
+                    'whatif_wider_zone_would_signal' => 0,
+                    'reject_detail_distribution' => [],
                     'zone_widths' => [],
                     'zone_distances' => [],
+                    'price_positions' => [],
+                    'confirmation_scores' => [],
                 ];
             }
             $v2DownstreamFunnel[$algo]['monitors_count']++;
@@ -387,6 +394,27 @@ final class SmartBrainCore
             };
             $v2DownstreamFunnel[$algo]['zone_widths'][] = (float)($m['zone_width_pct'] ?? 0);
             $v2DownstreamFunnel[$algo]['zone_distances'][] = (float)($m['zone_distance_from_price'] ?? 0);
+            $v2DownstreamFunnel[$algo]['price_positions'][] = (float)($m['price_position'] ?? 0);
+            $v2DownstreamFunnel[$algo]['confirmation_scores'][] = (float)($m['confirmation_score'] ?? 0);
+
+            // What-if counters
+            if ($st !== 'entry_zone') {
+                $whatifEnterNow = (string)($m['whatif_enter_now_status'] ?? '');
+                $whatifWiderZone = (string)($m['whatif_wider_zone_status'] ?? '');
+                if ($whatifEnterNow === 'entry_zone') {
+                    $v2DownstreamFunnel[$algo]['whatif_enter_now_would_signal']++;
+                }
+                if ($whatifWiderZone === 'entry_zone') {
+                    $v2DownstreamFunnel[$algo]['whatif_wider_zone_would_signal']++;
+                }
+            }
+
+            // Reject detail distribution
+            $rejectDetail = (string)($m['reject_detail'] ?? 'none');
+            if ($rejectDetail !== 'none') {
+                $v2DownstreamFunnel[$algo]['reject_detail_distribution'][$rejectDetail] =
+                    ($v2DownstreamFunnel[$algo]['reject_detail_distribution'][$rejectDetail] ?? 0) + 1;
+            }
         }
 
         // Count candidates and signals per contextual pattern
@@ -407,19 +435,27 @@ final class SmartBrainCore
         foreach ($v2DownstreamFunnel as $algo => &$funnel) {
             $widths = $funnel['zone_widths'];
             $distances = $funnel['zone_distances'];
+            $positions = $funnel['price_positions'];
+            $confScores = $funnel['confirmation_scores'];
             $funnel['avg_zone_width_pct'] = count($widths) > 0 ? round(array_sum($widths) / count($widths), 6) : 0.0;
             $funnel['avg_zone_distance'] = count($distances) > 0 ? round(array_sum($distances) / count($distances), 6) : 0.0;
-            unset($funnel['zone_widths'], $funnel['zone_distances']);
+            $funnel['avg_price_position'] = count($positions) > 0 ? round(array_sum($positions) / count($positions), 4) : 0.0;
+            $funnel['avg_confirmation_score'] = count($confScores) > 0 ? round(array_sum($confScores) / count($confScores), 4) : 0.0;
+            unset($funnel['zone_widths'], $funnel['zone_distances'], $funnel['price_positions'], $funnel['confirmation_scores']);
 
             // Add per-pattern rejection reasons
             $funnel['rejection_reasons'] = $perPatternRejections[$algo] ?? [];
         }
         unset($funnel);
 
+        // Build what-if analysis summary for V2
+        $v2WhatIfAnalysis = $this->computeV2WhatIfAnalysis($v2DownstreamFunnel);
+
         // Persist V2 downstream funnel
         $this->state->writeJson('storage/v2_downstream_funnel.json', [
             'by_pattern' => $v2DownstreamFunnel,
             'failed_monitor_preview' => $failedMonitorPreview,
+            'whatif_analysis' => $v2WhatIfAnalysis,
             'updated_at' => date('c'),
         ]);
 
@@ -2523,5 +2559,68 @@ final class SmartBrainCore
         }
 
         return $result;
+    }
+
+    /**
+     * Compute V2 what-if analysis for entry zone tuning.
+     *
+     * Compares current behavior with hypothetical scenarios:
+     * 1. Current mode (actual results)
+     * 2. Enter-now: full corridor as entry zone
+     * 3. Wider zone: 0.85 entry zone percent
+     * 4. Moderate widen: 0.70 entry zone percent
+     *
+     * @param array<string,array<string,mixed>> $v2Funnel
+     * @return array<string,mixed>
+     */
+    private function computeV2WhatIfAnalysis(array $v2Funnel): array
+    {
+        $analysis = [];
+        foreach ($v2Funnel as $algo => $funnel) {
+            $monitors = (int)($funnel['monitors_count'] ?? 0);
+            $currentEntryZone = (int)($funnel['entry_zone_count'] ?? 0);
+            $currentSignals = (int)($funnel['signals_count'] ?? 0);
+            $whatifEnterNow = (int)($funnel['whatif_enter_now_would_signal'] ?? 0);
+            $whatifWiderZone = (int)($funnel['whatif_wider_zone_would_signal'] ?? 0);
+            $monitoring = (int)($funnel['monitoring_count'] ?? 0);
+            $invalidated = (int)($funnel['invalidated_count'] ?? 0);
+
+            $analysis[$algo] = [
+                'monitors_total' => $monitors,
+                'scenarios' => [
+                    'current' => [
+                        'label' => 'Current entry zone',
+                        'entry_zone_count' => $currentEntryZone,
+                        'signals_count' => $currentSignals,
+                        'conversion_rate' => $monitors > 0 ? round($currentSignals / $monitors, 4) : 0.0,
+                        'stalled_monitoring' => $monitoring,
+                        'invalidated' => $invalidated,
+                    ],
+                    'enter_now_hypothetical' => [
+                        'label' => 'If enter_now (full corridor)',
+                        'additional_entry_zone' => $whatifEnterNow,
+                        'potential_signals_gain' => $whatifEnterNow,
+                        'estimated_total_signals' => $currentSignals + $whatifEnterNow,
+                        'estimated_conversion_rate' => $monitors > 0 ? round(($currentSignals + $whatifEnterNow) / $monitors, 4) : 0.0,
+                    ],
+                    'wider_zone_085' => [
+                        'label' => 'If entry zone 85%',
+                        'additional_entry_zone' => $whatifWiderZone,
+                        'potential_signals_gain' => $whatifWiderZone,
+                        'estimated_total_signals' => $currentSignals + $whatifWiderZone,
+                        'estimated_conversion_rate' => $monitors > 0 ? round(($currentSignals + $whatifWiderZone) / $monitors, 4) : 0.0,
+                    ],
+                ],
+                'diagnostics' => [
+                    'avg_price_position' => (float)($funnel['avg_price_position'] ?? 0),
+                    'avg_zone_width_pct' => (float)($funnel['avg_zone_width_pct'] ?? 0),
+                    'avg_zone_distance' => (float)($funnel['avg_zone_distance'] ?? 0),
+                    'avg_confirmation_score' => (float)($funnel['avg_confirmation_score'] ?? 0),
+                    'reject_detail_distribution' => $funnel['reject_detail_distribution'] ?? [],
+                ],
+            ];
+        }
+
+        return $analysis;
     }
 }

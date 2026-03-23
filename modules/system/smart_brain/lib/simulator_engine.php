@@ -761,6 +761,7 @@ final class SimulatorEngine
             return [
                 'by_pattern' => [],
                 'failed_monitor_preview' => [],
+                'whatif_analysis' => [],
             ];
         }
         return $data;

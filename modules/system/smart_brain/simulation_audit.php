@@ -727,11 +727,13 @@ final class SimulationAudit
         $v2DownstreamFunnelRaw = $this->loadV2DownstreamFunnel();
         $v2ByPattern = $v2DownstreamFunnelRaw['by_pattern'] ?? [];
         $v2FailedPreview = $v2DownstreamFunnelRaw['failed_monitor_preview'] ?? [];
+        $v2WhatIfAnalysis = $v2DownstreamFunnelRaw['whatif_analysis'] ?? [];
 
         $v2DownstreamFunnelAudit = [
             'summary' => 'V2 contextual pattern monitor→signal funnel analysis',
             'by_pattern' => [],
-            'failed_monitor_preview' => array_slice($v2FailedPreview, 0, 5),
+            'failed_monitor_preview' => array_slice($v2FailedPreview, 0, 10),
+            'whatif_analysis' => $v2WhatIfAnalysis,
         ];
 
         foreach ($v2ByPattern as $algo => $funnel) {
@@ -752,6 +754,13 @@ final class SimulationAudit
                 $topRejectReason = array_key_first($rejectionReasons);
             }
 
+            $topRejectDetail = 'none';
+            $rejectDetailDist = $funnel['reject_detail_distribution'] ?? [];
+            if (!empty($rejectDetailDist)) {
+                arsort($rejectDetailDist);
+                $topRejectDetail = array_key_first($rejectDetailDist);
+            }
+
             $v2DownstreamFunnelAudit['by_pattern'][$algo] = [
                 'candidates_count' => (int)($funnel['candidates_count'] ?? 0),
                 'monitors_count' => $monitorsCount,
@@ -764,8 +773,14 @@ final class SimulationAudit
                 'overall_conversion_rate' => $overallConversion,
                 'avg_zone_width_pct' => (float)($funnel['avg_zone_width_pct'] ?? 0),
                 'avg_zone_distance' => (float)($funnel['avg_zone_distance'] ?? 0),
+                'avg_price_position' => (float)($funnel['avg_price_position'] ?? 0),
+                'avg_confirmation_score' => (float)($funnel['avg_confirmation_score'] ?? 0),
                 'top_reject_reason' => $topRejectReason,
+                'top_reject_detail' => $topRejectDetail,
                 'rejection_reasons' => $rejectionReasons,
+                'reject_detail_distribution' => $rejectDetailDist,
+                'whatif_enter_now_would_signal' => (int)($funnel['whatif_enter_now_would_signal'] ?? 0),
+                'whatif_wider_zone_would_signal' => (int)($funnel['whatif_wider_zone_would_signal'] ?? 0),
             ];
         }
 

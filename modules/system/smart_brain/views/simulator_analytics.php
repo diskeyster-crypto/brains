@@ -582,6 +582,7 @@ $pageContent = function() use (
 $v2DownstreamFunnel = $rc['v2_downstream_funnel'] ?? [];
 $v2DfByPattern = $v2DownstreamFunnel['by_pattern'] ?? [];
 $v2DfPreview = $v2DownstreamFunnel['failed_monitor_preview'] ?? [];
+$v2DfWhatIf = $v2DownstreamFunnel['whatif_analysis'] ?? [];
 if (!empty($v2DfByPattern)):
 ?>
 <div class="card mb-3">
@@ -602,6 +603,8 @@ if (!empty($v2DfByPattern)):
                     <th>EZ Rate</th>
                     <th>Conversion</th>
                     <th>Avg Zone W%</th>
+                    <th>Avg Price Pos</th>
+                    <th>Avg Conf Score</th>
                     <th>Top Reject</th>
                 </tr>
             </thead>
@@ -618,11 +621,90 @@ if (!empty($v2DfByPattern)):
                     <td><?= number_format((float)($dfData['entry_zone_rate'] ?? 0) * 100, 1) ?>%</td>
                     <td><?= number_format((float)($dfData['overall_conversion_rate'] ?? 0) * 100, 1) ?>%</td>
                     <td><?= number_format((float)($dfData['avg_zone_width_pct'] ?? 0) * 100, 3) ?>%</td>
+                    <td><?= number_format((float)($dfData['avg_price_position'] ?? 0), 3) ?></td>
+                    <td><?= number_format((float)($dfData['avg_confirmation_score'] ?? 0), 3) ?></td>
                     <td><small><?= htmlspecialchars((string)($dfData['top_reject_reason'] ?? 'none')) ?></small></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
+
+        <?php
+        // Reject detail distribution per pattern
+        foreach ($v2DfByPattern as $dfAlgo => $dfData):
+            $rejectDetails = $dfData['reject_detail_distribution'] ?? [];
+            if (!empty($rejectDetails)):
+                arsort($rejectDetails);
+        ?>
+        <div class="mb-2">
+            <strong class="small"><?= htmlspecialchars((string)$dfAlgo) ?> — Reject Details:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($rejectDetails as $reason => $cnt): ?>
+                <span class="badge bg-secondary"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; endforeach; ?>
+
+        <?php
+        // What-If Analysis
+        if (!empty($v2DfWhatIf)):
+        ?>
+        <div class="mt-2 mb-2">
+            <h6 class="mb-1"><i class="bi bi-lightbulb me-1"></i> What-If Analysis (V2 Entry Zone Tuning)</h6>
+            <?php foreach ($v2DfWhatIf as $wfAlgo => $wfData):
+                $scenarios = $wfData['scenarios'] ?? [];
+                $diag = $wfData['diagnostics'] ?? [];
+            ?>
+            <div class="mb-2">
+                <strong class="small"><?= htmlspecialchars((string)$wfAlgo) ?></strong>
+                <table class="table table-sm table-bordered mb-1" style="font-size: 0.78rem;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Scenario</th>
+                            <th>Entry Zone / Gain</th>
+                            <th>Signals</th>
+                            <th>Conversion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (isset($scenarios['current'])): $sc = $scenarios['current']; ?>
+                        <tr>
+                            <td><?= htmlspecialchars((string)($sc['label'] ?? '')) ?></td>
+                            <td><?= (int)($sc['entry_zone_count'] ?? 0) ?> EZ</td>
+                            <td><?= (int)($sc['signals_count'] ?? 0) ?></td>
+                            <td><?= number_format((float)($sc['conversion_rate'] ?? 0) * 100, 1) ?>%</td>
+                        </tr>
+                        <?php endif; ?>
+                        <?php if (isset($scenarios['enter_now_hypothetical'])): $sc = $scenarios['enter_now_hypothetical']; ?>
+                        <tr class="table-warning">
+                            <td><?= htmlspecialchars((string)($sc['label'] ?? '')) ?></td>
+                            <td>+<?= (int)($sc['additional_entry_zone'] ?? 0) ?> monitors</td>
+                            <td><strong>~<?= (int)($sc['estimated_total_signals'] ?? 0) ?></strong></td>
+                            <td><?= number_format((float)($sc['estimated_conversion_rate'] ?? 0) * 100, 1) ?>%</td>
+                        </tr>
+                        <?php endif; ?>
+                        <?php if (isset($scenarios['wider_zone_085'])): $sc = $scenarios['wider_zone_085']; ?>
+                        <tr class="table-info">
+                            <td><?= htmlspecialchars((string)($sc['label'] ?? '')) ?></td>
+                            <td>+<?= (int)($sc['additional_entry_zone'] ?? 0) ?> monitors</td>
+                            <td><strong>~<?= (int)($sc['estimated_total_signals'] ?? 0) ?></strong></td>
+                            <td><?= number_format((float)($sc['estimated_conversion_rate'] ?? 0) * 100, 1) ?>%</td>
+                        </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+                <div class="d-flex flex-wrap gap-2 small text-muted">
+                    <span>Avg Price Pos: <strong><?= number_format((float)($diag['avg_price_position'] ?? 0), 3) ?></strong></span>
+                    <span>Avg Zone Width: <strong><?= number_format((float)($diag['avg_zone_width_pct'] ?? 0) * 100, 3) ?>%</strong></span>
+                    <span>Avg Zone Dist: <strong><?= number_format((float)($diag['avg_zone_distance'] ?? 0) * 100, 3) ?>%</strong></span>
+                    <span>Avg Conf Score: <strong><?= number_format((float)($diag['avg_confirmation_score'] ?? 0), 3) ?></strong></span>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
         <?php if (!empty($v2DfPreview)): ?>
         <details>
             <summary class="text-muted small">Failed Monitor Preview (first <?= count($v2DfPreview) ?>)</summary>
@@ -636,8 +718,10 @@ if (!empty($v2DfByPattern)):
                         <th>EZ Low</th>
                         <th>EZ High</th>
                         <th>EZ%</th>
-                        <th>Widened</th>
-                        <th>Confidence</th>
+                        <th>Conf Score</th>
+                        <th>Cur Price</th>
+                        <th>WI:EnterNow</th>
+                        <th>WI:Wider</th>
                         <th>Reason</th>
                     </tr>
                 </thead>
@@ -651,8 +735,10 @@ if (!empty($v2DfByPattern)):
                         <td><?= number_format((float)($fp['entry_zone_low'] ?? 0), 8) ?></td>
                         <td><?= number_format((float)($fp['entry_zone_high'] ?? 0), 8) ?></td>
                         <td><?= number_format((float)($fp['entry_zone_percent'] ?? 0) * 100, 1) ?>%</td>
-                        <td><?= !empty($fp['entry_zone_widened']) ? '✓' : '' ?></td>
-                        <td><?= number_format((float)($fp['pattern_confidence'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($fp['confirmation_score'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($fp['current_price_at_creation'] ?? 0), 8) ?></td>
+                        <td class="<?= ((string)($fp['whatif_enter_now_status'] ?? '')) === 'entry_zone' ? 'text-success fw-bold' : '' ?>"><?= htmlspecialchars((string)($fp['whatif_enter_now_status'] ?? '')) ?></td>
+                        <td class="<?= ((string)($fp['whatif_wider_zone_status'] ?? '')) === 'entry_zone' ? 'text-success fw-bold' : '' ?>"><?= htmlspecialchars((string)($fp['whatif_wider_zone_status'] ?? '')) ?></td>
                         <td><small><?= htmlspecialchars((string)($fp['reject_reason'] ?? '')) ?></small></td>
                     </tr>
                     <?php endforeach; ?>

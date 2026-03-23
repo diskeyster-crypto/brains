@@ -262,6 +262,7 @@ final class Parser4Analyzer
                 'last_price' => $lastPrice,
                 'pattern_algorithm' => $patternAlgorithm,
                 'pattern_confidence' => $patternConfidence,
+                'confirmation_score' => (float)($patternResult['confirmation_score'] ?? 0.0),
                 'trend_match_score' => round($trendMatchScore, 4),
                 'corridor_fit_score' => round($corridorFitScore, 4),
                 'entry_quality_score' => round($entryQualityScore, 4),

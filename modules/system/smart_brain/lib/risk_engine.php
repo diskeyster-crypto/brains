@@ -122,6 +122,10 @@ final class RiskEngine
 
         $this->rejectionCounters = [
             'rejected_not_entry_zone' => 0,
+            'rejected_monitoring_stalled' => 0,
+            'rejected_invalidated' => 0,
+            'rejected_price_above_zone' => 0,
+            'rejected_zone_too_far' => 0,
             'rejected_low_reliability' => 0,
             'rejected_missing_passport' => 0,
             'rejected_missing_price' => 0,
@@ -147,7 +151,25 @@ final class RiskEngine
             if ($status !== 'entry_zone') {
                 $this->rejectionCounters['rejected_not_entry_zone']++;
                 $algo = (string)($monitor['pattern_algorithm'] ?? 'none');
+                $rejectDetail = (string)($monitor['reject_detail'] ?? 'rejected_not_entry_zone');
+
+                // Specific sub-reason counters
+                if ($status === 'invalidated') {
+                    $this->rejectionCounters['rejected_invalidated']++;
+                    $this->perPatternRejections[$algo]['rejected_invalidated'] = ($this->perPatternRejections[$algo]['rejected_invalidated'] ?? 0) + 1;
+                } elseif ($status === 'monitoring') {
+                    $this->rejectionCounters['rejected_monitoring_stalled']++;
+                    $this->perPatternRejections[$algo]['rejected_monitoring_stalled'] = ($this->perPatternRejections[$algo]['rejected_monitoring_stalled'] ?? 0) + 1;
+                }
+                if ($rejectDetail === 'reject_price_above_zone') {
+                    $this->rejectionCounters['rejected_price_above_zone']++;
+                    $this->perPatternRejections[$algo]['rejected_price_above_zone'] = ($this->perPatternRejections[$algo]['rejected_price_above_zone'] ?? 0) + 1;
+                } elseif ($rejectDetail === 'reject_zone_too_far') {
+                    $this->rejectionCounters['rejected_zone_too_far']++;
+                    $this->perPatternRejections[$algo]['rejected_zone_too_far'] = ($this->perPatternRejections[$algo]['rejected_zone_too_far'] ?? 0) + 1;
+                }
                 $this->perPatternRejections[$algo]['rejected_not_entry_zone'] = ($this->perPatternRejections[$algo]['rejected_not_entry_zone'] ?? 0) + 1;
+
                 // Store failed monitor preview (first N)
                 if (count($this->failedMonitorPreview) < $this->failedMonitorPreviewLimit) {
                     $this->failedMonitorPreview[] = [
@@ -160,13 +182,17 @@ final class RiskEngine
                         'entry_zone_percent' => (float)($monitor['entry_zone_percent'] ?? 0),
                         'entry_zone_widened' => (bool)($monitor['entry_zone_widened'] ?? false),
                         'pattern_confidence' => (float)($monitor['pattern_confidence'] ?? 0),
+                        'confirmation_score' => (float)($monitor['confirmation_score'] ?? 0),
                         'analyzer_score' => (float)($monitor['analyzer_score'] ?? 0),
-                        'reject_reason' => 'rejected_not_entry_zone',
+                        'reject_reason' => $rejectDetail,
                         'zone_width_pct' => (float)($monitor['zone_width_pct'] ?? 0),
                         'zone_distance_from_price' => (float)($monitor['zone_distance_from_price'] ?? 0),
+                        'current_price_at_creation' => (float)($monitor['current_price_at_creation'] ?? 0),
+                        'whatif_enter_now_status' => (string)($monitor['whatif_enter_now_status'] ?? ''),
+                        'whatif_wider_zone_status' => (string)($monitor['whatif_wider_zone_status'] ?? ''),
                     ];
                 }
-                $this->addDebugLine($symbol, 'status=' . $status . ' pattern=' . $algo);
+                $this->addDebugLine($symbol, 'status=' . $status . ' pattern=' . $algo . ' reject=' . $rejectDetail);
                 continue;
             }
 

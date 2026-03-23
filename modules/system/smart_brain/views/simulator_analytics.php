@@ -333,6 +333,8 @@ $pageContent = function() use (
                 <?php foreach ([
                     'Reversal V1 (baseline)' => $rcV1,
                     'Reversal V2 (confirm)' => $rcV2,
+                    'Contextual V2' => $rcCtxV2,
+                    'Contextual V3' => $rcCtxV3,
                 ] as $label => $data): ?>
                     <?php $t = (int)($data['trades_total'] ?? 0); ?>
                     <tr>
@@ -408,6 +410,7 @@ $pageContent = function() use (
             <table class="table table-dark table-hover table-sm mb-0">
                 <thead><tr>
                     <th>Алгоритм</th>
+                    <th class="text-end" title="Кол-во раз когда контекст отклонён (не прошёл гейт)">Контекст откл.</th>
                     <th class="text-end" title="Кол-во раз когда Stage 1 нашёл валидный сетап">Сетапов</th>
                     <th class="text-end" title="Кол-во подтверждённых сигналов (Stage 2 прошёл)">Подтверж.</th>
                     <th class="text-end" title="Сетапов не прошедших подтверждение">Отклонено</th>
@@ -425,6 +428,7 @@ $pageContent = function() use (
                 ];
                 foreach ($v2AlgoRows as $algoKey => $algoLabel):
                     $ac = (array)($v2scByAlgo[$algoKey] ?? []);
+                    $acCtxReject = (int)($ac['context_rejected_count'] ?? 0);
                     $acSetup = (int)($ac['setup_candidates_count'] ?? 0);
                     $acConfirm = (int)($ac['confirmed_signals_count'] ?? 0);
                     $acReject = (int)($ac['confirm_rejected_count'] ?? 0);
@@ -433,6 +437,7 @@ $pageContent = function() use (
                 ?>
                     <tr>
                         <td class="fw-bold"><?= htmlspecialchars($algoLabel) ?></td>
+                        <td class="text-end <?= $acCtxReject > 0 ? 'roi-negative' : '' ?>"><?= $acCtxReject ?></td>
                         <td class="text-end"><?= $acSetup ?></td>
                         <td class="text-end roi-positive"><?= $acConfirm ?></td>
                         <td class="text-end roi-negative"><?= $acReject ?></td>
@@ -442,6 +447,7 @@ $pageContent = function() use (
                 <?php endforeach; ?>
                 <?php
                 // Family aggregate row
+                $aggCtxReject = (int)($v2scAggregate['context_rejected_count'] ?? 0);
                 $aggSetup = (int)($v2scAggregate['setup_candidates_count'] ?? 0);
                 $aggConfirm = (int)($v2scAggregate['confirmed_signals_count'] ?? 0);
                 $aggReject = (int)($v2scAggregate['confirm_rejected_count'] ?? 0);
@@ -449,7 +455,8 @@ $pageContent = function() use (
                 $aggRejRate = (float)($v2scAggregate['rejection_rate'] ?? 0);
                 ?>
                     <tr class="table-active fw-bold">
-                        <td>Reversal V2 (итого)</td>
+                        <td>Reversal V2/V3 (итого)</td>
+                        <td class="text-end <?= $aggCtxReject > 0 ? 'roi-negative' : '' ?>"><?= $aggCtxReject ?></td>
                         <td class="text-end"><?= $aggSetup ?></td>
                         <td class="text-end roi-positive"><?= $aggConfirm ?></td>
                         <td class="text-end roi-negative"><?= $aggReject ?></td>

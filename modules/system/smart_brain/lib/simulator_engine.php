@@ -678,16 +678,19 @@ final class SimulatorEngine
         $v1Patterns = ['double_bottom', 'double_top'];
         $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
         $ctxV2Patterns = ['double_bottom_contextual_v2'];
+        $ctxV3Patterns = ['double_bottom_contextual_v3'];
 
         $v1Aggregate = $this->computeFamilyAggregate($closed, $v1Patterns);
         $v2Aggregate = $this->computeFamilyAggregate($closed, $v2Patterns);
         $ctxV2Aggregate = $this->computeFamilyAggregate($closed, $ctxV2Patterns);
+        $ctxV3Aggregate = $this->computeFamilyAggregate($closed, $ctxV3Patterns);
 
-        // Per-type comparison: bottom V1 vs V2 vs Contextual V2, top V1 vs V2
+        // Per-type comparison: bottom V1 vs V2 vs Contextual V2 vs Contextual V3, top V1 vs V2
         $bottomComparison = [
             'v1' => $patternStatsResult['double_bottom'] ?? [],
             'v2' => $patternStatsResult['double_bottom_confirm_v2'] ?? [],
             'contextual_v2' => $patternStatsResult['double_bottom_contextual_v2'] ?? [],
+            'contextual_v3' => $patternStatsResult['double_bottom_contextual_v3'] ?? [],
         ];
         $topComparison = [
             'v1' => $patternStatsResult['double_top'] ?? [],
@@ -704,12 +707,13 @@ final class SimulatorEngine
             'v1_aggregate' => $v1Aggregate,
             'v2_aggregate' => $v2Aggregate,
             'contextual_v2_aggregate' => $ctxV2Aggregate,
+            'contextual_v3_aggregate' => $ctxV3Aggregate,
             'bottom_patterns' => $bottomComparison,
             'top_patterns' => $topComparison,
             'promotion_criteria' => $promotion,
             'v2_stage_counters' => $v2StageCounters,
             'compare_mode_active' => true,
-            'evaluation_note' => 'V2 is under shadow evaluation. Do not promote without statistical evidence.',
+            'evaluation_note' => 'V2/V3 under shadow evaluation. Do not promote without statistical evidence.',
         ];
     }
 
@@ -1312,7 +1316,7 @@ final class SimulatorEngine
      */
     private function computeRegressionAudit(array $closed): array
     {
-        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
+        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
         $sides = ['long', 'short'];
 
         // ── Per-pattern × per-side matrix ──
@@ -1480,28 +1484,28 @@ final class SimulatorEngine
         );
         $scenarios['disable_top_and_pullback']['description'] = 'Без double_top и pullback';
 
-        // Scenario 4: only double_bottom + V2 patterns
-        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
+        // Scenario 4: only double_bottom + V2 + V3 patterns
+        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
         $scenarios['bottom_plus_v2_only'] = $this->computeCellStats(
             array_values(array_filter($closed, fn($t) => in_array((string)($t['pattern_algorithm'] ?? ''), $keepOnly, true))),
             null, null
         );
-        $scenarios['bottom_plus_v2_only']['description'] = 'Только double_bottom + V2';
+        $scenarios['bottom_plus_v2_only']['description'] = 'Только double_bottom + V2/V3';
 
-        // Scenario 5: V1 long only + V2 any side
-        $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2'];
+        // Scenario 5: V1 long only + V2/V3 any side
+        $v2v3Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
         $scenarios['v1_long_v2_any'] = $this->computeCellStats(
-            array_values(array_filter($closed, function ($t) use ($v2Patterns) {
+            array_values(array_filter($closed, function ($t) use ($v2v3Patterns) {
                 $algo = (string)($t['pattern_algorithm'] ?? '');
                 $side = (string)($t['side'] ?? '');
-                if (in_array($algo, $v2Patterns, true)) {
-                    return true; // keep all V2
+                if (in_array($algo, $v2v3Patterns, true)) {
+                    return true; // keep all V2/V3
                 }
                 return $side === 'long'; // V1 long only
             })),
             null, null
         );
-        $scenarios['v1_long_v2_any']['description'] = 'V1 только long + V2 любой';
+        $scenarios['v1_long_v2_any']['description'] = 'V1 только long + V2/V3 любой';
 
         return $scenarios;
     }

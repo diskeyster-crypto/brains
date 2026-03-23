@@ -338,11 +338,17 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $mirrorPriceDistPct = $rtEffectiveContract['trailing_price_distance_pct'] ?? null;
                 $mirrorHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($rtEffectiveContract['hybrid_tp_share'] ?? null);
                 $mirrorSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
+                $rtLegacyPresent = (bool)($rtEffectiveContract['legacy_trailing_fields_present'] ?? false);
                 $hasContract = ($mirrorExitMode !== null);
                 if ($hasContract):
             ?>
             <div class="mb-2 small">
-                <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
+                <strong><i class="bi bi-arrow-right-circle me-1"></i>Active Trailing Contract</strong>
+                <span class="badge bg-primary ms-1" style="font-size:0.65rem;"><?= htmlspecialchars($mirrorTrailingMode) ?></span>
+                <?php if ($rtLegacyPresent): ?>
+                <span class="badge bg-secondary ms-1" style="font-size:0.55rem;">legacy fields preserved</span>
+                <?php endif; ?>
+                :
                 <code><?= htmlspecialchars((string)$mirrorExitMode) ?></code>
                 | trailing: <code><?= $mirrorTrailingEnabled ? 'ON' : 'OFF' ?></code>
                 | mode: <code><?= htmlspecialchars((string)$mirrorTrailingMode) ?></code>

@@ -308,11 +308,17 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $dashPriceDistPct = $effectiveContract['trailing_price_distance_pct'] ?? null;
                 $dashHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($effectiveContract['hybrid_tp_share'] ?? null);
                 $dashSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
+                $dashLegacyPresent = (bool)($effectiveContract['legacy_trailing_fields_present'] ?? false);
                 $dashHasContract = ($dashExitMode !== null);
                 if ($dashHasContract):
             ?>
             <div class="mt-2 small">
-                <strong><i class="bi bi-arrow-right-circle me-1"></i>Effective Exit Contract:</strong>
+                <strong><i class="bi bi-arrow-right-circle me-1"></i>Active Trailing Contract</strong>
+                <span class="badge bg-primary ms-1" style="font-size:0.65rem;"><?= htmlspecialchars($dashTrailingMode) ?></span>
+                <?php if ($dashLegacyPresent): ?>
+                <span class="badge bg-secondary ms-1" style="font-size:0.55rem;">legacy fields preserved</span>
+                <?php endif; ?>
+                :
                 <code><?= htmlspecialchars((string)$dashExitMode) ?></code>
                 | trailing: <code><?= $dashTrailingEnabled ? 'ON' : 'OFF' ?></code>
                 | mode: <code><?= htmlspecialchars((string)$dashTrailingMode) ?></code>

@@ -560,6 +560,21 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         </div>
                         <!-- ROI Giveback specific fields — active for roi_giveback and price_distance modes -->
                         <div id="roi_giveback_fields_group" class="<?= $currentTrailingMode === 'price_distance_floor' ? 'cfg-muted-field' : '' ?>">
+                        <div class="card mb-2 <?= $currentTrailingMode === 'price_distance_floor' ? 'border-secondary' : 'border-success' ?>">
+                            <div class="card-header d-flex justify-content-between align-items-center <?= $currentTrailingMode === 'price_distance_floor' ? 'bg-secondary bg-opacity-10' : 'bg-success bg-opacity-10' ?>" id="roi_giveback_header"
+                                 style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#roi_giveback_collapse">
+                                <span>
+                                    <strong>ROI Giveback Settings</strong>
+                                    <?php if ($currentTrailingMode === 'price_distance_floor'): ?>
+                                    <span class="badge bg-secondary ms-2">inactive — other mode</span>
+                                    <?php else: ?>
+                                    <span class="badge bg-success ms-2">active</span>
+                                    <?php endif; ?>
+                                </span>
+                                <i class="bi bi-chevron-down"></i>
+                            </div>
+                            <div id="roi_giveback_collapse" class="collapse <?= $currentTrailingMode !== 'price_distance_floor' ? 'show' : '' ?>">
+                            <div class="card-body">
                         <div class="mb-3">
                             <label for="trailing_activation_roi" class="form-label">Trailing Activation ROI
                                 <i class="bi bi-question-circle cfg-info" title="Трейлинг начинает работать после достижения этого ROI. 0.05 = +5% ROI."></i>
@@ -586,15 +601,28 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             <label class="form-check-label" for="brain_may_delay_trailing">Brain May Delay Trailing</label>
                             <br><div class="cfg-hint">Brain может задержать активацию трейлинга</div>
                         </div>
+                            </div>
+                            </div>
+                        </div>
                         <div class="cfg-mode-note" style="<?= $currentTrailingMode === 'price_distance_floor' ? '' : 'display:none' ?>">⚠ Поля выше активны только в режимах ROI Giveback / Price Distance</div>
                         </div><!-- /roi_giveback_fields_group -->
 
                         <!-- Price Distance Floor specific fields — active only for price_distance_floor mode -->
                         <div class="mb-3<?= $currentTrailingMode !== 'price_distance_floor' ? ' cfg-muted-field' : '' ?>" id="floor_trailing_fields_group">
-                            <div class="card border-info">
-                                <div class="card-header bg-info bg-opacity-10"><strong>Price Distance Floor Settings</strong>
-                                    <span class="badge bg-info ms-2">price_distance_floor mode</span>
+                            <div class="card <?= $currentTrailingMode === 'price_distance_floor' ? 'border-info' : 'border-secondary' ?>">
+                                <div class="card-header d-flex justify-content-between align-items-center <?= $currentTrailingMode === 'price_distance_floor' ? 'bg-info bg-opacity-10' : 'bg-secondary bg-opacity-10' ?>" id="floor_trailing_header"
+                                     style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#floor_trailing_collapse">
+                                    <span>
+                                        <strong>Price Distance Floor Settings</strong>
+                                        <?php if ($currentTrailingMode === 'price_distance_floor'): ?>
+                                        <span class="badge bg-info ms-2">active</span>
+                                        <?php else: ?>
+                                        <span class="badge bg-secondary ms-2">inactive — other mode</span>
+                                        <?php endif; ?>
+                                    </span>
+                                    <i class="bi bi-chevron-down"></i>
                                 </div>
+                                <div id="floor_trailing_collapse" class="collapse <?= $currentTrailingMode === 'price_distance_floor' ? 'show' : '' ?>">
                                 <div class="card-body">
                                     <div class="mb-2">
                                         <label for="trailing_activation_floor_roi" class="form-label">Floor Activation ROI
@@ -637,6 +665,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                             <div class="cfg-hint">Макс. шаг обновления (<code>0.02</code> = 2%)</div>
                                         </div>
                                     </div>
+                                </div>
                                 </div>
                             </div>
                             <div class="cfg-mode-note" style="<?= $currentTrailingMode !== 'price_distance_floor' ? '' : 'display:none' ?>">⚠ Активно только в режиме Price Distance Floor</div>
@@ -1053,7 +1082,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             });
         }
 
-        // Trailing mode visibility — show/mute fields by active mode
+        // Trailing mode visibility — show/mute fields by active mode with collapsible sections
         var trailingModeSelect = document.getElementById('trailing_mode');
         if (trailingModeSelect) {
             function updateTrailingModeVisibility() {
@@ -1067,12 +1096,58 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                     floorGroup.classList.toggle('cfg-muted-field', mode !== 'price_distance_floor');
                     var floorNote = floorGroup.querySelector('.cfg-mode-note');
                     if (floorNote) floorNote.style.display = mode !== 'price_distance_floor' ? '' : 'none';
+                    // Update card styling and badge
+                    var floorCard = floorGroup.querySelector('.card');
+                    var floorHeader = floorGroup.querySelector('.card-header');
+                    var floorBadge = floorGroup.querySelector('.card-header .badge');
+                    var floorCollapse = document.getElementById('floor_trailing_collapse');
+                    if (floorCard) {
+                        floorCard.className = mode === 'price_distance_floor' ? 'card border-info' : 'card border-secondary';
+                    }
+                    if (floorHeader) {
+                        floorHeader.className = floorHeader.className.replace(/bg-\w+ bg-opacity-10/, mode === 'price_distance_floor' ? 'bg-info bg-opacity-10' : 'bg-secondary bg-opacity-10');
+                    }
+                    if (floorBadge) {
+                        floorBadge.className = mode === 'price_distance_floor' ? 'badge bg-info ms-2' : 'badge bg-secondary ms-2';
+                        floorBadge.textContent = mode === 'price_distance_floor' ? 'active' : 'inactive — other mode';
+                    }
+                    // Auto-expand/collapse
+                    if (floorCollapse) {
+                        if (mode === 'price_distance_floor') {
+                            floorCollapse.classList.add('show');
+                        } else {
+                            floorCollapse.classList.remove('show');
+                        }
+                    }
                 }
                 // ROI Giveback fields: active in roi_giveback and price_distance, muted in floor
                 if (givebackGroup) {
                     givebackGroup.classList.toggle('cfg-muted-field', mode === 'price_distance_floor');
                     var gbNote = givebackGroup.querySelector('.cfg-mode-note');
                     if (gbNote) gbNote.style.display = mode === 'price_distance_floor' ? '' : 'none';
+                    // Update card styling and badge
+                    var gbCard = givebackGroup.querySelector('.card');
+                    var gbHeader = givebackGroup.querySelector('.card-header');
+                    var gbBadge = givebackGroup.querySelector('.card-header .badge');
+                    var gbCollapse = document.getElementById('roi_giveback_collapse');
+                    if (gbCard) {
+                        gbCard.className = mode === 'price_distance_floor' ? 'card mb-2 border-secondary' : 'card mb-2 border-success';
+                    }
+                    if (gbHeader) {
+                        gbHeader.className = gbHeader.className.replace(/bg-\w+ bg-opacity-10/, mode === 'price_distance_floor' ? 'bg-secondary bg-opacity-10' : 'bg-success bg-opacity-10');
+                    }
+                    if (gbBadge) {
+                        gbBadge.className = mode === 'price_distance_floor' ? 'badge bg-secondary ms-2' : 'badge bg-success ms-2';
+                        gbBadge.textContent = mode === 'price_distance_floor' ? 'inactive — other mode' : 'active';
+                    }
+                    // Auto-expand/collapse
+                    if (gbCollapse) {
+                        if (mode !== 'price_distance_floor') {
+                            gbCollapse.classList.add('show');
+                        } else {
+                            gbCollapse.classList.remove('show');
+                        }
+                    }
                 }
                 // Price distance pct: active in price_distance and price_distance_floor
                 if (distanceGroup) {

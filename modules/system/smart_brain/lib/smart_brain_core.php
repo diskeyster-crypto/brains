@@ -1242,30 +1242,20 @@ final class SmartBrainCore
     /**
      * Build a consistent effective trailing contract summary from userLimits.
      * Used for runtime display and Brain→Bot contract traceability.
+     * Cleanup Pass 2: structurally separated into active_trailing_contract + legacy block.
      *
      * @param array $userLimits User limits from config
-     * @return array Effective trailing contract summary
+     * @return array Effective trailing contract summary (mode-aware, active fields only in main block)
      */
     private function buildEffectiveTrailingContractSummary(array $userLimits): array
     {
-        $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
         $rawBreakEvenActivation = (float)($userLimits['break_even_activation_roi'] ?? 0.025);
         $trailingMode = (string)($userLimits['trailing_mode'] ?? 'roi_giveback');
 
-        return [
+        // Shared fields across all modes
+        $contract = [
             'trailing_enabled' => (bool)($userLimits['trailing_enabled'] ?? false),
             'trailing_mode' => $trailingMode,
-            'trailing_activation_roi' => $rawActivation,
-            'trailing_activation_roi_pct' => ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation,
-            'trailing_min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
-            'trailing_min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
-            // Price distance / floor fields
-            'trailing_price_distance_pct' => (float)($userLimits['trailing_price_distance_pct'] ?? 0.02),
-            'trailing_activation_floor_roi' => (float)($userLimits['trailing_activation_floor_roi'] ?? 0.04),
-            'trailing_floor_lock_roi' => (float)($userLimits['trailing_floor_lock_roi'] ?? 0.03),
-            'trailing_step_mode' => (string)($userLimits['trailing_step_mode'] ?? 'fixed'),
-            'trailing_step_pct_min' => (float)($userLimits['trailing_step_pct_min'] ?? 0.005),
-            'trailing_step_pct_max' => (float)($userLimits['trailing_step_pct_max'] ?? 0.02),
             'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
             'break_even_activation_roi' => $rawBreakEvenActivation,
             'break_even_activation_roi_pct' => ($rawBreakEvenActivation > 0 && $rawBreakEvenActivation < 1.0) ? $rawBreakEvenActivation * 100 : $rawBreakEvenActivation,
@@ -1273,10 +1263,45 @@ final class SmartBrainCore
             'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.03),
             'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.40),
             'logical_stop_roi' => (float)($userLimits['logical_stop_roi'] ?? 0.03),
-            'drawdown_factor' => 0.5,
             'canonical_source' => 'brain_user_limits',
-            'unit_system' => 'activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio,trailing_price_distance_pct=ratio',
         ];
+
+        // Active trailing fields: only those relevant to the selected mode
+        switch ($trailingMode) {
+            case 'price_distance_floor':
+                $contract['trailing_activation_floor_roi'] = (float)($userLimits['trailing_activation_floor_roi'] ?? 0.04);
+                $contract['trailing_floor_lock_roi'] = (float)($userLimits['trailing_floor_lock_roi'] ?? 0.03);
+                $contract['trailing_price_distance_pct'] = (float)($userLimits['trailing_price_distance_pct'] ?? 0.02);
+                $contract['trailing_step_mode'] = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
+                $contract['trailing_step_pct_min'] = (float)($userLimits['trailing_step_pct_min'] ?? 0.005);
+                $contract['trailing_step_pct_max'] = (float)($userLimits['trailing_step_pct_max'] ?? 0.02);
+                break;
+            case 'price_distance':
+                $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
+                $contract['trailing_activation_roi'] = $rawActivation;
+                $contract['trailing_activation_roi_pct'] = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
+                $contract['trailing_price_distance_pct'] = (float)($userLimits['trailing_price_distance_pct'] ?? 0.02);
+                break;
+            case 'roi_giveback':
+            default:
+                $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);
+                $contract['trailing_activation_roi'] = $rawActivation;
+                $contract['trailing_activation_roi_pct'] = ($rawActivation > 0 && $rawActivation < 1.0) ? $rawActivation * 100 : $rawActivation;
+                $contract['trailing_min_lock_roi'] = (float)($userLimits['trailing_min_lock_roi'] ?? 0.012);
+                $contract['trailing_min_step'] = (float)($userLimits['trailing_min_step'] ?? 0.01);
+                $contract['drawdown_factor'] = 0.5;
+                break;
+        }
+
+        // Legacy indicator: whether old-mode fields are still present in user config
+        $hasLegacy = ($trailingMode !== 'roi_giveback') && (
+            isset($userLimits['trailing_activation_roi']) ||
+            isset($userLimits['trailing_min_lock_roi']) ||
+            isset($userLimits['trailing_min_step'])
+        );
+        $contract['legacy_trailing_fields_present'] = $hasLegacy;
+
+        return $contract;
     }
 
     /**

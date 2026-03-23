@@ -41,6 +41,13 @@
         "early_failure_enabled": true,
         "early_failure_window_minutes": 5,
         "early_failure_max_adverse_roi": -0.0080000000000000002,
+        "trailing_mode": "price_distance_floor",
+        "trailing_price_distance_pct": 0.02,
+        "trailing_activation_floor_roi": 0.040000000000000001,
+        "trailing_floor_lock_roi": 0.029999999999999999,
+        "trailing_step_mode": "auto_strength",
+        "trailing_step_pct_min": 0.0050000000000000001,
+        "trailing_step_pct_max": 0.02,
         "leverage_mode": "manual",
         "manual_leverage": 5,
         "symbol_intelligence_enabled": true,
@@ -61,17 +68,16 @@
         "manual_symbol_mode": "manual_only",
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
-        "live_max_positions": 5,
+        "live_max_positions": 2,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
-        "live_reverse_side_enabled": true,
+        "live_reverse_side_enabled": false,
         "patterns": {
             "enabled": [
                 "double_bottom",
                 "double_top",
-                "pullback_trend_continue",
-                "double_bottom_confirm_v2",
-                "double_top_confirm_v2"
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3"
             ],
             "mode": "any"
         }
@@ -89,12 +95,30 @@
         "stop_floor_value": 0.29999999999999999,
         "brain_may_tighten_stop": true,
         "trailing_enabled": true,
+        "trailing_mode": "price_distance_floor",
+        "trailing_price_distance_pct": 0.02,
+        "trailing_activation_floor_roi": 0.040000000000000001,
+        "trailing_floor_lock_roi": 0.029999999999999999,
+        "trailing_step_mode": "auto_strength",
+        "trailing_step_pct_min": 0.0050000000000000001,
+        "trailing_step_pct_max": 0.02,
         "trailing_activation_roi": 0.070000000000000007,
         "trailing_min_lock_roi": 0.021999999999999999,
         "trailing_min_step": 0.01,
         "brain_may_delay_trailing": true,
         "fixed_take_profit_roi": 0.029999999999999999,
-        "hybrid_tp_share": 0.40000000000000002
+        "hybrid_tp_share": 0.40000000000000002,
+        "active_trailing_fields": [
+            "trailing_enabled",
+            "trailing_mode",
+            "trailing_price_distance_pct",
+            "trailing_activation_floor_roi",
+            "trailing_floor_lock_roi",
+            "trailing_step_mode",
+            "trailing_step_pct_min",
+            "trailing_step_pct_max"
+        ],
+        "legacy_trailing_fields_present": true
     },
     "exit_safety": {
         "break_even_enabled": true,
@@ -144,32 +168,34 @@
     "live_trading": {
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
-        "live_max_positions": 5,
+        "live_max_positions": 2,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
-        "live_reverse_side_enabled": true,
+        "live_reverse_side_enabled": false,
         "live_trailing_contract": {
+            "canonical_source": "exit_policy",
             "trailing_enabled": true,
-            "trailing_activation_roi": 0.070000000000000007,
-            "trailing_min_lock_roi": 0.021999999999999999,
-            "trailing_min_step": 0.01,
+            "trailing_mode": "price_distance_floor",
+            "active_trailing_fields": [
+                "trailing_enabled",
+                "trailing_mode",
+                "trailing_price_distance_pct",
+                "trailing_activation_floor_roi",
+                "trailing_floor_lock_roi",
+                "trailing_step_mode",
+                "trailing_step_pct_min",
+                "trailing_step_pct_max"
+            ],
             "break_even_enabled": true,
-            "break_even_activation_roi": 0.025000000000000001,
-            "exit_mode": "trailing_tp",
-            "fixed_take_profit_roi": 0.029999999999999999,
-            "hybrid_tp_share": 0.40000000000000002,
-            "stop_control_mode": "entry_roi",
-            "manual_stop_loss_roi": 0.029999999999999999,
-            "stop_loss_from_entry_roi": 0.050000000000000003
+            "exit_mode": "trailing_tp"
         }
     },
     "pattern_selection": {
         "enabled": [
             "double_bottom",
             "double_top",
-            "pullback_trend_continue",
-            "double_bottom_confirm_v2",
-            "double_top_confirm_v2"
+            "double_bottom_contextual_v2",
+            "double_bottom_contextual_v3"
         ],
         "mode": "any"
     },
@@ -192,9 +218,8 @@
             "enabled": [
                 "double_bottom",
                 "double_top",
-                "pullback_trend_continue",
-                "double_bottom_confirm_v2",
-                "double_top_confirm_v2"
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3"
             ],
             "mode": "any"
         },
@@ -264,5 +289,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-22T09:23:02+00:00"
+    "generated_at": "2026-03-23T11:46:01+00:00"
 }

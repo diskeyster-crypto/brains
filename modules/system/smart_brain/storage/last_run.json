@@ -1,18 +1,18 @@
 {
     "ok": true,
-    "updated_at": "2026-03-22T09:23:06+00:00",
+    "updated_at": "2026-03-23T11:46:05+00:00",
     "status": "ok",
     "source": "cron",
-    "duration_ms": 4243,
-    "candidates": 499,
-    "monitors": 499,
+    "duration_ms": 3346,
+    "candidates": 494,
+    "monitors": 494,
     "signals": 50,
     "error_message": "",
-    "monitoring_count": 434,
-    "entry_zone_count": 54,
+    "monitoring_count": 305,
+    "entry_zone_count": 107,
     "triggered_count": 0,
-    "invalidated_count": 11,
-    "rejected_not_entry_zone": 445,
+    "invalidated_count": 82,
+    "rejected_not_entry_zone": 387,
     "rejected_low_reliability": 0,
     "rejected_missing_passport": 0,
     "rejected_missing_price": 0,
@@ -22,10 +22,10 @@
     "normal_signals_count": 0,
     "symbol_intel_filtered": 0,
     "symbol_filter_mode": "all",
-    "raw_candidates_count": 499,
-    "after_manual_filter_count": 499,
-    "after_symbol_filter_count": 499,
-    "filtered_candidates_count": 499,
+    "raw_candidates_count": 494,
+    "after_manual_filter_count": 494,
+    "after_symbol_filter_count": 494,
+    "filtered_candidates_count": 494,
     "filter_stage_that_removed_all": "none",
     "zero_output_reason": "",
     "restrictive_si_skipped": false,
@@ -60,7 +60,7 @@
     "live_invalid_risk_contract_count": 0,
     "live_debug_preview": [
         {
-            "symbol": "RESOLVUSDT",
+            "symbol": "SXTUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -70,7 +70,7 @@
             "has_limits": true
         },
         {
-            "symbol": "LYNUSDT",
+            "symbol": "BSUUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -80,7 +80,7 @@
             "has_limits": true
         },
         {
-            "symbol": "UAIUSDT",
+            "symbol": "VELVETUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -90,7 +90,7 @@
             "has_limits": true
         },
         {
-            "symbol": "SXPUSDT",
+            "symbol": "SLPUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -100,7 +100,7 @@
             "has_limits": true
         },
         {
-            "symbol": "NTRNUSDT",
+            "symbol": "SOLVUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -110,7 +110,7 @@
             "has_limits": true
         },
         {
-            "symbol": "TSTBSCUSDT",
+            "symbol": "BANANAS31USDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -120,7 +120,7 @@
             "has_limits": true
         },
         {
-            "symbol": "ROAMUSDT",
+            "symbol": "BOBAUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -130,7 +130,7 @@
             "has_limits": true
         },
         {
-            "symbol": "DYDXUSDT",
+            "symbol": "SPORTFUNUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -140,7 +140,7 @@
             "has_limits": true
         },
         {
-            "symbol": "KSMUSDT",
+            "symbol": "DUSKUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -150,7 +150,7 @@
             "has_limits": true
         },
         {
-            "symbol": "RVNUSDT",
+            "symbol": "FLUIDUSDT",
             "signal_id_source": "original",
             "outcome": "approved",
             "reason": "mode=all",
@@ -161,15 +161,22 @@
         }
     ],
     "effective_execution_limits": {
-        "live_max_positions": 5,
+        "live_max_positions": 2,
         "live_one_trade_per_symbol": true
     },
     "effective_trailing_contract": {
         "trailing_enabled": true,
+        "trailing_mode": "price_distance_floor",
         "trailing_activation_roi": 0.070000000000000007,
         "trailing_activation_roi_pct": 7.0000000000000009,
         "trailing_min_lock_roi": 0.021999999999999999,
         "trailing_min_step": 0.01,
+        "trailing_price_distance_pct": 0.02,
+        "trailing_activation_floor_roi": 0.040000000000000001,
+        "trailing_floor_lock_roi": 0.029999999999999999,
+        "trailing_step_mode": "auto_strength",
+        "trailing_step_pct_min": 0.0050000000000000001,
+        "trailing_step_pct_max": 0.02,
         "break_even_enabled": true,
         "break_even_activation_roi": 0.025000000000000001,
         "break_even_activation_roi_pct": 2.5,
@@ -179,10 +186,10 @@
         "logical_stop_roi": 0.029999999999999999,
         "drawdown_factor": 0.5,
         "canonical_source": "brain_user_limits",
-        "unit_system": "activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
+        "unit_system": "activation_roi=ratio,activation_roi_pct=percent,drawdown_factor=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio,trailing_price_distance_pct=ratio"
     },
-    "bot_symbol_exit_stats_loaded": true,
-    "bot_symbol_exit_stats_symbols_count": 4,
+    "bot_symbol_exit_stats_loaded": false,
+    "bot_symbol_exit_stats_symbols_count": 0,
     "bot_symbol_exit_stats_source_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/trading_bot/storage/last_run.json",
     "bot_symbol_exit_stats_parse_ok": true,
     "passports_updated_count": 0,

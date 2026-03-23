@@ -270,6 +270,11 @@ final class Parser4Analyzer
                 'setup_neckline_price' => (float)($patternResult['setup_neckline_price'] ?? 0.0),
                 'setup_low_1_price' => (float)($patternResult['setup_low_1_price'] ?? 0.0),
                 'setup_low_2_price' => (float)($patternResult['setup_low_2_price'] ?? 0.0),
+                // Confirmation score component debug fields
+                'reclaim_strength_score' => (float)($patternResult['reclaim_strength_score'] ?? 0.0),
+                'hold_quality_score' => (float)($patternResult['hold_quality_score'] ?? 0.0),
+                'post_reclaim_stability_score' => (float)($patternResult['post_reclaim_stability_score'] ?? 0.0),
+                'zone_defense_score' => (float)($patternResult['zone_defense_score'] ?? 0.0),
                 'trend_match_score' => round($trendMatchScore, 4),
                 'corridor_fit_score' => round($corridorFitScore, 4),
                 'entry_quality_score' => round($entryQualityScore, 4),
@@ -832,6 +837,11 @@ final class Parser4Analyzer
                     'setup_neckline_price' => (float)($result['setup_neckline_price'] ?? 0.0),
                     'setup_low_1_price' => (float)($result['setup_low_1_price'] ?? 0.0),
                     'setup_low_2_price' => (float)($result['setup_low_2_price'] ?? 0.0),
+                    // Confirmation score component debug fields
+                    'reclaim_strength_score' => (float)($result['reclaim_strength_score'] ?? 0.0),
+                    'hold_quality_score' => (float)($result['hold_quality_score'] ?? 0.0),
+                    'post_reclaim_stability_score' => (float)($result['post_reclaim_stability_score'] ?? 0.0),
+                    'zone_defense_score' => (float)($result['zone_defense_score'] ?? 0.0),
                 ];
             }
         }
@@ -881,6 +891,11 @@ final class Parser4Analyzer
             'setup_neckline_price' => $best['setup_neckline_price'],
             'setup_low_1_price' => $best['setup_low_1_price'],
             'setup_low_2_price' => $best['setup_low_2_price'],
+            // Confirmation score component debug fields
+            'reclaim_strength_score' => $best['reclaim_strength_score'],
+            'hold_quality_score' => $best['hold_quality_score'],
+            'post_reclaim_stability_score' => $best['post_reclaim_stability_score'],
+            'zone_defense_score' => $best['zone_defense_score'],
         ];
     }
 

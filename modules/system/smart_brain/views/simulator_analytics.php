@@ -605,6 +605,7 @@ if (!empty($v2DfByPattern)):
                     <th>Avg Zone W%</th>
                     <th>Avg Price Pos</th>
                     <th>Avg Conf Score</th>
+                    <th>Conf Min/Max</th>
                     <th>Top Reject</th>
                 </tr>
             </thead>
@@ -623,6 +624,7 @@ if (!empty($v2DfByPattern)):
                     <td><?= number_format((float)($dfData['avg_zone_width_pct'] ?? 0) * 100, 3) ?>%</td>
                     <td><?= number_format((float)($dfData['avg_price_position'] ?? 0), 3) ?></td>
                     <td><?= number_format((float)($dfData['avg_confirmation_score'] ?? 0), 3) ?></td>
+                    <td><small><?= number_format((float)($dfData['confirmation_score_min'] ?? 0), 3) ?>/<?= number_format((float)($dfData['confirmation_score_max'] ?? 0), 3) ?></small></td>
                     <td><small><?= htmlspecialchars((string)($dfData['top_reject_reason'] ?? 'none')) ?></small></td>
                 </tr>
                 <?php endforeach; ?>
@@ -699,12 +701,22 @@ if (!empty($v2DfByPattern)):
                     <span>Avg Zone Width: <strong><?= number_format((float)($diag['avg_zone_width_pct'] ?? 0) * 100, 3) ?>%</strong></span>
                     <span>Avg Zone Dist: <strong><?= number_format((float)($diag['avg_zone_distance'] ?? 0) * 100, 3) ?>%</strong></span>
                     <span>Avg Conf Score: <strong><?= number_format((float)($diag['avg_confirmation_score'] ?? 0), 3) ?></strong></span>
+                    <span>Conf Min: <strong><?= number_format((float)($diag['confirmation_score_min'] ?? 0), 3) ?></strong></span>
+                    <span>Conf Max: <strong><?= number_format((float)($diag['confirmation_score_max'] ?? 0), 3) ?></strong></span>
                     <?php
                         $csZero = (int)($diag['confirmation_score_zero_on_confirmed_count'] ?? 0);
                         $csTotal = (int)($diag['confirmation_score_total_monitors'] ?? 0);
+                        $csBuckets = $diag['confirmation_score_buckets'] ?? [];
+                        $csFlat = (bool)($diag['confirmation_score_flat_warning'] ?? false);
                     ?>
+                    <?php if (!empty($csBuckets)): ?>
+                    <span>Buckets: W:<strong><?= (int)($csBuckets['weak'] ?? 0) ?></strong> M:<strong><?= (int)($csBuckets['medium'] ?? 0) ?></strong> S:<strong><?= (int)($csBuckets['strong'] ?? 0) ?></strong> VS:<strong><?= (int)($csBuckets['very_strong'] ?? 0) ?></strong></span>
+                    <?php endif; ?>
                     <?php if ($csTotal > 0 && $csZero > 0): ?>
                     <span class="text-warning">⚠ Conf Score Zero: <strong><?= $csZero ?>/<?= $csTotal ?></strong></span>
+                    <?php endif; ?>
+                    <?php if ($csFlat): ?>
+                    <span class="text-warning">⚠ Conf Score FLAT (all identical)</span>
                     <?php endif; ?>
                 </div>
             </div>

@@ -442,6 +442,25 @@ final class SmartBrainCore
             $funnel['avg_price_position'] = count($positions) > 0 ? round(array_sum($positions) / count($positions), 4) : 0.0;
             $funnel['avg_confirmation_score'] = count($confScores) > 0 ? round(array_sum($confScores) / count($confScores), 4) : 0.0;
 
+            // Confirmation score distribution analytics
+            $nonZeroScores = array_filter($confScores, static fn($s) => $s > 0.0);
+            $funnel['confirmation_score_min'] = count($nonZeroScores) > 0 ? round(min($nonZeroScores), 4) : 0.0;
+            $funnel['confirmation_score_max'] = count($nonZeroScores) > 0 ? round(max($nonZeroScores), 4) : 0.0;
+            // Bucket counts: weak (0.0-0.39), medium (0.40-0.59), strong (0.60-0.79), very_strong (0.80-1.0)
+            $buckets = ['weak' => 0, 'medium' => 0, 'strong' => 0, 'very_strong' => 0];
+            foreach ($nonZeroScores as $cs) {
+                if ($cs >= 0.80) {
+                    $buckets['very_strong']++;
+                } elseif ($cs >= 0.60) {
+                    $buckets['strong']++;
+                } elseif ($cs >= 0.40) {
+                    $buckets['medium']++;
+                } else {
+                    $buckets['weak']++;
+                }
+            }
+            $funnel['confirmation_score_buckets'] = $buckets;
+
             // Sanity counters: detect zero-score regression for confirmed V2 patterns
             $confScoreZeroOnConfirmed = 0;
             foreach ($confScores as $cs) {
@@ -451,6 +470,10 @@ final class SmartBrainCore
             }
             $funnel['confirmation_score_zero_on_confirmed_count'] = $confScoreZeroOnConfirmed;
             $funnel['confirmation_score_total_monitors'] = count($confScores);
+
+            // Flat-score warning: all non-zero scores identical
+            $uniqueNonZero = array_unique(array_map(static fn($s) => round($s, 4), $nonZeroScores));
+            $funnel['confirmation_score_flat_warning'] = (count($uniqueNonZero) === 1 && count($nonZeroScores) > 1);
 
             unset($funnel['zone_widths'], $funnel['zone_distances'], $funnel['price_positions'], $funnel['confirmation_scores']);
 
@@ -2627,6 +2650,12 @@ final class SmartBrainCore
                     'avg_zone_width_pct' => (float)($funnel['avg_zone_width_pct'] ?? 0),
                     'avg_zone_distance' => (float)($funnel['avg_zone_distance'] ?? 0),
                     'avg_confirmation_score' => (float)($funnel['avg_confirmation_score'] ?? 0),
+                    'confirmation_score_min' => (float)($funnel['confirmation_score_min'] ?? 0),
+                    'confirmation_score_max' => (float)($funnel['confirmation_score_max'] ?? 0),
+                    'confirmation_score_buckets' => $funnel['confirmation_score_buckets'] ?? [],
+                    'confirmation_score_zero_on_confirmed_count' => (int)($funnel['confirmation_score_zero_on_confirmed_count'] ?? 0),
+                    'confirmation_score_total_monitors' => (int)($funnel['confirmation_score_total_monitors'] ?? 0),
+                    'confirmation_score_flat_warning' => (bool)($funnel['confirmation_score_flat_warning'] ?? false),
                     'reject_detail_distribution' => $funnel['reject_detail_distribution'] ?? [],
                 ],
             ];

@@ -283,6 +283,9 @@ final class RiskEngine
                 $signalId = $this->buildSignalId($symbol, $side, $patternAlgorithm, 'bootstrap',
                     (string)$corridorLow, (string)$corridorHigh, (string)$entryZoneLow, (string)$entryZoneHigh);
 
+                // V2 confirmation tier metadata
+                $tierMeta = $this->computeV2TierMetadata($monitor, $userLimits);
+
                 $signals[] = array_merge([
                     'id' => $signalId,
                     'schema_version' => 'clean_signal_v1',
@@ -312,6 +315,10 @@ final class RiskEngine
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
                     'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
                     'analyzer_score' => $analyzerScore,
+                    'confirmation_tier' => $tierMeta['confirmation_tier'],
+                    'entry_action' => $tierMeta['entry_action'],
+                    'zone_widen_profile' => $tierMeta['zone_widen_profile'],
+                    'v2_priority_score' => $tierMeta['v2_priority_score'],
                     'leverage_mode' => $leverageMode,
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
@@ -381,6 +388,9 @@ final class RiskEngine
                 $signalId = $this->buildSignalId($symbol, $side, $patternAlgorithm, 'normal',
                     (string)$corridorLow, (string)$corridorHigh, (string)$entryZoneLow, (string)$entryZoneHigh);
 
+                // V2 confirmation tier metadata
+                $tierMeta = $this->computeV2TierMetadata($monitor, $userLimits);
+
                 $signals[] = array_merge([
                     'id' => $signalId,
                     'schema_version' => 'clean_signal_v1',
@@ -410,6 +420,10 @@ final class RiskEngine
                     'corridor_fit_score' => (float)($monitor['corridor_fit_score'] ?? 0.0),
                     'entry_quality_score' => (float)($monitor['entry_quality_score'] ?? 0.0),
                     'analyzer_score' => $analyzerScore,
+                    'confirmation_tier' => $tierMeta['confirmation_tier'],
+                    'entry_action' => $tierMeta['entry_action'],
+                    'zone_widen_profile' => $tierMeta['zone_widen_profile'],
+                    'v2_priority_score' => $tierMeta['v2_priority_score'],
                     'leverage_mode' => $leverageMode,
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
@@ -438,7 +452,93 @@ final class RiskEngine
             }
         }
 
+        // Sort signals: V2 signals with higher priority score rank first (stable sort)
+        usort($signals, static function (array $a, array $b): int {
+            $aPrio = (float)($a['v2_priority_score'] ?? 0.0);
+            $bPrio = (float)($b['v2_priority_score'] ?? 0.0);
+            if ($aPrio === $bPrio) {
+                return 0;
+            }
+            return ($bPrio > $aPrio) ? 1 : -1;
+        });
+
         return $signals;
+    }
+
+    /**
+     * Compute V2 confirmation tier metadata for a monitor.
+     *
+     * Returns an array with:
+     *   confirmation_tier, entry_action, zone_widen_profile, v2_priority_score
+     *
+     * confirmation_tier:
+     *   'weak'   → confirmation_score < v2_confirmation_weak_max   (default 0.45)
+     *   'medium' → between weak_max and strong_min
+     *   'strong' → confirmation_score >= v2_confirmation_strong_min (default 0.70)
+     *
+     * entry_action:
+     *   'strong'  → 'enter_now'    (prefer immediate entry)
+     *   'medium'  → 'wait_retrace' (standard zone logic)
+     *   'weak'    → 'wait_retrace' (conservative, narrower zone)
+     *
+     * v2_priority_score: weighted composite for ranking among competing V2 signals.
+     *
+     * @param array<string,mixed> $monitor
+     * @param array<string,mixed> $userLimits
+     * @return array<string,mixed>
+     */
+    private function computeV2TierMetadata(array $monitor, array $userLimits): array
+    {
+        $patternAlgo = (string)($monitor['pattern_algorithm'] ?? 'none');
+        $confirmationScore = (float)($monitor['confirmation_score'] ?? 0.0);
+        $patternConfidence = (float)($monitor['pattern_confidence'] ?? 0.0);
+
+        // Non-V2 patterns get neutral tier metadata
+        if ($patternAlgo !== 'double_bottom_contextual_v2') {
+            return [
+                'confirmation_tier' => 'none',
+                'entry_action' => 'wait_retrace',
+                'zone_widen_profile' => 'default',
+                'v2_priority_score' => 0.0,
+            ];
+        }
+
+        $tier = CorridorMonitor::computeConfirmationTier($confirmationScore, $userLimits);
+
+        // Entry action per tier
+        $entryAction = match ($tier) {
+            'strong' => 'enter_now',
+            'medium' => 'wait_retrace',
+            'weak'   => 'wait_retrace',
+            default  => 'wait_retrace',
+        };
+
+        // Zone widen profile label
+        $zoneWidenProfile = match ($tier) {
+            'strong' => 'strong_wide',
+            'medium' => 'medium_wide',
+            'weak'   => 'narrow',
+            default  => 'default',
+        };
+
+        // V2 priority score: weighted composite for ranking
+        // confirmation_score(0.40) + pattern_confidence(0.25) + analyzer_score(0.20) + reclaim_strength_score(0.15)
+        $analyzerScore = (float)($monitor['analyzer_score'] ?? 0.0);
+        $reclaimScore = (float)($monitor['reclaim_strength_score'] ?? 0.0);
+        $v2PriorityScore = round(
+            ($confirmationScore * 0.40) +
+            ($patternConfidence * 0.25) +
+            ($analyzerScore * 0.20) +
+            ($reclaimScore * 0.15),
+            4
+        );
+
+        return [
+            'confirmation_tier' => $tier,
+            'entry_action' => $entryAction,
+            'zone_widen_profile' => $zoneWidenProfile,
+            'v2_priority_score' => $v2PriorityScore,
+        ];
     }
 
     /**

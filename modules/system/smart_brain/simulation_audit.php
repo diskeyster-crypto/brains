@@ -132,6 +132,10 @@ final class SimulationAudit
                 'bootstrap_signals_count' => 0,
                 'normal_signals_count' => 0,
                 'average_leverage' => 0.0,
+                // V2 confirmation tier breakdown
+                'tier_distribution' => ['weak' => 0, 'medium' => 0, 'strong' => 0, 'none' => 0],
+                'tier_winrate' => ['weak' => 0.0, 'medium' => 0.0, 'strong' => 0.0],
+                'tier_avg_roi' => ['weak' => 0.0, 'medium' => 0.0, 'strong' => 0.0],
             ];
         }
 
@@ -216,6 +220,32 @@ final class SimulationAudit
             $stats[$algo]['average_leverage'] = count($nonZeroLeverages) > 0
                 ? round(array_sum($nonZeroLeverages) / count($nonZeroLeverages), 2)
                 : 0.0;
+
+            // V2 confirmation tier breakdown for closed trades
+            $tierWins = ['weak' => 0, 'medium' => 0, 'strong' => 0];
+            $tierTotal = ['weak' => 0, 'medium' => 0, 'strong' => 0];
+            $tierRois = ['weak' => [], 'medium' => [], 'strong' => []];
+            foreach ($algoTrades as $t) {
+                $tier = (string)($t['confirmation_tier'] ?? 'none');
+                if (isset($tierTotal[$tier])) {
+                    $tierTotal[$tier]++;
+                    $stats[$algo]['tier_distribution'][$tier]++;
+                    $tradeRoi = (float)($t['roi'] ?? 0.0);
+                    $tierRois[$tier][] = $tradeRoi;
+                    if ($tradeRoi >= 0) {
+                        $tierWins[$tier]++;
+                    }
+                } else {
+                    $stats[$algo]['tier_distribution']['none'] =
+                        ($stats[$algo]['tier_distribution']['none'] ?? 0) + 1;
+                }
+            }
+            foreach (['weak', 'medium', 'strong'] as $tier) {
+                if ($tierTotal[$tier] > 0) {
+                    $stats[$algo]['tier_winrate'][$tier] = round($tierWins[$tier] / $tierTotal[$tier], 4);
+                    $stats[$algo]['tier_avg_roi'][$tier] = round(array_sum($tierRois[$tier]) / $tierTotal[$tier], 6);
+                }
+            }
         }
 
         // Remove _unknown if empty

@@ -245,6 +245,14 @@ final class SmartBrainCore
         }
 
         // Corridor Monitor uses real prices for price_position / status
+        // Merge V2 tier widening config into corridor config so CorridorMonitor can use it
+        $v2TierKeys = ['v2_confirmation_weak_max', 'v2_confirmation_strong_min',
+            'v2_zone_widen_weak_pct', 'v2_zone_widen_medium_pct', 'v2_zone_widen_strong_pct', 'v2_zone_widen_max_cap_pct'];
+        foreach ($v2TierKeys as $key) {
+            if (isset($userLimits[$key])) {
+                $corridorCfg[$key] = $userLimits[$key];
+            }
+        }
         $corridor = new CorridorMonitor($corridorCfg);
         $monitors = $corridor->buildMonitors($candidates, $prices);
 
@@ -426,10 +434,23 @@ final class SmartBrainCore
         }
         $finalSignalConfScoreMissing = 0;
         $finalSignalConfScoreNull = 0;
+        $signalTierDistribution = ['weak' => 0, 'medium' => 0, 'strong' => 0, 'none' => 0];
         foreach ($signals as $s) {
             $algo = (string)($s['pattern_algorithm'] ?? '');
             if (isset($v2DownstreamFunnel[$algo])) {
                 $v2DownstreamFunnel[$algo]['signals_count']++;
+                // Per-tier signal counts
+                $tier = (string)($s['confirmation_tier'] ?? 'none');
+                if (!isset($v2DownstreamFunnel[$algo]['signals_by_tier'])) {
+                    $v2DownstreamFunnel[$algo]['signals_by_tier'] = ['weak' => 0, 'medium' => 0, 'strong' => 0, 'none' => 0];
+                }
+                $v2DownstreamFunnel[$algo]['signals_by_tier'][$tier] =
+                    ($v2DownstreamFunnel[$algo]['signals_by_tier'][$tier] ?? 0) + 1;
+            }
+            // Track global tier distribution for V2 signals
+            if (in_array($algo, $contextualPatterns, true)) {
+                $tier = (string)($s['confirmation_tier'] ?? 'none');
+                $signalTierDistribution[$tier] = ($signalTierDistribution[$tier] ?? 0) + 1;
             }
             // Sanity: track V2 signals missing confirmation_score in final payload
             if (in_array($algo, $contextualPatterns, true)) {
@@ -492,7 +513,7 @@ final class SmartBrainCore
         }
         unset($funnel);
 
-        // Build what-if analysis summary for V2
+        // Build what-if analysis summary for V2 (includes tier-based scenarios)
         $v2WhatIfAnalysis = $this->computeV2WhatIfAnalysis($v2DownstreamFunnel);
 
         // Persist V2 downstream funnel
@@ -500,6 +521,7 @@ final class SmartBrainCore
             'by_pattern' => $v2DownstreamFunnel,
             'failed_monitor_preview' => $failedMonitorPreview,
             'whatif_analysis' => $v2WhatIfAnalysis,
+            'signal_tier_distribution' => $signalTierDistribution,
             'final_signal_confirmation_score_missing_count' => $finalSignalConfScoreMissing,
             'final_signal_confirmation_score_null_count' => $finalSignalConfScoreNull,
             'updated_at' => date('c'),
@@ -2630,17 +2652,19 @@ final class SmartBrainCore
             $whatifWiderZone = (int)($funnel['whatif_wider_zone_would_signal'] ?? 0);
             $monitoring = (int)($funnel['monitoring_count'] ?? 0);
             $invalidated = (int)($funnel['invalidated_count'] ?? 0);
+            $signalsByTier = (array)($funnel['signals_by_tier'] ?? []);
 
             $analysis[$algo] = [
                 'monitors_total' => $monitors,
                 'scenarios' => [
                     'current' => [
-                        'label' => 'Current entry zone',
+                        'label' => 'Current tier-based entry policy',
                         'entry_zone_count' => $currentEntryZone,
                         'signals_count' => $currentSignals,
                         'conversion_rate' => $monitors > 0 ? round($currentSignals / $monitors, 4) : 0.0,
                         'stalled_monitoring' => $monitoring,
                         'invalidated' => $invalidated,
+                        'signals_by_tier' => $signalsByTier,
                     ],
                     'enter_now_hypothetical' => [
                         'label' => 'If enter_now (full corridor)',
@@ -2655,6 +2679,19 @@ final class SmartBrainCore
                         'potential_signals_gain' => $whatifWiderZone,
                         'estimated_total_signals' => $currentSignals + $whatifWiderZone,
                         'estimated_conversion_rate' => $monitors > 0 ? round(($currentSignals + $whatifWiderZone) / $monitors, 4) : 0.0,
+                    ],
+                    'tier_policy_strong_enter_now' => [
+                        'label' => 'Strong→enter_now, Medium→wait_retrace, Weak→conservative',
+                        'strong_signals' => (int)($signalsByTier['strong'] ?? 0),
+                        'medium_signals' => (int)($signalsByTier['medium'] ?? 0),
+                        'weak_signals' => (int)($signalsByTier['weak'] ?? 0),
+                        'strong_would_enter_now' => (int)($signalsByTier['strong'] ?? 0),
+                        'description' => 'Strong tier uses widest zone + enter_now; medium uses moderate zone; weak uses narrow zone.',
+                    ],
+                    'widening_only' => [
+                        'label' => 'Score-driven zone widening only (no action change)',
+                        'description' => 'All tiers use wait_retrace but zone width is tier-dependent.',
+                        'signals_count' => $currentSignals,
                     ],
                 ],
                 'diagnostics' => [

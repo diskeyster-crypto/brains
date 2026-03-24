@@ -275,6 +275,68 @@ $pageContent = function() use (
         </div>
     </div>
 
+    <!-- ===== V2 CONFIRMATION TIER ANALYTICS ===== -->
+    <?php
+    $v2TierPatterns = ['double_bottom_contextual_v2'];
+    $hasTierData = false;
+    foreach ($v2TierPatterns as $tp) {
+        if (isset($pattern_stats[$tp]) && ((int)($pattern_stats[$tp]['closed_total'] ?? 0)) > 0) {
+            $hasTierData = true;
+            break;
+        }
+    }
+    if ($hasTierData): ?>
+    <div class="card mb-4">
+        <div class="card-header"><h5 style="margin:0;"><i class="bi bi-layers me-1"></i> V2 Confirmation Tier Performance</h5></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead><tr>
+                    <th>Паттерн</th>
+                    <th class="text-center" colspan="3">Tier Distribution</th>
+                    <th class="text-center" colspan="3">Winrate by Tier</th>
+                    <th class="text-center" colspan="3">Avg ROI by Tier</th>
+                </tr>
+                <tr>
+                    <th></th>
+                    <th class="text-end text-warning">Weak</th>
+                    <th class="text-end text-info">Medium</th>
+                    <th class="text-end text-success">Strong</th>
+                    <th class="text-end text-warning">Weak</th>
+                    <th class="text-end text-info">Medium</th>
+                    <th class="text-end text-success">Strong</th>
+                    <th class="text-end text-warning">Weak</th>
+                    <th class="text-end text-info">Medium</th>
+                    <th class="text-end text-success">Strong</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($v2TierPatterns as $tp):
+                    if (!isset($pattern_stats[$tp])) continue;
+                    $ps = $pattern_stats[$tp];
+                    $td = (array)($ps['tier_distribution'] ?? []);
+                    $tw = (array)($ps['tier_winrate'] ?? []);
+                    $tr = (array)($ps['tier_avg_roi'] ?? []);
+                ?>
+                    <tr>
+                        <td class="fw-bold"><?= htmlspecialchars($tp) ?></td>
+                        <td class="text-end"><?= (int)($td['weak'] ?? 0) ?></td>
+                        <td class="text-end"><?= (int)($td['medium'] ?? 0) ?></td>
+                        <td class="text-end"><?= (int)($td['strong'] ?? 0) ?></td>
+                        <td class="text-end"><?= number_format((float)($tw['weak'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($tw['medium'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end"><?= number_format((float)($tw['strong'] ?? 0) * 100, 1) ?>%</td>
+                        <td class="text-end <?= (float)($tr['weak'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($tr['weak'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end <?= (float)($tr['medium'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($tr['medium'] ?? 0) * 100, 2) ?>%</td>
+                        <td class="text-end <?= (float)($tr['strong'] ?? 0) >= 0 ? 'roi-positive' : 'roi-negative' ?>"><?= number_format((float)($tr['strong'] ?? 0) * 100, 2) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- ===== REVERSAL V1 vs V2 COMPARISON ===== -->
     <?php
     /** @var array<string,mixed> $reversal_comparison */
@@ -670,10 +732,12 @@ if (!empty($v2DfByPattern)):
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (isset($scenarios['current'])): $sc = $scenarios['current']; ?>
+                        <?php if (isset($scenarios['current'])): $sc = $scenarios['current'];
+                            $curTiers = $sc['signals_by_tier'] ?? [];
+                        ?>
                         <tr>
                             <td><?= htmlspecialchars((string)($sc['label'] ?? '')) ?></td>
-                            <td><?= (int)($sc['entry_zone_count'] ?? 0) ?> EZ</td>
+                            <td><?= (int)($sc['entry_zone_count'] ?? 0) ?> EZ<?php if (!empty($curTiers)): ?> <small class="text-muted">(W:<?= (int)($curTiers['weak'] ?? 0) ?> M:<?= (int)($curTiers['medium'] ?? 0) ?> S:<?= (int)($curTiers['strong'] ?? 0) ?>)</small><?php endif; ?></td>
                             <td><?= (int)($sc['signals_count'] ?? 0) ?></td>
                             <td><?= number_format((float)($sc['conversion_rate'] ?? 0) * 100, 1) ?>%</td>
                         </tr>
@@ -692,6 +756,14 @@ if (!empty($v2DfByPattern)):
                             <td>+<?= (int)($sc['additional_entry_zone'] ?? 0) ?> monitors</td>
                             <td><strong>~<?= (int)($sc['estimated_total_signals'] ?? 0) ?></strong></td>
                             <td><?= number_format((float)($sc['estimated_conversion_rate'] ?? 0) * 100, 1) ?>%</td>
+                        </tr>
+                        <?php endif; ?>
+                        <?php if (isset($scenarios['tier_policy_strong_enter_now'])): $sc = $scenarios['tier_policy_strong_enter_now']; ?>
+                        <tr class="table-success">
+                            <td><?= htmlspecialchars((string)($sc['label'] ?? '')) ?></td>
+                            <td>Strong: <?= (int)($sc['strong_signals'] ?? 0) ?> / Med: <?= (int)($sc['medium_signals'] ?? 0) ?> / Weak: <?= (int)($sc['weak_signals'] ?? 0) ?></td>
+                            <td>enter_now: <?= (int)($sc['strong_would_enter_now'] ?? 0) ?></td>
+                            <td><small><?= htmlspecialchars((string)($sc['description'] ?? '')) ?></small></td>
                         </tr>
                         <?php endif; ?>
                     </tbody>

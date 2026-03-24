@@ -131,10 +131,11 @@ final class CorridorMonitor
     /**
      * Compute effective entry zone percent with pattern-specific progressive widening.
      *
-     * V2 contextual patterns use confidence-based progressive widening:
-     *   - Base: max(config, 0.50)
-     *   - Medium confidence (≥0.5): 0.65
-     *   - High confidence (≥0.7): 0.80
+     * V2 contextual patterns use confirmation-tier-based progressive widening:
+     *   - weak tier   → v2_zone_widen_weak_pct   (default 0.50)
+     *   - medium tier → v2_zone_widen_medium_pct  (default 0.65)
+     *   - strong tier → v2_zone_widen_strong_pct  (default 0.80)
+     *   Capped by v2_zone_widen_max_cap_pct (default 0.85).
      *
      * V3 remains at max(config, 0.40) — V2 must stay looser than V3.
      */
@@ -145,16 +146,18 @@ final class CorridorMonitor
         float $confirmationScore
     ): float {
         if ($patternAlgo === 'double_bottom_contextual_v2') {
-            // Progressive widening based on confidence
-            // Strong confirmation → price has already bounced significantly → wider zone needed
-            $effectiveConfidence = max($patternConfidence, $confirmationScore);
-            if ($effectiveConfidence >= 0.70) {
-                return max($basePercent, 0.80);
+            $tier = self::computeConfirmationTier($confirmationScore, $this->cfg);
+            $cap = (float)($this->cfg['v2_zone_widen_max_cap_pct'] ?? 0.85);
+
+            if ($tier === 'strong') {
+                $target = (float)($this->cfg['v2_zone_widen_strong_pct'] ?? 0.80);
+            } elseif ($tier === 'medium') {
+                $target = (float)($this->cfg['v2_zone_widen_medium_pct'] ?? 0.65);
+            } else {
+                $target = (float)($this->cfg['v2_zone_widen_weak_pct'] ?? 0.50);
             }
-            if ($effectiveConfidence >= 0.50) {
-                return max($basePercent, 0.65);
-            }
-            return max($basePercent, 0.50);
+
+            return min(max($basePercent, $target), $cap);
         }
 
         if ($patternAlgo === 'double_bottom_contextual_v3') {
@@ -162,6 +165,27 @@ final class CorridorMonitor
         }
 
         return $basePercent;
+    }
+
+    /**
+     * Classify V2 confirmation_score into a tier.
+     *
+     * @param float $confirmationScore  The raw confirmation score (0.0 – 1.0)
+     * @param array<string,mixed> $cfg  Config containing tier thresholds
+     * @return string  'weak' | 'medium' | 'strong'
+     */
+    public static function computeConfirmationTier(float $confirmationScore, array $cfg = []): string
+    {
+        $strongMin = (float)($cfg['v2_confirmation_strong_min'] ?? 0.70);
+        $weakMax   = (float)($cfg['v2_confirmation_weak_max'] ?? 0.45);
+
+        if ($confirmationScore >= $strongMin) {
+            return 'strong';
+        }
+        if ($confirmationScore < $weakMax) {
+            return 'weak';
+        }
+        return 'medium';
     }
 
     /**

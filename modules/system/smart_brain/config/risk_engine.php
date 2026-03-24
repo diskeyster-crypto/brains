@@ -63,5 +63,12 @@ return [
         'early_failure_enabled' => true,
         'early_failure_window_minutes' => 5,
         'early_failure_max_adverse_roi' => -0.008,
+        // V2 Confirmation Tier Policy
+        'v2_confirmation_weak_max' => 0.45,
+        'v2_confirmation_strong_min' => 0.70,
+        'v2_zone_widen_weak_pct' => 0.50,
+        'v2_zone_widen_medium_pct' => 0.65,
+        'v2_zone_widen_strong_pct' => 0.80,
+        'v2_zone_widen_max_cap_pct' => 0.85,
     ],
 ];

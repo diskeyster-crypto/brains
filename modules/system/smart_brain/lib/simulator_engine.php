@@ -118,6 +118,12 @@ final class SimulatorEngine
                 'stop_control_mode'          => $signal['stop_control_mode'] ?? 'auto',
                 'manual_stop_loss_roi'       => $signal['manual_stop_loss_roi'] ?? 0.03,
                 'stop_loss_from_entry_roi'   => $signal['stop_loss_from_entry_roi'] ?? 0.10,
+                // V2 confirmation tier tracking
+                'confirmation_score'         => $signal['confirmation_score'] ?? 0.0,
+                'confirmation_tier'          => $signal['confirmation_tier'] ?? 'none',
+                'entry_action'               => $signal['entry_action'] ?? 'wait_retrace',
+                'zone_widen_profile'         => $signal['zone_widen_profile'] ?? 'default',
+                'v2_priority_score'          => $signal['v2_priority_score'] ?? 0.0,
             ];
             $waitingSymbols[$symbol] = true;
         }
@@ -217,6 +223,12 @@ final class SimulatorEngine
                     'stop_control_mode'          => $w['stop_control_mode'] ?? 'auto',
                     'manual_stop_loss_roi'       => $w['manual_stop_loss_roi'] ?? 0.03,
                     'stop_loss_from_entry_roi'   => $w['stop_loss_from_entry_roi'] ?? 0.10,
+                    // V2 confirmation tier tracking
+                    'confirmation_score'         => $w['confirmation_score'] ?? 0.0,
+                    'confirmation_tier'          => $w['confirmation_tier'] ?? 'none',
+                    'entry_action'               => $w['entry_action'] ?? 'wait_retrace',
+                    'zone_widen_profile'         => $w['zone_widen_profile'] ?? 'default',
+                    'v2_priority_score'          => $w['v2_priority_score'] ?? 0.0,
                 ];
                 $activeSymbols[$symbol] = true;
             } else {
@@ -402,6 +414,12 @@ final class SimulatorEngine
                     'stop_control_mode'          => $a['stop_control_mode'] ?? 'auto',
                     'manual_stop_loss_roi'       => $a['manual_stop_loss_roi'] ?? 0.03,
                     'stop_loss_from_entry_roi'   => $a['stop_loss_from_entry_roi'] ?? 0.10,
+                    // V2 confirmation tier tracking
+                    'confirmation_score'         => $a['confirmation_score'] ?? 0.0,
+                    'confirmation_tier'          => $a['confirmation_tier'] ?? 'none',
+                    'entry_action'               => $a['entry_action'] ?? 'wait_retrace',
+                    'zone_widen_profile'         => $a['zone_widen_profile'] ?? 'default',
+                    'v2_priority_score'          => $a['v2_priority_score'] ?? 0.0,
                 ];
                 // Remove from activeSymbols so new signal can enter
                 unset($activeSymbols[$symbol]);

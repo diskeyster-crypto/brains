@@ -151,6 +151,76 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         </div>
     </div>
 
+    <!-- Sniper V3 Live Filters Runtime Status -->
+    <?php if ($execProfile === 'sniper_75_attempt'): ?>
+    <?php
+        $sniperV3Enabled = (bool)($execProfileBundle['values']['sniper_v3_live_filter_enabled'] ?? true);
+        $sniperV3AllowedTiers = SmartBrainConfig::getSniperV3AllowedTiers();
+        $sniperV3Eligible = (int)($last_run['sniper_v3_live_eligible_count'] ?? 0);
+        $sniperV3Rejected = (int)($last_run['sniper_v3_live_rejected_count'] ?? 0);
+        $sniperV3RejectDist = (array)($last_run['sniper_v3_reject_reason_distribution'] ?? []);
+    ?>
+    <div class="card mb-4" style="border-color: #f59e0b;">
+        <div class="card-header" style="background: rgba(245,158,11,0.1);">
+            <h5 style="margin: 0;">
+                <i class="bi bi-crosshair2 me-1"></i> Sniper V3 Live Filters
+                <span class="badge <?= $sniperV3Enabled ? 'bg-success' : 'bg-secondary' ?> ms-1"><?= $sniperV3Enabled ? 'Active' : 'Disabled' ?></span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-2" style="font-size: 0.85rem;">
+                <div class="col-md-3 mb-2">
+                    <strong>Allowed Tiers:</strong>
+                    <?php foreach ($sniperV3AllowedTiers as $tier): ?>
+                    <span class="badge bg-success ms-1"><?= htmlspecialchars($tier) ?></span>
+                    <?php endforeach; ?>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>V3 Live Eligible:</strong>
+                    <span class="badge <?= $sniperV3Eligible > 0 ? 'bg-success' : 'bg-secondary' ?>"><?= $sniperV3Eligible ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>V3 Live Rejected:</strong>
+                    <span class="badge <?= $sniperV3Rejected > 0 ? 'bg-warning text-dark' : 'bg-secondary' ?>"><?= $sniperV3Rejected ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Entry Action:</strong>
+                    <span class="badge bg-info">wait_retrace</span>
+                </div>
+            </div>
+            <?php
+                $sniperV3FilterValues = [
+                    'Min Confirmation Score' => $execProfileBundle['values']['sniper_v3_min_confirmation_score'] ?? 0.80,
+                    'Min Pattern Confidence' => $execProfileBundle['values']['sniper_v3_min_pattern_confidence'] ?? 0.60,
+                    'Min Trend Match' => $execProfileBundle['values']['sniper_v3_min_trend_match_score'] ?? 0.55,
+                    'Min Entry Quality' => $execProfileBundle['values']['sniper_v3_min_entry_quality_score'] ?? 0.75,
+                    'Min Corridor Fit' => $execProfileBundle['values']['sniper_v3_min_corridor_fit_score'] ?? 0.75,
+                    'Max Price Position' => $execProfileBundle['values']['sniper_v3_max_price_position'] ?? 0.80,
+                ];
+            ?>
+            <div class="row" style="font-size: 0.83rem;">
+                <?php foreach ($sniperV3FilterValues as $label => $val): ?>
+                <div class="col-md-4 mb-1">
+                    <code class="small"><?= htmlspecialchars($label) ?></code>:
+                    <span class="text-info"><?= htmlspecialchars((string)$val) ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (!empty($sniperV3RejectDist)): ?>
+            <div class="mt-2" style="font-size: 0.82rem;">
+                <strong>Last Run Reject Reasons:</strong>
+                <div class="mt-1">
+                <?php foreach ($sniperV3RejectDist as $reason => $count): ?>
+                    <span class="badge bg-warning text-dark me-1 mb-1"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$count ?></span>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            <div class="small text-secondary mt-2">V3 live allowed only for strong/very_strong confirmations. Medium/weak V3 stay in shadow/analytics.</div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Live Trading Status -->
     <?php
         $liveEnabled = (bool)($last_run['live_trading_enabled'] ?? false);

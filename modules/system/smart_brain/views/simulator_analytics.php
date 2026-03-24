@@ -983,6 +983,83 @@ if ($v3HasData):
 </div>
 <?php endif; ?>
 
+<?php
+// ── Sniper V3 Live Filter Analytics ──
+$sniperV3Eligible = (int)($v2DownstreamFunnel['sniper_v3_live_eligible_count'] ?? ($rc['sniper_v3_live_eligible_count'] ?? 0));
+$sniperV3Rejected = (int)($v2DownstreamFunnel['sniper_v3_live_rejected_count'] ?? ($rc['sniper_v3_live_rejected_count'] ?? 0));
+$sniperV3Shadow = (int)($v2DownstreamFunnel['sniper_v3_shadow_only_count'] ?? ($rc['sniper_v3_shadow_only_count'] ?? 0));
+$sniperV3RejectDist = (array)($v2DownstreamFunnel['sniper_v3_reject_reason_distribution'] ?? ($rc['sniper_v3_reject_reason_distribution'] ?? []));
+$sniperV3RejectedPreview = (array)($v2DownstreamFunnel['sniper_v3_rejected_preview'] ?? ($rc['sniper_v3_rejected_preview'] ?? []));
+$sniperV3HasData = $sniperV3Eligible > 0 || $sniperV3Rejected > 0 || !empty($sniperV3RejectDist);
+if ($sniperV3HasData):
+?>
+<div class="card mb-3">
+    <div class="card-header" style="background: rgba(245,158,11,0.15);">
+        <strong><i class="bi bi-crosshair2 me-1"></i> Sniper V3 Live Filter — Quality Gate Analytics</strong>
+    </div>
+    <div class="card-body p-2">
+        <div class="d-flex flex-wrap gap-3 small mb-2">
+            <span>V3 Live Eligible: <strong class="<?= $sniperV3Eligible > 0 ? 'text-success' : 'text-secondary' ?>"><?= $sniperV3Eligible ?></strong></span>
+            <span>V3 Live Rejected: <strong class="<?= $sniperV3Rejected > 0 ? 'text-warning' : 'text-secondary' ?>"><?= $sniperV3Rejected ?></strong></span>
+            <span>V3 Shadow Only: <strong class="text-muted"><?= $sniperV3Shadow ?></strong></span>
+            <?php $sniperV3Total = $sniperV3Eligible + $sniperV3Rejected; ?>
+            <?php if ($sniperV3Total > 0): ?>
+            <span>Pass Rate: <strong><?= number_format($sniperV3Eligible / $sniperV3Total * 100, 1) ?>%</strong></span>
+            <?php endif; ?>
+        </div>
+
+        <?php if (!empty($sniperV3RejectDist)):
+            arsort($sniperV3RejectDist);
+        ?>
+        <div class="mb-2">
+            <strong class="small">Sniper V3 Reject Reasons:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($sniperV3RejectDist as $reason => $cnt): ?>
+                <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($sniperV3RejectedPreview)): ?>
+        <details class="mb-1">
+            <summary class="text-muted small"><i class="bi bi-search me-1"></i> Sniper V3 Rejected Preview (first <?= count($sniperV3RejectedPreview) ?>)</summary>
+            <table class="table table-sm table-bordered mt-1 mb-0" style="font-size: 0.78rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Reject Reasons</th>
+                        <th>Conf Score</th>
+                        <th>Conf Tier</th>
+                        <th>Pat Conf</th>
+                        <th>Trend Match</th>
+                        <th>Price Pos</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($sniperV3RejectedPreview as $srp): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)($srp['symbol'] ?? '')) ?></td>
+                        <td>
+                            <?php foreach ((array)($srp['reject_reasons'] ?? []) as $rr): ?>
+                            <span class="badge bg-danger mb-1" style="font-size: 0.7rem;"><?= htmlspecialchars((string)$rr) ?></span>
+                            <?php endforeach; ?>
+                        </td>
+                        <td><?= number_format((float)($srp['checked_values']['confirmation_score'] ?? 0), 3) ?></td>
+                        <td><?= htmlspecialchars((string)($srp['checked_values']['confirmation_tier'] ?? 'none')) ?></td>
+                        <td><?= number_format((float)($srp['checked_values']['pattern_confidence'] ?? 0), 3) ?></td>
+                        <td><?= $srp['checked_values']['trend_match_score'] !== null ? number_format((float)$srp['checked_values']['trend_match_score'], 3) : '<em class="text-danger">missing</em>' ?></td>
+                        <td><?= number_format((float)($srp['checked_values']['price_position'] ?? 0), 3) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
     <!-- ===== REGRESSION AUDIT: SHORT-SIDE COLLAPSE ===== -->
     <?php
     $ra = (array)($stats['regression_audit'] ?? []);

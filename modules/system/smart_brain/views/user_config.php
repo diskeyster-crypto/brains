@@ -225,6 +225,76 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
+        <!-- Sniper V3 Live Filters (visible only for sniper profile) -->
+        <?php if ($currentProfile === 'sniper_75_attempt'): ?>
+        <?php
+            $sniperV3Fields = SmartBrainConfig::getSniperV3FilterFields();
+            $sniperV3AllowedTiers = SmartBrainConfig::getSniperV3AllowedTiers();
+            $sniperV3Enabled = (bool)($form_values['sniper_v3_live_filter_enabled'] ?? $currentBundle['values']['sniper_v3_live_filter_enabled'] ?? true);
+        ?>
+        <div class="card mb-4" style="border-color: #f59e0b;">
+            <div class="card-header d-flex align-items-center" style="background: rgba(245,158,11,0.1);">
+                <i class="bi bi-crosshair2 me-2"></i>
+                <h5 style="margin: 0;">Sniper V3 Live Filters</h5>
+                <span class="badge <?= $sniperV3Enabled ? 'bg-success' : 'bg-secondary' ?> ms-2"><?= $sniperV3Enabled ? 'Active' : 'Disabled' ?></span>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning small py-2 mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Sniper profile allows only the cleanest V3 confirmations into live.
+                    Other structurally valid V3 cases remain shadow/debug only.
+                    Only <strong><?= implode(', ', $sniperV3AllowedTiers) ?></strong> confirmation tiers are allowed for live entry.
+                </div>
+                <div class="row" style="font-size: 0.85rem;">
+                    <div class="col-md-6 mb-2">
+                        <strong>Allowed Tiers:</strong>
+                        <?php foreach ($sniperV3AllowedTiers as $tier): ?>
+                        <span class="badge bg-success ms-1"><?= htmlspecialchars($tier) ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <strong>Entry Action:</strong>
+                        <span class="badge bg-info">wait_retrace</span>
+                    </div>
+                </div>
+                <table class="table table-sm table-dark mt-2 mb-0" style="font-size: 0.82rem;">
+                    <thead><tr><th>Filter</th><th>Threshold</th></tr></thead>
+                    <tbody>
+                    <?php
+                        $sniperV3Labels = [
+                            'sniper_v3_live_filter_enabled' => 'Filter Enabled',
+                            'sniper_v3_min_confirmation_score' => 'Min Confirmation Score',
+                            'sniper_v3_min_pattern_confidence' => 'Min Pattern Confidence',
+                            'sniper_v3_min_trend_match_score' => 'Min Trend Match Score',
+                            'sniper_v3_min_entry_quality_score' => 'Min Entry Quality Score',
+                            'sniper_v3_min_corridor_fit_score' => 'Min Corridor Fit Score',
+                            'sniper_v3_max_price_position' => 'Max Price Position',
+                            'sniper_v3_min_reclaim_strength_score' => 'Min Reclaim Strength',
+                            'sniper_v3_min_hold_quality_score' => 'Min Hold Quality',
+                            'sniper_v3_min_post_reclaim_stability_score' => 'Min Post-Reclaim Stability',
+                            'sniper_v3_min_zone_defense_score' => 'Min Zone Defense',
+                        ];
+                        foreach ($sniperV3Fields as $sf):
+                            $sfVal = $currentBundle['values'][$sf] ?? $form_values[$sf] ?? '-';
+                    ?>
+                    <tr>
+                        <td><code><?= htmlspecialchars($sniperV3Labels[$sf] ?? $sf) ?></code></td>
+                        <td>
+                            <?php if (is_bool($sfVal)): ?>
+                                <span class="<?= $sfVal ? 'text-success' : 'text-danger' ?>"><?= $sfVal ? 'true' : 'false' ?></span>
+                            <?php else: ?>
+                                <span class="text-info"><?= htmlspecialchars((string)$sfVal) ?></span>
+                            <?php endif; ?>
+                            <small class="text-secondary">(profile)</small>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Pattern Selection Section -->
         <div class="row">
             <div class="col-md-6 mb-4">

@@ -833,6 +833,12 @@ final class SimulationAudit
             'v2_downstream_funnel' => $v2DownstreamFunnelAudit,
             'v3_debug_preview' => $v2DownstreamFunnelRaw['v3_debug_preview'] ?? [],
             'v3_candidate_preview' => $v2DownstreamFunnelRaw['v3_candidate_preview'] ?? [],
+            // Sniper V3 live filter diagnostics
+            'sniper_v3_live_eligible_count' => (int)($v2DownstreamFunnelRaw['sniper_v3_live_eligible_count'] ?? 0),
+            'sniper_v3_live_rejected_count' => (int)($v2DownstreamFunnelRaw['sniper_v3_live_rejected_count'] ?? 0),
+            'sniper_v3_shadow_only_count' => (int)($v2DownstreamFunnelRaw['sniper_v3_shadow_only_count'] ?? 0),
+            'sniper_v3_reject_reason_distribution' => (array)($v2DownstreamFunnelRaw['sniper_v3_reject_reason_distribution'] ?? []),
+            'sniper_v3_rejected_preview' => (array)($v2DownstreamFunnelRaw['sniper_v3_rejected_preview'] ?? []),
             'compare_mode_active' => true,
             'evaluation_note' => 'V2 is under shadow evaluation. Promotion requires statistical evidence.',
         ];

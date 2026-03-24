@@ -901,9 +901,17 @@ if ($v3HasData):
             <summary class="text-muted small">V3 Confirm Reject Preview (first <?= count($v3ConfirmRejectPreview) ?>)</summary>
             <div class="small mt-1">
                 <?php foreach ($v3ConfirmRejectPreview as $crp): ?>
-                <div class="badge bg-light text-dark border me-1 mb-1">
-                    <?= htmlspecialchars((string)($crp['reject_reason'] ?? '')) ?>
-                    <?php if (isset($crp['detail'])): ?> — <?= htmlspecialchars((string)$crp['detail']) ?><?php endif; ?>
+                <div class="border rounded p-1 mb-1 bg-light">
+                    <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)($crp['reject_reason'] ?? '')) ?></span>
+                    <?php if (isset($crp['subtype'])): ?><span class="badge bg-secondary"><?= htmlspecialchars((string)$crp['subtype']) ?></span><?php endif; ?>
+                    <?php if (isset($crp['detail'])): ?><span class="text-muted ms-1"><?= htmlspecialchars((string)$crp['detail']) ?></span><?php endif; ?>
+                    <?php if (isset($crp['stage_at_failure'])): ?><span class="badge bg-info text-dark ms-1">stage: <?= htmlspecialchars((string)$crp['stage_at_failure']) ?></span><?php endif; ?>
+                    <?php if (isset($crp['breach_below_defended_pct'])): ?><span class="ms-1">breach: <?= number_format((float)$crp['breach_below_defended_pct'] * 100, 2) ?>%</span><?php endif; ?>
+                    <?php if (isset($crp['reclaim_started'])): ?><span class="ms-1">reclaim: <?= $crp['reclaim_started'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                    <?php if (isset($crp['hold_started'])): ?><span class="ms-1">hold: <?= $crp['hold_started'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                    <?php if (isset($crp['recovered_after_dip'])): ?><span class="ms-1">recovered: <?= $crp['recovered_after_dip'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                    <?php if (isset($crp['bars_below_defended'])): ?><span class="ms-1">bars↓defended: <?= (int)$crp['bars_below_defended'] ?></span><?php endif; ?>
+                    <?php if (isset($crp['max_consecutive_below_defended'])): ?><span class="ms-1">consec: <?= (int)$crp['max_consecutive_below_defended'] ?></span><?php endif; ?>
                 </div>
                 <?php endforeach; ?>
             </div>

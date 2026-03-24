@@ -1109,6 +1109,12 @@ final class SmartBrainConfig
             'v2_zone_defense_min',
             'v2_trend_match_min',
             'v2_price_position_max',
+            // V3-specific entry policy fields
+            'v3_strong_enter_now_enabled',
+            'v3_zone_widen_weak_pct',
+            'v3_zone_widen_medium_pct',
+            'v3_zone_widen_strong_pct',
+            'v3_zone_widen_max_cap_pct',
             // Sniper V3 Live Filters
             'sniper_v3_live_filter_enabled',
             'sniper_v3_min_confirmation_score',
@@ -1155,6 +1161,12 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.30,
                     'v2_trend_match_min' => 0.40,
                     'v2_price_position_max' => 0.90,
+                    // V3-specific entry policy
+                    'v3_strong_enter_now_enabled' => true,
+                    'v3_zone_widen_weak_pct' => 0.40,
+                    'v3_zone_widen_medium_pct' => 0.55,
+                    'v3_zone_widen_strong_pct' => 0.70,
+                    'v3_zone_widen_max_cap_pct' => 0.75,
                     'sniper_v3_live_filter_enabled' => false,
                     'sniper_v3_min_confirmation_score' => 0.80,
                     'sniper_v3_min_pattern_confidence' => 0.60,
@@ -1186,6 +1198,12 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.35,
                     'v2_trend_match_min' => 0.50,
                     'v2_price_position_max' => 0.88,
+                    // V3-specific entry policy
+                    'v3_strong_enter_now_enabled' => true,
+                    'v3_zone_widen_weak_pct' => 0.35,
+                    'v3_zone_widen_medium_pct' => 0.50,
+                    'v3_zone_widen_strong_pct' => 0.65,
+                    'v3_zone_widen_max_cap_pct' => 0.70,
                     'sniper_v3_live_filter_enabled' => false,
                     'sniper_v3_min_confirmation_score' => 0.80,
                     'sniper_v3_min_pattern_confidence' => 0.60,
@@ -1217,6 +1235,12 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.40,
                     'v2_trend_match_min' => 0.60,
                     'v2_price_position_max' => 0.85,
+                    // V3-specific entry policy — sniper uses enter_now for strong V3
+                    'v3_strong_enter_now_enabled' => true,
+                    'v3_zone_widen_weak_pct' => 0.40,
+                    'v3_zone_widen_medium_pct' => 0.55,
+                    'v3_zone_widen_strong_pct' => 0.70,
+                    'v3_zone_widen_max_cap_pct' => 0.75,
                     // Sniper V3 Live Filters
                     'sniper_v3_live_filter_enabled' => true,
                     'sniper_v3_min_confirmation_score' => 0.80,

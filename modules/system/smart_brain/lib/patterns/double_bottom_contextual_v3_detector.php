@@ -49,6 +49,8 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     private float  $retestTolerancePct;
     private float  $reclaimInvalidationTolerancePct;
     private float  $newLowAfterSetupTolerancePct;
+    private float  $newLowLargeBreakThresholdPct;
+    private int    $newLowSustainedBarsMin;
 
     // ── Confidence Parameters ──
 
@@ -121,6 +123,8 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $this->retestTolerancePct        = (float) ($params['retest_tolerance_pct']             ?? 0.003);
         $this->reclaimInvalidationTolerancePct = (float) ($params['reclaim_invalidation_tolerance_pct'] ?? 0.003);
         $this->newLowAfterSetupTolerancePct    = (float) ($params['new_low_after_setup_tolerance_pct'] ?? 0.005);
+        $this->newLowLargeBreakThresholdPct    = (float) ($params['new_low_large_break_threshold_pct'] ?? 0.035);
+        $this->newLowSustainedBarsMin          = (int)   ($params['new_low_sustained_bars_min']        ?? 2);
 
         // Confidence
         $this->minFinalConfidence        = (float) ($params['min_final_confidence']             ?? 0.30);
@@ -1087,10 +1091,19 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
      * floor) instead of avg_low, which can sit above low2 when low2 < low1.
      * Applies newLowAfterSetupTolerancePct as buffer.
      *
+     * Stage-aware logic (March 2026 FIX-TZ):
+     *   - Checks whether a reclaim toward trigger has started before the dip
+     *   - Pre-reclaim dips are treated more leniently (moderate breaks allowed)
+     *   - Post-reclaim breaks are treated strictly
+     *   - Large break requires sustained bars below threshold, not just a single tick
+     *
      * Returns ['rejected' => bool, 'diagnostics' => [...]] with subtypes:
-     *   - new_low_after_setup_micro_sweep   (within tolerance buffer)
-     *   - new_low_after_setup_meaningful_break (moderately below buffer)
-     *   - new_low_after_setup_large_break   (substantially below buffer)
+     *   - new_low_after_setup_micro_sweep               (within tolerance buffer)
+     *   - new_low_after_setup_moderate_break             (moderate, pre-reclaim, allowed)
+     *   - new_low_after_setup_meaningful_break           (moderate but sustained or post-reclaim)
+     *   - new_low_after_setup_large_break                (structural failure)
+     *   - new_low_after_setup_post_reclaim_break         (break after reclaim started)
+     *   - new_low_after_setup_pre_reclaim_retest_failed  (deep pre-reclaim retest, no recovery)
      *
      * @return array{rejected:bool,diagnostics:array<string,mixed>}
      */
@@ -1110,10 +1123,82 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $toleranceBuffer = $defendedZoneLow * $this->newLowAfterSetupTolerancePct;
         $bufferedInvalidation = $defendedZoneLow - $toleranceBuffer;
 
+        // Large break threshold (configurable, default 3.5%)
+        $largeBreakThreshold = $this->newLowLargeBreakThresholdPct;
+        $sustainedBarsMin    = $this->newLowSustainedBarsMin;
+
+        // ── Scan post-setup bars for stage-aware analysis ──
         $postMinPrice = null;
+        $postMinIdx   = null;
+        $reclaimStarted = false;
+        $reclaimStartIdx = null;
+        $holdStarted = false;
+        $barsAboveTrigger = 0;
+        $barsBelowDefended = 0;
+        $barsBelowBuffered = 0;
+        $consecutiveBelowDefended = 0;
+        $maxConsecutiveBelowDefended = 0;
+        $minPriceBeforeReclaim = null;
+        $minPriceAfterReclaim  = null;
+        $recoveredAfterDip     = false;
+
         for ($i = $low2Idx + 1; $i < $segLen; $i++) {
-            if ($postMinPrice === null || $segment[$i] < $postMinPrice) {
-                $postMinPrice = $segment[$i];
+            $p = $segment[$i];
+
+            // Track reclaim start: first time price reaches trigger level
+            if (!$reclaimStarted && $p >= $triggerLevel) {
+                $reclaimStarted = true;
+                $reclaimStartIdx = $i;
+            }
+
+            // Track hold: sustained bars above trigger
+            if ($p >= $triggerLevel) {
+                $barsAboveTrigger++;
+                if ($barsAboveTrigger >= 2) {
+                    $holdStarted = true;
+                }
+            }
+
+            // Track bars below defended zone
+            if ($p < $defendedZoneLow) {
+                $barsBelowDefended++;
+                $consecutiveBelowDefended++;
+                if ($consecutiveBelowDefended > $maxConsecutiveBelowDefended) {
+                    $maxConsecutiveBelowDefended = $consecutiveBelowDefended;
+                }
+            } else {
+                $consecutiveBelowDefended = 0;
+            }
+
+            if ($p < $bufferedInvalidation) {
+                $barsBelowBuffered++;
+            }
+
+            // Track overall min
+            if ($postMinPrice === null || $p < $postMinPrice) {
+                $postMinPrice = $p;
+                $postMinIdx = $i;
+            }
+
+            // Track min before and after reclaim
+            if (!$reclaimStarted) {
+                if ($minPriceBeforeReclaim === null || $p < $minPriceBeforeReclaim) {
+                    $minPriceBeforeReclaim = $p;
+                }
+            } else {
+                if ($minPriceAfterReclaim === null || $p < $minPriceAfterReclaim) {
+                    $minPriceAfterReclaim = $p;
+                }
+            }
+        }
+
+        // Check if price recovered above defended zone after the dip
+        if ($postMinIdx !== null && $postMinIdx < $segLen - 1) {
+            for ($i = $postMinIdx + 1; $i < $segLen; $i++) {
+                if ($segment[$i] >= $defendedZoneLow) {
+                    $recoveredAfterDip = true;
+                    break;
+                }
             }
         }
 
@@ -1126,6 +1211,12 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             ? ($defendedZoneLow - $postMinPrice) / $defendedZoneLow
             : 0.0;
 
+        // Determine stage at which the lowest point occurred
+        $dipBeforeReclaim = ($postMinIdx !== null && $reclaimStartIdx !== null)
+            ? ($postMinIdx < $reclaimStartIdx)
+            : true; // if no reclaim, dip is pre-reclaim by definition
+        $stageAtFailure = $holdStarted ? 'post_hold' : ($reclaimStarted ? 'post_reclaim' : 'pre_reclaim');
+
         $baseDiagnostics = [
             'defended_zone_low' => round($defendedZoneLow, 6),
             'buffered_invalidation' => round($bufferedInvalidation, 6),
@@ -1133,7 +1224,16 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             'avg_low' => round($avgLow, 6),
             'trigger_level' => round($triggerLevel, 6),
             'tolerance_pct' => $this->newLowAfterSetupTolerancePct,
+            'large_break_threshold_pct' => $largeBreakThreshold,
             'breach_below_defended_pct' => round($breachBelowDefended, 6),
+            'reclaim_started' => $reclaimStarted,
+            'hold_started' => $holdStarted,
+            'stage_at_failure' => $stageAtFailure,
+            'dip_before_reclaim' => $dipBeforeReclaim,
+            'bars_below_defended' => $barsBelowDefended,
+            'bars_below_buffered' => $barsBelowBuffered,
+            'max_consecutive_below_defended' => $maxConsecutiveBelowDefended,
+            'recovered_after_dip' => $recoveredAfterDip,
         ];
 
         // Price stayed above the defended zone → no breakdown at all
@@ -1152,20 +1252,73 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             ];
         }
 
-        // Price broke below buffered invalidation → determine severity
-        if ($breachBelowDefended > 0.02) {
-            $subtype = 'new_low_after_setup_large_break';
-            $detail  = 'price_broke_well_below_defended_zone';
-        } else {
-            $subtype = 'new_low_after_setup_meaningful_break';
-            $detail  = 'price_broke_below_buffered_invalidation';
+        // ── Price broke below buffered invalidation → stage-aware severity ──
+
+        // Case 1: Post-reclaim break (price reclaimed trigger, then broke down → serious)
+        if ($reclaimStarted && $minPriceAfterReclaim !== null && $minPriceAfterReclaim < $bufferedInvalidation) {
+            return [
+                'rejected' => true,
+                'diagnostics' => array_merge($baseDiagnostics, [
+                    'detail' => 'price_broke_below_defended_zone_after_reclaim',
+                    'subtype' => 'new_low_after_setup_post_reclaim_break',
+                ]),
+            ];
         }
 
+        // Case 2: Large structural break (high breach % AND sustained bars below)
+        if ($breachBelowDefended > $largeBreakThreshold
+            && $maxConsecutiveBelowDefended >= $sustainedBarsMin) {
+            return [
+                'rejected' => true,
+                'diagnostics' => array_merge($baseDiagnostics, [
+                    'detail' => 'price_broke_well_below_defended_zone_sustained',
+                    'subtype' => 'new_low_after_setup_large_break',
+                ]),
+            ];
+        }
+
+        // Case 3: Pre-reclaim moderate break that recovered → allowed
+        // If dip happened before any reclaim started and price recovered, treat leniently
+        if ($dipBeforeReclaim && $recoveredAfterDip && $breachBelowDefended <= $largeBreakThreshold) {
+            return [
+                'rejected' => false,
+                'diagnostics' => array_merge($baseDiagnostics, [
+                    'detail' => 'pre_reclaim_dip_recovered',
+                    'subtype' => 'new_low_after_setup_moderate_break',
+                ]),
+            ];
+        }
+
+        // Case 4: Pre-reclaim deep retest that did NOT recover → reject
+        if ($dipBeforeReclaim && !$recoveredAfterDip) {
+            return [
+                'rejected' => true,
+                'diagnostics' => array_merge($baseDiagnostics, [
+                    'detail' => 'pre_reclaim_deep_retest_no_recovery',
+                    'subtype' => 'new_low_after_setup_pre_reclaim_retest_failed',
+                ]),
+            ];
+        }
+
+        // Case 5: Moderate break — between micro_sweep and large_break
+        // Single tick / brief dip without sustained breakdown → meaningful but not fatal
+        if ($breachBelowDefended <= $largeBreakThreshold
+            && $maxConsecutiveBelowDefended < $sustainedBarsMin) {
+            return [
+                'rejected' => false,
+                'diagnostics' => array_merge($baseDiagnostics, [
+                    'detail' => 'moderate_breach_not_sustained',
+                    'subtype' => 'new_low_after_setup_moderate_break',
+                ]),
+            ];
+        }
+
+        // Default: meaningful break (sustained moderate breach beyond buffer)
         return [
             'rejected' => true,
             'diagnostics' => array_merge($baseDiagnostics, [
-                'detail' => $detail,
-                'subtype' => $subtype,
+                'detail' => 'price_broke_below_buffered_invalidation',
+                'subtype' => 'new_low_after_setup_meaningful_break',
             ]),
         ];
     }

@@ -216,6 +216,20 @@ final class SmartBrainCore
             $this->logger->log('warning', 'Config Conflict Guard: zero candidates after filtering. ' . $configConflictMessage);
         }
 
+        // Enrich V2 candidates with policy fields for storage consistency
+        // (confirmation_tier, entry_action, zone_widen_profile, v2_priority_score)
+        foreach ($candidates as &$c) {
+            $patternAlgo = (string)($c['pattern_algorithm'] ?? '');
+            if ($patternAlgo === 'double_bottom_contextual_v2') {
+                $policyFields = CorridorMonitor::computeV2PolicyFields($c, $userLimits);
+                $c['confirmation_tier'] = $policyFields['confirmation_tier'];
+                $c['entry_action'] = $policyFields['entry_action'];
+                $c['zone_widen_profile'] = $policyFields['zone_widen_profile'];
+                $c['v2_priority_score'] = $policyFields['v2_priority_score'];
+            }
+        }
+        unset($c);
+
         $this->state->writeJson('storage/candidates.json', $candidates);
 
         // Write analyzer debug log (Pattern-First Decision Flow)
@@ -426,10 +440,33 @@ final class SmartBrainCore
         }
 
         // Count candidates and signals per contextual pattern
+        // Also track policy field propagation sanity
+        $candidatePolicyFieldsMissingCount = 0;
+        $monitorPolicyFieldsMissingCount = 0;
         foreach ($candidates as $c) {
             $algo = (string)($c['pattern_algorithm'] ?? '');
             if (isset($v2DownstreamFunnel[$algo])) {
                 $v2DownstreamFunnel[$algo]['candidates_count']++;
+            }
+            // Policy field propagation sanity for V2 candidates
+            if ($algo === 'double_bottom_contextual_v2') {
+                foreach (['confirmation_tier', 'entry_action', 'zone_widen_profile', 'v2_priority_score'] as $pf) {
+                    if (!array_key_exists($pf, $c) || $c[$pf] === null) {
+                        $candidatePolicyFieldsMissingCount++;
+                        break;
+                    }
+                }
+            }
+        }
+        foreach ($monitors as $m2) {
+            $algo2 = (string)($m2['pattern_algorithm'] ?? '');
+            if ($algo2 === 'double_bottom_contextual_v2') {
+                foreach (['confirmation_tier', 'entry_action', 'zone_widen_profile', 'v2_priority_score'] as $pf) {
+                    if (!array_key_exists($pf, $m2) || $m2[$pf] === null) {
+                        $monitorPolicyFieldsMissingCount++;
+                        break;
+                    }
+                }
             }
         }
         $finalSignalConfScoreMissing = 0;
@@ -524,6 +561,8 @@ final class SmartBrainCore
             'signal_tier_distribution' => $signalTierDistribution,
             'final_signal_confirmation_score_missing_count' => $finalSignalConfScoreMissing,
             'final_signal_confirmation_score_null_count' => $finalSignalConfScoreNull,
+            'candidate_policy_fields_missing_count' => $candidatePolicyFieldsMissingCount,
+            'monitor_policy_fields_missing_count' => $monitorPolicyFieldsMissingCount,
             'updated_at' => date('c'),
         ]);
 

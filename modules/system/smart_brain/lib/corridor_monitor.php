@@ -92,6 +92,9 @@ final class CorridorMonitor
             $zoneWidthPct = ($range > 0.0 && $low > 0.0) ? round(($entryZoneHigh - $entryZoneLow) / $low, 6) : 0.0;
             $zoneDistanceFromPrice = ($currentPrice > 0.0 && $entryZoneHigh > 0.0) ? round(($currentPrice - $entryZoneHigh) / $currentPrice, 6) : 0.0;
 
+            // Compute full V2 policy fields for monitor payload consistency
+            $policyFields = self::computeV2PolicyFields($candidate, $this->cfg);
+
             $monitors[] = [
                 'symbol' => $symbol,
                 'corridor_low' => $low,
@@ -107,9 +110,10 @@ final class CorridorMonitor
                 'pattern_algorithm' => $patternAlgo !== '' ? $patternAlgo : 'none',
                 'pattern_confidence' => $patternConfidence,
                 'confirmation_score' => $confirmationScore,
-                'confirmation_tier' => ($patternAlgo === 'double_bottom_contextual_v2')
-                    ? self::computeConfirmationTier($confirmationScore, $this->cfg)
-                    : 'none',
+                'confirmation_tier' => $policyFields['confirmation_tier'],
+                'entry_action' => $policyFields['entry_action'],
+                'zone_widen_profile' => $policyFields['zone_widen_profile'],
+                'v2_priority_score' => $policyFields['v2_priority_score'],
                 'reclaim_strength_score' => (float)($candidate['reclaim_strength_score'] ?? 0.0),
                 'hold_quality_score' => (float)($candidate['hold_quality_score'] ?? 0.0),
                 'post_reclaim_stability_score' => (float)($candidate['post_reclaim_stability_score'] ?? 0.0),
@@ -189,6 +193,63 @@ final class CorridorMonitor
             return 'weak';
         }
         return 'medium';
+    }
+
+    /**
+     * Compute all V2 policy fields for a candidate/monitor.
+     *
+     * Returns confirmation_tier, entry_action, zone_widen_profile, v2_priority_score.
+     * Non-V2 patterns get neutral defaults.
+     *
+     * @param array<string,mixed> $candidate  Candidate or monitor payload
+     * @param array<string,mixed> $cfg        Config containing tier thresholds
+     * @return array{confirmation_tier: string, entry_action: string, zone_widen_profile: string, v2_priority_score: float}
+     */
+    public static function computeV2PolicyFields(array $candidate, array $cfg = []): array
+    {
+        $patternAlgo = (string)($candidate['pattern_algorithm'] ?? 'none');
+        $confirmationScore = (float)($candidate['confirmation_score'] ?? 0.0);
+
+        if ($patternAlgo !== 'double_bottom_contextual_v2') {
+            return [
+                'confirmation_tier' => 'none',
+                'entry_action' => 'wait_retrace',
+                'zone_widen_profile' => 'default',
+                'v2_priority_score' => 0.0,
+            ];
+        }
+
+        $tier = self::computeConfirmationTier($confirmationScore, $cfg);
+
+        $entryAction = match ($tier) {
+            'strong' => 'enter_now',
+            default  => 'wait_retrace',
+        };
+
+        $zoneWidenProfile = match ($tier) {
+            'strong' => 'strong_wide',
+            'medium' => 'medium_wide',
+            'weak'   => 'narrow',
+            default  => 'default',
+        };
+
+        $patternConfidence = (float)($candidate['pattern_confidence'] ?? 0.0);
+        $analyzerScore = (float)($candidate['analyzer_score'] ?? 0.0);
+        $reclaimScore = (float)($candidate['reclaim_strength_score'] ?? 0.0);
+        $v2PriorityScore = round(
+            ($confirmationScore * 0.40) +
+            ($patternConfidence * 0.25) +
+            ($analyzerScore * 0.20) +
+            ($reclaimScore * 0.15),
+            4
+        );
+
+        return [
+            'confirmation_tier' => $tier,
+            'entry_action' => $entryAction,
+            'zone_widen_profile' => $zoneWidenProfile,
+            'v2_priority_score' => $v2PriorityScore,
+        ];
     }
 
     /**

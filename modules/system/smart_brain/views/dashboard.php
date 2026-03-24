@@ -104,16 +104,27 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                         $dashIsPatternControlled = $dashProfileIsPreset && $dashPatternMode === 'profile_controlled';
                     ?>
                     <span class="badge <?= $dashProfileIsPreset ? 'bg-primary' : 'bg-secondary' ?>"><?= htmlspecialchars($dashProfileLabel) ?></span>
-                    <?php if ($dashIsPatternControlled): ?>
                     <?php
-                        $dashRoutingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
-                        $dashRouting = $dashRoutingBundles[$dashProfile] ?? ['live_patterns' => []];
+                        $dashPatternPolicy = is_array($last_run['pattern_policy'] ?? null) ? $last_run['pattern_policy'] : null;
                         $dashPatLabels = [
                             'double_bottom_contextual_v2' => 'V2 Ctx',
                             'double_bottom_contextual_v3' => 'V3 Ctx',
                         ];
+                        if ($dashPatternPolicy !== null) {
+                            $dashLivePatterns = (array)($dashPatternPolicy['live_patterns'] ?? []);
+                        } elseif ($dashIsPatternControlled) {
+                            $dashRoutingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
+                            $dashRouting = $dashRoutingBundles[$dashProfile] ?? ['live_patterns' => []];
+                            $dashLivePatterns = (array)($dashRouting['live_patterns'] ?? []);
+                        } else {
+                            $dashLivePatterns = [];
+                        }
                     ?>
-                    <small class="text-success ms-1">Live: <?= implode(', ', array_map(fn($p) => $dashPatLabels[$p] ?? $p, $dashRouting['live_patterns'])) ?></small>
+                    <?php if (!empty($dashLivePatterns)): ?>
+                    <small class="text-success ms-1">Live: <?= implode(', ', array_map(fn($p) => $dashPatLabels[$p] ?? $p, $dashLivePatterns)) ?></small>
+                    <?php endif; ?>
+                    <?php if (!empty($dashPatternPolicy['fallback_used'])): ?>
+                    <small class="text-warning ms-1" title="Pattern routing fallback used"><i class="bi bi-exclamation-triangle"></i></small>
                     <?php endif; ?>
                 </div>
             </div>

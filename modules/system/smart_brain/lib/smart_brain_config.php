@@ -1030,18 +1030,32 @@ final class SmartBrainConfig
         if ($profileId === 'custom' || $patternProfileMode !== 'profile_controlled') {
             // Manual mode: derive from current parser4 enabled patterns
             $enabledPatterns = (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []);
+            $fallbackUsed = false;
+            $fallbackReason = '';
+
+            // If manual override yields empty patterns and a profile preset exists, use profile as fallback
+            if (empty($enabledPatterns) && $profileId !== 'custom' && isset($routingBundles[$profileId])) {
+                $enabledPatterns = (array)($routingBundles[$profileId]['live_patterns'] ?? []);
+                $fallbackUsed = true;
+                $fallbackReason = 'manual_override_missing_lists';
+            }
+
             $activePatternPolicy = [
-                'live_patterns' => $enabledPatterns,
-                'shadow_patterns' => [],
+                'live_patterns' => array_values($enabledPatterns),
+                'shadow_patterns' => $fallbackUsed ? array_values((array)($routingBundles[$profileId]['shadow_patterns'] ?? [])) : [],
                 'disabled_patterns' => array_values(array_diff(self::ALLOWED_PATTERN_ALGORITHMS, $enabledPatterns)),
-                'canonical_source' => 'manual_override',
+                'canonical_source' => $fallbackUsed ? 'profile_fallback' : 'manual_override',
+                'fallback_used' => $fallbackUsed,
+                'fallback_reason' => $fallbackReason,
             ];
         } else {
             $activePatternPolicy = [
-                'live_patterns' => $routingBundle['live_patterns'],
-                'shadow_patterns' => $routingBundle['shadow_patterns'],
-                'disabled_patterns' => $routingBundle['disabled_patterns'],
+                'live_patterns' => array_values((array)($routingBundle['live_patterns'] ?? [])),
+                'shadow_patterns' => array_values((array)($routingBundle['shadow_patterns'] ?? [])),
+                'disabled_patterns' => array_values((array)($routingBundle['disabled_patterns'] ?? [])),
                 'canonical_source' => 'execution_profile',
+                'fallback_used' => false,
+                'fallback_reason' => '',
             ];
         }
 
@@ -1554,5 +1568,25 @@ final class SmartBrainConfig
         if (isset($patterns['mode']) && in_array($patterns['mode'], ['one', 'any', 'all'], true)) {
             $this->config['parser4']['pattern_algorithms']['mode'] = $patterns['mode'];
         }
+    }
+
+    /**
+     * Get currently enabled pattern algorithms from parser4 config.
+     *
+     * @return list<string>
+     */
+    public function getEnabledPatterns(): array
+    {
+        return array_values((array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []));
+    }
+
+    /**
+     * Get list of all allowed pattern algorithm identifiers.
+     *
+     * @return list<string>
+     */
+    public static function getAllowedPatternAlgorithms(): array
+    {
+        return self::ALLOWED_PATTERN_ALGORITHMS;
     }
 }

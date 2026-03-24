@@ -71,8 +71,17 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         $execProfileBundle = $execProfileBundles[$execProfile] ?? $execProfileBundles['custom'];
         $execPatternProfileMode = (string)($last_run['pattern_profile_mode'] ?? 'manual_override');
         $execPatternRoutingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
-        $execPatternRouting = $execPatternRoutingBundles[$execProfile] ?? $execPatternRoutingBundles['custom'];
+        // Use pattern_policy from last_run if available (normalized, never null)
+        $execPatternPolicy = is_array($last_run['pattern_policy'] ?? null) ? $last_run['pattern_policy'] : null;
+        if ($execPatternPolicy !== null) {
+            $execPatternRouting = $execPatternPolicy;
+        } else {
+            // Fallback: derive from profile bundle
+            $execPatternRouting = $execPatternRoutingBundles[$execProfile] ?? $execPatternRoutingBundles['custom'];
+        }
         $execIsPatternProfileControlled = $execProfileIsPreset && $execPatternProfileMode === 'profile_controlled';
+        $execPatternFallbackUsed = (bool)($execPatternRouting['fallback_used'] ?? false);
+        $execPatternFallbackReason = (string)($execPatternRouting['fallback_reason'] ?? '');
         $execPatternLabels = [
             'double_bottom' => 'Double Bottom',
             'double_top' => 'Double Top',
@@ -116,13 +125,17 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             </div>
             <?php endif; ?>
 
-            <!-- Pattern Routing Summary -->
-            <?php if ($execIsPatternProfileControlled): ?>
+            <!-- Pattern Routing Summary — always shown -->
             <div class="mt-3" style="font-size: 0.85rem;">
-                <strong><i class="bi bi-diagram-3 me-1"></i>Active Pattern Routing:</strong>
-                <span class="text-success ms-2">Live: <?= !empty($execPatternRouting['live_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, $execPatternRouting['live_patterns'])) : '—' ?></span>
-                <span class="text-warning ms-2">Shadow: <?= !empty($execPatternRouting['shadow_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, $execPatternRouting['shadow_patterns'])) : '—' ?></span>
-                <span class="text-muted ms-2">Disabled: <?= !empty($execPatternRouting['disabled_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, $execPatternRouting['disabled_patterns'])) : '—' ?></span>
+                <strong><i class="bi bi-diagram-3 me-1"></i>Active Pattern Routing
+                    <small class="text-secondary">(<?= htmlspecialchars((string)($execPatternRouting['canonical_source'] ?? $execPatternProfileMode)) ?>)</small>:</strong>
+                <span class="text-success ms-2">Live: <?= !empty($execPatternRouting['live_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, (array)$execPatternRouting['live_patterns'])) : '—' ?></span>
+                <span class="text-warning ms-2">Shadow: <?= !empty($execPatternRouting['shadow_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, (array)$execPatternRouting['shadow_patterns'])) : '—' ?></span>
+                <span class="text-muted ms-2">Disabled: <?= !empty($execPatternRouting['disabled_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, (array)$execPatternRouting['disabled_patterns'])) : '—' ?></span>
+            </div>
+            <?php if ($execPatternFallbackUsed): ?>
+            <div class="alert alert-warning small mb-0 mt-1 py-1 px-2">
+                <i class="bi bi-exclamation-triangle me-1"></i> Pattern routing fallback used: <?= htmlspecialchars($execPatternFallbackReason) ?>. Manual override lists were missing — derived from profile preset.
             </div>
             <?php endif; ?>
 

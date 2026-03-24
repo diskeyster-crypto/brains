@@ -47,6 +47,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     private float  $minHoldQualityScore;
     private bool   $retestRequired;
     private float  $retestTolerancePct;
+    private float  $reclaimInvalidationTolerancePct;
 
     // ── Confidence Parameters ──
 
@@ -117,6 +118,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $this->minHoldQualityScore       = (float) ($params['min_hold_quality_score']           ?? 0.0);
         $this->retestRequired            = (bool)  ($params['retest_required']                  ?? false);
         $this->retestTolerancePct        = (float) ($params['retest_tolerance_pct']             ?? 0.003);
+        $this->reclaimInvalidationTolerancePct = (float) ($params['reclaim_invalidation_tolerance_pct'] ?? 0.003);
 
         // Confidence
         $this->minFinalConfidence        = (float) ($params['min_final_confidence']             ?? 0.30);
@@ -817,14 +819,23 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             return null;
         }
 
-        // No new low below invalidation level (avg low)
+        // No new low below invalidation level (avg low) — with tolerance for micro-undershoots
         $confirmMin = (float) min($confirmBars);
-        if ($confirmMin < $avgLow) {
+        $invalidationBuffer = $avgLow * $this->reclaimInvalidationTolerancePct;
+        $bufferedInvalidation = $avgLow - $invalidationBuffer;
+        $undershootPct = $avgLow > 0.0 ? ($avgLow - $confirmMin) / $avgLow : 0.0;
+
+        if ($confirmMin < $bufferedInvalidation) {
+            // Meaningful break: price dropped well below avg_low beyond tolerance
             $this->addRejectReason('reject_reclaim_failed');
             $this->trackConfirmRejectReason('reject_reclaim_failed', [
-                'detail' => 'new_low_below_avg',
+                'detail' => 'new_low_below_avg_large',
+                'subtype' => 'reclaim_meaningful_break',
                 'confirm_min' => round($confirmMin, 6),
                 'avg_low' => round($avgLow, 6),
+                'buffered_invalidation' => round($bufferedInvalidation, 6),
+                'tolerance_pct' => $this->reclaimInvalidationTolerancePct,
+                'undershoot_pct' => round($undershootPct, 6),
                 'trigger_level' => round($triggerLevel, 6),
             ]);
             return null;
@@ -852,6 +863,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             $this->addRejectReason('reject_reclaim_failed');
             $this->trackConfirmRejectReason('reject_reclaim_weak', [
                 'detail' => 'reclaim_strength_below_min',
+                'subtype' => 'reclaim_not_sustained',
                 'reclaim_strength' => round($reclaimStrength, 6),
                 'min_required' => $this->minReclaimStrengthPct,
             ]);

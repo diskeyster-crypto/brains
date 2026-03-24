@@ -690,6 +690,7 @@ final class SmartBrainCore
             'execution_profile' => (string)($userLimits['execution_profile'] ?? 'custom'),
             'execution_profile_label' => self::getExecutionProfileLabel($userLimits),
             'pattern_profile_mode' => (string)($userLimits['pattern_profile_mode'] ?? 'manual_override'),
+            'pattern_policy' => self::resolvePatternPolicy($userLimits, $this->config),
             // Live Intent Generation — audit fields
             'live_stage_runtime_signature' => $liveIntentResult['live_stage_runtime_signature'] ?? '',
             'live_trading_enabled' => $liveConfig['live_trading_enabled'],
@@ -1875,6 +1876,71 @@ final class SmartBrainCore
         $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
         $bundles = SmartBrainConfig::getExecutionProfileBundles();
         return $bundles[$profileId]['label'] ?? 'Custom';
+    }
+
+    /**
+     * Resolve effective pattern policy for last_run, ensuring non-null arrays always.
+     *
+     * @param array<string,mixed> $userLimits
+     * @param SmartBrainConfig $config
+     * @return array{live_patterns:list<string>,shadow_patterns:list<string>,disabled_patterns:list<string>,canonical_source:string,fallback_used:bool,fallback_reason:string}
+     */
+    private static function resolvePatternPolicy(array $userLimits, SmartBrainConfig $config): array
+    {
+        $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
+        $patternMode = (string)($userLimits['pattern_profile_mode'] ?? 'manual_override');
+        $routingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
+
+        // Profile-controlled mode with a known preset
+        if ($profileId !== 'custom' && $patternMode === 'profile_controlled' && isset($routingBundles[$profileId])) {
+            $bundle = $routingBundles[$profileId];
+            return [
+                'live_patterns' => array_values((array)($bundle['live_patterns'] ?? [])),
+                'shadow_patterns' => array_values((array)($bundle['shadow_patterns'] ?? [])),
+                'disabled_patterns' => array_values((array)($bundle['disabled_patterns'] ?? [])),
+                'canonical_source' => 'execution_profile',
+                'fallback_used' => false,
+                'fallback_reason' => '',
+            ];
+        }
+
+        // Manual override or custom profile: derive from current enabled patterns
+        $enabledPatterns = $config->getEnabledPatterns();
+        $allPatterns = SmartBrainConfig::getAllowedPatternAlgorithms();
+
+        if (!empty($enabledPatterns)) {
+            return [
+                'live_patterns' => array_values($enabledPatterns),
+                'shadow_patterns' => [],
+                'disabled_patterns' => array_values(array_diff($allPatterns, $enabledPatterns)),
+                'canonical_source' => 'manual_override',
+                'fallback_used' => false,
+                'fallback_reason' => '',
+            ];
+        }
+
+        // Manual override with missing/empty lists: fall back to profile preset if available
+        if ($profileId !== 'custom' && isset($routingBundles[$profileId])) {
+            $bundle = $routingBundles[$profileId];
+            return [
+                'live_patterns' => array_values((array)($bundle['live_patterns'] ?? [])),
+                'shadow_patterns' => array_values((array)($bundle['shadow_patterns'] ?? [])),
+                'disabled_patterns' => array_values((array)($bundle['disabled_patterns'] ?? [])),
+                'canonical_source' => 'profile_fallback',
+                'fallback_used' => true,
+                'fallback_reason' => 'manual_override_missing_lists',
+            ];
+        }
+
+        // Ultimate fallback: empty but non-null
+        return [
+            'live_patterns' => [],
+            'shadow_patterns' => [],
+            'disabled_patterns' => $allPatterns,
+            'canonical_source' => 'default_fallback',
+            'fallback_used' => true,
+            'fallback_reason' => 'no_patterns_configured',
+        ];
     }
 
     /**

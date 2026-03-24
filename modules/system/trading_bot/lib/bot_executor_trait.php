@@ -1175,6 +1175,9 @@ trait BotExecutorTrait
             'step_trailing_skipped' => 0,
             'break_even_applied' => 0,
             'hybrid_partial_applied' => 0,
+            'floor_lock_applied' => 0,
+            'floor_lock_failed' => 0,
+            'floor_lock_skipped' => 0,
         ];
         
         if ($mode !== 'live') {
@@ -1256,6 +1259,14 @@ trait BotExecutorTrait
                     $runtime['effective_trailing_activation_floor_roi'] = (float)($riskTrailing['trailing_activation_floor_roi'] ?? 4.0);
                     $runtime['effective_trailing_floor_lock_roi'] = (float)($riskTrailing['trailing_floor_lock_roi'] ?? 3.0);
                     $runtime['effective_trailing_step_mode'] = (string)($riskTrailing['trailing_step_mode'] ?? 'fixed');
+                    // Preserve floor lock runtime state across cycles
+                    $runtime['floor_lock_active'] = (bool)($runtime['floor_lock_active'] ?? false);
+                    $runtime['floor_locked_roi'] = (float)($runtime['floor_locked_roi'] ?? 0);
+                    $runtime['floor_stop_price'] = (float)($runtime['floor_stop_price'] ?? 0);
+                    $runtime['current_effective_stop_price'] = (float)($runtime['current_effective_stop_price'] ?? 0);
+                    $runtime['protection_source_of_truth'] = (string)($runtime['protection_source_of_truth'] ?? '');
+                    $runtime['floor_enforced_via_exchange_stop'] = (bool)($runtime['floor_enforced_via_exchange_stop'] ?? false);
+                    $runtime['floor_enforced_via_bot_exit'] = (bool)($runtime['floor_enforced_via_bot_exit'] ?? false);
                 }
 
                 // Stop mode truth: persist into runtime for observability
@@ -1305,6 +1316,16 @@ trait BotExecutorTrait
                 // Initial vs current stop separation: mirror into top-level
                 $trade['initial_computed_stop_price'] = $runtime['initial_computed_stop_price'];
                 $trade['stop_moved_from_initial'] = $runtime['stop_moved_from_initial'];
+                // Floor lock fields: mirror into top-level for observability
+                if (($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor') {
+                    $trade['floor_lock_active'] = $runtime['floor_lock_active'] ?? false;
+                    $trade['floor_locked_roi'] = $runtime['floor_locked_roi'] ?? 0;
+                    $trade['floor_stop_price'] = $runtime['floor_stop_price'] ?? 0;
+                    $trade['current_effective_stop_price'] = $runtime['current_effective_stop_price'] ?? 0;
+                    $trade['protection_source_of_truth'] = $runtime['protection_source_of_truth'] ?? '';
+                    $trade['floor_enforced_via_exchange_stop'] = $runtime['floor_enforced_via_exchange_stop'] ?? false;
+                    $trade['floor_enforced_via_bot_exit'] = $runtime['floor_enforced_via_bot_exit'] ?? false;
+                }
                 // @legacy — v1→v2 schema upgrade for active trades. Remove after all active
                 // v1 snapshot trades have been closed or cycled out.
                 if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
@@ -1887,6 +1908,173 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // P10: Floor Lock Enforcement (price_distance_floor mode)
+                //
+                // When trailing_mode=price_distance_floor and ROI reaches
+                // trailing_activation_floor_roi, compute floor_stop_price from
+                // entry + floor_lock_roi and enforce it as a real exchange SL.
+                //
+                // The floor stop is the *minimum* protective level; the effective
+                // stop is the best (most protective) among: initial SL, break-even
+                // SL, floor stop, and current exchange SL.
+                //
+                // This section bridges BotTrailingEngine's computation with actual
+                // exchange execution that was previously missing.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $trailingMode = (string)($trailingCfg['trailing_mode'] ?? 'roi_giveback');
+                    $trailingEnabled = (bool)($trailingCfg['enabled'] ?? false);
+
+                    if ($trailingMode === 'price_distance_floor' && $trailingEnabled) {
+
+                        $positionIM = (float)($position['positionIM'] ?? 0);
+                        $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                        $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                        $activationFloorRoi = (float)($trailingCfg['trailing_activation_floor_roi'] ?? 4.0);
+
+                        if ($roiBybit >= $activationFloorRoi) {
+
+                            $floorLockRoi = (float)($trailingCfg['trailing_floor_lock_roi'] ?? 3.0);
+                            $leverage = (float)($risk['leverage'] ?? ($trade['leverage'] ?? 1));
+                            if ($leverage <= 0) {
+                                $leverage = 1.0;
+                            }
+
+                            $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+                            $side = strtolower((string)($trade['side'] ?? 'long'));
+                            if ($side === 'buy') {
+                                $side = 'long';
+                            } elseif ($side === 'sell') {
+                                $side = 'short';
+                            }
+
+                            $markPrice = (float)($position['markPrice'] ?? 0);
+                            $lastPrice = (float)($position['lastPrice'] ?? 0);
+                            $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice);
+                            $minDistancePct = (float)($this->config['execution']['step_trailing_min_distance_to_price_pct'] ?? 0.05);
+
+                            if ($entryAvg > 0 && $currentPrice > 0) {
+
+                                // Compute floor stop price from entry + floor_lock_roi
+                                $floorPriceMove = ($floorLockRoi / 100.0) / $leverage;
+                                if ($side === 'long') {
+                                    $floorStopPrice = round($entryAvg * (1.0 + $floorPriceMove), 8);
+                                } else {
+                                    $floorStopPrice = round($entryAvg * (1.0 - $floorPriceMove), 8);
+                                }
+
+                                // Determine initial stop price
+                                $initialStopPrice = (float)($trade['initial_computed_stop_price']
+                                    ?? ($trade['protection']['stop_loss_price'] ?? 0));
+
+                                // Determine break-even stop price
+                                $breakEvenStopPrice = 0.0;
+                                if (!empty($runtime['break_even_applied'])) {
+                                    $breakEvenStopPrice = (float)$entryAvg;
+                                }
+
+                                // Compute current_effective_stop_price: most protective among all stops
+                                if ($side === 'long') {
+                                    $desiredSL = max($initialStopPrice, $breakEvenStopPrice, $floorStopPrice, $exchangeSL);
+                                } else {
+                                    // SHORT: most protective = lowest positive stop
+                                    $candidates = array_filter(
+                                        [$initialStopPrice, $breakEvenStopPrice, $floorStopPrice, $exchangeSL],
+                                        function ($v) { return $v > 0; }
+                                    );
+                                    $desiredSL = !empty($candidates) ? min($candidates) : 0.0;
+                                }
+
+                                $desiredSL = round($desiredSL, 8);
+
+                                // Safety: keep SL below current price (LONG) / above current price (SHORT)
+                                if ($side === 'long') {
+                                    $maxAllowed = $currentPrice * (1 - ($minDistancePct / 100));
+                                    if ($maxAllowed > 0 && $desiredSL > $maxAllowed) {
+                                        $desiredSL = round($maxAllowed, 8);
+                                    }
+                                } else {
+                                    $minAllowed = $currentPrice * (1 + ($minDistancePct / 100));
+                                    if ($minAllowed > 0 && $desiredSL < $minAllowed) {
+                                        $desiredSL = round($minAllowed, 8);
+                                    }
+                                }
+
+                                // Determine if the floor-derived stop improves exchange SL
+                                $shouldApply = false;
+                                if ($side === 'long') {
+                                    $shouldApply = ($desiredSL > 0 && $desiredSL > $exchangeSL);
+                                } else {
+                                    $shouldApply = ($desiredSL > 0 && ($exchangeSL <= 0 || $desiredSL < $exchangeSL));
+                                }
+
+                                if ($shouldApply && $this->gateway && $this->gateway->isInitialized()) {
+
+                                    $opts = [
+                                        'position_idx' => (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0))),
+                                        'tpsl_mode' => $this->config['exchange']['tpsl_mode'] ?? 'Full',
+                                        'sl_trigger_by' => $this->config['exchange']['sl_trigger_by'] ?? 'IndexPrice',
+                                        'stop_loss' => $desiredSL,
+                                    ];
+
+                                    $slRes = $this->gateway->setTradingStop($trade['symbol'], $side, $opts);
+
+                                    if (($slRes['success'] ?? false) === true) {
+                                        $exchangeSL = $desiredSL;
+                                        $trade['protection']['stop_loss_price'] = $desiredSL;
+
+                                        $runtime['floor_lock_active'] = true;
+                                        $runtime['floor_locked_roi'] = $floorLockRoi;
+                                        $runtime['floor_stop_price'] = $floorStopPrice;
+                                        $runtime['current_effective_stop_price'] = $desiredSL;
+                                        $runtime['protection_source_of_truth'] = 'exchange_stop';
+                                        $runtime['floor_enforced_via_exchange_stop'] = true;
+                                        $runtime['floor_enforced_via_bot_exit'] = false;
+                                        $runtime['floor_lock_last_update_at'] = date('c');
+                                        $runtime['floor_lock_last_roi_bybit_pct'] = round($roiBybit, 2);
+                                        $runtime['stop_moved_from_initial'] = ($initialStopPrice > 0 && abs($desiredSL - $initialStopPrice) > 0.0000001);
+                                        $trade['runtime'] = $runtime;
+
+                                        $result['floor_lock_applied']++;
+                                        $result['warnings'][] = "Floor lock SL applied for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, floor " . round($floorLockRoi, 2) . "%, SL " . round($desiredSL, 8) . ")";
+                                    } else {
+                                        $runtime['floor_lock_last_error'] = $slRes;
+                                        $trade['runtime'] = $runtime;
+
+                                        $result['floor_lock_failed']++;
+                                        $result['warnings'][] = "Floor lock SL update failed for {$trade['symbol']}: " . ($slRes['error'] ?? 'unknown');
+                                    }
+                                } else {
+                                    // Floor is active but exchange SL already at or beyond desired level
+                                    $runtime['floor_lock_active'] = true;
+                                    $runtime['floor_locked_roi'] = $floorLockRoi;
+                                    $runtime['floor_stop_price'] = $floorStopPrice;
+                                    $runtime['current_effective_stop_price'] = ($side === 'long') ? max($exchangeSL, $desiredSL) : (($exchangeSL > 0) ? min($exchangeSL, $desiredSL) : $desiredSL);
+                                    $runtime['protection_source_of_truth'] = 'exchange_stop';
+                                    $runtime['floor_enforced_via_exchange_stop'] = true;
+                                    $runtime['floor_enforced_via_bot_exit'] = false;
+                                    $trade['runtime'] = $runtime;
+
+                                    $result['floor_lock_skipped']++;
+                                }
+                            } else {
+                                $result['floor_lock_skipped']++;
+                            }
+                        } else {
+                            // Activation not reached: mark floor lock inactive
+                            $runtime['floor_lock_active'] = false;
+                            $trade['runtime'] = $runtime;
+
+                            $result['floor_lock_skipped']++;
                         }
                     }
                 }

@@ -310,6 +310,7 @@ class BotTrailingEngine
             $result['changes']['exchange_trailing_distance']        = round($trailingRefPrice * $distancePct, 8);
             $result['changes']['theoretical_current_stop_price']    = round($trailingStopPrice, 8);
             $result['changes']['current_effective_stop_price']      = round($trailingStopPrice, 8);
+            $result['changes']['protection_source_of_truth']        = 'bot_trailing_engine';
             $result['changes']['trailing_active']                   = true;
             $result['changes']['stop_moved_from_initial']           = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
             $result['changes']['trailing_step_mode']                = $stepMode;
@@ -371,6 +372,7 @@ class BotTrailingEngine
             $result['changes']['exchange_trailing_distance']        = round($trailingRefPrice * $distancePct, 8);
             $result['changes']['theoretical_current_stop_price']    = round($trailingStopPrice, 8);
             $result['changes']['current_effective_stop_price']      = round($trailingStopPrice, 8);
+            $result['changes']['protection_source_of_truth']        = 'bot_trailing_engine';
             $result['changes']['trailing_active']                   = true;
             $result['changes']['stop_moved_from_initial']           = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
             $result['changes']['trailing_step_mode']                = $stepMode;

@@ -227,11 +227,11 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
         </div>
 
-        <!-- Sniper V3 Live Filters (visible only for sniper profile) -->
-        <?php if ($currentProfile === 'sniper_75_attempt'): ?>
+        <!-- Sniper V3 Live Filters (visible only for sniper profiles) -->
+        <?php if (in_array($currentProfile, ['sniper_75_attempt', 'sniper_lite'], true)): ?>
         <?php
             $sniperV3Fields = SmartBrainConfig::getSniperV3FilterFields();
-            $sniperV3AllowedTiers = SmartBrainConfig::getSniperV3AllowedTiers();
+            $sniperV3AllowedTiers = SmartBrainConfig::getSniperV3AllowedTiers($currentProfile);
             $sniperV3Enabled = (bool)($form_values['sniper_v3_live_filter_enabled'] ?? $currentBundle['values']['sniper_v3_live_filter_enabled'] ?? true);
         ?>
         <div class="card mb-4" style="border-color: #f59e0b;">
@@ -241,9 +241,13 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                 <span class="badge <?= $sniperV3Enabled ? 'bg-success' : 'bg-secondary' ?> ms-2"><?= $sniperV3Enabled ? 'Active' : 'Disabled' ?></span>
             </div>
             <div class="card-body">
-                <div class="alert alert-warning small py-2 mb-3">
+                <div class="alert <?= $currentProfile === 'sniper_lite' ? 'alert-info' : 'alert-warning' ?> small py-2 mb-3">
                     <i class="bi bi-info-circle me-1"></i>
+                    <?php if ($currentProfile === 'sniper_lite'): ?>
+                    Sniper Lite allows strong and selected medium V3 confirmations into live.
+                    <?php else: ?>
                     Sniper profile allows only the cleanest V3 confirmations into live.
+                    <?php endif; ?>
                     Other structurally valid V3 cases remain shadow/debug only.
                     Only <strong><?= implode(', ', $sniperV3AllowedTiers) ?></strong> confirmation tiers are allowed for live entry.
                 </div>

@@ -629,6 +629,12 @@ final class SmartBrainCore
             'final_signal_confirmation_score_null_count' => $finalSignalConfScoreNull,
             'candidate_policy_fields_missing_count' => $candidatePolicyFieldsMissingCount,
             'monitor_policy_fields_missing_count' => $monitorPolicyFieldsMissingCount,
+            // Sniper V3 live filter diagnostics
+            'sniper_v3_live_eligible_count' => (int)($liveIntentResult['sniper_v3_live_eligible_count'] ?? 0),
+            'sniper_v3_live_rejected_count' => (int)($liveIntentResult['sniper_v3_live_rejected_count'] ?? 0),
+            'sniper_v3_shadow_only_count' => (int)($liveIntentResult['sniper_v3_shadow_only_count'] ?? 0),
+            'sniper_v3_reject_reason_distribution' => $liveIntentResult['sniper_v3_reject_reason_distribution'] ?? [],
+            'sniper_v3_rejected_preview' => $liveIntentResult['sniper_v3_rejected_preview'] ?? [],
             'updated_at' => date('c'),
         ]);
 
@@ -726,6 +732,12 @@ final class SmartBrainCore
             'mae_stop_hints_fallback_count' => $liveIntentResult['mae_stop_hints_fallback_count'] ?? 0,
             // Part 2: MAE debug preview (first few symbol/side cases)
             'mae_stop_debug_preview' => $liveIntentResult['mae_stop_debug_preview'] ?? [],
+            // Sniper V3 Live Filter diagnostics
+            'sniper_v3_live_eligible_count' => (int)($liveIntentResult['sniper_v3_live_eligible_count'] ?? 0),
+            'sniper_v3_live_rejected_count' => (int)($liveIntentResult['sniper_v3_live_rejected_count'] ?? 0),
+            'sniper_v3_shadow_only_count' => (int)($liveIntentResult['sniper_v3_shadow_only_count'] ?? 0),
+            'sniper_v3_reject_reason_distribution' => $liveIntentResult['sniper_v3_reject_reason_distribution'] ?? [],
+            'sniper_v3_rejected_preview' => $liveIntentResult['sniper_v3_rejected_preview'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -782,6 +794,12 @@ final class SmartBrainCore
             'mae_stop_hints_applied_count' => 0,
             'mae_stop_hints_fallback_count' => 0,
             'mae_stop_debug_preview' => [],
+            // Sniper V3 live filter diagnostics
+            'sniper_v3_live_eligible_count' => 0,
+            'sniper_v3_live_rejected_count' => 0,
+            'sniper_v3_shadow_only_count' => 0,
+            'sniper_v3_reject_reason_distribution' => [],
+            'sniper_v3_rejected_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -968,6 +986,43 @@ final class SmartBrainCore
                     $result['early_failure_rejected_count'] = ($result['early_failure_rejected_count'] ?? 0) + 1;
                     continue;
                 }
+            }
+
+            // === SNIPER V3 LIVE QUALITY FILTER ===
+            // Applied only when execution_profile = sniper_75_attempt AND pattern = V3
+            $patternAlgo = (string)($signal['pattern_algorithm'] ?? '');
+            $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
+            $sniperV3FilterEnabled = (bool)($userLimits['sniper_v3_live_filter_enabled'] ?? false);
+
+            if ($patternAlgo === 'double_bottom_contextual_v3'
+                && $execProfile === 'sniper_75_attempt'
+                && $sniperV3FilterEnabled
+            ) {
+                $sniperFilterResult = SmartBrainConfig::evaluateSniperV3LiveFilter($signal, $userLimits);
+                // Tag signal for diagnostics
+                $signal['sniper_live_eligible'] = $sniperFilterResult['eligible'];
+                if (!$sniperFilterResult['eligible']) {
+                    $signal['sniper_shadow_only'] = true;
+                    $signal['sniper_reject_reasons'] = $sniperFilterResult['reject_reasons'];
+                    // Track reject reasons in result
+                    foreach ($sniperFilterResult['reject_reasons'] as $sr) {
+                        $result['sniper_v3_reject_reason_distribution'][$sr] =
+                            ($result['sniper_v3_reject_reason_distribution'][$sr] ?? 0) + 1;
+                    }
+                    $result['sniper_v3_live_rejected_count'] = ($result['sniper_v3_live_rejected_count'] ?? 0) + 1;
+                    $result['sniper_v3_shadow_only_count'] = ($result['sniper_v3_shadow_only_count'] ?? 0) + 1;
+                    // Record preview for diagnostics (first 10)
+                    if (count($result['sniper_v3_rejected_preview'] ?? []) < 10) {
+                        $result['sniper_v3_rejected_preview'][] = [
+                            'symbol' => $symbol,
+                            'reject_reasons' => $sniperFilterResult['reject_reasons'],
+                            'checked_values' => $sniperFilterResult['checked_values'],
+                        ];
+                    }
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'sniper_v3_quality_filter', $selectionMode);
+                    continue;
+                }
+                $result['sniper_v3_live_eligible_count'] = ($result['sniper_v3_live_eligible_count'] ?? 0) + 1;
             }
 
             // === APPROVED: build bot-ready live intent ===

@@ -80,5 +80,17 @@ return [
         'v2_zone_defense_min' => 0.30,
         'v2_trend_match_min' => 0.40,
         'v2_price_position_max' => 0.90,
+        // Sniper V3 Live Filters — applied ONLY when execution_profile = sniper_75_attempt AND pattern = V3
+        'sniper_v3_live_filter_enabled' => true,
+        'sniper_v3_min_confirmation_score' => 0.80,
+        'sniper_v3_min_pattern_confidence' => 0.60,
+        'sniper_v3_min_trend_match_score' => 0.55,
+        'sniper_v3_min_entry_quality_score' => 0.75,
+        'sniper_v3_min_corridor_fit_score' => 0.75,
+        'sniper_v3_max_price_position' => 0.80,
+        'sniper_v3_min_reclaim_strength_score' => 0.70,
+        'sniper_v3_min_hold_quality_score' => 0.75,
+        'sniper_v3_min_post_reclaim_stability_score' => 0.70,
+        'sniper_v3_min_zone_defense_score' => 0.40,
     ],
 ];

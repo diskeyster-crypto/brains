@@ -1095,6 +1095,18 @@ final class SmartBrainConfig
             'v2_zone_defense_min',
             'v2_trend_match_min',
             'v2_price_position_max',
+            // Sniper V3 Live Filters
+            'sniper_v3_live_filter_enabled',
+            'sniper_v3_min_confirmation_score',
+            'sniper_v3_min_pattern_confidence',
+            'sniper_v3_min_trend_match_score',
+            'sniper_v3_min_entry_quality_score',
+            'sniper_v3_min_corridor_fit_score',
+            'sniper_v3_max_price_position',
+            'sniper_v3_min_reclaim_strength_score',
+            'sniper_v3_min_hold_quality_score',
+            'sniper_v3_min_post_reclaim_stability_score',
+            'sniper_v3_min_zone_defense_score',
         ];
     }
 
@@ -1129,6 +1141,17 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.30,
                     'v2_trend_match_min' => 0.40,
                     'v2_price_position_max' => 0.90,
+                    'sniper_v3_live_filter_enabled' => false,
+                    'sniper_v3_min_confirmation_score' => 0.80,
+                    'sniper_v3_min_pattern_confidence' => 0.60,
+                    'sniper_v3_min_trend_match_score' => 0.55,
+                    'sniper_v3_min_entry_quality_score' => 0.75,
+                    'sniper_v3_min_corridor_fit_score' => 0.75,
+                    'sniper_v3_max_price_position' => 0.80,
+                    'sniper_v3_min_reclaim_strength_score' => 0.70,
+                    'sniper_v3_min_hold_quality_score' => 0.75,
+                    'sniper_v3_min_post_reclaim_stability_score' => 0.70,
+                    'sniper_v3_min_zone_defense_score' => 0.40,
                 ],
             ],
             'conservative' => [
@@ -1149,6 +1172,17 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.35,
                     'v2_trend_match_min' => 0.50,
                     'v2_price_position_max' => 0.88,
+                    'sniper_v3_live_filter_enabled' => false,
+                    'sniper_v3_min_confirmation_score' => 0.80,
+                    'sniper_v3_min_pattern_confidence' => 0.60,
+                    'sniper_v3_min_trend_match_score' => 0.55,
+                    'sniper_v3_min_entry_quality_score' => 0.75,
+                    'sniper_v3_min_corridor_fit_score' => 0.75,
+                    'sniper_v3_max_price_position' => 0.80,
+                    'sniper_v3_min_reclaim_strength_score' => 0.70,
+                    'sniper_v3_min_hold_quality_score' => 0.75,
+                    'sniper_v3_min_post_reclaim_stability_score' => 0.70,
+                    'sniper_v3_min_zone_defense_score' => 0.40,
                 ],
             ],
             'sniper_75_attempt' => [
@@ -1169,6 +1203,18 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.40,
                     'v2_trend_match_min' => 0.60,
                     'v2_price_position_max' => 0.85,
+                    // Sniper V3 Live Filters
+                    'sniper_v3_live_filter_enabled' => true,
+                    'sniper_v3_min_confirmation_score' => 0.80,
+                    'sniper_v3_min_pattern_confidence' => 0.60,
+                    'sniper_v3_min_trend_match_score' => 0.55,
+                    'sniper_v3_min_entry_quality_score' => 0.75,
+                    'sniper_v3_min_corridor_fit_score' => 0.75,
+                    'sniper_v3_max_price_position' => 0.80,
+                    'sniper_v3_min_reclaim_strength_score' => 0.70,
+                    'sniper_v3_min_hold_quality_score' => 0.75,
+                    'sniper_v3_min_post_reclaim_stability_score' => 0.70,
+                    'sniper_v3_min_zone_defense_score' => 0.40,
                 ],
             ],
             'custom' => [
@@ -1212,6 +1258,152 @@ final class SmartBrainConfig
                 'shadow_patterns' => [],
                 'disabled_patterns' => [],
             ],
+        ];
+    }
+
+    /**
+     * Get the list of sniper V3 live filter field names.
+     *
+     * @return list<string>
+     */
+    public static function getSniperV3FilterFields(): array
+    {
+        return [
+            'sniper_v3_live_filter_enabled',
+            'sniper_v3_min_confirmation_score',
+            'sniper_v3_min_pattern_confidence',
+            'sniper_v3_min_trend_match_score',
+            'sniper_v3_min_entry_quality_score',
+            'sniper_v3_min_corridor_fit_score',
+            'sniper_v3_max_price_position',
+            'sniper_v3_min_reclaim_strength_score',
+            'sniper_v3_min_hold_quality_score',
+            'sniper_v3_min_post_reclaim_stability_score',
+            'sniper_v3_min_zone_defense_score',
+        ];
+    }
+
+    /**
+     * Get the allowed confirmation tiers for sniper V3 live entry.
+     *
+     * @return list<string>
+     */
+    public static function getSniperV3AllowedTiers(): array
+    {
+        return ['strong', 'very_strong'];
+    }
+
+    /**
+     * Evaluate sniper V3 live filter for a single signal/candidate.
+     *
+     * Returns array with:
+     *   'eligible' => bool,
+     *   'reject_reasons' => string[],
+     *   'checked_values' => array (for diagnostics)
+     *
+     * @param array<string,mixed> $signal     Signal or candidate payload
+     * @param array<string,mixed> $userLimits Effective user limits
+     * @return array{eligible:bool,reject_reasons:list<string>,checked_values:array<string,mixed>}
+     */
+    public static function evaluateSniperV3LiveFilter(array $signal, array $userLimits): array
+    {
+        $rejectReasons = [];
+
+        $confirmationTier = (string)($signal['confirmation_tier'] ?? 'none');
+        $confirmationScore = (float)($signal['confirmation_score'] ?? 0.0);
+        $patternConfidence = (float)($signal['pattern_confidence'] ?? 0.0);
+        $trendMatchScore = $signal['trend_match_score'] ?? null;
+        $entryQualityScore = (float)($signal['entry_quality_score'] ?? 0.0);
+        $corridorFitScore = (float)($signal['corridor_fit_score'] ?? 0.0);
+        $pricePosition = (float)($signal['price_position'] ?? 0.0);
+        $reclaimStrengthScore = (float)($signal['reclaim_strength_score'] ?? 0.0);
+        $holdQualityScore = (float)($signal['hold_quality_score'] ?? 0.0);
+        $postReclaimStabilityScore = (float)($signal['post_reclaim_stability_score'] ?? 0.0);
+        $zoneDefenseScore = (float)($signal['zone_defense_score'] ?? 0.0);
+
+        $checkedValues = [
+            'confirmation_tier' => $confirmationTier,
+            'confirmation_score' => round($confirmationScore, 4),
+            'pattern_confidence' => round($patternConfidence, 4),
+            'trend_match_score' => $trendMatchScore,
+            'entry_quality_score' => round($entryQualityScore, 4),
+            'corridor_fit_score' => round($corridorFitScore, 4),
+            'price_position' => round($pricePosition, 4),
+            'reclaim_strength_score' => round($reclaimStrengthScore, 4),
+            'hold_quality_score' => round($holdQualityScore, 4),
+            'post_reclaim_stability_score' => round($postReclaimStabilityScore, 4),
+            'zone_defense_score' => round($zoneDefenseScore, 4),
+        ];
+
+        // 4.1 Confirmation Tier Gate
+        $allowedTiers = self::getSniperV3AllowedTiers();
+        if (!in_array($confirmationTier, $allowedTiers, true)) {
+            $rejectReasons[] = 'sniper_reject_confirmation_tier_not_strong';
+        }
+
+        // 4.2 Minimum confirmation_score
+        $minConfScore = (float)($userLimits['sniper_v3_min_confirmation_score'] ?? 0.80);
+        if ($confirmationScore < $minConfScore) {
+            $rejectReasons[] = 'sniper_reject_confirmation_score_too_low';
+        }
+
+        // 4.3 Minimum pattern_confidence
+        $minPatternConf = (float)($userLimits['sniper_v3_min_pattern_confidence'] ?? 0.60);
+        if ($patternConfidence < $minPatternConf) {
+            $rejectReasons[] = 'sniper_reject_pattern_confidence_too_low';
+        }
+
+        // 4.4 Minimum trend_match_score
+        $minTrendMatch = (float)($userLimits['sniper_v3_min_trend_match_score'] ?? 0.55);
+        if ($trendMatchScore === null || (float)$trendMatchScore <= 0.0) {
+            $rejectReasons[] = 'sniper_reject_trend_match_missing';
+        } elseif ((float)$trendMatchScore < $minTrendMatch) {
+            $rejectReasons[] = 'sniper_reject_trend_match_too_low';
+        }
+
+        // 4.5 Minimum entry_quality_score
+        $minEntryQuality = (float)($userLimits['sniper_v3_min_entry_quality_score'] ?? 0.75);
+        if ($entryQualityScore < $minEntryQuality) {
+            $rejectReasons[] = 'sniper_reject_entry_quality_too_low';
+        }
+
+        // 4.6 Minimum corridor_fit_score
+        $minCorridorFit = (float)($userLimits['sniper_v3_min_corridor_fit_score'] ?? 0.75);
+        if ($corridorFitScore < $minCorridorFit) {
+            $rejectReasons[] = 'sniper_reject_corridor_fit_too_low';
+        }
+
+        // 4.7 Maximum price_position
+        $maxPricePosition = (float)($userLimits['sniper_v3_max_price_position'] ?? 0.80);
+        if ($pricePosition > $maxPricePosition) {
+            $rejectReasons[] = 'sniper_reject_price_position_too_high';
+        }
+
+        // 4.8 Component Score Floors
+        $minReclaim = (float)($userLimits['sniper_v3_min_reclaim_strength_score'] ?? 0.70);
+        if ($reclaimStrengthScore < $minReclaim) {
+            $rejectReasons[] = 'sniper_reject_reclaim_strength_too_low';
+        }
+
+        $minHoldQuality = (float)($userLimits['sniper_v3_min_hold_quality_score'] ?? 0.75);
+        if ($holdQualityScore < $minHoldQuality) {
+            $rejectReasons[] = 'sniper_reject_hold_quality_too_low';
+        }
+
+        $minPostReclaim = (float)($userLimits['sniper_v3_min_post_reclaim_stability_score'] ?? 0.70);
+        if ($postReclaimStabilityScore < $minPostReclaim) {
+            $rejectReasons[] = 'sniper_reject_post_reclaim_stability_too_low';
+        }
+
+        $minZoneDefense = (float)($userLimits['sniper_v3_min_zone_defense_score'] ?? 0.40);
+        if ($zoneDefenseScore < $minZoneDefense) {
+            $rejectReasons[] = 'sniper_reject_zone_defense_too_low';
+        }
+
+        return [
+            'eligible' => empty($rejectReasons),
+            'reject_reasons' => $rejectReasons,
+            'checked_values' => $checkedValues,
         ];
     }
 

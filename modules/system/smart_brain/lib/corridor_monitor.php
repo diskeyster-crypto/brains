@@ -196,7 +196,29 @@ final class CorridorMonitor
     }
 
     /**
-     * Compute all V2 policy fields for a candidate/monitor.
+     * Compute confirmation tier for V3 contextual patterns.
+     *
+     * V3 is stricter by nature, so thresholds differ from V2:
+     *   - weak:   confirmation_score < 0.50
+     *   - medium: 0.50 <= confirmation_score < 0.75
+     *   - strong: confirmation_score >= 0.75
+     *
+     * @param float $confirmationScore  The raw confirmation score (0.0 – 1.0)
+     * @return string  'weak' | 'medium' | 'strong'
+     */
+    public static function computeV3ConfirmationTier(float $confirmationScore): string
+    {
+        if ($confirmationScore >= 0.75) {
+            return 'strong';
+        }
+        if ($confirmationScore < 0.50) {
+            return 'weak';
+        }
+        return 'medium';
+    }
+
+    /**
+     * Compute all V2/V3 policy fields for a candidate/monitor.
      *
      * Returns confirmation_tier, entry_action, zone_widen_profile, v2_priority_score.
      * Non-V2 patterns get neutral defaults.
@@ -209,6 +231,39 @@ final class CorridorMonitor
     {
         $patternAlgo = (string)($candidate['pattern_algorithm'] ?? 'none');
         $confirmationScore = (float)($candidate['confirmation_score'] ?? 0.0);
+
+        // V3 contextual patterns also get real confirmation tier and policy fields
+        if ($patternAlgo === 'double_bottom_contextual_v3') {
+            $tier = self::computeV3ConfirmationTier($confirmationScore);
+
+            // V3 default: wait_retrace for all tiers (conservative by design)
+            $entryAction = 'wait_retrace';
+
+            $zoneWidenProfile = match ($tier) {
+                'strong' => 'strong_wide',
+                'medium' => 'medium_wide',
+                'weak'   => 'narrow',
+                default  => 'default',
+            };
+
+            $patternConfidence = (float)($candidate['pattern_confidence'] ?? 0.0);
+            $analyzerScore = (float)($candidate['analyzer_score'] ?? 0.0);
+            $reclaimScore = (float)($candidate['reclaim_strength_score'] ?? 0.0);
+            $v3PriorityScore = round(
+                ($confirmationScore * 0.40) +
+                ($patternConfidence * 0.25) +
+                ($analyzerScore * 0.20) +
+                ($reclaimScore * 0.15),
+                4
+            );
+
+            return [
+                'confirmation_tier' => $tier,
+                'entry_action' => $entryAction,
+                'zone_widen_profile' => $zoneWidenProfile,
+                'v2_priority_score' => $v3PriorityScore,
+            ];
+        }
 
         if ($patternAlgo !== 'double_bottom_contextual_v2') {
             return [

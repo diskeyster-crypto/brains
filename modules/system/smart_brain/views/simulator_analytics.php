@@ -790,6 +790,16 @@ if (!empty($v2DfByPattern)):
                     <?php if ($csFlat): ?>
                     <span class="text-warning">⚠ Conf Score FLAT (all identical)</span>
                     <?php endif; ?>
+                    <?php
+                        $compAvgs = $diag['component_score_averages'] ?? [];
+                        if (!empty($compAvgs)):
+                    ?>
+                    <br><span class="text-muted small">Components:</span>
+                    <span>Reclaim: <strong><?= number_format((float)($compAvgs['avg_reclaim_strength_score'] ?? 0), 3) ?></strong></span>
+                    <span>Hold: <strong><?= number_format((float)($compAvgs['avg_hold_quality_score'] ?? 0), 3) ?></strong></span>
+                    <span>Stability: <strong><?= number_format((float)($compAvgs['avg_post_reclaim_stability_score'] ?? 0), 3) ?></strong></span>
+                    <span>Defense: <strong><?= number_format((float)($compAvgs['avg_zone_defense_score'] ?? 0), 3) ?></strong></span>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endforeach; ?>

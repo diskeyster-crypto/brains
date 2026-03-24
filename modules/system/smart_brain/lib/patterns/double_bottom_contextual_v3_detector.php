@@ -336,6 +336,10 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
                     'setup_low_2_price'      => round($setup['low_2_price'], 6),
                     'setup_neckline_price'   => round($setup['neckline'], 6),
                     'trigger_level'          => round($setup['trigger_level'], 6),
+                    'reclaim_strength_score'       => $confirmation['reclaim_strength_score'],
+                    'hold_quality_score'           => $confirmation['hold_quality_score'],
+                    'post_reclaim_stability_score'  => $confirmation['post_reclaim_stability_score'],
+                    'zone_defense_score'           => $confirmation['zone_defense_score'],
                     'context_summary'        => $contextSummary,
                     'reject_reasons'         => [],
                 ];
@@ -749,7 +753,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
      * with sufficient quality, optionally retest, and not make a new
      * low below the setup low.
      *
-     * @return array{confirmation_score:float,hold_score:float,reclaim_strength:float,hold_bars:int,hold_quality:float,retest_passed:bool}|null
+     * @return array{confirmation_score:float,hold_score:float,reclaim_strength:float,hold_bars:int,hold_quality:float,retest_passed:bool,reclaim_strength_score:float,hold_quality_score:float,post_reclaim_stability_score:float,zone_defense_score:float}|null
      */
     private function evaluateConfirmation(
         array $segment,
@@ -790,6 +794,17 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             return null;
         }
 
+        // ── Component 1: Reclaim Strength Score ──
+        // How convincingly price reclaimed the trigger/neckline
+        // Maps reclaim strength relative to setup range
+        $fullRange = $neckline - $avgLow;
+        $reclaimMagnitude = $confirmMax - $triggerLevel;
+        $reclaimRatioScore = ($fullRange > 0.0)
+            ? min(1.0, $reclaimMagnitude / ($fullRange * 0.5))
+            : min(1.0, $reclaimStrength / 0.02);
+        $reclaimPctScore = min(1.0, $reclaimStrength / 0.02);
+        $reclaimStrengthScore = ($reclaimPctScore * 0.6) + ($reclaimRatioScore * 0.4);
+
         // Hold quality: fraction of bars above trigger level
         $barsAboveTrigger = 0;
         foreach ($confirmBars as $p) {
@@ -811,6 +826,11 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             return null;
         }
 
+        // ── Component 2: Hold Quality Score ──
+        // How well price held after reclaim (fraction + duration factor)
+        $holdDurationFactor = min(1.0, $barsAboveTrigger / max(1, $this->minHoldBars * 3));
+        $holdQualityScore = ($holdQuality * 0.6) + ($holdDurationFactor * 0.4);
+
         // Hold score: fraction of bars that held above midpoint of avg_low → trigger
         $holdMid   = ($avgLow + $triggerLevel) / 2.0;
         $barsAbove = 0;
@@ -820,6 +840,45 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             }
         }
         $holdScore = $confirmLen > 0 ? (float) $barsAbove / $confirmLen : 0.0;
+
+        // ── Component 3: Post-Reclaim Stability Score ──
+        // Low variance after reclaim → stable confirmation
+        $confirmMean = array_sum($confirmBars) / $confirmLen;
+        $variance = 0.0;
+        foreach ($confirmBars as $p) {
+            $variance += ($p - $confirmMean) ** 2;
+        }
+        $variance /= $confirmLen;
+        $stdDev = sqrt($variance);
+        // Coefficient of variation: lower is more stable
+        $cv = $confirmMean > 0.0 ? ($stdDev / $confirmMean) : 0.0;
+        // Map: CV=0 → 1.0 (perfect stability), CV≥0.03 → 0.0 (very unstable)
+        $postReclaimStabilityScore = max(0.0, min(1.0, 1.0 - ($cv / 0.03)));
+
+        // ── Component 4: Zone Defense Score ──
+        // How well price defends trigger: minimum distance from trigger as fraction of range
+        $minAboveTrigger = PHP_FLOAT_MAX;
+        $barsDefending = 0;
+        foreach ($confirmBars as $p) {
+            $dist = $p - $triggerLevel;
+            if ($dist >= 0.0 && $dist < $minAboveTrigger) {
+                $minAboveTrigger = $dist;
+            }
+            // Count bars in the trigger-to-neckline zone (defending territory)
+            if ($p >= $triggerLevel && $p <= $neckline * 1.02) {
+                $barsDefending++;
+            }
+        }
+        if ($minAboveTrigger === PHP_FLOAT_MAX) {
+            $minAboveTrigger = 0.0;
+        }
+        // Defense margin: how close was the closest test of trigger
+        $defenseMarginScore = ($fullRange > 0.0)
+            ? min(1.0, ($minAboveTrigger / $fullRange) * 2.0)
+            : ($triggerLevel > 0.0 ? min(1.0, $minAboveTrigger / ($triggerLevel * 0.01)) : 0.0);
+        // Defense consistency: fraction of bars in the defended zone
+        $defenseConsistency = $confirmLen > 0 ? (float) $barsDefending / $confirmLen : 0.0;
+        $zoneDefenseScore = ($defenseMarginScore * 0.5) + ($defenseConsistency * 0.5);
 
         // ── Optional Retest Requirement (V3 improvement) ──
         $retestPassed = true;
@@ -831,22 +890,30 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
             }
         }
 
-        // ── Confirmation score ──
-        $reclaimScore      = min(1.0, $reclaimStrength / 0.02);
-        $holdQualityScore  = min(1.0, $holdQuality);
-        $holdAboveScore    = min(1.0, $holdScore);
+        // ── Composite confirmation_score ──
+        // Weighted combination of 4 components for meaningful differentiation
+        $confirmationScore = ($reclaimStrengthScore * 0.30)
+            + ($holdQualityScore * 0.30)
+            + ($postReclaimStabilityScore * 0.20)
+            + ($zoneDefenseScore * 0.20);
 
-        $confirmationScore = ($reclaimScore * 0.40)
-            + ($holdQualityScore * 0.35)
-            + ($holdAboveScore * 0.25);
+        // Require at least minimal confirmation quality
+        if ($confirmationScore < 0.05 && $holdScore < 0.3) {
+            $this->addRejectReason('reject_reclaim_failed');
+            return null;
+        }
 
         return [
-            'confirmation_score' => $confirmationScore,
-            'hold_score'         => $holdScore,
-            'reclaim_strength'   => $reclaimStrength,
-            'hold_bars'          => $barsAboveTrigger,
-            'hold_quality'       => $holdQuality,
-            'retest_passed'      => $retestPassed,
+            'confirmation_score'          => $confirmationScore,
+            'hold_score'                  => $holdScore,
+            'reclaim_strength'            => $reclaimStrength,
+            'hold_bars'                   => $barsAboveTrigger,
+            'hold_quality'                => $holdQuality,
+            'retest_passed'               => $retestPassed,
+            'reclaim_strength_score'      => round($reclaimStrengthScore, 4),
+            'hold_quality_score'          => round($holdQualityScore, 4),
+            'post_reclaim_stability_score' => round($postReclaimStabilityScore, 4),
+            'zone_defense_score'          => round($zoneDefenseScore, 4),
         ];
     }
 

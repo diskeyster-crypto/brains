@@ -466,22 +466,27 @@ final class RiskEngine
     }
 
     /**
-     * Compute V2 confirmation tier metadata for a monitor.
+     * Compute V2/V3 confirmation tier metadata for a monitor.
      *
      * Returns an array with:
      *   confirmation_tier, entry_action, zone_widen_profile, v2_priority_score
      *
-     * confirmation_tier:
+     * V2 confirmation_tier:
      *   'weak'   → confirmation_score < v2_confirmation_weak_max   (default 0.45)
      *   'medium' → between weak_max and strong_min
      *   'strong' → confirmation_score >= v2_confirmation_strong_min (default 0.70)
      *
-     * entry_action:
-     *   'strong'  → 'enter_now'    (prefer immediate entry)
-     *   'medium'  → 'wait_retrace' (standard zone logic)
-     *   'weak'    → 'wait_retrace' (conservative, narrower zone)
+     * V3 confirmation_tier (stricter thresholds):
+     *   'weak'   → confirmation_score < 0.50
+     *   'medium' → 0.50 <= confirmation_score < 0.75
+     *   'strong' → confirmation_score >= 0.75
      *
-     * v2_priority_score: weighted composite for ranking among competing V2 signals.
+     * entry_action:
+     *   V2 'strong'  → 'enter_now'    (prefer immediate entry)
+     *   V2 other     → 'wait_retrace' (standard zone logic)
+     *   V3 all tiers → 'wait_retrace' (conservative by design)
+     *
+     * v2_priority_score: weighted composite for ranking among competing signals.
      *
      * @param array<string,mixed> $monitor
      * @param array<string,mixed> $userLimits
@@ -493,7 +498,39 @@ final class RiskEngine
         $confirmationScore = (float)($monitor['confirmation_score'] ?? 0.0);
         $patternConfidence = (float)($monitor['pattern_confidence'] ?? 0.0);
 
-        // Non-V2 patterns get neutral tier metadata
+        // V3 contextual patterns: use V3-specific tier thresholds
+        if ($patternAlgo === 'double_bottom_contextual_v3') {
+            $tier = CorridorMonitor::computeV3ConfirmationTier($confirmationScore);
+
+            // V3 default: wait_retrace for all tiers (conservative by design)
+            $entryAction = 'wait_retrace';
+
+            $zoneWidenProfile = match ($tier) {
+                'strong' => 'strong_wide',
+                'medium' => 'medium_wide',
+                'weak'   => 'narrow',
+                default  => 'default',
+            };
+
+            $analyzerScore = (float)($monitor['analyzer_score'] ?? 0.0);
+            $reclaimScore = (float)($monitor['reclaim_strength_score'] ?? 0.0);
+            $v3PriorityScore = round(
+                ($confirmationScore * 0.40) +
+                ($patternConfidence * 0.25) +
+                ($analyzerScore * 0.20) +
+                ($reclaimScore * 0.15),
+                4
+            );
+
+            return [
+                'confirmation_tier' => $tier,
+                'entry_action' => $entryAction,
+                'zone_widen_profile' => $zoneWidenProfile,
+                'v2_priority_score' => $v3PriorityScore,
+            ];
+        }
+
+        // Non-V2/V3 patterns get neutral tier metadata
         if ($patternAlgo !== 'double_bottom_contextual_v2') {
             return [
                 'confirmation_tier' => 'none',

@@ -404,6 +404,12 @@ final class SmartBrainCore
                     'zone_distances' => [],
                     'price_positions' => [],
                     'confirmation_scores' => [],
+                    'component_scores' => [
+                        'reclaim_strength' => [],
+                        'hold_quality' => [],
+                        'post_reclaim_stability' => [],
+                        'zone_defense' => [],
+                    ],
                 ];
             }
             $v2DownstreamFunnel[$algo]['monitors_count']++;
@@ -418,6 +424,12 @@ final class SmartBrainCore
             $v2DownstreamFunnel[$algo]['zone_distances'][] = (float)($m['zone_distance_from_price'] ?? 0);
             $v2DownstreamFunnel[$algo]['price_positions'][] = (float)($m['price_position'] ?? 0);
             $v2DownstreamFunnel[$algo]['confirmation_scores'][] = (float)($m['confirmation_score'] ?? 0);
+
+            // Collect component scores for analytics
+            $v2DownstreamFunnel[$algo]['component_scores']['reclaim_strength'][] = (float)($m['reclaim_strength_score'] ?? 0);
+            $v2DownstreamFunnel[$algo]['component_scores']['hold_quality'][] = (float)($m['hold_quality_score'] ?? 0);
+            $v2DownstreamFunnel[$algo]['component_scores']['post_reclaim_stability'][] = (float)($m['post_reclaim_stability_score'] ?? 0);
+            $v2DownstreamFunnel[$algo]['component_scores']['zone_defense'][] = (float)($m['zone_defense_score'] ?? 0);
 
             // What-if counters
             if ($st !== 'entry_zone') {
@@ -448,8 +460,8 @@ final class SmartBrainCore
             if (isset($v2DownstreamFunnel[$algo])) {
                 $v2DownstreamFunnel[$algo]['candidates_count']++;
             }
-            // Policy field propagation sanity for V2 candidates
-            if ($algo === 'double_bottom_contextual_v2') {
+            // Policy field propagation sanity for V2/V3 candidates
+            if ($algo === 'double_bottom_contextual_v2' || $algo === 'double_bottom_contextual_v3') {
                 foreach (['confirmation_tier', 'entry_action', 'zone_widen_profile', 'v2_priority_score'] as $pf) {
                     if (!array_key_exists($pf, $c) || $c[$pf] === null) {
                         $candidatePolicyFieldsMissingCount++;
@@ -460,7 +472,7 @@ final class SmartBrainCore
         }
         foreach ($monitors as $m2) {
             $algo2 = (string)($m2['pattern_algorithm'] ?? '');
-            if ($algo2 === 'double_bottom_contextual_v2') {
+            if ($algo2 === 'double_bottom_contextual_v2' || $algo2 === 'double_bottom_contextual_v3') {
                 foreach (['confirmation_tier', 'entry_action', 'zone_widen_profile', 'v2_priority_score'] as $pf) {
                     if (!array_key_exists($pf, $m2) || $m2[$pf] === null) {
                         $monitorPolicyFieldsMissingCount++;
@@ -543,7 +555,17 @@ final class SmartBrainCore
             $uniqueNonZero = array_unique(array_map(static fn($s) => round($s, 4), $nonZeroScores));
             $funnel['confirmation_score_flat_warning'] = (count($uniqueNonZero) === 1 && count($nonZeroScores) > 1);
 
-            unset($funnel['zone_widths'], $funnel['zone_distances'], $funnel['price_positions'], $funnel['confirmation_scores']);
+            // Component score averages
+            $componentAverages = [];
+            foreach ($funnel['component_scores'] as $compName => $compValues) {
+                $nonZeroComp = array_filter($compValues, static fn($v) => $v > 0.0);
+                $componentAverages['avg_' . $compName . '_score'] = count($nonZeroComp) > 0
+                    ? round(array_sum($nonZeroComp) / count($nonZeroComp), 4)
+                    : 0.0;
+            }
+            $funnel['component_score_averages'] = $componentAverages;
+
+            unset($funnel['zone_widths'], $funnel['zone_distances'], $funnel['price_positions'], $funnel['confirmation_scores'], $funnel['component_scores']);
 
             // Add per-pattern rejection reasons
             $funnel['rejection_reasons'] = $perPatternRejections[$algo] ?? [];
@@ -2762,6 +2784,7 @@ final class SmartBrainCore
                     'confirmation_score_total_monitors' => (int)($funnel['confirmation_score_total_monitors'] ?? 0),
                     'confirmation_score_flat_warning' => (bool)($funnel['confirmation_score_flat_warning'] ?? false),
                     'reject_detail_distribution' => $funnel['reject_detail_distribution'] ?? [],
+                    'component_score_averages' => $funnel['component_score_averages'] ?? [],
                 ],
             ];
         }

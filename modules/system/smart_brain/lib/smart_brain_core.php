@@ -424,10 +424,20 @@ final class SmartBrainCore
                 $v2DownstreamFunnel[$algo]['candidates_count']++;
             }
         }
+        $finalSignalConfScoreMissing = 0;
+        $finalSignalConfScoreNull = 0;
         foreach ($signals as $s) {
             $algo = (string)($s['pattern_algorithm'] ?? '');
             if (isset($v2DownstreamFunnel[$algo])) {
                 $v2DownstreamFunnel[$algo]['signals_count']++;
+            }
+            // Sanity: track V2 signals missing confirmation_score in final payload
+            if (in_array($algo, $contextualPatterns, true)) {
+                if (!array_key_exists('confirmation_score', $s)) {
+                    $finalSignalConfScoreMissing++;
+                } elseif ($s['confirmation_score'] === null) {
+                    $finalSignalConfScoreNull++;
+                }
             }
         }
 
@@ -490,6 +500,8 @@ final class SmartBrainCore
             'by_pattern' => $v2DownstreamFunnel,
             'failed_monitor_preview' => $failedMonitorPreview,
             'whatif_analysis' => $v2WhatIfAnalysis,
+            'final_signal_confirmation_score_missing_count' => $finalSignalConfScoreMissing,
+            'final_signal_confirmation_score_null_count' => $finalSignalConfScoreNull,
             'updated_at' => date('c'),
         ]);
 

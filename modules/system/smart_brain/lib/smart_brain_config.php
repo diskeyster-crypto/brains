@@ -97,6 +97,8 @@ final class SmartBrainConfig
         $clean = [
             'execution_profile'            => in_array((string)($values['execution_profile'] ?? 'custom'), self::ALLOWED_EXECUTION_PROFILES, true)
                                                 ? (string)$values['execution_profile'] : 'custom',
+            'pattern_profile_mode'         => in_array((string)($values['pattern_profile_mode'] ?? 'manual_override'), ['manual_override', 'profile_controlled'], true)
+                                                ? (string)$values['pattern_profile_mode'] : 'manual_override',
             'max_budget_per_coin'          => (float)$values['max_budget_per_coin'],
             'max_active_tasks'             => (int)$values['max_active_tasks'],
             'max_leverage'                 => (int)$values['max_leverage'],
@@ -142,6 +144,16 @@ final class SmartBrainConfig
             'early_failure_enabled'        => !empty($values['early_failure_enabled']),
             'early_failure_window_minutes' => (int)$values['early_failure_window_minutes'],
             'early_failure_max_adverse_roi' => (float)$values['early_failure_max_adverse_roi'],
+            // V2 Entry Policy (profile-managed)
+            'strong_confirmation_enter_now_enabled' => !empty($values['strong_confirmation_enter_now_enabled']),
+            'medium_confirmation_wait_retrace_enabled' => !empty($values['medium_confirmation_wait_retrace_enabled']),
+            'weak_confirmation_live_enabled' => !empty($values['weak_confirmation_live_enabled']),
+            // V2 Quality Floors (profile-managed)
+            'v2_hold_quality_min' => max(0.0, min(1.0, (float)($values['v2_hold_quality_min'] ?? 0.60))),
+            'v2_post_reclaim_stability_min' => max(0.0, min(1.0, (float)($values['v2_post_reclaim_stability_min'] ?? 0.60))),
+            'v2_zone_defense_min' => max(0.0, min(1.0, (float)($values['v2_zone_defense_min'] ?? 0.30))),
+            'v2_trend_match_min' => max(0.0, min(1.0, (float)($values['v2_trend_match_min'] ?? 0.40))),
+            'v2_price_position_max' => max(0.0, min(1.0, (float)($values['v2_price_position_max'] ?? 0.90))),
             // Leverage Control
             'leverage_mode'                => (string)($values['leverage_mode'] ?? 'auto'),
             'manual_leverage'              => (int)($values['manual_leverage'] ?? 3),
@@ -208,6 +220,9 @@ final class SmartBrainConfig
 
         // Apply execution profile bundle over managed fields immediately
         $this->applyExecutionProfile();
+
+        // Apply profile-driven pattern routing immediately
+        $this->applyProfilePatternRouting();
 
         // Apply pattern selection into parser4 config immediately
         $this->applyPatternSelection($clean['patterns']);
@@ -1001,6 +1016,29 @@ final class SmartBrainConfig
         $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
         $bundles = self::getExecutionProfileBundles();
         $bundle = $bundles[$profileId] ?? $bundles['custom'];
+        $patternProfileMode = (string)($userLimits['pattern_profile_mode'] ?? 'manual_override');
+
+        // Resolve active pattern routing
+        $routingBundles = self::getProfilePatternRoutingBundles();
+        $routingBundle = $routingBundles[$profileId] ?? $routingBundles['custom'];
+
+        if ($profileId === 'custom' || $patternProfileMode !== 'profile_controlled') {
+            // Manual mode: derive from current parser4 enabled patterns
+            $enabledPatterns = (array)(($this->config['parser4']['pattern_algorithms'] ?? [])['enabled'] ?? []);
+            $activePatternPolicy = [
+                'live_patterns' => $enabledPatterns,
+                'shadow_patterns' => [],
+                'disabled_patterns' => array_values(array_diff(self::ALLOWED_PATTERN_ALGORITHMS, $enabledPatterns)),
+                'canonical_source' => 'manual_override',
+            ];
+        } else {
+            $activePatternPolicy = [
+                'live_patterns' => $routingBundle['live_patterns'],
+                'shadow_patterns' => $routingBundle['shadow_patterns'],
+                'disabled_patterns' => $routingBundle['disabled_patterns'],
+                'canonical_source' => 'execution_profile',
+            ];
+        }
 
         return [
             'execution_profile' => $profileId,
@@ -1009,6 +1047,8 @@ final class SmartBrainConfig
             'execution_profile_mode' => $profileId === 'custom' ? 'custom' : 'preset',
             'active_profile_managed_fields' => self::getProfileManagedFields(),
             'active_values' => $this->getActiveProfileManagedValues(),
+            'pattern_profile_mode' => $patternProfileMode,
+            'pattern_policy' => $activePatternPolicy,
         ];
     }
 
@@ -1042,6 +1082,14 @@ final class SmartBrainConfig
             'v2_zone_widen_medium_pct',
             'v2_zone_widen_strong_pct',
             'v2_zone_widen_max_cap_pct',
+            'strong_confirmation_enter_now_enabled',
+            'medium_confirmation_wait_retrace_enabled',
+            'weak_confirmation_live_enabled',
+            'v2_hold_quality_min',
+            'v2_post_reclaim_stability_min',
+            'v2_zone_defense_min',
+            'v2_trend_match_min',
+            'v2_price_position_max',
         ];
     }
 
@@ -1068,6 +1116,14 @@ final class SmartBrainConfig
                     'v2_zone_widen_medium_pct' => 0.65,
                     'v2_zone_widen_strong_pct' => 0.80,
                     'v2_zone_widen_max_cap_pct' => 0.85,
+                    'strong_confirmation_enter_now_enabled' => true,
+                    'medium_confirmation_wait_retrace_enabled' => true,
+                    'weak_confirmation_live_enabled' => false,
+                    'v2_hold_quality_min' => 0.60,
+                    'v2_post_reclaim_stability_min' => 0.60,
+                    'v2_zone_defense_min' => 0.30,
+                    'v2_trend_match_min' => 0.40,
+                    'v2_price_position_max' => 0.90,
                 ],
             ],
             'conservative' => [
@@ -1080,6 +1136,14 @@ final class SmartBrainConfig
                     'v2_zone_widen_medium_pct' => 0.55,
                     'v2_zone_widen_strong_pct' => 0.70,
                     'v2_zone_widen_max_cap_pct' => 0.75,
+                    'strong_confirmation_enter_now_enabled' => true,
+                    'medium_confirmation_wait_retrace_enabled' => true,
+                    'weak_confirmation_live_enabled' => false,
+                    'v2_hold_quality_min' => 0.70,
+                    'v2_post_reclaim_stability_min' => 0.70,
+                    'v2_zone_defense_min' => 0.35,
+                    'v2_trend_match_min' => 0.50,
+                    'v2_price_position_max' => 0.88,
                 ],
             ],
             'sniper_75_attempt' => [
@@ -1092,12 +1156,56 @@ final class SmartBrainConfig
                     'v2_zone_widen_medium_pct' => 0.60,
                     'v2_zone_widen_strong_pct' => 0.75,
                     'v2_zone_widen_max_cap_pct' => 0.75,
+                    'strong_confirmation_enter_now_enabled' => true,
+                    'medium_confirmation_wait_retrace_enabled' => false,
+                    'weak_confirmation_live_enabled' => false,
+                    'v2_hold_quality_min' => 0.80,
+                    'v2_post_reclaim_stability_min' => 0.80,
+                    'v2_zone_defense_min' => 0.40,
+                    'v2_trend_match_min' => 0.60,
+                    'v2_price_position_max' => 0.85,
                 ],
             ],
             'custom' => [
                 'label' => 'Custom',
                 'description' => 'Manual mode — all managed fields are editable directly. No profile bundle overwrites values.',
                 'values' => [],
+            ],
+        ];
+    }
+
+    /**
+     * Get profile-driven pattern routing bundles.
+     *
+     * Each profile defines which patterns are live, shadow, or disabled.
+     * live: allowed for active candidate/monitor/signal path.
+     * shadow: analyzed/counted but not live.
+     * disabled: excluded from active profile behavior.
+     *
+     * @return array<string,array{live_patterns:list<string>,shadow_patterns:list<string>,disabled_patterns:list<string>}>
+     */
+    public static function getProfilePatternRoutingBundles(): array
+    {
+        return [
+            'balanced' => [
+                'live_patterns' => ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'],
+                'shadow_patterns' => ['double_bottom'],
+                'disabled_patterns' => ['double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
+            ],
+            'conservative' => [
+                'live_patterns' => ['double_bottom_contextual_v2'],
+                'shadow_patterns' => ['double_bottom_contextual_v3'],
+                'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
+            ],
+            'sniper_75_attempt' => [
+                'live_patterns' => ['double_bottom_contextual_v3'],
+                'shadow_patterns' => ['double_bottom_contextual_v2'],
+                'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
+            ],
+            'custom' => [
+                'live_patterns' => [],
+                'shadow_patterns' => [],
+                'disabled_patterns' => [],
             ],
         ];
     }
@@ -1160,6 +1268,9 @@ final class SmartBrainConfig
         // Apply execution profile bundle over managed fields (non-custom profiles only)
         $this->applyExecutionProfile();
 
+        // Apply profile-driven pattern routing (overrides manual pattern selection if profile_controlled)
+        $this->applyProfilePatternRouting();
+
         // Apply pattern selection from user config into parser4 config
         if (isset($saved['patterns']) && is_array($saved['patterns'])) {
             $this->applyPatternSelection($saved['patterns']);
@@ -1190,6 +1301,38 @@ final class SmartBrainConfig
         $bundle = $bundles[$profileId];
         foreach ($bundle['values'] as $field => $value) {
             $userLimits[$field] = $value;
+        }
+    }
+
+    /**
+     * Apply profile-driven pattern routing when pattern_profile_mode is 'profile_controlled'.
+     * When active, the profile's live_patterns are set as the enabled patterns.
+     */
+    private function applyProfilePatternRouting(): void
+    {
+        $userLimits = $this->config['risk_engine']['user_limits'] ?? [];
+        $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
+        $patternMode = (string)($userLimits['pattern_profile_mode'] ?? 'manual_override');
+
+        if ($profileId === 'custom' || $patternMode !== 'profile_controlled') {
+            return;
+        }
+
+        $routingBundles = self::getProfilePatternRoutingBundles();
+        if (!isset($routingBundles[$profileId])) {
+            return;
+        }
+
+        $bundle = $routingBundles[$profileId];
+        $livePatterns = $bundle['live_patterns'];
+
+        // Apply profile live patterns as enabled patterns in parser4 config
+        if (!empty($livePatterns)) {
+            if (!isset($this->config['parser4']['pattern_algorithms'])) {
+                $this->config['parser4']['pattern_algorithms'] = [];
+            }
+            $this->config['parser4']['pattern_algorithms']['enabled'] = $livePatterns;
+            $this->config['parser4']['pattern_algorithms']['mode'] = 'any';
         }
     }
 

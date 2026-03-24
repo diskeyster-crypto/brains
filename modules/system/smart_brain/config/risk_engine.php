@@ -70,5 +70,15 @@ return [
         'v2_zone_widen_medium_pct' => 0.65,
         'v2_zone_widen_strong_pct' => 0.80,
         'v2_zone_widen_max_cap_pct' => 0.85,
+        // V2 Entry Policy
+        'strong_confirmation_enter_now_enabled' => true,
+        'medium_confirmation_wait_retrace_enabled' => true,
+        'weak_confirmation_live_enabled' => false,
+        // V2 Quality Floors
+        'v2_hold_quality_min' => 0.60,
+        'v2_post_reclaim_stability_min' => 0.60,
+        'v2_zone_defense_min' => 0.30,
+        'v2_trend_match_min' => 0.40,
+        'v2_price_position_max' => 0.90,
     ],
 ];

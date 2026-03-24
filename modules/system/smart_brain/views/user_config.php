@@ -114,6 +114,8 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             <span id="profile-desc-text"><?= htmlspecialchars($currentBundle['description']) ?></span>
                             <?php if ($currentProfile === 'sniper_75_attempt'): ?>
                             <div class="mt-1 text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.</div>
+                            <?php elseif ($currentProfile === 'sniper_lite'): ?>
+                            <div class="mt-1 text-info"><i class="bi bi-info-circle me-1"></i>Moderately selective V3-only profile. Allows strong and selected medium confirmations. Higher signal count than Sniper.</div>
                             <?php endif; ?>
                         </div>
                     </div>

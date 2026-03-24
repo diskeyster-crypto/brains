@@ -6,7 +6,7 @@ final class SmartBrainConfig
     private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
 
     /** Valid execution profile IDs */
-    private const ALLOWED_EXECUTION_PROFILES = ['balanced', 'conservative', 'sniper_75_attempt', 'custom'];
+    private const ALLOWED_EXECUTION_PROFILES = ['balanced', 'conservative', 'sniper_75_attempt', 'sniper_lite', 'custom'];
 
     private string $moduleBase;
     /** @var array<string,mixed> */
@@ -1255,6 +1255,44 @@ final class SmartBrainConfig
                     'sniper_v3_min_zone_defense_score' => 0.40,
                 ],
             ],
+            'sniper_lite' => [
+                'label' => 'Sniper Lite',
+                'description' => 'Moderately selective V3-only live policy. Strong confirmations and selected medium confirmations allowed. Higher signal count than Sniper, lower target precision.',
+                'values' => [
+                    'v2_confirmation_weak_max' => 0.45,
+                    'v2_confirmation_strong_min' => 0.80,
+                    'v2_zone_widen_weak_pct' => 0.50,
+                    'v2_zone_widen_medium_pct' => 0.60,
+                    'v2_zone_widen_strong_pct' => 0.75,
+                    'v2_zone_widen_max_cap_pct' => 0.75,
+                    'strong_confirmation_enter_now_enabled' => true,
+                    'medium_confirmation_wait_retrace_enabled' => true,
+                    'weak_confirmation_live_enabled' => false,
+                    'v2_hold_quality_min' => 0.70,
+                    'v2_post_reclaim_stability_min' => 0.70,
+                    'v2_zone_defense_min' => 0.35,
+                    'v2_trend_match_min' => 0.50,
+                    'v2_price_position_max' => 0.88,
+                    // V3-specific entry policy — sniper lite uses enter_now for strong V3
+                    'v3_strong_enter_now_enabled' => true,
+                    'v3_zone_widen_weak_pct' => 0.40,
+                    'v3_zone_widen_medium_pct' => 0.55,
+                    'v3_zone_widen_strong_pct' => 0.70,
+                    'v3_zone_widen_max_cap_pct' => 0.75,
+                    // Sniper Lite V3 Live Filters — looser than strict sniper
+                    'sniper_v3_live_filter_enabled' => true,
+                    'sniper_v3_min_confirmation_score' => 0.68,
+                    'sniper_v3_min_pattern_confidence' => 0.55,
+                    'sniper_v3_min_trend_match_score' => 0.45,
+                    'sniper_v3_min_entry_quality_score' => 0.75,
+                    'sniper_v3_min_corridor_fit_score' => 0.75,
+                    'sniper_v3_max_price_position' => 0.85,
+                    'sniper_v3_min_reclaim_strength_score' => 0.70,
+                    'sniper_v3_min_hold_quality_score' => 0.72,
+                    'sniper_v3_min_post_reclaim_stability_score' => 0.60,
+                    'sniper_v3_min_zone_defense_score' => 0.30,
+                ],
+            ],
             'custom' => [
                 'label' => 'Custom',
                 'description' => 'Manual mode — all managed fields are editable directly. No profile bundle overwrites values.',
@@ -1287,6 +1325,11 @@ final class SmartBrainConfig
                 'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
             ],
             'sniper_75_attempt' => [
+                'live_patterns' => ['double_bottom_contextual_v3'],
+                'shadow_patterns' => ['double_bottom_contextual_v2'],
+                'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
+            ],
+            'sniper_lite' => [
                 'live_patterns' => ['double_bottom_contextual_v3'],
                 'shadow_patterns' => ['double_bottom_contextual_v2'],
                 'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
@@ -1324,10 +1367,14 @@ final class SmartBrainConfig
     /**
      * Get the allowed confirmation tiers for sniper V3 live entry.
      *
+     * @param string $profile Execution profile ID
      * @return list<string>
      */
-    public static function getSniperV3AllowedTiers(): array
+    public static function getSniperV3AllowedTiers(string $profile = 'sniper_75_attempt'): array
     {
+        if ($profile === 'sniper_lite') {
+            return ['medium', 'strong', 'very_strong'];
+        }
         return ['strong', 'very_strong'];
     }
 
@@ -1341,9 +1388,10 @@ final class SmartBrainConfig
      *
      * @param array<string,mixed> $signal     Signal or candidate payload
      * @param array<string,mixed> $userLimits Effective user limits
+     * @param string              $profile    Execution profile ID (sniper_75_attempt or sniper_lite)
      * @return array{eligible:bool,reject_reasons:list<string>,checked_values:array<string,mixed>}
      */
-    public static function evaluateSniperV3LiveFilter(array $signal, array $userLimits): array
+    public static function evaluateSniperV3LiveFilter(array $signal, array $userLimits, string $profile = 'sniper_75_attempt'): array
     {
         $rejectReasons = [];
 
@@ -1374,7 +1422,7 @@ final class SmartBrainConfig
         ];
 
         // 4.1 Confirmation Tier Gate
-        $allowedTiers = self::getSniperV3AllowedTiers();
+        $allowedTiers = self::getSniperV3AllowedTiers($profile);
         if (!in_array($confirmationTier, $allowedTiers, true)) {
             $rejectReasons[] = 'sniper_reject_confirmation_tier_not_strong';
         }

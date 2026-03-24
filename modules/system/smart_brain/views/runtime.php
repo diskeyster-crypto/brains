@@ -123,6 +123,10 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             <div class="alert alert-warning small mb-0 mt-2 py-1 px-2">
                 <i class="bi bi-exclamation-triangle me-1"></i> Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.
             </div>
+            <?php elseif ($execProfile === 'sniper_lite'): ?>
+            <div class="alert alert-info small mb-0 mt-2 py-1 px-2">
+                <i class="bi bi-info-circle me-1"></i> Moderately selective V3-only profile. Allows strong and selected medium confirmations. Higher signal count than Sniper, lower target precision.
+            </div>
             <?php endif; ?>
 
             <!-- Pattern Routing Summary — always shown -->
@@ -165,10 +169,10 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
     </div>
 
     <!-- Sniper V3 Live Filters Runtime Status -->
-    <?php if ($execProfile === 'sniper_75_attempt'): ?>
+    <?php if (in_array($execProfile, ['sniper_75_attempt', 'sniper_lite'], true)): ?>
     <?php
         $sniperV3Enabled = (bool)($execProfileBundle['values']['sniper_v3_live_filter_enabled'] ?? true);
-        $sniperV3AllowedTiers = SmartBrainConfig::getSniperV3AllowedTiers();
+        $sniperV3AllowedTiers = SmartBrainConfig::getSniperV3AllowedTiers($execProfile);
         $sniperV3Eligible = (int)($last_run['sniper_v3_live_eligible_count'] ?? 0);
         $sniperV3Rejected = (int)($last_run['sniper_v3_live_rejected_count'] ?? 0);
         $sniperV3RejectDist = (array)($last_run['sniper_v3_reject_reason_distribution'] ?? []);
@@ -229,7 +233,11 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 </div>
             </div>
             <?php endif; ?>
+            <?php if ($execProfile === 'sniper_lite'): ?>
+            <div class="small text-secondary mt-2">V3 live allowed for medium (with extra quality gates), strong, and very_strong confirmations. Weak V3 stays in shadow/analytics.</div>
+            <?php else: ?>
             <div class="small text-secondary mt-2">V3 live allowed only for strong/very_strong confirmations. Medium/weak V3 stay in shadow/analytics.</div>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>

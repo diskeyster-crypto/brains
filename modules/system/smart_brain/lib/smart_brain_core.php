@@ -1059,16 +1059,17 @@ final class SmartBrainCore
             }
 
             // === SNIPER V3 LIVE QUALITY FILTER ===
-            // Applied only when execution_profile = sniper_75_attempt AND pattern = V3
+            // Applied when execution_profile is a sniper profile (sniper_75_attempt or sniper_lite) AND pattern = V3
             $patternAlgo = (string)($signal['pattern_algorithm'] ?? '');
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
             $sniperV3FilterEnabled = (bool)($userLimits['sniper_v3_live_filter_enabled'] ?? false);
+            $isSniperProfile = in_array($execProfile, ['sniper_75_attempt', 'sniper_lite'], true);
 
             if ($patternAlgo === 'double_bottom_contextual_v3'
-                && $execProfile === 'sniper_75_attempt'
+                && $isSniperProfile
                 && $sniperV3FilterEnabled
             ) {
-                $sniperFilterResult = SmartBrainConfig::evaluateSniperV3LiveFilter($signal, $userLimits);
+                $sniperFilterResult = SmartBrainConfig::evaluateSniperV3LiveFilter($signal, $userLimits, $execProfile);
                 // Tag signal for diagnostics
                 $signal['sniper_live_eligible'] = $sniperFilterResult['eligible'];
                 if (!$sniperFilterResult['eligible']) {

@@ -48,6 +48,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     private bool   $retestRequired;
     private float  $retestTolerancePct;
     private float  $reclaimInvalidationTolerancePct;
+    private float  $newLowAfterSetupTolerancePct;
 
     // ── Confidence Parameters ──
 
@@ -119,6 +120,7 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
         $this->retestRequired            = (bool)  ($params['retest_required']                  ?? false);
         $this->retestTolerancePct        = (float) ($params['retest_tolerance_pct']             ?? 0.003);
         $this->reclaimInvalidationTolerancePct = (float) ($params['reclaim_invalidation_tolerance_pct'] ?? 0.003);
+        $this->newLowAfterSetupTolerancePct    = (float) ($params['new_low_after_setup_tolerance_pct'] ?? 0.005);
 
         // Confidence
         $this->minFinalConfidence        = (float) ($params['min_final_confidence']             ?? 0.30);
@@ -305,13 +307,14 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
 
             // ── Check for fresh breakdown after setup ──
 
-            if ($this->hasFreshBreakdownAfterSetup($segment, $segLen, $low2Idx, $setup['avg_low'])) {
+            $breakdownResult = $this->evaluatePostSetupBreakdown(
+                $segment, $segLen, $low2Idx,
+                $setup['low_1_price'], $setup['low_2_price'], $setup['avg_low'],
+                $setup['trigger_level']
+            );
+            if ($breakdownResult['rejected']) {
                 $this->addRejectReason('reject_new_low_after_setup');
-                $this->trackConfirmRejectReason('reject_new_low_after_setup', [
-                    'detail' => 'price_broke_below_setup_low',
-                    'avg_low' => round($setup['avg_low'], 6),
-                    'trigger_level' => round($setup['trigger_level'], 6),
-                ]);
+                $this->trackConfirmRejectReason('reject_new_low_after_setup', $breakdownResult['diagnostics']);
                 continue;
             }
 
@@ -1077,21 +1080,94 @@ final class DoubleBottomContextualV3Detector implements PatternDetectorInterface
     }
 
     /**
-     * Check whether price has made a fresh low below the setup low
-     * after the second bottom, invalidating the pattern.
+     * Evaluate whether price has made a fresh breakdown after the second
+     * bottom that invalidates the pattern.
+     *
+     * Uses min(low1, low2) as the defended-zone reference (the actual structural
+     * floor) instead of avg_low, which can sit above low2 when low2 < low1.
+     * Applies newLowAfterSetupTolerancePct as buffer.
+     *
+     * Returns ['rejected' => bool, 'diagnostics' => [...]] with subtypes:
+     *   - new_low_after_setup_micro_sweep   (within tolerance buffer)
+     *   - new_low_after_setup_meaningful_break (moderately below buffer)
+     *   - new_low_after_setup_large_break   (substantially below buffer)
+     *
+     * @return array{rejected:bool,diagnostics:array<string,mixed>}
      */
-    private function hasFreshBreakdownAfterSetup(
+    private function evaluatePostSetupBreakdown(
         array $segment,
         int $segLen,
         int $low2Idx,
-        float $avgLow
-    ): bool {
+        float $low1Price,
+        float $low2Price,
+        float $avgLow,
+        float $triggerLevel
+    ): array {
+        // Use defended zone floor: the actual lowest of the two setup lows
+        $defendedZoneLow = min($low1Price, $low2Price);
+
+        // Buffered invalidation: only reject if price breaks meaningfully below
+        $toleranceBuffer = $defendedZoneLow * $this->newLowAfterSetupTolerancePct;
+        $bufferedInvalidation = $defendedZoneLow - $toleranceBuffer;
+
+        $postMinPrice = null;
         for ($i = $low2Idx + 1; $i < $segLen; $i++) {
-            if ($segment[$i] < $avgLow * (1.0 - $this->maxSecondLowUndercutPct)) {
-                return true;
+            if ($postMinPrice === null || $segment[$i] < $postMinPrice) {
+                $postMinPrice = $segment[$i];
             }
         }
-        return false;
+
+        // No bars after setup → no breakdown
+        if ($postMinPrice === null) {
+            return ['rejected' => false, 'diagnostics' => []];
+        }
+
+        $breachBelowDefended = $defendedZoneLow > 0.0
+            ? ($defendedZoneLow - $postMinPrice) / $defendedZoneLow
+            : 0.0;
+
+        $baseDiagnostics = [
+            'defended_zone_low' => round($defendedZoneLow, 6),
+            'buffered_invalidation' => round($bufferedInvalidation, 6),
+            'post_min_price' => round($postMinPrice, 6),
+            'avg_low' => round($avgLow, 6),
+            'trigger_level' => round($triggerLevel, 6),
+            'tolerance_pct' => $this->newLowAfterSetupTolerancePct,
+            'breach_below_defended_pct' => round($breachBelowDefended, 6),
+        ];
+
+        // Price stayed above the defended zone → no breakdown at all
+        if ($postMinPrice >= $defendedZoneLow) {
+            return ['rejected' => false, 'diagnostics' => $baseDiagnostics];
+        }
+
+        // Price dipped below defended zone but stayed within tolerance buffer → micro sweep (allowed)
+        if ($postMinPrice >= $bufferedInvalidation) {
+            return [
+                'rejected' => false,
+                'diagnostics' => array_merge($baseDiagnostics, [
+                    'detail' => 'micro_sweep_within_tolerance',
+                    'subtype' => 'new_low_after_setup_micro_sweep',
+                ]),
+            ];
+        }
+
+        // Price broke below buffered invalidation → determine severity
+        if ($breachBelowDefended > 0.02) {
+            $subtype = 'new_low_after_setup_large_break';
+            $detail  = 'price_broke_well_below_defended_zone';
+        } else {
+            $subtype = 'new_low_after_setup_meaningful_break';
+            $detail  = 'price_broke_below_buffered_invalidation';
+        }
+
+        return [
+            'rejected' => true,
+            'diagnostics' => array_merge($baseDiagnostics, [
+                'detail' => $detail,
+                'subtype' => $subtype,
+            ]),
+        ];
     }
 
     /**

@@ -221,11 +221,11 @@ final class SmartBrainConfig
         // Apply execution profile bundle over managed fields immediately
         $this->applyExecutionProfile();
 
-        // Apply profile-driven pattern routing immediately
-        $this->applyProfilePatternRouting();
-
         // Apply pattern selection into parser4 config immediately
         $this->applyPatternSelection($clean['patterns']);
+
+        // Apply profile-driven pattern routing AFTER manual patterns (overrides when profile_controlled)
+        $this->applyProfilePatternRouting();
 
         return ['ok' => true, 'errors' => []];
     }
@@ -243,6 +243,11 @@ final class SmartBrainConfig
         // Execution Profile validation
         if (isset($values['execution_profile']) && !in_array((string)$values['execution_profile'], self::ALLOWED_EXECUTION_PROFILES, true)) {
             $errors[] = 'execution_profile must be one of: ' . implode(', ', self::ALLOWED_EXECUTION_PROFILES);
+        }
+
+        // Pattern Profile Mode validation
+        if (isset($values['pattern_profile_mode']) && !in_array((string)$values['pattern_profile_mode'], ['manual_override', 'profile_controlled'], true)) {
+            $errors[] = 'pattern_profile_mode must be one of: manual_override, profile_controlled';
         }
 
         if (!isset($values['max_budget_per_coin']) || (float)$values['max_budget_per_coin'] <= 0) {
@@ -1268,13 +1273,13 @@ final class SmartBrainConfig
         // Apply execution profile bundle over managed fields (non-custom profiles only)
         $this->applyExecutionProfile();
 
-        // Apply profile-driven pattern routing (overrides manual pattern selection if profile_controlled)
-        $this->applyProfilePatternRouting();
-
         // Apply pattern selection from user config into parser4 config
         if (isset($saved['patterns']) && is_array($saved['patterns'])) {
             $this->applyPatternSelection($saved['patterns']);
         }
+
+        // Apply profile-driven pattern routing AFTER manual patterns (overrides when profile_controlled)
+        $this->applyProfilePatternRouting();
     }
 
     /**

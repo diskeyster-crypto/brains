@@ -521,6 +521,10 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         <div class="fw-semibold text-success"><?= (int)($protSummary['break_even_applied_count'] ?? 0) ?></div>
                     </div>
                     <div class="col-6">
+                        <div class="text-muted">Floor Lock Active</div>
+                        <div class="fw-semibold text-info"><?= (int)($protSummary['floor_lock_active_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
                         <div class="text-muted">Protection Errors</div>
                         <div class="fw-semibold <?= (int)($protSummary['protection_errors_count'] ?? 0) > 0 ? 'text-danger' : '' ?>"><?= (int)($protSummary['protection_errors_count'] ?? 0) ?></div>
                     </div>
@@ -563,6 +567,19 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                     <?php $ipdTm = (string)($ipd['trailing_mode'] ?? 'roi_giveback'); ?>
                                     <?php if ($ipdTm === 'price_distance'): ?>
                                         <small class="text-info">(dist <?= round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                                    <?php elseif ($ipdTm === 'price_distance_floor'): ?>
+                                        <small class="text-info">(floor <?= round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                                        <?php if ($ipd['floor_lock_active'] ?? false): ?>
+                                            <br><small class="text-success">🔒 Floor: <?= round((float)($ipd['floor_locked_roi'] ?? 0), 1) ?>% ROI</small>
+                                            <?php if ((float)($ipd['floor_stop_price'] ?? 0) > 0): ?>
+                                                <br><small>floor_stop: <?= number_format((float)$ipd['floor_stop_price'], 4) ?></small>
+                                            <?php endif; ?>
+                                            <?php if ($ipd['protection_source_of_truth'] ?? ''): ?>
+                                                <br><small class="text-muted">via: <?= htmlspecialchars((string)$ipd['protection_source_of_truth']) ?></small>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <br><small class="text-muted">🔓 Floor: waiting</small>
+                                        <?php endif; ?>
                                     <?php elseif ($ipd['trailing_activation_roi_pct'] ?? 0): ?>
                                         <small>(<?= number_format((float)($ipd['trailing_activation_roi_pct'] ?? 0), 2) ?>%)</small>
                                     <?php endif; ?>

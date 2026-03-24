@@ -674,6 +674,8 @@ final class TradingBotService
             $result['positions_closed_by_exchange'] = $updateResult['closed_by_exchange'] ?? 0;
             $result['break_even_applied_count'] = $updateResult['break_even_applied'] ?? 0;
             $result['hybrid_partial_applied_count'] = $updateResult['hybrid_partial_applied'] ?? 0;
+            $result['floor_lock_applied_count'] = $updateResult['floor_lock_applied'] ?? 0;
+            $result['floor_lock_failed_count'] = $updateResult['floor_lock_failed'] ?? 0;
             $result['steps'][] = [
                 'step' => 'update_positions',
                 'status' => 'ok',
@@ -686,6 +688,9 @@ final class TradingBotService
                 'trailing_skipped' => $updateResult['trailing_skipped'] ?? 0,
                 'break_even_applied' => $updateResult['break_even_applied'] ?? 0,
                 'hybrid_partial_applied' => $updateResult['hybrid_partial_applied'] ?? 0,
+                'floor_lock_applied' => $updateResult['floor_lock_applied'] ?? 0,
+                'floor_lock_failed' => $updateResult['floor_lock_failed'] ?? 0,
+                'floor_lock_skipped' => $updateResult['floor_lock_skipped'] ?? 0,
             ];
 
             // ============================================================
@@ -880,6 +885,7 @@ final class TradingBotService
             $protectionErrorsCount = 0;
             $breakEvenArmedCount = 0;
             $breakEvenAppliedCount = 0;
+            $floorLockActiveCount = 0;
             $activePositionProtectionDetails = [];
             $contractGenerationCounts = [];
             $legacyActiveTradesCount = 0;
@@ -908,6 +914,11 @@ final class TradingBotService
                 $beApplied = (bool)($rt['break_even_applied'] ?? false);
                 if ($beArmed) $breakEvenArmedCount++;
                 if ($beApplied) $breakEvenAppliedCount++;
+
+                // Floor lock detection
+                if (!empty($rt['floor_lock_active']) || !empty($t['floor_lock_active'])) {
+                    $floorLockActiveCount++;
+                }
 
                 // Protection errors: SL repair attempted but failed
                 if (!empty($rt['sl_repair_attempted']) && empty($rt['sl_repair_result']['ok'])) {
@@ -970,6 +981,14 @@ final class TradingBotService
                     // Initial vs current stop separation
                     'initial_computed_stop_price' => $t['initial_computed_stop_price'] ?? ($t['runtime']['initial_computed_stop_price'] ?? null),
                     'stop_moved_from_initial' => (bool)($t['stop_moved_from_initial'] ?? ($t['runtime']['stop_moved_from_initial'] ?? false)),
+                    // Floor lock fields (price_distance_floor mode)
+                    'floor_lock_active' => (bool)($rt['floor_lock_active'] ?? ($t['floor_lock_active'] ?? false)),
+                    'floor_locked_roi' => (float)($rt['floor_locked_roi'] ?? ($t['floor_locked_roi'] ?? 0)),
+                    'floor_stop_price' => (float)($rt['floor_stop_price'] ?? ($t['floor_stop_price'] ?? 0)),
+                    'current_effective_stop_price' => (float)($rt['current_effective_stop_price'] ?? ($t['current_effective_stop_price'] ?? 0)),
+                    'protection_source_of_truth' => (string)($rt['protection_source_of_truth'] ?? ($t['protection_source_of_truth'] ?? '')),
+                    'floor_enforced_via_exchange_stop' => (bool)($rt['floor_enforced_via_exchange_stop'] ?? ($t['floor_enforced_via_exchange_stop'] ?? false)),
+                    'floor_enforced_via_bot_exit' => (bool)($rt['floor_enforced_via_bot_exit'] ?? ($t['floor_enforced_via_bot_exit'] ?? false)),
                 ];
             }
             $result['active_protection_summary'] = [
@@ -978,6 +997,7 @@ final class TradingBotService
                 'trailing_active_count' => $trailingActiveCount,
                 'break_even_armed_count' => $breakEvenArmedCount,
                 'break_even_applied_count' => $breakEvenAppliedCount,
+                'floor_lock_active_count' => $floorLockActiveCount,
                 'protection_errors_count' => $protectionErrorsCount,
             ];
             $result['active_position_protection_details'] = $activePositionProtectionDetails;

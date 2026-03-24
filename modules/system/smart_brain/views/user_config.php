@@ -67,6 +67,19 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             $managedFields = SmartBrainConfig::getProfileManagedFields();
             $isProfileMode = $currentProfile !== 'custom';
             $currentBundle = $profileBundles[$currentProfile] ?? $profileBundles['custom'];
+            $patternRoutingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
+            $currentPatternRouting = $patternRoutingBundles[$currentProfile] ?? $patternRoutingBundles['custom'];
+            $patternProfileMode = (string)($form_values['pattern_profile_mode'] ?? 'manual_override');
+            $isPatternProfileControlled = $isProfileMode && $patternProfileMode === 'profile_controlled';
+            $patternLabels = [
+                'double_bottom' => 'Double Bottom',
+                'double_top' => 'Double Top',
+                'pullback_trend_continue' => 'Pullback Trend Continue',
+                'double_bottom_confirm_v2' => 'Double Bottom V2 (confirmed)',
+                'double_top_confirm_v2' => 'Double Top V2 (confirmed)',
+                'double_bottom_contextual_v2' => 'Double Bottom Contextual V2',
+                'double_bottom_contextual_v3' => 'Double Bottom Contextual V3',
+            ];
         ?>
         <div class="card mb-4" style="border-color: <?= $isProfileMode ? '#6366f1' : '#6b7280' ?>;">
             <div class="card-header d-flex align-items-center" style="background: <?= $isProfileMode ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
@@ -80,9 +93,9 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
             </div>
             <div class="card-body">
                 <p class="text-secondary mb-3" style="font-size: 0.85rem;">
-                    Choose an execution profile to apply a coordinated bundle of V2 entry quality parameters.
-                    Profiles control confirmation thresholds and zone widening behavior.
-                    Select <strong>Custom</strong> to edit managed fields manually.
+                    Choose an execution profile to apply a coordinated bundle of V2 entry quality parameters and pattern routing.
+                    Profiles control confirmation thresholds, zone widening, entry policy, quality floors, and which patterns are live.
+                    Select <strong>Custom</strong> to edit all fields manually.
                 </p>
                 <div class="row">
                     <div class="col-md-5 mb-3">
@@ -97,7 +110,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                     </div>
                     <div class="col-md-7 mb-3">
                         <div id="profile-description-card" class="alert <?= $isProfileMode ? 'alert-info' : 'alert-secondary' ?> mb-0" style="font-size: 0.85rem;">
-                            <strong id="profile-desc-label"><?= htmlspecialchars($currentBundle['label']) ?></strong>
+                            <strong id="profile-desc-label"><?= htmlspecialchars($currentBundle['label']) ?>: </strong>
                             <span id="profile-desc-text"><?= htmlspecialchars($currentBundle['description']) ?></span>
                             <?php if ($currentProfile === 'sniper_75_attempt'): ?>
                             <div class="mt-1 text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.</div>
@@ -105,10 +118,72 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         </div>
                     </div>
                 </div>
+
+                <!-- Pattern Routing Policy Summary -->
+                <?php if ($isProfileMode): ?>
+                <div class="mt-2 mb-2">
+                    <h6 class="mb-2"><i class="bi bi-diagram-3 me-1"></i>Pattern Routing Policy</h6>
+                    <div class="row" style="font-size: 0.85rem;">
+                        <div class="col-md-4 mb-2">
+                            <div class="card border-success" style="background: rgba(34,197,94,0.05);">
+                                <div class="card-body py-2 px-3">
+                                    <div class="fw-bold text-success mb-1"><i class="bi bi-check-circle me-1"></i>Live</div>
+                                    <?php if (!empty($currentPatternRouting['live_patterns'])): ?>
+                                        <?php foreach ($currentPatternRouting['live_patterns'] as $lp): ?>
+                                        <div><code><?= htmlspecialchars($patternLabels[$lp] ?? $lp) ?></code></div>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <div class="text-secondary">—</div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-2">
+                            <div class="card border-warning" style="background: rgba(234,179,8,0.05);">
+                                <div class="card-body py-2 px-3">
+                                    <div class="fw-bold text-warning mb-1"><i class="bi bi-eye me-1"></i>Shadow</div>
+                                    <?php if (!empty($currentPatternRouting['shadow_patterns'])): ?>
+                                        <?php foreach ($currentPatternRouting['shadow_patterns'] as $sp): ?>
+                                        <div><code><?= htmlspecialchars($patternLabels[$sp] ?? $sp) ?></code></div>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <div class="text-secondary">—</div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-2">
+                            <div class="card border-secondary" style="background: rgba(107,114,128,0.05);">
+                                <div class="card-body py-2 px-3">
+                                    <div class="fw-bold text-secondary mb-1"><i class="bi bi-x-circle me-1"></i>Disabled</div>
+                                    <?php if (!empty($currentPatternRouting['disabled_patterns'])): ?>
+                                        <?php foreach ($currentPatternRouting['disabled_patterns'] as $dp): ?>
+                                        <div><code class="text-muted"><?= htmlspecialchars($patternLabels[$dp] ?? $dp) ?></code></div>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <div class="text-secondary">—</div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label for="pattern_profile_mode" class="form-label fw-bold" style="font-size: 0.85rem;">Pattern Routing Mode</label>
+                        <select class="form-select form-select-sm" id="pattern_profile_mode" name="pattern_profile_mode" style="max-width: 320px;">
+                            <option value="profile_controlled" <?= $patternProfileMode === 'profile_controlled' ? 'selected' : '' ?>>Use profile pattern set</option>
+                            <option value="manual_override" <?= $patternProfileMode === 'manual_override' ? 'selected' : '' ?>>Manual pattern override</option>
+                        </select>
+                        <small class="text-secondary d-block mt-1">When «Use profile pattern set» is active, the profile controls which patterns are live. Switch to «Manual» to override.</small>
+                    </div>
+                </div>
+                <?php else: ?>
+                <input type="hidden" name="pattern_profile_mode" value="manual_override">
+                <?php endif; ?>
+
                 <!-- Profile Managed Fields Preview (collapsible) -->
                 <div class="mt-1">
                     <a class="text-decoration-none small" data-bs-toggle="collapse" href="#profile-managed-fields" role="button" aria-expanded="false">
-                        <i class="bi bi-gear me-1"></i>Show managed V2 parameters
+                        <i class="bi bi-gear me-1"></i>Show managed V2 parameters (<?= count($managedFields) ?> fields)
                     </a>
                     <div class="collapse mt-2" id="profile-managed-fields">
                         <div class="card card-body" style="font-size: 0.82rem; background: rgba(255,255,255,0.03);">
@@ -121,12 +196,21 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                     <td><code><?= htmlspecialchars($mf) ?></code></td>
                                     <td>
                                         <?php
-                                            if ($isProfileMode && isset($currentBundle['values'][$mf])) {
-                                                echo '<span class="text-info">' . htmlspecialchars((string)$currentBundle['values'][$mf]) . '</span>';
+                                            if ($isProfileMode && array_key_exists($mf, $currentBundle['values'])) {
+                                                $mfVal = $currentBundle['values'][$mf];
+                                                if (is_bool($mfVal)) {
+                                                    echo $mfVal ? '<span class="text-success">true</span>' : '<span class="text-danger">false</span>';
+                                                } else {
+                                                    echo '<span class="text-info">' . htmlspecialchars((string)$mfVal) . '</span>';
+                                                }
                                                 echo ' <small class="text-secondary">(profile)</small>';
                                             } else {
                                                 $val = $form_values[$mf] ?? $user_limits[$mf] ?? '-';
-                                                echo htmlspecialchars((string)$val);
+                                                if (is_bool($val)) {
+                                                    echo $val ? '<span class="text-success">true</span>' : '<span class="text-danger">false</span>';
+                                                } else {
+                                                    echo htmlspecialchars((string)$val);
+                                                }
                                                 echo ' <small class="text-secondary">(manual)</small>';
                                             }
                                         ?>
@@ -144,12 +228,20 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
         <!-- Pattern Selection Section -->
         <div class="row">
             <div class="col-md-6 mb-4">
-                <div class="card h-100">
+                <div class="card h-100" id="pattern-selection-card" style="<?= $isPatternProfileControlled ? 'opacity: 0.6;' : '' ?>">
                     <div class="card-header d-flex align-items-center">
                         <i class="bi bi-search me-2"></i>
                         <h5 style="margin: 0;">Pattern Selection</h5>
+                        <?php if ($isPatternProfileControlled): ?>
+                        <span class="badge bg-info ms-2">profile-controlled</span>
+                        <?php endif; ?>
                     </div>
                     <div class="card-body">
+                        <?php if ($isPatternProfileControlled): ?>
+                        <div class="alert alert-info small py-2 mb-3">
+                            <i class="bi bi-info-circle me-1"></i>Pattern selection is controlled by the active execution profile. Switch to <strong>Manual pattern override</strong> above to edit manually.
+                        </div>
+                        <?php endif; ?>
                         <p class="text-secondary mb-3" style="font-size: 0.85rem;">
                             Выбранные алгоритмы используются анализатором для поиска входов.<br>
                             Режим «any» — достаточно совпадения любого включённого алгоритма.<br>
@@ -159,37 +251,37 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         <div class="mb-3">
                             <label class="form-label fw-bold">Enabled Algorithms</label>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom" name="patterns_enabled[]" value="double_bottom" <?= $patternChecked('double_bottom') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom" name="patterns_enabled[]" value="double_bottom" <?= $patternChecked('double_bottom') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_bottom">Double Bottom</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_double_top" name="patterns_enabled[]" value="double_top" <?= $patternChecked('double_top') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_double_top" name="patterns_enabled[]" value="double_top" <?= $patternChecked('double_top') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_top">Double Top</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_pullback" name="patterns_enabled[]" value="pullback_trend_continue" <?= $patternChecked('pullback_trend_continue') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_pullback" name="patterns_enabled[]" value="pullback_trend_continue" <?= $patternChecked('pullback_trend_continue') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_pullback">Pullback Trend Continue</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_v2" name="patterns_enabled[]" value="double_bottom_confirm_v2" <?= $patternChecked('double_bottom_confirm_v2') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_v2" name="patterns_enabled[]" value="double_bottom_confirm_v2" <?= $patternChecked('double_bottom_confirm_v2') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_bottom_v2">Double Bottom V2 <small class="text-info">(confirmed)</small></label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_double_top_v2" name="patterns_enabled[]" value="double_top_confirm_v2" <?= $patternChecked('double_top_confirm_v2') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_double_top_v2" name="patterns_enabled[]" value="double_top_confirm_v2" <?= $patternChecked('double_top_confirm_v2') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_top_v2">Double Top V2 <small class="text-info">(confirmed)</small></label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_ctx_v2" name="patterns_enabled[]" value="double_bottom_contextual_v2" <?= $patternChecked('double_bottom_contextual_v2') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_ctx_v2" name="patterns_enabled[]" value="double_bottom_contextual_v2" <?= $patternChecked('double_bottom_contextual_v2') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_bottom_ctx_v2">Double Bottom Contextual V2 <small class="text-warning">(context-aware)</small></label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_ctx_v3" name="patterns_enabled[]" value="double_bottom_contextual_v3" <?= $patternChecked('double_bottom_contextual_v3') ?>>
+                                <input class="form-check-input" type="checkbox" id="pattern_double_bottom_ctx_v3" name="patterns_enabled[]" value="double_bottom_contextual_v3" <?= $patternChecked('double_bottom_contextual_v3') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_bottom_ctx_v3">Double Bottom Contextual V3 <small class="text-danger">(regime-aware)</small></label>
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="pattern_mode" class="form-label fw-bold">Pattern Mode</label>
-                            <select class="form-select" id="pattern_mode" name="pattern_mode">
+                            <select class="form-select" id="pattern_mode" name="pattern_mode" <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <?php foreach (['one' => 'One', 'any' => 'Any', 'all' => 'All'] as $pm => $pmLabel): ?>
                                 <option value="<?= $pm ?>" <?= $pattern_mode === $pm ? 'selected' : '' ?>><?= $pmLabel ?></option>
                                 <?php endforeach; ?>
@@ -1280,6 +1372,27 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                         cardHeader.style.background = pid !== 'custom' ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)';
                     }
                 }
+            });
+        }
+
+        // Pattern profile mode toggle — enable/disable pattern checkboxes
+        var patternProfileModeSelect = document.getElementById('pattern_profile_mode');
+        if (patternProfileModeSelect) {
+            patternProfileModeSelect.addEventListener('change', function() {
+                var isControlled = this.value === 'profile_controlled';
+                var card = document.getElementById('pattern-selection-card');
+                if (card) {
+                    card.style.opacity = isControlled ? '0.6' : '1';
+                    var badge = card.querySelector('.card-header .badge');
+                    if (badge) {
+                        badge.style.display = isControlled ? '' : 'none';
+                    }
+                }
+                // Disable/enable pattern checkboxes and mode select
+                var checkboxes = document.querySelectorAll('input[name="patterns_enabled[]"]');
+                checkboxes.forEach(function(cb) { cb.disabled = isControlled; });
+                var modeSelect = document.getElementById('pattern_mode');
+                if (modeSelect) modeSelect.disabled = isControlled;
             });
         }
     });

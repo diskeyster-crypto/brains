@@ -69,6 +69,19 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         $execProfileIsPreset = $execProfile !== 'custom';
         $execProfileBundles = SmartBrainConfig::getExecutionProfileBundles();
         $execProfileBundle = $execProfileBundles[$execProfile] ?? $execProfileBundles['custom'];
+        $execPatternProfileMode = (string)($last_run['pattern_profile_mode'] ?? 'manual_override');
+        $execPatternRoutingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
+        $execPatternRouting = $execPatternRoutingBundles[$execProfile] ?? $execPatternRoutingBundles['custom'];
+        $execIsPatternProfileControlled = $execProfileIsPreset && $execPatternProfileMode === 'profile_controlled';
+        $execPatternLabels = [
+            'double_bottom' => 'Double Bottom',
+            'double_top' => 'Double Top',
+            'pullback_trend_continue' => 'Pullback Trend Continue',
+            'double_bottom_confirm_v2' => 'DB V2 (confirmed)',
+            'double_top_confirm_v2' => 'DT V2 (confirmed)',
+            'double_bottom_contextual_v2' => 'DB Contextual V2',
+            'double_bottom_contextual_v3' => 'DB Contextual V3',
+        ];
     ?>
     <div class="card mb-4" style="border-color: <?= $execProfileIsPreset ? '#6366f1' : '#6b7280' ?>;">
         <div class="card-header" style="background: <?= $execProfileIsPreset ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
@@ -79,23 +92,60 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-4 mb-2">
+                <div class="col-md-3 mb-2">
                     <strong>Profile ID:</strong>
                     <code><?= htmlspecialchars($execProfile) ?></code>
                 </div>
-                <div class="col-md-4 mb-2">
+                <div class="col-md-3 mb-2">
                     <strong>Mode:</strong>
                     <span class="<?= $execProfileIsPreset ? 'text-info' : 'text-secondary' ?>"><?= $execProfileIsPreset ? 'Preset' : 'Custom / Manual' ?></span>
                 </div>
-                <div class="col-md-4 mb-2">
+                <div class="col-md-3 mb-2">
                     <strong>Managed Fields:</strong>
                     <span class="text-info"><?= count(SmartBrainConfig::getProfileManagedFields()) ?> V2 parameters</span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Pattern Routing:</strong>
+                    <span class="<?= $execIsPatternProfileControlled ? 'text-info' : 'text-secondary' ?>"><?= $execIsPatternProfileControlled ? 'profile_controlled' : 'manual_override' ?></span>
                 </div>
             </div>
             <div class="small text-secondary mt-1"><?= htmlspecialchars($execProfileBundle['description']) ?></div>
             <?php if ($execProfile === 'sniper_75_attempt'): ?>
             <div class="alert alert-warning small mb-0 mt-2 py-1 px-2">
                 <i class="bi bi-exclamation-triangle me-1"></i> Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.
+            </div>
+            <?php endif; ?>
+
+            <!-- Pattern Routing Summary -->
+            <?php if ($execIsPatternProfileControlled): ?>
+            <div class="mt-3" style="font-size: 0.85rem;">
+                <strong><i class="bi bi-diagram-3 me-1"></i>Active Pattern Routing:</strong>
+                <span class="text-success ms-2">Live: <?= !empty($execPatternRouting['live_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, $execPatternRouting['live_patterns'])) : '—' ?></span>
+                <span class="text-warning ms-2">Shadow: <?= !empty($execPatternRouting['shadow_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, $execPatternRouting['shadow_patterns'])) : '—' ?></span>
+                <span class="text-muted ms-2">Disabled: <?= !empty($execPatternRouting['disabled_patterns']) ? implode(', ', array_map(fn($p) => $execPatternLabels[$p] ?? $p, $execPatternRouting['disabled_patterns'])) : '—' ?></span>
+            </div>
+            <?php endif; ?>
+
+            <!-- Key V2 Policy Summary -->
+            <?php if ($execProfileIsPreset && !empty($execProfileBundle['values'])): ?>
+            <div class="mt-2" style="font-size: 0.83rem;">
+                <a class="text-decoration-none small" data-bs-toggle="collapse" href="#runtime-profile-values" role="button" aria-expanded="false">
+                    <i class="bi bi-list-ul me-1"></i>Show active V2 entry policy values
+                </a>
+                <div class="collapse mt-1" id="runtime-profile-values">
+                    <div class="row">
+                    <?php foreach ($execProfileBundle['values'] as $fk => $fv): ?>
+                        <div class="col-md-4 mb-1">
+                            <code class="small"><?= htmlspecialchars($fk) ?></code>:
+                            <?php if (is_bool($fv)): ?>
+                                <span class="<?= $fv ? 'text-success' : 'text-danger' ?>"><?= $fv ? 'true' : 'false' ?></span>
+                            <?php else: ?>
+                                <span class="text-info"><?= htmlspecialchars((string)$fv) ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    </div>
+                </div>
             </div>
             <?php endif; ?>
         </div>

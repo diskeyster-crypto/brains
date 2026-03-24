@@ -617,6 +617,7 @@ final class SmartBrainCore
             // Execution Profile
             'execution_profile' => (string)($userLimits['execution_profile'] ?? 'custom'),
             'execution_profile_label' => self::getExecutionProfileLabel($userLimits),
+            'pattern_profile_mode' => (string)($userLimits['pattern_profile_mode'] ?? 'manual_override'),
             // Live Intent Generation — audit fields
             'live_stage_runtime_signature' => $liveIntentResult['live_stage_runtime_signature'] ?? '',
             'live_trading_enabled' => $liveConfig['live_trading_enabled'],

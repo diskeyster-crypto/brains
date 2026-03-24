@@ -100,8 +100,21 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                         $dashProfile = (string)($last_run['execution_profile'] ?? 'custom');
                         $dashProfileLabel = (string)($last_run['execution_profile_label'] ?? 'Custom');
                         $dashProfileIsPreset = $dashProfile !== 'custom';
+                        $dashPatternMode = (string)($last_run['pattern_profile_mode'] ?? 'manual_override');
+                        $dashIsPatternControlled = $dashProfileIsPreset && $dashPatternMode === 'profile_controlled';
                     ?>
                     <span class="badge <?= $dashProfileIsPreset ? 'bg-primary' : 'bg-secondary' ?>"><?= htmlspecialchars($dashProfileLabel) ?></span>
+                    <?php if ($dashIsPatternControlled): ?>
+                    <?php
+                        $dashRoutingBundles = SmartBrainConfig::getProfilePatternRoutingBundles();
+                        $dashRouting = $dashRoutingBundles[$dashProfile] ?? ['live_patterns' => []];
+                        $dashPatLabels = [
+                            'double_bottom_contextual_v2' => 'V2 Ctx',
+                            'double_bottom_contextual_v3' => 'V3 Ctx',
+                        ];
+                    ?>
+                    <small class="text-success ms-1">Live: <?= implode(', ', array_map(fn($p) => $dashPatLabels[$p] ?? $p, $dashRouting['live_patterns'])) ?></small>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php $errMsg = (string)($last_run['error_message'] ?? ''); if ($errMsg !== ''): ?>

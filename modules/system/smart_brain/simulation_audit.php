@@ -833,6 +833,7 @@ final class SimulationAudit
             'v2_downstream_funnel' => $v2DownstreamFunnelAudit,
             'v3_debug_preview' => $v2DownstreamFunnelRaw['v3_debug_preview'] ?? [],
             'v3_candidate_preview' => $v2DownstreamFunnelRaw['v3_candidate_preview'] ?? [],
+            'v3_downstream_diagnostics' => (array)($v2DownstreamFunnelRaw['v3_downstream_diagnostics'] ?? []),
             // Sniper V3 live filter diagnostics
             'sniper_v3_live_eligible_count' => (int)($v2DownstreamFunnelRaw['sniper_v3_live_eligible_count'] ?? 0),
             'sniper_v3_live_rejected_count' => (int)($v2DownstreamFunnelRaw['sniper_v3_live_rejected_count'] ?? 0),

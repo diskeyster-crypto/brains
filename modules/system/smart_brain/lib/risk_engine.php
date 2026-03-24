@@ -484,7 +484,8 @@ final class RiskEngine
      * entry_action:
      *   V2 'strong'  → 'enter_now'    (prefer immediate entry)
      *   V2 other     → 'wait_retrace' (standard zone logic)
-     *   V3 all tiers → 'wait_retrace' (conservative by design)
+     *   V3 'strong'  → 'enter_now'    (if v3_strong_enter_now_enabled, default true)
+     *   V3 other     → 'wait_retrace' (conservative by design)
      *
      * v2_priority_score: weighted composite for ranking among competing signals.
      *
@@ -502,8 +503,13 @@ final class RiskEngine
         if ($patternAlgo === 'double_bottom_contextual_v3') {
             $tier = CorridorMonitor::computeV3ConfirmationTier($confirmationScore);
 
-            // V3 default: wait_retrace for all tiers (conservative by design)
-            $entryAction = 'wait_retrace';
+            // V3 entry action: strong confirmations can enter_now (configurable)
+            $v3StrongEnterNow = (bool)($userLimits['v3_strong_enter_now_enabled'] ?? true);
+            if ($tier === 'strong' && $v3StrongEnterNow) {
+                $entryAction = 'enter_now';
+            } else {
+                $entryAction = 'wait_retrace';
+            }
 
             $zoneWidenProfile = match ($tier) {
                 'strong' => 'strong_wide',

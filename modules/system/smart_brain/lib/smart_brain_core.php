@@ -617,6 +617,74 @@ final class SmartBrainCore
             }
         }
 
+        // Build V3 downstream entry zone diagnostics from monitors
+        $v3DownstreamDiag = [
+            'v3_candidates_count' => 0,
+            'v3_monitors_count' => 0,
+            'v3_entry_zone_count' => 0,
+            'v3_signals_count' => 0,
+            'v3_rejected_not_entry_zone_count' => 0,
+            'v3_reject_zone_too_far_count' => 0,
+            'v3_wait_retrace_count' => 0,
+            'v3_enter_now_count' => 0,
+            'v3_reject_detail_distribution' => [],
+            'v3_monitor_preview' => [],
+        ];
+        foreach ($candidates as $c) {
+            if ((string)($c['pattern_algorithm'] ?? '') === 'double_bottom_contextual_v3') {
+                $v3DownstreamDiag['v3_candidates_count']++;
+            }
+        }
+        foreach ($monitors as $m) {
+            if ((string)($m['pattern_algorithm'] ?? '') !== 'double_bottom_contextual_v3') {
+                continue;
+            }
+            $v3DownstreamDiag['v3_monitors_count']++;
+            $mst = (string)($m['status'] ?? '');
+            if ($mst === 'entry_zone') {
+                $v3DownstreamDiag['v3_entry_zone_count']++;
+            } else {
+                $v3DownstreamDiag['v3_rejected_not_entry_zone_count']++;
+            }
+            $mReject = (string)($m['reject_detail'] ?? 'none');
+            if ($mReject === 'reject_zone_too_far') {
+                $v3DownstreamDiag['v3_reject_zone_too_far_count']++;
+            }
+            if ($mReject !== 'none') {
+                $v3DownstreamDiag['v3_reject_detail_distribution'][$mReject] =
+                    ($v3DownstreamDiag['v3_reject_detail_distribution'][$mReject] ?? 0) + 1;
+            }
+            $mEntryAction = (string)($m['entry_action'] ?? 'wait_retrace');
+            if ($mEntryAction === 'enter_now') {
+                $v3DownstreamDiag['v3_enter_now_count']++;
+            } else {
+                $v3DownstreamDiag['v3_wait_retrace_count']++;
+            }
+            // Monitor preview (first 10)
+            if (count($v3DownstreamDiag['v3_monitor_preview']) < 10) {
+                $v3DownstreamDiag['v3_monitor_preview'][] = [
+                    'symbol' => (string)($m['symbol'] ?? ''),
+                    'status' => $mst,
+                    'entry_action' => $mEntryAction,
+                    'confirmation_score' => round((float)($m['confirmation_score'] ?? 0.0), 4),
+                    'confirmation_tier' => (string)($m['confirmation_tier'] ?? 'none'),
+                    'price_position' => round((float)($m['price_position'] ?? 0.0), 4),
+                    'entry_zone_percent' => round((float)($m['entry_zone_percent'] ?? 0.0), 4),
+                    'zone_width_pct' => round((float)($m['zone_width_pct'] ?? 0.0), 6),
+                    'zone_distance_from_price' => round((float)($m['zone_distance_from_price'] ?? 0.0), 6),
+                    'reject_detail' => $mReject,
+                    'whatif_enter_now_status' => (string)($m['whatif_enter_now_status'] ?? ''),
+                    'whatif_wider_zone_status' => (string)($m['whatif_wider_zone_status'] ?? ''),
+                    'pattern_confidence' => round((float)($m['pattern_confidence'] ?? 0.0), 4),
+                ];
+            }
+        }
+        foreach ($signals as $s) {
+            if ((string)($s['pattern_algorithm'] ?? '') === 'double_bottom_contextual_v3') {
+                $v3DownstreamDiag['v3_signals_count']++;
+            }
+        }
+
         // Persist V2 downstream funnel
         $this->state->writeJson('storage/v2_downstream_funnel.json', [
             'by_pattern' => $v2DownstreamFunnel,
@@ -625,6 +693,7 @@ final class SmartBrainCore
             'signal_tier_distribution' => $signalTierDistribution,
             'v3_debug_preview' => $v3DebugPreview,
             'v3_candidate_preview' => $v3CandidatePreview,
+            'v3_downstream_diagnostics' => $v3DownstreamDiag,
             'final_signal_confirmation_score_missing_count' => $finalSignalConfScoreMissing,
             'final_signal_confirmation_score_null_count' => $finalSignalConfScoreNull,
             'candidate_policy_fields_missing_count' => $candidatePolicyFieldsMissingCount,

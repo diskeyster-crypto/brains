@@ -15,6 +15,9 @@ declare(strict_types=1);
  * pattern_confidence — confirmed reversals with high confidence get
  * wider entry zones because price has already bounced from lows.
  *
+ * V3 contextual patterns also use tier-based progressive widening
+ * (stricter defaults than V2) and allow enter_now for strong tier.
+ *
  * Does NOT create final trade signals.
  */
 final class CorridorMonitor
@@ -144,7 +147,11 @@ final class CorridorMonitor
      *   - strong tier → v2_zone_widen_strong_pct  (default 0.80)
      *   Capped by v2_zone_widen_max_cap_pct (default 0.85).
      *
-     * V3 remains at max(config, 0.40) — V2 must stay looser than V3.
+     * V3 contextual patterns use V3-specific tier-based widening (stricter than V2):
+     *   - weak tier   → v3_zone_widen_weak_pct   (default 0.40)
+     *   - medium tier → v3_zone_widen_medium_pct  (default 0.55)
+     *   - strong tier → v3_zone_widen_strong_pct  (default 0.70)
+     *   Capped by v3_zone_widen_max_cap_pct (default 0.75).
      */
     private function computeEffectiveEntryZonePercent(
         float $basePercent,
@@ -168,7 +175,18 @@ final class CorridorMonitor
         }
 
         if ($patternAlgo === 'double_bottom_contextual_v3') {
-            return max($basePercent, 0.40);
+            $v3Tier = self::computeV3ConfirmationTier($confirmationScore);
+            $v3Cap = (float)($this->cfg['v3_zone_widen_max_cap_pct'] ?? 0.75);
+
+            if ($v3Tier === 'strong') {
+                $v3Target = (float)($this->cfg['v3_zone_widen_strong_pct'] ?? 0.70);
+            } elseif ($v3Tier === 'medium') {
+                $v3Target = (float)($this->cfg['v3_zone_widen_medium_pct'] ?? 0.55);
+            } else {
+                $v3Target = (float)($this->cfg['v3_zone_widen_weak_pct'] ?? 0.40);
+            }
+
+            return min(max($basePercent, $v3Target), $v3Cap);
         }
 
         return $basePercent;
@@ -236,8 +254,13 @@ final class CorridorMonitor
         if ($patternAlgo === 'double_bottom_contextual_v3') {
             $tier = self::computeV3ConfirmationTier($confirmationScore);
 
-            // V3 default: wait_retrace for all tiers (conservative by design)
-            $entryAction = 'wait_retrace';
+            // V3 entry action: strong confirmations can enter_now (configurable)
+            $v3StrongEnterNow = (bool)($cfg['v3_strong_enter_now_enabled'] ?? true);
+            if ($tier === 'strong' && $v3StrongEnterNow) {
+                $entryAction = 'enter_now';
+            } else {
+                $entryAction = 'wait_retrace';
+            }
 
             $zoneWidenProfile = match ($tier) {
                 'strong' => 'strong_wide',

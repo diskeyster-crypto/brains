@@ -984,6 +984,90 @@ if ($v3HasData):
 <?php endif; ?>
 
 <?php
+// ── V3 Downstream Entry Zone Diagnostics ──
+$v3Downstream = (array)($v2DownstreamFunnel['v3_downstream_diagnostics'] ?? ($rc['v3_downstream_diagnostics'] ?? []));
+$v3DsHasData = ((int)($v3Downstream['v3_monitors_count'] ?? 0)) > 0 || ((int)($v3Downstream['v3_candidates_count'] ?? 0)) > 0;
+if ($v3DsHasData):
+?>
+<div class="card mb-3">
+    <div class="card-header" style="background: rgba(99,102,241,0.15);">
+        <strong><i class="bi bi-bullseye me-1"></i> V3 Downstream — Entry Zone &amp; Policy Diagnostics</strong>
+    </div>
+    <div class="card-body p-2">
+        <div class="d-flex flex-wrap gap-2 small mb-2">
+            <span>V3 Candidates: <strong><?= (int)($v3Downstream['v3_candidates_count'] ?? 0) ?></strong></span>
+            <span>V3 Monitors: <strong><?= (int)($v3Downstream['v3_monitors_count'] ?? 0) ?></strong></span>
+            <span>V3 Entry Zone: <strong class="<?= ((int)($v3Downstream['v3_entry_zone_count'] ?? 0)) > 0 ? 'text-success' : 'text-danger' ?>"><?= (int)($v3Downstream['v3_entry_zone_count'] ?? 0) ?></strong></span>
+            <span>V3 Signals: <strong class="<?= ((int)($v3Downstream['v3_signals_count'] ?? 0)) > 0 ? 'text-success' : 'text-danger' ?>"><?= (int)($v3Downstream['v3_signals_count'] ?? 0) ?></strong></span>
+            <span>Rejected Not Entry: <strong class="text-warning"><?= (int)($v3Downstream['v3_rejected_not_entry_zone_count'] ?? 0) ?></strong></span>
+            <span>Zone Too Far: <strong class="text-danger"><?= (int)($v3Downstream['v3_reject_zone_too_far_count'] ?? 0) ?></strong></span>
+        </div>
+        <div class="d-flex flex-wrap gap-2 small mb-2">
+            <span>V3 enter_now: <strong class="text-primary"><?= (int)($v3Downstream['v3_enter_now_count'] ?? 0) ?></strong></span>
+            <span>V3 wait_retrace: <strong class="text-secondary"><?= (int)($v3Downstream['v3_wait_retrace_count'] ?? 0) ?></strong></span>
+            <?php $v3MonTot = (int)($v3Downstream['v3_monitors_count'] ?? 0); ?>
+            <?php if ($v3MonTot > 0): ?>
+            <span>Entry Zone Rate: <strong><?= number_format(((int)($v3Downstream['v3_entry_zone_count'] ?? 0)) / $v3MonTot * 100, 1) ?>%</strong></span>
+            <?php endif; ?>
+        </div>
+
+        <?php $v3RejectDist = (array)($v3Downstream['v3_reject_detail_distribution'] ?? []);
+        if (!empty($v3RejectDist)):
+            arsort($v3RejectDist);
+        ?>
+        <div class="mb-2">
+            <strong class="small">V3 Monitor Reject Detail:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($v3RejectDist as $reason => $cnt): ?>
+                <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php $v3MonPreview = (array)($v3Downstream['v3_monitor_preview'] ?? []);
+        if (!empty($v3MonPreview)): ?>
+        <details class="mb-1">
+            <summary class="text-muted small"><i class="bi bi-search me-1"></i> V3 Monitor Preview (first <?= count($v3MonPreview) ?>)</summary>
+            <table class="table table-sm table-bordered mt-1 mb-0" style="font-size: 0.78rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Status</th>
+                        <th>Entry Action</th>
+                        <th>Conf Score</th>
+                        <th>Tier</th>
+                        <th>Price Pos</th>
+                        <th>Zone %</th>
+                        <th>Zone Dist</th>
+                        <th>Reject</th>
+                        <th>WhatIf Now</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($v3MonPreview as $vmp): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)($vmp['symbol'] ?? '')) ?></td>
+                        <td><span class="badge <?= ($vmp['status'] ?? '') === 'entry_zone' ? 'bg-success' : 'bg-secondary' ?>"><?= htmlspecialchars((string)($vmp['status'] ?? '')) ?></span></td>
+                        <td><span class="badge <?= ($vmp['entry_action'] ?? '') === 'enter_now' ? 'bg-primary' : 'bg-secondary' ?>"><?= htmlspecialchars((string)($vmp['entry_action'] ?? 'wait_retrace')) ?></span></td>
+                        <td><strong><?= number_format((float)($vmp['confirmation_score'] ?? 0), 3) ?></strong></td>
+                        <td><span class="badge <?= match((string)($vmp['confirmation_tier'] ?? 'none')) { 'strong' => 'bg-success', 'medium' => 'bg-warning text-dark', 'weak' => 'bg-danger', default => 'bg-secondary' } ?>"><?= htmlspecialchars((string)($vmp['confirmation_tier'] ?? 'none')) ?></span></td>
+                        <td><?= number_format((float)($vmp['price_position'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($vmp['entry_zone_percent'] ?? 0) * 100, 1) ?>%</td>
+                        <td><?= number_format((float)($vmp['zone_distance_from_price'] ?? 0) * 100, 2) ?>%</td>
+                        <td><span class="badge bg-light text-dark border"><?= htmlspecialchars((string)($vmp['reject_detail'] ?? 'none')) ?></span></td>
+                        <td><?= ($vmp['whatif_enter_now_status'] ?? '') === 'entry_zone' ? '<span class="badge bg-info">✓</span>' : '<span class="text-muted">—</span>' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
 // ── Sniper V3 Live Filter Analytics ──
 $sniperV3Eligible = (int)($v2DownstreamFunnel['sniper_v3_live_eligible_count'] ?? ($rc['sniper_v3_live_eligible_count'] ?? 0));
 $sniperV3Rejected = (int)($v2DownstreamFunnel['sniper_v3_live_rejected_count'] ?? ($rc['sniper_v3_live_rejected_count'] ?? 0));

@@ -107,6 +107,9 @@ final class CorridorMonitor
                 'pattern_algorithm' => $patternAlgo !== '' ? $patternAlgo : 'none',
                 'pattern_confidence' => $patternConfidence,
                 'confirmation_score' => $confirmationScore,
+                'confirmation_tier' => ($patternAlgo === 'double_bottom_contextual_v2')
+                    ? self::computeConfirmationTier($confirmationScore, $this->cfg)
+                    : 'none',
                 'reclaim_strength_score' => (float)($candidate['reclaim_strength_score'] ?? 0.0),
                 'hold_quality_score' => (float)($candidate['hold_quality_score'] ?? 0.0),
                 'post_reclaim_stability_score' => (float)($candidate['post_reclaim_stability_score'] ?? 0.0),

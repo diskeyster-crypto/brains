@@ -176,6 +176,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         $sniperV3Eligible = (int)($last_run['sniper_v3_live_eligible_count'] ?? 0);
         $sniperV3Rejected = (int)($last_run['sniper_v3_live_rejected_count'] ?? 0);
         $sniperV3RejectDist = (array)($last_run['sniper_v3_reject_reason_distribution'] ?? []);
+        $sniperV3Structural = (int)($last_run['structural_v3_signal_count'] ?? 0);
     ?>
     <div class="card mb-4" style="border-color: #f59e0b;">
         <div class="card-header" style="background: rgba(245,158,11,0.1);">
@@ -186,6 +187,10 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         </div>
         <div class="card-body">
             <div class="row mb-2" style="font-size: 0.85rem;">
+                <div class="col-md-2 mb-2">
+                    <strong>Structural V3:</strong>
+                    <span class="badge bg-primary"><?= $sniperV3Structural ?></span>
+                </div>
                 <div class="col-md-3 mb-2">
                     <strong>Allowed Tiers:</strong>
                     <?php foreach ($sniperV3AllowedTiers as $tier): ?>

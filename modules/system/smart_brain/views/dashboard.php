@@ -198,6 +198,74 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         </div>
     </div>
 
+    <!-- Sniper V3 Live Filter Analytics -->
+    <?php
+        $dashIsSniperProfile = in_array($dashProfile, ['sniper_75_attempt', 'sniper_lite'], true);
+        $sniperStructural = (int)($last_run['structural_v3_signal_count'] ?? 0);
+        $sniperEligible = (int)($last_run['sniper_v3_live_eligible_count'] ?? 0);
+        $sniperRejected = (int)($last_run['sniper_v3_live_rejected_count'] ?? 0);
+        $sniperShadow = (int)($last_run['sniper_v3_shadow_only_count'] ?? 0);
+        $sniperRejectDist = is_array($last_run['sniper_v3_reject_reason_distribution'] ?? null)
+            ? $last_run['sniper_v3_reject_reason_distribution'] : [];
+    ?>
+    <?php if ($dashIsSniperProfile): ?>
+    <div class="card mb-4" style="border-color: <?= $dashProfile === 'sniper_lite' ? '#06b6d4' : '#f59e0b' ?>;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 style="margin: 0;"><i class="bi bi-crosshair me-1"></i> Sniper V3 Live Filter</h5>
+            <span class="badge <?= $dashProfile === 'sniper_lite' ? 'bg-info' : 'bg-warning text-dark' ?>"><?= htmlspecialchars($dashProfileLabel) ?></span>
+        </div>
+        <div class="card-body">
+            <div class="row text-center mb-2">
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Structural V3 Signals</small>
+                    <strong><?= $sniperStructural ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Live Eligible</small>
+                    <strong class="text-success"><?= $sniperEligible ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Live Rejected</small>
+                    <strong class="text-danger"><?= $sniperRejected ?></strong>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-secondary d-block">Shadow Only</small>
+                    <strong class="text-secondary"><?= $sniperShadow ?></strong>
+                </div>
+                <div class="col-md-3">
+                    <small class="text-secondary d-block">Pass Rate</small>
+                    <strong><?= $sniperStructural > 0 ? round(($sniperEligible / $sniperStructural) * 100, 1) . '%' : '—' ?></strong>
+                </div>
+            </div>
+            <?php if ($sniperStructural === 0 && $sniperEligible === 0): ?>
+            <div class="alert alert-secondary small mb-0 py-1 px-2">
+                <i class="bi bi-info-circle me-1"></i>
+                No structural V3 signals this cycle. This is normal — V3 detection may not produce signals every run.
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($sniperRejectDist)): ?>
+            <hr class="my-2">
+            <small class="text-secondary d-block mb-1">Top Reject Reasons</small>
+            <div class="d-flex flex-wrap gap-1">
+                <?php
+                    arsort($sniperRejectDist);
+                    foreach (array_slice($sniperRejectDist, 0, 8, true) as $reason => $cnt):
+                ?>
+                <span class="badge bg-dark text-light"><?= htmlspecialchars(str_replace('sniper_reject_', '', (string)$reason)) ?>: <?= $cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($dashProfile === 'sniper_lite'): ?>
+            <div class="alert alert-info small mb-0 mt-2 py-1 px-2">
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>Sniper Lite:</strong> Allows strong <em>and selected medium</em> V3 confirmations.
+                Higher signal count than strict Sniper, lower target precision.
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- P1: Trading Bot Execution Mirror -->
     <?php
         $botMirror = $bot_execution_mirror ?? [];

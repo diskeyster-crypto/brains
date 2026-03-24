@@ -1080,9 +1080,10 @@ if ($v3DsHasData):
 $sniperV3Eligible = (int)($v2DownstreamFunnel['sniper_v3_live_eligible_count'] ?? ($rc['sniper_v3_live_eligible_count'] ?? 0));
 $sniperV3Rejected = (int)($v2DownstreamFunnel['sniper_v3_live_rejected_count'] ?? ($rc['sniper_v3_live_rejected_count'] ?? 0));
 $sniperV3Shadow = (int)($v2DownstreamFunnel['sniper_v3_shadow_only_count'] ?? ($rc['sniper_v3_shadow_only_count'] ?? 0));
+$sniperV3Structural = (int)($v2DownstreamFunnel['structural_v3_signal_count'] ?? ($rc['structural_v3_signal_count'] ?? 0));
 $sniperV3RejectDist = (array)($v2DownstreamFunnel['sniper_v3_reject_reason_distribution'] ?? ($rc['sniper_v3_reject_reason_distribution'] ?? []));
 $sniperV3RejectedPreview = (array)($v2DownstreamFunnel['sniper_v3_rejected_preview'] ?? ($rc['sniper_v3_rejected_preview'] ?? []));
-$sniperV3HasData = $sniperV3Eligible > 0 || $sniperV3Rejected > 0 || !empty($sniperV3RejectDist);
+$sniperV3HasData = $sniperV3Eligible > 0 || $sniperV3Rejected > 0 || $sniperV3Structural > 0 || !empty($sniperV3RejectDist);
 if ($sniperV3HasData):
 ?>
 <div class="card mb-3">
@@ -1091,6 +1092,7 @@ if ($sniperV3HasData):
     </div>
     <div class="card-body p-2">
         <div class="d-flex flex-wrap gap-3 small mb-2">
+            <span>Structural V3 Signals: <strong class="text-primary"><?= $sniperV3Structural ?></strong></span>
             <span>V3 Live Eligible: <strong class="<?= $sniperV3Eligible > 0 ? 'text-success' : 'text-secondary' ?>"><?= $sniperV3Eligible ?></strong></span>
             <span>V3 Live Rejected: <strong class="<?= $sniperV3Rejected > 0 ? 'text-warning' : 'text-secondary' ?>"><?= $sniperV3Rejected ?></strong></span>
             <span>V3 Shadow Only: <strong class="text-muted"><?= $sniperV3Shadow ?></strong></span>

@@ -870,6 +870,7 @@ final class SmartBrainCore
             'sniper_v3_shadow_only_count' => 0,
             'sniper_v3_reject_reason_distribution' => [],
             'sniper_v3_rejected_preview' => [],
+            'structural_v3_signal_count' => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1069,9 +1070,15 @@ final class SmartBrainCore
                 && $isSniperProfile
                 && $sniperV3FilterEnabled
             ) {
+                // Track structural V3 signal count (every V3 reaching this point is structurally valid)
+                $result['structural_v3_signal_count'] = ($result['structural_v3_signal_count'] ?? 0) + 1;
+
                 $sniperFilterResult = SmartBrainConfig::evaluateSniperV3LiveFilter($signal, $userLimits, $execProfile);
                 // Tag signal for diagnostics
+                $signal['sniper_profile_name'] = $execProfile;
+                $signal['structural_signal'] = true;
                 $signal['sniper_live_eligible'] = $sniperFilterResult['eligible'];
+                $signal['sniper_filter_passed'] = $sniperFilterResult['eligible'];
                 if (!$sniperFilterResult['eligible']) {
                     $signal['sniper_shadow_only'] = true;
                     $signal['sniper_reject_reasons'] = $sniperFilterResult['reject_reasons'];

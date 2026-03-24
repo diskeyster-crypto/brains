@@ -216,11 +216,11 @@ final class SmartBrainCore
             $this->logger->log('warning', 'Config Conflict Guard: zero candidates after filtering. ' . $configConflictMessage);
         }
 
-        // Enrich V2 candidates with policy fields for storage consistency
+        // Enrich V2/V3 candidates with policy fields for storage consistency
         // (confirmation_tier, entry_action, zone_widen_profile, v2_priority_score)
         foreach ($candidates as &$c) {
             $patternAlgo = (string)($c['pattern_algorithm'] ?? '');
-            if ($patternAlgo === 'double_bottom_contextual_v2') {
+            if ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_bottom_contextual_v3') {
                 $policyFields = CorridorMonitor::computeV2PolicyFields($c, $userLimits);
                 $c['confirmation_tier'] = $policyFields['confirmation_tier'];
                 $c['entry_action'] = $policyFields['entry_action'];
@@ -575,12 +575,56 @@ final class SmartBrainCore
         // Build what-if analysis summary for V2 (includes tier-based scenarios)
         $v2WhatIfAnalysis = $this->computeV2WhatIfAnalysis($v2DownstreamFunnel);
 
+        // Build V3 debug preview: compact summary of V3 signals for sniper observability
+        $v3DebugPreview = [];
+        foreach ($signals as $s) {
+            $algo = (string)($s['pattern_algorithm'] ?? '');
+            if ($algo === 'double_bottom_contextual_v3' && count($v3DebugPreview) < 10) {
+                $v3DebugPreview[] = [
+                    'symbol' => (string)($s['symbol'] ?? ''),
+                    'confirmation_score' => round((float)($s['confirmation_score'] ?? 0.0), 4),
+                    'confirmation_tier' => (string)($s['confirmation_tier'] ?? 'none'),
+                    'reclaim_strength_score' => round((float)($s['reclaim_strength_score'] ?? 0.0), 4),
+                    'hold_quality_score' => round((float)($s['hold_quality_score'] ?? 0.0), 4),
+                    'post_reclaim_stability_score' => round((float)($s['post_reclaim_stability_score'] ?? 0.0), 4),
+                    'zone_defense_score' => round((float)($s['zone_defense_score'] ?? 0.0), 4),
+                    'entry_action' => (string)($s['entry_action'] ?? 'wait_retrace'),
+                    'price_position' => round((float)($s['price_position'] ?? 0.0), 4),
+                    'entry_zone_low' => $s['entry_zone_low'] ?? null,
+                    'entry_zone_high' => $s['entry_zone_high'] ?? null,
+                    'pattern_confidence' => round((float)($s['pattern_confidence'] ?? 0.0), 4),
+                    'v2_priority_score' => round((float)($s['v2_priority_score'] ?? 0.0), 4),
+                ];
+            }
+        }
+
+        // Also build V3 debug preview from candidates (for cases where no signals pass)
+        $v3CandidatePreview = [];
+        foreach ($candidates as $c) {
+            $algo = (string)($c['pattern_algorithm'] ?? '');
+            if ($algo === 'double_bottom_contextual_v3' && count($v3CandidatePreview) < 10) {
+                $v3CandidatePreview[] = [
+                    'symbol' => (string)($c['symbol'] ?? ''),
+                    'confirmation_score' => round((float)($c['confirmation_score'] ?? 0.0), 4),
+                    'confirmation_tier' => (string)($c['confirmation_tier'] ?? 'none'),
+                    'reclaim_strength_score' => round((float)($c['reclaim_strength_score'] ?? 0.0), 4),
+                    'hold_quality_score' => round((float)($c['hold_quality_score'] ?? 0.0), 4),
+                    'post_reclaim_stability_score' => round((float)($c['post_reclaim_stability_score'] ?? 0.0), 4),
+                    'zone_defense_score' => round((float)($c['zone_defense_score'] ?? 0.0), 4),
+                    'entry_action' => (string)($c['entry_action'] ?? 'wait_retrace'),
+                    'pattern_confidence' => round((float)($c['pattern_confidence'] ?? 0.0), 4),
+                ];
+            }
+        }
+
         // Persist V2 downstream funnel
         $this->state->writeJson('storage/v2_downstream_funnel.json', [
             'by_pattern' => $v2DownstreamFunnel,
             'failed_monitor_preview' => $failedMonitorPreview,
             'whatif_analysis' => $v2WhatIfAnalysis,
             'signal_tier_distribution' => $signalTierDistribution,
+            'v3_debug_preview' => $v3DebugPreview,
+            'v3_candidate_preview' => $v3CandidatePreview,
             'final_signal_confirmation_score_missing_count' => $finalSignalConfScoreMissing,
             'final_signal_confirmation_score_null_count' => $finalSignalConfScoreNull,
             'candidate_policy_fields_missing_count' => $candidatePolicyFieldsMissingCount,

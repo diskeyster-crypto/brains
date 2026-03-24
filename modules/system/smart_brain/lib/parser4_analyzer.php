@@ -275,6 +275,8 @@ final class Parser4Analyzer
                 'hold_quality_score' => (float)($patternResult['hold_quality_score'] ?? 0.0),
                 'post_reclaim_stability_score' => (float)($patternResult['post_reclaim_stability_score'] ?? 0.0),
                 'zone_defense_score' => (float)($patternResult['zone_defense_score'] ?? 0.0),
+                // V3 confirmation tier (from detector, enriched later by policy fields)
+                'confirmation_tier' => (string)($patternResult['confirmation_tier'] ?? ''),
                 'trend_match_score' => round($trendMatchScore, 4),
                 'corridor_fit_score' => round($corridorFitScore, 4),
                 'entry_quality_score' => round($entryQualityScore, 4),
@@ -366,12 +368,23 @@ final class Parser4Analyzer
                 $preview = method_exists($detector, 'getContextRejectPreview')
                     ? $detector->getContextRejectPreview()
                     : [];
+
+                // Collect confirmation-stage reject diagnostics (V3+)
+                $confirmRejectDistribution = method_exists($detector, 'getConfirmRejectReasonDistribution')
+                    ? $detector->getConfirmRejectReasonDistribution()
+                    : [];
+                $confirmRejectPreview = method_exists($detector, 'getConfirmRejectPreview')
+                    ? $detector->getConfirmRejectPreview()
+                    : [];
+
                 $contextDiagnostics[$name] = [
                     'reject_reason_distribution' => $distribution,
                     'context_rejected_count'     => $contextRejected,
                     'context_passed_count'       => $contextPassed,
                     'context_pass_rate'          => $contextPassRate,
                     'context_reject_preview'     => $preview,
+                    'confirm_reject_reason_distribution' => $confirmRejectDistribution,
+                    'confirm_reject_preview'     => $confirmRejectPreview,
                 ];
             } elseif (method_exists($detector, 'getLastRejectReasons')) {
                 $reasons = $detector->getLastRejectReasons();
@@ -842,6 +855,8 @@ final class Parser4Analyzer
                     'hold_quality_score' => (float)($result['hold_quality_score'] ?? 0.0),
                     'post_reclaim_stability_score' => (float)($result['post_reclaim_stability_score'] ?? 0.0),
                     'zone_defense_score' => (float)($result['zone_defense_score'] ?? 0.0),
+                    // V3 confirmation tier (computed by V3 detector)
+                    'confirmation_tier' => (string)($result['confirmation_tier'] ?? ''),
                 ];
             }
         }
@@ -896,6 +911,8 @@ final class Parser4Analyzer
             'hold_quality_score' => $best['hold_quality_score'],
             'post_reclaim_stability_score' => $best['post_reclaim_stability_score'],
             'zone_defense_score' => $best['zone_defense_score'],
+            // V3 confirmation tier
+            'confirmation_tier' => $best['confirmation_tier'] ?? '',
         ];
     }
 

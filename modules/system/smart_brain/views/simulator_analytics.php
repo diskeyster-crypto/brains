@@ -853,6 +853,136 @@ if (!empty($v2DfByPattern)):
 </div>
 <?php endif; ?>
 
+<?php
+// ── V3 Sniper Debug Preview ──
+$v3DebugPreview = $v2DownstreamFunnel['v3_debug_preview'] ?? ($rc['v3_debug_preview'] ?? []);
+$v3CandidatePreview = $v2DownstreamFunnel['v3_candidate_preview'] ?? ($rc['v3_candidate_preview'] ?? []);
+$v3StageCounters = [];
+$v2scByAlgo = (array)($v2sc['by_algorithm'] ?? []);
+if (isset($v2scByAlgo['double_bottom_contextual_v3'])) {
+    $v3StageCounters = (array)$v2scByAlgo['double_bottom_contextual_v3'];
+}
+$v3ContextDiag = (array)(($v2sc['context_diagnostics'] ?? [])['double_bottom_contextual_v3'] ?? []);
+$v3ConfirmRejectDist = (array)($v3ContextDiag['confirm_reject_reason_distribution'] ?? []);
+$v3ConfirmRejectPreview = (array)($v3ContextDiag['confirm_reject_preview'] ?? []);
+$v3HasData = !empty($v3DebugPreview) || !empty($v3CandidatePreview) || !empty($v3StageCounters) || !empty($v3ConfirmRejectDist);
+if ($v3HasData):
+?>
+<div class="card mb-3">
+    <div class="card-header bg-dark text-white">
+        <strong><i class="bi bi-crosshair me-1"></i> V3 Sniper Observability — Confirmation Quality</strong>
+    </div>
+    <div class="card-body p-2">
+        <?php if (!empty($v3StageCounters)): ?>
+        <div class="d-flex flex-wrap gap-2 small mb-2">
+            <span>Context Passed: <strong class="text-success"><?= (int)($v3StageCounters['context_passed_count'] ?? 0) ?></strong></span>
+            <span>Setup Candidates: <strong><?= (int)($v3StageCounters['setup_candidates_count'] ?? 0) ?></strong></span>
+            <span>Confirmed: <strong class="<?= ((int)($v3StageCounters['confirmed_signals_count'] ?? 0)) > 0 ? 'text-success' : 'text-danger' ?>"><?= (int)($v3StageCounters['confirmed_signals_count'] ?? 0) ?></strong></span>
+            <span>Confirm Rejected: <strong class="text-warning"><?= (int)($v3StageCounters['confirm_rejected_count'] ?? 0) ?></strong></span>
+            <span>Confirmation Rate: <strong><?= number_format((float)($v3StageCounters['confirmation_rate'] ?? 0) * 100, 1) ?>%</strong></span>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($v3ConfirmRejectDist)):
+            arsort($v3ConfirmRejectDist);
+        ?>
+        <div class="mb-2">
+            <strong class="small">V3 Confirmation Reject Reasons:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($v3ConfirmRejectDist as $reason => $cnt): ?>
+                <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($v3ConfirmRejectPreview)): ?>
+        <details class="mb-2">
+            <summary class="text-muted small">V3 Confirm Reject Preview (first <?= count($v3ConfirmRejectPreview) ?>)</summary>
+            <div class="small mt-1">
+                <?php foreach ($v3ConfirmRejectPreview as $crp): ?>
+                <div class="badge bg-light text-dark border me-1 mb-1">
+                    <?= htmlspecialchars((string)($crp['reject_reason'] ?? '')) ?>
+                    <?php if (isset($crp['detail'])): ?> — <?= htmlspecialchars((string)$crp['detail']) ?><?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </details>
+        <?php endif; ?>
+
+        <?php if (!empty($v3DebugPreview)): ?>
+        <h6 class="mb-1"><i class="bi bi-bullseye me-1"></i> V3 Signal Debug Preview</h6>
+        <table class="table table-sm table-bordered mb-2" style="font-size: 0.78rem;">
+            <thead class="table-light">
+                <tr>
+                    <th>Symbol</th>
+                    <th>Conf Score</th>
+                    <th>Tier</th>
+                    <th>Reclaim</th>
+                    <th>Hold</th>
+                    <th>Stability</th>
+                    <th>Defense</th>
+                    <th>Entry Action</th>
+                    <th>Price Pos</th>
+                    <th>Priority</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($v3DebugPreview as $vp): ?>
+                <tr>
+                    <td><?= htmlspecialchars((string)($vp['symbol'] ?? '')) ?></td>
+                    <td><strong><?= number_format((float)($vp['confirmation_score'] ?? 0), 3) ?></strong></td>
+                    <td><span class="badge <?= match((string)($vp['confirmation_tier'] ?? 'none')) { 'strong', 'very_strong' => 'bg-success', 'medium' => 'bg-warning text-dark', 'weak' => 'bg-danger', default => 'bg-secondary' } ?>"><?= htmlspecialchars((string)($vp['confirmation_tier'] ?? 'none')) ?></span></td>
+                    <td><?= number_format((float)($vp['reclaim_strength_score'] ?? 0), 3) ?></td>
+                    <td><?= number_format((float)($vp['hold_quality_score'] ?? 0), 3) ?></td>
+                    <td><?= number_format((float)($vp['post_reclaim_stability_score'] ?? 0), 3) ?></td>
+                    <td><?= number_format((float)($vp['zone_defense_score'] ?? 0), 3) ?></td>
+                    <td><?= htmlspecialchars((string)($vp['entry_action'] ?? 'wait_retrace')) ?></td>
+                    <td><?= number_format((float)($vp['price_position'] ?? 0), 3) ?></td>
+                    <td><?= number_format((float)($vp['v2_priority_score'] ?? 0), 3) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+
+        <?php if (!empty($v3CandidatePreview)): ?>
+        <details class="mb-1">
+            <summary class="text-muted small"><i class="bi bi-search me-1"></i> V3 Candidate Preview (first <?= count($v3CandidatePreview) ?>)</summary>
+            <table class="table table-sm table-bordered mt-1 mb-0" style="font-size: 0.78rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Conf Score</th>
+                        <th>Tier</th>
+                        <th>Reclaim</th>
+                        <th>Hold</th>
+                        <th>Stability</th>
+                        <th>Defense</th>
+                        <th>Pat Conf</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($v3CandidatePreview as $vcp): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)($vcp['symbol'] ?? '')) ?></td>
+                        <td><strong><?= number_format((float)($vcp['confirmation_score'] ?? 0), 3) ?></strong></td>
+                        <td><span class="badge <?= match((string)($vcp['confirmation_tier'] ?? 'none')) { 'strong', 'very_strong' => 'bg-success', 'medium' => 'bg-warning text-dark', 'weak' => 'bg-danger', default => 'bg-secondary' } ?>"><?= htmlspecialchars((string)($vcp['confirmation_tier'] ?? 'none')) ?></span></td>
+                        <td><?= number_format((float)($vcp['reclaim_strength_score'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($vcp['hold_quality_score'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($vcp['post_reclaim_stability_score'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($vcp['zone_defense_score'] ?? 0), 3) ?></td>
+                        <td><?= number_format((float)($vcp['pattern_confidence'] ?? 0), 3) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
     <!-- ===== REGRESSION AUDIT: SHORT-SIDE COLLAPSE ===== -->
     <?php
     $ra = (array)($stats['regression_audit'] ?? []);

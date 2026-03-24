@@ -811,6 +811,8 @@ final class SimulationAudit
                 'confirmation_score_zero_on_confirmed_count' => (int)($funnel['confirmation_score_zero_on_confirmed_count'] ?? 0),
                 'confirmation_score_total_monitors' => (int)($funnel['confirmation_score_total_monitors'] ?? 0),
                 'confirmation_score_flat_warning' => (bool)($funnel['confirmation_score_flat_warning'] ?? false),
+                'component_score_averages' => $funnel['component_score_averages'] ?? [],
+                'signals_by_tier' => $funnel['signals_by_tier'] ?? [],
                 'top_reject_reason' => $topRejectReason,
                 'top_reject_detail' => $topRejectDetail,
                 'rejection_reasons' => $rejectionReasons,
@@ -829,6 +831,8 @@ final class SimulationAudit
             'top_patterns' => ['v1' => $topV1, 'v2' => $topV2],
             'v2_stage_counters' => $v2StageCounters,
             'v2_downstream_funnel' => $v2DownstreamFunnelAudit,
+            'v3_debug_preview' => $v2DownstreamFunnelRaw['v3_debug_preview'] ?? [],
+            'v3_candidate_preview' => $v2DownstreamFunnelRaw['v3_candidate_preview'] ?? [],
             'compare_mode_active' => true,
             'evaluation_note' => 'V2 is under shadow evaluation. Promotion requires statistical evidence.',
         ];

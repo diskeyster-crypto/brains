@@ -5,6 +5,9 @@ final class SmartBrainConfig
 {
     private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
 
+    /** Valid execution profile IDs */
+    private const ALLOWED_EXECUTION_PROFILES = ['balanced', 'conservative', 'sniper_75_attempt', 'custom'];
+
     private string $moduleBase;
     /** @var array<string,mixed> */
     private array $config;
@@ -92,6 +95,8 @@ final class SmartBrainConfig
         }
 
         $clean = [
+            'execution_profile'            => in_array((string)($values['execution_profile'] ?? 'custom'), self::ALLOWED_EXECUTION_PROFILES, true)
+                                                ? (string)$values['execution_profile'] : 'custom',
             'max_budget_per_coin'          => (float)$values['max_budget_per_coin'],
             'max_active_tasks'             => (int)$values['max_active_tasks'],
             'max_leverage'                 => (int)$values['max_leverage'],
@@ -201,6 +206,9 @@ final class SmartBrainConfig
             $clean
         );
 
+        // Apply execution profile bundle over managed fields immediately
+        $this->applyExecutionProfile();
+
         // Apply pattern selection into parser4 config immediately
         $this->applyPatternSelection($clean['patterns']);
 
@@ -216,6 +224,11 @@ final class SmartBrainConfig
     public function validateUserConfig(array $values): array
     {
         $errors = [];
+
+        // Execution Profile validation
+        if (isset($values['execution_profile']) && !in_array((string)$values['execution_profile'], self::ALLOWED_EXECUTION_PROFILES, true)) {
+            $errors[] = 'execution_profile must be one of: ' . implode(', ', self::ALLOWED_EXECUTION_PROFILES);
+        }
 
         if (!isset($values['max_budget_per_coin']) || (float)$values['max_budget_per_coin'] <= 0) {
             $errors[] = 'max_budget_per_coin must be > 0';
@@ -969,10 +982,123 @@ final class SmartBrainConfig
             'parser4' => $this->get('parser4', []),
             'corridor' => $this->getEffective('corridor'),
             'risk_engine' => $this->getEffective('risk_engine'),
+            'execution_profile' => $this->buildExecutionProfileSnapshot(),
             'profiles' => $this->getEffective('profiles'),
             'simulator' => $this->getEffective('simulator'),
             'ui' => $this->getEffective('ui'),
             'generated_at' => date('c'),
+        ];
+    }
+
+    /**
+     * Build the execution profile section for effective config snapshot.
+     *
+     * @return array<string,mixed>
+     */
+    private function buildExecutionProfileSnapshot(): array
+    {
+        $userLimits = $this->getUserLimits();
+        $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
+        $bundles = self::getExecutionProfileBundles();
+        $bundle = $bundles[$profileId] ?? $bundles['custom'];
+
+        return [
+            'execution_profile' => $profileId,
+            'execution_profile_label' => $bundle['label'],
+            'execution_profile_description' => $bundle['description'],
+            'execution_profile_mode' => $profileId === 'custom' ? 'custom' : 'preset',
+            'active_profile_managed_fields' => self::getProfileManagedFields(),
+            'active_values' => $this->getActiveProfileManagedValues(),
+        ];
+    }
+
+    /**
+     * Get the current active values for all profile-managed fields.
+     *
+     * @return array<string,mixed>
+     */
+    private function getActiveProfileManagedValues(): array
+    {
+        $userLimits = $this->getUserLimits();
+        $result = [];
+        foreach (self::getProfileManagedFields() as $field) {
+            $result[$field] = $userLimits[$field] ?? null;
+        }
+        return $result;
+    }
+
+    /**
+     * Get the list of field names managed by execution profiles.
+     * These fields are overwritten when a non-custom profile is selected.
+     *
+     * @return list<string>
+     */
+    public static function getProfileManagedFields(): array
+    {
+        return [
+            'v2_confirmation_weak_max',
+            'v2_confirmation_strong_min',
+            'v2_zone_widen_weak_pct',
+            'v2_zone_widen_medium_pct',
+            'v2_zone_widen_strong_pct',
+            'v2_zone_widen_max_cap_pct',
+        ];
+    }
+
+    /**
+     * Get execution profile bundle definitions.
+     *
+     * Each bundle contains:
+     *   - label: human-readable name
+     *   - description: what the profile does
+     *   - values: managed field values (empty for custom)
+     *
+     * @return array<string,array{label:string,description:string,values:array<string,float>}>
+     */
+    public static function getExecutionProfileBundles(): array
+    {
+        return [
+            'balanced' => [
+                'label' => 'Balanced',
+                'description' => 'Standard working profile balancing signal count and quality. Medium confirmations allowed, moderate zone widening.',
+                'values' => [
+                    'v2_confirmation_weak_max' => 0.45,
+                    'v2_confirmation_strong_min' => 0.70,
+                    'v2_zone_widen_weak_pct' => 0.50,
+                    'v2_zone_widen_medium_pct' => 0.65,
+                    'v2_zone_widen_strong_pct' => 0.80,
+                    'v2_zone_widen_max_cap_pct' => 0.85,
+                ],
+            ],
+            'conservative' => [
+                'label' => 'Conservative',
+                'description' => 'Lower-risk profile with reduced aggression. Tighter zone widening and stricter strong confirmation threshold.',
+                'values' => [
+                    'v2_confirmation_weak_max' => 0.45,
+                    'v2_confirmation_strong_min' => 0.75,
+                    'v2_zone_widen_weak_pct' => 0.45,
+                    'v2_zone_widen_medium_pct' => 0.55,
+                    'v2_zone_widen_strong_pct' => 0.70,
+                    'v2_zone_widen_max_cap_pct' => 0.75,
+                ],
+            ],
+            'sniper_75_attempt' => [
+                'label' => 'Sniper Mode (75%+ attempt)',
+                'description' => 'Very selective profile targeting higher winrate at the cost of fewer trades. Only strongest confirmations become live entries. This is a target intent, not a guaranteed outcome.',
+                'values' => [
+                    'v2_confirmation_weak_max' => 0.45,
+                    'v2_confirmation_strong_min' => 0.80,
+                    'v2_zone_widen_weak_pct' => 0.50,
+                    'v2_zone_widen_medium_pct' => 0.60,
+                    'v2_zone_widen_strong_pct' => 0.75,
+                    'v2_zone_widen_max_cap_pct' => 0.75,
+                ],
+            ],
+            'custom' => [
+                'label' => 'Custom',
+                'description' => 'Manual mode — all managed fields are editable directly. No profile bundle overwrites values.',
+                'values' => [],
+            ],
         ];
     }
 
@@ -1031,9 +1157,39 @@ final class SmartBrainConfig
             $saved
         );
 
+        // Apply execution profile bundle over managed fields (non-custom profiles only)
+        $this->applyExecutionProfile();
+
         // Apply pattern selection from user config into parser4 config
         if (isset($saved['patterns']) && is_array($saved['patterns'])) {
             $this->applyPatternSelection($saved['patterns']);
+        }
+    }
+
+    /**
+     * Apply execution profile bundle values over managed fields in user_limits.
+     *
+     * When execution_profile is NOT 'custom', the profile's managed field values
+     * are applied deterministically — operator values for managed fields are overwritten.
+     * When execution_profile IS 'custom' (or absent for backward compat), no overwrite occurs.
+     */
+    private function applyExecutionProfile(): void
+    {
+        $userLimits = &$this->config['risk_engine']['user_limits'];
+        $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
+
+        if ($profileId === 'custom') {
+            return;
+        }
+
+        $bundles = self::getExecutionProfileBundles();
+        if (!isset($bundles[$profileId])) {
+            return;
+        }
+
+        $bundle = $bundles[$profileId];
+        foreach ($bundle['values'] as $field => $value) {
+            $userLimits[$field] = $value;
         }
     }
 

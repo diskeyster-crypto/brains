@@ -60,6 +60,87 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
 
     <form method="POST" action="<?= htmlspecialchars($smartBrainUrl) ?>/user_config/save" id="user-config-form">
 
+        <!-- Execution Profile Section -->
+        <?php
+            $currentProfile = (string)($form_values['execution_profile'] ?? 'custom');
+            $profileBundles = SmartBrainConfig::getExecutionProfileBundles();
+            $managedFields = SmartBrainConfig::getProfileManagedFields();
+            $isProfileMode = $currentProfile !== 'custom';
+            $currentBundle = $profileBundles[$currentProfile] ?? $profileBundles['custom'];
+        ?>
+        <div class="card mb-4" style="border-color: <?= $isProfileMode ? '#6366f1' : '#6b7280' ?>;">
+            <div class="card-header d-flex align-items-center" style="background: <?= $isProfileMode ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
+                <i class="bi bi-crosshair me-2"></i>
+                <h5 style="margin: 0;">Execution Profile</h5>
+                <?php if ($isProfileMode): ?>
+                <span class="badge bg-primary ms-2"><?= htmlspecialchars($currentBundle['label']) ?></span>
+                <?php else: ?>
+                <span class="badge bg-secondary ms-2">Custom</span>
+                <?php endif; ?>
+            </div>
+            <div class="card-body">
+                <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                    Choose an execution profile to apply a coordinated bundle of V2 entry quality parameters.
+                    Profiles control confirmation thresholds and zone widening behavior.
+                    Select <strong>Custom</strong> to edit managed fields manually.
+                </p>
+                <div class="row">
+                    <div class="col-md-5 mb-3">
+                        <label for="execution_profile" class="form-label fw-bold">Active Profile</label>
+                        <select class="form-select" id="execution_profile" name="execution_profile">
+                            <?php foreach ($profileBundles as $pid => $pbundle): ?>
+                            <option value="<?= htmlspecialchars($pid) ?>" <?= $currentProfile === $pid ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($pbundle['label']) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-7 mb-3">
+                        <div id="profile-description-card" class="alert <?= $isProfileMode ? 'alert-info' : 'alert-secondary' ?> mb-0" style="font-size: 0.85rem;">
+                            <strong id="profile-desc-label"><?= htmlspecialchars($currentBundle['label']) ?></strong>
+                            <span id="profile-desc-text"><?= htmlspecialchars($currentBundle['description']) ?></span>
+                            <?php if ($currentProfile === 'sniper_75_attempt'): ?>
+                            <div class="mt-1 text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.</div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <!-- Profile Managed Fields Preview (collapsible) -->
+                <div class="mt-1">
+                    <a class="text-decoration-none small" data-bs-toggle="collapse" href="#profile-managed-fields" role="button" aria-expanded="false">
+                        <i class="bi bi-gear me-1"></i>Show managed V2 parameters
+                    </a>
+                    <div class="collapse mt-2" id="profile-managed-fields">
+                        <div class="card card-body" style="font-size: 0.82rem; background: rgba(255,255,255,0.03);">
+                            <p class="mb-2 text-secondary">These V2 entry quality fields are controlled by the selected profile. In <strong>Custom</strong> mode they are editable via <em>config/risk_engine.php</em> user_limits.</p>
+                            <table class="table table-sm table-dark mb-0">
+                                <thead><tr><th>Field</th><th>Active Value</th></tr></thead>
+                                <tbody>
+                                <?php foreach ($managedFields as $mf): ?>
+                                <tr>
+                                    <td><code><?= htmlspecialchars($mf) ?></code></td>
+                                    <td>
+                                        <?php
+                                            if ($isProfileMode && isset($currentBundle['values'][$mf])) {
+                                                echo '<span class="text-info">' . htmlspecialchars((string)$currentBundle['values'][$mf]) . '</span>';
+                                                echo ' <small class="text-secondary">(profile)</small>';
+                                            } else {
+                                                $val = $form_values[$mf] ?? $user_limits[$mf] ?? '-';
+                                                echo htmlspecialchars((string)$val);
+                                                echo ' <small class="text-secondary">(manual)</small>';
+                                            }
+                                        ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Pattern Selection Section -->
         <div class="row">
             <div class="col-md-6 mb-4">
@@ -1157,6 +1238,49 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                 }
             }
             trailingModeSelect.addEventListener('change', updateTrailingModeVisibility);
+        }
+
+        // Execution Profile switcher — update description and badge on change
+        var profileSelect = document.getElementById('execution_profile');
+        if (profileSelect) {
+            var profileBundles = <?= json_encode($profileBundles, JSON_UNESCAPED_UNICODE) ?>;
+            profileSelect.addEventListener('change', function() {
+                var pid = this.value;
+                var bundle = profileBundles[pid] || profileBundles['custom'];
+                var descCard = document.getElementById('profile-description-card');
+                var descLabel = document.getElementById('profile-desc-label');
+                var descText = document.getElementById('profile-desc-text');
+                if (descLabel) descLabel.textContent = bundle.label + ': ';
+                if (descText) descText.textContent = bundle.description;
+                if (descCard) {
+                    descCard.className = 'alert mb-0';
+                    descCard.classList.add(pid !== 'custom' ? 'alert-info' : 'alert-secondary');
+                    descCard.style.fontSize = '0.85rem';
+                    // Append sniper warning if applicable
+                    var existing = descCard.querySelector('.text-warning');
+                    if (existing) existing.remove();
+                    if (pid === 'sniper_75_attempt') {
+                        var warn = document.createElement('div');
+                        warn.className = 'mt-1 text-warning';
+                        warn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.';
+                        descCard.appendChild(warn);
+                    }
+                }
+                // Update header badge
+                var headerCard = profileSelect.closest('.card');
+                if (headerCard) {
+                    var headerBadge = headerCard.querySelector('.card-header .badge');
+                    if (headerBadge) {
+                        headerBadge.className = pid !== 'custom' ? 'badge bg-primary ms-2' : 'badge bg-secondary ms-2';
+                        headerBadge.textContent = bundle.label;
+                    }
+                    headerCard.style.borderColor = pid !== 'custom' ? '#6366f1' : '#6b7280';
+                    var cardHeader = headerCard.querySelector('.card-header');
+                    if (cardHeader) {
+                        cardHeader.style.background = pid !== 'custom' ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)';
+                    }
+                }
+            });
         }
     });
     </script>

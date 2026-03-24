@@ -62,6 +62,45 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
     </div>
     <?php endif; ?>
 
+    <!-- Execution Profile Status -->
+    <?php
+        $execProfile = (string)($last_run['execution_profile'] ?? 'custom');
+        $execProfileLabel = (string)($last_run['execution_profile_label'] ?? 'Custom');
+        $execProfileIsPreset = $execProfile !== 'custom';
+        $execProfileBundles = SmartBrainConfig::getExecutionProfileBundles();
+        $execProfileBundle = $execProfileBundles[$execProfile] ?? $execProfileBundles['custom'];
+    ?>
+    <div class="card mb-4" style="border-color: <?= $execProfileIsPreset ? '#6366f1' : '#6b7280' ?>;">
+        <div class="card-header" style="background: <?= $execProfileIsPreset ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
+            <h5 style="margin: 0;">
+                <i class="bi bi-crosshair me-1"></i> Execution Profile
+                <span class="badge <?= $execProfileIsPreset ? 'bg-primary' : 'bg-secondary' ?> ms-1"><?= htmlspecialchars($execProfileLabel) ?></span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-2">
+                    <strong>Profile ID:</strong>
+                    <code><?= htmlspecialchars($execProfile) ?></code>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <strong>Mode:</strong>
+                    <span class="<?= $execProfileIsPreset ? 'text-info' : 'text-secondary' ?>"><?= $execProfileIsPreset ? 'Preset' : 'Custom / Manual' ?></span>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <strong>Managed Fields:</strong>
+                    <span class="text-info"><?= count(SmartBrainConfig::getProfileManagedFields()) ?> V2 parameters</span>
+                </div>
+            </div>
+            <div class="small text-secondary mt-1"><?= htmlspecialchars($execProfileBundle['description']) ?></div>
+            <?php if ($execProfile === 'sniper_75_attempt'): ?>
+            <div class="alert alert-warning small mb-0 mt-2 py-1 px-2">
+                <i class="bi bi-exclamation-triangle me-1"></i> Very selective profile. Fewer trades expected. Higher target precision, not guaranteed winrate.
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- Live Trading Status -->
     <?php
         $liveEnabled = (bool)($last_run['live_trading_enabled'] ?? false);

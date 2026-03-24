@@ -74,7 +74,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                     ?>
                     <strong style="color: <?= $statusColor ?>;"><?= htmlspecialchars($runStatus) ?></strong>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <small class="text-secondary d-block">Source</small>
                     <strong><?= htmlspecialchars((string)($last_run['source'] ?? '-')) ?></strong>
                 </div>
@@ -82,17 +82,26 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                     <small class="text-secondary d-block">Duration</small>
                     <strong><?= isset($last_run['duration_ms']) ? htmlspecialchars((string)$last_run['duration_ms']) . ' ms' : '-' ?></strong>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <small class="text-secondary d-block">Candidates</small>
                     <strong><?= htmlspecialchars((string)($last_run['candidates'] ?? '0')) ?></strong>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <small class="text-secondary d-block">Monitors</small>
                     <strong><?= htmlspecialchars((string)($last_run['monitors'] ?? '0')) ?></strong>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <small class="text-secondary d-block">Signals</small>
                     <strong><?= htmlspecialchars((string)($last_run['signals'] ?? '0')) ?></strong>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-secondary d-block">Execution Profile</small>
+                    <?php
+                        $dashProfile = (string)($last_run['execution_profile'] ?? 'custom');
+                        $dashProfileLabel = (string)($last_run['execution_profile_label'] ?? 'Custom');
+                        $dashProfileIsPreset = $dashProfile !== 'custom';
+                    ?>
+                    <span class="badge <?= $dashProfileIsPreset ? 'bg-primary' : 'bg-secondary' ?>"><?= htmlspecialchars($dashProfileLabel) ?></span>
                 </div>
             </div>
             <?php $errMsg = (string)($last_run['error_message'] ?? ''); if ($errMsg !== ''): ?>

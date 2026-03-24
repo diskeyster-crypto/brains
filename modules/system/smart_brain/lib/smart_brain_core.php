@@ -614,6 +614,9 @@ final class SmartBrainCore
             // Config Conflict Guard
             'config_conflict_detected' => $configConflictDetected,
             'config_conflict_message' => $configConflictMessage,
+            // Execution Profile
+            'execution_profile' => (string)($userLimits['execution_profile'] ?? 'custom'),
+            'execution_profile_label' => self::getExecutionProfileLabel($userLimits),
             // Live Intent Generation — audit fields
             'live_stage_runtime_signature' => $liveIntentResult['live_stage_runtime_signature'] ?? '',
             'live_trading_enabled' => $liveConfig['live_trading_enabled'],
@@ -1737,6 +1740,19 @@ final class SmartBrainCore
         if (is_file($lockPath)) {
             @unlink($lockPath);
         }
+    }
+
+    /**
+     * Get the human-readable label for the active execution profile.
+     *
+     * @param array<string,mixed> $userLimits
+     * @return string
+     */
+    private static function getExecutionProfileLabel(array $userLimits): string
+    {
+        $profileId = (string)($userLimits['execution_profile'] ?? 'custom');
+        $bundles = SmartBrainConfig::getExecutionProfileBundles();
+        return $bundles[$profileId]['label'] ?? 'Custom';
     }
 
     /**

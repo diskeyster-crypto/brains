@@ -1,68 +1,39 @@
 {
     "symbols": {
-        "ARIAUSDT": {
-            "trades_total": 1,
-            "wins": 1,
-            "losses": 0,
-            "winrate": 1,
-            "average_roi": 0.18812100000000001,
-            "average_mae": 0,
-            "average_mfe": 0.24885199999999999,
-            "average_duration": 28,
-            "long_count": 1,
-            "short_count": 0,
-            "stop_loss_count": 0,
-            "early_failure_count": 0,
-            "trailing_stop_count": 1,
-            "break_even_stop_count": 0,
-            "take_profit_count": 0,
-            "pattern_distribution": {
-                "double_bottom": 1
-            },
-            "last_trade_at": "2026-03-23T11:41:48+00:00",
-            "last_roi": 0.18812100000000001,
-            "status": "soft_whitelist",
-            "symbol_score": 0.90000000000000002,
-            "recent_trades_total": 1,
-            "recent_wins": 1,
-            "recent_losses": 0,
-            "recent_winrate": 1,
-            "recent_avg_roi": 0.18812100000000001
-        },
-        "ICNTUSDT": {
+        "LYNUSDT": {
             "trades_total": 1,
             "wins": 0,
             "losses": 1,
             "winrate": 0,
-            "average_roi": -0.018644999999999998,
-            "average_mae": 0.018644999999999998,
+            "average_roi": -0.011650000000000001,
+            "average_mae": 0.011650000000000001,
             "average_mfe": 0,
             "average_duration": 3,
-            "long_count": 0,
-            "short_count": 1,
+            "long_count": 1,
+            "short_count": 0,
             "stop_loss_count": 0,
             "early_failure_count": 1,
             "trailing_stop_count": 0,
             "break_even_stop_count": 0,
             "take_profit_count": 0,
             "pattern_distribution": {
-                "double_top": 1
+                "double_bottom_contextual_v2": 1
             },
-            "last_trade_at": "2026-03-23T11:46:05+00:00",
-            "last_roi": -0.018644999999999998,
+            "last_trade_at": "2026-03-25T12:48:03+00:00",
+            "last_roi": -0.011650000000000001,
             "status": "watchlist",
-            "symbol_score": -0.1653,
+            "symbol_score": -0.14080000000000001,
             "recent_trades_total": 1,
             "recent_wins": 0,
             "recent_losses": 1,
             "recent_winrate": 0,
-            "recent_avg_roi": -0.018644999999999998
+            "recent_avg_roi": -0.011650000000000001
         }
     },
     "whitelist_count": 0,
-    "soft_whitelist_count": 1,
+    "soft_whitelist_count": 0,
     "blacklist_count": 0,
     "watchlist_count": 1,
-    "total_symbols": 2,
-    "updated_at": "2026-03-23T11:46:05+00:00"
+    "total_symbols": 1,
+    "updated_at": "2026-03-25T13:00:03+00:00"
 }

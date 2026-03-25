@@ -1,26 +1,221 @@
 {
     "by_algorithm": {
         "double_bottom_contextual_v2": {
-            "setup_candidates_count": 10,
-            "confirmed_signals_count": 6,
-            "confirm_rejected_count": 4,
-            "confirmation_rate": 0.59999999999999998,
-            "rejection_rate": 0.40000000000000002
+            "setup_candidates_count": 27,
+            "confirmed_signals_count": 7,
+            "confirm_rejected_count": 20,
+            "context_rejected_count": 481,
+            "context_passed_count": 49,
+            "context_pass_rate": 0.092499999999999999,
+            "confirmation_rate": 0.25929999999999997,
+            "rejection_rate": 0.74070000000000003
         },
         "double_bottom_contextual_v3": {
-            "setup_candidates_count": 0,
-            "confirmed_signals_count": 0,
-            "confirm_rejected_count": 0,
-            "confirmation_rate": 0,
-            "rejection_rate": 0
+            "setup_candidates_count": 2,
+            "confirmed_signals_count": 1,
+            "confirm_rejected_count": 1,
+            "context_rejected_count": 526,
+            "context_passed_count": 4,
+            "context_pass_rate": 0.0074999999999999997,
+            "confirmation_rate": 0.5,
+            "rejection_rate": 0.5
         }
     },
     "reversal_v2_aggregate": {
-        "setup_candidates_count": 10,
-        "confirmed_signals_count": 6,
-        "confirm_rejected_count": 4,
-        "confirmation_rate": 0.59999999999999998,
-        "rejection_rate": 0.40000000000000002
+        "setup_candidates_count": 29,
+        "confirmed_signals_count": 8,
+        "confirm_rejected_count": 21,
+        "context_rejected_count": 1007,
+        "context_passed_count": 53,
+        "context_pass_rate": 0.050000000000000003,
+        "confirmation_rate": 0.27589999999999998,
+        "rejection_rate": 0.72409999999999997
     },
-    "updated_at": "2026-03-23T11:46:04+00:00"
+    "context_diagnostics": {
+        "double_bottom_contextual_v2": {
+            "reject_reason_distribution": {
+                "reject_context_not_downtrend": 273,
+                "reject_context_trend_too_weak": 91,
+                "reject_no_exhaustion": 109,
+                "reject_noise_too_high": 3,
+                "reject_context_duration_too_short": 5
+            },
+            "context_rejected_count": 481,
+            "context_passed_count": 49,
+            "context_pass_rate": 0.092499999999999999,
+            "context_reject_preview": [
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "flat",
+                    "regime_strength": 0.15479999999999999,
+                    "regime_depth_pct": 0.0012999999999999999,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.4728,
+                    "noise_score": 0.68240000000000001,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.19439999999999999
+                },
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "weak_up",
+                    "regime_strength": 0.20200000000000001,
+                    "regime_depth_pct": 0.0038,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.43930000000000002,
+                    "noise_score": 0.5393,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.23549999999999999
+                },
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "flat",
+                    "regime_strength": 0.23130000000000001,
+                    "regime_depth_pct": 0.0043,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.35460000000000003,
+                    "noise_score": 0.57909999999999995,
+                    "exhaustion_score": 0.20419999999999999,
+                    "context_quality_score": 0.25950000000000001
+                },
+                {
+                    "reject_reason": "reject_context_trend_too_weak",
+                    "regime_direction": "down",
+                    "regime_strength": 0.1459,
+                    "regime_depth_pct": 0.0095999999999999992,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.4078,
+                    "noise_score": 0.77590000000000003,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.19400000000000001
+                },
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "weak_up",
+                    "regime_strength": 0.19789999999999999,
+                    "regime_depth_pct": 0,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.27500000000000002,
+                    "noise_score": 0.57520000000000004,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.17949999999999999
+                }
+            ],
+            "confirm_reject_reason_distribution": [],
+            "confirm_reject_preview": []
+        },
+        "double_bottom_contextual_v3": {
+            "reject_reason_distribution": {
+                "reject_context_not_downtrend": 273,
+                "reject_context_trend_too_weak": 221,
+                "reject_no_exhaustion": 24,
+                "reject_noise_too_high": 8
+            },
+            "context_rejected_count": 526,
+            "context_passed_count": 4,
+            "context_pass_rate": 0.0074999999999999997,
+            "context_reject_preview": [
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "flat",
+                    "regime_strength": 0.15479999999999999,
+                    "regime_depth_pct": 0.0012999999999999999,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.4728,
+                    "noise_score": 0.68240000000000001,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.19439999999999999
+                },
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "weak_up",
+                    "regime_strength": 0.20200000000000001,
+                    "regime_depth_pct": 0.0038,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.43930000000000002,
+                    "noise_score": 0.5393,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.23549999999999999
+                },
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "flat",
+                    "regime_strength": 0.23130000000000001,
+                    "regime_depth_pct": 0.0043,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.35460000000000003,
+                    "noise_score": 0.57909999999999995,
+                    "exhaustion_score": 0.20419999999999999,
+                    "context_quality_score": 0.25950000000000001
+                },
+                {
+                    "reject_reason": "reject_context_trend_too_weak",
+                    "regime_direction": "down",
+                    "regime_strength": 0.1459,
+                    "regime_depth_pct": 0.0095999999999999992,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.4078,
+                    "noise_score": 0.77590000000000003,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.19400000000000001
+                },
+                {
+                    "reject_reason": "reject_context_not_downtrend",
+                    "regime_direction": "weak_up",
+                    "regime_strength": 0.19789999999999999,
+                    "regime_depth_pct": 0,
+                    "regime_duration_bars": 50,
+                    "trend_maturity_score": 0.27500000000000002,
+                    "noise_score": 0.57520000000000004,
+                    "exhaustion_score": 0,
+                    "context_quality_score": 0.17949999999999999
+                }
+            ],
+            "confirm_reject_reason_distribution": {
+                "reject_reclaim_failed": 3
+            },
+            "confirm_reject_preview": [
+                {
+                    "reject_reason": "reject_reclaim_failed",
+                    "detail": "new_low_below_avg_large",
+                    "subtype": "reclaim_meaningful_break",
+                    "confirm_min": 0.024129999999999999,
+                    "avg_low": 0.024244999999999999,
+                    "buffered_invalidation": 0.024171999999999999,
+                    "tolerance_pct": 0.0030000000000000001,
+                    "undershoot_pct": 0.0047429999999999998,
+                    "trigger_level": 0.024348000000000002
+                },
+                {
+                    "reject_reason": "reject_reclaim_failed",
+                    "detail": "new_low_below_avg_large",
+                    "subtype": "reclaim_meaningful_break",
+                    "confirm_min": 0.024129999999999999,
+                    "avg_low": 0.024205000000000001,
+                    "buffered_invalidation": 0.024132000000000001,
+                    "tolerance_pct": 0.0030000000000000001,
+                    "undershoot_pct": 0.0030990000000000002,
+                    "trigger_level": 0.024288000000000001
+                },
+                {
+                    "reject_reason": "reject_reclaim_failed",
+                    "detail": "new_low_below_avg_large",
+                    "subtype": "reclaim_meaningful_break",
+                    "confirm_min": 0.012984000000000001,
+                    "avg_low": 0.013037,
+                    "buffered_invalidation": 0.012997999999999999,
+                    "tolerance_pct": 0.0030000000000000001,
+                    "undershoot_pct": 0.004065,
+                    "trigger_level": 0.013079
+                }
+            ]
+        }
+    },
+    "context_adapter_counters": {
+        "context_adapter_calls": 530,
+        "context_adapter_valid_count": 530,
+        "context_adapter_invalid_count": 0,
+        "context_adapter_bearish_count": 257,
+        "context_adapter_mature_bearish_count": 59
+    },
+    "updated_at": "2026-03-25T13:00:03+00:00"
 }

@@ -41,10 +41,41 @@
         "early_failure_enabled": true,
         "early_failure_window_minutes": 5,
         "early_failure_max_adverse_roi": -0.0080000000000000002,
+        "v2_confirmation_weak_max": 0.45000000000000001,
+        "v2_confirmation_strong_min": 0.80000000000000004,
+        "v2_zone_widen_weak_pct": 0.5,
+        "v2_zone_widen_medium_pct": 0.59999999999999998,
+        "v2_zone_widen_strong_pct": 0.75,
+        "v2_zone_widen_max_cap_pct": 0.75,
+        "strong_confirmation_enter_now_enabled": true,
+        "medium_confirmation_wait_retrace_enabled": true,
+        "weak_confirmation_live_enabled": false,
+        "v2_hold_quality_min": 0.69999999999999996,
+        "v2_post_reclaim_stability_min": 0.69999999999999996,
+        "v2_zone_defense_min": 0.34999999999999998,
+        "v2_trend_match_min": 0.55000000000000004,
+        "v2_price_position_max": 0.88,
+        "v2_live_quality_floor_enabled": true,
+        "v2_live_min_confirmation_score": 0.59999999999999998,
+        "v2_live_min_pattern_confidence": 0.55000000000000004,
+        "v2_live_min_trend_match_score": 0.45000000000000001,
+        "sniper_v3_live_filter_enabled": true,
+        "sniper_v3_min_confirmation_score": 0.71999999999999997,
+        "sniper_v3_min_pattern_confidence": 0.59999999999999998,
+        "sniper_v3_min_trend_match_score": 0.5,
+        "sniper_v3_min_entry_quality_score": 0.75,
+        "sniper_v3_min_corridor_fit_score": 0.75,
+        "sniper_v3_max_price_position": 0.84999999999999998,
+        "sniper_v3_min_reclaim_strength_score": 0.69999999999999996,
+        "sniper_v3_min_hold_quality_score": 0.75,
+        "sniper_v3_min_post_reclaim_stability_score": 0.65000000000000002,
+        "sniper_v3_min_zone_defense_score": 0.34999999999999998,
+        "execution_profile": "sniper_lite",
+        "pattern_profile_mode": "manual_override",
         "trailing_mode": "price_distance_floor",
         "trailing_price_distance_pct": 0.02,
-        "trailing_activation_floor_roi": 0.040000000000000001,
-        "trailing_floor_lock_roi": 0.029999999999999999,
+        "trailing_activation_floor_roi": 0.050000000000000003,
+        "trailing_floor_lock_roi": 0.040000000000000001,
         "trailing_step_mode": "auto_strength",
         "trailing_step_pct_min": 0.0050000000000000001,
         "trailing_step_pct_max": 0.02,
@@ -74,13 +105,16 @@
         "live_reverse_side_enabled": false,
         "patterns": {
             "enabled": [
-                "double_bottom",
-                "double_top",
                 "double_bottom_contextual_v2",
                 "double_bottom_contextual_v3"
             ],
             "mode": "any"
-        }
+        },
+        "v3_strong_enter_now_enabled": true,
+        "v3_zone_widen_weak_pct": 0.40000000000000002,
+        "v3_zone_widen_medium_pct": 0.55000000000000004,
+        "v3_zone_widen_strong_pct": 0.69999999999999996,
+        "v3_zone_widen_max_cap_pct": 0.75
     },
     "brain_auto": {
         "effective_strength_threshold": 0.40000000000000002,
@@ -94,20 +128,19 @@
         "stop_floor_type": "corridor_percent",
         "stop_floor_value": 0.29999999999999999,
         "brain_may_tighten_stop": true,
-        "trailing_enabled": true,
         "trailing_mode": "price_distance_floor",
-        "trailing_price_distance_pct": 0.02,
-        "trailing_activation_floor_roi": 0.040000000000000001,
-        "trailing_floor_lock_roi": 0.029999999999999999,
-        "trailing_step_mode": "auto_strength",
-        "trailing_step_pct_min": 0.0050000000000000001,
-        "trailing_step_pct_max": 0.02,
-        "trailing_activation_roi": 0.070000000000000007,
-        "trailing_min_lock_roi": 0.021999999999999999,
-        "trailing_min_step": 0.01,
-        "brain_may_delay_trailing": true,
-        "fixed_take_profit_roi": 0.029999999999999999,
-        "hybrid_tp_share": 0.40000000000000002,
+        "active_trailing_contract": {
+            "trailing_mode": "price_distance_floor",
+            "trailing_enabled": true,
+            "break_even_enabled": true,
+            "break_even_activation_roi": 0.025000000000000001,
+            "trailing_activation_floor_roi": 0.050000000000000003,
+            "trailing_floor_lock_roi": 0.040000000000000001,
+            "trailing_price_distance_pct": 0.02,
+            "trailing_step_mode": "auto_strength",
+            "trailing_step_pct_min": 0.0050000000000000001,
+            "trailing_step_pct_max": 0.02
+        },
         "active_trailing_fields": [
             "trailing_enabled",
             "trailing_mode",
@@ -118,7 +151,15 @@
             "trailing_step_pct_min",
             "trailing_step_pct_max"
         ],
-        "legacy_trailing_fields_present": true
+        "legacy_trailing_fields_present": true,
+        "legacy_trailing_fields": {
+            "trailing_activation_roi": 0.070000000000000007,
+            "trailing_min_lock_roi": 0.021999999999999999,
+            "trailing_min_step": 0.01,
+            "brain_may_delay_trailing": true
+        },
+        "fixed_take_profit_roi": 0.029999999999999999,
+        "hybrid_tp_share": 0.40000000000000002
     },
     "exit_safety": {
         "break_even_enabled": true,
@@ -165,6 +206,27 @@
         "manual_symbol_list": "",
         "manual_symbol_mode": "manual_only"
     },
+    "manual_blacklist": {
+        "manual_blacklist_enabled": true,
+        "manual_blacklist_symbols": [
+            "DEEPUSDT",
+            "FIGHTUSDT",
+            "GIGAUSDT",
+            "HUMAUSDT",
+            "ICXUSDT",
+            "ILVUSDT",
+            "KERNELUSDT",
+            "NEWTUSDT",
+            "SOPHUSDT",
+            "TRIAUSDT",
+            "VFYUSDT",
+            "ZEREBROUSDT"
+        ],
+        "manual_blacklist_count": 12,
+        "blacklist_source": "manual_file",
+        "blacklist_valid": true,
+        "blacklist_warning": ""
+    },
     "live_trading": {
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
@@ -173,9 +235,9 @@
         "live_entry_policy": "enter_now",
         "live_reverse_side_enabled": false,
         "live_trailing_contract": {
-            "canonical_source": "exit_policy",
-            "trailing_enabled": true,
+            "canonical_source": "exit_policy.active_trailing_contract",
             "trailing_mode": "price_distance_floor",
+            "trailing_enabled": true,
             "active_trailing_fields": [
                 "trailing_enabled",
                 "trailing_mode",
@@ -187,13 +249,12 @@
                 "trailing_step_pct_max"
             ],
             "break_even_enabled": true,
-            "exit_mode": "trailing_tp"
+            "exit_mode": "trailing_tp",
+            "legacy_trailing_fields_present": true
         }
     },
     "pattern_selection": {
         "enabled": [
-            "double_bottom",
-            "double_top",
             "double_bottom_contextual_v2",
             "double_bottom_contextual_v3"
         ],
@@ -216,8 +277,6 @@
         },
         "pattern_algorithms": {
             "enabled": [
-                "double_bottom",
-                "double_top",
                 "double_bottom_contextual_v2",
                 "double_bottom_contextual_v3"
             ],
@@ -266,6 +325,102 @@
         ],
         "default_stop_loss_percent": 0.050000000000000003
     },
+    "execution_profile": {
+        "execution_profile": "sniper_lite",
+        "execution_profile_label": "Sniper Lite",
+        "execution_profile_description": "Moderately selective V3-only live policy. Strong confirmations and selected medium confirmations allowed. Higher signal count than Sniper, lower target precision.",
+        "execution_profile_mode": "preset",
+        "active_profile_managed_fields": [
+            "v2_confirmation_weak_max",
+            "v2_confirmation_strong_min",
+            "v2_zone_widen_weak_pct",
+            "v2_zone_widen_medium_pct",
+            "v2_zone_widen_strong_pct",
+            "v2_zone_widen_max_cap_pct",
+            "strong_confirmation_enter_now_enabled",
+            "medium_confirmation_wait_retrace_enabled",
+            "weak_confirmation_live_enabled",
+            "v2_hold_quality_min",
+            "v2_post_reclaim_stability_min",
+            "v2_zone_defense_min",
+            "v2_trend_match_min",
+            "v2_price_position_max",
+            "v3_strong_enter_now_enabled",
+            "v3_zone_widen_weak_pct",
+            "v3_zone_widen_medium_pct",
+            "v3_zone_widen_strong_pct",
+            "v3_zone_widen_max_cap_pct",
+            "sniper_v3_live_filter_enabled",
+            "sniper_v3_min_confirmation_score",
+            "sniper_v3_min_pattern_confidence",
+            "sniper_v3_min_trend_match_score",
+            "sniper_v3_min_entry_quality_score",
+            "sniper_v3_min_corridor_fit_score",
+            "sniper_v3_max_price_position",
+            "sniper_v3_min_reclaim_strength_score",
+            "sniper_v3_min_hold_quality_score",
+            "sniper_v3_min_post_reclaim_stability_score",
+            "sniper_v3_min_zone_defense_score",
+            "v2_live_quality_floor_enabled",
+            "v2_live_min_confirmation_score",
+            "v2_live_min_pattern_confidence",
+            "v2_live_min_trend_match_score"
+        ],
+        "active_values": {
+            "v2_confirmation_weak_max": 0.45000000000000001,
+            "v2_confirmation_strong_min": 0.80000000000000004,
+            "v2_zone_widen_weak_pct": 0.5,
+            "v2_zone_widen_medium_pct": 0.59999999999999998,
+            "v2_zone_widen_strong_pct": 0.75,
+            "v2_zone_widen_max_cap_pct": 0.75,
+            "strong_confirmation_enter_now_enabled": true,
+            "medium_confirmation_wait_retrace_enabled": true,
+            "weak_confirmation_live_enabled": false,
+            "v2_hold_quality_min": 0.69999999999999996,
+            "v2_post_reclaim_stability_min": 0.69999999999999996,
+            "v2_zone_defense_min": 0.34999999999999998,
+            "v2_trend_match_min": 0.55000000000000004,
+            "v2_price_position_max": 0.88,
+            "v3_strong_enter_now_enabled": true,
+            "v3_zone_widen_weak_pct": 0.40000000000000002,
+            "v3_zone_widen_medium_pct": 0.55000000000000004,
+            "v3_zone_widen_strong_pct": 0.69999999999999996,
+            "v3_zone_widen_max_cap_pct": 0.75,
+            "sniper_v3_live_filter_enabled": true,
+            "sniper_v3_min_confirmation_score": 0.71999999999999997,
+            "sniper_v3_min_pattern_confidence": 0.59999999999999998,
+            "sniper_v3_min_trend_match_score": 0.5,
+            "sniper_v3_min_entry_quality_score": 0.75,
+            "sniper_v3_min_corridor_fit_score": 0.75,
+            "sniper_v3_max_price_position": 0.84999999999999998,
+            "sniper_v3_min_reclaim_strength_score": 0.69999999999999996,
+            "sniper_v3_min_hold_quality_score": 0.75,
+            "sniper_v3_min_post_reclaim_stability_score": 0.65000000000000002,
+            "sniper_v3_min_zone_defense_score": 0.34999999999999998,
+            "v2_live_quality_floor_enabled": true,
+            "v2_live_min_confirmation_score": 0.59999999999999998,
+            "v2_live_min_pattern_confidence": 0.55000000000000004,
+            "v2_live_min_trend_match_score": 0.45000000000000001
+        },
+        "pattern_profile_mode": "manual_override",
+        "pattern_policy": {
+            "live_patterns": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3"
+            ],
+            "shadow_patterns": [],
+            "disabled_patterns": [
+                "double_bottom",
+                "double_top",
+                "pullback_trend_continue",
+                "double_bottom_confirm_v2",
+                "double_top_confirm_v2"
+            ],
+            "canonical_source": "manual_override",
+            "fallback_used": false,
+            "fallback_reason": ""
+        }
+    },
     "profiles": {
         "default_profile": "111",
         "profiles": {
@@ -289,5 +444,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-23T11:46:01+00:00"
+    "generated_at": "2026-03-25T13:00:01+00:00"
 }

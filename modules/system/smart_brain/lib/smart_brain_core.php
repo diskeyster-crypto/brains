@@ -988,7 +988,7 @@ final class SmartBrainCore
                         'symbol' => $symbol,
                         'reason' => 'reject_symbol_blacklisted_manual',
                         'stage' => 'brain_blacklist_gate',
-                        'source' => 'manual_blacklist',
+                        'source' => 'manual_live_blacklist',
                     ];
                 }
                 $this->rejectLiveSignal($result, $symbol, $signalId ?? '', 'reject_symbol_blacklisted_manual', $selectionMode);

@@ -653,7 +653,7 @@ final class SmartBrainConfig
     // Manual Live Blacklist — authoritative manual symbol blocking for live pipeline
     // =========================================================================
 
-    private const MANUAL_BLACKLIST_FILENAME = 'blacklist.json';
+    private const MANUAL_BLACKLIST_FILENAME = 'manual_live_blacklist.json';
 
     /**
      * Load manual blacklist from storage.
@@ -772,7 +772,8 @@ final class SmartBrainConfig
             'manual_blacklist_enabled' => true,
             'manual_blacklist_symbols' => $data['symbols'],
             'manual_blacklist_count' => $data['count'],
-            'blacklist_source' => 'manual_file',
+            'blacklist_source' => 'manual_live_blacklist',
+            'blacklist_source_file' => 'storage/' . self::MANUAL_BLACKLIST_FILENAME,
             'blacklist_valid' => $data['valid'],
             'blacklist_warning' => $data['warning'],
         ];

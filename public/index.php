@@ -1088,6 +1088,11 @@ Router::post('/admin/smart_brain/cleanup/full', function () {
     $controller->cleanupFull();
 });
 
+Router::post('/admin/smart_brain/blacklist/save', function () {
+    $controller = new SmartBrainController();
+    $controller->saveBlacklist();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

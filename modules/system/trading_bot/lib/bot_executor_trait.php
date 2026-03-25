@@ -1178,6 +1178,10 @@ trait BotExecutorTrait
             'floor_lock_applied' => 0,
             'floor_lock_failed' => 0,
             'floor_lock_skipped' => 0,
+            'effective_stop_zero_while_protected_count' => 0,
+            'protection_source_missing_count' => 0,
+            'best_price_missing_while_trailing_active_count' => 0,
+            'top_level_runtime_mismatch_count' => 0,
         ];
         
         if ($mode !== 'live') {
@@ -1289,6 +1293,170 @@ trait BotExecutorTrait
                 $currentStop = $runtime['effective_stop_price'];
                 $runtime['stop_moved_from_initial'] = ($initialStop !== null && $currentStop !== null && abs($initialStop - $currentStop) > 0.0000001);
 
+                // ====================================================================
+                // P11: Protection Layer Synchronization
+                // Ensure current_effective_stop_price, protection_source_of_truth,
+                // break_even_stop_price, and best_price are always consistent
+                // when any protection layer is active.
+                // ====================================================================
+                $side = strtolower($trade['side'] ?? 'long');
+                $protectionActive = !empty($runtime['trailing_active'])
+                    || !empty($runtime['break_even_applied'])
+                    || !empty($runtime['floor_lock_active']);
+
+                // --- Break-even stop price: ensure it's always in runtime when BE applied ---
+                if (!empty($runtime['break_even_applied'])) {
+                    $beSLPrice = (float)($runtime['break_even_sl_price'] ?? 0);
+                    if ($beSLPrice > 0) {
+                        $runtime['break_even_stop_price'] = $beSLPrice;
+                    } elseif (empty($runtime['break_even_stop_price']) || (float)$runtime['break_even_stop_price'] <= 0) {
+                        // Fallback: use entry price as break-even stop
+                        $entryPx = (float)($trade['entry_price'] ?? 0);
+                        if ($entryPx > 0) {
+                            $runtime['break_even_stop_price'] = $entryPx;
+                        }
+                    }
+                }
+
+                // --- Best price tracking: must be live when trailing active ---
+                if (!empty($runtime['trailing_active'])) {
+                    $currentPx = (float)($position['mark_price'] ?? ($position['last_price'] ?? 0));
+                    if ($currentPx <= 0) {
+                        $currentPx = (float)($trade['entry_price'] ?? 0);
+                    }
+                    if (empty($runtime['best_price']) || (float)$runtime['best_price'] <= 0) {
+                        $runtime['best_price'] = $currentPx;
+                    } else {
+                        // Update best_price monotonically
+                        if ($side === 'long') {
+                            $runtime['best_price'] = max((float)$runtime['best_price'], $currentPx);
+                        } else {
+                            $runtime['best_price'] = min((float)$runtime['best_price'], $currentPx);
+                        }
+                    }
+                    // Ensure trailing_reference_price is populated
+                    if (empty($runtime['trailing_reference_price']) || (float)$runtime['trailing_reference_price'] <= 0) {
+                        $runtime['trailing_reference_price'] = $runtime['best_price'];
+                    }
+                }
+
+                // --- Stop stack: compute current_effective_stop_price from all layers ---
+                if ($protectionActive) {
+                    $stopCandidates = [];
+
+                    // Layer 1: initial stop
+                    $initSP = (float)($runtime['initial_computed_stop_price'] ?? 0);
+                    if ($initSP > 0) {
+                        $stopCandidates[] = $initSP;
+                    }
+
+                    // Layer 2: exchange stop (effective_stop_price)
+                    $exchSP = (float)($runtime['effective_stop_price'] ?? 0);
+                    if ($exchSP > 0) {
+                        $stopCandidates[] = $exchSP;
+                    }
+
+                    // Layer 3: break-even stop
+                    if (!empty($runtime['break_even_applied'])) {
+                        $beSP = (float)($runtime['break_even_stop_price'] ?? 0);
+                        if ($beSP > 0) {
+                            $stopCandidates[] = $beSP;
+                        }
+                    }
+
+                    // Layer 4: floor lock stop
+                    if (!empty($runtime['floor_lock_active'])) {
+                        $floorSP = (float)($runtime['floor_stop_price'] ?? 0);
+                        if ($floorSP > 0) {
+                            $stopCandidates[] = $floorSP;
+                        }
+                    }
+
+                    // Layer 5: theoretical distance stop
+                    $distSP = (float)($runtime['theoretical_current_stop_price'] ?? 0);
+                    if ($distSP > 0) {
+                        $stopCandidates[] = $distSP;
+                    }
+
+                    // Pick strongest protection
+                    if (!empty($stopCandidates)) {
+                        $prevEffective = (float)($runtime['current_effective_stop_price'] ?? 0);
+                        if ($side === 'long') {
+                            $bestStop = max($stopCandidates);
+                            // Monotonic: never decrease for LONG
+                            if ($prevEffective > 0) {
+                                $bestStop = max($bestStop, $prevEffective);
+                            }
+                        } else {
+                            $bestStop = min($stopCandidates);
+                            // Monotonic: never increase for SHORT
+                            if ($prevEffective > 0) {
+                                $bestStop = min($bestStop, $prevEffective);
+                            }
+                        }
+                        $runtime['current_effective_stop_price'] = round($bestStop, 8);
+                    }
+
+                    // --- Protection source of truth: determine enforcement path ---
+                    if (empty($runtime['protection_source_of_truth'])) {
+                        $sources = [];
+                        if ($exchSP > 0) {
+                            $sources[] = 'exchange_stop';
+                        }
+                        if (!empty($runtime['floor_lock_active']) && !empty($runtime['floor_enforced_via_exchange_stop'])) {
+                            $sources[] = 'floor_lock_stop';
+                        }
+                        if (!empty($runtime['floor_lock_active']) && !empty($runtime['floor_enforced_via_bot_exit'])) {
+                            $sources[] = 'bot_forced_exit';
+                        }
+                        if (!empty($runtime['break_even_applied'])) {
+                            $sources[] = 'break_even_stop';
+                        }
+
+                        if (count($sources) > 1) {
+                            $runtime['protection_source_of_truth'] = 'combined';
+                        } elseif (count($sources) === 1) {
+                            $runtime['protection_source_of_truth'] = $sources[0];
+                        } else {
+                            // Fallback: if we have an exchange stop, that's the source
+                            $runtime['protection_source_of_truth'] = $exchSP > 0 ? 'exchange_stop' : 'initial_stop';
+                        }
+                    }
+
+                    // --- Update stop_moved_from_initial truthfully ---
+                    $effStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+                    if ($initSP > 0 && $effStop > 0) {
+                        if ($side === 'long') {
+                            $runtime['stop_moved_from_initial'] = ($effStop > $initSP + 0.0000001);
+                        } else {
+                            $runtime['stop_moved_from_initial'] = ($effStop < $initSP - 0.0000001);
+                        }
+                    }
+
+                    // --- Sync timestamp ---
+                    $runtime['last_protection_update_at'] = date('c');
+                }
+
+                // --- Diagnostics: per-trade warning flags ---
+                $runtime['warning_effective_stop_zero_while_protected'] = (
+                    $protectionActive && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
+                );
+                $runtime['warning_protection_source_missing'] = (
+                    $protectionActive && empty($runtime['protection_source_of_truth'])
+                );
+                $runtime['warning_best_price_missing'] = (
+                    !empty($runtime['trailing_active']) && ((float)($runtime['best_price'] ?? 0) <= 0)
+                );
+                $runtime['warning_floor_lock_active_but_not_enforced'] = (
+                    !empty($runtime['floor_lock_active'])
+                    && ((float)($runtime['floor_stop_price'] ?? 0) > 0)
+                    && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
+                );
+                $runtime['warning_break_even_missing_stop_update'] = (
+                    !empty($runtime['break_even_applied'])
+                    && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
+                );
+
                 $trade['runtime'] = $runtime;
 
                 // Mirror runtime truth into top-level fields (Option A: no conflicting nulls)
@@ -1316,15 +1484,44 @@ trait BotExecutorTrait
                 // Initial vs current stop separation: mirror into top-level
                 $trade['initial_computed_stop_price'] = $runtime['initial_computed_stop_price'];
                 $trade['stop_moved_from_initial'] = $runtime['stop_moved_from_initial'];
+                // Protection layer fields: mirror into top-level for observability (all modes)
+                $trade['current_effective_stop_price'] = $runtime['current_effective_stop_price'] ?? 0;
+                $trade['protection_source_of_truth'] = $runtime['protection_source_of_truth'] ?? '';
+                $trade['break_even_stop_price'] = $runtime['break_even_stop_price'] ?? 0;
+                $trade['best_price'] = $runtime['best_price'] ?? null;
+                $trade['last_protection_update_at'] = $runtime['last_protection_update_at'] ?? null;
                 // Floor lock fields: mirror into top-level for observability
                 if (($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor') {
                     $trade['floor_lock_active'] = $runtime['floor_lock_active'] ?? false;
                     $trade['floor_locked_roi'] = $runtime['floor_locked_roi'] ?? 0;
                     $trade['floor_stop_price'] = $runtime['floor_stop_price'] ?? 0;
-                    $trade['current_effective_stop_price'] = $runtime['current_effective_stop_price'] ?? 0;
-                    $trade['protection_source_of_truth'] = $runtime['protection_source_of_truth'] ?? '';
                     $trade['floor_enforced_via_exchange_stop'] = $runtime['floor_enforced_via_exchange_stop'] ?? false;
                     $trade['floor_enforced_via_bot_exit'] = $runtime['floor_enforced_via_bot_exit'] ?? false;
+                }
+                // Diagnostic warnings: mirror into top-level
+                $trade['warning_effective_stop_zero_while_protected'] = $runtime['warning_effective_stop_zero_while_protected'] ?? false;
+                $trade['warning_protection_source_missing'] = $runtime['warning_protection_source_missing'] ?? false;
+                $trade['warning_best_price_missing'] = $runtime['warning_best_price_missing'] ?? false;
+                $trade['warning_floor_lock_active_but_not_enforced'] = $runtime['warning_floor_lock_active_but_not_enforced'] ?? false;
+                $trade['last_top_level_mirror_sync_at'] = date('c');
+
+                // Increment diagnostic counters
+                if (!empty($runtime['warning_effective_stop_zero_while_protected'])) {
+                    $result['effective_stop_zero_while_protected_count']++;
+                }
+                if (!empty($runtime['warning_protection_source_missing'])) {
+                    $result['protection_source_missing_count']++;
+                }
+                if (!empty($runtime['warning_best_price_missing'])) {
+                    $result['best_price_missing_while_trailing_active_count']++;
+                }
+                // Check top-level / runtime mismatch
+                $topEffStop = (float)($trade['current_effective_stop_price'] ?? 0);
+                $rtEffStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+                if (abs($topEffStop - $rtEffStop) > 0.0000001) {
+                    $result['top_level_runtime_mismatch_count']++;
+                    $runtime['warning_top_level_runtime_mismatch'] = true;
+                    $trade['runtime'] = $runtime;
                 }
                 // @legacy — v1→v2 schema upgrade for active trades. Remove after all active
                 // v1 snapshot trades have been closed or cycled out.

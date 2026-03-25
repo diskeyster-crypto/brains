@@ -691,6 +691,10 @@ final class TradingBotService
                 'floor_lock_applied' => $updateResult['floor_lock_applied'] ?? 0,
                 'floor_lock_failed' => $updateResult['floor_lock_failed'] ?? 0,
                 'floor_lock_skipped' => $updateResult['floor_lock_skipped'] ?? 0,
+                'effective_stop_zero_while_protected_count' => $updateResult['effective_stop_zero_while_protected_count'] ?? 0,
+                'protection_source_missing_count' => $updateResult['protection_source_missing_count'] ?? 0,
+                'best_price_missing_while_trailing_active_count' => $updateResult['best_price_missing_while_trailing_active_count'] ?? 0,
+                'top_level_runtime_mismatch_count' => $updateResult['top_level_runtime_mismatch_count'] ?? 0,
             ];
 
             // ============================================================
@@ -886,6 +890,9 @@ final class TradingBotService
             $breakEvenArmedCount = 0;
             $breakEvenAppliedCount = 0;
             $floorLockActiveCount = 0;
+            $effectiveStopZeroCount = 0;
+            $protectionSourceMissingCount = 0;
+            $bestPriceMissingCount = 0;
             $activePositionProtectionDetails = [];
             $contractGenerationCounts = [];
             $legacyActiveTradesCount = 0;
@@ -918,6 +925,17 @@ final class TradingBotService
                 // Floor lock detection
                 if (!empty($rt['floor_lock_active']) || !empty($t['floor_lock_active'])) {
                     $floorLockActiveCount++;
+                }
+
+                // Diagnostic counters
+                if (!empty($rt['warning_effective_stop_zero_while_protected'])) {
+                    $effectiveStopZeroCount++;
+                }
+                if (!empty($rt['warning_protection_source_missing'])) {
+                    $protectionSourceMissingCount++;
+                }
+                if (!empty($rt['warning_best_price_missing'])) {
+                    $bestPriceMissingCount++;
                 }
 
                 // Protection errors: SL repair attempted but failed
@@ -989,6 +1007,19 @@ final class TradingBotService
                     'protection_source_of_truth' => (string)($rt['protection_source_of_truth'] ?? ($t['protection_source_of_truth'] ?? '')),
                     'floor_enforced_via_exchange_stop' => (bool)($rt['floor_enforced_via_exchange_stop'] ?? ($t['floor_enforced_via_exchange_stop'] ?? false)),
                     'floor_enforced_via_bot_exit' => (bool)($rt['floor_enforced_via_bot_exit'] ?? ($t['floor_enforced_via_bot_exit'] ?? false)),
+                    // Break-even stop price
+                    'break_even_stop_price' => (float)($rt['break_even_stop_price'] ?? ($t['break_even_stop_price'] ?? 0)),
+                    // Best price / trailing reference
+                    'best_price' => (float)($rt['best_price'] ?? ($t['best_price'] ?? 0)),
+                    'trailing_reference_price' => (float)($rt['trailing_reference_price'] ?? ($t['trailing_reference_price'] ?? 0)),
+                    // Sync timestamps
+                    'last_protection_update_at' => $rt['last_protection_update_at'] ?? ($t['last_protection_update_at'] ?? null),
+                    'last_top_level_mirror_sync_at' => $t['last_top_level_mirror_sync_at'] ?? null,
+                    // Diagnostic warnings
+                    'warning_effective_stop_zero_while_protected' => (bool)($rt['warning_effective_stop_zero_while_protected'] ?? false),
+                    'warning_protection_source_missing' => (bool)($rt['warning_protection_source_missing'] ?? false),
+                    'warning_best_price_missing' => (bool)($rt['warning_best_price_missing'] ?? false),
+                    'warning_floor_lock_active_but_not_enforced' => (bool)($rt['warning_floor_lock_active_but_not_enforced'] ?? false),
                 ];
             }
             $result['active_protection_summary'] = [
@@ -999,6 +1030,9 @@ final class TradingBotService
                 'break_even_applied_count' => $breakEvenAppliedCount,
                 'floor_lock_active_count' => $floorLockActiveCount,
                 'protection_errors_count' => $protectionErrorsCount,
+                'effective_stop_zero_while_protected_count' => $effectiveStopZeroCount,
+                'protection_source_missing_count' => $protectionSourceMissingCount,
+                'best_price_missing_while_trailing_active_count' => $bestPriceMissingCount,
             ];
             $result['active_position_protection_details'] = $activePositionProtectionDetails;
 

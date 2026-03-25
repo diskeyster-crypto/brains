@@ -528,6 +528,24 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         <div class="text-muted">Protection Errors</div>
                         <div class="fw-semibold <?= (int)($protSummary['protection_errors_count'] ?? 0) > 0 ? 'text-danger' : '' ?>"><?= (int)($protSummary['protection_errors_count'] ?? 0) ?></div>
                     </div>
+                    <?php if ((int)($protSummary['effective_stop_zero_while_protected_count'] ?? 0) > 0): ?>
+                    <div class="col-6">
+                        <div class="text-muted">⚠ Stop=0 while Protected</div>
+                        <div class="fw-semibold text-danger"><?= (int)$protSummary['effective_stop_zero_while_protected_count'] ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ((int)($protSummary['protection_source_missing_count'] ?? 0) > 0): ?>
+                    <div class="col-6">
+                        <div class="text-muted">⚠ Source Missing</div>
+                        <div class="fw-semibold text-warning"><?= (int)$protSummary['protection_source_missing_count'] ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ((int)($protSummary['best_price_missing_while_trailing_active_count'] ?? 0) > 0): ?>
+                    <div class="col-6">
+                        <div class="text-muted">⚠ Best Price Missing</div>
+                        <div class="fw-semibold text-warning"><?= (int)$protSummary['best_price_missing_while_trailing_active_count'] ?></div>
+                    </div>
+                    <?php endif; ?>
                 </div>
                 <?php
                 $idxProtDetails = is_array($lastRunBot['active_position_protection_details'] ?? null) ? $lastRunBot['active_position_protection_details'] : [];
@@ -554,7 +572,7 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                 <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
                 <div class="table-responsive">
                     <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
-                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Initial Stop</th><th>Current Stop</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Initial Stop</th><th>Current Stop</th><th>Eff. Stop</th><th>Source</th><th>⚠</th></tr></thead>
                         <tbody>
                         <?php foreach ($idxProtDetails as $ipd): ?>
                             <tr>
@@ -614,7 +632,27 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                         <small class="text-muted">—</small>
                                     <?php endif; ?>
                                 </td>
+                                <td>
+                                    <?php $ipdEffStop = (float)($ipd['current_effective_stop_price'] ?? 0); ?>
+                                    <?php if ($ipdEffStop > 0): ?>
+                                        <small class="text-success fw-bold"><?= number_format($ipdEffStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                    <?php if ((float)($ipd['best_price'] ?? 0) > 0): ?>
+                                        <br><small class="text-muted">best: <?= number_format((float)$ipd['best_price'], 4) ?></small>
+                                    <?php endif; ?>
+                                    <?php if ((float)($ipd['break_even_stop_price'] ?? 0) > 0): ?>
+                                        <br><small class="text-muted">BE: <?= number_format((float)$ipd['break_even_stop_price'], 4) ?></small>
+                                    <?php endif; ?>
+                                </td>
                                 <td><small><?= htmlspecialchars((string)($ipd['effective_trailing_contract_source'] ?? '')) ?></small></td>
+                                <td>
+                                    <?php if ($ipd['warning_effective_stop_zero_while_protected'] ?? false): ?><span class="badge bg-danger" title="Effective stop = 0 while protected">⚠ stop=0</span><br><?php endif; ?>
+                                    <?php if ($ipd['warning_protection_source_missing'] ?? false): ?><span class="badge bg-warning text-dark" title="Protection source missing">⚠ src?</span><br><?php endif; ?>
+                                    <?php if ($ipd['warning_best_price_missing'] ?? false): ?><span class="badge bg-warning text-dark" title="Best price missing">⚠ best?</span><br><?php endif; ?>
+                                    <?php if ($ipd['warning_floor_lock_active_but_not_enforced'] ?? false): ?><span class="badge bg-danger" title="Floor lock active but not enforced">⚠ floor!</span><br><?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>

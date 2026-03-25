@@ -623,7 +623,9 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                 <th>Stop Mode</th>
                                 <th>Initial Stop</th>
                                 <th>Current Stop</th>
+                                <th>Eff. Stop</th>
                                 <th>Source</th>
+                                <th>⚠</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -682,6 +684,29 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                                     <?php endif; ?>
                                 </td>
                                 <td><small><?= htmlspecialchars((string)($pd['effective_trailing_contract_source'] ?? 'unknown')) ?></small></td>
+                                <td>
+                                    <?php $pdEffStop = (float)($pd['current_effective_stop_price'] ?? 0); ?>
+                                    <?php if ($pdEffStop > 0): ?>
+                                        <small class="text-success fw-bold"><?= number_format($pdEffStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                    <?php if ((float)($pd['best_price'] ?? 0) > 0): ?>
+                                        <br><small class="text-muted">best: <?= number_format((float)$pd['best_price'], 4) ?></small>
+                                    <?php endif; ?>
+                                    <?php if ((float)($pd['break_even_stop_price'] ?? 0) > 0): ?>
+                                        <br><small class="text-muted">BE: <?= number_format((float)$pd['break_even_stop_price'], 4) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($pd['protection_source_of_truth'] ?? '')) ?></small>
+                                </td>
+                                <td>
+                                    <?php if ($pd['warning_effective_stop_zero_while_protected'] ?? false): ?><span class="badge bg-danger" title="Effective stop = 0 while protected">⚠ stop=0</span><br><?php endif; ?>
+                                    <?php if ($pd['warning_protection_source_missing'] ?? false): ?><span class="badge bg-warning text-dark" title="Protection source missing">⚠ src?</span><br><?php endif; ?>
+                                    <?php if ($pd['warning_best_price_missing'] ?? false): ?><span class="badge bg-warning text-dark" title="Best price missing">⚠ best?</span><br><?php endif; ?>
+                                    <?php if ($pd['warning_floor_lock_active_but_not_enforced'] ?? false): ?><span class="badge bg-danger" title="Floor lock active but not enforced">⚠ floor!</span><br><?php endif; ?>
+                                </td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>

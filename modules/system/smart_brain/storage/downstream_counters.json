@@ -1,0 +1,76 @@
+{
+    "by_algorithm": {
+        "double_bottom_confirm_v2": {
+            "candidates_shaped_count": 0,
+            "candidates_selected_count": 0,
+            "candidates_dropped_by_rank_count": 0,
+            "drop_reason": "no_candidates_shaped"
+        },
+        "double_top_confirm_v2": {
+            "candidates_shaped_count": 0,
+            "candidates_selected_count": 0,
+            "candidates_dropped_by_rank_count": 0,
+            "drop_reason": "no_candidates_shaped"
+        },
+        "double_bottom_contextual_v2": {
+            "candidates_shaped_count": 7,
+            "candidates_selected_count": 7,
+            "candidates_dropped_by_rank_count": 0,
+            "drop_reason": "all_selected"
+        },
+        "double_bottom_contextual_v3": {
+            "candidates_shaped_count": 0,
+            "candidates_selected_count": 0,
+            "candidates_dropped_by_rank_count": 0,
+            "drop_reason": "no_candidates_shaped"
+        }
+    },
+    "debug_preview": [
+        {
+            "symbol": "OLUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.74360000000000004,
+            "pattern_confidence": 0.73999999999999999,
+            "stage": "final_output",
+            "selected": true
+        },
+        {
+            "symbol": "LYNUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.6522,
+            "pattern_confidence": 0.75,
+            "stage": "final_output",
+            "selected": true
+        },
+        {
+            "symbol": "OPUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.64500000000000002,
+            "pattern_confidence": 0.71999999999999997,
+            "stage": "final_output",
+            "selected": true
+        },
+        {
+            "symbol": "MBOXUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.63929999999999998,
+            "pattern_confidence": 0.69999999999999996,
+            "stage": "final_output",
+            "selected": true
+        },
+        {
+            "symbol": "VELOUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.63039999999999996,
+            "pattern_confidence": 0.66000000000000003,
+            "stage": "final_output",
+            "selected": true
+        }
+    ],
+    "updated_at": "2026-03-25T13:00:03+00:00"
+}

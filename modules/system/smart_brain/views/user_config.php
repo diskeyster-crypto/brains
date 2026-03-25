@@ -17,6 +17,7 @@
 /** @var bool $manual_symbol_universe_enabled */
 /** @var string $manual_symbol_mode */
 /** @var list<string> $config_warnings */
+/** @var array{symbols:list<string>,count:int,valid:bool,warning:string} $manual_blacklist */
 
 $pageTitle = 'Smart Brain - User Config';
 $activeTab = 'user_config';
@@ -28,8 +29,9 @@ $symbol_filter_mode = $symbol_filter_mode ?? 'all';
 $manual_symbol_universe_enabled = $manual_symbol_universe_enabled ?? false;
 $manual_symbol_mode = $manual_symbol_mode ?? 'manual_only';
 $config_warnings = $config_warnings ?? [];
+$manual_blacklist = $manual_blacklist ?? ['symbols' => [], 'count' => 0, 'valid' => true, 'warning' => ''];
 
-$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode, $manual_symbol_universe_enabled, $manual_symbol_mode, $config_warnings) {
+$pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patterns_enabled, $pattern_mode, $symbol_intelligence_enabled, $symbol_filter_mode, $manual_symbol_universe_enabled, $manual_symbol_mode, $config_warnings, $manual_blacklist) {
     $v = function(string $key, $default = '') use ($form_values) {
         return htmlspecialchars((string)($form_values[$key] ?? $default));
     };
@@ -641,6 +643,48 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Live Blacklist — separate form, not part of user config -->
+        <div class="row">
+            <div class="col-md-12 mb-4">
+                <div class="card h-100" style="border-color: #dc3545;">
+                    <div class="card-header d-flex align-items-center" style="background: rgba(220,53,69,0.08);">
+                        <i class="bi bi-shield-x me-2 text-danger"></i>
+                        <h5 style="margin: 0;">Manual Live Blacklist</h5>
+                        <span class="badge bg-danger ms-2"><?= $manual_blacklist['count'] ?> symbol(s)</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary mb-3" style="font-size: 0.85rem;">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Applies to <strong>LIVE only</strong>. Simulator and analytics are unaffected.<br>
+                            Blacklisted symbols will not receive live approval or live intents.
+                            Structural detection continues for research/debug.
+                        </p>
+                        <?php if (!$manual_blacklist['valid']): ?>
+                        <div class="alert alert-warning py-1 px-2 mb-2" style="font-size: 0.85rem;">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Blacklist warning: <?= htmlspecialchars($manual_blacklist['warning']) ?>
+                        </div>
+                        <?php endif; ?>
+                        <form method="POST" action="<?= htmlspecialchars($smartBrainUrl) ?>/blacklist/save">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <label for="manual_blacklist_symbols" class="form-label fw-bold">Blacklisted Symbols</label>
+                                    <textarea class="form-control" id="manual_blacklist_symbols" name="manual_blacklist_symbols" rows="4" placeholder="BADCOINUSDT&#10;SPIKEUSDT&#10;TRASHUSDT"><?= htmlspecialchars(implode("\n", $manual_blacklist['symbols'])) ?></textarea>
+                                    <small class="text-secondary">One symbol per line or comma-separated. Will be normalized to uppercase.</small>
+                                </div>
+                                <div class="col-md-4 d-flex flex-column justify-content-end">
+                                    <button type="submit" class="btn btn-danger mb-2">
+                                        <i class="bi bi-shield-x me-1"></i> Save Blacklist
+                                    </button>
+                                    <small class="text-secondary">Changes take effect on next Brain cycle.</small>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>

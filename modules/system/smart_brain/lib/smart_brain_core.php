@@ -710,6 +710,11 @@ final class SmartBrainCore
             'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
             'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
             'v2_live_quality_floor_rejected_preview' => $liveIntentResult['v2_live_quality_floor_rejected_preview'] ?? [],
+            // Manual blacklist diagnostics
+            'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
+            'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
+            'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
+            'manual_blacklist_rejected_preview' => $liveIntentResult['manual_blacklist_rejected_preview'] ?? [],
             'updated_at' => date('c'),
         ]);
 
@@ -819,6 +824,11 @@ final class SmartBrainCore
             'v2_live_quality_floor_rejected_count' => (int)($liveIntentResult['v2_live_quality_floor_rejected_count'] ?? 0),
             'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
             'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
+            // Manual Blacklist diagnostics
+            'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
+            'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
+            'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
+            'manual_blacklist_rejected_preview' => $liveIntentResult['manual_blacklist_rejected_preview'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -888,6 +898,11 @@ final class SmartBrainCore
             'v2_live_quality_floor_passed_count' => 0,
             'v2_live_quality_floor_reject_reason_distribution' => [],
             'v2_live_quality_floor_rejected_preview' => [],
+            // Manual blacklist diagnostics
+            'manual_blacklist_active' => false,
+            'manual_blacklist_count' => 0,
+            'manual_blacklist_rejected_count' => 0,
+            'manual_blacklist_rejected_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -915,6 +930,15 @@ final class SmartBrainCore
         if (!empty($userLimits['manual_symbol_universe_enabled'])) {
             $rawList = (string)($userLimits['manual_symbol_list'] ?? '');
             $manualSymbols = SymbolIntelligence::parseManualSymbolList($rawList);
+        }
+
+        // Load manual live blacklist — authoritative live-only symbol block
+        $blacklistData = $this->config->loadManualBlacklist();
+        $manualBlacklist = $blacklistData['symbols'];
+        $result['manual_blacklist_active'] = !empty($manualBlacklist);
+        $result['manual_blacklist_count'] = $blacklistData['count'];
+        if (!$blacklistData['valid']) {
+            $this->logger->log('warning', 'Manual blacklist: ' . $blacklistData['warning']);
         }
 
         $intents = [];
@@ -951,6 +975,23 @@ final class SmartBrainCore
             if ($symbol === '') {
                 $this->rejectLiveSignal($result, '', '', 'missing_symbol', $selectionMode);
                 $result['live_invalid_payload_count']++;
+                continue;
+            }
+
+            // === BRAIN BLACKLIST GATE: manual live-only symbol block ===
+            // Applied before any other filtering. Structural signal may still exist in analytics/debug.
+            if (SmartBrainConfig::isSymbolManuallyBlacklisted($symbol, $manualBlacklist)) {
+                $result['manual_blacklist_rejected_count']++;
+                // Record preview for diagnostics (first 10)
+                if (count($result['manual_blacklist_rejected_preview']) < 10) {
+                    $result['manual_blacklist_rejected_preview'][] = [
+                        'symbol' => $symbol,
+                        'reason' => 'reject_symbol_blacklisted_manual',
+                        'stage' => 'brain_blacklist_gate',
+                        'source' => 'manual_blacklist',
+                    ];
+                }
+                $this->rejectLiveSignal($result, $symbol, $signalId ?? '', 'reject_symbol_blacklisted_manual', $selectionMode);
                 continue;
             }
 
@@ -2491,6 +2532,7 @@ final class SmartBrainCore
             'manual_symbol_universe_enabled' => (bool)($userLimits['manual_symbol_universe_enabled'] ?? false),
             'manual_symbol_mode' => (string)($userLimits['manual_symbol_mode'] ?? 'manual_only'),
             'config_warnings' => $this->config->detectConfigConflicts(),
+            'manual_blacklist' => $this->config->loadManualBlacklist(),
         ];
     }
 
@@ -2503,6 +2545,27 @@ final class SmartBrainCore
     public function saveUserConfig(array $values): array
     {
         return $this->config->saveUserConfig($values);
+    }
+
+    /**
+     * Save manual live blacklist.
+     *
+     * @param list<string> $symbols
+     * @return array{ok:bool,count:int,symbols:list<string>}
+     */
+    public function saveManualBlacklist(array $symbols): array
+    {
+        return $this->config->saveManualBlacklist($symbols);
+    }
+
+    /**
+     * Load manual live blacklist.
+     *
+     * @return array{symbols:list<string>,count:int,valid:bool,warning:string}
+     */
+    public function loadManualBlacklist(): array
+    {
+        return $this->config->loadManualBlacklist();
     }
 
     /**

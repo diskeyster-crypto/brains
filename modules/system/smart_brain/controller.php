@@ -283,4 +283,33 @@ final class SmartBrainController
 
         include __DIR__ . '/views/maintenance.php';
     }
+
+    /**
+     * Save Manual Blacklist
+     * POST /admin/smart_brain/blacklist/save
+     */
+    public function saveBlacklist(): void
+    {
+        $rawInput = (string)($_POST['manual_blacklist_symbols'] ?? '');
+        // Parse: one symbol per line, or comma-separated
+        $symbols = preg_split('/[\r\n,]+/', $rawInput, -1, PREG_SPLIT_NO_EMPTY);
+        $symbols = array_map('trim', $symbols);
+        $symbols = array_filter($symbols, fn($s) => $s !== '');
+
+        $result = $this->service->saveManualBlacklist($symbols);
+
+        // Redirect back to user_config with flash
+        $data = $this->service->getUserConfigData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        if ($result['ok']) {
+            $data['flash'] = ['type' => 'success', 'message' => 'Manual blacklist saved — ' . $result['count'] . ' symbol(s).'];
+        } else {
+            $data['flash'] = ['type' => 'error', 'message' => 'Failed to save manual blacklist.'];
+        }
+        $data['form_values'] = $data['user_limits'];
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/user_config.php';
+    }
 }

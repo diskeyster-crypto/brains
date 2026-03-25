@@ -306,6 +306,53 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         </div>
     </div>
 
+    <!-- Manual Live Blacklist Status -->
+    <?php
+        $blActive = (bool)($last_run['manual_blacklist_active'] ?? false);
+        $blCount = (int)($last_run['manual_blacklist_count'] ?? 0);
+        $blRejected = (int)($last_run['manual_blacklist_rejected_count'] ?? 0);
+        $blPreview = (array)($last_run['manual_blacklist_rejected_preview'] ?? []);
+    ?>
+    <div class="card mb-4" style="border-color: #dc3545;">
+        <div class="card-header" style="background: rgba(220,53,69,0.08);">
+            <h5 style="margin: 0;">
+                <i class="bi bi-shield-x me-1"></i> Manual Live Blacklist
+                <span class="badge <?= $blActive ? 'bg-danger' : 'bg-secondary' ?> ms-1"><?= $blCount ?> symbol(s)</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-2" style="font-size: 0.85rem;">
+                <div class="col-md-3 mb-2">
+                    <strong>Active:</strong>
+                    <span class="badge <?= $blActive ? 'bg-danger' : 'bg-secondary' ?>"><?= $blActive ? 'Yes' : 'No' ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Symbols:</strong>
+                    <span class="badge bg-primary"><?= $blCount ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Live Rejected:</strong>
+                    <span class="badge <?= $blRejected > 0 ? 'bg-warning text-dark' : 'bg-secondary' ?>"><?= $blRejected ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Scope:</strong>
+                    <span class="badge bg-info">LIVE only</span>
+                </div>
+            </div>
+            <?php if (!empty($blPreview)): ?>
+            <div class="mt-2" style="font-size: 0.82rem;">
+                <strong>Last Run Blocked Symbols:</strong>
+                <div class="mt-1">
+                <?php foreach ($blPreview as $bp): ?>
+                    <span class="badge bg-danger me-1 mb-1"><?= htmlspecialchars((string)($bp['symbol'] ?? '')) ?></span>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            <div class="small text-secondary mt-2">Blacklisted symbols are blocked from live approval. Simulator and analytics remain unaffected.</div>
+        </div>
+    </div>
+
     <!-- Live Trading Status -->
     <?php
         $liveEnabled = (bool)($last_run['live_trading_enabled'] ?? false);

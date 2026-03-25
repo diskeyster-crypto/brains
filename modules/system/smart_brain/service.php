@@ -113,4 +113,25 @@ final class SmartBrainService
     {
         return $this->core->getLivePerformanceData();
     }
+
+    /**
+     * Save manual live blacklist.
+     *
+     * @param list<string> $symbols
+     * @return array{ok:bool,count:int,symbols:list<string>}
+     */
+    public function saveManualBlacklist(array $symbols): array
+    {
+        return $this->core->saveManualBlacklist($symbols);
+    }
+
+    /**
+     * Load manual live blacklist.
+     *
+     * @return array{symbols:list<string>,count:int,valid:bool,warning:string}
+     */
+    public function loadManualBlacklist(): array
+    {
+        return $this->core->loadManualBlacklist();
+    }
 }

@@ -198,6 +198,28 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         </div>
     </div>
 
+    <!-- Manual Blacklist Indicator -->
+    <?php
+        $dashBlActive = (bool)($last_run['manual_blacklist_active'] ?? false);
+        $dashBlCount = (int)($last_run['manual_blacklist_count'] ?? 0);
+        $dashBlRejected = (int)($last_run['manual_blacklist_rejected_count'] ?? 0);
+    ?>
+    <?php if ($dashBlActive): ?>
+    <div class="card mb-4" style="border-color: #dc3545;">
+        <div class="card-header d-flex justify-content-between align-items-center" style="background: rgba(220,53,69,0.08);">
+            <h5 style="margin: 0;"><i class="bi bi-shield-x me-1 text-danger"></i> Manual Live Blacklist</h5>
+            <span class="badge bg-danger"><?= $dashBlCount ?> symbol(s)</span>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-md-4"><small class="text-secondary d-block">Blacklisted Symbols</small><strong class="text-danger"><?= $dashBlCount ?></strong></div>
+                <div class="col-md-4"><small class="text-secondary d-block">Live Rejected (last run)</small><strong class="<?= $dashBlRejected > 0 ? 'text-warning' : 'text-secondary' ?>"><?= $dashBlRejected ?></strong></div>
+                <div class="col-md-4"><small class="text-secondary d-block">Scope</small><strong class="text-info">LIVE only</strong></div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Sniper V3 Live Filter Analytics -->
     <?php
         $dashIsSniperProfile = in_array($dashProfile, ['sniper_75_attempt', 'sniper_lite'], true);

@@ -649,6 +649,135 @@ final class SmartBrainConfig
         return count($result['list']) === 0;
     }
 
+    // =========================================================================
+    // Manual Live Blacklist — authoritative manual symbol blocking for live pipeline
+    // =========================================================================
+
+    private const MANUAL_BLACKLIST_FILENAME = 'blacklist.json';
+
+    /**
+     * Load manual blacklist from storage.
+     * Returns normalized, deduplicated, uppercase array of symbol strings.
+     * On missing file: creates empty default [].
+     * On invalid JSON: fallback to [], set warning flag.
+     *
+     * @return array{symbols:list<string>,count:int,valid:bool,warning:string}
+     */
+    public function loadManualBlacklist(): array
+    {
+        $path = $this->moduleBase . '/storage/' . self::MANUAL_BLACKLIST_FILENAME;
+
+        // If file missing, create empty default
+        if (!is_file($path)) {
+            @file_put_contents($path, "[\n]\n");
+            return ['symbols' => [], 'count' => 0, 'valid' => true, 'warning' => 'manual_blacklist_empty_ok'];
+        }
+
+        $content = @file_get_contents($path);
+        if ($content === false) {
+            return ['symbols' => [], 'count' => 0, 'valid' => false, 'warning' => 'manual_blacklist_load_failed'];
+        }
+
+        $decoded = @json_decode($content, true);
+        if (!is_array($decoded)) {
+            return ['symbols' => [], 'count' => 0, 'valid' => false, 'warning' => 'manual_blacklist_invalid_json'];
+        }
+
+        // Normalize: uppercase, trim, dedupe, filter empty
+        $symbols = [];
+        $seen = [];
+        foreach ($decoded as $item) {
+            if (!is_string($item)) {
+                continue;
+            }
+            $normalized = strtoupper(trim($item));
+            if ($normalized === '') {
+                continue;
+            }
+            if (isset($seen[$normalized])) {
+                continue;
+            }
+            $seen[$normalized] = true;
+            $symbols[] = $normalized;
+        }
+
+        return [
+            'symbols' => $symbols,
+            'count' => count($symbols),
+            'valid' => true,
+            'warning' => count($symbols) === 0 ? 'manual_blacklist_empty_ok' : '',
+        ];
+    }
+
+    /**
+     * Save manual blacklist to storage.
+     * Normalizes, deduplicates, and writes clean JSON.
+     *
+     * @param list<string> $symbols Raw symbol list (will be normalized)
+     * @return array{ok:bool,count:int,symbols:list<string>}
+     */
+    public function saveManualBlacklist(array $symbols): array
+    {
+        // Normalize: uppercase, trim, dedupe, filter empty
+        $normalized = [];
+        $seen = [];
+        foreach ($symbols as $item) {
+            if (!is_string($item)) {
+                continue;
+            }
+            $clean = strtoupper(trim($item));
+            if ($clean === '') {
+                continue;
+            }
+            if (isset($seen[$clean])) {
+                continue;
+            }
+            $seen[$clean] = true;
+            $normalized[] = $clean;
+        }
+
+        sort($normalized);
+
+        $path = $this->moduleBase . '/storage/' . self::MANUAL_BLACKLIST_FILENAME;
+        $json = json_encode(array_values($normalized), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $ok = @file_put_contents($path, $json . "\n") !== false;
+
+        return ['ok' => $ok, 'count' => count($normalized), 'symbols' => $normalized];
+    }
+
+    /**
+     * Check if a symbol is in the manual blacklist.
+     *
+     * @param string $symbol Symbol to check (will be uppercased)
+     * @param list<string> $blacklist Pre-loaded normalized blacklist
+     * @return bool
+     */
+    public static function isSymbolManuallyBlacklisted(string $symbol, array $blacklist): bool
+    {
+        if (empty($blacklist)) {
+            return false;
+        }
+        return in_array(strtoupper(trim($symbol)), $blacklist, true);
+    }
+
+    /**
+     * Build manual blacklist snapshot for effective config.
+     *
+     * @return array<string,mixed>
+     */
+    private function buildManualBlacklistSnapshot(): array
+    {
+        $data = $this->loadManualBlacklist();
+        return [
+            'manual_blacklist_enabled' => true,
+            'manual_blacklist_symbols' => $data['symbols'],
+            'manual_blacklist_count' => $data['count'],
+            'blacklist_source' => 'manual_file',
+            'blacklist_valid' => $data['valid'],
+            'blacklist_warning' => $data['warning'],
+        ];
+    }
+
     /**
      * Deduplicate warnings by normalized text.
      *
@@ -976,6 +1105,7 @@ final class SmartBrainConfig
                 'manual_symbol_list' => (string)($userLimits['manual_symbol_list'] ?? ''),
                 'manual_symbol_mode' => (string)($userLimits['manual_symbol_mode'] ?? 'manual_only'),
             ],
+            'manual_blacklist' => $this->buildManualBlacklistSnapshot(),
             'live_trading' => [
                 'live_trading_enabled' => (bool)($userLimits['live_trading_enabled'] ?? false),
                 'live_signal_selection_mode' => (string)($userLimits['live_signal_selection_mode'] ?? 'whitelist_only'),

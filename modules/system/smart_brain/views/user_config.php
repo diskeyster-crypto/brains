@@ -301,6 +301,51 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
         </div>
         <?php endif; ?>
 
+        <!-- V2 Live Quality Floor (visible for all profiles) -->
+        <?php
+            $v2FloorEnabled = (bool)($form_values['v2_live_quality_floor_enabled'] ?? $currentBundle['values']['v2_live_quality_floor_enabled'] ?? true);
+        ?>
+        <div class="card mb-4" style="border-color: #8b5cf6;">
+            <div class="card-header d-flex align-items-center" style="background: rgba(139,92,246,0.1);">
+                <i class="bi bi-shield-check me-2"></i>
+                <h5 style="margin: 0;">V2 Live Quality Floor</h5>
+                <span class="badge <?= $v2FloorEnabled ? 'bg-success' : 'bg-secondary' ?> ms-2"><?= $v2FloorEnabled ? 'Active' : 'Disabled' ?></span>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info small py-2 mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    V2 signals with confirmation_score, pattern_confidence, or trend_match below these floors are filtered before live approval. This prevents weak/medium-quality V2 leakage into live.
+                </div>
+                <table class="table table-sm table-dark mt-2 mb-0" style="font-size: 0.82rem;">
+                    <thead><tr><th>Filter</th><th>Threshold</th></tr></thead>
+                    <tbody>
+                    <?php
+                        $v2FloorLabels = [
+                            'v2_live_quality_floor_enabled' => 'Floor Enabled',
+                            'v2_live_min_confirmation_score' => 'Min Confirmation Score',
+                            'v2_live_min_pattern_confidence' => 'Min Pattern Confidence',
+                            'v2_live_min_trend_match_score' => 'Min Trend Match Score',
+                        ];
+                        foreach ($v2FloorLabels as $fk => $label):
+                            $fkVal = $currentBundle['values'][$fk] ?? $form_values[$fk] ?? '-';
+                    ?>
+                    <tr>
+                        <td><code><?= htmlspecialchars($label) ?></code></td>
+                        <td>
+                            <?php if (is_bool($fkVal)): ?>
+                                <span class="<?= $fkVal ? 'text-success' : 'text-danger' ?>"><?= $fkVal ? 'true' : 'false' ?></span>
+                            <?php else: ?>
+                                <span class="text-info"><?= htmlspecialchars((string)$fkVal) ?></span>
+                            <?php endif; ?>
+                            <small class="text-secondary">(profile)</small>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Pattern Selection Section -->
         <div class="row">
             <div class="col-md-6 mb-4">

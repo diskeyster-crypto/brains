@@ -1127,6 +1127,11 @@ final class SmartBrainConfig
             'sniper_v3_min_hold_quality_score',
             'sniper_v3_min_post_reclaim_stability_score',
             'sniper_v3_min_zone_defense_score',
+            // V2 Live Quality Floor
+            'v2_live_quality_floor_enabled',
+            'v2_live_min_confirmation_score',
+            'v2_live_min_pattern_confidence',
+            'v2_live_min_trend_match_score',
         ];
     }
 
@@ -1148,7 +1153,7 @@ final class SmartBrainConfig
                 'description' => 'Standard working profile balancing signal count and quality. Medium confirmations allowed, moderate zone widening.',
                 'values' => [
                     'v2_confirmation_weak_max' => 0.45,
-                    'v2_confirmation_strong_min' => 0.70,
+                    'v2_confirmation_strong_min' => 0.75,
                     'v2_zone_widen_weak_pct' => 0.50,
                     'v2_zone_widen_medium_pct' => 0.65,
                     'v2_zone_widen_strong_pct' => 0.80,
@@ -1156,11 +1161,16 @@ final class SmartBrainConfig
                     'strong_confirmation_enter_now_enabled' => true,
                     'medium_confirmation_wait_retrace_enabled' => true,
                     'weak_confirmation_live_enabled' => false,
-                    'v2_hold_quality_min' => 0.60,
-                    'v2_post_reclaim_stability_min' => 0.60,
-                    'v2_zone_defense_min' => 0.30,
-                    'v2_trend_match_min' => 0.40,
-                    'v2_price_position_max' => 0.90,
+                    'v2_hold_quality_min' => 0.65,
+                    'v2_post_reclaim_stability_min' => 0.65,
+                    'v2_zone_defense_min' => 0.35,
+                    'v2_trend_match_min' => 0.50,
+                    'v2_price_position_max' => 0.88,
+                    // V2 Live Quality Floor
+                    'v2_live_quality_floor_enabled' => true,
+                    'v2_live_min_confirmation_score' => 0.55,
+                    'v2_live_min_pattern_confidence' => 0.50,
+                    'v2_live_min_trend_match_score' => 0.40,
                     // V3-specific entry policy
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.40,
@@ -1196,8 +1206,13 @@ final class SmartBrainConfig
                     'v2_hold_quality_min' => 0.70,
                     'v2_post_reclaim_stability_min' => 0.70,
                     'v2_zone_defense_min' => 0.35,
-                    'v2_trend_match_min' => 0.50,
+                    'v2_trend_match_min' => 0.55,
                     'v2_price_position_max' => 0.88,
+                    // V2 Live Quality Floor
+                    'v2_live_quality_floor_enabled' => true,
+                    'v2_live_min_confirmation_score' => 0.60,
+                    'v2_live_min_pattern_confidence' => 0.55,
+                    'v2_live_min_trend_match_score' => 0.45,
                     // V3-specific entry policy
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.35,
@@ -1235,6 +1250,11 @@ final class SmartBrainConfig
                     'v2_zone_defense_min' => 0.40,
                     'v2_trend_match_min' => 0.60,
                     'v2_price_position_max' => 0.85,
+                    // V2 Live Quality Floor — strictest for sniper
+                    'v2_live_quality_floor_enabled' => true,
+                    'v2_live_min_confirmation_score' => 0.70,
+                    'v2_live_min_pattern_confidence' => 0.60,
+                    'v2_live_min_trend_match_score' => 0.55,
                     // V3-specific entry policy — sniper uses enter_now for strong V3
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.40,
@@ -1271,26 +1291,31 @@ final class SmartBrainConfig
                     'v2_hold_quality_min' => 0.70,
                     'v2_post_reclaim_stability_min' => 0.70,
                     'v2_zone_defense_min' => 0.35,
-                    'v2_trend_match_min' => 0.50,
+                    'v2_trend_match_min' => 0.55,
                     'v2_price_position_max' => 0.88,
+                    // V2 Live Quality Floor
+                    'v2_live_quality_floor_enabled' => true,
+                    'v2_live_min_confirmation_score' => 0.60,
+                    'v2_live_min_pattern_confidence' => 0.55,
+                    'v2_live_min_trend_match_score' => 0.45,
                     // V3-specific entry policy — sniper lite uses enter_now for strong V3
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.40,
                     'v3_zone_widen_medium_pct' => 0.55,
                     'v3_zone_widen_strong_pct' => 0.70,
                     'v3_zone_widen_max_cap_pct' => 0.75,
-                    // Sniper Lite V3 Live Filters — looser than strict sniper
+                    // Sniper Lite V3 Live Filters — tightened from prior drift
                     'sniper_v3_live_filter_enabled' => true,
-                    'sniper_v3_min_confirmation_score' => 0.68,
-                    'sniper_v3_min_pattern_confidence' => 0.55,
-                    'sniper_v3_min_trend_match_score' => 0.45,
+                    'sniper_v3_min_confirmation_score' => 0.72,
+                    'sniper_v3_min_pattern_confidence' => 0.60,
+                    'sniper_v3_min_trend_match_score' => 0.50,
                     'sniper_v3_min_entry_quality_score' => 0.75,
                     'sniper_v3_min_corridor_fit_score' => 0.75,
                     'sniper_v3_max_price_position' => 0.85,
                     'sniper_v3_min_reclaim_strength_score' => 0.70,
-                    'sniper_v3_min_hold_quality_score' => 0.72,
-                    'sniper_v3_min_post_reclaim_stability_score' => 0.60,
-                    'sniper_v3_min_zone_defense_score' => 0.30,
+                    'sniper_v3_min_hold_quality_score' => 0.75,
+                    'sniper_v3_min_post_reclaim_stability_score' => 0.65,
+                    'sniper_v3_min_zone_defense_score' => 0.35,
                 ],
             ],
             'custom' => [
@@ -1376,6 +1401,66 @@ final class SmartBrainConfig
             return ['medium', 'strong', 'very_strong'];
         }
         return ['strong', 'very_strong'];
+    }
+
+    /**
+     * Evaluate V2 live quality floor for a single signal/candidate.
+     *
+     * This gate prevents weak/medium-quality V2 signals from becoming live
+     * when their quality scores fall below profile-configured minimums.
+     * Applied to all V2 contextual patterns (double_bottom_contextual_v2)
+     * during live intent generation, before bot-ready approval.
+     *
+     * Returns array with:
+     *   'eligible' => bool,
+     *   'reject_reasons' => string[],
+     *   'checked_values' => array (for diagnostics)
+     *
+     * @param array<string,mixed> $signal     Signal or candidate payload
+     * @param array<string,mixed> $userLimits Effective user limits
+     * @return array{eligible:bool,reject_reasons:list<string>,checked_values:array<string,mixed>}
+     */
+    public static function evaluateV2LiveQualityFloor(array $signal, array $userLimits): array
+    {
+        $rejectReasons = [];
+
+        $confirmationScore = (float)($signal['confirmation_score'] ?? 0.0);
+        $patternConfidence = (float)($signal['pattern_confidence'] ?? 0.0);
+        $trendMatchScore = $signal['trend_match_score'] ?? null;
+        $confirmationTier = (string)($signal['confirmation_tier'] ?? 'none');
+
+        $checkedValues = [
+            'confirmation_tier' => $confirmationTier,
+            'confirmation_score' => round($confirmationScore, 4),
+            'pattern_confidence' => round($patternConfidence, 4),
+            'trend_match_score' => $trendMatchScore !== null ? round((float)$trendMatchScore, 4) : null,
+        ];
+
+        // Gate 1: Minimum confirmation_score
+        $minConfScore = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
+        if ($confirmationScore < $minConfScore) {
+            $rejectReasons[] = 'v2_reject_confirmation_score_too_low';
+        }
+
+        // Gate 2: Minimum pattern_confidence
+        $minPatternConf = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
+        if ($patternConfidence < $minPatternConf) {
+            $rejectReasons[] = 'v2_reject_pattern_confidence_too_low';
+        }
+
+        // Gate 3: Minimum trend_match_score
+        $minTrendMatch = (float)($userLimits['v2_live_min_trend_match_score'] ?? 0.40);
+        if ($trendMatchScore === null || (float)$trendMatchScore <= 0.0) {
+            $rejectReasons[] = 'v2_reject_trend_match_missing';
+        } elseif ((float)$trendMatchScore < $minTrendMatch) {
+            $rejectReasons[] = 'v2_reject_trend_match_too_low';
+        }
+
+        return [
+            'eligible' => empty($rejectReasons),
+            'reject_reasons' => $rejectReasons,
+            'checked_values' => $checkedValues,
+        ];
     }
 
     /**

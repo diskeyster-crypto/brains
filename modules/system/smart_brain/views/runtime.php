@@ -247,6 +247,65 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
     </div>
     <?php endif; ?>
 
+    <!-- V2 Live Quality Floor Status -->
+    <?php
+        $v2FloorEnabled = (bool)($execProfileBundle['values']['v2_live_quality_floor_enabled'] ?? true);
+        $v2FloorApplied = (int)($last_run['v2_live_quality_floor_applied_count'] ?? 0);
+        $v2FloorRejected = (int)($last_run['v2_live_quality_floor_rejected_count'] ?? 0);
+        $v2FloorPassed = (int)($last_run['v2_live_quality_floor_passed_count'] ?? 0);
+        $v2FloorRejectDist = (array)($last_run['v2_live_quality_floor_reject_reason_distribution'] ?? []);
+    ?>
+    <div class="card mb-4" style="border-color: #8b5cf6;">
+        <div class="card-header" style="background: rgba(139,92,246,0.1);">
+            <h5 style="margin: 0;">
+                <i class="bi bi-shield-check me-1"></i> V2 Live Quality Floor
+                <span class="badge <?= $v2FloorEnabled ? 'bg-success' : 'bg-secondary' ?> ms-1"><?= $v2FloorEnabled ? 'Active' : 'Disabled' ?></span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-2" style="font-size: 0.85rem;">
+                <div class="col-md-3 mb-2">
+                    <strong>V2 Signals Checked:</strong>
+                    <span class="badge bg-primary"><?= $v2FloorApplied ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Passed:</strong>
+                    <span class="badge <?= $v2FloorPassed > 0 ? 'bg-success' : 'bg-secondary' ?>"><?= $v2FloorPassed ?></span>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <strong>Rejected:</strong>
+                    <span class="badge <?= $v2FloorRejected > 0 ? 'bg-warning text-dark' : 'bg-secondary' ?>"><?= $v2FloorRejected ?></span>
+                </div>
+            </div>
+            <?php
+                $v2FloorThresholds = [
+                    'Min Confirmation Score' => $execProfileBundle['values']['v2_live_min_confirmation_score'] ?? $userLimits['v2_live_min_confirmation_score'] ?? 0.55,
+                    'Min Pattern Confidence' => $execProfileBundle['values']['v2_live_min_pattern_confidence'] ?? $userLimits['v2_live_min_pattern_confidence'] ?? 0.50,
+                    'Min Trend Match' => $execProfileBundle['values']['v2_live_min_trend_match_score'] ?? $userLimits['v2_live_min_trend_match_score'] ?? 0.40,
+                ];
+            ?>
+            <div class="row" style="font-size: 0.83rem;">
+                <?php foreach ($v2FloorThresholds as $label => $val): ?>
+                <div class="col-md-4 mb-1">
+                    <code class="small"><?= htmlspecialchars($label) ?></code>:
+                    <span class="text-info"><?= htmlspecialchars((string)$val) ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (!empty($v2FloorRejectDist)): ?>
+            <div class="mt-2" style="font-size: 0.82rem;">
+                <strong>Last Run Reject Reasons:</strong>
+                <div class="mt-1">
+                <?php foreach ($v2FloorRejectDist as $reason => $count): ?>
+                    <span class="badge bg-warning text-dark me-1 mb-1"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$count ?></span>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            <div class="small text-secondary mt-2">V2 signals with confirmation_score, pattern_confidence, or trend_match below profile floor are filtered before live approval.</div>
+        </div>
+    </div>
+
     <!-- Live Trading Status -->
     <?php
         $liveEnabled = (bool)($last_run['live_trading_enabled'] ?? false);

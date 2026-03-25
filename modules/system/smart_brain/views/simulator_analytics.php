@@ -1154,6 +1154,80 @@ if ($sniperV3HasData):
 </div>
 <?php endif; ?>
 
+<?php
+// ── V2 Live Quality Floor Analytics ──
+$v2FloorApplied = (int)($v2DownstreamFunnel['v2_live_quality_floor_applied_count'] ?? ($rc['v2_live_quality_floor_applied_count'] ?? 0));
+$v2FloorRejected = (int)($v2DownstreamFunnel['v2_live_quality_floor_rejected_count'] ?? ($rc['v2_live_quality_floor_rejected_count'] ?? 0));
+$v2FloorPassed = (int)($v2DownstreamFunnel['v2_live_quality_floor_passed_count'] ?? ($rc['v2_live_quality_floor_passed_count'] ?? 0));
+$v2FloorRejectDist = (array)($v2DownstreamFunnel['v2_live_quality_floor_reject_reason_distribution'] ?? ($rc['v2_live_quality_floor_reject_reason_distribution'] ?? []));
+$v2FloorRejectedPreview = (array)($v2DownstreamFunnel['v2_live_quality_floor_rejected_preview'] ?? []);
+$v2FloorHasData = $v2FloorApplied > 0 || $v2FloorRejected > 0 || !empty($v2FloorRejectDist);
+if ($v2FloorHasData):
+?>
+<div class="card mb-3">
+    <div class="card-header" style="background: rgba(139,92,246,0.15);">
+        <strong><i class="bi bi-shield-check me-1"></i> V2 Live Quality Floor — Signal Strictness Gate</strong>
+    </div>
+    <div class="card-body p-2">
+        <div class="d-flex flex-wrap gap-3 small mb-2">
+            <span>V2 Signals Checked: <strong class="text-primary"><?= $v2FloorApplied ?></strong></span>
+            <span>Passed: <strong class="<?= $v2FloorPassed > 0 ? 'text-success' : 'text-secondary' ?>"><?= $v2FloorPassed ?></strong></span>
+            <span>Rejected: <strong class="<?= $v2FloorRejected > 0 ? 'text-warning' : 'text-secondary' ?>"><?= $v2FloorRejected ?></strong></span>
+            <?php if ($v2FloorApplied > 0): ?>
+            <span>Pass Rate: <strong><?= number_format($v2FloorPassed / $v2FloorApplied * 100, 1) ?>%</strong></span>
+            <?php endif; ?>
+        </div>
+
+        <?php if (!empty($v2FloorRejectDist)):
+            arsort($v2FloorRejectDist);
+        ?>
+        <div class="mb-2">
+            <strong class="small">V2 Quality Floor Reject Reasons:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($v2FloorRejectDist as $reason => $cnt): ?>
+                <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($v2FloorRejectedPreview)): ?>
+        <details class="mb-1">
+            <summary class="text-muted small"><i class="bi bi-search me-1"></i> V2 Rejected Preview (first <?= count($v2FloorRejectedPreview) ?>)</summary>
+            <table class="table table-sm table-bordered mt-1 mb-0" style="font-size: 0.78rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Reject Reasons</th>
+                        <th>Conf Score</th>
+                        <th>Conf Tier</th>
+                        <th>Pat Conf</th>
+                        <th>Trend Match</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($v2FloorRejectedPreview as $vrp): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string)($vrp['symbol'] ?? '')) ?></td>
+                        <td>
+                            <?php foreach ((array)($vrp['reject_reasons'] ?? []) as $rr): ?>
+                            <span class="badge bg-danger mb-1" style="font-size: 0.7rem;"><?= htmlspecialchars((string)$rr) ?></span>
+                            <?php endforeach; ?>
+                        </td>
+                        <td><?= number_format((float)($vrp['checked_values']['confirmation_score'] ?? 0), 3) ?></td>
+                        <td><?= htmlspecialchars((string)($vrp['checked_values']['confirmation_tier'] ?? 'none')) ?></td>
+                        <td><?= number_format((float)($vrp['checked_values']['pattern_confidence'] ?? 0), 3) ?></td>
+                        <td><?= isset($vrp['checked_values']['trend_match_score']) && $vrp['checked_values']['trend_match_score'] !== null ? number_format((float)$vrp['checked_values']['trend_match_score'], 3) : '<em class="text-danger">missing</em>' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
     <!-- ===== REGRESSION AUDIT: SHORT-SIDE COLLAPSE ===== -->
     <?php
     $ra = (array)($stats['regression_audit'] ?? []);

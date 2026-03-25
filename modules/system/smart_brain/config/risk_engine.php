@@ -65,7 +65,7 @@ return [
         'early_failure_max_adverse_roi' => -0.008,
         // V2 Confirmation Tier Policy
         'v2_confirmation_weak_max' => 0.45,
-        'v2_confirmation_strong_min' => 0.70,
+        'v2_confirmation_strong_min' => 0.75,
         'v2_zone_widen_weak_pct' => 0.50,
         'v2_zone_widen_medium_pct' => 0.65,
         'v2_zone_widen_strong_pct' => 0.80,
@@ -75,11 +75,16 @@ return [
         'medium_confirmation_wait_retrace_enabled' => true,
         'weak_confirmation_live_enabled' => false,
         // V2 Quality Floors
-        'v2_hold_quality_min' => 0.60,
-        'v2_post_reclaim_stability_min' => 0.60,
-        'v2_zone_defense_min' => 0.30,
-        'v2_trend_match_min' => 0.40,
-        'v2_price_position_max' => 0.90,
+        'v2_hold_quality_min' => 0.65,
+        'v2_post_reclaim_stability_min' => 0.65,
+        'v2_zone_defense_min' => 0.35,
+        'v2_trend_match_min' => 0.50,
+        'v2_price_position_max' => 0.88,
+        // V2 Live Quality Floor — applied to V2 signals before live approval
+        'v2_live_quality_floor_enabled' => true,
+        'v2_live_min_confirmation_score' => 0.55,
+        'v2_live_min_pattern_confidence' => 0.50,
+        'v2_live_min_trend_match_score' => 0.40,
         // Sniper V3 Live Filters — applied ONLY when execution_profile = sniper_75_attempt AND pattern = V3
         'sniper_v3_live_filter_enabled' => true,
         'sniper_v3_min_confirmation_score' => 0.80,

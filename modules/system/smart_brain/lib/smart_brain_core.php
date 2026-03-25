@@ -704,6 +704,12 @@ final class SmartBrainCore
             'sniper_v3_shadow_only_count' => (int)($liveIntentResult['sniper_v3_shadow_only_count'] ?? 0),
             'sniper_v3_reject_reason_distribution' => $liveIntentResult['sniper_v3_reject_reason_distribution'] ?? [],
             'sniper_v3_rejected_preview' => $liveIntentResult['sniper_v3_rejected_preview'] ?? [],
+            // V2 live quality floor diagnostics
+            'v2_live_quality_floor_applied_count' => (int)($liveIntentResult['v2_live_quality_floor_applied_count'] ?? 0),
+            'v2_live_quality_floor_rejected_count' => (int)($liveIntentResult['v2_live_quality_floor_rejected_count'] ?? 0),
+            'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
+            'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
+            'v2_live_quality_floor_rejected_preview' => $liveIntentResult['v2_live_quality_floor_rejected_preview'] ?? [],
             'updated_at' => date('c'),
         ]);
 
@@ -808,6 +814,11 @@ final class SmartBrainCore
             'sniper_v3_shadow_only_count' => (int)($liveIntentResult['sniper_v3_shadow_only_count'] ?? 0),
             'sniper_v3_reject_reason_distribution' => $liveIntentResult['sniper_v3_reject_reason_distribution'] ?? [],
             'sniper_v3_rejected_preview' => $liveIntentResult['sniper_v3_rejected_preview'] ?? [],
+            // V2 Live Quality Floor diagnostics
+            'v2_live_quality_floor_applied_count' => (int)($liveIntentResult['v2_live_quality_floor_applied_count'] ?? 0),
+            'v2_live_quality_floor_rejected_count' => (int)($liveIntentResult['v2_live_quality_floor_rejected_count'] ?? 0),
+            'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
+            'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -871,6 +882,12 @@ final class SmartBrainCore
             'sniper_v3_reject_reason_distribution' => [],
             'sniper_v3_rejected_preview' => [],
             'structural_v3_signal_count' => 0,
+            // V2 live quality floor diagnostics
+            'v2_live_quality_floor_applied_count' => 0,
+            'v2_live_quality_floor_rejected_count' => 0,
+            'v2_live_quality_floor_passed_count' => 0,
+            'v2_live_quality_floor_reject_reason_distribution' => [],
+            'v2_live_quality_floor_rejected_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1059,10 +1076,39 @@ final class SmartBrainCore
                 }
             }
 
-            // === SNIPER V3 LIVE QUALITY FILTER ===
-            // Applied when execution_profile is a sniper profile (sniper_75_attempt or sniper_lite) AND pattern = V3
+            // === V2 LIVE QUALITY FLOOR GATE ===
+            // Applied to V2 contextual signals to prevent weak/medium-quality leakage into live
             $patternAlgo = (string)($signal['pattern_algorithm'] ?? '');
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
+            $v2QualityFloorEnabled = (bool)($userLimits['v2_live_quality_floor_enabled'] ?? true);
+
+            if ($patternAlgo === 'double_bottom_contextual_v2' && $v2QualityFloorEnabled) {
+                $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
+
+                $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
+                if (!$v2FloorResult['eligible']) {
+                    $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
+                    // Track reject reasons in result
+                    foreach ($v2FloorResult['reject_reasons'] as $vr) {
+                        $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
+                            ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
+                    }
+                    // Record preview for diagnostics (first 10)
+                    if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
+                        $result['v2_live_quality_floor_rejected_preview'][] = [
+                            'symbol' => $symbol,
+                            'reject_reasons' => $v2FloorResult['reject_reasons'],
+                            'checked_values' => $v2FloorResult['checked_values'],
+                        ];
+                    }
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
+                    continue;
+                }
+                $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+            }
+
+            // === SNIPER V3 LIVE QUALITY FILTER ===
+            // Applied when execution_profile is a sniper profile (sniper_75_attempt or sniper_lite) AND pattern = V3
             $sniperV3FilterEnabled = (bool)($userLimits['sniper_v3_live_filter_enabled'] ?? false);
             $isSniperProfile = in_array($execProfile, ['sniper_75_attempt', 'sniper_lite'], true);
 

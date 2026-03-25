@@ -1,4 +1,6 @@
 {
+    "execution_profile": "sniper_lite",
+    "pattern_profile_mode": "manual_override",
     "max_budget_per_coin": 6,
     "max_active_tasks": 50,
     "max_leverage": 10,
@@ -16,8 +18,8 @@
     "trailing_enabled": true,
     "trailing_mode": "price_distance_floor",
     "trailing_price_distance_pct": 0.02,
-    "trailing_activation_floor_roi": 0.040000000000000001,
-    "trailing_floor_lock_roi": 0.029999999999999999,
+    "trailing_activation_floor_roi": 0.050000000000000003,
+    "trailing_floor_lock_roi": 0.040000000000000001,
     "trailing_step_mode": "auto_strength",
     "trailing_step_pct_min": 0.0050000000000000001,
     "trailing_step_pct_max": 0.02,
@@ -37,6 +39,14 @@
     "early_failure_enabled": true,
     "early_failure_window_minutes": 5,
     "early_failure_max_adverse_roi": -0.0080000000000000002,
+    "strong_confirmation_enter_now_enabled": false,
+    "medium_confirmation_wait_retrace_enabled": false,
+    "weak_confirmation_live_enabled": false,
+    "v2_hold_quality_min": 0.59999999999999998,
+    "v2_post_reclaim_stability_min": 0.59999999999999998,
+    "v2_zone_defense_min": 0.29999999999999999,
+    "v2_trend_match_min": 0.40000000000000002,
+    "v2_price_position_max": 0.90000000000000002,
     "leverage_mode": "manual",
     "manual_leverage": 5,
     "stop_control_mode": "entry_roi",
@@ -66,8 +76,6 @@
     "live_reverse_side_enabled": false,
     "patterns": {
         "enabled": [
-            "double_bottom",
-            "double_top",
             "double_bottom_contextual_v2",
             "double_bottom_contextual_v3"
         ],

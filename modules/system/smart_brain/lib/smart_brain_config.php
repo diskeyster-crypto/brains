@@ -1586,7 +1586,7 @@ final class SmartBrainConfig
         $minConfScore = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
         if ($confirmationScore + $epsilon < $minConfScore) {
             $rejectReasons[] = $side === 'short'
-                ? 'reject_short_enter_now_quality_floor'
+                ? 'reject_short_enter_now_confirmation_too_low'
                 : 'v2_reject_confirmation_score_too_low';
         } elseif ($confirmationScore < $minConfScore) {
             $borderlinePass = true;
@@ -1596,7 +1596,7 @@ final class SmartBrainConfig
         $minPatternConf = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
         if ($patternConfidence + $epsilon < $minPatternConf) {
             $rejectReasons[] = $side === 'short'
-                ? 'reject_short_enter_now_quality_floor'
+                ? 'reject_short_enter_now_pattern_conf_too_low'
                 : 'v2_reject_pattern_confidence_too_low';
         } elseif ($patternConfidence < $minPatternConf) {
             $borderlinePass = true;
@@ -1612,11 +1612,11 @@ final class SmartBrainConfig
 
         if ($trendMatchScore === null || (float)$trendMatchScore <= 0.0) {
             $rejectReasons[] = $side === 'short'
-                ? 'reject_short_enter_now_quality_floor'
+                ? 'reject_short_enter_now_trend_match_missing'
                 : 'v2_reject_trend_match_missing';
         } elseif ((float)$trendMatchScore + $epsilon < $minTrendMatch) {
             $rejectReasons[] = $side === 'short'
-                ? 'reject_short_enter_now_quality_floor'
+                ? 'reject_short_enter_now_trend_match_too_low'
                 : 'v2_reject_trend_match_too_low';
         } elseif ((float)$trendMatchScore < $minTrendMatch) {
             $borderlinePass = true;

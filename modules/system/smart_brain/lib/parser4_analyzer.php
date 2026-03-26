@@ -9,6 +9,8 @@ require_once __DIR__ . '/patterns/double_bottom_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_top_confirm_v2_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_contextual_v2_detector.php';
 require_once __DIR__ . '/patterns/double_bottom_contextual_v3_detector.php';
+require_once __DIR__ . '/patterns/double_top_contextual_v2_detector.php';
+require_once __DIR__ . '/patterns/double_top_contextual_v3_detector.php';
 require_once __DIR__ . '/context/context_adapter.php';
 
 /**
@@ -87,6 +89,8 @@ final class Parser4Analyzer
             'double_top_confirm_v2' => static fn() => new DoubleTopConfirmV2Detector(),
             'double_bottom_contextual_v2' => static fn() => new DoubleBottomContextualV2Detector(),
             'double_bottom_contextual_v3' => static fn() => new DoubleBottomContextualV3Detector(),
+            'double_top_contextual_v2' => static fn() => new DoubleTopContextualV2Detector(),
+            'double_top_contextual_v3' => static fn() => new DoubleTopContextualV3Detector(),
         ];
 
         $detectors = [];
@@ -575,6 +579,8 @@ final class Parser4Analyzer
      * double_bottom_contextual_v3  → long
      * double_top                   → short
      * double_top_confirm_v2        → short
+     * double_top_contextual_v2     → short
+     * double_top_contextual_v3     → short
      * pullback_trend_continue up   → long
      * pullback_trend_continue down → short
      *
@@ -584,7 +590,7 @@ final class Parser4Analyzer
     {
         return match ($patternAlgorithm) {
             'double_bottom', 'double_bottom_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3' => 'long',
-            'double_top', 'double_top_confirm_v2' => 'short',
+            'double_top', 'double_top_confirm_v2', 'double_top_contextual_v2', 'double_top_contextual_v3' => 'short',
             'pullback_trend_continue' => match ($trendBias) {
                 'up' => 'long',
                 'down' => 'short',

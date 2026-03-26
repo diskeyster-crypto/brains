@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class SmartBrainConfig
 {
-    private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+    private const ALLOWED_PATTERN_ALGORITHMS = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
 
     /** Valid execution profile IDs */
     private const ALLOWED_EXECUTION_PROFILES = ['balanced', 'conservative', 'sniper_75_attempt', 'sniper_lite', 'custom'];
@@ -1472,22 +1472,22 @@ final class SmartBrainConfig
         return [
             'balanced' => [
                 'live_patterns' => ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'],
-                'shadow_patterns' => ['double_bottom'],
+                'shadow_patterns' => ['double_bottom', 'double_top_contextual_v2', 'double_top_contextual_v3'],
                 'disabled_patterns' => ['double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
             ],
             'conservative' => [
                 'live_patterns' => ['double_bottom_contextual_v2'],
-                'shadow_patterns' => ['double_bottom_contextual_v3'],
+                'shadow_patterns' => ['double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'],
                 'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
             ],
             'sniper_75_attempt' => [
                 'live_patterns' => ['double_bottom_contextual_v3'],
-                'shadow_patterns' => ['double_bottom_contextual_v2'],
+                'shadow_patterns' => ['double_bottom_contextual_v2', 'double_top_contextual_v2', 'double_top_contextual_v3'],
                 'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
             ],
             'sniper_lite' => [
                 'live_patterns' => ['double_bottom_contextual_v3'],
-                'shadow_patterns' => ['double_bottom_contextual_v2'],
+                'shadow_patterns' => ['double_bottom_contextual_v2', 'double_top_contextual_v2', 'double_top_contextual_v3'],
                 'disabled_patterns' => ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2'],
             ],
             'custom' => [

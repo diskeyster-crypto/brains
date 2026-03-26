@@ -220,7 +220,8 @@ final class SmartBrainCore
         // (confirmation_tier, entry_action, zone_widen_profile, v2_priority_score)
         foreach ($candidates as &$c) {
             $patternAlgo = (string)($c['pattern_algorithm'] ?? '');
-            if ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_bottom_contextual_v3') {
+            if ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_bottom_contextual_v3'
+                || $patternAlgo === 'double_top_contextual_v2' || $patternAlgo === 'double_top_contextual_v3') {
                 $policyFields = CorridorMonitor::computeV2PolicyFields($c, $userLimits);
                 $c['confirmation_tier'] = $policyFields['confirmation_tier'];
                 $c['entry_action'] = $policyFields['entry_action'];
@@ -379,7 +380,7 @@ final class SmartBrainCore
 
         // V2 Downstream Funnel: per-pattern monitor status distribution
         $v2DownstreamFunnel = [];
-        $contextualPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        $contextualPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
         foreach ($monitors as $m) {
             $algo = (string)($m['pattern_algorithm'] ?? '');
             if (!in_array($algo, $contextualPatterns, true)) {
@@ -461,7 +462,8 @@ final class SmartBrainCore
                 $v2DownstreamFunnel[$algo]['candidates_count']++;
             }
             // Policy field propagation sanity for V2/V3 candidates
-            if ($algo === 'double_bottom_contextual_v2' || $algo === 'double_bottom_contextual_v3') {
+            if ($algo === 'double_bottom_contextual_v2' || $algo === 'double_bottom_contextual_v3'
+                || $algo === 'double_top_contextual_v2' || $algo === 'double_top_contextual_v3') {
                 foreach (['confirmation_tier', 'entry_action', 'zone_widen_profile', 'v2_priority_score'] as $pf) {
                     if (!array_key_exists($pf, $c) || $c[$pf] === null) {
                         $candidatePolicyFieldsMissingCount++;
@@ -472,7 +474,8 @@ final class SmartBrainCore
         }
         foreach ($monitors as $m2) {
             $algo2 = (string)($m2['pattern_algorithm'] ?? '');
-            if ($algo2 === 'double_bottom_contextual_v2' || $algo2 === 'double_bottom_contextual_v3') {
+            if ($algo2 === 'double_bottom_contextual_v2' || $algo2 === 'double_bottom_contextual_v3'
+                || $algo2 === 'double_top_contextual_v2' || $algo2 === 'double_top_contextual_v3') {
                 foreach (['confirmation_tier', 'entry_action', 'zone_widen_profile', 'v2_priority_score'] as $pf) {
                     if (!array_key_exists($pf, $m2) || $m2[$pf] === null) {
                         $monitorPolicyFieldsMissingCount++;
@@ -1123,7 +1126,7 @@ final class SmartBrainCore
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
             $v2QualityFloorEnabled = (bool)($userLimits['v2_live_quality_floor_enabled'] ?? true);
 
-            if ($patternAlgo === 'double_bottom_contextual_v2' && $v2QualityFloorEnabled) {
+            if (($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') && $v2QualityFloorEnabled) {
                 $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
 
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
@@ -1153,7 +1156,7 @@ final class SmartBrainCore
             $sniperV3FilterEnabled = (bool)($userLimits['sniper_v3_live_filter_enabled'] ?? false);
             $isSniperProfile = in_array($execProfile, ['sniper_75_attempt', 'sniper_lite'], true);
 
-            if ($patternAlgo === 'double_bottom_contextual_v3'
+            if (($patternAlgo === 'double_bottom_contextual_v3' || $patternAlgo === 'double_top_contextual_v3')
                 && $isSniperProfile
                 && $sniperV3FilterEnabled
             ) {

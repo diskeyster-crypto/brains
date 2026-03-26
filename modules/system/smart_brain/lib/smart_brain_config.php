@@ -1333,6 +1333,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_hold_quality_score' => 0.75,
                     'sniper_v3_min_post_reclaim_stability_score' => 0.70,
                     'sniper_v3_min_zone_defense_score' => 0.40,
+                    // Short-side V3 overrides (softer than long defaults)
+                    'sniper_v3_min_trend_match_score_short' => 0.35,
+                    'sniper_v3_min_entry_quality_score_short' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_short' => 0.60,
                 ],
             ],
             'conservative' => [
@@ -1376,6 +1380,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_hold_quality_score' => 0.75,
                     'sniper_v3_min_post_reclaim_stability_score' => 0.70,
                     'sniper_v3_min_zone_defense_score' => 0.40,
+                    // Short-side V3 overrides (softer than long defaults)
+                    'sniper_v3_min_trend_match_score_short' => 0.40,
+                    'sniper_v3_min_entry_quality_score_short' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_short' => 0.60,
                 ],
             ],
             'sniper_75_attempt' => [
@@ -1420,6 +1428,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_hold_quality_score' => 0.75,
                     'sniper_v3_min_post_reclaim_stability_score' => 0.70,
                     'sniper_v3_min_zone_defense_score' => 0.40,
+                    // Short-side V3 overrides (softer to allow structurally strong short V3)
+                    'sniper_v3_min_trend_match_score_short' => 0.40,
+                    'sniper_v3_min_entry_quality_score_short' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_short' => 0.60,
                 ],
             ],
             'sniper_lite' => [
@@ -1464,6 +1476,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_hold_quality_score' => 0.75,
                     'sniper_v3_min_post_reclaim_stability_score' => 0.65,
                     'sniper_v3_min_zone_defense_score' => 0.35,
+                    // Short-side V3 overrides (softer to allow structurally strong short V3)
+                    'sniper_v3_min_trend_match_score_short' => 0.35,
+                    'sniper_v3_min_entry_quality_score_short' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_short' => 0.60,
                 ],
             ],
             'custom' => [
@@ -1534,6 +1550,10 @@ final class SmartBrainConfig
             'sniper_v3_min_hold_quality_score',
             'sniper_v3_min_post_reclaim_stability_score',
             'sniper_v3_min_zone_defense_score',
+            // Short-side V3 overrides
+            'sniper_v3_min_trend_match_score_short',
+            'sniper_v3_min_entry_quality_score_short',
+            'sniper_v3_min_corridor_fit_score_short',
         ];
     }
 
@@ -1659,6 +1679,12 @@ final class SmartBrainConfig
     public static function evaluateSniperV3LiveFilter(array $signal, array $userLimits, string $profile = 'sniper_75_attempt'): array
     {
         $rejectReasons = [];
+        $epsilon = 0.005; // Epsilon-safe margin (same as V2 quality floor)
+
+        $side = strtolower(trim((string)($signal['side'] ?? '')));
+        $isShort = ($side === 'short');
+        $patternAlgo = (string)($signal['pattern_algorithm'] ?? '');
+        $isShortV3 = $isShort && $patternAlgo === 'double_top_contextual_v3';
 
         $confirmationTier = (string)($signal['confirmation_tier'] ?? 'none');
         $confirmationScore = (float)($signal['confirmation_score'] ?? 0.0);
@@ -1684,6 +1710,8 @@ final class SmartBrainConfig
             'hold_quality_score' => round($holdQualityScore, 4),
             'post_reclaim_stability_score' => round($postReclaimStabilityScore, 4),
             'zone_defense_score' => round($zoneDefenseScore, 4),
+            'side' => $side,
+            'threshold_source' => $isShortV3 ? 'short_v3' : 'default_v3',
         ];
 
         // 4.1 Confirmation Tier Gate
@@ -1694,35 +1722,44 @@ final class SmartBrainConfig
 
         // 4.2 Minimum confirmation_score
         $minConfScore = (float)($userLimits['sniper_v3_min_confirmation_score'] ?? 0.80);
-        if ($confirmationScore < $minConfScore) {
+        if ($confirmationScore + $epsilon < $minConfScore) {
             $rejectReasons[] = 'sniper_reject_confirmation_score_too_low';
         }
 
         // 4.3 Minimum pattern_confidence
         $minPatternConf = (float)($userLimits['sniper_v3_min_pattern_confidence'] ?? 0.60);
-        if ($patternConfidence < $minPatternConf) {
+        if ($patternConfidence + $epsilon < $minPatternConf) {
             $rejectReasons[] = 'sniper_reject_pattern_confidence_too_low';
         }
 
-        // 4.4 Minimum trend_match_score
-        $minTrendMatch = (float)($userLimits['sniper_v3_min_trend_match_score'] ?? 0.55);
+        // 4.4 Minimum trend_match_score — side-aware for short V3
+        $minTrendMatchDefault = (float)($userLimits['sniper_v3_min_trend_match_score'] ?? 0.55);
+        $minTrendMatchShort = (float)($userLimits['sniper_v3_min_trend_match_score_short'] ?? $minTrendMatchDefault);
+        $minTrendMatch = $isShortV3 ? $minTrendMatchShort : $minTrendMatchDefault;
         if ($trendMatchScore === null || (float)$trendMatchScore <= 0.0) {
             $rejectReasons[] = 'sniper_reject_trend_match_missing';
-        } elseif ((float)$trendMatchScore < $minTrendMatch) {
+        } elseif ((float)$trendMatchScore + $epsilon < $minTrendMatch) {
             $rejectReasons[] = 'sniper_reject_trend_match_too_low';
         }
+        $checkedValues['trend_match_threshold_used'] = round($minTrendMatch, 4);
 
-        // 4.5 Minimum entry_quality_score
-        $minEntryQuality = (float)($userLimits['sniper_v3_min_entry_quality_score'] ?? 0.75);
-        if ($entryQualityScore < $minEntryQuality) {
+        // 4.5 Minimum entry_quality_score — side-aware for short V3
+        $minEntryQualityDefault = (float)($userLimits['sniper_v3_min_entry_quality_score'] ?? 0.75);
+        $minEntryQualityShort = (float)($userLimits['sniper_v3_min_entry_quality_score_short'] ?? $minEntryQualityDefault);
+        $minEntryQuality = $isShortV3 ? $minEntryQualityShort : $minEntryQualityDefault;
+        if ($entryQualityScore + $epsilon < $minEntryQuality) {
             $rejectReasons[] = 'sniper_reject_entry_quality_too_low';
         }
+        $checkedValues['entry_quality_threshold_used'] = round($minEntryQuality, 4);
 
-        // 4.6 Minimum corridor_fit_score
-        $minCorridorFit = (float)($userLimits['sniper_v3_min_corridor_fit_score'] ?? 0.75);
-        if ($corridorFitScore < $minCorridorFit) {
+        // 4.6 Minimum corridor_fit_score — side-aware for short V3
+        $minCorridorFitDefault = (float)($userLimits['sniper_v3_min_corridor_fit_score'] ?? 0.75);
+        $minCorridorFitShort = (float)($userLimits['sniper_v3_min_corridor_fit_score_short'] ?? $minCorridorFitDefault);
+        $minCorridorFit = $isShortV3 ? $minCorridorFitShort : $minCorridorFitDefault;
+        if ($corridorFitScore + $epsilon < $minCorridorFit) {
             $rejectReasons[] = 'sniper_reject_corridor_fit_too_low';
         }
+        $checkedValues['corridor_fit_threshold_used'] = round($minCorridorFit, 4);
 
         // 4.7 Maximum price_position
         $maxPricePosition = (float)($userLimits['sniper_v3_max_price_position'] ?? 0.80);
@@ -1732,30 +1769,37 @@ final class SmartBrainConfig
 
         // 4.8 Component Score Floors
         $minReclaim = (float)($userLimits['sniper_v3_min_reclaim_strength_score'] ?? 0.70);
-        if ($reclaimStrengthScore < $minReclaim) {
+        if ($reclaimStrengthScore + $epsilon < $minReclaim) {
             $rejectReasons[] = 'sniper_reject_reclaim_strength_too_low';
         }
 
         $minHoldQuality = (float)($userLimits['sniper_v3_min_hold_quality_score'] ?? 0.75);
-        if ($holdQualityScore < $minHoldQuality) {
+        if ($holdQualityScore + $epsilon < $minHoldQuality) {
             $rejectReasons[] = 'sniper_reject_hold_quality_too_low';
         }
 
         $minPostReclaim = (float)($userLimits['sniper_v3_min_post_reclaim_stability_score'] ?? 0.70);
-        if ($postReclaimStabilityScore < $minPostReclaim) {
+        if ($postReclaimStabilityScore + $epsilon < $minPostReclaim) {
             $rejectReasons[] = 'sniper_reject_post_reclaim_stability_too_low';
         }
 
         $minZoneDefense = (float)($userLimits['sniper_v3_min_zone_defense_score'] ?? 0.40);
-        if ($zoneDefenseScore < $minZoneDefense) {
+        if ($zoneDefenseScore + $epsilon < $minZoneDefense) {
             $rejectReasons[] = 'sniper_reject_zone_defense_too_low';
         }
 
-        return [
+        $result = [
             'eligible' => empty($rejectReasons),
             'reject_reasons' => $rejectReasons,
             'checked_values' => $checkedValues,
         ];
+
+        // Diagnostics: mark if short V3 threshold path was used
+        if ($isShortV3) {
+            $result['short_v3_threshold_applied'] = true;
+        }
+
+        return $result;
     }
 
     /**

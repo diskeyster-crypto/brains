@@ -217,8 +217,11 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     'Min Confirmation Score' => $execProfileBundle['values']['sniper_v3_min_confirmation_score'] ?? 0.80,
                     'Min Pattern Confidence' => $execProfileBundle['values']['sniper_v3_min_pattern_confidence'] ?? 0.60,
                     'Min Trend Match' => $execProfileBundle['values']['sniper_v3_min_trend_match_score'] ?? 0.55,
+                    'Min Trend Match (Short V3)' => $execProfileBundle['values']['sniper_v3_min_trend_match_score_short'] ?? '-',
                     'Min Entry Quality' => $execProfileBundle['values']['sniper_v3_min_entry_quality_score'] ?? 0.75,
+                    'Min Entry Quality (Short V3)' => $execProfileBundle['values']['sniper_v3_min_entry_quality_score_short'] ?? '-',
                     'Min Corridor Fit' => $execProfileBundle['values']['sniper_v3_min_corridor_fit_score'] ?? 0.75,
+                    'Min Corridor Fit (Short V3)' => $execProfileBundle['values']['sniper_v3_min_corridor_fit_score_short'] ?? '-',
                     'Max Price Position' => $execProfileBundle['values']['sniper_v3_max_price_position'] ?? 0.80,
                 ];
             ?>

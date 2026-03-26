@@ -97,5 +97,9 @@ return [
         'sniper_v3_min_hold_quality_score' => 0.75,
         'sniper_v3_min_post_reclaim_stability_score' => 0.70,
         'sniper_v3_min_zone_defense_score' => 0.40,
+        // Short-side V3 overrides (softer thresholds for short V3 structural signals)
+        'sniper_v3_min_trend_match_score_short' => 0.40,
+        'sniper_v3_min_entry_quality_score_short' => 0.60,
+        'sniper_v3_min_corridor_fit_score_short' => 0.60,
     ],
 ];

@@ -1303,14 +1303,22 @@ final class SmartBrainCore
                     if (count($result['sniper_v3_rejected_preview'] ?? []) < 10) {
                         $result['sniper_v3_rejected_preview'][] = [
                             'symbol' => $symbol,
+                            'side' => $side,
+                            'pattern_algorithm' => $patternAlgo,
                             'reject_reasons' => $sniperFilterResult['reject_reasons'],
                             'checked_values' => $sniperFilterResult['checked_values'],
+                            'threshold_source' => $sniperFilterResult['checked_values']['threshold_source'] ?? 'default_v3',
+                            'short_v3_threshold_applied' => $sniperFilterResult['short_v3_threshold_applied'] ?? false,
                         ];
                     }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'sniper_v3_quality_filter', $selectionMode);
                     continue;
                 }
                 $result['sniper_v3_live_eligible_count'] = ($result['sniper_v3_live_eligible_count'] ?? 0) + 1;
+                // Track short V3 eligible separately
+                if (!empty($sniperFilterResult['short_v3_threshold_applied'])) {
+                    $result['sniper_v3_short_live_eligible_count'] = ($result['sniper_v3_short_live_eligible_count'] ?? 0) + 1;
+                }
             }
 
             // === APPROVED: build bot-ready live intent ===

@@ -283,6 +283,9 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             'sniper_v3_min_hold_quality_score' => 'Min Hold Quality',
                             'sniper_v3_min_post_reclaim_stability_score' => 'Min Post-Reclaim Stability',
                             'sniper_v3_min_zone_defense_score' => 'Min Zone Defense',
+                            'sniper_v3_min_trend_match_score_short' => 'Min Trend Match (Short V3)',
+                            'sniper_v3_min_entry_quality_score_short' => 'Min Entry Quality (Short V3)',
+                            'sniper_v3_min_corridor_fit_score_short' => 'Min Corridor Fit (Short V3)',
                         ];
                         foreach ($sniperV3Fields as $sf):
                             $sfVal = $currentBundle['values'][$sf] ?? $form_values[$sf] ?? '-';

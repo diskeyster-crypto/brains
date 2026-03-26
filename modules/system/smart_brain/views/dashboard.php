@@ -239,6 +239,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         $dashIsSniperProfile = in_array($dashProfile, ['sniper_75_attempt', 'sniper_lite'], true);
         $sniperStructural = (int)($last_run['structural_v3_signal_count'] ?? 0);
         $sniperEligible = (int)($last_run['sniper_v3_live_eligible_count'] ?? 0);
+        $sniperShortEligible = (int)($last_run['sniper_v3_short_live_eligible_count'] ?? 0);
         $sniperRejected = (int)($last_run['sniper_v3_live_rejected_count'] ?? 0);
         $sniperShadow = (int)($last_run['sniper_v3_shadow_only_count'] ?? 0);
         $sniperRejectDist = is_array($last_run['sniper_v3_reject_reason_distribution'] ?? null)
@@ -259,6 +260,9 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <div class="col-md-2">
                     <small class="text-secondary d-block">Live Eligible</small>
                     <strong class="text-success"><?= $sniperEligible ?></strong>
+                    <?php if ($sniperShortEligible > 0): ?>
+                    <small class="text-info d-block">(<?= $sniperShortEligible ?> short)</small>
+                    <?php endif; ?>
                 </div>
                 <div class="col-md-2">
                     <small class="text-secondary d-block">Live Rejected</small>

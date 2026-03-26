@@ -601,6 +601,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         $rejLowRel = (int)($last_run['rejected_low_reliability'] ?? 0);
         $rejMissPass = (int)($last_run['rejected_missing_passport'] ?? 0);
         $rejMissPrice = (int)($last_run['rejected_missing_price'] ?? 0);
+        $rejPriceBelowZone = (int)($last_run['rejected_price_below_zone'] ?? 0);
         $bootstrapSig = (int)($last_run['bootstrap_signals_count'] ?? 0);
         $normalSig = (int)($last_run['normal_signals_count'] ?? 0);
         $warmupSym = (int)($last_run['warmup_symbols_count'] ?? 0);
@@ -634,6 +635,9 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                         <tr><td>Low reliability</td><td class="text-end"><strong><?= $rejLowRel ?></strong></td></tr>
                         <tr><td>Missing passport</td><td class="text-end"><strong><?= $rejMissPass ?></strong></td></tr>
                         <tr><td>Missing price</td><td class="text-end"><strong><?= $rejMissPrice ?></strong></td></tr>
+                        <?php if ($rejPriceBelowZone > 0): ?>
+                        <tr><td>Short: price below zone</td><td class="text-end"><strong><?= $rejPriceBelowZone ?></strong></td></tr>
+                        <?php endif; ?>
                     </table>
                 </div>
                 <!-- Signal Mode Breakdown -->

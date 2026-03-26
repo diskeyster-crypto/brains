@@ -251,7 +251,7 @@ final class CorridorMonitor
         $confirmationScore = (float)($candidate['confirmation_score'] ?? 0.0);
 
         // V3 contextual patterns also get real confirmation tier and policy fields
-        if ($patternAlgo === 'double_bottom_contextual_v3') {
+        if ($patternAlgo === 'double_bottom_contextual_v3' || $patternAlgo === 'double_top_contextual_v3') {
             $tier = self::computeV3ConfirmationTier($confirmationScore);
 
             // V3 entry action: strong confirmations can enter_now (configurable)
@@ -288,7 +288,8 @@ final class CorridorMonitor
             ];
         }
 
-        if ($patternAlgo !== 'double_bottom_contextual_v2') {
+        // V2 contextual patterns: bottom (long) and top (short)
+        if ($patternAlgo !== 'double_bottom_contextual_v2' && $patternAlgo !== 'double_top_contextual_v2') {
             return [
                 'confirmation_tier' => 'none',
                 'entry_action' => 'wait_retrace',
@@ -299,10 +300,20 @@ final class CorridorMonitor
 
         $tier = self::computeConfirmationTier($confirmationScore, $cfg);
 
-        $entryAction = match ($tier) {
-            'strong' => 'enter_now',
-            default  => 'wait_retrace',
-        };
+        // Short V2 entry policy: after valid breakdown, price often continues down immediately.
+        // Strong and medium short confirmations use enter_now to avoid stale retrace-biased zone.
+        if ($patternAlgo === 'double_top_contextual_v2') {
+            $entryAction = match ($tier) {
+                'strong' => 'enter_now',
+                'medium' => 'enter_now',
+                default  => 'wait_retrace',
+            };
+        } else {
+            $entryAction = match ($tier) {
+                'strong' => 'enter_now',
+                default  => 'wait_retrace',
+            };
+        }
 
         $zoneWidenProfile = match ($tier) {
             'strong' => 'strong_wide',
@@ -359,6 +370,11 @@ final class CorridorMonitor
         if ($side === 'short') {
             $zoneThreshold = 1.0 - $entryZonePercent;
             if ($pricePosition < $zoneThreshold) {
+                // Graduated rejection for shorts (mirroring long-side logic)
+                $distance = $zoneThreshold - $pricePosition;
+                if ($distance > 0.30) {
+                    return 'reject_zone_too_far';
+                }
                 return 'reject_price_below_zone';
             }
             return 'reject_monitoring_unknown';

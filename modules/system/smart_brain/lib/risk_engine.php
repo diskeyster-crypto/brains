@@ -125,6 +125,7 @@ final class RiskEngine
             'rejected_monitoring_stalled' => 0,
             'rejected_invalidated' => 0,
             'rejected_price_above_zone' => 0,
+            'rejected_price_below_zone' => 0,
             'rejected_zone_too_far' => 0,
             'rejected_low_reliability' => 0,
             'rejected_missing_passport' => 0,
@@ -167,6 +168,9 @@ final class RiskEngine
                 } elseif ($rejectDetail === 'reject_zone_too_far') {
                     $this->rejectionCounters['rejected_zone_too_far']++;
                     $this->perPatternRejections[$algo]['rejected_zone_too_far'] = ($this->perPatternRejections[$algo]['rejected_zone_too_far'] ?? 0) + 1;
+                } elseif ($rejectDetail === 'reject_price_below_zone') {
+                    $this->rejectionCounters['rejected_price_below_zone']++;
+                    $this->perPatternRejections[$algo]['rejected_price_below_zone'] = ($this->perPatternRejections[$algo]['rejected_price_below_zone'] ?? 0) + 1;
                 }
                 $this->perPatternRejections[$algo]['rejected_not_entry_zone'] = ($this->perPatternRejections[$algo]['rejected_not_entry_zone'] ?? 0) + 1;
 
@@ -500,7 +504,7 @@ final class RiskEngine
         $patternConfidence = (float)($monitor['pattern_confidence'] ?? 0.0);
 
         // V3 contextual patterns: use V3-specific tier thresholds
-        if ($patternAlgo === 'double_bottom_contextual_v3') {
+        if ($patternAlgo === 'double_bottom_contextual_v3' || $patternAlgo === 'double_top_contextual_v3') {
             $tier = CorridorMonitor::computeV3ConfirmationTier($confirmationScore);
 
             // V3 entry action: strong confirmations can enter_now (configurable)
@@ -537,7 +541,7 @@ final class RiskEngine
         }
 
         // Non-V2/V3 patterns get neutral tier metadata
-        if ($patternAlgo !== 'double_bottom_contextual_v2') {
+        if ($patternAlgo !== 'double_bottom_contextual_v2' && $patternAlgo !== 'double_top_contextual_v2') {
             return [
                 'confirmation_tier' => 'none',
                 'entry_action' => 'wait_retrace',
@@ -548,13 +552,23 @@ final class RiskEngine
 
         $tier = CorridorMonitor::computeConfirmationTier($confirmationScore, $userLimits);
 
-        // Entry action per tier
-        $entryAction = match ($tier) {
-            'strong' => 'enter_now',
-            'medium' => 'wait_retrace',
-            'weak'   => 'wait_retrace',
-            default  => 'wait_retrace',
-        };
+        // Short V2 entry policy: after valid breakdown, price often continues down immediately.
+        // Strong and medium short confirmations use enter_now to avoid stale retrace-biased zone.
+        if ($patternAlgo === 'double_top_contextual_v2') {
+            $entryAction = match ($tier) {
+                'strong' => 'enter_now',
+                'medium' => 'enter_now',
+                default  => 'wait_retrace',
+            };
+        } else {
+            // Entry action per tier
+            $entryAction = match ($tier) {
+                'strong' => 'enter_now',
+                'medium' => 'wait_retrace',
+                'weak'   => 'wait_retrace',
+                default  => 'wait_retrace',
+            };
+        }
 
         // Zone widen profile label
         $zoneWidenProfile = match ($tier) {

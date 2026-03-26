@@ -620,7 +620,8 @@ final class SmartBrainCore
             }
         }
 
-        // Build V3 downstream entry zone diagnostics from monitors
+        // Build V3 downstream entry zone diagnostics from monitors (both long V3 and short V3)
+        $v3ContextualPatterns = ['double_bottom_contextual_v3', 'double_top_contextual_v3'];
         $v3DownstreamDiag = [
             'v3_candidates_count' => 0,
             'v3_monitors_count' => 0,
@@ -634,12 +635,12 @@ final class SmartBrainCore
             'v3_monitor_preview' => [],
         ];
         foreach ($candidates as $c) {
-            if ((string)($c['pattern_algorithm'] ?? '') === 'double_bottom_contextual_v3') {
+            if (in_array((string)($c['pattern_algorithm'] ?? ''), $v3ContextualPatterns, true)) {
                 $v3DownstreamDiag['v3_candidates_count']++;
             }
         }
         foreach ($monitors as $m) {
-            if ((string)($m['pattern_algorithm'] ?? '') !== 'double_bottom_contextual_v3') {
+            if (!in_array((string)($m['pattern_algorithm'] ?? ''), $v3ContextualPatterns, true)) {
                 continue;
             }
             $v3DownstreamDiag['v3_monitors_count']++;
@@ -683,7 +684,7 @@ final class SmartBrainCore
             }
         }
         foreach ($signals as $s) {
-            if ((string)($s['pattern_algorithm'] ?? '') === 'double_bottom_contextual_v3') {
+            if (in_array((string)($s['pattern_algorithm'] ?? ''), $v3ContextualPatterns, true)) {
                 $v3DownstreamDiag['v3_signals_count']++;
             }
         }
@@ -742,6 +743,7 @@ final class SmartBrainCore
             'rejected_missing_passport' => $rejectionCounters['rejected_missing_passport'] ?? 0,
             'rejected_missing_price' => $rejectionCounters['rejected_missing_price'] ?? 0,
             'rejected_side_unresolved' => $rejectionCounters['rejected_side_unresolved'] ?? 0,
+            'rejected_price_below_zone' => $rejectionCounters['rejected_price_below_zone'] ?? 0,
             // Stable Config Refactor — bootstrap / normal signal counts
             'bootstrap_signals_count' => $signalModeCounters['bootstrap_signals_count'] ?? 0,
             'warmup_symbols_count' => $signalModeCounters['warmup_symbols_count'] ?? 0,

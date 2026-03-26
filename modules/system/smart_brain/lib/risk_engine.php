@@ -194,6 +194,8 @@ final class RiskEngine
                         'current_price_at_creation' => (float)($monitor['current_price_at_creation'] ?? 0),
                         'whatif_enter_now_status' => (string)($monitor['whatif_enter_now_status'] ?? ''),
                         'whatif_wider_zone_status' => (string)($monitor['whatif_wider_zone_status'] ?? ''),
+                        'entry_action' => (string)($monitor['entry_action'] ?? 'wait_retrace'),
+                        'enter_now_promoted' => (bool)($monitor['enter_now_promoted'] ?? false),
                     ];
                 }
                 $this->addDebugLine($symbol, 'status=' . $status . ' pattern=' . $algo . ' reject=' . $rejectDetail);

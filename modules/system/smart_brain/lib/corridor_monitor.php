@@ -98,6 +98,20 @@ final class CorridorMonitor
             // Compute full V2 policy fields for monitor payload consistency
             $policyFields = self::computeV2PolicyFields($candidate, $this->cfg);
 
+            // enter_now promotion: if entry_action = enter_now and monitor is only
+            // 'monitoring' (not invalidated), promote to 'entry_zone' so the Risk Engine
+            // can emit a real signal. Without this, enter_now is decorative metadata.
+            $enterNowPromoted = false;
+            if ($policyFields['entry_action'] === 'enter_now'
+                && $status === 'monitoring'
+                && $pricePosition >= 0.0
+                && $pricePosition < 1.0
+            ) {
+                $status = 'entry_zone';
+                $rejectDetail = 'none';
+                $enterNowPromoted = true;
+            }
+
             $monitors[] = [
                 'symbol' => $symbol,
                 'corridor_low' => $low,
@@ -132,6 +146,7 @@ final class CorridorMonitor
                 'whatif_enter_now_status' => $whatifEnterNowStatus,
                 'whatif_wider_zone_status' => $whatifWiderZoneStatus,
                 'current_price_at_creation' => round($currentPrice, 8),
+                'enter_now_promoted' => $enterNowPromoted,
             ];
         }
 

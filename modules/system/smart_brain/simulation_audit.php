@@ -823,6 +823,9 @@ final class SimulationAudit
                 'reject_detail_distribution' => $rejectDetailDist,
                 'whatif_enter_now_would_signal' => (int)($funnel['whatif_enter_now_would_signal'] ?? 0),
                 'whatif_wider_zone_would_signal' => (int)($funnel['whatif_wider_zone_would_signal'] ?? 0),
+                'enter_now_count' => (int)($funnel['enter_now_count'] ?? 0),
+                'wait_retrace_count' => (int)($funnel['wait_retrace_count'] ?? 0),
+                'enter_now_promoted_count' => (int)($funnel['enter_now_promoted_count'] ?? 0),
             ];
         }
 

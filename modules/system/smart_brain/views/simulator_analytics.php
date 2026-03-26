@@ -717,6 +717,26 @@ if (!empty($v2DfByPattern)):
         <?php endif; endforeach; ?>
 
         <?php
+        // Entry action policy diagnostics per pattern
+        foreach ($v2DfByPattern as $dfAlgo => $dfData):
+            $enterNowCount = (int)($dfData['enter_now_count'] ?? 0);
+            $waitRetraceCount = (int)($dfData['wait_retrace_count'] ?? 0);
+            $enterNowPromotedCount = (int)($dfData['enter_now_promoted_count'] ?? 0);
+            if ($enterNowCount > 0 || $enterNowPromotedCount > 0):
+        ?>
+        <div class="mb-2">
+            <strong class="small"><?= htmlspecialchars((string)$dfAlgo) ?> — Entry Policy:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <span class="badge bg-primary">enter_now: <?= $enterNowCount ?></span>
+                <span class="badge bg-secondary">wait_retrace: <?= $waitRetraceCount ?></span>
+                <?php if ($enterNowPromotedCount > 0): ?>
+                <span class="badge bg-success">enter_now_promoted: <?= $enterNowPromotedCount ?></span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; endforeach; ?>
+
+        <?php
         // What-If Analysis
         if (!empty($v2DfWhatIf)):
         ?>

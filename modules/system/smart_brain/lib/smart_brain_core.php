@@ -394,6 +394,9 @@ final class SmartBrainCore
                     'monitoring_count' => 0,
                     'invalidated_count' => 0,
                     'signals_count' => 0,
+                    'enter_now_count' => 0,
+                    'wait_retrace_count' => 0,
+                    'enter_now_promoted_count' => 0,
                     'avg_zone_width_pct' => 0.0,
                     'avg_zone_distance' => 0.0,
                     'avg_price_position' => 0.0,
@@ -421,6 +424,18 @@ final class SmartBrainCore
                 'invalidated' => $v2DownstreamFunnel[$algo]['invalidated_count']++,
                 default => null,
             };
+
+            // Track entry_action policy and enter_now promotions
+            $mEntryAction = (string)($m['entry_action'] ?? 'wait_retrace');
+            if ($mEntryAction === 'enter_now') {
+                $v2DownstreamFunnel[$algo]['enter_now_count']++;
+            } else {
+                $v2DownstreamFunnel[$algo]['wait_retrace_count']++;
+            }
+            if (!empty($m['enter_now_promoted'])) {
+                $v2DownstreamFunnel[$algo]['enter_now_promoted_count']++;
+            }
+
             $v2DownstreamFunnel[$algo]['zone_widths'][] = (float)($m['zone_width_pct'] ?? 0);
             $v2DownstreamFunnel[$algo]['zone_distances'][] = (float)($m['zone_distance_from_price'] ?? 0);
             $v2DownstreamFunnel[$algo]['price_positions'][] = (float)($m['price_position'] ?? 0);

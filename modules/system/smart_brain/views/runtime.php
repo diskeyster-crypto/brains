@@ -349,7 +349,12 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 </div>
             </div>
             <?php endif; ?>
-            <div class="small text-secondary mt-2">Blacklisted symbols are blocked from live approval. Simulator and analytics remain unaffected.</div>
+            <div class="small text-secondary mt-2">
+                <i class="bi bi-folder2-open me-1"></i>
+                <strong>Source:</strong> <code>storage/manual_live_blacklist.json</code>
+                &nbsp;|&nbsp; Separate from Symbol Intelligence blacklist (<code>storage/blacklist.json</code>).
+                Blacklisted symbols are blocked from live approval. Simulator and analytics remain unaffected.
+            </div>
         </div>
     </div>
 

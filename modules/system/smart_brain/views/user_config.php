@@ -1373,6 +1373,12 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             Blacklisted symbols will not receive live approval or live intents.
                             Structural detection continues for research/debug.
                         </p>
+                        <div class="alert alert-info py-1 px-2 mb-2" style="font-size: 0.82rem;">
+                            <i class="bi bi-folder2-open me-1"></i>
+                            <strong>Storage:</strong> <code>storage/manual_live_blacklist.json</code><br>
+                            This file is separate from Symbol Intelligence blacklist (<code>storage/blacklist.json</code>).
+                            Manual blacklist is preserved across runs and is not affected by Symbol Intelligence updates.
+                        </div>
                         <?php if (!$manual_blacklist['valid']): ?>
                         <div class="alert alert-warning py-1 px-2 mb-2" style="font-size: 0.85rem;">
                             <i class="bi bi-exclamation-triangle me-1"></i>

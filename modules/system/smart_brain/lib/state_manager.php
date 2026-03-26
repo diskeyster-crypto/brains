@@ -40,4 +40,12 @@ final class StateManager
             json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
         );
     }
+
+    /**
+     * Resolve a relative path to an absolute path within the module base.
+     */
+    public function resolvePath(string $relativeFile): string
+    {
+        return $this->moduleBase . '/' . ltrim($relativeFile, '/');
+    }
 }

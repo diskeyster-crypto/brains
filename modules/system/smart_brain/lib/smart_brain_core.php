@@ -954,6 +954,10 @@ final class SmartBrainCore
             'manual_blacklist_count' => 0,
             'manual_blacklist_rejected_count' => 0,
             'manual_blacklist_rejected_preview' => [],
+            // Intent lifecycle diagnostics
+            'lifecycle_counters' => [],
+            'lifecycle_summary' => [],
+            'intent_ttl_minutes' => SmartBrainConfig::LIVE_INTENT_TTL_MINUTES,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1393,8 +1397,14 @@ final class SmartBrainCore
                 'selection_mode_used' => $selectionMode,
                 'selection_source' => $selectionSource,
                 'approval_reason' => $approvalReason,
-                'created_ts' => (int)($signal['created_ts'] ?? time()),
-                'expires_at' => (int)($signal['expires_at'] ?? 0),
+                'created_ts' => time(),
+                'expires_at' => time() + (SmartBrainConfig::LIVE_INTENT_TTL_MINUTES * 60),
+                'status' => SmartBrainConfig::INTENT_STATUS_PENDING,
+                'claimed_at' => null,
+                'claimed_by' => null,
+                'executed_at' => null,
+                'rejected_at' => null,
+                'reject_reason' => null,
                 'execution_limits_snapshot' => [
                     'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
                     'live_one_trade_per_symbol' => (bool)($liveConfig['live_one_trade_per_symbol'] ?? true),
@@ -1467,7 +1477,126 @@ final class SmartBrainCore
         }
         unset($intentRef);
 
-        // Write live_intents.json
+        // ── Lifecycle-aware merge + cleanup ────────────────────────────────
+        // Instead of overwriting live_intents.json, we:
+        // 1. Load existing intents (preserve claimed, fresh pending from other runs)
+        // 2. Add new pending intents
+        // 3. Expire stale pending intents
+        // 4. Clean old terminal intents beyond retention window
+        $liveIntentsPath = $this->state->resolvePath('storage/live_intents.json');
+        $existingData = [];
+        if (is_file($liveIntentsPath)) {
+            $raw = @file_get_contents($liveIntentsPath);
+            if ($raw !== false) {
+                $existingData = @json_decode($raw, true);
+                if (!is_array($existingData)) {
+                    $existingData = [];
+                }
+            }
+        }
+
+        $existingIntents = $existingData['intents'] ?? [];
+        if (!is_array($existingIntents)) {
+            $existingIntents = [];
+        }
+
+        // Index new intents by intent_id for fast lookup
+        $newIntentIds = [];
+        foreach ($intents as $ni) {
+            $nid = $ni['intent_id'] ?? '';
+            if ($nid !== '') {
+                $newIntentIds[$nid] = true;
+            }
+        }
+
+        $now = time();
+        $retentionCutoff = $now - (SmartBrainConfig::LIVE_INTENT_CLEANUP_RETENTION_MINUTES * 60);
+        $lifecycleCounters = [
+            'preserved_claimed' => 0,
+            'preserved_pending' => 0,
+            'expired_by_brain' => 0,
+            'cleaned_terminal' => 0,
+            'new_pending' => count($intents),
+        ];
+
+        // Merge: keep non-superseded, non-stale existing intents
+        $mergedIntents = [];
+        foreach ($existingIntents as $ei) {
+            $eid = $ei['intent_id'] ?? '';
+            $status = $ei['status'] ?? 'pending';
+            $expiresAt = (int)($ei['expires_at'] ?? 0);
+            $createdTs = (int)($ei['created_ts'] ?? 0);
+
+            // Skip if new Brain run produced a replacement for this intent
+            if ($eid !== '' && isset($newIntentIds[$eid])) {
+                // New intent supersedes — only if existing is still pending
+                if ($status === SmartBrainConfig::INTENT_STATUS_PENDING) {
+                    continue; // will be replaced by the new version
+                }
+                // Non-pending (claimed/executed/rejected) — keep existing, skip new
+                // (remove from new set so we don't duplicate)
+                unset($newIntentIds[$eid]);
+            }
+
+            // Expire stale pending intents
+            if ($status === SmartBrainConfig::INTENT_STATUS_PENDING && $expiresAt > 0 && $expiresAt <= $now) {
+                $ei['status'] = SmartBrainConfig::INTENT_STATUS_EXPIRED;
+                $ei['expired_at'] = date('c');
+                $ei['expired_by'] = 'brain_cleanup';
+                $lifecycleCounters['expired_by_brain']++;
+            }
+
+            // Clean old terminal intents beyond retention window
+            $eStatus = $ei['status'] ?? 'pending';
+            if (SmartBrainConfig::isTerminalIntentStatus($eStatus)) {
+                $terminalTs = max(
+                    (int)($ei['executed_at_ts'] ?? 0),
+                    (int)($ei['rejected_at_ts'] ?? 0),
+                    strtotime($ei['expired_at'] ?? '1970-01-01') ?: 0,
+                    $createdTs
+                );
+                if ($terminalTs > 0 && $terminalTs < $retentionCutoff) {
+                    $lifecycleCounters['cleaned_terminal']++;
+                    continue; // drop from merged list
+                }
+            }
+
+            // Preserve
+            if ($eStatus === SmartBrainConfig::INTENT_STATUS_CLAIMED) {
+                $lifecycleCounters['preserved_claimed']++;
+            } elseif ($eStatus === SmartBrainConfig::INTENT_STATUS_PENDING) {
+                $lifecycleCounters['preserved_pending']++;
+            }
+
+            $mergedIntents[] = $ei;
+        }
+
+        // Add new pending intents (skip any whose ID already exists in merged set as non-pending)
+        $mergedIds = [];
+        foreach ($mergedIntents as $mi) {
+            $mid = $mi['intent_id'] ?? '';
+            if ($mid !== '') {
+                $mergedIds[$mid] = true;
+            }
+        }
+        foreach ($intents as $ni) {
+            $nid = $ni['intent_id'] ?? '';
+            if ($nid !== '' && isset($mergedIds[$nid])) {
+                continue; // already preserved from existing (non-pending state)
+            }
+            $mergedIntents[] = $ni;
+        }
+
+        // Build lifecycle summary counts
+        $statusCounts = ['pending' => 0, 'claimed' => 0, 'executed' => 0, 'rejected' => 0, 'expired' => 0];
+        foreach ($mergedIntents as $mi) {
+            $s = $mi['status'] ?? 'pending';
+            if (isset($statusCounts[$s])) {
+                $statusCounts[$s]++;
+            }
+        }
+
+        // Write merged live_intents.json atomically
         $payload = [
             'schema_version' => 'live_intents_v1',
             'generated_at' => date('c'),
@@ -1475,15 +1604,34 @@ final class SmartBrainCore
             'brain_controlled_live_mode' => true,
             'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
             'effective_live_config' => $liveConfig,
-            'intents' => $intents,
+            'intent_ttl_minutes' => SmartBrainConfig::LIVE_INTENT_TTL_MINUTES,
+            'lifecycle_summary' => [
+                'total' => count($mergedIntents),
+                'pending' => $statusCounts['pending'],
+                'claimed' => $statusCounts['claimed'],
+                'executed' => $statusCounts['executed'],
+                'rejected' => $statusCounts['rejected'],
+                'expired' => $statusCounts['expired'],
+            ],
+            'intents' => $mergedIntents,
         ];
-        $this->state->writeJson('storage/live_intents.json', $payload);
-        $result['intents_written'] = count($intents);
+
+        $writeOk = SmartBrainConfig::atomicUpdateLiveIntents($liveIntentsPath, function() use ($payload) {
+            return $payload;
+        });
+        if (!$writeOk) {
+            // Fallback: non-atomic write
+            $this->state->writeJson('storage/live_intents.json', $payload);
+        }
+
+        $result['intents_written'] = count($mergedIntents);
+        $result['lifecycle_counters'] = $lifecycleCounters;
+        $result['lifecycle_summary'] = $payload['lifecycle_summary'];
 
         if (count($intents) > 0) {
-            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' intents (mode=' . $selectionMode . ', approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ')');
+            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ')');
         } elseif ($result['signals_seen'] > 0) {
-            $this->logger->log('info', 'Live Intents: 0 intents from ' . $result['signals_seen'] . ' signals (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', reasons=' . json_encode($reasonStats) . ')');
+            $this->logger->log('info', 'Live Intents: 0 new intents from ' . $result['signals_seen'] . ' signals, merged total ' . count($mergedIntents) . ' (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', reasons=' . json_encode($reasonStats) . ')');
         }
 
         return $result;

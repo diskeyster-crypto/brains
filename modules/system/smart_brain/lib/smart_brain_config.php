@@ -8,6 +8,18 @@ final class SmartBrainConfig
     /** Valid execution profile IDs */
     private const ALLOWED_EXECUTION_PROFILES = ['balanced', 'conservative', 'sniper_75_attempt', 'sniper_lite', 'custom'];
 
+    // ── Live Intent Lifecycle Constants ──────────────────────────────────
+    /** Default TTL for live intents in minutes */
+    public const LIVE_INTENT_TTL_MINUTES = 5;
+    /** Retention window for terminal intents before cleanup (minutes) */
+    public const LIVE_INTENT_CLEANUP_RETENTION_MINUTES = 60;
+    /** Intent lifecycle statuses */
+    public const INTENT_STATUS_PENDING  = 'pending';
+    public const INTENT_STATUS_CLAIMED  = 'claimed';
+    public const INTENT_STATUS_EXECUTED = 'executed';
+    public const INTENT_STATUS_REJECTED = 'rejected';
+    public const INTENT_STATUS_EXPIRED  = 'expired';
+
     private string $moduleBase;
     /** @var array<string,mixed> */
     private array $config;
@@ -1913,5 +1925,70 @@ final class SmartBrainConfig
     public static function getAllowedPatternAlgorithms(): array
     {
         return self::ALLOWED_PATTERN_ALGORITHMS;
+    }
+
+    // =========================================================================
+    // Live Intent Lifecycle Helpers
+    // =========================================================================
+
+    /**
+     * Atomically read-modify-write live_intents.json with flock.
+     *
+     * @param string   $path     Absolute path to live_intents.json
+     * @param callable $modifier fn(array $data): array — receives current data, returns new data
+     * @return bool True on success
+     */
+    public static function atomicUpdateLiveIntents(string $path, callable $modifier): bool
+    {
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        $fp = @fopen($path, 'c+');
+        if ($fp === false) {
+            return false;
+        }
+
+        if (!flock($fp, LOCK_EX)) {
+            fclose($fp);
+            return false;
+        }
+
+        try {
+            $content = '';
+            while (!feof($fp)) {
+                $content .= fread($fp, 8192);
+            }
+
+            $data = @json_decode($content, true);
+            if (!is_array($data)) {
+                $data = ['schema_version' => 'live_intents_v1', 'intents' => []];
+            }
+
+            $data = $modifier($data);
+
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            fflush($fp);
+
+            return true;
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
+    }
+
+    /**
+     * Check whether an intent status is terminal (no further transitions).
+     */
+    public static function isTerminalIntentStatus(string $status): bool
+    {
+        return in_array($status, [
+            self::INTENT_STATUS_EXECUTED,
+            self::INTENT_STATUS_REJECTED,
+            self::INTENT_STATUS_EXPIRED,
+        ], true);
     }
 }

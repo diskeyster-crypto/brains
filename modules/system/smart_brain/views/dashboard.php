@@ -171,6 +171,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         $liveApproved = (int)($last_run['live_candidates_approved_count'] ?? 0);
         $liveRejected = (int)($last_run['live_candidates_rejected_count'] ?? 0);
         $liveIntentsCount = (int)($last_run['live_intents_created_count'] ?? 0);
+        $dashLifecycle = $last_run['lifecycle_summary'] ?? [];
     ?>
     <div class="card mb-4" style="border-color: <?= $liveEnabled ? '#22c55e' : '#6b7280' ?>;">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -189,6 +190,16 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <div class="col-md-2"><small class="text-secondary d-block">Live Intents</small><strong class="text-warning"><?= $liveIntentsCount ?></strong></div>
                 <div class="col-md-3"><small class="text-secondary d-block">Status</small><strong><?= $liveEnabled ? '<span class="text-success">Active</span>' : '<span class="text-secondary">Inactive</span>' ?></strong></div>
             </div>
+            <?php if (!empty($dashLifecycle)): ?>
+            <div class="row mt-2" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
+                <div class="col-12 mb-1"><small class="text-secondary"><i class="bi bi-arrow-repeat me-1"></i>Lifecycle</small></div>
+                <div class="col"><small class="text-secondary d-block">Pending</small><strong class="text-info"><?= (int)($dashLifecycle['pending'] ?? 0) ?></strong></div>
+                <div class="col"><small class="text-secondary d-block">Claimed</small><strong class="text-primary"><?= (int)($dashLifecycle['claimed'] ?? 0) ?></strong></div>
+                <div class="col"><small class="text-secondary d-block">Executed</small><strong class="text-success"><?= (int)($dashLifecycle['executed'] ?? 0) ?></strong></div>
+                <div class="col"><small class="text-secondary d-block">Rejected</small><strong class="text-danger"><?= (int)($dashLifecycle['rejected'] ?? 0) ?></strong></div>
+                <div class="col"><small class="text-secondary d-block">Expired</small><strong class="text-secondary"><?= (int)($dashLifecycle['expired'] ?? 0) ?></strong></div>
+            </div>
+            <?php endif; ?>
             <?php if ($liveEnabled): ?>
             <div class="alert alert-success small mb-0 mt-2 py-1 px-2">
                 <i class="bi bi-shield-check me-1"></i> <strong>Brain-Controlled Live Mode:</strong> Active — bot will only execute Brain-approved intents. Legacy fallback disabled.

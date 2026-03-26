@@ -122,6 +122,8 @@ $executableAfterBusy = (int)($lastRunBot['executable_after_busy'] ?? 0);
 $intentsRejected = (int)($lastRunBot['intents_rejected'] ?? 0);
 $intentsRejectedExec = (int)($lastRunBot['intents_rejected_exec'] ?? 0);
 $noOrderPreview = is_array($lastRunBot['no_order_path_preview'] ?? null) ? $lastRunBot['no_order_path_preview'] : [];
+$botIntentClaim = is_array($lastRunBot['intent_claim'] ?? null) ? $lastRunBot['intent_claim'] : [];
+$botLifecycleSkipped = is_array($lastRunBot['lifecycle_skipped'] ?? null) ? $lastRunBot['lifecycle_skipped'] : [];
 ?>
 <?php if ($approvedLoaded > 0 || $exchSubmitAttempted > 0 || $latestExchErrCode !== null): ?>
 <div class="card mb-4" style="border-color: <?= $exchSubmitAttempted > 0 && $exchSubmitSuccess === 0 ? '#dc3545' : ($exchSubmitSuccess > 0 ? '#198754' : '#6c757d') ?>;">
@@ -213,6 +215,45 @@ $noOrderPreview = is_array($lastRunBot['no_order_path_preview'] ?? null) ? $last
             </table>
         </details>
         <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($botIntentClaim) || !empty($botLifecycleSkipped)): ?>
+<div class="card mb-4" style="border-color: #6610f2;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-arrow-repeat me-2"></i>Intent Lifecycle — Claim & Skip</span>
+        <?php if (($botIntentClaim['claimed_count'] ?? 0) > 0): ?>
+            <span class="badge bg-primary"><?= (int)$botIntentClaim['claimed_count'] ?> Claimed</span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 text-center" style="font-size: 0.85rem;">
+            <div class="col">
+                <small class="text-muted d-block">Claimed Now</small>
+                <strong class="text-primary"><?= (int)($botIntentClaim['claimed_count'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Already Claimed</small>
+                <strong class="text-secondary"><?= (int)($botIntentClaim['already_claimed'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Expired</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['expired'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Claimed</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['claimed'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Executed</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['executed'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Rejected</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['rejected'] ?? 0) ?></strong>
+            </div>
+        </div>
     </div>
 </div>
 <?php endif; ?>

@@ -368,6 +368,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         $liveRejected = (int)($last_run['live_candidates_rejected_count'] ?? 0);
         $liveIntents = (int)($last_run['live_intents_created_count'] ?? 0);
         $liveSent = (int)($last_run['live_intents_sent_to_bot_count'] ?? 0);
+        $lifecycleSummary = $last_run['lifecycle_summary'] ?? [];
+        $lifecycleCounters = $last_run['lifecycle_counters'] ?? [];
     ?>
     <div class="card mb-4" style="border-color: <?= $liveEnabled ? '#22c55e' : '#6b7280' ?>;">
         <div class="card-header" style="background: <?= $liveEnabled ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
@@ -403,6 +405,49 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <span class="text-primary"><?= $liveSent ?></span>
                 </div>
             </div>
+            <?php if (!empty($lifecycleSummary)): ?>
+            <div class="row mt-2" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+                <div class="col-12 mb-1"><small class="text-secondary"><i class="bi bi-arrow-repeat me-1"></i>Intent Lifecycle (live_intents.json)</small></div>
+                <div class="col-md-2 mb-1">
+                    <small class="text-secondary d-block">Pending</small>
+                    <strong class="text-info"><?= (int)($lifecycleSummary['pending'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <small class="text-secondary d-block">Claimed</small>
+                    <strong class="text-primary"><?= (int)($lifecycleSummary['claimed'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <small class="text-secondary d-block">Executed</small>
+                    <strong class="text-success"><?= (int)($lifecycleSummary['executed'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <small class="text-secondary d-block">Rejected</small>
+                    <strong class="text-danger"><?= (int)($lifecycleSummary['rejected'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <small class="text-secondary d-block">Expired</small>
+                    <strong class="text-secondary"><?= (int)($lifecycleSummary['expired'] ?? 0) ?></strong>
+                </div>
+                <div class="col-md-2 mb-1">
+                    <small class="text-secondary d-block">Total</small>
+                    <strong><?= (int)($lifecycleSummary['total'] ?? 0) ?></strong>
+                </div>
+            </div>
+            <?php if (!empty($lifecycleCounters)): ?>
+            <div class="row mt-1">
+                <div class="col-12">
+                    <small class="text-secondary">
+                        Last run: +<?= (int)($lifecycleCounters['new_pending'] ?? 0) ?> new,
+                        <?= (int)($lifecycleCounters['preserved_claimed'] ?? 0) ?> claimed preserved,
+                        <?= (int)($lifecycleCounters['preserved_pending'] ?? 0) ?> pending preserved,
+                        <?= (int)($lifecycleCounters['expired_by_brain'] ?? 0) ?> expired,
+                        <?= (int)($lifecycleCounters['cleaned_terminal'] ?? 0) ?> cleaned
+                        | TTL: <?= (int)($last_run['intent_ttl_minutes'] ?? 5) ?>min
+                    </small>
+                </div>
+            </div>
+            <?php endif; ?>
+            <?php endif; ?>
             <?php
                 $filterStage = (string)($last_run['filter_stage_that_removed_all'] ?? 'none');
                 $zeroReason = (string)($last_run['zero_output_reason'] ?? '');

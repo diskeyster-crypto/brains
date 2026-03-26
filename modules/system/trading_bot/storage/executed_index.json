@@ -1,65 +1,2054 @@
 {
-    "li_sig_d9d5c82619128a5b_955b70f5": {
-        "executed_at": "2026-03-25T12:33:05+00:00",
+    "li_sig_197086f442c237ff_3dc9f342": {
+        "executed_at": "2026-03-25T14:26:02+00:00",
         "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
         "error": "Brain limit: max 2 positions reached (current: 2)",
-        "execution_identity_key": "li_sig_d9d5c82619128a5b_955b70f5",
+        "execution_identity_key": "li_sig_197086f442c237ff_3dc9f342",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_617c531086a6d712_5ee5049e": {
-        "executed_at": "2026-03-25T12:37:05+00:00",
+    "li_sig_af65cef2b910510f_d84fed4f": {
+        "executed_at": "2026-03-25T14:27:05+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.4036398569675% > threshold 1.25%",
+        "execution_identity_key": "li_sig_af65cef2b910510f_d84fed4f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_93cc3d6675f0ff6d_0c0e1303": {
+        "executed_at": "2026-03-25T14:29:06+00:00",
         "result": "opened_protected",
-        "order_id": "4a47934b-58b0-4ad1-9d8e-00dae0ff5339",
-        "trade_id": "sig_617c531086a6d712",
+        "order_id": "1553fd20-2b57-4dc1-bb9b-45582dd62070",
+        "trade_id": "sig_93cc3d6675f0ff6d",
         "error": null,
-        "execution_identity_key": "li_sig_617c531086a6d712_5ee5049e",
+        "execution_identity_key": "li_sig_93cc3d6675f0ff6d_0c0e1303",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_384c62015750d6aa_27342886": {
-        "executed_at": "2026-03-25T12:39:03+00:00",
+    "li_sig_b6622dc607120c19_3efee311": {
+        "executed_at": "2026-03-25T14:31:03+00:00",
         "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
         "error": "Brain limit: max 2 positions reached (current: 2)",
-        "execution_identity_key": "li_sig_384c62015750d6aa_27342886",
+        "execution_identity_key": "li_sig_b6622dc607120c19_3efee311",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_478784932697d5cc_26ff9050": {
-        "executed_at": "2026-03-25T12:41:02+00:00",
+    "li_sig_57fb1edea9f180b9_a91197fe": {
+        "executed_at": "2026-03-25T14:33:04+00:00",
         "result": "skipped_max_positions_reached",
         "order_id": null,
         "trade_id": null,
         "error": "Brain limit: max 2 positions reached (current: 2)",
-        "execution_identity_key": "li_sig_478784932697d5cc_26ff9050",
+        "execution_identity_key": "li_sig_57fb1edea9f180b9_a91197fe",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_9eeac51916ae9849_fde1235f": {
-        "executed_at": "2026-03-25T12:45:05+00:00",
-        "result": "skipped_max_positions_reached",
+    "li_sig_6de9038894f5d179_94219fb6": {
+        "executed_at": "2026-03-25T14:35:05+00:00",
+        "result": "opened_protected",
+        "order_id": "d4cc243b-bb71-4ef2-8125-5af0cb8ca6bb",
+        "trade_id": "sig_6de9038894f5d179",
+        "error": null,
+        "execution_identity_key": "li_sig_6de9038894f5d179_94219fb6",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_84b1e39463de3f6f_1e3b62b2": {
+        "executed_at": "2026-03-25T14:37:04+00:00",
+        "result": "rejected_insufficient_balance",
         "order_id": null,
         "trade_id": null,
-        "error": "Brain limit: max 2 positions reached (current: 2)",
-        "execution_identity_key": "li_sig_9eeac51916ae9849_fde1235f",
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_84b1e39463de3f6f_1e3b62b2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c31bf4ba3c28517c_8f3ed14c": {
+        "executed_at": "2026-03-25T14:39:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_c31bf4ba3c28517c_8f3ed14c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f8c5b21c0bb3e7c1_04694029": {
+        "executed_at": "2026-03-25T14:41:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_f8c5b21c0bb3e7c1_04694029",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6fcaad7cafd11ff3_518d89c5": {
+        "executed_at": "2026-03-25T14:43:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_6fcaad7cafd11ff3_518d89c5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_94426c996b475e25_2e5b728c": {
+        "executed_at": "2026-03-25T14:45:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_94426c996b475e25_2e5b728c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_93fa3a86a9f36966_e0bd8387": {
+        "executed_at": "2026-03-25T14:47:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_93fa3a86a9f36966_e0bd8387",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_43d99f8f6a1104b6_774b61db": {
+        "executed_at": "2026-03-25T14:49:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_43d99f8f6a1104b6_774b61db",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2800069c43610e03_d66bc429": {
+        "executed_at": "2026-03-25T14:51:12+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_2800069c43610e03_d66bc429",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_96aa4d8393beb507_6750d8d5": {
+        "executed_at": "2026-03-25T14:53:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_96aa4d8393beb507_6750d8d5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b48bb1be01934d10_2c44406c": {
+        "executed_at": "2026-03-25T14:55:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_b48bb1be01934d10_2c44406c",
         "dedupe_basis": "intent_id"
     },
     "li_sig_10c7c46c7080dc38_5ee48791": {
-        "executed_at": "2026-03-25T12:51:04+00:00",
-        "result": "skipped_max_positions_reached",
+        "executed_at": "2026-03-25T14:57:05+00:00",
+        "result": "rejected_late_entry",
         "order_id": null,
         "trade_id": null,
-        "error": "Brain limit: max 2 positions reached (current: 2)",
+        "error": "Price moved up 2.5178592341024% > threshold 1.25%",
         "execution_identity_key": "li_sig_10c7c46c7080dc38_5ee48791",
         "dedupe_basis": "intent_id"
     },
-    "li_sig_02fd8b1129e9a7e5_a6a2e87f": {
-        "executed_at": "2026-03-25T13:01:03+00:00",
-        "result": "skipped_max_positions_reached",
+    "li_sig_4ce7dc62f0935493_2fc09ce7": {
+        "executed_at": "2026-03-25T14:59:08+00:00",
+        "result": "rejected_insufficient_balance",
         "order_id": null,
         "trade_id": null,
-        "error": "Brain limit: max 2 positions reached (current: 2)",
-        "execution_identity_key": "li_sig_02fd8b1129e9a7e5_a6a2e87f",
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_4ce7dc62f0935493_2fc09ce7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9b48341296486ac5_b47e2879": {
+        "executed_at": "2026-03-25T15:01:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_9b48341296486ac5_b47e2879",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9288739c03235d18_8b2e8100": {
+        "executed_at": "2026-03-25T16:22:04+00:00",
+        "result": "opened_protected",
+        "order_id": "92428f18-1dac-4c93-95a6-91cf9f2129bd",
+        "trade_id": "sig_9288739c03235d18",
+        "error": null,
+        "execution_identity_key": "li_sig_9288739c03235d18_8b2e8100",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9496caf2e480f7c2_13a1ef82": {
+        "executed_at": "2026-03-25T16:24:06+00:00",
+        "result": "opened_protected",
+        "order_id": "889708ac-185f-42de-a98f-4126280aec6f",
+        "trade_id": "sig_9496caf2e480f7c2",
+        "error": null,
+        "execution_identity_key": "li_sig_9496caf2e480f7c2_13a1ef82",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_adeea37377edbe7f_1ba3517a": {
+        "executed_at": "2026-03-25T16:27:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_adeea37377edbe7f_1ba3517a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9722506044d38e7c_a260a931": {
+        "executed_at": "2026-03-25T16:29:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_9722506044d38e7c_a260a931",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9d8a5a5afc5df050_d7faefcd": {
+        "executed_at": "2026-03-25T16:31:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_9d8a5a5afc5df050_d7faefcd",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_90e316e36e27fc71_45697623": {
+        "executed_at": "2026-03-25T16:32:11+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_90e316e36e27fc71_45697623",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_987fd8a1a54d2d9c_7f11a1ea": {
+        "executed_at": "2026-03-25T16:34:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_987fd8a1a54d2d9c_7f11a1ea",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_fe8f26b3dee4646c_b04d553a": {
+        "executed_at": "2026-03-25T16:36:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_fe8f26b3dee4646c_b04d553a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_04046fb1749b27b1_4dc94b82": {
+        "executed_at": "2026-03-25T16:38:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_04046fb1749b27b1_4dc94b82",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_79200babd0eb839e_83775ee1": {
+        "executed_at": "2026-03-25T16:42:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_79200babd0eb839e_83775ee1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b82d3fd494f055bb_c0c8e53b": {
+        "executed_at": "2026-03-25T16:44:05+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.6156021857276% > threshold 1.25%",
+        "execution_identity_key": "li_sig_b82d3fd494f055bb_c0c8e53b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1d92517f0800b3a5_8bc77c62": {
+        "executed_at": "2026-03-25T16:52:06+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.398868257793% > threshold 1.25%",
+        "execution_identity_key": "li_sig_1d92517f0800b3a5_8bc77c62",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9a8cfc700be0a64a_9e1c2389": {
+        "executed_at": "2026-03-25T16:54:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_9a8cfc700be0a64a_9e1c2389",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_271dea487227c5a6_5d618286": {
+        "executed_at": "2026-03-25T16:58:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_271dea487227c5a6_5d618286",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_44bf8ccd239454f3_5d3c9dee": {
+        "executed_at": "2026-03-25T17:00:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_44bf8ccd239454f3_5d3c9dee",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a16fc3cfd051954c_0f23e200": {
+        "executed_at": "2026-03-25T17:02:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_a16fc3cfd051954c_0f23e200",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3a17f7d8cbaa4364_8d8cfc20": {
+        "executed_at": "2026-03-25T17:13:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_3a17f7d8cbaa4364_8d8cfc20",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_384c62015750d6aa_27342886": {
+        "executed_at": "2026-03-25T17:19:05+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.6072745146228% > threshold 1.25%",
+        "execution_identity_key": "li_sig_384c62015750d6aa_27342886",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0e82bbf71bb88a00_f85fda69": {
+        "executed_at": "2026-03-25T17:26:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_0e82bbf71bb88a00_f85fda69",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_09250a5c0557a176_2554e2f5": {
+        "executed_at": "2026-03-25T17:28:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_09250a5c0557a176_2554e2f5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8bbc257d397efbd3_1614712a": {
+        "executed_at": "2026-03-25T17:32:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_8bbc257d397efbd3_1614712a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0c2a7351c20caed4_654318c1": {
+        "executed_at": "2026-03-25T17:40:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_0c2a7351c20caed4_654318c1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9249f2b1ac0c8613_eee55ae8": {
+        "executed_at": "2026-03-25T17:43:08+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_9249f2b1ac0c8613_eee55ae8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1a73d1d2e092745d_4c2d8634": {
+        "executed_at": "2026-03-25T17:49:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_1a73d1d2e092745d_4c2d8634",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_35174d5c9d84e080_c3eea18c": {
+        "executed_at": "2026-03-25T17:51:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_35174d5c9d84e080_c3eea18c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_aa157076c365206a_2250e973": {
+        "executed_at": "2026-03-25T17:53:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_aa157076c365206a_2250e973",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3407d95921d4659d_f7507264": {
+        "executed_at": "2026-03-25T17:55:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_3407d95921d4659d_f7507264",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_09c92c4cc1d241e2_a5cabff8": {
+        "executed_at": "2026-03-25T17:57:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_09c92c4cc1d241e2_a5cabff8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4e06b8ea3e50c914_07212c7e": {
+        "executed_at": "2026-03-25T18:01:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_4e06b8ea3e50c914_07212c7e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a684ab2a5f1089f1_f8a16bec": {
+        "executed_at": "2026-03-25T18:04:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_a684ab2a5f1089f1_f8a16bec",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2384498b8fbb8e2b_7e2d7527": {
+        "executed_at": "2026-03-25T18:06:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_2384498b8fbb8e2b_7e2d7527",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2de44d47198f9d17_b0a4c99d": {
+        "executed_at": "2026-03-25T18:08:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_2de44d47198f9d17_b0a4c99d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_020ff2eda110f776_405b5aa2": {
+        "executed_at": "2026-03-25T18:10:12+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_020ff2eda110f776_405b5aa2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_739644668d795e2b_d82626b7": {
+        "executed_at": "2026-03-25T18:16:08+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_739644668d795e2b_d82626b7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5aefbf18c7605e21_eb34461e": {
+        "executed_at": "2026-03-25T18:18:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_5aefbf18c7605e21_eb34461e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c299399270c4bc5e_604f113f": {
+        "executed_at": "2026-03-25T18:20:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_c299399270c4bc5e_604f113f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_7bafff6217c48b87_280752ce": {
+        "executed_at": "2026-03-25T18:22:26+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_7bafff6217c48b87_280752ce",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_965289fb629e52f8_ad2018f3": {
+        "executed_at": "2026-03-25T18:23:36+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_965289fb629e52f8_ad2018f3",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0d3d8edecc06f2bd_8acac823": {
+        "executed_at": "2026-03-25T18:25:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_0d3d8edecc06f2bd_8acac823",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_7501a4f3eb9561d3_1d8a3b11": {
+        "executed_at": "2026-03-25T18:27:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 7.3822129884056% > threshold 1.25%",
+        "execution_identity_key": "li_sig_7501a4f3eb9561d3_1d8a3b11",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_e6995b436870dbdb_797e75f2": {
+        "executed_at": "2026-03-25T18:29:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_e6995b436870dbdb_797e75f2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d4cf4e37afe6bb18_444792d1": {
+        "executed_at": "2026-03-25T18:31:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_d4cf4e37afe6bb18_444792d1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d8fce487e8ffe7f2_826213dd": {
+        "executed_at": "2026-03-25T18:33:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_d8fce487e8ffe7f2_826213dd",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_77a6e472510d3655_b864b27f": {
+        "executed_at": "2026-03-25T18:35:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_77a6e472510d3655_b864b27f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ff099fa22ceb8256_d5c587ec": {
+        "executed_at": "2026-03-25T18:37:14+00:00",
+        "result": "opened_protected",
+        "order_id": "0898e87d-133e-487e-a93b-283f74fc7b86",
+        "trade_id": "sig_ff099fa22ceb8256",
+        "error": null,
+        "execution_identity_key": "li_sig_ff099fa22ceb8256_d5c587ec",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3390e0b80b313b7a_9f70d973": {
+        "executed_at": "2026-03-25T18:39:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_3390e0b80b313b7a_9f70d973",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_947f88e5e17b052f_d941b4f2": {
+        "executed_at": "2026-03-25T18:41:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_947f88e5e17b052f_d941b4f2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_24cc2547bfa5ef2c_25086d94": {
+        "executed_at": "2026-03-25T18:45:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_24cc2547bfa5ef2c_25086d94",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3c0d3f5366821271_61178655": {
+        "executed_at": "2026-03-25T18:47:06+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 6.0444358203163% > threshold 1.25%",
+        "execution_identity_key": "li_sig_3c0d3f5366821271_61178655",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_bc26e32da2bda9da_efadd834": {
+        "executed_at": "2026-03-25T18:53:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_bc26e32da2bda9da_efadd834",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ed712d7567a3e65a_6ed39c1a": {
+        "executed_at": "2026-03-25T18:55:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_ed712d7567a3e65a_6ed39c1a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f5b5d374bc45ed8a_535556d5": {
+        "executed_at": "2026-03-25T18:57:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_f5b5d374bc45ed8a_535556d5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_327ccefb4ffb6cbb_dfb672fa": {
+        "executed_at": "2026-03-25T19:02:02+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 4.426732464328% > threshold 1.25%",
+        "execution_identity_key": "li_sig_327ccefb4ffb6cbb_dfb672fa",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4909f65ee5ba4c86_110bcf21": {
+        "executed_at": "2026-03-25T19:07:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_4909f65ee5ba4c86_110bcf21",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5215b2d048ab307a_5fc16435": {
+        "executed_at": "2026-03-25T19:09:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_5215b2d048ab307a_5fc16435",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f9a1a837ef2c229f_badf0cad": {
+        "executed_at": "2026-03-25T19:11:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_f9a1a837ef2c229f_badf0cad",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3e443e4866fd0ae5_d6618d23": {
+        "executed_at": "2026-03-25T19:19:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_3e443e4866fd0ae5_d6618d23",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8fc580c5c7fb9697_d5ef0ed2": {
+        "executed_at": "2026-03-25T19:25:09+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_8fc580c5c7fb9697_d5ef0ed2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f7e5f00ce0a8ec95_16e8638e": {
+        "executed_at": "2026-03-25T19:27:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.3756863671252% > threshold 1.25%",
+        "execution_identity_key": "li_sig_f7e5f00ce0a8ec95_16e8638e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_90d7ce30dcfc0338_6be4c263": {
+        "executed_at": "2026-03-25T19:29:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_90d7ce30dcfc0338_6be4c263",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_03be3b56508affbc_79c6f724": {
+        "executed_at": "2026-03-25T19:31:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_03be3b56508affbc_79c6f724",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_252bac7d8295fe88_46685f87": {
+        "executed_at": "2026-03-25T19:33:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_252bac7d8295fe88_46685f87",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d5f39cf849e0a948_80e31e2e": {
+        "executed_at": "2026-03-25T19:35:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_d5f39cf849e0a948_80e31e2e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_cf6e12b1a16b19ec_b23e4be7": {
+        "executed_at": "2026-03-25T19:37:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_cf6e12b1a16b19ec_b23e4be7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6a6f15aad12381d5_9d5b3800": {
+        "executed_at": "2026-03-25T19:39:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_6a6f15aad12381d5_9d5b3800",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_aa224d8cbc2dc47f_7c151541": {
+        "executed_at": "2026-03-25T19:41:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_aa224d8cbc2dc47f_7c151541",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_29dbe31832943cc0_344eb8e4": {
+        "executed_at": "2026-03-25T19:43:08+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_29dbe31832943cc0_344eb8e4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_67585a186552de81_779232d5": {
+        "executed_at": "2026-03-25T19:45:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_67585a186552de81_779232d5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_07be9601bd96f49d_38c47df5": {
+        "executed_at": "2026-03-25T19:47:05+00:00",
+        "result": "opened_protected",
+        "order_id": "66aea4a8-60d1-4a78-9e8d-5f43d0128d49",
+        "trade_id": "sig_07be9601bd96f49d",
+        "error": null,
+        "execution_identity_key": "li_sig_07be9601bd96f49d_38c47df5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c6b466df93bb2e60_9f8f7334": {
+        "executed_at": "2026-03-25T19:49:12+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_c6b466df93bb2e60_9f8f7334",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_57653ef30ea68a7b_45327537": {
+        "executed_at": "2026-03-25T19:51:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 2.4890367275293% > threshold 1.25%",
+        "execution_identity_key": "li_sig_57653ef30ea68a7b_45327537",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5464c5b96081d74a_f8ce755b": {
+        "executed_at": "2026-03-25T19:53:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_5464c5b96081d74a_f8ce755b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f25a8c2ce97fc702_6ed5d34b": {
+        "executed_at": "2026-03-25T19:55:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_f25a8c2ce97fc702_6ed5d34b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c5cd32a918a04287_f4418543": {
+        "executed_at": "2026-03-25T19:57:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.3496716212789% > threshold 1.25%",
+        "execution_identity_key": "li_sig_c5cd32a918a04287_f4418543",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8cba42904eb36eea_6c04e12e": {
+        "executed_at": "2026-03-25T20:05:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_8cba42904eb36eea_6c04e12e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_253b41911321af37_cf4a2f07": {
+        "executed_at": "2026-03-25T20:07:08+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_253b41911321af37_cf4a2f07",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_45f7d6fdd875c1e6_b6002375": {
+        "executed_at": "2026-03-25T20:17:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 2.1619032412582% > threshold 1.25%",
+        "execution_identity_key": "li_sig_45f7d6fdd875c1e6_b6002375",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_44550d23c2ef977e_372b5b14": {
+        "executed_at": "2026-03-25T20:25:07+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.9728032850299% > threshold 1.25%",
+        "execution_identity_key": "li_sig_44550d23c2ef977e_372b5b14",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_48ecac508196e504_785247fa": {
+        "executed_at": "2026-03-25T20:41:04+00:00",
+        "result": "opened_protected",
+        "order_id": "7ea6c98f-482a-4b18-a8b8-a87a2139d961",
+        "trade_id": "sig_48ecac508196e504",
+        "error": null,
+        "execution_identity_key": "li_sig_48ecac508196e504_785247fa",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a7c224697f90a97b_78d7d2ed": {
+        "executed_at": "2026-03-25T20:47:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a7c224697f90a97b_78d7d2ed",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a824eea4aba73faa_22ebac46": {
+        "executed_at": "2026-03-25T20:49:06+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.8899284239873% > threshold 1.25%",
+        "execution_identity_key": "li_sig_a824eea4aba73faa_22ebac46",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b9241ee902d68973_46c70ed2": {
+        "executed_at": "2026-03-25T20:51:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_b9241ee902d68973_46c70ed2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_68a8fe19624b6567_11a33ba8": {
+        "executed_at": "2026-03-25T20:53:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.6364022763229% > threshold 1.25%",
+        "execution_identity_key": "li_sig_68a8fe19624b6567_11a33ba8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a9a7d03c23215329_20cb8d3b": {
+        "executed_at": "2026-03-25T20:55:08+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a9a7d03c23215329_20cb8d3b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_7120e135a656355d_87764f43": {
+        "executed_at": "2026-03-25T20:57:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_7120e135a656355d_87764f43",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0c0c71bddb3dfd41_f4eb6a8e": {
+        "executed_at": "2026-03-25T20:59:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_0c0c71bddb3dfd41_f4eb6a8e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_69b5500162b8e712_a7483635": {
+        "executed_at": "2026-03-25T21:01:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_69b5500162b8e712_a7483635",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_32e7c5d413b383e4_e8be0dc4": {
+        "executed_at": "2026-03-25T21:03:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_32e7c5d413b383e4_e8be0dc4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8f664a8a3c2ab678_091500a8": {
+        "executed_at": "2026-03-25T21:05:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_8f664a8a3c2ab678_091500a8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_56aa8a1d5566c1b7_ea454243": {
+        "executed_at": "2026-03-25T21:07:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_56aa8a1d5566c1b7_ea454243",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_eef45cc4f2db9bae_2256e90b": {
+        "executed_at": "2026-03-25T21:09:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_eef45cc4f2db9bae_2256e90b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d81f43aa1ea95204_d2ea9410": {
+        "executed_at": "2026-03-25T21:11:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_d81f43aa1ea95204_d2ea9410",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0c5ffc861d9465fe_0e2612c4": {
+        "executed_at": "2026-03-25T21:13:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_0c5ffc861d9465fe_0e2612c4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2e0369af831c7e1a_f815a4c2": {
+        "executed_at": "2026-03-25T21:15:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_2e0369af831c7e1a_f815a4c2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4ff071394f3e3ac8_65ec673f": {
+        "executed_at": "2026-03-25T21:17:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_4ff071394f3e3ac8_65ec673f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_fb1b1ba9f8e29675_dddf1878": {
+        "executed_at": "2026-03-25T21:19:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_fb1b1ba9f8e29675_dddf1878",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_656cef8777582515_fd17ac20": {
+        "executed_at": "2026-03-25T21:21:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_656cef8777582515_fd17ac20",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b7d6690f08177334_5ed50228": {
+        "executed_at": "2026-03-25T21:23:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_b7d6690f08177334_5ed50228",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_e53d3846278a61b1_91d83194": {
+        "executed_at": "2026-03-25T21:25:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_e53d3846278a61b1_91d83194",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_7a9a1356c9a12942_0d5b7a12": {
+        "executed_at": "2026-03-25T21:27:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_7a9a1356c9a12942_0d5b7a12",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_09b3ddfcf39869bf_1c414e4c": {
+        "executed_at": "2026-03-25T21:29:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_09b3ddfcf39869bf_1c414e4c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_33cb7f9a38616b74_3fb3154d": {
+        "executed_at": "2026-03-25T21:35:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_33cb7f9a38616b74_3fb3154d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_687b576659c46576_579ea529": {
+        "executed_at": "2026-03-25T21:37:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_687b576659c46576_579ea529",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3a96ea37dc3cfcf6_4e47abfa": {
+        "executed_at": "2026-03-25T21:41:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_3a96ea37dc3cfcf6_4e47abfa",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f639a93c7778c6a5_0cc5b76d": {
+        "executed_at": "2026-03-25T21:47:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_f639a93c7778c6a5_0cc5b76d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_83835a5ad8f72d10_c20d157a": {
+        "executed_at": "2026-03-25T21:56:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_83835a5ad8f72d10_c20d157a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3297639bafd5ceb0_e62bfd66": {
+        "executed_at": "2026-03-25T22:11:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.6018202761055% > threshold 1.25%",
+        "execution_identity_key": "li_sig_3297639bafd5ceb0_e62bfd66",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_88f4f0edb279b509_3bcc7b45": {
+        "executed_at": "2026-03-25T22:13:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_88f4f0edb279b509_3bcc7b45",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_d6374900c199a6ec_e4c72285": {
+        "executed_at": "2026-03-25T22:19:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_d6374900c199a6ec_e4c72285",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4e85dc29934a6df0_f97306b8": {
+        "executed_at": "2026-03-25T22:34:06+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_4e85dc29934a6df0_f97306b8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_63e10e6f4f2ea390_bcd6d852": {
+        "executed_at": "2026-03-25T22:38:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_63e10e6f4f2ea390_bcd6d852",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1441229b2576156c_d4ae0f2b": {
+        "executed_at": "2026-03-25T22:46:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_1441229b2576156c_d4ae0f2b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b3e2ada13bca9367_082073a2": {
+        "executed_at": "2026-03-25T22:50:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_b3e2ada13bca9367_082073a2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b3c7731fbc699226_d82400d6": {
+        "executed_at": "2026-03-25T22:58:07+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_b3c7731fbc699226_d82400d6",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a6a3bbb8d581dcd7_910830e4": {
+        "executed_at": "2026-03-25T23:07:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a6a3bbb8d581dcd7_910830e4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_24f5bd97cc0d3c86_c4814d96": {
+        "executed_at": "2026-03-25T23:09:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 2.6872564583634% > threshold 1.25%",
+        "execution_identity_key": "li_sig_24f5bd97cc0d3c86_c4814d96",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2cd894ce7d4da93c_c5375fbc": {
+        "executed_at": "2026-03-25T23:28:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_2cd894ce7d4da93c_c5375fbc",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_27a662e16d3606ed_8f2db6f2": {
+        "executed_at": "2026-03-25T23:47:08+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_27a662e16d3606ed_8f2db6f2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5fee32b8279cbcab_0874636e": {
+        "executed_at": "2026-03-25T23:51:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 3.0747507594883% > threshold 1.25%",
+        "execution_identity_key": "li_sig_5fee32b8279cbcab_0874636e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_45b71a19c3b2f388_ae1512c7": {
+        "executed_at": "2026-03-25T23:53:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_45b71a19c3b2f388_ae1512c7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_88b873a38d900091_bed8cf79": {
+        "executed_at": "2026-03-25T23:56:08+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_88b873a38d900091_bed8cf79",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5005cb20addc1167_060d1885": {
+        "executed_at": "2026-03-25T23:59:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_5005cb20addc1167_060d1885",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1079691b37f74787_a5edbc6c": {
+        "executed_at": "2026-03-26T00:01:02+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 2.7434728135785% > threshold 1.25%",
+        "execution_identity_key": "li_sig_1079691b37f74787_a5edbc6c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_e1498be47a2183cb_05afd0bd": {
+        "executed_at": "2026-03-26T01:10:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_e1498be47a2183cb_05afd0bd",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_69c6380270284533_469c38f0": {
+        "executed_at": "2026-03-26T01:12:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_69c6380270284533_469c38f0",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a8477b70aec2fca5_11e751a9": {
+        "executed_at": "2026-03-26T01:18:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a8477b70aec2fca5_11e751a9",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0f3f95b190cc84db_d8a39c86": {
+        "executed_at": "2026-03-26T01:20:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_0f3f95b190cc84db_d8a39c86",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_af3e9cc495dc271b_a6cfe508": {
+        "executed_at": "2026-03-26T01:24:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_af3e9cc495dc271b_a6cfe508",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c4b9c8f17e9d31c9_a44608a3": {
+        "executed_at": "2026-03-26T01:28:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_c4b9c8f17e9d31c9_a44608a3",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_33ccc6de0d5ebd87_f1726843": {
+        "executed_at": "2026-03-26T01:36:04+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_33ccc6de0d5ebd87_f1726843",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9503e97b7030ebad_f8639a73": {
+        "executed_at": "2026-03-26T01:38:02+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_9503e97b7030ebad_f8639a73",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f028b747f07b3770_d84f4066": {
+        "executed_at": "2026-03-26T01:40:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_f028b747f07b3770_d84f4066",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_be597d63e4a43b43_4894b0da": {
+        "executed_at": "2026-03-26T01:42:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.9975932611312% > threshold 1.25%",
+        "execution_identity_key": "li_sig_be597d63e4a43b43_4894b0da",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f63fff19760a3146_7b575212": {
+        "executed_at": "2026-03-26T01:44:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_f63fff19760a3146_7b575212",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_54ee8637fbf43eec_c351ec80": {
+        "executed_at": "2026-03-26T01:46:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_54ee8637fbf43eec_c351ec80",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a0a52493f68c1534_ac1bb0cc": {
+        "executed_at": "2026-03-26T01:48:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a0a52493f68c1534_ac1bb0cc",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f28afbba93bccb56_b407a31c": {
+        "executed_at": "2026-03-26T01:50:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_f28afbba93bccb56_b407a31c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6f456ff27e766ecf_d8ce60a8": {
+        "executed_at": "2026-03-26T01:52:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_6f456ff27e766ecf_d8ce60a8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1f4a36c373a4dfa0_923f9abf": {
+        "executed_at": "2026-03-26T01:54:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_1f4a36c373a4dfa0_923f9abf",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_10a7a95682f1b6d2_b8d858e1": {
+        "executed_at": "2026-03-26T01:56:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.4623115757686% > threshold 1.25%",
+        "execution_identity_key": "li_sig_10a7a95682f1b6d2_b8d858e1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8ee63633bbd0f5b7_9f06f3e1": {
+        "executed_at": "2026-03-26T01:58:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_8ee63633bbd0f5b7_9f06f3e1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_565b4002c223fd01_fd66fb8e": {
+        "executed_at": "2026-03-26T02:00:06+00:00",
+        "result": "opened_protected",
+        "order_id": "97487e7d-bf08-492d-a0f6-ebfd1dcb66de",
+        "trade_id": "sig_565b4002c223fd01",
+        "error": null,
+        "execution_identity_key": "li_sig_565b4002c223fd01_fd66fb8e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_03a7260f686c3cc9_b55ce3c1": {
+        "executed_at": "2026-03-26T02:02:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_03a7260f686c3cc9_b55ce3c1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5d997b2f8f73683f_934d5e5d": {
+        "executed_at": "2026-03-26T02:06:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_5d997b2f8f73683f_934d5e5d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8a32beffd6df2101_53283017": {
+        "executed_at": "2026-03-26T02:08:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_8a32beffd6df2101_53283017",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9435378d8d58ae0a_100cd62e": {
+        "executed_at": "2026-03-26T02:10:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_9435378d8d58ae0a_100cd62e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_e0411c734fb92f21_254fafb5": {
+        "executed_at": "2026-03-26T02:12:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_e0411c734fb92f21_254fafb5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_cf25c88d7ab964b6_0c17fa31": {
+        "executed_at": "2026-03-26T02:14:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_cf25c88d7ab964b6_0c17fa31",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c44126617ea7efe8_b36432c0": {
+        "executed_at": "2026-03-26T02:16:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_c44126617ea7efe8_b36432c0",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b6f0fd350563cab2_265db3ee": {
+        "executed_at": "2026-03-26T02:18:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_b6f0fd350563cab2_265db3ee",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3a7389222937a470_6ed99f47": {
+        "executed_at": "2026-03-26T02:20:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_3a7389222937a470_6ed99f47",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1a821ababa89d21a_4343682f": {
+        "executed_at": "2026-03-26T02:22:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_1a821ababa89d21a_4343682f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9b2045b04541b58b_98aa047b": {
+        "executed_at": "2026-03-26T02:24:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_9b2045b04541b58b_98aa047b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_31a9dcf15fde0195_86b0fb46": {
+        "executed_at": "2026-03-26T02:26:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_31a9dcf15fde0195_86b0fb46",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c7ec9f417db1965a_d8296215": {
+        "executed_at": "2026-03-26T02:28:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_c7ec9f417db1965a_d8296215",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_694f59ba29b956ad_9429a8b1": {
+        "executed_at": "2026-03-26T02:32:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_694f59ba29b956ad_9429a8b1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c63c009e501b1735_5ca52cd7": {
+        "executed_at": "2026-03-26T02:36:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_c63c009e501b1735_5ca52cd7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_392455165f01e3aa_225496e4": {
+        "executed_at": "2026-03-26T02:38:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_392455165f01e3aa_225496e4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2beacc81294843a9_0e56e3c0": {
+        "executed_at": "2026-03-26T02:40:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_2beacc81294843a9_0e56e3c0",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_143d249d8930c7c0_db9e012a": {
+        "executed_at": "2026-03-26T02:42:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_143d249d8930c7c0_db9e012a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a0624acab7c33bb6_0066699d": {
+        "executed_at": "2026-03-26T02:48:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a0624acab7c33bb6_0066699d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_39b74359537a2f13_74d3f2f4": {
+        "executed_at": "2026-03-26T02:50:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.2960185838626% > threshold 1.25%",
+        "execution_identity_key": "li_sig_39b74359537a2f13_74d3f2f4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_50fe3da4d5682ed7_0b87dd31": {
+        "executed_at": "2026-03-26T02:56:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_50fe3da4d5682ed7_0b87dd31",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9146276446b79570_678820e8": {
+        "executed_at": "2026-03-26T03:00:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_9146276446b79570_678820e8",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2ea847389882774d_3c85ea78": {
+        "executed_at": "2026-03-26T03:02:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_2ea847389882774d_3c85ea78",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b1a93bfe4f16249d_204f77e4": {
+        "executed_at": "2026-03-26T03:04:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_b1a93bfe4f16249d_204f77e4",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ab544f02aa63e8c9_550fe8f7": {
+        "executed_at": "2026-03-26T03:06:04+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.2599669748585% > threshold 1.25%",
+        "execution_identity_key": "li_sig_ab544f02aa63e8c9_550fe8f7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c86257d583d07be6_2039b220": {
+        "executed_at": "2026-03-26T03:08:04+00:00",
+        "result": "skipped_symbol_busy",
+        "order_id": null,
+        "trade_id": null,
+        "error": "symbol_busy:ARIAUSDT \u2014 already has active exchange position and local trade",
+        "execution_identity_key": "li_sig_c86257d583d07be6_2039b220",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_aa729df1e606dfc3_8b87ec40": {
+        "executed_at": "2026-03-26T03:10:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_aa729df1e606dfc3_8b87ec40",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_05e4d756e2e0e66d_9623b07d": {
+        "executed_at": "2026-03-26T03:12:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_05e4d756e2e0e66d_9623b07d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4d6c701c6c5d9c67_91d72297": {
+        "executed_at": "2026-03-26T03:14:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_4d6c701c6c5d9c67_91d72297",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f5aa58187d56e36c_684af64b": {
+        "executed_at": "2026-03-26T03:18:05+00:00",
+        "result": "opened_protected",
+        "order_id": "3dc07bcc-606d-41f6-a01e-2166ed27a8d1",
+        "trade_id": "sig_f5aa58187d56e36c",
+        "error": null,
+        "execution_identity_key": "li_sig_f5aa58187d56e36c_684af64b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ec3c5048e6a0e0d4_0afffd2c": {
+        "executed_at": "2026-03-26T03:20:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_ec3c5048e6a0e0d4_0afffd2c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3f7aec20422c1fde_6ad0f8e0": {
+        "executed_at": "2026-03-26T03:22:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_3f7aec20422c1fde_6ad0f8e0",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_03835aea0b9940dc_23d9c4f9": {
+        "executed_at": "2026-03-26T03:24:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_03835aea0b9940dc_23d9c4f9",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b4d74a5d498d9c0a_d7e6a343": {
+        "executed_at": "2026-03-26T03:26:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_b4d74a5d498d9c0a_d7e6a343",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_e53d1786e38c1b17_86940861": {
+        "executed_at": "2026-03-26T03:28:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_e53d1786e38c1b17_86940861",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_bfd6594ecd5fd7b5_1c3a57c7": {
+        "executed_at": "2026-03-26T03:32:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_bfd6594ecd5fd7b5_1c3a57c7",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_0ea9f2efc22b4a77_0234fe7e": {
+        "executed_at": "2026-03-26T03:36:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_0ea9f2efc22b4a77_0234fe7e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2c5df75d179aebed_c6920e47": {
+        "executed_at": "2026-03-26T03:42:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_2c5df75d179aebed_c6920e47",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_51ed124bebf94694_fc3cc426": {
+        "executed_at": "2026-03-26T03:44:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_51ed124bebf94694_fc3cc426",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_7894b9a71b7f92ec_4b65c775": {
+        "executed_at": "2026-03-26T03:46:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_7894b9a71b7f92ec_4b65c775",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2e59826c8b2c9206_3854886a": {
+        "executed_at": "2026-03-26T03:48:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_2e59826c8b2c9206_3854886a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_fba13ab09f2f5dfc_3c024fbb": {
+        "executed_at": "2026-03-26T03:50:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_fba13ab09f2f5dfc_3c024fbb",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_bf4d29f47aa9501a_847a84c0": {
+        "executed_at": "2026-03-26T03:57:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_bf4d29f47aa9501a_847a84c0",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_b5382fe12ef2af0f_47c47571": {
+        "executed_at": "2026-03-26T04:03:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.6468650746971% > threshold 1.25%",
+        "execution_identity_key": "li_sig_b5382fe12ef2af0f_47c47571",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ee2a7af2042d9b93_10fe659d": {
+        "executed_at": "2026-03-26T04:11:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_ee2a7af2042d9b93_10fe659d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ce9db74903c4b185_9a85ec19": {
+        "executed_at": "2026-03-26T04:17:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_ce9db74903c4b185_9a85ec19",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c8bd55f1c287f5de_11c2ca29": {
+        "executed_at": "2026-03-26T04:25:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_c8bd55f1c287f5de_11c2ca29",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_fe24764db6790ab9_df8ea944": {
+        "executed_at": "2026-03-26T04:27:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_fe24764db6790ab9_df8ea944",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_e8641dc5e5230602_04da6b96": {
+        "executed_at": "2026-03-26T04:29:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_e8641dc5e5230602_04da6b96",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_9c3b7d8015c9c780_42471770": {
+        "executed_at": "2026-03-26T04:34:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_9c3b7d8015c9c780_42471770",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_bf2f8a5bb263738a_1f9cf1fc": {
+        "executed_at": "2026-03-26T04:40:06+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_bf2f8a5bb263738a_1f9cf1fc",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ec3eb4aab3eb55f9_30e0c9f5": {
+        "executed_at": "2026-03-26T04:42:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_ec3eb4aab3eb55f9_30e0c9f5",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1ff85cef3971992c_f28dd10b": {
+        "executed_at": "2026-03-26T04:44:02+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 2.8905494756507% > threshold 1.25%",
+        "execution_identity_key": "li_sig_1ff85cef3971992c_f28dd10b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f1579391bbea881a_40c2b316": {
+        "executed_at": "2026-03-26T04:50:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_f1579391bbea881a_40c2b316",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_86597b00cf6df65f_9f27e69c": {
+        "executed_at": "2026-03-26T04:58:05+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_86597b00cf6df65f_9f27e69c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_5dcb901e0ac2eb5c_053eeccc": {
+        "executed_at": "2026-03-26T05:02:03+00:00",
+        "result": "rejected_insufficient_balance",
+        "order_id": null,
+        "trade_id": null,
+        "error": "insufficient_margin",
+        "execution_identity_key": "li_sig_5dcb901e0ac2eb5c_053eeccc",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4d3671966dadc9bd_3ae5a05a": {
+        "executed_at": "2026-03-26T05:08:03+00:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved up 1.6224415767142% > threshold 1.25%",
+        "execution_identity_key": "li_sig_4d3671966dadc9bd_3ae5a05a",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ba9347a956cf6530_1d79eeb1": {
+        "executed_at": "2026-03-26T05:13:07+00:00",
+        "result": "opened_protected",
+        "order_id": "bd9ab502-5fe9-43ae-b87d-d3231524c9cc",
+        "trade_id": "sig_ba9347a956cf6530",
+        "error": null,
+        "execution_identity_key": "li_sig_ba9347a956cf6530_1d79eeb1",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a9521dda86873ec0_cc5dcee2": {
+        "executed_at": "2026-03-26T05:19:05+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_a9521dda86873ec0_cc5dcee2",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_21985c4bc78e31a0_0a800752": {
+        "executed_at": "2026-03-26T05:25:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_21985c4bc78e31a0_0a800752",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_3fff2e4db83ed44e_c2b57476": {
+        "executed_at": "2026-03-26T05:27:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_3fff2e4db83ed44e_c2b57476",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_4bab3a782ee76d4f_9bfd40bd": {
+        "executed_at": "2026-03-26T05:29:04+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_4bab3a782ee76d4f_9bfd40bd",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f502673772852cab_c25fbd5d": {
+        "executed_at": "2026-03-26T05:39:03+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_f502673772852cab_c25fbd5d",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_1547de53b72b3179_eef9043c": {
+        "executed_at": "2026-03-26T05:41:02+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_1547de53b72b3179_eef9043c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_dfa8e403b6a297e7_ec52797e": {
+        "executed_at": "2026-03-26T05:43:07+00:00",
+        "result": "rejected_balance_below_minimum",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_below_minimum_threshold",
+        "execution_identity_key": "li_sig_dfa8e403b6a297e7_ec52797e",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_a0b5443b574cf1b3_0f08ad0f": {
+        "executed_at": "2026-03-26T05:55:06+00:00",
+        "result": "opened_protected",
+        "order_id": "8c4e4743-77c7-4cb1-91c5-6407f74e278f",
+        "trade_id": "sig_a0b5443b574cf1b3",
+        "error": null,
+        "execution_identity_key": "li_sig_a0b5443b574cf1b3_0f08ad0f",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_878cc43cb08b07ab_d1030e63": {
+        "executed_at": "2026-03-26T05:59:03+00:00",
+        "result": "opened_protected",
+        "order_id": "5c81f389-27fd-45da-ab4a-bd76966db0e8",
+        "trade_id": "sig_878cc43cb08b07ab",
+        "error": null,
+        "execution_identity_key": "li_sig_878cc43cb08b07ab_d1030e63",
         "dedupe_basis": "intent_id"
     }
 }

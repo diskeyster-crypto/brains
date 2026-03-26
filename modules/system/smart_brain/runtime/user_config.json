@@ -70,7 +70,7 @@
     "manual_symbol_mode": "manual_only",
     "live_trading_enabled": true,
     "live_signal_selection_mode": "all",
-    "live_max_positions": 2,
+    "live_max_positions": 5,
     "live_one_trade_per_symbol": true,
     "live_entry_policy": "enter_now",
     "live_reverse_side_enabled": false,

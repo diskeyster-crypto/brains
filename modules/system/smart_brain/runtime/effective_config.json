@@ -99,7 +99,7 @@
         "manual_symbol_mode": "manual_only",
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
-        "live_max_positions": 2,
+        "live_max_positions": 5,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
         "live_reverse_side_enabled": false,
@@ -209,28 +209,34 @@
     "manual_blacklist": {
         "manual_blacklist_enabled": true,
         "manual_blacklist_symbols": [
+            "1000NEIROCTOUSD",
+            "ARIAUSDT",
             "DEEPUSDT",
             "FIGHTUSDT",
             "GIGAUSDT",
+            "HOLOUSDT",
             "HUMAUSDT",
             "ICXUSDT",
             "ILVUSDT",
             "KERNELUSDT",
             "NEWTUSDT",
+            "ORCAUSDT",
+            "PEAQUSDT",
+            "SONICUSDT",
             "SOPHUSDT",
-            "TRIAUSDT",
             "VFYUSDT",
             "ZEREBROUSDT"
         ],
-        "manual_blacklist_count": 12,
-        "blacklist_source": "manual_file",
+        "manual_blacklist_count": 17,
+        "blacklist_source": "manual_live_blacklist",
+        "blacklist_source_file": "storage/manual_live_blacklist.json",
         "blacklist_valid": true,
         "blacklist_warning": ""
     },
     "live_trading": {
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
-        "live_max_positions": 2,
+        "live_max_positions": 5,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
         "live_reverse_side_enabled": false,
@@ -444,5 +450,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-25T13:00:01+00:00"
+    "generated_at": "2026-03-26T06:01:03+00:00"
 }

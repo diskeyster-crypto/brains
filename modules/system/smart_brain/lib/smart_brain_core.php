@@ -831,6 +831,8 @@ final class SmartBrainCore
             'live_signal_id_source_stats' => $liveIntentResult['signal_id_source_stats'],
             'live_intents_created_count' => $liveIntentResult['intents_created'],
             'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
+            'live_intents_total_after_merge' => $liveIntentResult['intents_total_after_merge'] ?? 0,
+            'live_terminal_retained_count' => $liveIntentResult['terminal_retained_count'] ?? 0,
             'lifecycle_counters' => $liveIntentResult['lifecycle_counters'] ?? [],
             'lifecycle_summary' => $liveIntentResult['lifecycle_summary'] ?? [],
             'intent_ttl_minutes' => $liveIntentResult['intent_ttl_minutes'] ?? 5,
@@ -839,6 +841,9 @@ final class SmartBrainCore
             'live_missing_entry_count' => $liveIntentResult['live_missing_entry_count'],
             'live_mode_filter_rejected_count' => $liveIntentResult['live_mode_filter_rejected_count'],
             'live_invalid_risk_contract_count' => $liveIntentResult['live_invalid_risk_contract_count'],
+            'late_entry_rejected_count' => $liveIntentResult['late_entry_rejected_count'] ?? 0,
+            'late_entry_rejected_distribution' => $liveIntentResult['late_entry_rejected_distribution'] ?? [],
+            'late_entry_rejected_preview' => $liveIntentResult['late_entry_rejected_preview'] ?? [],
             'live_debug_preview' => $liveIntentResult['live_debug_preview'],
             'effective_execution_limits' => [
                 'live_max_positions' => (int)($liveConfig['live_max_positions'] ?? 3),
@@ -1151,14 +1156,51 @@ final class SmartBrainCore
             }
 
             // === VALIDATION GATE 5: Weak Entry Quality Filter (P3) ===
-            // Reject late entries (signal age > threshold)
+            // Reject late entries (signal age > threshold) with nuanced sub-reasons
             $signalCreatedTs = (int)($signal['created_ts'] ?? 0);
             $lateEntryThresholdMinutes = (int)($userLimits['late_entry_max_minutes'] ?? 15);
             if ($signalCreatedTs > 0 && $lateEntryThresholdMinutes > 0) {
                 $signalAgeMinutes = (time() - $signalCreatedTs) / 60;
-                if ($signalAgeMinutes > $lateEntryThresholdMinutes) {
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'late_entry_rejected', $selectionMode);
+                $signalAgeSeconds = (int)(time() - $signalCreatedTs);
+
+                // Tolerance buffer: high-quality signals get +50% extra time allowance
+                $confirmationScore = (float)($signal['confirmation_score'] ?? 0);
+                $patternConfidence = (float)($signal['pattern_confidence'] ?? 0);
+                $toleranceMultiplier = 1.0;
+                if ($confirmationScore >= 0.70 && $patternConfidence >= 0.60) {
+                    $toleranceMultiplier = 1.5;
+                } elseif ($confirmationScore >= 0.55 && $patternConfidence >= 0.45) {
+                    $toleranceMultiplier = 1.25;
+                }
+                $effectiveThresholdMinutes = $lateEntryThresholdMinutes * $toleranceMultiplier;
+
+                if ($signalAgeMinutes > $effectiveThresholdMinutes) {
+                    // Determine specific sub-reason
+                    if ($signalAgeMinutes > $lateEntryThresholdMinutes * 3) {
+                        $lateSubReason = 'late_entry_signal_too_old';
+                    } elseif ($signalAgeMinutes > $lateEntryThresholdMinutes * 2) {
+                        $lateSubReason = 'late_entry_timeout_exceeded';
+                    } else {
+                        $lateSubReason = 'late_entry_post_confirm_delay';
+                    }
+
+                    $this->rejectLiveSignal($result, $symbol, $signalId, $lateSubReason, $selectionMode);
                     $result['late_entry_rejected_count'] = ($result['late_entry_rejected_count'] ?? 0) + 1;
+                    $result['late_entry_rejected_distribution'][$lateSubReason] = ($result['late_entry_rejected_distribution'][$lateSubReason] ?? 0) + 1;
+                    if (count($result['late_entry_rejected_preview'] ?? []) < 5) {
+                        $result['late_entry_rejected_preview'][] = [
+                            'symbol' => $symbol,
+                            'side' => strtolower(trim((string)($signal['side'] ?? ''))),
+                            'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                            'signal_age_seconds' => $signalAgeSeconds,
+                            'threshold_minutes' => $lateEntryThresholdMinutes,
+                            'effective_threshold_minutes' => round($effectiveThresholdMinutes, 1),
+                            'tolerance_multiplier' => $toleranceMultiplier,
+                            'confirmation_score' => $confirmationScore,
+                            'pattern_confidence' => $patternConfidence,
+                            'reject_subreason' => $lateSubReason,
+                        ];
+                    }
                     continue;
                 }
             }
@@ -1627,14 +1669,17 @@ final class SmartBrainCore
             $this->state->writeJson('storage/live_intents.json', $payload);
         }
 
-        $result['intents_written'] = count($mergedIntents);
+        $result['intents_written'] = $result['intents_created'];
+        $result['intents_total_after_merge'] = count($mergedIntents);
+        $result['terminal_retained_count'] = count($mergedIntents) - ($statusCounts['pending'] ?? 0) - ($statusCounts['claimed'] ?? 0);
         $result['lifecycle_counters'] = $lifecycleCounters;
         $result['lifecycle_summary'] = $payload['lifecycle_summary'];
 
         if (count($intents) > 0) {
-            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ')');
+            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ', terminal_retained=' . $result['terminal_retained_count'] . ')');
         } elseif ($result['signals_seen'] > 0) {
-            $this->logger->log('info', 'Live Intents: 0 new intents from ' . $result['signals_seen'] . ' signals, merged total ' . count($mergedIntents) . ' (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', reasons=' . json_encode($reasonStats) . ')');
+            $lateCount = $result['late_entry_rejected_count'] ?? 0;
+            $this->logger->log('info', 'Live Intents: 0 new intents from ' . $result['signals_seen'] . ' signals, merged total ' . count($mergedIntents) . ' (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', late_entry_rejected=' . $lateCount . ', terminal_retained=' . $result['terminal_retained_count'] . ', reasons=' . json_encode($reasonStats) . ')');
         }
 
         return $result;

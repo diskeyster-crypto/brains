@@ -171,6 +171,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         $liveApproved = (int)($last_run['live_candidates_approved_count'] ?? 0);
         $liveRejected = (int)($last_run['live_candidates_rejected_count'] ?? 0);
         $liveIntentsCount = (int)($last_run['live_intents_created_count'] ?? 0);
+        $liveTerminalRetainedDash = (int)($last_run['live_terminal_retained_count'] ?? 0);
         $dashLifecycle = $last_run['lifecycle_summary'] ?? [];
     ?>
     <div class="card mb-4" style="border-color: <?= $liveEnabled ? '#22c55e' : '#6b7280' ?>;">
@@ -187,7 +188,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <div class="col-md-3"><small class="text-secondary d-block">Selection Mode</small><strong><?= htmlspecialchars($liveMode) ?></strong></div>
                 <div class="col-md-2"><small class="text-secondary d-block">Approved</small><strong class="text-success"><?= $liveApproved ?></strong></div>
                 <div class="col-md-2"><small class="text-secondary d-block">Rejected</small><strong class="text-danger"><?= $liveRejected ?></strong></div>
-                <div class="col-md-2"><small class="text-secondary d-block">Live Intents</small><strong class="text-warning"><?= $liveIntentsCount ?></strong></div>
+                <div class="col-md-2"><small class="text-secondary d-block">Live Intents</small><strong class="text-warning"><?= $liveIntentsCount ?></strong><?php if ($liveTerminalRetainedDash > 0): ?><small class="text-secondary"> (+<?= $liveTerminalRetainedDash ?> retained)</small><?php endif; ?></div>
                 <div class="col-md-3"><small class="text-secondary d-block">Status</small><strong><?= $liveEnabled ? '<span class="text-success">Active</span>' : '<span class="text-secondary">Inactive</span>' ?></strong></div>
             </div>
             <?php if (!empty($dashLifecycle)): ?>

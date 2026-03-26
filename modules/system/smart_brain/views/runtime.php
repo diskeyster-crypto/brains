@@ -368,8 +368,12 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
         $liveRejected = (int)($last_run['live_candidates_rejected_count'] ?? 0);
         $liveIntents = (int)($last_run['live_intents_created_count'] ?? 0);
         $liveSent = (int)($last_run['live_intents_sent_to_bot_count'] ?? 0);
+        $liveTotalAfterMerge = (int)($last_run['live_intents_total_after_merge'] ?? 0);
+        $liveTerminalRetained = (int)($last_run['live_terminal_retained_count'] ?? 0);
         $lifecycleSummary = $last_run['lifecycle_summary'] ?? [];
         $lifecycleCounters = $last_run['lifecycle_counters'] ?? [];
+        $lateEntryCount = (int)($last_run['late_entry_rejected_count'] ?? 0);
+        $lateEntryDist = $last_run['late_entry_rejected_distribution'] ?? [];
     ?>
     <div class="card mb-4" style="border-color: <?= $liveEnabled ? '#22c55e' : '#6b7280' ?>;">
         <div class="card-header" style="background: <?= $liveEnabled ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)' ?>;">
@@ -401,10 +405,29 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <span class="text-warning"><?= $liveIntents ?></span>
                 </div>
                 <div class="col-md-3 mb-2">
-                    <strong>Sent to Bot:</strong>
+                    <strong>New Pending:</strong>
                     <span class="text-primary"><?= $liveSent ?></span>
+                    <?php if ($liveTerminalRetained > 0): ?>
+                    <small class="text-secondary ms-1">(+<?= $liveTerminalRetained ?> terminal retained)</small>
+                    <?php endif; ?>
                 </div>
             </div>
+            <?php if ($lateEntryCount > 0): ?>
+            <div class="row mt-1">
+                <div class="col-12">
+                    <small class="text-warning">
+                        <i class="bi bi-clock-history me-1"></i>Late entry rejected: <?= $lateEntryCount ?>
+                        <?php if (!empty($lateEntryDist)): ?>
+                        (<?php
+                            $parts = [];
+                            foreach ($lateEntryDist as $sub => $cnt) { $parts[] = str_replace('late_entry_', '', $sub) . ':' . $cnt; }
+                            echo implode(', ', $parts);
+                        ?>)
+                        <?php endif; ?>
+                    </small>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php if (!empty($lifecycleSummary)): ?>
             <div class="row mt-2" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
                 <div class="col-12 mb-1"><small class="text-secondary"><i class="bi bi-arrow-repeat me-1"></i>Intent Lifecycle (live_intents.json)</small></div>
@@ -441,7 +464,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                         <?= (int)($lifecycleCounters['preserved_claimed'] ?? 0) ?> claimed preserved,
                         <?= (int)($lifecycleCounters['preserved_pending'] ?? 0) ?> pending preserved,
                         <?= (int)($lifecycleCounters['expired_by_brain'] ?? 0) ?> expired,
-                        <?= (int)($lifecycleCounters['cleaned_terminal'] ?? 0) ?> cleaned
+                        <?= (int)($lifecycleCounters['cleaned_terminal'] ?? 0) ?> cleaned,
+                        <?= $liveTerminalRetained ?> terminal retained
                         | TTL: <?= (int)($last_run['intent_ttl_minutes'] ?? 5) ?>min
                     </small>
                 </div>

@@ -332,7 +332,9 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
                 $high2Idx,
                 $setup['avg_high'],
                 $setup['trigger_level'],
-                $setup['neckline']
+                $setup['neckline'],
+                $setup['high_1_price'],
+                $setup['high_2_price']
             );
             if ($confirmation === null) {
                 continue;
@@ -344,6 +346,15 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
                 $this->addRejectReason('reject_context_deteriorated');
                 $this->trackConfirmRejectReason('reject_context_deteriorated', [
                     'detail' => 'context_reversed_during_confirmation',
+                    'stage_at_failure' => 'confirmation',
+                    'side' => 'short',
+                    'pattern_algorithm' => 'double_top_contextual_v3',
+                    'high1' => round($setup['high_1_price'], 6),
+                    'high2' => round($setup['high_2_price'], 6),
+                    'defended_zone_high' => round(max($setup['high_1_price'], $setup['high_2_price']), 6),
+                    'trigger_level' => round($setup['trigger_level'], 6),
+                    'avg_high' => round($setup['avg_high'], 6),
+                    'neckline' => round($setup['neckline'], 6),
                 ]);
                 continue;
             }
@@ -362,9 +373,20 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
                 $this->addRejectReason('reject_low_confidence');
                 $this->trackConfirmRejectReason('reject_low_confidence', [
                     'detail' => 'composite_confidence_below_min',
+                    'stage_at_failure' => 'confirmation',
+                    'side' => 'short',
+                    'pattern_algorithm' => 'double_top_contextual_v3',
                     'confidence' => round($confidence, 4),
                     'min_final_confidence' => $this->minFinalConfidence,
                     'confirmation_score' => round($confirmation['confirmation_score'], 4),
+                    'setup_score' => round($setup['setup_score'], 4),
+                    'context_score' => round($contextResult['context_score'], 4),
+                    'high1' => round($setup['high_1_price'], 6),
+                    'high2' => round($setup['high_2_price'], 6),
+                    'defended_zone_high' => round(max($setup['high_1_price'], $setup['high_2_price']), 6),
+                    'trigger_level' => round($setup['trigger_level'], 6),
+                    'avg_high' => round($setup['avg_high'], 6),
+                    'neckline' => round($setup['neckline'], 6),
                 ]);
                 continue;
             }
@@ -820,19 +842,32 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         int $high2Idx,
         float $avgHigh,
         float $triggerLevel,
-        float $neckline
+        float $neckline,
+        float $high1Price = 0.0,
+        float $high2Price = 0.0
     ): ?array {
         $confirmBars = array_slice($segment, $high2Idx + 1);
         $confirmLen  = count($confirmBars);
 
+        // Common short-side structural context for all rejection diagnostics
+        $shortStructure = [
+            'stage_at_failure' => 'confirmation',
+            'side' => 'short',
+            'pattern_algorithm' => 'double_top_contextual_v3',
+            'high1' => round($high1Price, 6),
+            'high2' => round($high2Price, 6),
+            'defended_zone_high' => round(max($high1Price, $high2Price), 6),
+            'avg_high' => round($avgHigh, 6),
+            'trigger_level' => round($triggerLevel, 6),
+            'neckline' => round($neckline, 6),
+        ];
+
         if ($confirmLen < $this->minHoldBars) {
-            $this->trackConfirmRejectReason('reject_insufficient_confirm_bars', [
+            $this->trackConfirmRejectReason('reject_insufficient_confirm_bars', array_merge($shortStructure, [
                 'detail' => 'not_enough_bars_after_setup',
                 'confirm_len' => $confirmLen,
                 'min_hold_bars' => $this->minHoldBars,
-                'avg_high' => round($avgHigh, 6),
-                'trigger_level' => round($triggerLevel, 6),
-            ]);
+            ]));
             return null;
         }
 
@@ -845,16 +880,19 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         if ($confirmMax > $bufferedInvalidation) {
             // Meaningful break: price rose well above avg_high beyond tolerance
             $this->addRejectReason('reject_reclaim_failed');
-            $this->trackConfirmRejectReason('reject_reclaim_failed', [
+            $this->trackConfirmRejectReason('reject_reclaim_failed', array_merge($shortStructure, [
                 'detail' => 'new_high_above_avg_large',
                 'subtype' => 'reclaim_meaningful_break',
                 'confirm_max' => round($confirmMax, 6),
-                'avg_high' => round($avgHigh, 6),
                 'buffered_invalidation' => round($bufferedInvalidation, 6),
                 'tolerance_pct' => $this->reclaimInvalidationTolerancePct,
                 'overshoot_pct' => round($overshootPct, 6),
-                'trigger_level' => round($triggerLevel, 6),
-            ]);
+                'post_max_price' => round($confirmMax, 6),
+                'breach_above_defended_pct' => max($high1Price, $high2Price) > 0.0
+                    ? round(($confirmMax - max($high1Price, $high2Price)) / max($high1Price, $high2Price), 6) : 0,
+                'breach_above_buffered_pct' => $bufferedInvalidation > 0.0
+                    ? round(($confirmMax - $bufferedInvalidation) / $bufferedInvalidation, 6) : 0,
+            ]));
             return null;
         }
 
@@ -862,12 +900,11 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         $confirmMin = (float) min($confirmBars);
         if ($confirmMin > $triggerLevel) {
             $this->addRejectReason('reject_no_reclaim');
-            $this->trackConfirmRejectReason('reject_no_reclaim', [
+            $this->trackConfirmRejectReason('reject_no_reclaim', array_merge($shortStructure, [
                 'detail' => 'never_reached_trigger',
                 'confirm_min' => round($confirmMin, 6),
-                'trigger_level' => round($triggerLevel, 6),
                 'distance_pct' => $triggerLevel > 0 ? round(($confirmMin - $triggerLevel) / $triggerLevel, 4) : 0,
-            ]);
+            ]));
             return null;
         }
 
@@ -878,12 +915,12 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
 
         if ($reclaimStrength < $this->minReclaimStrengthPct) {
             $this->addRejectReason('reject_reclaim_failed');
-            $this->trackConfirmRejectReason('reject_reclaim_weak', [
+            $this->trackConfirmRejectReason('reject_reclaim_weak', array_merge($shortStructure, [
                 'detail' => 'reclaim_strength_below_min',
                 'subtype' => 'reclaim_not_sustained',
                 'reclaim_strength' => round($reclaimStrength, 6),
                 'min_required' => $this->minReclaimStrengthPct,
-            ]);
+            ]));
             return null;
         }
 
@@ -910,25 +947,26 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         // Minimum hold bars below trigger
         if ($barsBelowTrigger < $this->minHoldBars) {
             $this->addRejectReason('reject_hold_failed');
-            $this->trackConfirmRejectReason('reject_hold_bars_insufficient', [
+            $this->trackConfirmRejectReason('reject_hold_bars_insufficient', array_merge($shortStructure, [
                 'detail' => 'bars_below_trigger_below_min',
                 'bars_below_trigger' => $barsBelowTrigger,
                 'min_hold_bars' => $this->minHoldBars,
                 'hold_quality' => round($holdQuality, 4),
-            ]);
+                'hold_started' => $barsBelowTrigger > 0 ? 'yes' : 'no',
+            ]));
             return null;
         }
 
         // Hold quality score gate (soft — only rejects extreme failures when threshold > 0)
         if ($this->minHoldQualityScore > 0.0 && $holdQuality < $this->minHoldQualityScore) {
             $this->addRejectReason('reject_hold_failed');
-            $this->trackConfirmRejectReason('reject_hold_quality_low', [
+            $this->trackConfirmRejectReason('reject_hold_quality_low', array_merge($shortStructure, [
                 'detail' => 'hold_quality_below_threshold',
                 'hold_quality' => round($holdQuality, 4),
                 'min_hold_quality_score' => $this->minHoldQualityScore,
                 'bars_below_trigger' => $barsBelowTrigger,
                 'confirm_len' => $confirmLen,
-            ]);
+            ]));
             return null;
         }
 
@@ -992,12 +1030,10 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
             $retestPassed = $this->evaluateRetest($confirmBars, $triggerLevel, $avgHigh);
             if (!$retestPassed) {
                 $this->addRejectReason('reject_retest_failed');
-                $this->trackConfirmRejectReason('reject_retest_failed', [
+                $this->trackConfirmRejectReason('reject_retest_failed', array_merge($shortStructure, [
                     'detail' => 'retest_not_found',
-                    'trigger_level' => round($triggerLevel, 6),
-                    'avg_high' => round($avgHigh, 6),
                     'confirm_len' => $confirmLen,
-                ]);
+                ]));
                 return null;
             }
         }
@@ -1012,7 +1048,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         // Require at least minimal confirmation quality
         if ($confirmationScore < 0.05 && $holdScore < 0.3) {
             $this->addRejectReason('reject_low_confirmation_score');
-            $this->trackConfirmRejectReason('reject_low_confirmation_score', [
+            $this->trackConfirmRejectReason('reject_low_confirmation_score', array_merge($shortStructure, [
                 'detail' => 'confirmation_score_and_hold_too_low',
                 'confirmation_score' => round($confirmationScore, 4),
                 'hold_score' => round($holdScore, 4),
@@ -1020,7 +1056,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
                 'hold_quality_score' => round($holdQualityScore, 4),
                 'post_reclaim_stability_score' => round($postReclaimStabilityScore, 4),
                 'zone_defense_score' => round($zoneDefenseScore, 4),
-            ]);
+            ]));
             return null;
         }
 
@@ -1228,6 +1264,10 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         $stageAtFailure = $holdStarted ? 'post_hold' : ($reclaimStarted ? 'post_reclaim' : 'pre_reclaim');
 
         $baseDiagnostics = [
+            'side' => 'short',
+            'pattern_algorithm' => 'double_top_contextual_v3',
+            'high1' => round($high1Price, 6),
+            'high2' => round($high2Price, 6),
             'defended_zone_high' => round($defendedZoneHigh, 6),
             'buffered_invalidation' => round($bufferedInvalidation, 6),
             'post_max_price' => round($postMaxPrice, 6),
@@ -1236,6 +1276,8 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
             'tolerance_pct' => $this->newHighAfterSetupTolerancePct,
             'large_break_threshold_pct' => $largeBreakThreshold,
             'breach_above_defended_pct' => round($breachAboveDefended, 6),
+            'breach_above_buffered_pct' => $bufferedInvalidation > 0.0
+                ? round(($postMaxPrice - $bufferedInvalidation) / $bufferedInvalidation, 6) : 0,
             'reclaim_started' => $reclaimStarted,
             'hold_started' => $holdStarted,
             'stage_at_failure' => $stageAtFailure,

@@ -2445,11 +2445,13 @@ private function checkLateEntry(array $intent): array
             $baseThreshold = (float)$sideOverride;
         }
 
-        // Freshness bonus: intents created within the last 120 seconds
+        // Freshness bonus: intents created within the configured freshness window
         // get an extra tolerance buffer (they are structurally fresh).
+        $freshnessWindow = (int)($this->config['execution']['late_entry_freshness_window_seconds'] ?? 180);
+        $freshnessBonusPct = (float)($this->config['execution']['late_entry_freshness_bonus_pct'] ?? 0.20);
         $freshnessBonus = 0.0;
-        if ($intentAgeSec > 0 && $intentAgeSec <= 120) {
-            $freshnessBonus = $bufferPct;
+        if ($intentAgeSec > 0 && $intentAgeSec <= $freshnessWindow) {
+            $freshnessBonus = $freshnessBonusPct;
         }
 
         $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus;

@@ -135,7 +135,10 @@ return [
         'late_entry_buffer_pct' => 0.15,
         // Side-specific overrides (null = use default_late_threshold_pct)
         'late_entry_threshold_pct_long' => null,
-        'late_entry_threshold_pct_short' => null,
+        'late_entry_threshold_pct_short' => 1.75,
+        // Freshness: intents newer than this window get extra tolerance
+        'late_entry_freshness_window_seconds' => 180,
+        'late_entry_freshness_bonus_pct' => 0.20,
         'retrace_slack_pct' => 0.05,
 
         // Stale claimed intent finalization

@@ -355,6 +355,14 @@ final class Parser4Analyzer
             $totalContextAttempts = $contextRejected + $contextPassed;
             $contextPassRate = $totalContextAttempts > 0 ? round($contextPassed / $totalContextAttempts, 4) : 0.0;
 
+            // Collect confirmation-stage reject diagnostics into per-algorithm counters
+            $algoConfirmRejectDist = method_exists($detector, 'getConfirmRejectReasonDistribution')
+                ? $detector->getConfirmRejectReasonDistribution()
+                : [];
+            $algoConfirmRejectPrev = method_exists($detector, 'getConfirmRejectPreview')
+                ? $detector->getConfirmRejectPreview()
+                : [];
+
             $v2CountersByAlgo[$name] = [
                 'setup_candidates_count'   => $setup,
                 'confirmed_signals_count'  => $confirmed,
@@ -364,6 +372,8 @@ final class Parser4Analyzer
                 'context_pass_rate'        => $contextPassRate,
                 'confirmation_rate'        => $setup > 0 ? round($confirmed / $setup, 4) : 0.0,
                 'rejection_rate'           => $setup > 0 ? round($rejected / $setup, 4) : 0.0,
+                'confirm_reject_reason_distribution' => $algoConfirmRejectDist ?: null,
+                'confirm_reject_preview'   => $algoConfirmRejectPrev ?: null,
             ];
 
             // Collect reject reason distribution for contextual detectors
@@ -472,6 +482,8 @@ final class Parser4Analyzer
             'double_top_confirm_v2',
             'double_bottom_contextual_v2',
             'double_bottom_contextual_v3',
+            'double_top_contextual_v2',
+            'double_top_contextual_v3',
         ];
 
         $finalCounts = $this->countByAlgorithm($finalCandidates);

@@ -1,169 +1,84 @@
 {
     "by_pattern": {
         "double_bottom_contextual_v2": {
-            "candidates_count": 7,
-            "monitors_count": 7,
+            "candidates_count": 3,
+            "monitors_count": 3,
             "entry_zone_count": 3,
-            "monitoring_count": 4,
+            "monitoring_count": 0,
             "invalidated_count": 0,
             "signals_count": 3,
-            "avg_zone_width_pct": 0.042958000000000003,
-            "avg_zone_distance": 0.004653,
-            "avg_price_position": 0.75390000000000001,
-            "avg_confirmation_score": 0.74129999999999996,
-            "whatif_enter_now_would_signal": 4,
-            "whatif_wider_zone_would_signal": 3,
-            "reject_detail_distribution": {
-                "reject_price_above_zone": 3,
-                "reject_zone_too_far": 1
-            },
+            "avg_zone_width_pct": 0.069964999999999999,
+            "avg_zone_distance": -0.044660999999999999,
+            "avg_price_position": 0.42759999999999998,
+            "avg_confirmation_score": 0.71589999999999998,
+            "whatif_enter_now_would_signal": 0,
+            "whatif_wider_zone_would_signal": 0,
+            "reject_detail_distribution": [],
             "signals_by_tier": {
                 "weak": 0,
-                "medium": 0,
-                "strong": 3,
+                "medium": 2,
+                "strong": 1,
                 "none": 0
             },
-            "confirmation_score_min": 0.33150000000000002,
-            "confirmation_score_max": 0.89029999999999998,
+            "confirmation_score_min": 0.52129999999999999,
+            "confirmation_score_max": 0.8357,
             "confirmation_score_buckets": {
-                "weak": 1,
-                "medium": 0,
-                "strong": 2,
-                "very_strong": 4
+                "weak": 0,
+                "medium": 1,
+                "strong": 1,
+                "very_strong": 1
             },
             "confirmation_score_zero_on_confirmed_count": 0,
-            "confirmation_score_total_monitors": 7,
+            "confirmation_score_total_monitors": 3,
             "confirmation_score_flat_warning": false,
             "component_score_averages": {
-                "avg_reclaim_strength_score": 0.77710000000000001,
-                "avg_hold_quality_score": 0.84050000000000002,
-                "avg_post_reclaim_stability_score": 0.82940000000000003,
-                "avg_zone_defense_score": 0.45050000000000001
+                "avg_reclaim_strength_score": 0.80100000000000005,
+                "avg_hold_quality_score": 0.78900000000000003,
+                "avg_post_reclaim_stability_score": 0.77229999999999999,
+                "avg_zone_defense_score": 0.42230000000000001
             },
-            "rejection_reasons": {
-                "rejected_monitoring_stalled": 4,
-                "rejected_price_above_zone": 3,
-                "rejected_not_entry_zone": 4,
-                "rejected_zone_too_far": 1
-            }
+            "rejection_reasons": []
         }
     },
-    "failed_monitor_preview": [
-        {
-            "symbol": "OPUSDT",
-            "pattern_algorithm": "double_bottom_contextual_v2",
-            "status": "monitoring",
-            "price_position": 0.81859999999999999,
-            "entry_zone_low": 0.11260000000000001,
-            "entry_zone_high": 0.11437749999999999,
-            "entry_zone_percent": 0.75,
-            "entry_zone_widened": true,
-            "pattern_confidence": 0.71999999999999997,
-            "confirmation_score": 0.87150000000000005,
-            "analyzer_score": 0.64500000000000002,
-            "reject_reason": "reject_price_above_zone",
-            "zone_width_pct": 0.015786000000000001,
-            "zone_distance_from_price": 0.0014189999999999999,
-            "current_price_at_creation": 0.11454,
-            "whatif_enter_now_status": "entry_zone",
-            "whatif_wider_zone_status": "entry_zone"
-        },
-        {
-            "symbol": "VELOUSDT",
-            "pattern_algorithm": "double_bottom_contextual_v2",
-            "status": "monitoring",
-            "price_position": 0.7429,
-            "entry_zone_low": 0.0037160000000000001,
-            "entry_zone_high": 0.0038630000000000001,
-            "entry_zone_percent": 0.59999999999999998,
-            "entry_zone_widened": true,
-            "pattern_confidence": 0.66000000000000003,
-            "confirmation_score": 0.69820000000000004,
-            "analyzer_score": 0.63039999999999996,
-            "reject_reason": "reject_price_above_zone",
-            "zone_width_pct": 0.039558999999999997,
-            "zone_distance_from_price": 0.0089789999999999991,
-            "current_price_at_creation": 0.003898,
-            "whatif_enter_now_status": "entry_zone",
-            "whatif_wider_zone_status": "entry_zone"
-        },
-        {
-            "symbol": "WOOUSDT",
-            "pattern_algorithm": "double_bottom_contextual_v2",
-            "status": "monitoring",
-            "price_position": 0.92359999999999998,
-            "entry_zone_low": 0.017533,
-            "entry_zone_high": 0.018185199999999999,
-            "entry_zone_percent": 0.59999999999999998,
-            "entry_zone_widened": true,
-            "pattern_confidence": 0.69999999999999996,
-            "confirmation_score": 0.72970000000000002,
-            "analyzer_score": 0.60470000000000002,
-            "reject_reason": "reject_zone_too_far",
-            "zone_width_pct": 0.037198000000000002,
-            "zone_distance_from_price": 0.018977999999999998,
-            "current_price_at_creation": 0.018537000000000001,
-            "whatif_enter_now_status": "entry_zone",
-            "whatif_wider_zone_status": "monitoring"
-        },
-        {
-            "symbol": "MONUSDT",
-            "pattern_algorithm": "double_bottom_contextual_v2",
-            "status": "monitoring",
-            "price_position": 0.67800000000000005,
-            "entry_zone_low": 0.023976000000000001,
-            "entry_zone_high": 0.024708999999999998,
-            "entry_zone_percent": 0.5,
-            "entry_zone_widened": true,
-            "pattern_confidence": 0.53000000000000003,
-            "confirmation_score": 0.33150000000000002,
-            "analyzer_score": 0.5605,
-            "reject_reason": "reject_price_above_zone",
-            "zone_width_pct": 0.030571999999999998,
-            "zone_distance_from_price": 0.010453,
-            "current_price_at_creation": 0.024969999999999999,
-            "whatif_enter_now_status": "entry_zone",
-            "whatif_wider_zone_status": "entry_zone"
-        }
-    ],
+    "failed_monitor_preview": [],
     "whatif_analysis": {
         "double_bottom_contextual_v2": {
-            "monitors_total": 7,
+            "monitors_total": 3,
             "scenarios": {
                 "current": {
                     "label": "Current tier-based entry policy",
                     "entry_zone_count": 3,
                     "signals_count": 3,
-                    "conversion_rate": 0.42859999999999998,
-                    "stalled_monitoring": 4,
+                    "conversion_rate": 1,
+                    "stalled_monitoring": 0,
                     "invalidated": 0,
                     "signals_by_tier": {
                         "weak": 0,
-                        "medium": 0,
-                        "strong": 3,
+                        "medium": 2,
+                        "strong": 1,
                         "none": 0
                     }
                 },
                 "enter_now_hypothetical": {
                     "label": "If enter_now (full corridor)",
-                    "additional_entry_zone": 4,
-                    "potential_signals_gain": 4,
-                    "estimated_total_signals": 7,
+                    "additional_entry_zone": 0,
+                    "potential_signals_gain": 0,
+                    "estimated_total_signals": 3,
                     "estimated_conversion_rate": 1
                 },
                 "wider_zone_085": {
                     "label": "If entry zone 85%",
-                    "additional_entry_zone": 3,
-                    "potential_signals_gain": 3,
-                    "estimated_total_signals": 6,
-                    "estimated_conversion_rate": 0.85709999999999997
+                    "additional_entry_zone": 0,
+                    "potential_signals_gain": 0,
+                    "estimated_total_signals": 3,
+                    "estimated_conversion_rate": 1
                 },
                 "tier_policy_strong_enter_now": {
                     "label": "Strong→enter_now, Medium→wait_retrace, Weak→conservative",
-                    "strong_signals": 3,
-                    "medium_signals": 0,
+                    "strong_signals": 1,
+                    "medium_signals": 2,
                     "weak_signals": 0,
-                    "strong_would_enter_now": 3,
+                    "strong_would_enter_now": 1,
                     "description": "Strong tier uses widest zone + enter_now; medium uses moderate zone; weak uses narrow zone."
                 },
                 "widening_only": {
@@ -173,38 +88,35 @@
                 }
             },
             "diagnostics": {
-                "avg_price_position": 0.75390000000000001,
-                "avg_zone_width_pct": 0.042958000000000003,
-                "avg_zone_distance": 0.004653,
-                "avg_confirmation_score": 0.74129999999999996,
-                "confirmation_score_min": 0.33150000000000002,
-                "confirmation_score_max": 0.89029999999999998,
+                "avg_price_position": 0.42759999999999998,
+                "avg_zone_width_pct": 0.069964999999999999,
+                "avg_zone_distance": -0.044660999999999999,
+                "avg_confirmation_score": 0.71589999999999998,
+                "confirmation_score_min": 0.52129999999999999,
+                "confirmation_score_max": 0.8357,
                 "confirmation_score_buckets": {
-                    "weak": 1,
-                    "medium": 0,
-                    "strong": 2,
-                    "very_strong": 4
+                    "weak": 0,
+                    "medium": 1,
+                    "strong": 1,
+                    "very_strong": 1
                 },
                 "confirmation_score_zero_on_confirmed_count": 0,
-                "confirmation_score_total_monitors": 7,
+                "confirmation_score_total_monitors": 3,
                 "confirmation_score_flat_warning": false,
-                "reject_detail_distribution": {
-                    "reject_price_above_zone": 3,
-                    "reject_zone_too_far": 1
-                },
+                "reject_detail_distribution": [],
                 "component_score_averages": {
-                    "avg_reclaim_strength_score": 0.77710000000000001,
-                    "avg_hold_quality_score": 0.84050000000000002,
-                    "avg_post_reclaim_stability_score": 0.82940000000000003,
-                    "avg_zone_defense_score": 0.45050000000000001
+                    "avg_reclaim_strength_score": 0.80100000000000005,
+                    "avg_hold_quality_score": 0.78900000000000003,
+                    "avg_post_reclaim_stability_score": 0.77229999999999999,
+                    "avg_zone_defense_score": 0.42230000000000001
                 }
             }
         }
     },
     "signal_tier_distribution": {
         "weak": 0,
-        "medium": 0,
-        "strong": 3,
+        "medium": 2,
+        "strong": 1,
         "none": 0
     },
     "v3_debug_preview": [],
@@ -230,29 +142,38 @@
     "sniper_v3_shadow_only_count": 0,
     "sniper_v3_reject_reason_distribution": [],
     "sniper_v3_rejected_preview": [],
-    "v2_live_quality_floor_applied_count": 3,
+    "v2_live_quality_floor_applied_count": 2,
     "v2_live_quality_floor_rejected_count": 1,
-    "v2_live_quality_floor_passed_count": 2,
+    "v2_live_quality_floor_passed_count": 1,
     "v2_live_quality_floor_reject_reason_distribution": {
+        "v2_reject_confirmation_score_too_low": 1,
         "v2_reject_trend_match_too_low": 1
     },
     "v2_live_quality_floor_rejected_preview": [
         {
-            "symbol": "LYNUSDT",
+            "symbol": "SIGNUSDT",
             "reject_reasons": [
+                "v2_reject_confirmation_score_too_low",
                 "v2_reject_trend_match_too_low"
             ],
             "checked_values": {
-                "confirmation_tier": "strong",
-                "confirmation_score": 0.83169999999999999,
-                "pattern_confidence": 0.75,
-                "trend_match_score": 0.35780000000000001
+                "confirmation_tier": "medium",
+                "confirmation_score": 0.52129999999999999,
+                "pattern_confidence": 0.62,
+                "trend_match_score": 0.39639999999999997
             }
         }
     ],
     "manual_blacklist_active": true,
-    "manual_blacklist_count": 12,
-    "manual_blacklist_rejected_count": 0,
-    "manual_blacklist_rejected_preview": [],
-    "updated_at": "2026-03-25T13:00:03+00:00"
+    "manual_blacklist_count": 17,
+    "manual_blacklist_rejected_count": 1,
+    "manual_blacklist_rejected_preview": [
+        {
+            "symbol": "HUMAUSDT",
+            "reason": "reject_symbol_blacklisted_manual",
+            "stage": "brain_blacklist_gate",
+            "source": "manual_live_blacklist"
+        }
+    ],
+    "updated_at": "2026-03-26T06:01:04+00:00"
 }

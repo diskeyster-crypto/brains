@@ -373,7 +373,7 @@ final class Parser4Analyzer
                     ? $detector->getContextRejectPreview()
                     : [];
 
-                // Collect confirmation-stage reject diagnostics (V3+)
+                // Collect confirmation-stage reject diagnostics (V2-contextual + V3)
                 $confirmRejectDistribution = method_exists($detector, 'getConfirmRejectReasonDistribution')
                     ? $detector->getConfirmRejectReasonDistribution()
                     : [];

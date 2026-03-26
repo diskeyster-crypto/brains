@@ -826,6 +826,13 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         $confirmLen  = count($confirmBars);
 
         if ($confirmLen < $this->minHoldBars) {
+            $this->trackConfirmRejectReason('reject_insufficient_confirm_bars', [
+                'detail' => 'not_enough_bars_after_setup',
+                'confirm_len' => $confirmLen,
+                'min_hold_bars' => $this->minHoldBars,
+                'avg_high' => round($avgHigh, 6),
+                'trigger_level' => round($triggerLevel, 6),
+            ]);
             return null;
         }
 

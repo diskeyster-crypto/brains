@@ -576,6 +576,67 @@ $pageContent = function() use (
                 </div>
             </div>
             <?php endif; ?>
+
+            <!-- Confirmation Reject Distribution (all contextual patterns) -->
+            <?php
+            $hasConfirmDiag = false;
+            foreach ($ctxPatterns as $cp) {
+                $diag = (array)($v2scContextDiag[$cp] ?? []);
+                if (!empty($diag['confirm_reject_reason_distribution'])) {
+                    $hasConfirmDiag = true;
+                    break;
+                }
+            }
+            ?>
+            <?php if ($hasConfirmDiag): ?>
+            <div class="px-3 py-2">
+                <h6 class="mb-2"><i class="bi bi-x-octagon me-1"></i> Confirmation Reject Diagnostics</h6>
+                <div class="row">
+                <?php foreach ($ctxPatterns as $cp):
+                    $diag = (array)($v2scContextDiag[$cp] ?? []);
+                    $confirmDist = (array)($diag['confirm_reject_reason_distribution'] ?? []);
+                    $confirmPreview = (array)($diag['confirm_reject_preview'] ?? []);
+                    if (empty($confirmDist) && empty($confirmPreview)) continue;
+                    arsort($confirmDist);
+                ?>
+                    <div class="col-md-6 mb-3">
+                        <h6 class="text-light mb-1" style="font-size:0.8rem;"><?= htmlspecialchars($cp) ?></h6>
+                        <?php foreach ($confirmDist as $reason => $count): ?>
+                            <div class="d-flex justify-content-between mb-1" style="font-size:0.75rem;">
+                                <span class="text-secondary"><?= htmlspecialchars((string)$reason) ?></span>
+                                <span class="badge bg-warning text-dark"><?= (int)$count ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                        <?php if (!empty($confirmPreview)): ?>
+                        <details class="mt-1">
+                            <summary class="text-muted" style="font-size:0.72rem;">Preview (<?= count($confirmPreview) ?>)</summary>
+                            <?php foreach ($confirmPreview as $crp): ?>
+                            <div class="border rounded p-1 mb-1 bg-dark" style="font-size:0.7rem;">
+                                <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)($crp['reject_reason'] ?? '')) ?></span>
+                                <?php if (isset($crp['subtype'])): ?><span class="badge bg-secondary"><?= htmlspecialchars((string)$crp['subtype']) ?></span><?php endif; ?>
+                                <?php if (isset($crp['detail'])): ?><span class="text-muted ms-1"><?= htmlspecialchars((string)$crp['detail']) ?></span><?php endif; ?>
+                                <?php if (isset($crp['stage_at_failure'])): ?><span class="badge bg-info text-dark ms-1">stage: <?= htmlspecialchars((string)$crp['stage_at_failure']) ?></span><?php endif; ?>
+                                <?php if (isset($crp['confirm_max'])): ?><span class="ms-1">max: <?= number_format((float)$crp['confirm_max'], 6) ?></span><?php endif; ?>
+                                <?php if (isset($crp['confirm_min'])): ?><span class="ms-1">min: <?= number_format((float)$crp['confirm_min'], 6) ?></span><?php endif; ?>
+                                <?php if (isset($crp['avg_high'])): ?><span class="ms-1">avg_high: <?= number_format((float)$crp['avg_high'], 6) ?></span><?php endif; ?>
+                                <?php if (isset($crp['trigger_level'])): ?><span class="ms-1">trigger: <?= number_format((float)$crp['trigger_level'], 6) ?></span><?php endif; ?>
+                                <?php if (isset($crp['confirmation_score'])): ?><span class="ms-1">conf: <?= number_format((float)$crp['confirmation_score'], 3) ?></span><?php endif; ?>
+                                <?php if (isset($crp['hold_quality'])): ?><span class="ms-1">hold: <?= number_format((float)$crp['hold_quality'], 3) ?></span><?php endif; ?>
+                                <?php if (isset($crp['overshoot_pct'])): ?><span class="ms-1">overshoot: <?= number_format((float)$crp['overshoot_pct'] * 100, 2) ?>%</span><?php endif; ?>
+                                <?php if (isset($crp['reclaim_started'])): ?><span class="ms-1">reclaim: <?= $crp['reclaim_started'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                                <?php if (isset($crp['hold_started'])): ?><span class="ms-1">hold: <?= $crp['hold_started'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                                <?php if (isset($crp['bars_below_defended'])): ?><span class="ms-1">bars↓def: <?= (int)$crp['bars_below_defended'] ?></span><?php endif; ?>
+                                <?php if (isset($crp['bars_below_trigger'])): ?><span class="ms-1">bars↓trig: <?= (int)$crp['bars_below_trigger'] ?></span><?php endif; ?>
+                            </div>
+                            <?php endforeach; ?>
+                        </details>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <?php else: ?>
             <div class="px-3 py-2">
                 <p class="text-secondary mb-0" style="font-size:0.75rem;">
@@ -905,7 +966,9 @@ $v3ContextDiag = (array)(($v2sc['context_diagnostics'] ?? [])['double_bottom_con
 $v3ContextDiagTop = (array)(($v2sc['context_diagnostics'] ?? [])['double_top_contextual_v3'] ?? []);
 $v3ConfirmRejectDist = (array)($v3ContextDiag['confirm_reject_reason_distribution'] ?? []);
 $v3ConfirmRejectPreview = (array)($v3ContextDiag['confirm_reject_preview'] ?? []);
-$v3HasData = !empty($v3DebugPreview) || !empty($v3CandidatePreview) || !empty($v3StageCounters) || !empty($v3ConfirmRejectDist);
+$v3ConfirmRejectDistTop = (array)($v3ContextDiagTop['confirm_reject_reason_distribution'] ?? []);
+$v3ConfirmRejectPreviewTop = (array)($v3ContextDiagTop['confirm_reject_preview'] ?? []);
+$v3HasData = !empty($v3DebugPreview) || !empty($v3CandidatePreview) || !empty($v3StageCounters) || !empty($v3ConfirmRejectDist) || !empty($v3StageCountersTop) || !empty($v3ConfirmRejectDistTop);
 if ($v3HasData):
 ?>
 <div class="card mb-3">
@@ -956,6 +1019,60 @@ if ($v3HasData):
                 <?php endforeach; ?>
             </div>
         </details>
+        <?php endif; ?>
+
+        <?php // ── Short V3 (double_top_contextual_v3) stage counters + confirm rejects ── ?>
+        <?php if (!empty($v3StageCountersTop) || !empty($v3ConfirmRejectDistTop)): ?>
+        <hr class="my-2">
+        <h6 class="mb-1 text-danger"><i class="bi bi-arrow-down-circle me-1"></i> V3 Short (double_top_contextual_v3)</h6>
+        <?php if (!empty($v3StageCountersTop)): ?>
+        <div class="d-flex flex-wrap gap-2 small mb-2">
+            <span>Context Passed: <strong class="text-success"><?= (int)($v3StageCountersTop['context_passed_count'] ?? 0) ?></strong></span>
+            <span>Setup Candidates: <strong><?= (int)($v3StageCountersTop['setup_candidates_count'] ?? 0) ?></strong></span>
+            <span>Confirmed: <strong class="<?= ((int)($v3StageCountersTop['confirmed_signals_count'] ?? 0)) > 0 ? 'text-success' : 'text-danger' ?>"><?= (int)($v3StageCountersTop['confirmed_signals_count'] ?? 0) ?></strong></span>
+            <span>Confirm Rejected: <strong class="text-warning"><?= (int)($v3StageCountersTop['confirm_rejected_count'] ?? 0) ?></strong></span>
+            <span>Confirmation Rate: <strong><?= number_format((float)($v3StageCountersTop['confirmation_rate'] ?? 0) * 100, 1) ?>%</strong></span>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($v3ConfirmRejectDistTop)):
+            arsort($v3ConfirmRejectDistTop);
+        ?>
+        <div class="mb-2">
+            <strong class="small">V3 Short Confirmation Reject Reasons:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($v3ConfirmRejectDistTop as $reason => $cnt): ?>
+                <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($v3ConfirmRejectPreviewTop)): ?>
+        <details class="mb-2">
+            <summary class="text-muted small">V3 Short Confirm Reject Preview (first <?= count($v3ConfirmRejectPreviewTop) ?>)</summary>
+            <div class="small mt-1">
+                <?php foreach ($v3ConfirmRejectPreviewTop as $crp): ?>
+                <div class="border rounded p-1 mb-1 bg-light">
+                    <span class="badge bg-warning text-dark"><?= htmlspecialchars((string)($crp['reject_reason'] ?? '')) ?></span>
+                    <?php if (isset($crp['subtype'])): ?><span class="badge bg-secondary"><?= htmlspecialchars((string)$crp['subtype']) ?></span><?php endif; ?>
+                    <?php if (isset($crp['detail'])): ?><span class="text-muted ms-1"><?= htmlspecialchars((string)$crp['detail']) ?></span><?php endif; ?>
+                    <?php if (isset($crp['stage_at_failure'])): ?><span class="badge bg-info text-dark ms-1">stage: <?= htmlspecialchars((string)$crp['stage_at_failure']) ?></span><?php endif; ?>
+                    <?php if (isset($crp['confirm_max'])): ?><span class="ms-1">max: <?= number_format((float)$crp['confirm_max'], 6) ?></span><?php endif; ?>
+                    <?php if (isset($crp['confirm_min'])): ?><span class="ms-1">min: <?= number_format((float)$crp['confirm_min'], 6) ?></span><?php endif; ?>
+                    <?php if (isset($crp['avg_high'])): ?><span class="ms-1">avg_high: <?= number_format((float)$crp['avg_high'], 6) ?></span><?php endif; ?>
+                    <?php if (isset($crp['trigger_level'])): ?><span class="ms-1">trigger: <?= number_format((float)$crp['trigger_level'], 6) ?></span><?php endif; ?>
+                    <?php if (isset($crp['overshoot_pct'])): ?><span class="ms-1">overshoot: <?= number_format((float)$crp['overshoot_pct'] * 100, 2) ?>%</span><?php endif; ?>
+                    <?php if (isset($crp['reclaim_started'])): ?><span class="ms-1">reclaim: <?= $crp['reclaim_started'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                    <?php if (isset($crp['hold_started'])): ?><span class="ms-1">hold: <?= $crp['hold_started'] ? 'yes' : 'no' ?></span><?php endif; ?>
+                    <?php if (isset($crp['bars_below_defended'])): ?><span class="ms-1">bars↓defended: <?= (int)$crp['bars_below_defended'] ?></span><?php endif; ?>
+                    <?php if (isset($crp['confirmation_score'])): ?><span class="ms-1">conf: <?= number_format((float)$crp['confirmation_score'], 3) ?></span><?php endif; ?>
+                    <?php if (isset($crp['hold_quality'])): ?><span class="ms-1">hold: <?= number_format((float)$crp['hold_quality'], 3) ?></span><?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </details>
+        <?php endif; ?>
         <?php endif; ?>
 
         <?php if (!empty($v3DebugPreview)): ?>

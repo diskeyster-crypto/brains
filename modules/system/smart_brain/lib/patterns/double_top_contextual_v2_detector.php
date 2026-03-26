@@ -60,6 +60,13 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
     private array $contextRejectPreview = [];
     private int   $contextRejectPreviewLimit = 5;
 
+    /** @var array<string,int> Accumulated confirmation reject reason distribution */
+    private array $confirmRejectReasonDistribution = [];
+
+    /** @var array<int,array<string,mixed>> Debug preview of first N rejected confirmations */
+    private array $confirmRejectPreview = [];
+    private int   $confirmRejectPreviewLimit = 5;
+
     public function __construct(array $params = [])
     {
         // V2 context gates: LOOSER than V3 — V2 is the "alive contextual pattern"
@@ -130,6 +137,8 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         $this->stageContextPassed      = 0;
         $this->rejectReasonDistribution = [];
         $this->contextRejectPreview    = [];
+        $this->confirmRejectReasonDistribution = [];
+        $this->confirmRejectPreview    = [];
     }
 
     /**
@@ -150,6 +159,26 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
     public function getContextRejectPreview(): array
     {
         return $this->contextRejectPreview;
+    }
+
+    /**
+     * Return accumulated confirmation reject reason distribution.
+     *
+     * @return array<string,int>
+     */
+    public function getConfirmRejectReasonDistribution(): array
+    {
+        return $this->confirmRejectReasonDistribution;
+    }
+
+    /**
+     * Return debug preview of first N rejected confirmations.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getConfirmRejectPreview(): array
+    {
+        return $this->confirmRejectPreview;
     }
 
     /**
@@ -241,6 +270,11 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
 
             if ($this->hasContextDeteriorated()) {
                 $this->lastRejectReasons[] = 'reject_context_deteriorated';
+                $this->trackConfirmRejectReason('reject_context_deteriorated', [
+                    'detail' => 'context_reversed_during_confirmation',
+                    'trigger_level' => round($setup['trigger_level'], 6),
+                    'avg_high' => round($setup['avg_high'], 6),
+                ]);
                 continue;
             }
 
@@ -256,6 +290,14 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
             );
 
             if ($confidence < $this->minFinalConfidence) {
+                $this->trackConfirmRejectReason('reject_low_confidence', [
+                    'detail' => 'composite_confidence_below_min',
+                    'confidence' => round($confidence, 4),
+                    'min_final_confidence' => $this->minFinalConfidence,
+                    'confirmation_score' => round($confirmation['confirmation_score'], 4),
+                    'setup_score' => round($setup['setup_score'], 4),
+                    'context_score' => round($contextResult['context_score'], 4),
+                ]);
                 continue;
             }
 
@@ -410,6 +452,24 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
                 'exhaustion_score'    => round((float) ($ctx['exhaustion_score'] ?? 0.0), 4),
                 'context_quality_score' => round((float) ($ctx['context_quality_score'] ?? 0.0), 4),
             ];
+        }
+    }
+
+    /**
+     * Track a confirmation-stage reject reason in accumulated distribution and debug preview.
+     *
+     * @param string $reason
+     * @param array<string,mixed> $diagnostics  Confirmation-stage diagnostic fields
+     */
+    private function trackConfirmRejectReason(string $reason, array $diagnostics = []): void
+    {
+        $this->confirmRejectReasonDistribution[$reason] = ($this->confirmRejectReasonDistribution[$reason] ?? 0) + 1;
+
+        if (count($this->confirmRejectPreview) < $this->confirmRejectPreviewLimit) {
+            $this->confirmRejectPreview[] = array_merge(
+                ['reject_reason' => $reason],
+                $diagnostics
+            );
         }
     }
 
@@ -635,6 +695,13 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         $confirmLen  = count($confirmBars);
 
         if ($confirmLen < $this->minHoldBars) {
+            $this->trackConfirmRejectReason('reject_insufficient_confirm_bars', [
+                'detail' => 'not_enough_bars_after_setup',
+                'confirm_len' => $confirmLen,
+                'min_hold_bars' => $this->minHoldBars,
+                'avg_high' => round($avgHigh, 6),
+                'trigger_level' => round($triggerLevel, 6),
+            ]);
             return null;
         }
 
@@ -642,6 +709,14 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         $confirmMax = max($confirmBars);
         if ($confirmMax > $avgHigh) {
             $this->lastRejectReasons[] = 'reject_new_high_after_setup';
+            $this->trackConfirmRejectReason('reject_new_high_after_setup', [
+                'detail' => 'new_high_above_avg_high',
+                'confirm_max' => round($confirmMax, 6),
+                'avg_high' => round($avgHigh, 6),
+                'overshoot_pct' => $avgHigh > 0.0 ? round(($confirmMax - $avgHigh) / $avgHigh, 6) : 0,
+                'trigger_level' => round($triggerLevel, 6),
+                'neckline' => round($neckline, 6),
+            ]);
             return null;
         }
 
@@ -649,6 +724,13 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         $confirmMin = min($confirmBars);
         if ($confirmMin > $triggerLevel) {
             $this->lastRejectReasons[] = 'reject_no_breakdown';
+            $this->trackConfirmRejectReason('reject_no_breakdown', [
+                'detail' => 'price_never_broke_below_trigger',
+                'confirm_min' => round($confirmMin, 6),
+                'trigger_level' => round($triggerLevel, 6),
+                'distance_pct' => $triggerLevel > 0 ? round(($confirmMin - $triggerLevel) / $triggerLevel, 4) : 0,
+                'avg_high' => round($avgHigh, 6),
+            ]);
             return null;
         }
 
@@ -683,6 +765,15 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         // Minimum hold bars below trigger
         if ($barsBelowTrigger < $this->minHoldBars) {
             $this->lastRejectReasons[] = 'reject_hold_failed';
+            $this->trackConfirmRejectReason('reject_hold_failed', [
+                'detail' => 'bars_below_trigger_below_min',
+                'bars_below_trigger' => $barsBelowTrigger,
+                'min_hold_bars' => $this->minHoldBars,
+                'hold_quality' => round($holdQuality, 4),
+                'trigger_level' => round($triggerLevel, 6),
+                'avg_high' => round($avgHigh, 6),
+                'confirm_min' => round($confirmMin, 6),
+            ]);
             return null;
         }
 
@@ -745,6 +836,17 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         // Require at least minimal confirmation quality
         if ($confirmationScore < 0.05 && $holdScore < 0.3) {
             $this->lastRejectReasons[] = 'reject_breakdown_not_sustained';
+            $this->trackConfirmRejectReason('reject_breakdown_not_sustained', [
+                'detail' => 'confirmation_score_and_hold_too_low',
+                'confirmation_score' => round($confirmationScore, 4),
+                'hold_score' => round($holdScore, 4),
+                'breakdown_strength_score' => round($breakdownStrengthScore, 4),
+                'hold_quality_score' => round($holdQualityScore, 4),
+                'post_breakdown_stability_score' => round($postBreakdownStabilityScore, 4),
+                'zone_defense_score' => round($zoneDefenseScore, 4),
+                'trigger_level' => round($triggerLevel, 6),
+                'avg_high' => round($avgHigh, 6),
+            ]);
             return null;
         }
 

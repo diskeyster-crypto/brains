@@ -199,22 +199,74 @@ $botLifecycleSkipped = is_array($lastRunBot['lifecycle_skipped'] ?? null) ? $las
         <details style="font-size: 0.80rem;">
             <summary class="text-warning mb-1"><i class="bi bi-bug me-1"></i>No-Order Debug Preview (<?= count($noOrderPreview) ?> intents)</summary>
             <table class="table table-sm table-dark mb-0" style="font-size: 0.78rem;">
-                <thead><tr><th>Symbol</th><th>Intent ID</th><th>Outcome</th><th>Stage</th><th>Reason</th><th>Exch?</th></tr></thead>
+                <thead><tr><th>Symbol</th><th>Side</th><th>Intent ID</th><th>Outcome</th><th>Terminal</th><th>Stage</th><th>Reason</th><th>Order?</th><th>Pos?</th></tr></thead>
                 <tbody>
                 <?php foreach ($noOrderPreview as $nop): ?>
                 <tr>
                     <td><?= htmlspecialchars((string)($nop['symbol'] ?? '')) ?></td>
+                    <td><?= htmlspecialchars((string)($nop['side'] ?? '')) ?></td>
                     <td><code style="font-size:0.70rem;"><?= htmlspecialchars(substr((string)($nop['intent_id'] ?? ''), 0, 20)) ?></code></td>
                     <td><span class="badge bg-<?= ($nop['final_outcome'] ?? '') === 'rejected' ? 'danger' : 'warning' ?>"><?= htmlspecialchars((string)($nop['final_outcome'] ?? '')) ?></span></td>
+                    <td><span class="badge bg-secondary"><?= htmlspecialchars((string)($nop['terminal_status'] ?? '')) ?></span></td>
                     <td><?= htmlspecialchars((string)($nop['execution_stage'] ?? '')) ?></td>
                     <td><?= htmlspecialchars(substr((string)($nop['main_reason'] ?? ''), 0, 50)) ?></td>
-                    <td><?= !empty($nop['exchange_attempted']) ? '✓' : '✗' ?></td>
+                    <td><?= !empty($nop['order_send_attempted']) ? '✓' : '✗' ?></td>
+                    <td><?= !empty($nop['position_opened']) ? '✓' : '✗' ?></td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
         </details>
         <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// Execution Truth Counters
+$etLoaded = (int)($lastRunBot['intents_loaded_count'] ?? 0);
+$etClaimedNow = (int)($lastRunBot['intents_claimed_now_count'] ?? 0);
+$etProcessed = (int)($lastRunBot['intents_processed'] ?? 0);
+$etValidationPassed = (int)($lastRunBot['intents_validation_passed_count'] ?? 0);
+$etExecRejected = (int)($lastRunBot['intents_execution_rejected_count'] ?? 0);
+$etOrderSendAttempted = (int)($lastRunBot['intents_order_send_attempted_count'] ?? 0);
+$etOrderSent = (int)($lastRunBot['intents_order_sent_count'] ?? 0);
+$etExchangeAccepted = (int)($lastRunBot['intents_exchange_accepted_count'] ?? 0);
+$etPositionOpened = (int)($lastRunBot['intents_position_opened_count'] ?? 0);
+$etTerminalExecuted = (int)($lastRunBot['intents_terminal_executed_count'] ?? 0);
+$etTerminalRejected = (int)($lastRunBot['intents_terminal_rejected_count'] ?? 0);
+$etTerminalFailed = (int)($lastRunBot['intents_terminal_failed_count'] ?? 0);
+$etStaleFound = (int)($lastRunBot['intents_claimed_stale_count'] ?? 0);
+$etStaleFinalized = (int)($lastRunBot['intents_claimed_finalized_count'] ?? 0);
+?>
+<?php if ($etProcessed > 0 || $etLoaded > 0): ?>
+<div class="card mb-4" style="border-color: <?= $etTerminalExecuted > 0 ? '#198754' : ($etTerminalRejected > 0 ? '#dc3545' : '#6c757d') ?>;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-check me-2"></i>Execution Truth Counters</span>
+        <?php if ($etTerminalExecuted > 0): ?>
+            <span class="badge bg-success"><?= $etTerminalExecuted ?> Real Executed</span>
+        <?php elseif ($etProcessed > 0): ?>
+            <span class="badge bg-warning text-dark">0 Real Executed</span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 text-center" style="font-size: 0.82rem;">
+            <div class="col"><small class="text-muted d-block">Loaded</small><strong><?= $etLoaded ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Claimed</small><strong class="text-primary"><?= $etClaimedNow ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Valid</small><strong><?= $etValidationPassed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Processed</small><strong><?= $etProcessed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Order Attempted</small><strong class="text-info"><?= $etOrderSendAttempted ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Order Sent</small><strong class="text-success"><?= $etOrderSent ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Pos Opened</small><strong class="text-success"><?= $etPositionOpened ?></strong></div>
+        </div>
+        <div class="row g-2 text-center mt-1" style="font-size: 0.82rem;">
+            <div class="col"><small class="text-muted d-block">Terminal Executed</small><strong class="text-success"><?= $etTerminalExecuted ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Terminal Rejected</small><strong class="text-danger"><?= $etTerminalRejected ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Terminal Failed</small><strong class="text-warning"><?= $etTerminalFailed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Exec Rejected</small><strong class="text-danger"><?= $etExecRejected ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Stale Found</small><strong class="text-secondary"><?= $etStaleFound ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Stale Finalized</small><strong class="text-secondary"><?= $etStaleFinalized ?></strong></div>
+        </div>
     </div>
 </div>
 <?php endif; ?>
@@ -246,8 +298,8 @@ $botLifecycleSkipped = is_array($lastRunBot['lifecycle_skipped'] ?? null) ? $las
                 <strong class="text-secondary"><?= (int)($botLifecycleSkipped['claimed'] ?? 0) ?></strong>
             </div>
             <div class="col">
-                <small class="text-muted d-block">Skip: Executed</small>
-                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['executed'] ?? 0) ?></strong>
+                <small class="text-muted d-block">Skip: Already Executed</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['already_executed'] ?? 0) ?></strong>
             </div>
             <div class="col">
                 <small class="text-muted d-block">Skip: Rejected</small>

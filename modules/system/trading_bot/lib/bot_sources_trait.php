@@ -154,7 +154,7 @@ trait BotSourcesTrait
             $lifecycleSkipped = [
                 'expired' => 0,
                 'claimed' => 0,
-                'executed' => 0,
+                'already_executed' => 0,
                 'rejected' => 0,
                 'invalid_status' => 0,
             ];
@@ -176,7 +176,7 @@ trait BotSourcesTrait
                     continue;
                 }
                 if ($intentStatus === 'executed') {
-                    $lifecycleSkipped['executed']++;
+                    $lifecycleSkipped['already_executed']++;
                     continue;
                 }
                 if ($intentStatus === 'rejected') {

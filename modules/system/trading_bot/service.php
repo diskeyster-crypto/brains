@@ -507,6 +507,7 @@ final class TradingBotService
 
             $result['intents_valid'] = $totalValidIntents;
             $result['intents_rejected'] = count($rejectedIntents);
+            $result['intents_validation_passed_count'] = $totalValidIntents;
             $result['intents_truncated'] = $totalValidIntents - count($scanIntents);
             $result['steps'][] = [
                 'step' => 'validate_intents',
@@ -536,6 +537,8 @@ final class TradingBotService
                 }
             }
             $result['intent_claim'] = $claimResult;
+            $result['intents_loaded_count'] = count($intentsResult['intents'] ?? []);
+            $result['intents_claimed_now_count'] = $claimResult['claimed_count'] ?? 0;
             $result['steps'][] = [
                 'step' => 'claim_intents',
                 'status' => empty($claimResult['errors']) ? 'ok' : 'warning',
@@ -816,7 +819,9 @@ final class TradingBotService
             // Execution truth counters — only count real exchange interactions
             $result['intents_order_send_attempted_count'] = 0;
             $result['intents_order_sent_count'] = 0;
+            $result['intents_exchange_accepted_count'] = 0;
             $result['intents_position_opened_count'] = 0;
+            $result['intents_execution_rejected_count'] = 0;
             $result['intents_terminal_executed_count'] = 0;
             $result['intents_terminal_rejected_count'] = 0;
             $result['intents_terminal_failed_count'] = 0;
@@ -841,9 +846,15 @@ final class TradingBotService
                 }
                 if (!empty($ir['order_sent'])) {
                     $result['intents_order_sent_count']++;
+                    $result['intents_exchange_accepted_count']++;
                 }
                 if (!empty($ir['position_opened'])) {
                     $result['intents_position_opened_count']++;
+                }
+
+                // Execution rejection: intent processed but rejected before order send
+                if (in_array($ls, ['rejected', 'failed'], true) && empty($ir['order_send_attempted'])) {
+                    $result['intents_execution_rejected_count']++;
                 }
 
                 // Terminal status distribution
@@ -965,11 +976,21 @@ final class TradingBotService
                 if (!in_array($ls, ['opened', 'protected', 'trailing_active'], true) && count($noOrderPathPreview) < 5) {
                     $noOrderPathPreview[] = [
                         'symbol' => $ir['symbol'] ?? '',
+                        'side' => $ir['side'] ?? '',
                         'intent_id' => $ir['intent_id'] ?? null,
+                        'pattern_algorithm' => $ir['pattern_algorithm'] ?? '',
                         'final_outcome' => $ls,
+                        'terminal_status' => $ir['terminal_status'] ?? '',
                         'execution_stage' => $stage,
+                        'execution_stage_at_failure' => $stage,
                         'main_reason' => $ir['rejection_reason'] ?? ($ir['debug_message'] ?? ''),
+                        'reject_subreason' => $ir['reject_subreason'] ?? null,
+                        'validation_passed' => !in_array($ir['execution_stage'] ?? '', ['validation_failed', 'missing_required_fields'], true),
+                        'order_send_attempted' => !empty($ir['order_send_attempted']),
+                        'order_sent' => !empty($ir['order_sent']),
+                        'position_opened' => !empty($ir['position_opened']),
                         'exchange_attempted' => !empty($ir['exchange_submit_attempted']),
+                        'claimed_at' => $ir['processed_at'] ?? null,
                     ];
                 }
             }

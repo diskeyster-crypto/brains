@@ -277,7 +277,7 @@ $pageContent = function() use (
 
     <!-- ===== V2 CONFIRMATION TIER ANALYTICS ===== -->
     <?php
-    $v2TierPatterns = ['double_bottom_contextual_v2'];
+    $v2TierPatterns = ['double_bottom_contextual_v2', 'double_top_contextual_v2'];
     $hasTierData = false;
     foreach ($v2TierPatterns as $tp) {
         if (isset($pattern_stats[$tp]) && ((int)($pattern_stats[$tp]['closed_total'] ?? 0)) > 0) {
@@ -352,6 +352,8 @@ $pageContent = function() use (
     $rcBottomCtxV3 = (array)(($rc['bottom_patterns'] ?? [])['contextual_v3'] ?? []);
     $rcTopV1 = (array)(($rc['top_patterns'] ?? [])['v1'] ?? []);
     $rcTopV2 = (array)(($rc['top_patterns'] ?? [])['v2'] ?? []);
+    $rcTopCtxV2 = (array)(($rc['top_patterns'] ?? [])['contextual_v2'] ?? []);
+    $rcTopCtxV3 = (array)(($rc['top_patterns'] ?? [])['contextual_v3'] ?? []);
     $compareActive = !empty($rc['compare_mode_active']);
 
     // V2 stage counters (setup → confirm funnel)
@@ -443,6 +445,8 @@ $pageContent = function() use (
                     'double_bottom_contextual_v3 (V3)' => $rcBottomCtxV3,
                     'double_top (V1)' => $rcTopV1,
                     'double_top_confirm_v2 (V2)' => $rcTopV2,
+                    'double_top_contextual_v2 (Ctx)' => $rcTopCtxV2,
+                    'double_top_contextual_v3 (V3)' => $rcTopCtxV3,
                 ] as $label => $data): ?>
                     <?php $t = (int)($data['trades_total'] ?? 0); ?>
                     <tr>
@@ -489,6 +493,8 @@ $pageContent = function() use (
                     'double_top_confirm_v2' => 'double_top_confirm_v2',
                     'double_bottom_contextual_v2' => 'double_bottom_contextual_v2',
                     'double_bottom_contextual_v3' => 'double_bottom_contextual_v3',
+                    'double_top_contextual_v2' => 'double_top_contextual_v2',
+                    'double_top_contextual_v3' => 'double_top_contextual_v3',
                 ];
                 foreach ($v2AlgoRows as $algoKey => $algoLabel):
                     $ac = (array)($v2scByAlgo[$algoKey] ?? []);
@@ -537,7 +543,7 @@ $pageContent = function() use (
 
             <!-- Context Reject Distribution (contextual patterns only) -->
             <?php
-            $ctxPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+            $ctxPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
             $hasCtxDiag = false;
             foreach ($ctxPatterns as $cp) {
                 $diag = (array)($v2scContextDiag[$cp] ?? []);
@@ -862,7 +868,13 @@ $v2scByAlgo = (array)($v2sc['by_algorithm'] ?? []);
 if (isset($v2scByAlgo['double_bottom_contextual_v3'])) {
     $v3StageCounters = (array)$v2scByAlgo['double_bottom_contextual_v3'];
 }
+if (isset($v2scByAlgo['double_top_contextual_v3'])) {
+    $v3StageCountersTop = (array)$v2scByAlgo['double_top_contextual_v3'];
+} else {
+    $v3StageCountersTop = [];
+}
 $v3ContextDiag = (array)(($v2sc['context_diagnostics'] ?? [])['double_bottom_contextual_v3'] ?? []);
+$v3ContextDiagTop = (array)(($v2sc['context_diagnostics'] ?? [])['double_top_contextual_v3'] ?? []);
 $v3ConfirmRejectDist = (array)($v3ContextDiag['confirm_reject_reason_distribution'] ?? []);
 $v3ConfirmRejectPreview = (array)($v3ContextDiag['confirm_reject_preview'] ?? []);
 $v3HasData = !empty($v3DebugPreview) || !empty($v3CandidatePreview) || !empty($v3StageCounters) || !empty($v3ConfirmRejectDist);
@@ -1321,7 +1333,7 @@ if ($v2FloorHasData):
                 </tr></thead>
                 <tbody>
                 <?php
-                $matrixPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+                $matrixPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
                 $matrixSides = ['long', 'short'];
                 foreach ($matrixPatterns as $mp):
                     foreach ($matrixSides as $ms):

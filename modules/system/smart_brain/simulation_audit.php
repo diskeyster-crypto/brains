@@ -106,7 +106,7 @@ final class SimulationAudit
      */
     private function computePatternStats(array $closed, array $signals, array $waiting, array $active): array
     {
-        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', '_unknown'];
+        $algorithms = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3', '_unknown'];
 
         $stats = [];
         foreach ($algorithms as $algo) {
@@ -281,6 +281,8 @@ final class SimulationAudit
             'double_top_confirm_v2' => 'short',
             'double_bottom_contextual_v2' => 'long',
             'double_bottom_contextual_v3' => 'long',
+            'double_top_contextual_v2' => 'short',
+            'double_top_contextual_v3' => 'short',
         ];
 
         // Count sides by pattern for closed trades
@@ -734,8 +736,8 @@ final class SimulationAudit
     {
         $v1Patterns = ['double_bottom', 'double_top'];
         $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
-        $ctxV2Patterns = ['double_bottom_contextual_v2'];
-        $ctxV3Patterns = ['double_bottom_contextual_v3'];
+        $ctxV2Patterns = ['double_bottom_contextual_v2', 'double_top_contextual_v2'];
+        $ctxV3Patterns = ['double_bottom_contextual_v3', 'double_top_contextual_v3'];
 
         $v1Stats = $this->computeReversalFamilyStats($closed, $v1Patterns);
         $v2Stats = $this->computeReversalFamilyStats($closed, $v2Patterns);
@@ -749,6 +751,8 @@ final class SimulationAudit
         $bottomCtxV3 = $this->computeReversalFamilyStats($closed, ['double_bottom_contextual_v3']);
         $topV1 = $this->computeReversalFamilyStats($closed, ['double_top']);
         $topV2 = $this->computeReversalFamilyStats($closed, ['double_top_confirm_v2']);
+        $topCtxV2 = $this->computeReversalFamilyStats($closed, ['double_top_contextual_v2']);
+        $topCtxV3 = $this->computeReversalFamilyStats($closed, ['double_top_contextual_v3']);
 
         // V2 stage counters (setup → confirm funnel)
         $v2StageCounters = $this->loadV2StageCounters();
@@ -828,7 +832,7 @@ final class SimulationAudit
             'contextual_v2_aggregate' => $ctxV2Stats,
             'contextual_v3_aggregate' => $ctxV3Stats,
             'bottom_patterns' => ['v1' => $bottomV1, 'v2' => $bottomV2, 'contextual_v2' => $bottomCtxV2, 'contextual_v3' => $bottomCtxV3],
-            'top_patterns' => ['v1' => $topV1, 'v2' => $topV2],
+            'top_patterns' => ['v1' => $topV1, 'v2' => $topV2, 'contextual_v2' => $topCtxV2, 'contextual_v3' => $topCtxV3],
             'v2_stage_counters' => $v2StageCounters,
             'v2_downstream_funnel' => $v2DownstreamFunnelAudit,
             'v3_debug_preview' => $v2DownstreamFunnelRaw['v3_debug_preview'] ?? [],
@@ -1003,7 +1007,7 @@ final class SimulationAudit
      */
     private function auditRegression(array $closed): array
     {
-        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
         $sides = ['long', 'short'];
 
         // Per-pattern × per-side matrix
@@ -1056,7 +1060,7 @@ final class SimulationAudit
         $scenarios['disable_top_and_pullback']['label'] = 'Без double_top и pullback';
 
         // Scenario 4: only bottom + V2
-        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
         $scenarios['bottom_plus_v2_only'] = $this->computeRegressionCellStats(
             array_values(array_filter($closed, fn($t) => in_array($this->getAlgorithm($t), $keepOnly, true))),
             null, null

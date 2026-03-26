@@ -109,6 +109,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                         $dashPatLabels = [
                             'double_bottom_contextual_v2' => 'V2 Ctx',
                             'double_bottom_contextual_v3' => 'V3 Ctx',
+                            'double_top_contextual_v2' => 'V2 Top Ctx',
+                            'double_top_contextual_v3' => 'V3 Top Ctx',
                         ];
                         if ($dashPatternPolicy !== null) {
                             $dashLivePatterns = (array)($dashPatternPolicy['live_patterns'] ?? []);

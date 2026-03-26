@@ -90,6 +90,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             'double_top_confirm_v2' => 'DT V2 (confirmed)',
             'double_bottom_contextual_v2' => 'DB Contextual V2',
             'double_bottom_contextual_v3' => 'DB Contextual V3',
+            'double_top_contextual_v2' => 'DT Contextual V2',
+            'double_top_contextual_v3' => 'DT Contextual V3',
         ];
     ?>
     <div class="card mb-4" style="border-color: <?= $execProfileIsPreset ? '#6366f1' : '#6b7280' ?>;">

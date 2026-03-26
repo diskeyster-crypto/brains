@@ -81,6 +81,8 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                 'double_top_confirm_v2' => 'Double Top V2 (confirmed)',
                 'double_bottom_contextual_v2' => 'Double Bottom Contextual V2',
                 'double_bottom_contextual_v3' => 'Double Bottom Contextual V3',
+                'double_top_contextual_v2' => 'Double Top Contextual V2',
+                'double_top_contextual_v3' => 'Double Top Contextual V3',
             ];
         ?>
         <div class="card mb-4" style="border-color: <?= $isProfileMode ? '#6366f1' : '#6b7280' ?>;">
@@ -400,6 +402,14 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="pattern_double_bottom_ctx_v3" name="patterns_enabled[]" value="double_bottom_contextual_v3" <?= $patternChecked('double_bottom_contextual_v3') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
                                 <label class="form-check-label" for="pattern_double_bottom_ctx_v3">Double Bottom Contextual V3 <small class="text-danger">(regime-aware)</small></label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="pattern_double_top_ctx_v2" name="patterns_enabled[]" value="double_top_contextual_v2" <?= $patternChecked('double_top_contextual_v2') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
+                                <label class="form-check-label" for="pattern_double_top_ctx_v2">Double Top Contextual V2 <small class="text-warning">(context-aware short)</small></label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="pattern_double_top_ctx_v3" name="patterns_enabled[]" value="double_top_contextual_v3" <?= $patternChecked('double_top_contextual_v3') ?> <?= $isPatternProfileControlled ? 'disabled' : '' ?>>
+                                <label class="form-check-label" for="pattern_double_top_ctx_v3">Double Top Contextual V3 <small class="text-danger">(regime-aware short)</small></label>
                             </div>
                         </div>
                         <div class="mb-3">

@@ -695,8 +695,8 @@ final class SimulatorEngine
     {
         $v1Patterns = ['double_bottom', 'double_top'];
         $v2Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2'];
-        $ctxV2Patterns = ['double_bottom_contextual_v2'];
-        $ctxV3Patterns = ['double_bottom_contextual_v3'];
+        $ctxV2Patterns = ['double_bottom_contextual_v2', 'double_top_contextual_v2'];
+        $ctxV3Patterns = ['double_bottom_contextual_v3', 'double_top_contextual_v3'];
 
         $v1Aggregate = $this->computeFamilyAggregate($closed, $v1Patterns);
         $v2Aggregate = $this->computeFamilyAggregate($closed, $v2Patterns);
@@ -713,6 +713,8 @@ final class SimulatorEngine
         $topComparison = [
             'v1' => $patternStatsResult['double_top'] ?? [],
             'v2' => $patternStatsResult['double_top_confirm_v2'] ?? [],
+            'contextual_v2' => $patternStatsResult['double_top_contextual_v2'] ?? [],
+            'contextual_v3' => $patternStatsResult['double_top_contextual_v3'] ?? [],
         ];
 
         // Promotion criteria evaluation
@@ -1356,7 +1358,7 @@ final class SimulatorEngine
      */
     private function computeRegressionAudit(array $closed): array
     {
-        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        $allPatterns = ['double_bottom', 'double_top', 'pullback_trend_continue', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
         $sides = ['long', 'short'];
 
         // ── Per-pattern × per-side matrix ──
@@ -1525,7 +1527,7 @@ final class SimulatorEngine
         $scenarios['disable_top_and_pullback']['description'] = 'Без double_top и pullback';
 
         // Scenario 4: only double_bottom + V2 + V3 patterns
-        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        $keepOnly = ['double_bottom', 'double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
         $scenarios['bottom_plus_v2_only'] = $this->computeCellStats(
             array_values(array_filter($closed, fn($t) => in_array((string)($t['pattern_algorithm'] ?? ''), $keepOnly, true))),
             null, null
@@ -1533,7 +1535,7 @@ final class SimulatorEngine
         $scenarios['bottom_plus_v2_only']['description'] = 'Только double_bottom + V2/V3';
 
         // Scenario 5: V1 long only + V2/V3 any side
-        $v2v3Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+        $v2v3Patterns = ['double_bottom_confirm_v2', 'double_top_confirm_v2', 'double_bottom_contextual_v2', 'double_bottom_contextual_v3', 'double_top_contextual_v2', 'double_top_contextual_v3'];
         $scenarios['v1_long_v2_any'] = $this->computeCellStats(
             array_values(array_filter($closed, function ($t) use ($v2v3Patterns) {
                 $algo = (string)($t['pattern_algorithm'] ?? '');

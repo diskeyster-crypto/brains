@@ -295,6 +295,8 @@ final class TradingBotService
             $result['approved_intents_loaded'] = $intentsResult['count'] ?? 0;
             $result['executable_intents_count'] = $intentsResult['count'] ?? 0;
             $result['duplicate_skipped'] = $intentsResult['duplicate_skipped'] ?? 0;
+            $result['lifecycle_skipped'] = $intentsResult['lifecycle_skipped'] ?? [];
+            $liveIntentsFilePath = $intentsResult['live_intents_path'] ?? '';
 
             // V3 DIAGNOSTIC: Include Brain detection diagnostics for runtime observability
             $brainDiag = $this->getBrainDetectionDiagnostics();
@@ -461,6 +463,15 @@ final class TradingBotService
                         'missing_fields' => $validation['missing_fields'] ?? [],
                     ];
                     $this->store->saveRejectedIntent($intent, $validation);
+                    // Lifecycle: Mark validation-rejected intent in live_intents.json
+                    if ($brainControlled && !empty($liveIntentsFilePath)) {
+                        $iid = $intent['intent_id'] ?? '';
+                        if ($iid !== '') {
+                            $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                'reject_reason' => 'rejected_intent_validation: ' . ($validation['reason'] ?? 'unknown'),
+                            ]);
+                        }
+                    }
                 }
             }
             
@@ -507,6 +518,32 @@ final class TradingBotService
             
             // Step 4: Execute valid intents (open positions)
             $safetyStopThreshold = (int)($this->config['module']['safety_stop_on_errors'] ?? 5);
+
+            // ── Lifecycle: Claim intents before execution ────────────────
+            // Atomically mark intents as claimed in live_intents.json to prevent
+            // duplicate consumption by concurrent bot ticks.
+            $claimResult = ['claimed_count' => 0, 'errors' => []];
+            if ($brainControlled && !empty($liveIntentsFilePath) && !empty($scanIntents)) {
+                $intentIdsToClaim = [];
+                foreach ($scanIntents as $si) {
+                    $iid = $si['intent_id'] ?? '';
+                    if ($iid !== '') {
+                        $intentIdsToClaim[] = $iid;
+                    }
+                }
+                if (!empty($intentIdsToClaim)) {
+                    $claimResult = $this->claimLiveIntents($intentIdsToClaim, $liveIntentsFilePath);
+                }
+            }
+            $result['intent_claim'] = $claimResult;
+            $result['steps'][] = [
+                'step' => 'claim_intents',
+                'status' => empty($claimResult['errors']) ? 'ok' : 'warning',
+                'claimed' => $claimResult['claimed_count'] ?? 0,
+                'already_claimed' => $claimResult['already_claimed'] ?? 0,
+                'not_found' => $claimResult['not_found'] ?? 0,
+                'expired_skipped' => $claimResult['expired_skipped'] ?? 0,
+            ];
             
             if ($mode !== 'test') {
                 $executedThisRun = 0;
@@ -549,6 +586,25 @@ final class TradingBotService
                     // updateActivePositions post-processing (single source of truth).
                     $intentResultRecord = $this->buildIntentResultRecord($intent, $execResult);
                     $result['intent_results'][] = $intentResultRecord;
+
+                    // ── Lifecycle: Update intent status in live_intents.json ──
+                    if ($brainControlled && !empty($liveIntentsFilePath)) {
+                        $iid = $intent['intent_id'] ?? '';
+                        if ($iid !== '') {
+                            $lifecycleState = $intentResultRecord['lifecycle_state'] ?? '';
+                            if (in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true)) {
+                                $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'executed', [
+                                    'execution_result' => $execResult['status'] ?? 'unknown',
+                                ]);
+                            } elseif (in_array($lifecycleState, ['rejected', 'failed', 'closed'], true)) {
+                                $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                    'reject_reason' => $execResult['status'] ?? 'unknown',
+                                    'reject_context' => $execResult['error'] ?? null,
+                                ]);
+                            }
+                            // deferred/pending: leave as claimed — bot will re-check next tick
+                        }
+                    }
 
                     // P6.11: Track selected decision for UI (first processed intent)
                     if ($result['selected_decision'] === null) {

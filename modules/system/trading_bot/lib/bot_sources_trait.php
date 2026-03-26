@@ -151,6 +151,13 @@ trait BotSourcesTrait
             $validIntents = [];
             $duplicateSkipped = 0;
             $duplicateSkippedRecords = [];
+            $lifecycleSkipped = [
+                'expired' => 0,
+                'claimed' => 0,
+                'executed' => 0,
+                'rejected' => 0,
+                'invalid_status' => 0,
+            ];
 
             foreach ($intents as $intent) {
                 // V2 FIX: Use intent_id as the authoritative identity key for Brain intents
@@ -158,6 +165,30 @@ trait BotSourcesTrait
                 $signalId = $intent['signal_id'] ?? null;
                 $executionKey = $intentId ?? $signalId ?? null;
                 if (empty($executionKey)) {
+                    continue;
+                }
+
+                // ── Lifecycle status gate ────────────────────────────────
+                // Only process intents with status = pending (or missing status for backward compat)
+                $intentStatus = $intent['status'] ?? 'pending';
+                if ($intentStatus === 'claimed') {
+                    $lifecycleSkipped['claimed']++;
+                    continue;
+                }
+                if ($intentStatus === 'executed') {
+                    $lifecycleSkipped['executed']++;
+                    continue;
+                }
+                if ($intentStatus === 'rejected') {
+                    $lifecycleSkipped['rejected']++;
+                    continue;
+                }
+                if ($intentStatus === 'expired') {
+                    $lifecycleSkipped['expired']++;
+                    continue;
+                }
+                if ($intentStatus !== 'pending') {
+                    $lifecycleSkipped['invalid_status']++;
                     continue;
                 }
 
@@ -202,9 +233,10 @@ trait BotSourcesTrait
                     continue;
                 }
 
-                // Skip if expired
+                // Skip if expired by TTL
                 $expiresAt = $intent['expires_at'] ?? 0;
                 if ($expiresAt > 0 && $expiresAt < time()) {
+                    $lifecycleSkipped['expired']++;
                     continue;
                 }
 
@@ -255,9 +287,15 @@ trait BotSourcesTrait
             $result['intents'] = $validIntents;
             $result['duplicate_skipped'] = $duplicateSkipped;
             $result['duplicate_skipped_records'] = $duplicateSkippedRecords;
+            $result['lifecycle_skipped'] = $lifecycleSkipped;
+            $result['live_intents_path'] = $liveIntentsPath;
 
             if (count($validIntents) === 0) {
-                $result['source_status'] = 'empty';
+                if (($lifecycleSkipped['expired'] ?? 0) > 0 && $duplicateSkipped === 0) {
+                    $result['source_status'] = 'expired_only';
+                } else {
+                    $result['source_status'] = 'empty';
+                }
             }
 
         } catch (\Throwable $e) {
@@ -268,6 +306,168 @@ trait BotSourcesTrait
         }
 
         return $result;
+    }
+
+    /**
+     * Claim live intents by atomically updating their status to 'claimed'.
+     *
+     * @param array  $intentIds  List of intent_ids to claim
+     * @param string $liveIntentsPath Absolute path to live_intents.json
+     * @param string $claimedBy  Identifier of the claiming consumer (e.g. 'trading_bot')
+     * @return array{claimed_count:int, already_claimed:int, not_found:int, errors:list<string>}
+     */
+    protected function claimLiveIntents(array $intentIds, string $liveIntentsPath, string $claimedBy = 'trading_bot'): array
+    {
+        $claimResult = [
+            'claimed_count' => 0,
+            'already_claimed' => 0,
+            'not_found' => 0,
+            'expired_skipped' => 0,
+            'errors' => [],
+        ];
+
+        if (empty($intentIds) || empty($liveIntentsPath)) {
+            return $claimResult;
+        }
+
+        $intentIdSet = array_flip($intentIds);
+        $now = time();
+
+        $ok = $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($intentIdSet, $now, $claimedBy, &$claimResult) {
+            $intents = &$data['intents'];
+            if (!is_array($intents)) {
+                return;
+            }
+
+            $foundIds = [];
+            foreach ($intents as &$intent) {
+                $iid = $intent['intent_id'] ?? '';
+                if ($iid === '' || !isset($intentIdSet[$iid])) {
+                    continue;
+                }
+                $foundIds[$iid] = true;
+
+                $status = $intent['status'] ?? 'pending';
+                if ($status !== 'pending') {
+                    $claimResult['already_claimed']++;
+                    continue;
+                }
+
+                // Check expiry
+                $expiresAt = (int)($intent['expires_at'] ?? 0);
+                if ($expiresAt > 0 && $expiresAt <= $now) {
+                    $claimResult['expired_skipped']++;
+                    continue;
+                }
+
+                $intent['status'] = 'claimed';
+                $intent['claimed_at'] = date('c');
+                $intent['claimed_at_ts'] = $now;
+                $intent['claimed_by'] = $claimedBy;
+                $claimResult['claimed_count']++;
+            }
+            unset($intent);
+
+            $claimResult['not_found'] = count($intentIdSet) - count($foundIds);
+        });
+
+        if (!$ok) {
+            $claimResult['errors'][] = 'Failed to acquire lock on live_intents.json for claim';
+        }
+
+        return $claimResult;
+    }
+
+    /**
+     * Update an intent's status in live_intents.json to a terminal state.
+     *
+     * @param string $intentId        Intent to update
+     * @param string $liveIntentsPath Absolute path to live_intents.json
+     * @param string $newStatus       New status (executed, rejected)
+     * @param array  $metadata        Additional fields (reject_reason, execution_result, etc.)
+     * @return bool True on success
+     */
+    protected function updateLiveIntentStatus(string $intentId, string $liveIntentsPath, string $newStatus, array $metadata = []): bool
+    {
+        if (empty($intentId) || empty($liveIntentsPath)) {
+            return false;
+        }
+
+        $now = time();
+        return $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($intentId, $newStatus, $metadata, $now) {
+            $intents = &$data['intents'];
+            if (!is_array($intents)) {
+                return;
+            }
+
+            foreach ($intents as &$intent) {
+                if (($intent['intent_id'] ?? '') !== $intentId) {
+                    continue;
+                }
+
+                $intent['status'] = $newStatus;
+                if ($newStatus === 'executed') {
+                    $intent['executed_at'] = date('c');
+                    $intent['executed_at_ts'] = $now;
+                    $intent['execution_result'] = $metadata['execution_result'] ?? null;
+                } elseif ($newStatus === 'rejected') {
+                    $intent['rejected_at'] = date('c');
+                    $intent['rejected_at_ts'] = $now;
+                    $intent['reject_reason'] = $metadata['reject_reason'] ?? null;
+                    $intent['reject_context'] = $metadata['reject_context'] ?? null;
+                }
+                break;
+            }
+            unset($intent);
+        });
+    }
+
+    /**
+     * Atomically read-modify-write live_intents.json with flock.
+     *
+     * @param string   $path     Absolute path to live_intents.json
+     * @param callable $modifier fn(array &$data): void — modifies data in-place
+     * @return bool True on success
+     */
+    private function atomicUpdateLiveIntentsFile(string $path, callable $modifier): bool
+    {
+        if (!is_file($path)) {
+            return false;
+        }
+
+        $fp = @fopen($path, 'c+');
+        if ($fp === false) {
+            return false;
+        }
+
+        if (!flock($fp, LOCK_EX)) {
+            fclose($fp);
+            return false;
+        }
+
+        try {
+            $content = '';
+            while (!feof($fp)) {
+                $content .= fread($fp, 8192);
+            }
+
+            $data = @json_decode($content, true);
+            if (!is_array($data)) {
+                $data = ['schema_version' => 'live_intents_v1', 'intents' => []];
+            }
+
+            $modifier($data);
+
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            fflush($fp);
+
+            return true;
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
     }
 
     /**

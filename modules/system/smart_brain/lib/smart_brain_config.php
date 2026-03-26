@@ -1263,6 +1263,7 @@ final class SmartBrainConfig
             'v2_live_min_confirmation_score',
             'v2_live_min_pattern_confidence',
             'v2_live_min_trend_match_score',
+            'v2_live_min_trend_match_score_short',
         ];
     }
 
@@ -1302,6 +1303,7 @@ final class SmartBrainConfig
                     'v2_live_min_confirmation_score' => 0.55,
                     'v2_live_min_pattern_confidence' => 0.50,
                     'v2_live_min_trend_match_score' => 0.40,
+                    'v2_live_min_trend_match_score_short' => 0.38,
                     // V3-specific entry policy
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.40,
@@ -1344,6 +1346,7 @@ final class SmartBrainConfig
                     'v2_live_min_confirmation_score' => 0.60,
                     'v2_live_min_pattern_confidence' => 0.55,
                     'v2_live_min_trend_match_score' => 0.45,
+                    'v2_live_min_trend_match_score_short' => 0.44,
                     // V3-specific entry policy
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.35,
@@ -1386,6 +1389,7 @@ final class SmartBrainConfig
                     'v2_live_min_confirmation_score' => 0.70,
                     'v2_live_min_pattern_confidence' => 0.60,
                     'v2_live_min_trend_match_score' => 0.55,
+                    'v2_live_min_trend_match_score_short' => 0.54,
                     // V3-specific entry policy — sniper uses enter_now for strong V3
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.40,
@@ -1429,6 +1433,7 @@ final class SmartBrainConfig
                     'v2_live_min_confirmation_score' => 0.60,
                     'v2_live_min_pattern_confidence' => 0.55,
                     'v2_live_min_trend_match_score' => 0.45,
+                    'v2_live_min_trend_match_score_short' => 0.44,
                     // V3-specific entry policy — sniper lite uses enter_now for strong V3
                     'v3_strong_enter_now_enabled' => true,
                     'v3_zone_widen_weak_pct' => 0.40,
@@ -1555,37 +1560,69 @@ final class SmartBrainConfig
     {
         $rejectReasons = [];
 
+        // Epsilon for float-boundary safety — prevents microscopic rounding rejects
+        $epsilon = 0.005;
+
         $confirmationScore = (float)($signal['confirmation_score'] ?? 0.0);
         $patternConfidence = (float)($signal['pattern_confidence'] ?? 0.0);
         $trendMatchScore = $signal['trend_match_score'] ?? null;
         $confirmationTier = (string)($signal['confirmation_tier'] ?? 'none');
+        $side = strtolower(trim((string)($signal['side'] ?? '')));
+        $entryAction = (string)($signal['entry_action'] ?? 'wait_retrace');
 
         $checkedValues = [
             'confirmation_tier' => $confirmationTier,
             'confirmation_score' => round($confirmationScore, 4),
             'pattern_confidence' => round($patternConfidence, 4),
             'trend_match_score' => $trendMatchScore !== null ? round((float)$trendMatchScore, 4) : null,
+            'side' => $side,
+            'entry_action' => $entryAction,
+            'epsilon_used' => $epsilon,
         ];
 
-        // Gate 1: Minimum confirmation_score
+        $borderlinePass = false;
+
+        // Gate 1: Minimum confirmation_score (epsilon-safe)
         $minConfScore = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
-        if ($confirmationScore < $minConfScore) {
-            $rejectReasons[] = 'v2_reject_confirmation_score_too_low';
+        if ($confirmationScore + $epsilon < $minConfScore) {
+            $rejectReasons[] = $side === 'short'
+                ? 'reject_short_enter_now_quality_floor'
+                : 'v2_reject_confirmation_score_too_low';
+        } elseif ($confirmationScore < $minConfScore) {
+            $borderlinePass = true;
         }
 
-        // Gate 2: Minimum pattern_confidence
+        // Gate 2: Minimum pattern_confidence (epsilon-safe)
         $minPatternConf = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
-        if ($patternConfidence < $minPatternConf) {
-            $rejectReasons[] = 'v2_reject_pattern_confidence_too_low';
+        if ($patternConfidence + $epsilon < $minPatternConf) {
+            $rejectReasons[] = $side === 'short'
+                ? 'reject_short_enter_now_quality_floor'
+                : 'v2_reject_pattern_confidence_too_low';
+        } elseif ($patternConfidence < $minPatternConf) {
+            $borderlinePass = true;
         }
 
-        // Gate 3: Minimum trend_match_score
-        $minTrendMatch = (float)($userLimits['v2_live_min_trend_match_score'] ?? 0.40);
+        // Gate 3: Minimum trend_match_score (epsilon-safe, side-aware)
+        // Use side-specific threshold for short when available
+        $minTrendMatchLong = (float)($userLimits['v2_live_min_trend_match_score'] ?? 0.40);
+        $minTrendMatchShort = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendMatchLong);
+        $minTrendMatch = ($side === 'short') ? $minTrendMatchShort : $minTrendMatchLong;
+        $checkedValues['trend_match_threshold_used'] = round($minTrendMatch, 4);
+        $checkedValues['trend_match_side_aware'] = ($side === 'short' && isset($userLimits['v2_live_min_trend_match_score_short']));
+
         if ($trendMatchScore === null || (float)$trendMatchScore <= 0.0) {
-            $rejectReasons[] = 'v2_reject_trend_match_missing';
+            $rejectReasons[] = $side === 'short'
+                ? 'reject_short_enter_now_quality_floor'
+                : 'v2_reject_trend_match_missing';
+        } elseif ((float)$trendMatchScore + $epsilon < $minTrendMatch) {
+            $rejectReasons[] = $side === 'short'
+                ? 'reject_short_enter_now_quality_floor'
+                : 'v2_reject_trend_match_too_low';
         } elseif ((float)$trendMatchScore < $minTrendMatch) {
-            $rejectReasons[] = 'v2_reject_trend_match_too_low';
+            $borderlinePass = true;
         }
+
+        $checkedValues['trend_match_floor_borderline_pass'] = $borderlinePass;
 
         return [
             'eligible' => empty($rejectReasons),

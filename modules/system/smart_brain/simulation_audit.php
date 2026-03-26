@@ -826,6 +826,9 @@ final class SimulationAudit
                 'enter_now_count' => (int)($funnel['enter_now_count'] ?? 0),
                 'wait_retrace_count' => (int)($funnel['wait_retrace_count'] ?? 0),
                 'enter_now_promoted_count' => (int)($funnel['enter_now_promoted_count'] ?? 0),
+                'short_enter_now_candidates_count' => (int)($funnel['short_enter_now_candidates_count'] ?? 0),
+                'short_enter_now_signal_emitted_count' => (int)($funnel['short_enter_now_signal_emitted_count'] ?? 0),
+                'short_enter_now_monitor_bypassed_count' => (int)($funnel['short_enter_now_monitor_bypassed_count'] ?? 0),
             ];
         }
 
@@ -847,6 +850,12 @@ final class SimulationAudit
             'sniper_v3_shadow_only_count' => (int)($v2DownstreamFunnelRaw['sniper_v3_shadow_only_count'] ?? 0),
             'sniper_v3_reject_reason_distribution' => (array)($v2DownstreamFunnelRaw['sniper_v3_reject_reason_distribution'] ?? []),
             'sniper_v3_rejected_preview' => (array)($v2DownstreamFunnelRaw['sniper_v3_rejected_preview'] ?? []),
+            // Short enter_now live diagnostics
+            'short_enter_now_live_applied_count' => (int)($v2DownstreamFunnelRaw['short_enter_now_live_applied_count'] ?? 0),
+            'short_enter_now_live_approved_count' => (int)($v2DownstreamFunnelRaw['short_enter_now_live_approved_count'] ?? 0),
+            'short_enter_now_live_rejected_count' => (int)($v2DownstreamFunnelRaw['short_enter_now_live_rejected_count'] ?? 0),
+            'short_enter_now_live_reject_reasons' => (array)($v2DownstreamFunnelRaw['short_enter_now_live_reject_reasons'] ?? []),
+            'short_enter_now_live_borderline_pass_count' => (int)($v2DownstreamFunnelRaw['short_enter_now_live_borderline_pass_count'] ?? 0),
             'compare_mode_active' => true,
             'evaluation_note' => 'V2 is under shadow evaluation. Promotion requires statistical evidence.',
         ];

@@ -328,7 +328,8 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                             'v2_live_quality_floor_enabled' => 'Floor Enabled',
                             'v2_live_min_confirmation_score' => 'Min Confirmation Score',
                             'v2_live_min_pattern_confidence' => 'Min Pattern Confidence',
-                            'v2_live_min_trend_match_score' => 'Min Trend Match Score',
+                            'v2_live_min_trend_match_score' => 'Min Trend Match Score (long)',
+                            'v2_live_min_trend_match_score_short' => 'Min Trend Match Score (short)',
                         ];
                         foreach ($v2FloorLabels as $fk => $label):
                             $fkVal = $currentBundle['values'][$fk] ?? $form_values[$fk] ?? '-';

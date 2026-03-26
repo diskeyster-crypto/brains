@@ -397,6 +397,9 @@ final class SmartBrainCore
                     'enter_now_count' => 0,
                     'wait_retrace_count' => 0,
                     'enter_now_promoted_count' => 0,
+                    'short_enter_now_candidates_count' => 0,
+                    'short_enter_now_signal_emitted_count' => 0,
+                    'short_enter_now_monitor_bypassed_count' => 0,
                     'avg_zone_width_pct' => 0.0,
                     'avg_zone_distance' => 0.0,
                     'avg_price_position' => 0.0,
@@ -434,6 +437,15 @@ final class SmartBrainCore
             }
             if (!empty($m['enter_now_promoted'])) {
                 $v2DownstreamFunnel[$algo]['enter_now_promoted_count']++;
+            }
+
+            // Track short enter_now candidates and monitor bypass
+            $mSide = strtolower(trim((string)($m['side'] ?? '')));
+            if ($mSide === 'short' && $mEntryAction === 'enter_now') {
+                $v2DownstreamFunnel[$algo]['short_enter_now_candidates_count']++;
+                if (!empty($m['enter_now_promoted'])) {
+                    $v2DownstreamFunnel[$algo]['short_enter_now_monitor_bypassed_count']++;
+                }
             }
 
             $v2DownstreamFunnel[$algo]['zone_widths'][] = (float)($m['zone_width_pct'] ?? 0);
@@ -513,6 +525,13 @@ final class SmartBrainCore
                 }
                 $v2DownstreamFunnel[$algo]['signals_by_tier'][$tier] =
                     ($v2DownstreamFunnel[$algo]['signals_by_tier'][$tier] ?? 0) + 1;
+
+                // Track short enter_now signal emission
+                $sSide = strtolower(trim((string)($s['side'] ?? '')));
+                $sEntryAction = (string)($s['entry_action'] ?? 'wait_retrace');
+                if ($sSide === 'short' && $sEntryAction === 'enter_now') {
+                    $v2DownstreamFunnel[$algo]['short_enter_now_signal_emitted_count']++;
+                }
             }
             // Track global tier distribution for V2 signals
             if (in_array($algo, $contextualPatterns, true)) {
@@ -729,6 +748,12 @@ final class SmartBrainCore
             'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
             'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
             'v2_live_quality_floor_rejected_preview' => $liveIntentResult['v2_live_quality_floor_rejected_preview'] ?? [],
+            // Short enter_now live diagnostics
+            'short_enter_now_live_applied_count' => (int)($liveIntentResult['short_enter_now_live_applied_count'] ?? 0),
+            'short_enter_now_live_approved_count' => (int)($liveIntentResult['short_enter_now_live_approved_count'] ?? 0),
+            'short_enter_now_live_rejected_count' => (int)($liveIntentResult['short_enter_now_live_rejected_count'] ?? 0),
+            'short_enter_now_live_reject_reasons' => $liveIntentResult['short_enter_now_live_reject_reasons'] ?? [],
+            'short_enter_now_live_borderline_pass_count' => (int)($liveIntentResult['short_enter_now_live_borderline_pass_count'] ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -918,6 +943,12 @@ final class SmartBrainCore
             'v2_live_quality_floor_passed_count' => 0,
             'v2_live_quality_floor_reject_reason_distribution' => [],
             'v2_live_quality_floor_rejected_preview' => [],
+            // Short enter_now live diagnostics
+            'short_enter_now_live_applied_count' => 0,
+            'short_enter_now_live_approved_count' => 0,
+            'short_enter_now_live_rejected_count' => 0,
+            'short_enter_now_live_reject_reasons' => [],
+            'short_enter_now_live_borderline_pass_count' => 0,
             // Manual blacklist diagnostics
             'manual_blacklist_active' => false,
             'manual_blacklist_count' => 0,
@@ -1146,6 +1177,14 @@ final class SmartBrainCore
             if (($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') && $v2QualityFloorEnabled) {
                 $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
 
+                // Track short enter_now signals at quality floor gate
+                $signalSide = strtolower(trim((string)($signal['side'] ?? '')));
+                $signalEntryAction = (string)($signal['entry_action'] ?? 'wait_retrace');
+                $isShortEnterNow = ($signalSide === 'short' && $signalEntryAction === 'enter_now');
+                if ($isShortEnterNow) {
+                    $result['short_enter_now_live_applied_count'] = ($result['short_enter_now_live_applied_count'] ?? 0) + 1;
+                }
+
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
                 if (!$v2FloorResult['eligible']) {
                     $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
@@ -1162,10 +1201,25 @@ final class SmartBrainCore
                             'checked_values' => $v2FloorResult['checked_values'],
                         ];
                     }
+                    // Track short enter_now rejection with explicit reason
+                    if ($isShortEnterNow) {
+                        $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
+                        foreach ($v2FloorResult['reject_reasons'] as $vr) {
+                            $result['short_enter_now_live_reject_reasons'][$vr] =
+                                ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
+                        }
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
                     continue;
                 }
                 $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                // Track short enter_now quality floor pass
+                if ($isShortEnterNow) {
+                    $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
+                    if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
+                        $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
+                    }
+                }
             }
 
             // === SNIPER V3 LIVE QUALITY FILTER ===

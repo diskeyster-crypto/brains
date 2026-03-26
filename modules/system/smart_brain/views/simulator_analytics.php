@@ -722,6 +722,9 @@ if (!empty($v2DfByPattern)):
             $enterNowCount = (int)($dfData['enter_now_count'] ?? 0);
             $waitRetraceCount = (int)($dfData['wait_retrace_count'] ?? 0);
             $enterNowPromotedCount = (int)($dfData['enter_now_promoted_count'] ?? 0);
+            $shortEnterNowCandidates = (int)($dfData['short_enter_now_candidates_count'] ?? 0);
+            $shortEnterNowSignals = (int)($dfData['short_enter_now_signal_emitted_count'] ?? 0);
+            $shortEnterNowBypassed = (int)($dfData['short_enter_now_monitor_bypassed_count'] ?? 0);
             if ($enterNowCount > 0 || $enterNowPromotedCount > 0):
         ?>
         <div class="mb-2">
@@ -731,6 +734,11 @@ if (!empty($v2DfByPattern)):
                 <span class="badge bg-secondary">wait_retrace: <?= $waitRetraceCount ?></span>
                 <?php if ($enterNowPromotedCount > 0): ?>
                 <span class="badge bg-success">enter_now_promoted: <?= $enterNowPromotedCount ?></span>
+                <?php endif; ?>
+                <?php if ($shortEnterNowCandidates > 0): ?>
+                <span class="badge bg-warning text-dark">short_enter_now_candidates: <?= $shortEnterNowCandidates ?></span>
+                <span class="badge bg-info text-dark">short_enter_now_signals: <?= $shortEnterNowSignals ?></span>
+                <span class="badge bg-success">short_enter_now_monitor_bypassed: <?= $shortEnterNowBypassed ?></span>
                 <?php endif; ?>
             </div>
         </div>
@@ -1235,6 +1243,8 @@ if ($v2FloorHasData):
                         <th>Conf Tier</th>
                         <th>Pat Conf</th>
                         <th>Trend Match</th>
+                        <th>Side</th>
+                        <th>Threshold</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1250,11 +1260,52 @@ if ($v2FloorHasData):
                         <td><?= htmlspecialchars((string)($vrp['checked_values']['confirmation_tier'] ?? 'none')) ?></td>
                         <td><?= number_format((float)($vrp['checked_values']['pattern_confidence'] ?? 0), 3) ?></td>
                         <td><?= isset($vrp['checked_values']['trend_match_score']) && $vrp['checked_values']['trend_match_score'] !== null ? number_format((float)$vrp['checked_values']['trend_match_score'], 3) : '<em class="text-danger">missing</em>' ?></td>
+                        <td><?= htmlspecialchars((string)($vrp['checked_values']['side'] ?? '')) ?></td>
+                        <td><?= isset($vrp['checked_values']['trend_match_threshold_used']) ? number_format((float)$vrp['checked_values']['trend_match_threshold_used'], 3) : '' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// ── Short Enter Now — Live Diagnostics ──
+$shortEnNowApplied = (int)($v2DownstreamFunnel['short_enter_now_live_applied_count'] ?? 0);
+$shortEnNowApproved = (int)($v2DownstreamFunnel['short_enter_now_live_approved_count'] ?? 0);
+$shortEnNowRejected = (int)($v2DownstreamFunnel['short_enter_now_live_rejected_count'] ?? 0);
+$shortEnNowRejectReasons = (array)($v2DownstreamFunnel['short_enter_now_live_reject_reasons'] ?? []);
+$shortEnNowBorderline = (int)($v2DownstreamFunnel['short_enter_now_live_borderline_pass_count'] ?? 0);
+$shortEnNowHasData = $shortEnNowApplied > 0 || $shortEnNowRejected > 0 || !empty($shortEnNowRejectReasons);
+if ($shortEnNowHasData):
+?>
+<div class="card mb-3">
+    <div class="card-header" style="background: rgba(220,53,69,0.15);">
+        <strong><i class="bi bi-arrow-down-circle me-1"></i> Short Enter Now — Live Signal Diagnostics</strong>
+    </div>
+    <div class="card-body p-2">
+        <div class="d-flex flex-wrap gap-3 small mb-2">
+            <span>Short Enter Now at Live Gate: <strong class="text-primary"><?= $shortEnNowApplied ?></strong></span>
+            <span>Approved: <strong class="<?= $shortEnNowApproved > 0 ? 'text-success' : 'text-secondary' ?>"><?= $shortEnNowApproved ?></strong></span>
+            <span>Rejected: <strong class="<?= $shortEnNowRejected > 0 ? 'text-danger' : 'text-secondary' ?>"><?= $shortEnNowRejected ?></strong></span>
+            <?php if ($shortEnNowBorderline > 0): ?>
+            <span>Borderline Pass (epsilon): <strong class="text-warning"><?= $shortEnNowBorderline ?></strong></span>
+            <?php endif; ?>
+        </div>
+        <?php if (!empty($shortEnNowRejectReasons)):
+            arsort($shortEnNowRejectReasons);
+        ?>
+        <div class="mb-2">
+            <strong class="small">Short Enter Now Reject Reasons:</strong>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach ($shortEnNowRejectReasons as $reason => $cnt): ?>
+                <span class="badge bg-danger"><?= htmlspecialchars((string)$reason) ?>: <?= (int)$cnt ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
         <?php endif; ?>
     </div>
 </div>

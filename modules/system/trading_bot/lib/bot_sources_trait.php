@@ -1392,6 +1392,11 @@ trait BotSourcesTrait
             // P0.6: Validation rejection detail
             'validation_error_summary' => $execResult['validation_error_summary'] ?? null,
             'missing_fields_preview' => $execResult['missing_fields_preview'] ?? [],
+            // Execution truth fields: explicit order/position outcome
+            'order_send_attempted' => (bool)($execResult['exchange_submit_attempted'] ?? false),
+            'order_sent' => (bool)($execResult['opened'] ?? false),
+            'position_opened' => (bool)($execResult['opened'] ?? false) && in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true),
+            'terminal_status' => $this->resolveTerminalStatus($lifecycleState, $execStatus, (bool)($execResult['exchange_submit_attempted'] ?? false)),
         ];
 
         if ($lifecycleState === 'rejected') {
@@ -1477,6 +1482,85 @@ trait BotSourcesTrait
         }
 
         return $map[$raw] ?? 'close_unknown';
+    }
+
+    /**
+     * Resolve a terminal status label that reflects real execution truth.
+     *
+     * Only intents that actually sent an order and opened a position are
+     * considered "executed". Everything else is rejected/failed.
+     *
+     * @param string $lifecycleState  Resolved lifecycle state
+     * @param string $execStatus      Raw execution status
+     * @param bool   $exchangeSubmitAttempted  Whether order send was attempted
+     * @return string Terminal status label
+     */
+    protected function resolveTerminalStatus(string $lifecycleState, string $execStatus, bool $exchangeSubmitAttempted): string
+    {
+        if (in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true)) {
+            return 'executed_position_opened';
+        }
+        if ($lifecycleState === 'failed') {
+            if ($exchangeSubmitAttempted) {
+                return 'failed_exchange_reject';
+            }
+            return 'failed_pre_exchange';
+        }
+        if ($lifecycleState === 'rejected') {
+            // Return the specific rejection status for explainability
+            if (strpos($execStatus, 'rejected_') === 0) {
+                return $execStatus;
+            }
+            return 'rejected_' . $execStatus;
+        }
+        if ($lifecycleState === 'closed') {
+            return 'closed_fail_safe';
+        }
+        if ($lifecycleState === 'deferred') {
+            return 'deferred';
+        }
+        return 'unknown';
+    }
+
+    /**
+     * Rebuild lifecycle_summary from actual intents array inside live_intents.json.
+     *
+     * This ensures the top-level summary always matches the real intent statuses,
+     * preventing stale summary drift between Brain runs.
+     *
+     * @param string $liveIntentsPath Absolute path to live_intents.json
+     * @return bool True on success
+     */
+    protected function rebuildLifecycleSummary(string $liveIntentsPath): bool
+    {
+        if (empty($liveIntentsPath) || !is_file($liveIntentsPath)) {
+            return false;
+        }
+
+        return $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) {
+            $intents = $data['intents'] ?? [];
+            if (!is_array($intents)) {
+                $intents = [];
+            }
+
+            $statusCounts = ['pending' => 0, 'claimed' => 0, 'executed' => 0, 'rejected' => 0, 'expired' => 0];
+            foreach ($intents as $intent) {
+                $s = $intent['status'] ?? 'pending';
+                if (isset($statusCounts[$s])) {
+                    $statusCounts[$s]++;
+                }
+            }
+
+            $data['lifecycle_summary'] = [
+                'total' => count($intents),
+                'pending' => $statusCounts['pending'],
+                'claimed' => $statusCounts['claimed'],
+                'executed' => $statusCounts['executed'],
+                'rejected' => $statusCounts['rejected'],
+                'expired' => $statusCounts['expired'],
+                'rebuilt_at' => date('c'),
+            ];
+        });
     }
 
     /**

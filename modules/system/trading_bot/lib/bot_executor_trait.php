@@ -2425,7 +2425,11 @@ private function checkLateEntry(array $intent): array
         }
 
         $side = $intent['side'] ?? 'long';
-        $baseThreshold = (float)($intent['late_threshold_pct'] ?? 0.5);
+        // FIX: Use config default_late_threshold_pct (1.25%) instead of hardcoded 0.5%.
+        // The intent may provide its own late_threshold_pct, but the fallback must be
+        // the config default — not an overly tight hardcoded value.
+        $configDefault = (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25);
+        $baseThreshold = (float)($intent['late_threshold_pct'] ?? $configDefault);
         $bufferPct = (float)($this->config['execution']['late_entry_buffer_pct'] ?? 0.15);
         $createdTs = (int)($intent['created_ts'] ?? 0);
         $now = time();
@@ -2441,10 +2445,10 @@ private function checkLateEntry(array $intent): array
             $baseThreshold = (float)$sideOverride;
         }
 
-        // Freshness bonus: intents created within the last 90 seconds
+        // Freshness bonus: intents created within the last 120 seconds
         // get an extra tolerance buffer (they are structurally fresh).
         $freshnessBonus = 0.0;
-        if ($intentAgeSec > 0 && $intentAgeSec <= 90) {
+        if ($intentAgeSec > 0 && $intentAgeSec <= 120) {
             $freshnessBonus = $bufferPct;
         }
 
@@ -2463,11 +2467,13 @@ private function checkLateEntry(array $intent): array
             'entry_price' => $entryPrice,
             'price_move_pct' => $priceDiffRound,
             'base_threshold_pct' => round($baseThreshold, 4),
+            'config_default_threshold_pct' => round($configDefault, 4),
             'buffer_pct' => round($bufferPct, 4),
             'freshness_bonus_pct' => round($freshnessBonus, 4),
             'effective_threshold_pct' => $effectiveThresholdRound,
             'intent_age_seconds' => $intentAgeSec,
             'created_ts' => $createdTs,
+            'threshold_source' => isset($intent['late_threshold_pct']) ? 'intent' : (($sideOverride !== null) ? 'side_override' : 'config_default'),
         ];
         $result['diagnostics'] = $diag;
 
@@ -2485,10 +2491,10 @@ private function checkLateEntry(array $intent): array
         if ($isMoveAgainstEntry && $priceDiff > $effectiveThreshold) {
             // Determine sub-reason based on severity
             $subreason = 'rejected_late_entry_price_moved_too_far';
-            if ($priceDiff > $effectiveThreshold * 3) {
-                $subreason = 'rejected_late_entry_price_moved_too_far';
-            } elseif ($intentAgeSec > 300) {
+            if ($intentAgeSec > 300) {
                 $subreason = 'rejected_late_entry_timeout_exceeded';
+            } elseif ($priceDiff <= $effectiveThreshold * 1.5) {
+                $subreason = 'rejected_late_entry_borderline_buffer_fail';
             }
 
             $result['ok'] = false;

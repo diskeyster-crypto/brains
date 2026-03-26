@@ -719,7 +719,7 @@ final class TradingBotService
                 'status' => 'ok',
                 'opened' => $result['positions_opened'],
                 'failed' => $result['orders_failed'],
-                'executed' => $executedThisRun,
+                'processed' => $executedThisRun,
                 'deferred_checked' => $deferredChecked,
                 'max_execute_per_run' => $maxExecutePerRun,
                 'max_deferred_per_run' => $maxDeferredPerRun,
@@ -813,6 +813,13 @@ final class TradingBotService
             $result['intents_rejected_late_entry_preview'] = [];
             $result['rejection_reason_stats'] = [];
             $result['close_reason_stats'] = [];
+            // Execution truth counters — only count real exchange interactions
+            $result['intents_order_send_attempted_count'] = 0;
+            $result['intents_order_sent_count'] = 0;
+            $result['intents_position_opened_count'] = 0;
+            $result['intents_terminal_executed_count'] = 0;
+            $result['intents_terminal_rejected_count'] = 0;
+            $result['intents_terminal_failed_count'] = 0;
             foreach ($result['intent_results'] as $ir) {
                 $ls = $ir['lifecycle_state'] ?? '';
                 if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
@@ -827,6 +834,28 @@ final class TradingBotService
                 } elseif ($ls === 'failed') {
                     $result['intents_failed_exec']++;
                 }
+
+                // Execution truth: count real order/position outcomes
+                if (!empty($ir['order_send_attempted'])) {
+                    $result['intents_order_send_attempted_count']++;
+                }
+                if (!empty($ir['order_sent'])) {
+                    $result['intents_order_sent_count']++;
+                }
+                if (!empty($ir['position_opened'])) {
+                    $result['intents_position_opened_count']++;
+                }
+
+                // Terminal status distribution
+                $ts = $ir['terminal_status'] ?? '';
+                if (strpos($ts, 'executed_') === 0) {
+                    $result['intents_terminal_executed_count']++;
+                } elseif (strpos($ts, 'rejected_') === 0) {
+                    $result['intents_terminal_rejected_count']++;
+                } elseif (strpos($ts, 'failed_') === 0) {
+                    $result['intents_terminal_failed_count']++;
+                }
+
                 if (in_array($ls, ['rejected', 'failed'], true) && !empty($ir['rejection_reason'])) {
                     $rr = $ir['rejection_reason'];
                     $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
@@ -1165,6 +1194,14 @@ final class TradingBotService
                 'mixed_generations' => count($contractGenerationCounts) > 1,
             ];
             
+            // Step 5b: Rebuild lifecycle_summary in live_intents.json
+            // After all intent status updates (executed/rejected) and stale-claim
+            // finalization, the top-level lifecycle_summary may be stale.
+            // Rebuild it from actual intents array to ensure truth.
+            if ($brainControlled && !empty($liveIntentsFilePath)) {
+                $this->rebuildLifecycleSummary($liveIntentsFilePath);
+            }
+
             // Step 6: Safety checks
             $safetyResult = $this->performSafetyChecks();
             $result['steps'][] = [

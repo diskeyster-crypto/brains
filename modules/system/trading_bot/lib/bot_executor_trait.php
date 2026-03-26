@@ -346,7 +346,11 @@ trait BotExecutorTrait
                 if ($intent['entry_action'] === 'enter_now') {
                     $lateCheck = $this->checkLateEntry($intent);
                     if (!$lateCheck['ok']) {
-                        return $this->rejectIntent($intent, 'rejected_late_entry', $lateCheck['reason'], $result);
+                        $subreason = $lateCheck['subreason'] ?? 'rejected_late_entry_price_moved_too_far';
+                        return $this->rejectIntent($intent, 'rejected_late_entry', $lateCheck['reason'], $result, [
+                            'reject_subreason' => $subreason,
+                            'late_entry_diagnostics' => $lateCheck['diagnostics'] ?? [],
+                        ]);
                     }
                 }
             }
@@ -651,6 +655,7 @@ trait BotExecutorTrait
         $result['ok'] = false;
         $result['status'] = $status;
         $result['error'] = $reason;
+        $result['context'] = $context;
         
         $this->store->saveRejectedIntent($intent, array_merge([
             'reason' => $reason,
@@ -2407,31 +2412,98 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
     }
 private function checkLateEntry(array $intent): array
     {
-        $result = ['ok' => true];
-        
+        $result = ['ok' => true, 'diagnostics' => []];
+
         $currentPrice = $this->getCurrentPrice($intent['symbol']);
         if ($currentPrice === null) {
             return $result; // Can't check, assume ok
         }
-        
-        $entryPrice = $intent['entry_price'];
-        $threshold = $intent['late_threshold_pct'] ?? 0.5;
-        $side = $intent['side'];
-        
-        $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
-        
-        if ($side === 'long' && $currentPrice > $entryPrice) {
-            if ($priceDiff > $threshold) {
-                $result['ok'] = false;
-                $result['reason'] = "Price moved up {$priceDiff}% > threshold {$threshold}%";
-            }
-        } elseif ($side === 'short' && $currentPrice < $entryPrice) {
-            if ($priceDiff > $threshold) {
-                $result['ok'] = false;
-                $result['reason'] = "Price moved down {$priceDiff}% > threshold {$threshold}%";
-            }
+
+        $entryPrice = (float)($intent['entry_price'] ?? 0);
+        if ($entryPrice <= 0) {
+            return $result; // No entry price, skip check
         }
-        
+
+        $side = $intent['side'] ?? 'long';
+        $baseThreshold = (float)($intent['late_threshold_pct'] ?? 0.5);
+        $bufferPct = (float)($this->config['execution']['late_entry_buffer_pct'] ?? 0.15);
+        $createdTs = (int)($intent['created_ts'] ?? 0);
+        $now = time();
+        $intentAgeSec = ($createdTs > 0) ? ($now - $createdTs) : 0;
+
+        // Side-specific threshold override: short breakdowns often continue
+        // immediately, so short side gets a slightly wider tolerance.
+        $sideThresholdKey = ($side === 'short')
+            ? 'late_entry_threshold_pct_short'
+            : 'late_entry_threshold_pct_long';
+        $sideOverride = $this->config['execution'][$sideThresholdKey] ?? null;
+        if ($sideOverride !== null) {
+            $baseThreshold = (float)$sideOverride;
+        }
+
+        // Freshness bonus: intents created within the last 90 seconds
+        // get an extra tolerance buffer (they are structurally fresh).
+        $freshnessBonus = 0.0;
+        if ($intentAgeSec > 0 && $intentAgeSec <= 90) {
+            $freshnessBonus = $bufferPct;
+        }
+
+        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus;
+
+        $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
+        $priceDiffRound = round($priceDiff, 4);
+        $effectiveThresholdRound = round($effectiveThreshold, 4);
+
+        // Build diagnostics for every check (pass or fail)
+        $diag = [
+            'symbol' => $intent['symbol'] ?? '',
+            'side' => $side,
+            'pattern_algorithm' => $intent['pattern_algorithm'] ?? $intent['source_schema_version'] ?? 'unknown',
+            'current_price' => $currentPrice,
+            'entry_price' => $entryPrice,
+            'price_move_pct' => $priceDiffRound,
+            'base_threshold_pct' => round($baseThreshold, 4),
+            'buffer_pct' => round($bufferPct, 4),
+            'freshness_bonus_pct' => round($freshnessBonus, 4),
+            'effective_threshold_pct' => $effectiveThresholdRound,
+            'intent_age_seconds' => $intentAgeSec,
+            'created_ts' => $createdTs,
+        ];
+        $result['diagnostics'] = $diag;
+
+        // Direction-aware check: only reject if price moved AGAINST entry
+        $isMoveAgainstEntry = false;
+        $moveDirection = '';
+        if ($side === 'long' && $currentPrice > $entryPrice) {
+            $isMoveAgainstEntry = true;
+            $moveDirection = 'up';
+        } elseif ($side === 'short' && $currentPrice < $entryPrice) {
+            $isMoveAgainstEntry = true;
+            $moveDirection = 'down';
+        }
+
+        if ($isMoveAgainstEntry && $priceDiff > $effectiveThreshold) {
+            // Determine sub-reason based on severity
+            $subreason = 'rejected_late_entry_price_moved_too_far';
+            if ($priceDiff > $effectiveThreshold * 3) {
+                $subreason = 'rejected_late_entry_price_moved_too_far';
+            } elseif ($intentAgeSec > 300) {
+                $subreason = 'rejected_late_entry_timeout_exceeded';
+            }
+
+            $result['ok'] = false;
+            $result['subreason'] = $subreason;
+            $result['reason'] = sprintf(
+                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%%)",
+                $moveDirection,
+                $priceDiffRound,
+                $effectiveThresholdRound,
+                $baseThreshold,
+                $bufferPct,
+                $freshnessBonus
+            );
+        }
+
         return $result;
     }
     

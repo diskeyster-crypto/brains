@@ -132,7 +132,14 @@ return [
         // Late / retrace policy defaults (can be overridden by intent fields)
         'default_entry_timeout_minutes' => 8,
         'default_late_threshold_pct' => 1.25,
+        'late_entry_buffer_pct' => 0.15,
+        // Side-specific overrides (null = use default_late_threshold_pct)
+        'late_entry_threshold_pct_long' => null,
+        'late_entry_threshold_pct_short' => null,
         'retrace_slack_pct' => 0.05,
+
+        // Stale claimed intent finalization
+        'claim_timeout_minutes' => 10,
 
         // Experimental: invert direction from Brain signals (LONG↔SHORT)
         // Useful for contrarian tests; intent will include side_original.

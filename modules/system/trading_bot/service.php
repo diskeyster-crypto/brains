@@ -544,6 +544,22 @@ final class TradingBotService
                 'not_found' => $claimResult['not_found'] ?? 0,
                 'expired_skipped' => $claimResult['expired_skipped'] ?? 0,
             ];
+
+            // ── Lifecycle: Finalize stale claimed intents ────────────────
+            // Claimed intents that exceeded the claim timeout are finalized
+            // as rejected to prevent zombie records hanging indefinitely.
+            $staleClaimResult = ['finalized_count' => 0, 'errors' => []];
+            if ($brainControlled && !empty($liveIntentsFilePath)) {
+                $claimTimeoutMin = (int)($this->config['execution']['claim_timeout_minutes'] ?? 10);
+                $staleClaimResult = $this->finalizeStaleClaimedIntents($liveIntentsFilePath, $claimTimeoutMin);
+            }
+            $result['stale_claim_finalization'] = $staleClaimResult;
+            $result['steps'][] = [
+                'step' => 'finalize_stale_claims',
+                'status' => empty($staleClaimResult['errors']) ? 'ok' : 'warning',
+                'finalized' => $staleClaimResult['finalized_count'] ?? 0,
+                'stale_found' => $staleClaimResult['stale_claimed_found'] ?? 0,
+            ];
             
             if ($mode !== 'test') {
                 $executedThisRun = 0;
@@ -792,6 +808,9 @@ final class TradingBotService
             $result['intents_deferred'] = 0;
             $result['intents_rejected_exec'] = 0;
             $result['intents_failed_exec'] = 0;
+            $result['intents_rejected_late_entry_count'] = 0;
+            $result['intents_rejected_late_entry_distribution'] = [];
+            $result['intents_rejected_late_entry_preview'] = [];
             $result['rejection_reason_stats'] = [];
             $result['close_reason_stats'] = [];
             foreach ($result['intent_results'] as $ir) {
@@ -811,12 +830,34 @@ final class TradingBotService
                 if (in_array($ls, ['rejected', 'failed'], true) && !empty($ir['rejection_reason'])) {
                     $rr = $ir['rejection_reason'];
                     $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
+
+                    // Track late_entry rejections separately with sub-reasons and preview
+                    if ($rr === 'rejected_late_entry') {
+                        $result['intents_rejected_late_entry_count']++;
+                        $subreason = $ir['reject_subreason'] ?? $ir['late_entry_subreason'] ?? 'rejected_late_entry_unspecified';
+                        $result['intents_rejected_late_entry_distribution'][$subreason] =
+                            ($result['intents_rejected_late_entry_distribution'][$subreason] ?? 0) + 1;
+                        if (count($result['intents_rejected_late_entry_preview']) < 10) {
+                            $result['intents_rejected_late_entry_preview'][] = [
+                                'intent_id' => $ir['intent_id'] ?? null,
+                                'symbol' => $ir['symbol'] ?? '',
+                                'side' => $ir['side'] ?? '',
+                                'rejection_reason' => $rr,
+                                'reject_subreason' => $subreason,
+                                'late_entry_diagnostics' => $ir['late_entry_diagnostics'] ?? [],
+                            ];
+                        }
+                    }
                 }
                 if (!empty($ir['close_reason'])) {
                     $cr = $ir['close_reason'];
                     $result['close_reason_stats'][$cr] = ($result['close_reason_stats'][$cr] ?? 0) + 1;
                 }
             }
+
+            // Stale claim counters for telemetry
+            $result['intents_claimed_stale_count'] = $staleClaimResult['stale_claimed_found'] ?? 0;
+            $result['intents_claimed_finalized_count'] = $staleClaimResult['finalized_count'] ?? 0;
 
             // ============================================================
             // P6: ROI Expectancy Metrics

@@ -274,6 +274,9 @@ trait BotSourcesTrait
                     'execution_identity_key' => $intentId ?? $executionKey,
                     'dedupe_basis' => 'intent_id',
                     'normalized_drawdown_factor_source' => $risk['trailing']['drawdown_factor_source'] ?? 'n/a',
+                    // Pass-through for late-entry diagnostics
+                    'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
+                    'source_schema_version' => (string)($intent['source_schema_version'] ?? ''),
                 ];
 
                 if (isset($intent['side_original'])) {
@@ -420,6 +423,88 @@ trait BotSourcesTrait
             }
             unset($intent);
         });
+    }
+
+    /**
+     * Finalize stale claimed intents that have exceeded the claim timeout.
+     *
+     * Claimed intents that have not been resolved (executed/rejected) within
+     * the timeout window are finalized as rejected to prevent zombie records.
+     *
+     * @param string $liveIntentsPath  Absolute path to live_intents.json
+     * @param int    $claimTimeoutMin  Maximum minutes a claimed intent can stay unresolved
+     * @return array Result with counts: finalized_count, stale_claimed_preview
+     */
+    protected function finalizeStaleClaimedIntents(string $liveIntentsPath, int $claimTimeoutMin = 10): array
+    {
+        $finalizeResult = [
+            'finalized_count' => 0,
+            'stale_claimed_found' => 0,
+            'stale_claimed_preview' => [],
+            'errors' => [],
+        ];
+
+        if (empty($liveIntentsPath) || !is_file($liveIntentsPath)) {
+            return $finalizeResult;
+        }
+
+        $now = time();
+        $cutoff = $now - ($claimTimeoutMin * 60);
+
+        $ok = $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($cutoff, $now, &$finalizeResult) {
+            $intents = &$data['intents'];
+            if (!is_array($intents)) {
+                return;
+            }
+
+            foreach ($intents as &$intent) {
+                $status = $intent['status'] ?? 'pending';
+                if ($status !== 'claimed') {
+                    continue;
+                }
+
+                $claimedTs = (int)($intent['claimed_at_ts'] ?? 0);
+                if ($claimedTs <= 0 || $claimedTs > $cutoff) {
+                    continue; // Not yet stale
+                }
+
+                $finalizeResult['stale_claimed_found']++;
+
+                // Finalize as rejected with explicit stale-claim reason
+                $intent['status'] = 'rejected';
+                $intent['rejected_at'] = date('c');
+                $intent['rejected_at_ts'] = $now;
+                $intent['reject_reason'] = 'rejected_claim_stale_timeout';
+                $intent['reject_context'] = sprintf(
+                    'Claimed at %s (%ds ago), timeout %dmin exceeded',
+                    $intent['claimed_at'] ?? 'unknown',
+                    $now - $claimedTs,
+                    intdiv($now - $cutoff + ($now - $claimedTs), 60)
+                );
+
+                $finalizeResult['finalized_count']++;
+
+                // Build preview (first 10)
+                if (count($finalizeResult['stale_claimed_preview']) < 10) {
+                    $finalizeResult['stale_claimed_preview'][] = [
+                        'intent_id' => $intent['intent_id'] ?? '',
+                        'symbol' => $intent['symbol'] ?? '',
+                        'side' => $intent['side'] ?? '',
+                        'claimed_at' => $intent['claimed_at'] ?? null,
+                        'claimed_at_ts' => $claimedTs,
+                        'stale_seconds' => $now - $claimedTs,
+                        'finalized_as' => 'rejected_claim_stale_timeout',
+                    ];
+                }
+            }
+            unset($intent);
+        });
+
+        if (!$ok) {
+            $finalizeResult['errors'][] = 'Failed to acquire lock on live_intents.json for stale claim finalization';
+        }
+
+        return $finalizeResult;
     }
 
     /**
@@ -1311,6 +1396,13 @@ trait BotSourcesTrait
 
         if ($lifecycleState === 'rejected') {
             $record['rejection_reason'] = $this->normalizeRejectionReason($execStatus);
+            // Propagate late-entry sub-reason and diagnostics from execution context
+            if (isset($execResult['context']['reject_subreason'])) {
+                $record['reject_subreason'] = $execResult['context']['reject_subreason'];
+            }
+            if (isset($execResult['context']['late_entry_diagnostics'])) {
+                $record['late_entry_diagnostics'] = $execResult['context']['late_entry_diagnostics'];
+            }
         }
         if ($lifecycleState === 'failed') {
             $record['rejection_reason'] = $this->normalizeRejectionReason($execStatus);

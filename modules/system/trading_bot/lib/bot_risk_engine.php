@@ -423,9 +423,23 @@ class BotRiskEngine
 
         // Price-distance-floor mode (activation floor + locked ROI + price distance + step corridor)
         if ($trailingMode === 'price_distance_floor') {
-            $floorActivationRoi = (float)($trailing['trailing_activation_floor_roi'] ?? $activationRoiPct);
-            $floorLockRoi = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
-            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+            // Resolve ROI-based trailing preset if active
+            $presetMode = (string)($trailing['trailing_preset_mode'] ?? ($this->config['execution']['trailing_preset_mode'] ?? 'custom'));
+            $presetValues = $this->resolveTrailingPreset($presetMode, $trailing);
+            $distanceRoi = $presetValues['distance_roi'];
+
+            $floorActivationRoi = $presetValues['activation_roi'] ?? (float)($trailing['trailing_activation_floor_roi'] ?? $activationRoiPct);
+            $floorLockRoi = $presetValues['floor_lock_roi'] ?? (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
+
+            // Convert distance ROI to price distance using leverage
+            // Formula: price_distance_pct = distance_roi / leverage / 100
+            if ($distanceRoi !== null && $distanceRoi > 0) {
+                $distancePct = $distanceRoi / $leverage / 100;
+            } else {
+                $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+                $distanceRoi = null;
+            }
+
             $stepMode = (string)($trailing['trailing_step_mode'] ?? 'fixed');
             $stepPctMin = (float)($trailing['trailing_step_pct_min'] ?? 0.005);
             $stepPctMax = (float)($trailing['trailing_step_pct_max'] ?? 0.02);
@@ -433,8 +447,8 @@ class BotRiskEngine
             if ($distancePct <= 0 || $distancePct >= 1.0) {
                 return ['enabled' => false];
             }
-            if ($floorLockRoi >= $floorActivationRoi) {
-                // Floor lock must be less than activation threshold
+            if ($floorLockRoi > $floorActivationRoi) {
+                // Floor lock must be less than or equal to activation threshold
                 return ['enabled' => false];
             }
 
@@ -464,6 +478,8 @@ class BotRiskEngine
                 'trailing_activation_floor_roi' => $floorActivationRoi,
                 'trailing_floor_lock_roi' => $floorLockRoi,
                 'trailing_price_distance_pct' => $distancePct,
+                'trailing_distance_roi' => $distanceRoi,
+                'trailing_preset_mode' => $presetMode,
                 'trailing_step_mode' => $stepMode,
                 'trailing_step_pct_min' => $stepPctMin,
                 'trailing_step_pct_max' => $stepPctMax,
@@ -609,6 +625,40 @@ class BotRiskEngine
         }
         
         return $result;
+    }
+
+    /**
+     * Resolve ROI-based trailing preset values.
+     *
+     * Returns activation_roi, floor_lock_roi, and distance_roi based on preset mode.
+     * For 'custom' mode, returns values from the trailing block directly.
+     * For named presets (soft/medium/hard), returns preset definitions from config.
+     *
+     * @param string $presetMode Preset name: soft|medium|hard|custom
+     * @param array  $trailing   Trailing block from Brain risk
+     * @return array  Resolved values: activation_roi, floor_lock_roi, distance_roi
+     */
+    private function resolveTrailingPreset(string $presetMode, array $trailing): array
+    {
+        $presets = $this->config['execution']['trailing_presets'] ?? [];
+
+        if ($presetMode !== 'custom' && isset($presets[$presetMode])) {
+            $preset = $presets[$presetMode];
+            return [
+                'activation_roi'  => (float)($preset['activation_roi'] ?? 3.0),
+                'floor_lock_roi'  => (float)($preset['floor_lock_roi'] ?? 3.0),
+                'distance_roi'    => (float)($preset['distance_roi'] ?? 0.8),
+            ];
+        }
+
+        // Custom mode: use explicit trailing block values (backward-compatible)
+        return [
+            'activation_roi'  => (float)($trailing['trailing_activation_floor_roi'] ?? null),
+            'floor_lock_roi'  => (float)($trailing['trailing_floor_lock_roi'] ?? null),
+            'distance_roi'    => isset($trailing['trailing_distance_roi'])
+                ? (float)$trailing['trailing_distance_roi']
+                : null,
+        ];
     }
 }
 

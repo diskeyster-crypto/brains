@@ -677,6 +677,51 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 </div>
                     </div>
 
+                    <!-- ROI-Based Trailing Presets (price_distance_floor mode) -->
+                    <div class="card mb-3">
+                        <div class="card-header py-2">
+                            <strong>🎯 Trailing Presets</strong>
+                            <small class="text-muted ms-2">(price_distance_floor mode)</small>
+                        </div>
+                        <div class="card-body py-2">
+                            <div class="alert alert-secondary py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                Distance ROI is converted to price distance using leverage.<br>
+                                <code>price_distance_pct = distance_roi / leverage / 100</code>
+                            </div>
+                            <?php
+                                $cfgPresetMode = (string)($config['execution']['trailing_preset_mode'] ?? 'medium');
+                                $cfgPresets = $config['execution']['trailing_presets'] ?? [];
+                            ?>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-4">
+                                    <label class="form-label">Preset Mode</label>
+                                    <select class="form-select form-select-sm" id="trailing_preset_mode" name="trailing_preset_mode">
+                                        <option value="soft" <?= $cfgPresetMode === 'soft' ? 'selected' : '' ?>>Soft (conservative)</option>
+                                        <option value="medium" <?= $cfgPresetMode === 'medium' ? 'selected' : '' ?>>Medium (balanced)</option>
+                                        <option value="hard" <?= $cfgPresetMode === 'hard' ? 'selected' : '' ?>>Hard (tight)</option>
+                                        <option value="custom" <?= $cfgPresetMode === 'custom' ? 'selected' : '' ?>>Custom (Brain values)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <table class="table table-sm table-bordered mb-0" style="font-size:0.75rem;">
+                                <thead><tr><th>Preset</th><th>Activation ROI</th><th>Floor Lock ROI</th><th>Distance ROI</th></tr></thead>
+                                <tbody>
+                                <?php foreach (['soft', 'medium', 'hard'] as $pName):
+                                    $pVals = $cfgPresets[$pName] ?? [];
+                                    $isActive = ($cfgPresetMode === $pName);
+                                ?>
+                                    <tr class="<?= $isActive ? 'table-primary' : '' ?>">
+                                        <td><strong><?= $pName ?></strong> <?= $isActive ? '✅' : '' ?></td>
+                                        <td><?= (float)($pVals['activation_roi'] ?? 0) ?></td>
+                                        <td><?= (float)($pVals['floor_lock_roi'] ?? 0) ?></td>
+                                        <td><?= (float)($pVals['distance_roi'] ?? 0) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <hr class="my-4">
 
                     <h6 class="mb-3">Баланс</h6>

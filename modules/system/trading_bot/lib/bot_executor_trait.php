@@ -1127,6 +1127,13 @@ trait BotExecutorTrait
             'effective_trailing_step_mode' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
                 ? (string)($riskTrailing['trailing_step_mode'] ?? 'fixed')
                 : null,
+            // ROI-based trailing preset fields
+            'effective_trailing_preset_mode' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (string)($trailing['trailing_preset_mode'] ?? 'custom')
+                : null,
+            'effective_trailing_distance_roi' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? ($trailing['trailing_distance_roi'] ?? null)
+                : null,
             // Stop mode truth (top-level for operator observability)
             'effective_stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
             'effective_stop_loss_from_entry_roi' => ($intent['risk']['stop_control']['stop_control_mode'] ?? 'auto') === 'entry_roi'

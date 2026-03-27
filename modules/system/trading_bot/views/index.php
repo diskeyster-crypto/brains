@@ -683,11 +683,20 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                     <?php elseif ($ipdTm === 'price_distance_floor'): ?>
                                         <small class="text-info" title="Trailing mode: price_distance_floor (multi-layer)">(pdf)</small>
                                         <?php
-                                            $ipdDistPct = round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1);
+                                            $ipdDistPct = round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 2);
+                                            $ipdDistRoi = $ipd['trailing_distance_roi'] ?? null;
+                                            $ipdPreset = (string)($ipd['trailing_preset_mode'] ?? 'custom');
                                             $ipdFloorRoi = round((float)($ipd['floor_locked_roi'] ?? $ipd['trailing_floor_lock_roi'] ?? 0), 1);
                                             $ipdActivationRoi = round((float)($ipd['trailing_activation_floor_roi'] ?? $ipd['trailing_activation_roi_pct'] ?? 0), 1);
                                         ?>
-                                        <br><small class="text-muted" title="Distance trailing layer (shown in exchange UI)">📏 Dist: <?= $ipdDistPct ?>%</small>
+                                        <?php if ($ipdPreset !== 'custom'): ?>
+                                            <br><small class="text-primary" title="ROI-based trailing preset">🎯 Preset: <strong><?= htmlspecialchars($ipdPreset) ?></strong></small>
+                                        <?php endif; ?>
+                                        <?php if ($ipdDistRoi !== null && (float)$ipdDistRoi > 0): ?>
+                                            <br><small class="text-muted" title="Distance in ROI units (converted to <?= $ipdDistPct ?>% price distance via leverage)">📏 Dist: <?= round((float)$ipdDistRoi, 2) ?> ROI → <?= $ipdDistPct ?>%</small>
+                                        <?php else: ?>
+                                            <br><small class="text-muted" title="Distance trailing layer (shown in exchange UI)">📏 Dist: <?= $ipdDistPct ?>%</small>
+                                        <?php endif; ?>
                                         <?php if ($ipd['floor_lock_active'] ?? false): ?>
                                             <br><small class="text-success" title="Floor lock active — minimum ROI protected">🔒 Floor: <?= $ipdFloorRoi ?>% ROI</small>
                                             <?php if ((float)($ipd['floor_stop_price'] ?? 0) > 0): ?>
@@ -699,7 +708,7 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                         <?php else: ?>
                                             <br><small class="text-muted" title="Floor not yet active — waiting for activation ROI">🔓 Activation: <?= $ipdActivationRoi ?>% ROI</small>
                                         <?php endif; ?>
-                                        <br><small class="text-muted fst-italic" style="font-size:0.65rem;" title="Exchange UI reflects distance layer only">⚡ Exchange shows distance layer</small>
+                                        <br><small class="text-muted fst-italic" style="font-size:0.65rem;" title="Distance ROI converted to price % via leverage">⚡ Exchange shows distance layer</small>
                                     <?php elseif ($ipd['trailing_activation_roi_pct'] ?? 0): ?>
                                         <small>(<?= number_format((float)($ipd['trailing_activation_roi_pct'] ?? 0), 2) ?>%)</small>
                                     <?php endif; ?>
@@ -773,10 +782,13 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                     <strong>Multi-layer protection:</strong>
                     Exchange UI shows the <em>distance trailing</em> layer (correction %).
                     Floor lock ROI is enforced separately by bot/exchange stop logic.
+                    <br><em>Distance ROI is converted to price distance using leverage.</em>
                 </div>
                 <?php foreach ($pdfTrades as $pdfT):
                     $pdfSym = htmlspecialchars((string)($pdfT['symbol'] ?? ''));
-                    $pdfDist = round(((float)($pdfT['trailing_price_distance_pct'] ?? 0)) * 100, 1);
+                    $pdfDist = round(((float)($pdfT['trailing_price_distance_pct'] ?? 0)) * 100, 2);
+                    $pdfDistRoi = $pdfT['trailing_distance_roi'] ?? null;
+                    $pdfPreset = (string)($pdfT['trailing_preset_mode'] ?? 'custom');
                     $pdfFloor = round((float)($pdfT['floor_locked_roi'] ?? $pdfT['trailing_floor_lock_roi'] ?? 0), 1);
                     $pdfAct = round((float)($pdfT['trailing_activation_floor_roi'] ?? $pdfT['trailing_activation_roi_pct'] ?? 0), 1);
                     $pdfEffStop = (float)($pdfT['current_effective_stop_price'] ?? 0);
@@ -788,9 +800,17 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                     <span class="badge bg-<?= ($pdfT['side'] ?? '') === 'long' ? 'success' : 'danger' ?> ms-1"><?= strtoupper((string)($pdfT['side'] ?? '')) ?></span>
                     <table class="table table-sm table-borderless mb-0 mt-1" style="font-size:0.72rem;">
                         <tr><td class="text-muted" style="width:40%">Mode</td><td>price_distance_floor</td></tr>
+                        <?php if ($pdfPreset !== 'custom'): ?>
+                        <tr><td class="text-muted">Preset</td><td><strong><?= htmlspecialchars($pdfPreset) ?></strong></td></tr>
+                        <?php endif; ?>
                         <tr><td class="text-muted">Activation ROI</td><td><?= $pdfAct ?>%</td></tr>
                         <tr><td class="text-muted">Floor Lock ROI</td><td><?= $pdfFloor ?>% <?= $pdfFloorActive ? '🔒 active' : '🔓 waiting' ?></td></tr>
+                        <?php if ($pdfDistRoi !== null && (float)$pdfDistRoi > 0): ?>
+                        <tr><td class="text-muted">Distance ROI</td><td><?= round((float)$pdfDistRoi, 2) ?> ROI</td></tr>
+                        <tr><td class="text-muted">Converted Distance</td><td><?= $pdfDist ?>% <small class="text-muted">(via leverage)</small></td></tr>
+                        <?php else: ?>
                         <tr><td class="text-muted">Distance Layer</td><td><?= $pdfDist ?>%</td></tr>
+                        <?php endif; ?>
                         <?php if ($pdfEffStop > 0): ?>
                         <tr><td class="text-muted">Effective Stop</td><td class="fw-bold"><?= number_format($pdfEffStop, 4) ?></td></tr>
                         <?php endif; ?>

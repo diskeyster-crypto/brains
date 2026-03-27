@@ -187,6 +187,28 @@ return [
         'enable_trailing_on_open' => false,
         'dumb_trailing_activation_epsilon_pct' => 0.02,
 
+        // ROI-based trailing presets for price_distance_floor mode
+        // Preset mode: soft | medium | hard | custom
+        // When preset is active, distance is defined in ROI units and converted to price distance via leverage
+        'trailing_preset_mode' => 'medium',
+        'trailing_presets' => [
+            'soft' => [
+                'activation_roi' => 2.0,
+                'floor_lock_roi' => 2.0,
+                'distance_roi'   => 0.5,
+            ],
+            'medium' => [
+                'activation_roi' => 3.0,
+                'floor_lock_roi' => 3.0,
+                'distance_roi'   => 0.8,
+            ],
+            'hard' => [
+                'activation_roi' => 4.0,
+                'floor_lock_roi' => 4.0,
+                'distance_roi'   => 1.0,
+            ],
+        ],
+
         // Balance checks
         'balance_strict_stable_coin_only' => true,
         'balance_coin' => 'USDT',

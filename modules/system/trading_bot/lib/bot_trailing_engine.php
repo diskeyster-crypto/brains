@@ -245,13 +245,22 @@ class BotTrailingEngine
         string $side,
         float $entryPrice
     ): array {
-        $distancePct     = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+        $leverage        = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
+        if ($leverage < 1) { $leverage = 1; }
+
+        // ROI-based distance: convert distance_roi to price_distance_pct using leverage
+        $distanceRoi     = isset($trailing['trailing_distance_roi']) ? (float)$trailing['trailing_distance_roi'] : null;
+        $presetMode      = (string)($trailing['trailing_preset_mode'] ?? 'custom');
+        if ($distanceRoi !== null && $distanceRoi > 0) {
+            $distancePct = $distanceRoi / $leverage / 100;
+        } else {
+            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+        }
+
         $floorLockRoi    = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
         $stepMode        = (string)($trailing['trailing_step_mode'] ?? 'fixed');
         $stepPctMin      = (float)($trailing['trailing_step_pct_min'] ?? 0.005);
         $stepPctMax      = (float)($trailing['trailing_step_pct_max'] ?? 0.02);
-        $leverage        = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
-        if ($leverage < 1) { $leverage = 1; }
 
         // Retrieve persisted state
         $prevTrailingStop = (float)($trade['trailing_stop_price'] ?? 0.0);
@@ -303,6 +312,8 @@ class BotTrailingEngine
             $result['changes']['trailing_stop_price']              = round($trailingStopPrice, 8);
             $result['changes']['trailing_mode']                     = 'price_distance_floor';
             $result['changes']['trailing_price_distance_pct']       = $distancePct;
+            $result['changes']['trailing_distance_roi']             = $distanceRoi;
+            $result['changes']['trailing_preset_mode']              = $presetMode;
             $result['changes']['floor_lock_active']                 = true;
             $result['changes']['floor_locked_roi']                  = $floorLockRoi;
             $result['changes']['floor_stop_price']                  = round($floorStopPrice, 8);
@@ -365,6 +376,8 @@ class BotTrailingEngine
             $result['changes']['trailing_stop_price']              = round($trailingStopPrice, 8);
             $result['changes']['trailing_mode']                     = 'price_distance_floor';
             $result['changes']['trailing_price_distance_pct']       = $distancePct;
+            $result['changes']['trailing_distance_roi']             = $distanceRoi;
+            $result['changes']['trailing_preset_mode']              = $presetMode;
             $result['changes']['floor_lock_active']                 = true;
             $result['changes']['floor_locked_roi']                  = $floorLockRoi;
             $result['changes']['floor_stop_price']                  = round($floorStopPrice, 8);

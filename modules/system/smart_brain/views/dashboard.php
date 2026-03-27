@@ -173,6 +173,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         $liveIntentsCount = (int)($last_run['live_intents_created_count'] ?? 0);
         $liveTerminalRetainedDash = (int)($last_run['live_terminal_retained_count'] ?? 0);
         $dashLifecycle = $last_run['lifecycle_summary'] ?? [];
+        $dlNonPending = 0;
     ?>
     <div class="card mb-4" style="border-color: <?= $liveEnabled ? '#22c55e' : '#6b7280' ?>;">
         <div class="card-header d-flex justify-content-between align-items-center">

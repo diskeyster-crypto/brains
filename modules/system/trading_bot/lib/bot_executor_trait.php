@@ -354,6 +354,7 @@ trait BotExecutorTrait
                     }
                 }
             }
+            $result['execution_guard_passed'] = true;
             // ============================================================
             // Step 3.5 (P6.9): wait_retrace entry action gate - BEFORE balance/order
             // ============================================================
@@ -656,6 +657,8 @@ trait BotExecutorTrait
         $result['status'] = $status;
         $result['error'] = $reason;
         $result['context'] = $context;
+        $result['execution_guard_passed'] = !in_array($result['execution_stage'] ?? '', ['execution_guard_blocked', 'execution_guard_check'], true);
+        $result['execution_stage_at_failure'] = $result['execution_stage'] ?? 'unknown';
         
         $this->store->saveRejectedIntent($intent, array_merge([
             'reason' => $reason,
@@ -2454,7 +2457,15 @@ private function checkLateEntry(array $intent): array
             $freshnessBonus = $freshnessBonusPct;
         }
 
-        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus;
+        // Short enter_now breakdown bonus: breakdown entries move immediately after confirm,
+        // so they need extra tolerance to avoid false late-entry rejections.
+        $shortEnterNowBonus = 0.0;
+        $entryAction = $intent['entry_action'] ?? 'enter_now';
+        if ($side === 'short' && $entryAction === 'enter_now') {
+            $shortEnterNowBonus = (float)($this->config['execution']['late_entry_short_enter_now_bonus_pct'] ?? 0.25);
+        }
+
+        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus + $shortEnterNowBonus;
 
         $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
         $priceDiffRound = round($priceDiff, 4);
@@ -2464,6 +2475,7 @@ private function checkLateEntry(array $intent): array
         $diag = [
             'symbol' => $intent['symbol'] ?? '',
             'side' => $side,
+            'entry_action' => $entryAction,
             'pattern_algorithm' => $intent['pattern_algorithm'] ?? $intent['source_schema_version'] ?? 'unknown',
             'current_price' => $currentPrice,
             'entry_price' => $entryPrice,
@@ -2472,6 +2484,7 @@ private function checkLateEntry(array $intent): array
             'config_default_threshold_pct' => round($configDefault, 4),
             'buffer_pct' => round($bufferPct, 4),
             'freshness_bonus_pct' => round($freshnessBonus, 4),
+            'short_enter_now_bonus_pct' => round($shortEnterNowBonus, 4),
             'effective_threshold_pct' => $effectiveThresholdRound,
             'intent_age_seconds' => $intentAgeSec,
             'created_ts' => $createdTs,
@@ -2490,11 +2503,15 @@ private function checkLateEntry(array $intent): array
             $moveDirection = 'down';
         }
 
-        if ($isMoveAgainstEntry && $priceDiff > $effectiveThreshold) {
+        // Epsilon-safe comparison: allow borderline passes within 0.01% tolerance
+        $epsilon = 0.01;
+        if ($isMoveAgainstEntry && ($priceDiff - $effectiveThreshold) > $epsilon) {
             // Determine sub-reason based on severity
             $subreason = 'rejected_late_entry_price_moved_too_far';
             if ($intentAgeSec > 300) {
                 $subreason = 'rejected_late_entry_timeout_exceeded';
+            } elseif ($side === 'short' && $entryAction === 'enter_now' && $priceDiff <= $effectiveThreshold * 1.3) {
+                $subreason = 'rejected_late_entry_short_breakdown_followthrough';
             } elseif ($priceDiff <= $effectiveThreshold * 1.5) {
                 $subreason = 'rejected_late_entry_borderline_buffer_fail';
             }
@@ -2502,13 +2519,14 @@ private function checkLateEntry(array $intent): array
             $result['ok'] = false;
             $result['subreason'] = $subreason;
             $result['reason'] = sprintf(
-                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%%)",
+                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%% + short_enter_now=%.2f%%)",
                 $moveDirection,
                 $priceDiffRound,
                 $effectiveThresholdRound,
                 $baseThreshold,
                 $bufferPct,
-                $freshnessBonus
+                $freshnessBonus,
+                $shortEnterNowBonus
             );
         }
 

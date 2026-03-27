@@ -228,6 +228,7 @@ $etLoaded = (int)($lastRunBot['intents_loaded_count'] ?? 0);
 $etClaimedNow = (int)($lastRunBot['intents_claimed_now_count'] ?? 0);
 $etProcessed = (int)($lastRunBot['intents_processed'] ?? 0);
 $etValidationPassed = (int)($lastRunBot['intents_validation_passed_count'] ?? 0);
+$etGuardPassed = (int)($lastRunBot['intents_execution_guard_passed_count'] ?? 0);
 $etExecRejected = (int)($lastRunBot['intents_execution_rejected_count'] ?? 0);
 $etOrderSendAttempted = (int)($lastRunBot['intents_order_send_attempted_count'] ?? 0);
 $etOrderSent = (int)($lastRunBot['intents_order_sent_count'] ?? 0);
@@ -255,6 +256,7 @@ $etStaleFinalized = (int)($lastRunBot['intents_claimed_finalized_count'] ?? 0);
             <div class="col"><small class="text-muted d-block">Claimed</small><strong class="text-primary"><?= $etClaimedNow ?></strong></div>
             <div class="col"><small class="text-muted d-block">Valid</small><strong><?= $etValidationPassed ?></strong></div>
             <div class="col"><small class="text-muted d-block">Processed</small><strong><?= $etProcessed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Guard Passed</small><strong class="text-info"><?= $etGuardPassed ?></strong></div>
             <div class="col"><small class="text-muted d-block">Order Attempted</small><strong class="text-info"><?= $etOrderSendAttempted ?></strong></div>
             <div class="col"><small class="text-muted d-block">Order Sent</small><strong class="text-success"><?= $etOrderSent ?></strong></div>
             <div class="col"><small class="text-muted d-block">Pos Opened</small><strong class="text-success"><?= $etPositionOpened ?></strong></div>
@@ -679,18 +681,25 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                                     <?php if ($ipdTm === 'price_distance'): ?>
                                         <small class="text-info">(dist <?= round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
                                     <?php elseif ($ipdTm === 'price_distance_floor'): ?>
-                                        <small class="text-info">(floor <?= round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                                        <small class="text-info" title="Trailing mode: price_distance_floor (multi-layer)">(pdf)</small>
+                                        <?php
+                                            $ipdDistPct = round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1);
+                                            $ipdFloorRoi = round((float)($ipd['floor_locked_roi'] ?? $ipd['trailing_floor_lock_roi'] ?? 0), 1);
+                                            $ipdActivationRoi = round((float)($ipd['trailing_activation_floor_roi'] ?? $ipd['trailing_activation_roi_pct'] ?? 0), 1);
+                                        ?>
+                                        <br><small class="text-muted" title="Distance trailing layer (shown in exchange UI)">📏 Dist: <?= $ipdDistPct ?>%</small>
                                         <?php if ($ipd['floor_lock_active'] ?? false): ?>
-                                            <br><small class="text-success">🔒 Floor: <?= round((float)($ipd['floor_locked_roi'] ?? 0), 1) ?>% ROI</small>
+                                            <br><small class="text-success" title="Floor lock active — minimum ROI protected">🔒 Floor: <?= $ipdFloorRoi ?>% ROI</small>
                                             <?php if ((float)($ipd['floor_stop_price'] ?? 0) > 0): ?>
-                                                <br><small>floor_stop: <?= number_format((float)$ipd['floor_stop_price'], 4) ?></small>
+                                                <br><small title="Floor stop price enforced by bot">floor_stop: <?= number_format((float)$ipd['floor_stop_price'], 4) ?></small>
                                             <?php endif; ?>
                                             <?php if ($ipd['protection_source_of_truth'] ?? ''): ?>
                                                 <br><small class="text-muted">via: <?= htmlspecialchars((string)$ipd['protection_source_of_truth']) ?></small>
                                             <?php endif; ?>
                                         <?php else: ?>
-                                            <br><small class="text-muted">🔓 Floor: waiting</small>
+                                            <br><small class="text-muted" title="Floor not yet active — waiting for activation ROI">🔓 Activation: <?= $ipdActivationRoi ?>% ROI</small>
                                         <?php endif; ?>
+                                        <br><small class="text-muted fst-italic" style="font-size:0.65rem;" title="Exchange UI reflects distance layer only">⚡ Exchange shows distance layer</small>
                                     <?php elseif ($ipd['trailing_activation_roi_pct'] ?? 0): ?>
                                         <small>(<?= number_format((float)($ipd['trailing_activation_roi_pct'] ?? 0), 2) ?>%)</small>
                                     <?php endif; ?>
@@ -751,6 +760,44 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         </tbody>
                     </table>
                 </div>
+                <?php endif; ?>
+                <?php
+                // Trailing Contract Summary for price_distance_floor trades
+                $pdfTrades = array_filter($idxProtDetails, function($ipd) {
+                    return ($ipd['trailing_mode'] ?? '') === 'price_distance_floor';
+                });
+                if (!empty($pdfTrades)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">📋 Trailing Contract — price_distance_floor</small>
+                <div class="alert alert-info py-1 px-2 mb-2" style="font-size:0.75rem;">
+                    <strong>Multi-layer protection:</strong>
+                    Exchange UI shows the <em>distance trailing</em> layer (correction %).
+                    Floor lock ROI is enforced separately by bot/exchange stop logic.
+                </div>
+                <?php foreach ($pdfTrades as $pdfT):
+                    $pdfSym = htmlspecialchars((string)($pdfT['symbol'] ?? ''));
+                    $pdfDist = round(((float)($pdfT['trailing_price_distance_pct'] ?? 0)) * 100, 1);
+                    $pdfFloor = round((float)($pdfT['floor_locked_roi'] ?? $pdfT['trailing_floor_lock_roi'] ?? 0), 1);
+                    $pdfAct = round((float)($pdfT['trailing_activation_floor_roi'] ?? $pdfT['trailing_activation_roi_pct'] ?? 0), 1);
+                    $pdfEffStop = (float)($pdfT['current_effective_stop_price'] ?? 0);
+                    $pdfSource = htmlspecialchars((string)($pdfT['protection_source_of_truth'] ?? 'unknown'));
+                    $pdfFloorActive = (bool)($pdfT['floor_lock_active'] ?? false);
+                ?>
+                <div class="mb-2 p-2 border rounded" style="font-size:0.75rem;">
+                    <strong><?= $pdfSym ?></strong>
+                    <span class="badge bg-<?= ($pdfT['side'] ?? '') === 'long' ? 'success' : 'danger' ?> ms-1"><?= strtoupper((string)($pdfT['side'] ?? '')) ?></span>
+                    <table class="table table-sm table-borderless mb-0 mt-1" style="font-size:0.72rem;">
+                        <tr><td class="text-muted" style="width:40%">Mode</td><td>price_distance_floor</td></tr>
+                        <tr><td class="text-muted">Activation ROI</td><td><?= $pdfAct ?>%</td></tr>
+                        <tr><td class="text-muted">Floor Lock ROI</td><td><?= $pdfFloor ?>% <?= $pdfFloorActive ? '🔒 active' : '🔓 waiting' ?></td></tr>
+                        <tr><td class="text-muted">Distance Layer</td><td><?= $pdfDist ?>%</td></tr>
+                        <?php if ($pdfEffStop > 0): ?>
+                        <tr><td class="text-muted">Effective Stop</td><td class="fw-bold"><?= number_format($pdfEffStop, 4) ?></td></tr>
+                        <?php endif; ?>
+                        <tr><td class="text-muted">Source</td><td><?= $pdfSource ?></td></tr>
+                    </table>
+                </div>
+                <?php endforeach; ?>
                 <?php endif; ?>
             </div>
         </div>

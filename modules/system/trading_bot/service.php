@@ -806,6 +806,7 @@ final class TradingBotService
             // (single source of truth — no drift between records and counts).
             // ============================================================
             $result['intents_processed'] = count($result['intent_results']);
+            $result['intents_validation_passed_count'] = count($result['intent_results']);
             $result['intents_opened'] = 0;
             $result['intents_skipped'] = 0;
             $result['intents_deferred'] = 0;
@@ -822,6 +823,7 @@ final class TradingBotService
             $result['intents_exchange_accepted_count'] = 0;
             $result['intents_position_opened_count'] = 0;
             $result['intents_execution_rejected_count'] = 0;
+            $result['intents_execution_guard_passed_count'] = 0;
             $result['intents_terminal_executed_count'] = 0;
             $result['intents_terminal_rejected_count'] = 0;
             $result['intents_terminal_failed_count'] = 0;
@@ -855,6 +857,11 @@ final class TradingBotService
                 // Execution rejection: intent processed but rejected before order send
                 if (in_array($ls, ['rejected', 'failed'], true) && empty($ir['order_send_attempted'])) {
                     $result['intents_execution_rejected_count']++;
+                }
+
+                // Execution guard passed: intent reached beyond guard checks
+                if (!empty($ir['execution_guard_passed'])) {
+                    $result['intents_execution_guard_passed_count']++;
                 }
 
                 // Terminal status distribution

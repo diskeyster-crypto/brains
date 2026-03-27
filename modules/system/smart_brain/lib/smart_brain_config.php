@@ -128,11 +128,14 @@ final class SmartBrainConfig
             'brain_may_tighten_stop'       => !empty($values['brain_may_tighten_stop']),
             'trailing_enabled'             => !empty($values['trailing_enabled']),
             'trailing_mode'                => in_array((string)($values['trailing_mode'] ?? 'roi_giveback'), ['roi_giveback', 'price_distance', 'price_distance_floor'], true) ? (string)$values['trailing_mode'] : 'roi_giveback',
+            // ROI-based trailing preset mode: soft|medium|hard|custom
+            'trailing_preset_mode'         => in_array((string)($values['trailing_preset_mode'] ?? 'custom'), ['soft', 'medium', 'hard', 'custom'], true) ? (string)$values['trailing_preset_mode'] : 'custom',
             // Active for price_distance + price_distance_floor modes
             'trailing_price_distance_pct'  => max(0.005, min(0.20, (float)($values['trailing_price_distance_pct'] ?? 0.02))),
             // Active for price_distance_floor mode only
             'trailing_activation_floor_roi' => (float)($values['trailing_activation_floor_roi'] ?? 4.0),
             'trailing_floor_lock_roi'      => (float)($values['trailing_floor_lock_roi'] ?? 3.0),
+            'trailing_distance_roi'        => (float)($values['trailing_distance_roi'] ?? 0),
             'trailing_step_mode'           => in_array((string)($values['trailing_step_mode'] ?? 'fixed'), ['fixed', 'auto_strength'], true) ? (string)$values['trailing_step_mode'] : 'fixed',
             'trailing_step_pct_min'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_min'] ?? 0.005))),
             'trailing_step_pct_max'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_max'] ?? 0.02))),
@@ -329,6 +332,10 @@ final class SmartBrainConfig
                 }
             }
         }
+        // Validate trailing_preset_mode
+        if (isset($values['trailing_preset_mode']) && !in_array((string)$values['trailing_preset_mode'], ['soft', 'medium', 'hard', 'custom'], true)) {
+            $errors[] = 'trailing_preset_mode must be soft, medium, hard, or custom';
+        }
         // Validate price_distance_floor specific fields
         if (isset($values['trailing_mode']) && (string)$values['trailing_mode'] === 'price_distance_floor') {
             if (isset($values['trailing_activation_floor_roi'])) {
@@ -342,8 +349,9 @@ final class SmartBrainConfig
                 if ($floorLock <= 0) {
                     $errors[] = 'trailing_floor_lock_roi must be > 0';
                 }
-                if (isset($values['trailing_activation_floor_roi']) && $floorLock >= (float)$values['trailing_activation_floor_roi']) {
-                    $errors[] = 'trailing_floor_lock_roi must be < trailing_activation_floor_roi';
+                // Allow floor_lock_roi == activation_floor_roi (presets use equal values)
+                if (isset($values['trailing_activation_floor_roi']) && $floorLock > (float)$values['trailing_activation_floor_roi']) {
+                    $errors[] = 'trailing_floor_lock_roi must be <= trailing_activation_floor_roi';
                 }
             }
             if (isset($values['trailing_step_mode']) && !in_array((string)$values['trailing_step_mode'], ['fixed', 'auto_strength'], true)) {

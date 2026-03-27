@@ -447,6 +447,9 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $dashDrawdown = $botMirror['effective_drawdown_factor'] ?? ($effectiveContract['drawdown_factor'] ?? null);
                 $dashTrailingMode = $effectiveContract['trailing_mode'] ?? 'roi_giveback';
                 $dashPriceDistPct = $effectiveContract['trailing_price_distance_pct'] ?? null;
+                $dashPresetMode = $effectiveContract['trailing_preset_mode'] ?? null;
+                $dashDistanceRoi = $effectiveContract['trailing_distance_roi'] ?? null;
+                $dashContractSource = $effectiveContract['trailing_contract_source'] ?? null;
                 $dashHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($effectiveContract['hybrid_tp_share'] ?? null);
                 $dashSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
                 $dashLegacyPresent = (bool)($effectiveContract['legacy_trailing_fields_present'] ?? false);
@@ -456,6 +459,15 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
             <div class="mt-2 small">
                 <strong><i class="bi bi-arrow-right-circle me-1"></i>Active Trailing Contract</strong>
                 <span class="badge bg-primary ms-1" style="font-size:0.65rem;"><?= htmlspecialchars($dashTrailingMode) ?></span>
+                <?php if ($dashPresetMode && $dashPresetMode !== 'custom'): ?>
+                <span class="badge bg-info ms-1" style="font-size:0.65rem;">preset: <?= htmlspecialchars($dashPresetMode) ?></span>
+                <?php endif; ?>
+                <?php if ($dashDistanceRoi !== null && (float)$dashDistanceRoi > 0): ?>
+                <span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">dist: <?= (float)$dashDistanceRoi ?> ROI</span>
+                <?php endif; ?>
+                <?php if ($dashContractSource): ?>
+                <span class="badge bg-secondary ms-1" style="font-size:0.55rem;"><?= htmlspecialchars($dashContractSource) ?></span>
+                <?php endif; ?>
                 <?php if ($dashLegacyPresent): ?>
                 <span class="badge bg-secondary ms-1" style="font-size:0.55rem;">legacy fields preserved</span>
                 <?php endif; ?>

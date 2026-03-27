@@ -1932,9 +1932,35 @@ final class SmartBrainCore
         // Convert ratio→percent if needed
         $floorActivationPct = ($rawFloorActivation > 0 && $rawFloorActivation < 1.0) ? $rawFloorActivation * 100 : $rawFloorActivation;
         $floorLockRoiPct    = ($rawFloorLockRoi > 0 && $rawFloorLockRoi < 1.0) ? $rawFloorLockRoi * 100 : $rawFloorLockRoi;
-        // Validate: floor lock must be less than floor activation
-        if ($floorLockRoiPct >= $floorActivationPct && $floorActivationPct > 0) {
+        // Validate: floor lock must be less than or equal to floor activation
+        if ($floorLockRoiPct > $floorActivationPct && $floorActivationPct > 0) {
             $floorLockRoiPct = $floorActivationPct * 0.75;
+        }
+
+        // ROI-based trailing preset resolution (canonical Brain contract)
+        $trailingPresetMode = (string)($userLimits['trailing_preset_mode'] ?? 'custom');
+        if (!in_array($trailingPresetMode, ['soft', 'medium', 'hard', 'custom'], true)) {
+            $trailingPresetMode = 'custom';
+        }
+        $trailingPresets = [
+            'soft'   => ['activation_roi' => 2.0, 'floor_lock_roi' => 2.0, 'distance_roi' => 0.5],
+            'medium' => ['activation_roi' => 3.0, 'floor_lock_roi' => 3.0, 'distance_roi' => 0.8],
+            'hard'   => ['activation_roi' => 4.0, 'floor_lock_roi' => 4.0, 'distance_roi' => 1.0],
+        ];
+        $trailingDistanceRoi = null;
+        $presetContractSource = 'brain_custom';
+        if ($trailingPresetMode !== 'custom' && isset($trailingPresets[$trailingPresetMode])) {
+            $preset = $trailingPresets[$trailingPresetMode];
+            $floorActivationPct = (float)$preset['activation_roi'];
+            $floorLockRoiPct    = (float)$preset['floor_lock_roi'];
+            $trailingDistanceRoi = (float)$preset['distance_roi'];
+            $presetContractSource = 'brain_preset';
+        } else {
+            // Custom mode: use explicit distance_roi if set
+            $rawDistanceRoi = (float)($userLimits['trailing_distance_roi'] ?? 0);
+            if ($rawDistanceRoi > 0) {
+                $trailingDistanceRoi = $rawDistanceRoi;
+            }
         }
         $trailingStepMode = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
         if (!in_array($trailingStepMode, ['fixed', 'auto_strength'], true)) {
@@ -1949,6 +1975,9 @@ final class SmartBrainCore
         $botReady['trailing'] = [
             'enabled' => $trailingEnabled,
             'trailing_mode' => $trailingMode,
+            'trailing_preset_mode' => $trailingPresetMode,
+            'trailing_distance_roi' => $trailingDistanceRoi,
+            'trailing_contract_source' => $presetContractSource,
             'activation_roi_pct' => $activationPct,
             'drawdown_factor' => 0.5,
             'trailing_price_distance_pct' => $trailingPriceDistancePct,

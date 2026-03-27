@@ -706,6 +706,9 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $mirrorDrawdown = $botMirror['effective_drawdown_factor'] ?? ($rtEffectiveContract['drawdown_factor'] ?? null);
                 $mirrorTrailingMode = $rtEffectiveContract['trailing_mode'] ?? 'roi_giveback';
                 $mirrorPriceDistPct = $rtEffectiveContract['trailing_price_distance_pct'] ?? null;
+                $mirrorPresetMode = $rtEffectiveContract['trailing_preset_mode'] ?? null;
+                $mirrorDistanceRoi = $rtEffectiveContract['trailing_distance_roi'] ?? null;
+                $mirrorContractSource = $rtEffectiveContract['trailing_contract_source'] ?? null;
                 $mirrorHybridShare = $botMirror['effective_hybrid_tp_share'] ?? ($rtEffectiveContract['hybrid_tp_share'] ?? null);
                 $mirrorSource = $botMirror['effective_trailing_contract_source'] ?? 'unknown';
                 $rtLegacyPresent = (bool)($rtEffectiveContract['legacy_trailing_fields_present'] ?? false);
@@ -715,6 +718,15 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
             <div class="mb-2 small">
                 <strong><i class="bi bi-arrow-right-circle me-1"></i>Active Trailing Contract</strong>
                 <span class="badge bg-primary ms-1" style="font-size:0.65rem;"><?= htmlspecialchars($mirrorTrailingMode) ?></span>
+                <?php if ($mirrorPresetMode && $mirrorPresetMode !== 'custom'): ?>
+                <span class="badge bg-info ms-1" style="font-size:0.65rem;">preset: <?= htmlspecialchars($mirrorPresetMode) ?></span>
+                <?php endif; ?>
+                <?php if ($mirrorDistanceRoi !== null && (float)$mirrorDistanceRoi > 0): ?>
+                <span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">dist: <?= (float)$mirrorDistanceRoi ?> ROI</span>
+                <?php endif; ?>
+                <?php if ($mirrorContractSource): ?>
+                <span class="badge bg-secondary ms-1" style="font-size:0.55rem;"><?= htmlspecialchars($mirrorContractSource) ?></span>
+                <?php endif; ?>
                 <?php if ($rtLegacyPresent): ?>
                 <span class="badge bg-secondary ms-1" style="font-size:0.55rem;">legacy fields preserved</span>
                 <?php endif; ?>

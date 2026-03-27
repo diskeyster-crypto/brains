@@ -934,20 +934,94 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                 </div>
                                 <div id="floor_trailing_collapse" class="collapse <?= $currentTrailingMode === 'price_distance_floor' ? 'show' : '' ?>">
                                 <div class="card-body">
+
+                                    <!-- ROI-Based Trailing Preset Selector -->
+                                    <?php
+                                        $brainPresetMode = $v('trailing_preset_mode', 'custom');
+                                        $brainPresets = [
+                                            'soft'   => ['activation_roi' => 2.0, 'floor_lock_roi' => 2.0, 'distance_roi' => 0.5],
+                                            'medium' => ['activation_roi' => 3.0, 'floor_lock_roi' => 3.0, 'distance_roi' => 0.8],
+                                            'hard'   => ['activation_roi' => 4.0, 'floor_lock_roi' => 4.0, 'distance_roi' => 1.0],
+                                        ];
+                                    ?>
+                                    <div class="card border-primary mb-3">
+                                        <div class="card-header bg-primary bg-opacity-10 py-2">
+                                            <strong>🎯 Trailing Preset</strong>
+                                            <small class="text-muted ms-2">ROI-based trailing distance presets</small>
+                                        </div>
+                                        <div class="card-body py-2">
+                                            <div class="alert alert-info py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                                Distance ROI is converted to price distance using leverage.<br>
+                                                <code>price_distance_pct = distance_roi / leverage / 100</code><br>
+                                                When a preset is active, activation/floor/distance values are derived from the preset.
+                                            </div>
+                                            <div class="mb-2">
+                                                <label for="trailing_preset_mode" class="form-label">Preset Mode
+                                                    <i class="bi bi-question-circle cfg-info" title="soft/medium/hard = predefined ROI-based trailing contract. custom = edit raw values manually."></i>
+                                                </label>
+                                                <select class="form-select" id="trailing_preset_mode" name="trailing_preset_mode">
+                                                    <option value="soft" <?= $brainPresetMode === 'soft' ? 'selected' : '' ?>>Soft (activation 2 ROI, distance 0.5 ROI)</option>
+                                                    <option value="medium" <?= $brainPresetMode === 'medium' ? 'selected' : '' ?>>Medium (activation 3 ROI, distance 0.8 ROI)</option>
+                                                    <option value="hard" <?= $brainPresetMode === 'hard' ? 'selected' : '' ?>>Hard (activation 4 ROI, distance 1.0 ROI)</option>
+                                                    <option value="custom" <?= $brainPresetMode === 'custom' ? 'selected' : '' ?>>Custom (manual values)</option>
+                                                </select>
+                                                <div class="cfg-hint">Выберите режим трейлинга. Пресеты определяют activation/floor/distance в ROI-единицах.</div>
+                                            </div>
+                                            <table class="table table-sm table-bordered mb-2" style="font-size:0.75rem;">
+                                                <thead><tr><th>Preset</th><th>Activation ROI</th><th>Floor Lock ROI</th><th>Distance ROI</th></tr></thead>
+                                                <tbody>
+                                                <?php foreach ($brainPresets as $pName => $pVals):
+                                                    $isActive = ($brainPresetMode === $pName);
+                                                ?>
+                                                    <tr class="<?= $isActive ? 'table-primary' : '' ?>">
+                                                        <td><strong><?= $pName ?></strong> <?= $isActive ? '✅' : '' ?></td>
+                                                        <td><?= $pVals['activation_roi'] ?></td>
+                                                        <td><?= $pVals['floor_lock_roi'] ?></td>
+                                                        <td><?= $pVals['distance_roi'] ?></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                                <?php if ($brainPresetMode === 'custom'): ?>
+                                                    <tr class="table-warning">
+                                                        <td><strong>custom</strong> ✅</td>
+                                                        <td><?= $v('trailing_activation_floor_roi', '4.0') ?></td>
+                                                        <td><?= $v('trailing_floor_lock_roi', '3.0') ?></td>
+                                                        <td><?= $v('trailing_distance_roi', '0') ?: '—' ?></td>
+                                                    </tr>
+                                                <?php endif; ?>
+                                                </tbody>
+                                            </table>
+                                            <?php if ($brainPresetMode !== 'custom'): ?>
+                                            <div class="alert alert-success py-1 px-2 mb-0" style="font-size:0.78rem;">
+                                                📋 Active preset: <strong><?= htmlspecialchars($brainPresetMode) ?></strong> — floor fields below are overridden by preset values.
+                                            </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-2<?= $brainPresetMode !== 'custom' ? ' cfg-muted-field' : '' ?>" id="floor_custom_fields_group">
                                     <div class="mb-2">
                                         <label for="trailing_activation_floor_roi" class="form-label">Floor Activation ROI
-                                            <i class="bi bi-question-circle cfg-info" title="ROI threshold to activate floor trailing. 0.04 = +4% ROI."></i>
+                                            <i class="bi bi-question-circle cfg-info" title="ROI threshold to activate floor trailing. 0.04 = +4% ROI. Overridden when preset is active."></i>
                                         </label>
-                                        <input type="number" step="0.001" min="0.005" class="form-control" id="trailing_activation_floor_roi" name="trailing_activation_floor_roi" value="<?= $v('trailing_activation_floor_roi', '0.04') ?>">
-                                        <div class="cfg-hint">Порог ROI для активации floor-трейлинга (<code>0.04</code> = после +4% ROI)</div>
+                                        <input type="number" step="0.001" min="0.005" class="form-control" id="trailing_activation_floor_roi" name="trailing_activation_floor_roi" value="<?= $v('trailing_activation_floor_roi', '0.04') ?>"<?= $brainPresetMode !== 'custom' ? ' readonly' : '' ?>>
+                                        <div class="cfg-hint">Порог ROI для активации floor-трейлинга (<code>0.04</code> = после +4% ROI)<?= $brainPresetMode !== 'custom' ? ' <em>(overridden by preset)</em>' : '' ?></div>
                                     </div>
                                     <div class="mb-2">
                                         <label for="trailing_floor_lock_roi" class="form-label">Floor Lock ROI
-                                            <i class="bi bi-question-circle cfg-info" title="Minimum guaranteed protected ROI once trailing activates. Must be less than Floor Activation ROI. 0.03 = +3% ROI guaranteed."></i>
+                                            <i class="bi bi-question-circle cfg-info" title="Minimum guaranteed protected ROI once trailing activates. Must be <= Floor Activation ROI. Overridden when preset is active."></i>
                                         </label>
-                                        <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_floor_lock_roi" name="trailing_floor_lock_roi" value="<?= $v('trailing_floor_lock_roi', '0.03') ?>">
-                                        <div class="cfg-hint">Минимальная гарантированная защищённая прибыль (<code>0.03</code> = не менее +3% ROI после активации). Должно быть меньше Floor Activation ROI</div>
+                                        <input type="number" step="0.001" min="0.001" class="form-control" id="trailing_floor_lock_roi" name="trailing_floor_lock_roi" value="<?= $v('trailing_floor_lock_roi', '0.03') ?>"<?= $brainPresetMode !== 'custom' ? ' readonly' : '' ?>>
+                                        <div class="cfg-hint">Минимальная гарантированная защищённая прибыль (<code>0.03</code> = не менее +3% ROI после активации)<?= $brainPresetMode !== 'custom' ? ' <em>(overridden by preset)</em>' : '' ?></div>
                                     </div>
+                                    <div class="mb-2">
+                                        <label for="trailing_distance_roi" class="form-label">Distance ROI
+                                            <i class="bi bi-question-circle cfg-info" title="Trailing distance in ROI units. Converted to price distance via leverage. Only used in custom mode."></i>
+                                        </label>
+                                        <input type="number" step="0.1" min="0" class="form-control" id="trailing_distance_roi" name="trailing_distance_roi" value="<?= $v('trailing_distance_roi', '0') ?>"<?= $brainPresetMode !== 'custom' ? ' readonly' : '' ?>>
+                                        <div class="cfg-hint">Расстояние трейлинга в ROI-единицах (0 = использовать trailing_price_distance_pct)<?= $brainPresetMode !== 'custom' ? ' <em>(overridden by preset)</em>' : '' ?></div>
+                                    </div>
+                                    </div>
+
                                     <div class="mb-2">
                                         <label for="trailing_step_mode" class="form-label">Step Mode
                                             <i class="bi bi-question-circle cfg-info" title="fixed = use step_pct_min as fixed threshold. auto_strength = dynamic step based on move strength within corridor."></i>

@@ -459,6 +459,32 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <strong><?= (int)($lifecycleSummary['total'] ?? 0) ?></strong>
                 </div>
             </div>
+            <?php
+                // Lifecycle-aware status message: clarify when pending=0 but other states exist
+                $lcPending = (int)($lifecycleSummary['pending'] ?? 0);
+                $lcClaimed = (int)($lifecycleSummary['claimed'] ?? 0);
+                $lcExecuted = (int)($lifecycleSummary['executed'] ?? 0);
+                $lcRejected = (int)($lifecycleSummary['rejected'] ?? 0);
+                $lcExpired = (int)($lifecycleSummary['expired'] ?? 0);
+                $lcNonPending = $lcClaimed + $lcExecuted + $lcRejected + $lcExpired;
+                if ($lcPending === 0 && $lcNonPending > 0):
+            ?>
+            <div class="row mt-1">
+                <div class="col-12">
+                    <small class="text-info">
+                        <i class="bi bi-info-circle me-1"></i>No pending intents currently — previously approved intents already moved to
+                        <?php
+                            $parts = [];
+                            if ($lcClaimed > 0) $parts[] = $lcClaimed . ' claimed';
+                            if ($lcExecuted > 0) $parts[] = $lcExecuted . ' executed';
+                            if ($lcRejected > 0) $parts[] = $lcRejected . ' rejected';
+                            if ($lcExpired > 0) $parts[] = $lcExpired . ' expired';
+                            echo implode(', ', $parts);
+                        ?>.
+                    </small>
+                </div>
+            </div>
+            <?php endif; ?>
             <?php if (!empty($lifecycleCounters)): ?>
             <div class="row mt-1">
                 <div class="col-12">

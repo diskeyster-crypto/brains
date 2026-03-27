@@ -266,10 +266,23 @@ final class TradingBotService
                     $intentsResult = ['ok' => true, 'count' => 0, 'intents' => [], 'errors' => $brainLiveResult['errors'] ?? []];
                     $this->warnings[] = 'Brain-controlled mode active: live_intents.json is invalid. Run stopped. Legacy fallback is disabled. ' . implode('; ', $brainLiveResult['errors'] ?? []);
                 } elseif (($brainLiveResult['count'] ?? 0) === 0) {
-                    // Brain approved zero intents — valid decision, NOT an error
+                    // Brain has zero *pending* intents available — valid decision, NOT an error.
+                    // This does NOT mean Brain never approved any intents.
+                    // Previously approved intents may already be claimed/executed/rejected.
                     $inputSource = 'brain_live_intents';
                     $intentsResult = $brainLiveResult;
-                    $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled.';
+                    $lifecycleSkipped = $brainLiveResult['lifecycle_skipped'] ?? [];
+                    $nonPendingTotal = ($lifecycleSkipped['claimed'] ?? 0) + ($lifecycleSkipped['already_executed'] ?? 0) + ($lifecycleSkipped['rejected'] ?? 0) + ($lifecycleSkipped['expired'] ?? 0);
+                    if ($nonPendingTotal > 0) {
+                        $parts = [];
+                        if (($lifecycleSkipped['claimed'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['claimed']) . ' claimed';
+                        if (($lifecycleSkipped['already_executed'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['already_executed']) . ' executed';
+                        if (($lifecycleSkipped['rejected'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['rejected']) . ' rejected';
+                        if (($lifecycleSkipped['expired'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['expired']) . ' expired';
+                        $this->warnings[] = 'Brain-controlled mode active: no pending intents available. Existing intents already ' . implode(', ', $parts) . '. Legacy fallback disabled.';
+                    } else {
+                        $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled.';
+                    }
                 } else {
                     $inputSource = 'brain_live_intents';
                     $intentsResult = $brainLiveResult;
@@ -612,6 +625,9 @@ final class TradingBotService
                     $result['intent_results'][] = $intentResultRecord;
 
                     // ── Lifecycle: Update intent status in live_intents.json ──
+                    // Every claimed intent MUST reach a terminal state (executed/rejected)
+                    // in the same run. Only deferred (wait_retrace) intents may remain
+                    // as claimed for the next tick. All other states are finalized here.
                     if ($brainControlled && !empty($liveIntentsFilePath)) {
                         $iid = $intent['intent_id'] ?? '';
                         if ($iid !== '') {
@@ -625,8 +641,17 @@ final class TradingBotService
                                     'reject_reason' => $execResult['status'] ?? 'unknown',
                                     'reject_context' => $execResult['error'] ?? null,
                                 ]);
+                            } elseif ($lifecycleState === 'deferred') {
+                                // Deferred (wait_retrace): leave as claimed — bot will re-check next tick.
+                                // This is the ONLY intentional non-terminal outcome for a claimed intent.
+                            } else {
+                                // Catch-all: unexpected or empty lifecycle state after execution.
+                                // Finalize as rejected to prevent claimed intent from hanging indefinitely.
+                                $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                    'reject_reason' => 'rejected_unresolved_lifecycle',
+                                    'reject_context' => 'lifecycle_state=' . ($lifecycleState ?: 'empty') . ', exec_status=' . ($execResult['status'] ?? 'unknown'),
+                                ]);
                             }
-                            // deferred/pending: leave as claimed — bot will re-check next tick
                         }
                     }
 
@@ -910,6 +935,43 @@ final class TradingBotService
             // Stale claim counters for telemetry
             $result['intents_claimed_stale_count'] = $staleClaimResult['stale_claimed_found'] ?? 0;
             $result['intents_claimed_finalized_count'] = $staleClaimResult['finalized_count'] ?? 0;
+
+            // ── Honest lifecycle telemetry ──────────────────────────────
+            // Reload live_intents.json to get current lifecycle state after
+            // all status updates, stale-claim finalization, and execution.
+            // This provides accurate pending/claimed/executed/rejected counts
+            // that distinguish "no pending now" from "no approved ever".
+            $currentLifecycleCounts = ['pending' => 0, 'claimed' => 0, 'executed' => 0, 'rejected' => 0, 'expired' => 0, 'total' => 0];
+            if ($brainControlled && !empty($liveIntentsFilePath) && is_file($liveIntentsFilePath)) {
+                $liveData = @json_decode(@file_get_contents($liveIntentsFilePath), true);
+                if (is_array($liveData) && !empty($liveData['intents'])) {
+                    foreach ($liveData['intents'] as $_li) {
+                        $currentLifecycleCounts['total']++;
+                        $_ls = $_li['status'] ?? 'pending';
+                        if (isset($currentLifecycleCounts[$_ls])) {
+                            $currentLifecycleCounts[$_ls]++;
+                        }
+                    }
+                }
+            }
+            $result['lifecycle_current_counts'] = $currentLifecycleCounts;
+            $result['intents_pending_current_count'] = $currentLifecycleCounts['pending'];
+            $result['intents_claimed_current_count'] = $currentLifecycleCounts['claimed'];
+            $result['intents_executed_current_count'] = $currentLifecycleCounts['executed'];
+            $result['intents_rejected_current_count'] = $currentLifecycleCounts['rejected'];
+            $result['intents_expired_current_count'] = $currentLifecycleCounts['expired'];
+
+            // Diagnostic: count claimed intents left without terminal commit in this run.
+            // After a healthy run this should be 0 (only deferred intents may remain claimed).
+            $claimedWithoutTerminal = 0;
+            foreach ($result['intent_results'] as $ir) {
+                $irLifecycle = $ir['lifecycle_state'] ?? '';
+                // If an intent was processed but left in a non-terminal, non-deferred state
+                if (!in_array($irLifecycle, ['opened', 'protected', 'trailing_active', 'rejected', 'failed', 'closed', 'deferred', 'skipped'], true)) {
+                    $claimedWithoutTerminal++;
+                }
+            }
+            $result['claimed_without_terminal_commit_count'] = $claimedWithoutTerminal;
 
             // ============================================================
             // P6: ROI Expectancy Metrics

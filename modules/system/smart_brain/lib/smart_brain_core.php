@@ -1450,6 +1450,7 @@ final class SmartBrainCore
                 'selection_mode_used' => $selectionMode,
                 'selection_source' => $selectionSource,
                 'approval_reason' => $approvalReason,
+                'created_at' => date('c'),
                 'created_ts' => time(),
                 'expires_at' => time() + (SmartBrainConfig::LIVE_INTENT_TTL_MINUTES * 60),
                 'status' => SmartBrainConfig::INTENT_STATUS_PENDING,

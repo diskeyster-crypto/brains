@@ -243,6 +243,9 @@ final class TradingBotService
             $sourceStatus = 'unknown';
             $sourceError = '';
             $effectiveLiveConfig = [];
+            // Flag: defer the "no pending intents" warning until after stale-claim finalization
+            // so the message reflects the final post-cleanup lifecycle state, not the pre-load snapshot.
+            $noPendingWarningDeferred = false;
 
             if ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
@@ -272,17 +275,11 @@ final class TradingBotService
                     $inputSource = 'brain_live_intents';
                     $intentsResult = $brainLiveResult;
                     $lifecycleSkipped = $brainLiveResult['lifecycle_skipped'] ?? [];
-                    $nonPendingTotal = ($lifecycleSkipped['claimed'] ?? 0) + ($lifecycleSkipped['already_executed'] ?? 0) + ($lifecycleSkipped['rejected'] ?? 0) + ($lifecycleSkipped['expired'] ?? 0);
-                    if ($nonPendingTotal > 0) {
-                        $parts = [];
-                        if (($lifecycleSkipped['claimed'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['claimed']) . ' claimed';
-                        if (($lifecycleSkipped['already_executed'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['already_executed']) . ' executed';
-                        if (($lifecycleSkipped['rejected'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['rejected']) . ' rejected';
-                        if (($lifecycleSkipped['expired'] ?? 0) > 0) $parts[] = ($lifecycleSkipped['expired']) . ' expired';
-                        $this->warnings[] = 'Brain-controlled mode active: no pending intents available. Existing intents already ' . implode(', ', $parts) . '. Legacy fallback disabled.';
-                    } else {
-                        $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled.';
-                    }
+                    // Warning is deferred until after stale-claim finalization so the message
+                    // reflects the final post-cleanup lifecycle state, not the pre-load snapshot.
+                    // (e.g. a claimed intent finalized by stale cleanup must appear as rejected,
+                    //  not still claimed, in the operator-facing message.)
+                    $noPendingWarningDeferred = true;
                 } else {
                     $inputSource = 'brain_live_intents';
                     $intentsResult = $brainLiveResult;
@@ -972,6 +969,29 @@ final class TradingBotService
                 }
             }
             $result['claimed_without_terminal_commit_count'] = $claimedWithoutTerminal;
+
+            // ── Deferred no-pending warning ──────────────────────────────
+            // Emit AFTER final lifecycle cleanup so the message reflects the
+            // actual post-cleanup state (e.g. stale-claimed → rejected) rather
+            // than the pre-load snapshot stored in $lifecycleSkipped.
+            if ($noPendingWarningDeferred) {
+                $fcClaimed  = $currentLifecycleCounts['claimed'];
+                $fcExecuted = $currentLifecycleCounts['executed'];
+                $fcRejected = $currentLifecycleCounts['rejected'];
+                $fcExpired  = $currentLifecycleCounts['expired'];
+                $fcNonPendingTotal = $fcClaimed + $fcExecuted + $fcRejected + $fcExpired;
+                if ($fcNonPendingTotal > 0) {
+                    $fcParts = [];
+                    if ($fcClaimed  > 0) $fcParts[] = $fcClaimed  . ' claimed';
+                    if ($fcExecuted > 0) $fcParts[] = $fcExecuted . ' executed';
+                    if ($fcRejected > 0) $fcParts[] = $fcRejected . ' rejected';
+                    if ($fcExpired  > 0) $fcParts[] = $fcExpired  . ' expired';
+                    $this->warnings[] = 'Brain-controlled mode active: no pending intents available. Existing intents: ' . implode(', ', $fcParts) . '. Legacy fallback disabled.';
+                } else {
+                    $this->warnings[] = 'Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled.';
+                }
+                $noPendingWarningDeferred = false;
+            }
 
             // ============================================================
             // P6: ROI Expectancy Metrics

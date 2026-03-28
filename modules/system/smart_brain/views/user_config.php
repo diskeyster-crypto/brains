@@ -1022,6 +1022,24 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                     </div>
                                     </div>
 
+                                    <!-- Profit Add-On: one-time scale-in into winning position -->
+                                    <div class="mb-3 border-top pt-3">
+                                        <div class="form-check form-switch mb-2">
+                                            <input class="form-check-input" type="checkbox" id="profit_addon_enabled" name="profit_addon_enabled" <?= !empty($config['profit_addon_enabled']) ? 'checked' : '' ?>>
+                                            <label class="form-check-label fw-semibold" for="profit_addon_enabled">
+                                                💰 Profit Add-On
+                                                <i class="bi bi-question-circle cfg-info" title="One-time scale-in into a winning position. Triggered when ROI reaches trailing activation threshold. Protection state is never reset."></i>
+                                            </label>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label for="profit_addon_budget_pct" class="form-label">Add-On Budget %
+                                                <i class="bi bi-question-circle cfg-info" title="Percentage of budget_usdt_per_trade to add. e.g. 30 = add 30% of canonical budget. Range 0–500."></i>
+                                            </label>
+                                            <input type="number" step="0.1" min="0" max="500" class="form-control" id="profit_addon_budget_pct" name="profit_addon_budget_pct" value="<?= $v('profit_addon_budget_pct', '0') ?>">
+                                            <div class="cfg-hint">Uses trailing activation ROI as the trigger. One-time add-on only. Amount = budget × (pct / 100).</div>
+                                        </div>
+                                    </div>
+
                                     <div class="mb-2">
                                         <label for="trailing_step_mode" class="form-label">Step Mode
                                             <i class="bi bi-question-circle cfg-info" title="fixed = use step_pct_min as fixed threshold. auto_strength = dynamic step based on move strength within corridor."></i>

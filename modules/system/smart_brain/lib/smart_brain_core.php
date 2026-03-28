@@ -1995,6 +1995,8 @@ final class SmartBrainCore
             'fixed_take_profit_roi' => (float)($userLimits['fixed_take_profit_roi'] ?? 0.03),
             'hybrid_tp_share' => (float)($userLimits['hybrid_tp_share'] ?? 0.40),
             'brain_trailing_applied' => true,
+            'profit_addon_enabled' => !empty($userLimits['profit_addon_enabled']),
+            'profit_addon_budget_pct' => max(0.0, min(500.0, (float)($userLimits['profit_addon_budget_pct'] ?? 0.0))),
             'unit_system' => 'activation_pct=percent,drawdown_factor=ratio,trailing_price_distance_pct=ratio,floor_activation=percent,floor_lock=percent,step_pct=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio',
         ];
 

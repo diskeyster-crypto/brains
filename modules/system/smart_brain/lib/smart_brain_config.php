@@ -136,6 +136,9 @@ final class SmartBrainConfig
             'trailing_activation_floor_roi' => (float)($values['trailing_activation_floor_roi'] ?? 4.0),
             'trailing_floor_lock_roi'      => (float)($values['trailing_floor_lock_roi'] ?? 3.0),
             'trailing_distance_roi'        => (float)($values['trailing_distance_roi'] ?? 0),
+            // Profit Add-On: one-time scale-in into winning position, triggered at trailing_activation_floor_roi
+            'profit_addon_enabled'         => !empty($values['profit_addon_enabled']),
+            'profit_addon_budget_pct'      => max(0.0, min(500.0, (float)($values['profit_addon_budget_pct'] ?? 0.0))),
             'trailing_step_mode'           => in_array((string)($values['trailing_step_mode'] ?? 'fixed'), ['fixed', 'auto_strength'], true) ? (string)$values['trailing_step_mode'] : 'fixed',
             'trailing_step_pct_min'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_min'] ?? 0.005))),
             'trailing_step_pct_max'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_max'] ?? 0.02))),

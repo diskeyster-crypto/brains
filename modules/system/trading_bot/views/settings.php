@@ -733,28 +733,27 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                             <small class="text-muted ms-2">(one-time scale-in into winning trade)</small>
                         </div>
                         <div class="card-body py-2">
-                            <div class="alert alert-secondary py-1 px-2 mb-2" style="font-size:0.78rem;">
-                                Uses trailing activation ROI as the trigger. One-time add-on only.<br>
-                                <strong>Add-on amount = budget_usdt_per_trade × (budget_pct / 100).</strong><br>
-                                Protection state (floor lock, break-even, effective stop) is preserved after add-on.
-                                ROI may drop after add-on — this is expected as position size increases.
+                            <div class="alert alert-info py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                ℹ️ <strong>Configured in Brain Trailing Block.</strong>
+                                Set <code>profit_addon_enabled</code> and <code>profit_addon_budget_pct</code> in the Brain settings trailing section.
+                                Bot reads these values from the Brain-resolved trailing contract.
                             </div>
+                            <?php
+                                $profitAddonEnabledDisplay = (bool)($config['execution']['profit_addon_enabled'] ?? false);
+                                $profitAddonBudgetPctDisplay = (float)($config['execution']['profit_addon_budget_pct'] ?? 0.0);
+                            ?>
                             <div class="row g-2">
                                 <div class="col-md-6">
-                                    <div class="form-check form-switch mt-2">
-                                        <input class="form-check-input" type="checkbox" id="profit_addon_enabled" name="profit_addon_enabled" <?= $profitAddonEnabled ? 'checked' : '' ?>>
-                                        <label class="form-check-label" for="profit_addon_enabled">
-                                            Profit Add-On включён
-                                            <?= sprintf($helpIcon, htmlspecialchars('Одноразовое добавление к выигрышной позиции. Срабатывает при достижении trailing activation ROI. Не сбрасывает защиту.')) ?>
+                                    <div class="form-check form-switch mt-2 text-muted">
+                                        <input class="form-check-input" type="checkbox" disabled <?= $profitAddonEnabledDisplay ? 'checked' : '' ?>>
+                                        <label class="form-check-label">
+                                            Profit Add-On (bot fallback default)
                                         </label>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">
-                                        Add-On Budget %
-                                        <?= sprintf($helpIcon, htmlspecialchars('Процент от budget_usdt_per_trade для добавления. Например, 30 = добавить 30% от канонического бюджета. Диапазон: 0–500.')) ?>
-                                    </label>
-                                    <input type="number" step="0.1" min="0" max="500" class="form-control" id="profit_addon_budget_pct" name="profit_addon_budget_pct" value="<?= htmlspecialchars((string)$profitAddonBudgetPct) ?>">
+                                    <label class="form-label text-muted">Add-On Budget % (bot fallback default)</label>
+                                    <input type="number" step="0.1" min="0" max="500" class="form-control" disabled value="<?= htmlspecialchars((string)$profitAddonBudgetPctDisplay) ?>">
                                 </div>
                             </div>
                         </div>
@@ -1076,9 +1075,9 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
             enable_trailing_on_open: document.getElementById('enable_trailing_on_open').checked,
             dumb_trailing_activation_epsilon_pct: flt(document.getElementById('dumb_trailing_activation_epsilon_pct').value, <?= (float)$dumbTrailingEpsPct ?>),
 
-            // profit add-on
-            profit_addon_enabled: document.getElementById('profit_addon_enabled').checked,
-            profit_addon_budget_pct: flt(document.getElementById('profit_addon_budget_pct').value, <?= (float)$profitAddonBudgetPct ?>),
+            // profit add-on (now controlled by Brain trailing block; bot uses Brain contract value at runtime)
+            profit_addon_enabled: <?= $profitAddonEnabled ? 'true' : 'false' ?>,
+            profit_addon_budget_pct: <?= (float)$profitAddonBudgetPct ?>,
 
             // balance
             balance_coin: document.getElementById('balance_coin').value,

@@ -2305,10 +2305,15 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 // current_effective_stop_price) is preserved and NEVER weakened.
                 // ============================================================
                 {
-                    $paEnabled = (bool)($this->config['execution']['profit_addon_enabled'] ?? false);
-                    $paBudgetPct = (float)($this->config['execution']['profit_addon_budget_pct'] ?? 0.0);
                     $risk = $trade['risk'] ?? [];
                     $trailingCfg = $risk['trailing'] ?? [];
+                    // Read profit_addon config: Brain trailing contract takes precedence over bot local config
+                    $paEnabled = array_key_exists('profit_addon_enabled', $trailingCfg)
+                        ? (bool)$trailingCfg['profit_addon_enabled']
+                        : (bool)($this->config['execution']['profit_addon_enabled'] ?? false);
+                    $paBudgetPct = array_key_exists('profit_addon_budget_pct', $trailingCfg)
+                        ? (float)$trailingCfg['profit_addon_budget_pct']
+                        : (float)($this->config['execution']['profit_addon_budget_pct'] ?? 0.0);
                     $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
                     $paUsed = (bool)($runtime['profit_addon_used'] ?? false);
 

@@ -625,6 +625,7 @@ final class TradingBotController
                         'default_late_threshold_pct',
                         'retrace_slack_pct',
                         'dumb_trailing_activation_epsilon_pct',
+                        'profit_addon_budget_pct',
                     ];
 
                     foreach ($floats as $k) {
@@ -642,6 +643,7 @@ final class TradingBotController
                         'enable_trailing_on_open',
                         'balance_strict_stable_coin_only',
                         'reverse_side_enabled',
+                        'profit_addon_enabled',
                     ];
 
                     foreach ($bools as $k) {
@@ -1390,6 +1392,7 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
                     'default_late_threshold_pct' => [0.0, 100.0],
                     'retrace_slack_pct' => [0.0, 10.0],
                     'dumb_trailing_activation_epsilon_pct' => [0.0, 10.0],
+                    'profit_addon_budget_pct' => [0.0, 500.0],
                 ];
 
                 foreach ($floatKeys as $k => $range) {
@@ -1408,6 +1411,7 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
                     'enable_trailing_on_open',
                     'balance_strict_stable_coin_only',
                     'reverse_side_enabled',
+                    'profit_addon_enabled',
                 ];
 
                 foreach ($boolKeys as $k) {

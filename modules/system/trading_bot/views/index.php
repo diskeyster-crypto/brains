@@ -812,9 +812,32 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         <tr><td class="text-muted">Distance Layer</td><td><?= $pdfDist ?>%</td></tr>
                         <?php endif; ?>
                         <?php if ($pdfEffStop > 0): ?>
-                        <tr><td class="text-muted">Effective Stop</td><td class="fw-bold"><?= number_format($pdfEffStop, 4) ?></td></tr>
+                         <tr><td class="text-muted">Effective Stop</td><td class="fw-bold"><?= number_format($pdfEffStop, 4) ?></td></tr>
                         <?php endif; ?>
                         <tr><td class="text-muted">Source</td><td><?= $pdfSource ?></td></tr>
+                        <?php
+                            // Profit Add-On state for this trade
+                            $pdfAddonUsed = (bool)($pdfT['runtime']['profit_addon_used'] ?? false);
+                            $pdfAddonEnabled = (bool)(($pdfT['profit_addon_enabled'] ?? false) || ($pdfT['runtime']['profit_addon_used'] ?? false));
+                        ?>
+                        <?php if ($pdfAddonUsed): ?>
+                        <tr><td class="text-muted">Add-On</td><td>
+                            <span class="badge bg-success">✅ used</span>
+                            <?php $pdfAddonAt = $pdfT['runtime']['profit_addon_executed_at'] ?? null; if ($pdfAddonAt): ?><small class="text-muted ms-1"><?= htmlspecialchars(substr((string)$pdfAddonAt, 0, 16)) ?></small><?php endif; ?>
+                            <?php if ((float)($pdfT['runtime']['profit_addon_amount_usdt'] ?? 0) > 0): ?>
+                                <br><small>+<?= round((float)$pdfT['runtime']['profit_addon_amount_usdt'], 2) ?> USDT @ ROI <?= round((float)($pdfT['runtime']['profit_addon_trigger_roi'] ?? 0), 1) ?>%</small>
+                            <?php endif; ?>
+                            <?php if ((float)($pdfT['runtime']['profit_addon_pre_effective_stop'] ?? 0) > 0): ?>
+                                <br><small class="text-muted">stop before: <?= number_format((float)$pdfT['runtime']['profit_addon_pre_effective_stop'], 4) ?></small>
+                            <?php endif; ?>
+                            <?php if ((float)($pdfT['runtime']['profit_addon_post_effective_stop'] ?? 0) > 0): ?>
+                                <br><small class="text-muted">stop after: <?= number_format((float)$pdfT['runtime']['profit_addon_post_effective_stop'], 4) ?></small>
+                            <?php endif; ?>
+                            <?php if (!empty($pdfT['runtime']['profit_addon_stop_restored'])): ?>
+                                <br><span class="badge bg-warning text-dark" style="font-size:0.6rem;">stop restored</span>
+                            <?php endif; ?>
+                        </td></tr>
+                        <?php endif; ?>
                     </table>
                 </div>
                 <?php endforeach; ?>

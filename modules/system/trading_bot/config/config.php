@@ -209,6 +209,13 @@ return [
             ],
         ],
 
+        // Profit Add-On: one-time scale-in into a winning position
+        // Triggered when ROI >= trailing_activation_floor_roi (same threshold as floor lock).
+        // Add-on amount = budget_usdt_per_trade * (profit_addon_budget_pct / 100).
+        // One-time only per trade; does NOT reset protection state.
+        'profit_addon_enabled' => false,
+        'profit_addon_budget_pct' => 0.0,
+
         // Balance checks
         'balance_strict_stable_coin_only' => true,
         'balance_coin' => 'USDT',

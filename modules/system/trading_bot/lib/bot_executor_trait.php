@@ -1197,6 +1197,9 @@ trait BotExecutorTrait
             'protection_source_missing_count' => 0,
             'best_price_missing_while_trailing_active_count' => 0,
             'top_level_runtime_mismatch_count' => 0,
+            'profit_addon_applied' => 0,
+            'profit_addon_failed' => 0,
+            'profit_addon_skipped' => 0,
         ];
         
         if ($mode !== 'live') {
@@ -2287,6 +2290,169 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $trade['runtime'] = $runtime;
 
                             $result['floor_lock_skipped']++;
+                        }
+                    }
+                }
+
+                // ============================================================
+                // Profit Add-On: one-time scale-in into a winning position
+                //
+                // Trigger: ROI >= trailing_activation_floor_roi (or activation_roi_pct).
+                // Amount:  canonical_trade_budget * (profit_addon_budget_pct / 100).
+                // One-time: profit_addon_used = true after execution.
+                //
+                // Protection state (floor_lock_active, break_even_applied,
+                // current_effective_stop_price) is preserved and NEVER weakened.
+                // ============================================================
+                {
+                    $paEnabled = (bool)($this->config['execution']['profit_addon_enabled'] ?? false);
+                    $paBudgetPct = (float)($this->config['execution']['profit_addon_budget_pct'] ?? 0.0);
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $paUsed = (bool)($runtime['profit_addon_used'] ?? false);
+
+                    if ($paEnabled && $paBudgetPct > 0 && !$paUsed) {
+                        $positionIM = (float)($position['positionIM'] ?? 0);
+                        $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                        $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                        // Use trailing_activation_floor_roi for price_distance_floor mode,
+                        // otherwise activation_roi_pct.
+                        $trailingMode = (string)($trailingCfg['trailing_mode'] ?? 'roi_giveback');
+                        if ($trailingMode === 'price_distance_floor') {
+                            $addonTriggerRoi = (float)($trailingCfg['trailing_activation_floor_roi'] ?? 4.0);
+                        } else {
+                            $addonTriggerRoi = (float)($trailingCfg['activation_roi_pct'] ?? 0.0);
+                        }
+
+                        if ($addonTriggerRoi > 0 && $roiBybit >= $addonTriggerRoi) {
+                            $side = strtolower((string)($trade['side'] ?? 'long'));
+                            if ($side === 'buy') { $side = 'long'; }
+                            if ($side === 'sell') { $side = 'short'; }
+
+                            $canonicalBudget = (float)($risk['budget_usdt_per_trade'] ?? 0.0);
+                            $leverage = (float)($risk['leverage'] ?? 1.0);
+                            if ($leverage <= 0) { $leverage = 1.0; }
+
+                            if ($canonicalBudget > 0) {
+                                $addonAmountUsdt = $canonicalBudget * ($paBudgetPct / 100.0);
+
+                                $markPrice = (float)($position['markPrice'] ?? 0);
+                                $lastPrice = (float)($position['lastPrice'] ?? 0);
+                                $refPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice);
+                                if ($refPrice <= 0) {
+                                    $refPrice = (float)($trade['entry_price'] ?? 0);
+                                }
+
+                                if ($refPrice > 0 && $addonAmountUsdt > 0) {
+                                    // Snapshot pre-addon protection state for audit
+                                    $preAddonEffStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+
+                                    // Calculate addon qty = notional / ref price (same sizing approach)
+                                    $addonNotional = $addonAmountUsdt * $leverage;
+                                    $addonQty = round($addonNotional / $refPrice, 8);
+
+                                    if ($addonQty > 0 && $this->gateway && $this->gateway->isInitialized()) {
+                                        $addonOrderLinkId = 'tb_addon_' . substr((string)($trade['trade_id'] ?? $tradeId), 0, 24) . '_' . time();
+                                        $addonOrder = [
+                                            'symbol' => $trade['symbol'],
+                                            'side' => ($side === 'long') ? 'Buy' : 'Sell',
+                                            'order_type' => 'Market',
+                                            'qty' => $addonQty,
+                                            'order_link_id' => $addonOrderLinkId,
+                                            'position_idx' => (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0))),
+                                            'price' => null,
+                                        ];
+
+                                        $addonResult = $this->submitOrder($addonOrder);
+
+                                        if (($addonResult['ok'] ?? false) === true) {
+                                            $addonFillPrice = (float)($addonResult['fill_price'] ?? $refPrice);
+                                            $addonFillQty = (float)($addonResult['fill_qty'] ?? $addonQty);
+
+                                            // Recalculate avg entry price and position size
+                                            $oldQty = (float)($position['size'] ?? ($trade['position_size'] ?? 0));
+                                            $oldEntry = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+
+                                            if ($oldQty > 0 && $addonFillQty > 0) {
+                                                $newTotalQty = $oldQty + $addonFillQty;
+                                                $newAvgEntry = (($oldQty * $oldEntry) + ($addonFillQty * $addonFillPrice)) / $newTotalQty;
+                                            } else {
+                                                $newTotalQty = $addonFillQty;
+                                                $newAvgEntry = $addonFillPrice;
+                                            }
+
+                                            $newAvgEntry = round($newAvgEntry, 8);
+                                            $newTotalQty = round($newTotalQty, 8);
+
+                                            // Update trade position fields
+                                            $trade['position_size'] = $newTotalQty;
+                                            $trade['entry_price'] = $newAvgEntry;
+                                            if (isset($trade['exchange']['entry_avg_price'])) {
+                                                $trade['exchange']['entry_avg_price'] = $newAvgEntry;
+                                            }
+                                            if (isset($trade['exchange']['qty'])) {
+                                                $trade['exchange']['qty'] = $newTotalQty;
+                                            }
+
+                                            // Mark add-on as used and record metadata
+                                            $runtime['profit_addon_used'] = true;
+                                            $runtime['profit_addon_executed_at'] = date('c');
+                                            $runtime['profit_addon_trigger_roi'] = round($roiBybit, 4);
+                                            $runtime['profit_addon_budget_pct'] = $paBudgetPct;
+                                            $runtime['profit_addon_amount_usdt'] = round($addonAmountUsdt, 4);
+                                            $runtime['profit_addon_qty'] = $addonFillQty;
+                                            $runtime['profit_addon_fill_price'] = $addonFillPrice;
+                                            $runtime['profit_addon_order_id'] = $addonResult['order_id'] ?? null;
+                                            $runtime['profit_addon_pre_avg_entry'] = $oldEntry;
+                                            $runtime['profit_addon_post_avg_entry'] = $newAvgEntry;
+                                            $runtime['profit_addon_pre_qty'] = $oldQty;
+                                            $runtime['profit_addon_post_qty'] = $newTotalQty;
+                                            $runtime['profit_addon_pre_effective_stop'] = $preAddonEffStop;
+                                            $runtime['profit_addon_protection_preserved'] = true;
+
+                                            // Verify protection monotonicity — effective stop must not weaken
+                                            $postAddonEffStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+                                            if ($preAddonEffStop > 0 && $postAddonEffStop > 0) {
+                                                if ($side === 'long' && $postAddonEffStop < $preAddonEffStop - 0.0000001) {
+                                                    // Stop weakened for LONG — restore
+                                                    $runtime['current_effective_stop_price'] = $preAddonEffStop;
+                                                    $runtime['profit_addon_stop_restored'] = true;
+                                                } elseif ($side === 'short' && $postAddonEffStop > $preAddonEffStop + 0.0000001) {
+                                                    // Stop weakened for SHORT — restore
+                                                    $runtime['current_effective_stop_price'] = $preAddonEffStop;
+                                                    $runtime['profit_addon_stop_restored'] = true;
+                                                }
+                                            } elseif ($preAddonEffStop > 0 && $postAddonEffStop <= 0) {
+                                                // Stop was cleared — restore
+                                                $runtime['current_effective_stop_price'] = $preAddonEffStop;
+                                                $runtime['profit_addon_stop_restored'] = true;
+                                            }
+
+                                            $runtime['profit_addon_post_effective_stop'] = (float)($runtime['current_effective_stop_price'] ?? 0);
+
+                                            $trade['runtime'] = $runtime;
+                                            $result['profit_addon_applied']++;
+                                            $result['warnings'][] = "Profit add-on executed for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, added {$addonFillQty} qty @ {$addonFillPrice}, new avg " . round($newAvgEntry, 6) . ")";
+                                        } else {
+                                            $runtime['profit_addon_last_error'] = $addonResult['error'] ?? 'unknown';
+                                            $runtime['profit_addon_failed_at'] = date('c');
+                                            $trade['runtime'] = $runtime;
+                                            $result['profit_addon_failed']++;
+                                            $result['warnings'][] = "Profit add-on failed for {$trade['symbol']}: " . ($addonResult['error'] ?? 'unknown');
+                                        }
+                                    } else {
+                                        $result['profit_addon_skipped']++;
+                                    }
+                                } else {
+                                    $result['profit_addon_skipped']++;
+                                }
+                            } else {
+                                $result['profit_addon_skipped']++;
+                            }
+                        } else {
+                            $result['profit_addon_skipped']++;
                         }
                     }
                 }

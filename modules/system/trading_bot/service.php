@@ -778,6 +778,8 @@ final class TradingBotService
             $result['hybrid_partial_applied_count'] = $updateResult['hybrid_partial_applied'] ?? 0;
             $result['floor_lock_applied_count'] = $updateResult['floor_lock_applied'] ?? 0;
             $result['floor_lock_failed_count'] = $updateResult['floor_lock_failed'] ?? 0;
+            $result['profit_addon_applied_count'] = $updateResult['profit_addon_applied'] ?? 0;
+            $result['profit_addon_failed_count'] = $updateResult['profit_addon_failed'] ?? 0;
             $result['steps'][] = [
                 'step' => 'update_positions',
                 'status' => 'ok',
@@ -793,6 +795,9 @@ final class TradingBotService
                 'floor_lock_applied' => $updateResult['floor_lock_applied'] ?? 0,
                 'floor_lock_failed' => $updateResult['floor_lock_failed'] ?? 0,
                 'floor_lock_skipped' => $updateResult['floor_lock_skipped'] ?? 0,
+                'profit_addon_applied' => $updateResult['profit_addon_applied'] ?? 0,
+                'profit_addon_failed' => $updateResult['profit_addon_failed'] ?? 0,
+                'profit_addon_skipped' => $updateResult['profit_addon_skipped'] ?? 0,
                 'effective_stop_zero_while_protected_count' => $updateResult['effective_stop_zero_while_protected_count'] ?? 0,
                 'protection_source_missing_count' => $updateResult['protection_source_missing_count'] ?? 0,
                 'best_price_missing_while_trailing_active_count' => $updateResult['best_price_missing_while_trailing_active_count'] ?? 0,

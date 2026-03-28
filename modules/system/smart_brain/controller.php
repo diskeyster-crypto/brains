@@ -86,6 +86,9 @@ final class SmartBrainController
         $values['soft_whitelist_enabled'] = !empty($_POST['soft_whitelist_enabled']);
         $values['manual_symbol_universe_enabled'] = !empty($_POST['manual_symbol_universe_enabled']);
 
+        // Trailing block add-on toggle
+        $values['profit_addon_enabled'] = !empty($_POST['profit_addon_enabled']);
+
         // Live Trading Control checkboxes
         $values['live_trading_enabled'] = !empty($_POST['live_trading_enabled']);
         $values['live_one_trade_per_symbol'] = !empty($_POST['live_one_trade_per_symbol']);

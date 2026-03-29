@@ -17,9 +17,13 @@
     "brain_may_tighten_stop": true,
     "trailing_enabled": true,
     "trailing_mode": "price_distance_floor",
+    "trailing_preset_mode": "custom",
     "trailing_price_distance_pct": 0.02,
-    "trailing_activation_floor_roi": 0.050000000000000003,
-    "trailing_floor_lock_roi": 0.040000000000000001,
+    "trailing_activation_floor_roi": 0.029999999999999999,
+    "trailing_floor_lock_roi": 0.02,
+    "trailing_distance_roi": 0.10000000000000001,
+    "profit_addon_enabled": false,
+    "profit_addon_budget_pct": 2,
     "trailing_step_mode": "auto_strength",
     "trailing_step_pct_min": 0.0050000000000000001,
     "trailing_step_pct_max": 0.02,
@@ -51,7 +55,7 @@
     "manual_leverage": 5,
     "stop_control_mode": "entry_roi",
     "manual_stop_loss_roi": 0.029999999999999999,
-    "stop_loss_from_entry_roi": 0.050000000000000003,
+    "stop_loss_from_entry_roi": 0.01,
     "symbol_intelligence_enabled": true,
     "symbol_filter_mode": "all",
     "whitelist_min_trades": 3,
@@ -76,8 +80,8 @@
     "live_reverse_side_enabled": false,
     "patterns": {
         "enabled": [
-            "double_bottom_contextual_v2",
-            "double_bottom_contextual_v3"
+            "double_top_contextual_v2",
+            "double_top_contextual_v3"
         ],
         "mode": "any"
     }

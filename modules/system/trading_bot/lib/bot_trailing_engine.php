@@ -17,6 +17,12 @@ namespace Modules\System\TradingBot\Lib;
  *   - price_distance_floor: activates at floor_roi, locks minimum ROI, then
  *     follows best price at fixed pct distance with step corridor control
  *
+ * Step modes for price_distance_floor:
+ *   - fixed / auto_strength: price-based step corridor controls update frequency
+ *   - fixed_roi_ladder: locked ROI grows in discrete ROI steps from floor_lock base
+ *     Formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi
+ *     Peak ROI is monotonic (never decreases); protection only strengthens.
+ *
  * In Brain-controlled mode, risk.trailing is populated by
  * normalizeBrainTrailingIntoRisk() in bot_sources_trait.php.
  * Bot-local trailing toggles (enable_trailing_on_open, dumb_trailing_enabled)
@@ -31,9 +37,10 @@ namespace Modules\System\TradingBot\Lib;
  *   trailing_price_distance_pct — fixed distance ratio (price_distance / price_distance_floor, 0.02 = 2%)
  *   trailing_activation_floor_roi — ROI threshold to activate floor trailing (price_distance_floor)
  *   trailing_floor_lock_roi      — minimum guaranteed ROI once floor trailing activates
- *   trailing_step_mode           — 'fixed' | 'auto_strength' step corridor mode
- *   trailing_step_pct_min        — minimum step size for trailing updates
- *   trailing_step_pct_max        — maximum step size for trailing updates
+ *   trailing_step_mode           — 'fixed' | 'auto_strength' | 'fixed_roi_ladder'
+ *   trailing_step_pct_min        — minimum step size for trailing updates (fixed/auto_strength)
+ *   trailing_step_pct_max        — maximum step size for trailing updates (fixed/auto_strength)
+ *   trailing_step_roi            — ROI step size for fixed_roi_ladder mode
  */
 class BotTrailingEngine
 {
@@ -245,6 +252,12 @@ class BotTrailingEngine
         string $side,
         float $entryPrice
     ): array {
+        // Dispatch to ROI Ladder mode if configured
+        $stepMode = (string)($trailing['trailing_step_mode'] ?? 'fixed');
+        if ($stepMode === 'fixed_roi_ladder') {
+            return $this->checkRoiLadderTrailing($trade, $currentPrice, $result, $trailing, $side, $entryPrice);
+        }
+
         $leverage        = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
         if ($leverage < 1) { $leverage = 1; }
 
@@ -399,6 +412,223 @@ class BotTrailingEngine
                 $result['triggered'] = true;
                 $result['close_reason'] = 'closed_by_trailing';
                 $result['changes']['trailing_triggered_at'] = date('c');
+                $result['changes']['trailing_triggered_price'] = $currentPrice;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * ROI Ladder trailing mode (fixed_roi_ladder step mode within price_distance_floor).
+     *
+     * Locked ROI grows in discrete steps from the floor_lock base, driven by peak ROI.
+     * Peak ROI is monotonic — it only increases, ensuring protection never weakens.
+     *
+     * Formula:
+     *   if peak_roi < activation_roi:
+     *     locked_roi = floor_lock_roi
+     *   else:
+     *     locked_roi = floor_lock_roi + floor((peak_roi - activation_roi) / step_roi) * step_roi
+     *
+     * Example (floor=2, activation=3, step=1.5):
+     *   peak 3.0 → locked 2.0
+     *   peak 4.4 → locked 2.0   (floor((4.4-3)/1.5)=0)
+     *   peak 4.5 → locked 3.5   (floor((4.5-3)/1.5)=1)
+     *   peak 5.9 → locked 3.5
+     *   peak 6.0 → locked 5.0   (floor((6.0-3)/1.5)=2)
+     */
+    private function checkRoiLadderTrailing(
+        array $trade,
+        float $currentPrice,
+        array $result,
+        array $trailing,
+        string $side,
+        float $entryPrice
+    ): array {
+        $leverage       = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
+        if ($leverage < 1) { $leverage = 1; }
+
+        $floorLockRoi    = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
+        $activationRoi   = (float)($trailing['trailing_activation_floor_roi'] ?? $floorLockRoi);
+        $stepRoi         = max(0.01, (float)($trailing['trailing_step_roi'] ?? 1.5));
+
+        // Price-distance layer (secondary — used for visualization / distance-based candidate)
+        $distanceRoi     = isset($trailing['trailing_distance_roi']) ? (float)$trailing['trailing_distance_roi'] : null;
+        $presetMode      = (string)($trailing['trailing_preset_mode'] ?? 'custom');
+        if ($distanceRoi !== null && $distanceRoi > 0) {
+            $distancePct = $distanceRoi / $leverage / 100;
+        } else {
+            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+        }
+
+        // Retrieve persisted state
+        $prevTrailingStop  = (float)($trade['trailing_stop_price'] ?? 0.0);
+        $prevPeakRoi       = (float)($trade['trailing_peak_roi'] ?? 0.0);
+        $prevLockedRoi     = (float)($trade['trailing_locked_roi_current'] ?? $floorLockRoi);
+        $prevStepCount     = (int)($trade['trailing_ladder_step_count'] ?? 0);
+
+        if ($side === 'long') {
+            // Track high watermark (price) for distance layer
+            $trailingHighWatermark = (float)($trade['trailing_high_watermark'] ?? $currentPrice);
+            if ($currentPrice > $trailingHighWatermark) {
+                $result['updated'] = true;
+                $result['changes']['trailing_high_watermark'] = $currentPrice;
+                $trailingHighWatermark = $currentPrice;
+            }
+
+            // Compute current raw price ROI (same unit as activation/floor values)
+            $currentRoi = $this->calculateRoi($entryPrice, $currentPrice, $side);
+
+            // Update monotonic peak ROI
+            $peakRoi = max($prevPeakRoi, $currentRoi);
+            if ($peakRoi > $prevPeakRoi) {
+                $result['updated'] = true;
+                $result['changes']['trailing_peak_roi'] = round($peakRoi, 4);
+            }
+
+            // Compute ladder locked ROI
+            if ($peakRoi < $activationRoi || $stepRoi <= 0) {
+                $lockedRoi = $floorLockRoi;
+                $stepCount = 0;
+            } else {
+                $stepsEarned = (int)floor(($peakRoi - $activationRoi) / $stepRoi);
+                $lockedRoi   = $floorLockRoi + $stepsEarned * $stepRoi;
+                $stepCount   = $stepsEarned;
+            }
+
+            // Monotonic: locked ROI can only increase
+            $lockedRoi = max($lockedRoi, $prevLockedRoi);
+            $stepCount = max($stepCount, $prevStepCount);
+
+            // Convert locked ROI to floor stop price
+            $lockedPriceMove = ($lockedRoi / 100.0) / $leverage;
+            $ladderStopPrice = $entryPrice * (1.0 + $lockedPriceMove);
+
+            // Distance-layer candidate (secondary — for exchange visualization)
+            $distCandidateStop = $trailingHighWatermark * (1.0 - $distancePct);
+
+            // Canonical stop = stronger of ladder stop and distance candidate, monotonic
+            $candidateStop     = max($ladderStopPrice, $distCandidateStop);
+            $trailingStopPrice = max($candidateStop, $prevTrailingStop);
+
+            // Next step target ROI (diagnostic)
+            $nextStepTargetRoi = $activationRoi + ($stepCount + 1) * $stepRoi;
+
+            // Populate result
+            $result['changes']['trailing_stop_price']           = round($trailingStopPrice, 8);
+            $result['changes']['trailing_mode']                  = 'price_distance_floor';
+            $result['changes']['trailing_step_mode']             = 'fixed_roi_ladder';
+            $result['changes']['trailing_price_distance_pct']    = $distancePct;
+            $result['changes']['trailing_distance_roi']          = $distanceRoi;
+            $result['changes']['trailing_preset_mode']           = $presetMode;
+            $result['changes']['floor_lock_active']              = true;
+            $result['changes']['floor_locked_roi']               = $floorLockRoi;
+            $result['changes']['floor_stop_price']               = round($ladderStopPrice, 8);
+            $result['changes']['trailing_reference_price']       = round($trailingHighWatermark, 8);
+            $result['changes']['exchange_trailing_distance']     = round($trailingHighWatermark * $distancePct, 8);
+            $result['changes']['theoretical_current_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['current_effective_stop_price']   = round($trailingStopPrice, 8);
+            $result['changes']['protection_source_of_truth']     = 'bot_trailing_engine_roi_ladder';
+            $result['changes']['trailing_active']                = true;
+            $result['changes']['stop_moved_from_initial']        = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
+            $result['changes']['trailing_peak_roi']              = round($peakRoi, 4);
+            $result['changes']['trailing_locked_roi_current']    = round($lockedRoi, 4);
+            $result['changes']['trailing_locked_roi_previous']   = round($prevLockedRoi, 4);
+            $result['changes']['trailing_ladder_step_count']     = $stepCount;
+            $result['changes']['trailing_next_step_target_roi']  = round($nextStepTargetRoi, 4);
+            $result['changes']['trailing_step_roi']              = $stepRoi;
+            $result['changes']['best_roi_seen']                  = round($peakRoi, 4);
+
+            // Check if triggered
+            if ($currentPrice <= $trailingStopPrice) {
+                $result['triggered']  = true;
+                $result['close_reason'] = 'closed_by_trailing';
+                $result['changes']['trailing_triggered_at']    = date('c');
+                $result['changes']['trailing_triggered_price'] = $currentPrice;
+            }
+
+        } else {
+            // SHORT side
+            $trailingLowWatermark = (float)($trade['trailing_low_watermark'] ?? $currentPrice);
+            if ($currentPrice < $trailingLowWatermark) {
+                $result['updated'] = true;
+                $result['changes']['trailing_low_watermark'] = $currentPrice;
+                $trailingLowWatermark = $currentPrice;
+            }
+
+            // Compute current raw price ROI
+            $currentRoi = $this->calculateRoi($entryPrice, $currentPrice, $side);
+
+            // Update monotonic peak ROI
+            $peakRoi = max($prevPeakRoi, $currentRoi);
+            if ($peakRoi > $prevPeakRoi) {
+                $result['updated'] = true;
+                $result['changes']['trailing_peak_roi'] = round($peakRoi, 4);
+            }
+
+            // Compute ladder locked ROI
+            if ($peakRoi < $activationRoi || $stepRoi <= 0) {
+                $lockedRoi = $floorLockRoi;
+                $stepCount = 0;
+            } else {
+                $stepsEarned = (int)floor(($peakRoi - $activationRoi) / $stepRoi);
+                $lockedRoi   = $floorLockRoi + $stepsEarned * $stepRoi;
+                $stepCount   = $stepsEarned;
+            }
+
+            // Monotonic: locked ROI can only increase
+            $lockedRoi = max($lockedRoi, $prevLockedRoi);
+            $stepCount = max($stepCount, $prevStepCount);
+
+            // Convert locked ROI to floor stop price (short: stop is below entry)
+            $lockedPriceMove = ($lockedRoi / 100.0) / $leverage;
+            $ladderStopPrice = $entryPrice * (1.0 - $lockedPriceMove);
+
+            // Distance-layer candidate (short: stop trails above low watermark)
+            $distCandidateStop = $trailingLowWatermark * (1.0 + $distancePct);
+
+            // Canonical stop = weaker (higher) for short is less protective; use min
+            if ($prevTrailingStop > 0.0) {
+                $candidateStop     = min($distCandidateStop, $ladderStopPrice);
+                $trailingStopPrice = min($candidateStop, $prevTrailingStop);
+            } else {
+                $trailingStopPrice = min($distCandidateStop, $ladderStopPrice);
+            }
+
+            // Next step target ROI (diagnostic)
+            $nextStepTargetRoi = $activationRoi + ($stepCount + 1) * $stepRoi;
+
+            // Populate result
+            $result['changes']['trailing_stop_price']           = round($trailingStopPrice, 8);
+            $result['changes']['trailing_mode']                  = 'price_distance_floor';
+            $result['changes']['trailing_step_mode']             = 'fixed_roi_ladder';
+            $result['changes']['trailing_price_distance_pct']    = $distancePct;
+            $result['changes']['trailing_distance_roi']          = $distanceRoi;
+            $result['changes']['trailing_preset_mode']           = $presetMode;
+            $result['changes']['floor_lock_active']              = true;
+            $result['changes']['floor_locked_roi']               = $floorLockRoi;
+            $result['changes']['floor_stop_price']               = round($ladderStopPrice, 8);
+            $result['changes']['trailing_reference_price']       = round($trailingLowWatermark, 8);
+            $result['changes']['exchange_trailing_distance']     = round($trailingLowWatermark * $distancePct, 8);
+            $result['changes']['theoretical_current_stop_price'] = round($trailingStopPrice, 8);
+            $result['changes']['current_effective_stop_price']   = round($trailingStopPrice, 8);
+            $result['changes']['protection_source_of_truth']     = 'bot_trailing_engine_roi_ladder';
+            $result['changes']['trailing_active']                = true;
+            $result['changes']['stop_moved_from_initial']        = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
+            $result['changes']['trailing_peak_roi']              = round($peakRoi, 4);
+            $result['changes']['trailing_locked_roi_current']    = round($lockedRoi, 4);
+            $result['changes']['trailing_locked_roi_previous']   = round($prevLockedRoi, 4);
+            $result['changes']['trailing_ladder_step_count']     = $stepCount;
+            $result['changes']['trailing_next_step_target_roi']  = round($nextStepTargetRoi, 4);
+            $result['changes']['trailing_step_roi']              = $stepRoi;
+            $result['changes']['best_roi_seen']                  = round($peakRoi, 4);
+
+            // Check if triggered
+            if ($currentPrice >= $trailingStopPrice) {
+                $result['triggered']  = true;
+                $result['close_reason'] = 'closed_by_trailing';
+                $result['changes']['trailing_triggered_at']    = date('c');
                 $result['changes']['trailing_triggered_price'] = $currentPrice;
             }
         }
@@ -619,6 +849,10 @@ class BotTrailingEngine
 - TrailingEngine handles trailing stop calculations and break-even checks
 - Three trailing modes: roi_giveback (default), price_distance (fixed % from current price),
   price_distance_floor (activation floor + locked ROI + price distance follow + step corridor)
+- Step modes for price_distance_floor: fixed, auto_strength, fixed_roi_ladder
+- fixed_roi_ladder: locked ROI grows in discrete ROI steps using peak ROI (monotonic);
+  formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi;
+  peak_roi is tracked separately and never decreases; protection only strengthens.
 - Phase-1: "Dumb" trailing - set once on exchange, don't track
 - Trailing activation includes leverage in ROI calculation
 - NO local price tracking - exchange handles trailing
@@ -626,7 +860,9 @@ class BotTrailingEngine
 - Close reasons: closed_by_trailing, closed_by_break_even, closed_by_logical_stop
 - Unit system: activation_pct = percent (4.0 = 4%), drawdown_factor = ratio (0.5),
   trailing_price_distance_pct = ratio (0.02 = 2% from current price),
-  trailing_activation_floor_roi = percent (4.0 = 4%), trailing_floor_lock_roi = percent (3.0 = 3%)
+  trailing_activation_floor_roi = percent (4.0 = 4%), trailing_floor_lock_roi = percent (3.0 = 3%),
+  trailing_step_roi = percent (1.5 = 1.5 ROI units)
 - Monotonic rule: stop never moves backward (down for long, up for short) in any mode
 - Floor mode: floor_stop_price guarantees minimum locked profit, step corridor controls update frequency
+- ROI ladder mode: ladder stop derived from locked_roi, always >= floor_stop_price
 */

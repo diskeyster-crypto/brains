@@ -139,9 +139,10 @@ final class SmartBrainConfig
             // Profit Add-On: one-time scale-in into winning position, triggered at trailing_activation_floor_roi
             'profit_addon_enabled'         => !empty($values['profit_addon_enabled']),
             'profit_addon_budget_pct'      => max(0.0, min(500.0, (float)($values['profit_addon_budget_pct'] ?? 0.0))),
-            'trailing_step_mode'           => in_array((string)($values['trailing_step_mode'] ?? 'fixed'), ['fixed', 'auto_strength'], true) ? (string)$values['trailing_step_mode'] : 'fixed',
+            'trailing_step_mode'           => in_array((string)($values['trailing_step_mode'] ?? 'fixed'), ['fixed', 'auto_strength', 'fixed_roi_ladder'], true) ? (string)$values['trailing_step_mode'] : 'fixed',
             'trailing_step_pct_min'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_min'] ?? 0.005))),
             'trailing_step_pct_max'        => max(0.001, min(0.10, (float)($values['trailing_step_pct_max'] ?? 0.02))),
+            'trailing_step_roi'            => max(0.1, min(20.0, (float)($values['trailing_step_roi'] ?? 1.5))),
             // Legacy: active for roi_giveback mode (kept for backward compatibility)
             'trailing_activation_roi'      => (float)$values['trailing_activation_roi'],
             'trailing_min_lock_roi'        => (float)$values['trailing_min_lock_roi'],
@@ -357,8 +358,8 @@ final class SmartBrainConfig
                     $errors[] = 'trailing_floor_lock_roi must be <= trailing_activation_floor_roi';
                 }
             }
-            if (isset($values['trailing_step_mode']) && !in_array((string)$values['trailing_step_mode'], ['fixed', 'auto_strength'], true)) {
-                $errors[] = 'trailing_step_mode must be fixed or auto_strength';
+            if (isset($values['trailing_step_mode']) && !in_array((string)$values['trailing_step_mode'], ['fixed', 'auto_strength', 'fixed_roi_ladder'], true)) {
+                $errors[] = 'trailing_step_mode must be fixed, auto_strength, or fixed_roi_ladder';
             }
             if (isset($values['trailing_step_pct_min'])) {
                 $stepMin = (float)$values['trailing_step_pct_min'];
@@ -373,6 +374,12 @@ final class SmartBrainConfig
                 }
                 if (isset($values['trailing_step_pct_min']) && $stepMax < (float)$values['trailing_step_pct_min']) {
                     $errors[] = 'trailing_step_pct_max must be >= trailing_step_pct_min';
+                }
+            }
+            if (isset($values['trailing_step_roi'])) {
+                $stepRoi = (float)$values['trailing_step_roi'];
+                if ($stepRoi <= 0) {
+                    $errors[] = 'trailing_step_roi must be > 0';
                 }
             }
         }
@@ -916,6 +923,7 @@ final class SmartBrainConfig
                     'trailing_step_mode',
                     'trailing_step_pct_min',
                     'trailing_step_pct_max',
+                    'trailing_step_roi',
                 ]);
             case 'price_distance':
                 return array_merge($shared, [
@@ -975,6 +983,7 @@ final class SmartBrainConfig
                 $contract['trailing_step_mode'] = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
                 $contract['trailing_step_pct_min'] = (float)($userLimits['trailing_step_pct_min'] ?? 0.005);
                 $contract['trailing_step_pct_max'] = (float)($userLimits['trailing_step_pct_max'] ?? 0.02);
+                $contract['trailing_step_roi'] = max(0.1, (float)($userLimits['trailing_step_roi'] ?? 1.5));
                 break;
             case 'price_distance':
                 $contract['trailing_activation_roi'] = (float)($userLimits['trailing_activation_roi'] ?? 0.02);
@@ -1040,6 +1049,9 @@ final class SmartBrainConfig
             }
             if (isset($userLimits['trailing_step_pct_max'])) {
                 $legacy['trailing_step_pct_max'] = (float)$userLimits['trailing_step_pct_max'];
+            }
+            if (isset($userLimits['trailing_step_roi'])) {
+                $legacy['trailing_step_roi'] = (float)$userLimits['trailing_step_roi'];
             }
         }
 

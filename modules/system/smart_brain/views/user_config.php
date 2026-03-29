@@ -1042,15 +1042,24 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
 
                                     <div class="mb-2">
                                         <label for="trailing_step_mode" class="form-label">Step Mode
-                                            <i class="bi bi-question-circle cfg-info" title="fixed = use step_pct_min as fixed threshold. auto_strength = dynamic step based on move strength within corridor."></i>
+                                            <i class="bi bi-question-circle cfg-info" title="fixed = use step_pct_min as fixed threshold. auto_strength = dynamic step based on move strength within corridor. fixed_roi_ladder = locked ROI grows in discrete ROI steps from floor lock base."></i>
                                         </label>
                                         <select class="form-select" id="trailing_step_mode" name="trailing_step_mode">
                                             <?php $currentStepMode = $v('trailing_step_mode', 'fixed'); ?>
                                             <option value="fixed" <?= $currentStepMode === 'fixed' ? 'selected' : '' ?>>Fixed</option>
                                             <option value="auto_strength" <?= $currentStepMode === 'auto_strength' ? 'selected' : '' ?>>Auto Strength</option>
+                                            <option value="fixed_roi_ladder" <?= $currentStepMode === 'fixed_roi_ladder' ? 'selected' : '' ?>>Fixed ROI Ladder</option>
                                         </select>
-                                        <div class="cfg-hint"><code>fixed</code> = фиксированный шаг обновления. <code>auto_strength</code> = динамический шаг по силе движения</div>
+                                        <div class="cfg-hint"><code>fixed</code> = фиксированный шаг обновления. <code>auto_strength</code> = динамический шаг по силе движения. <code>fixed_roi_ladder</code> = защита растёт дискретными шагами от ROI.</div>
                                     </div>
+                                    <div class="mb-2" id="trailing_step_roi_block" style="<?= $currentStepMode === 'fixed_roi_ladder' ? '' : 'display:none' ?>">
+                                        <label for="trailing_step_roi" class="form-label">Step ROI
+                                            <i class="bi bi-question-circle cfg-info" title="ROI step size for fixed_roi_ladder mode. Locked ROI grows by this amount per step above activation. Protection increases by ROI steps from the guaranteed floor after activation."></i>
+                                        </label>
+                                        <input type="number" step="0.1" min="0.1" max="20" class="form-control" id="trailing_step_roi" name="trailing_step_roi" value="<?= $v('trailing_step_roi', '1.5') ?>">
+                                        <div class="cfg-hint">Шаг ROI-лестницы (единицы ROI). Пример: <code>1.5</code> = каждые 1.5 ROI выше activation добавляет 1.5 к locked ROI. Protection increases by ROI steps from the guaranteed floor after activation.</div>
+                                    </div>
+                                    <div id="trailing_step_pct_block" style="<?= $currentStepMode === 'fixed_roi_ladder' ? 'display:none' : '' ?>">
                                     <div class="row">
                                         <div class="col-md-6 mb-2">
                                             <label for="trailing_step_pct_min" class="form-label">Step Min %
@@ -1067,6 +1076,21 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                             <div class="cfg-hint">Макс. шаг обновления (<code>0.02</code> = 2%)</div>
                                         </div>
                                     </div>
+                                    </div>
+                                    <script>
+                                    (function() {
+                                        var sel = document.getElementById('trailing_step_mode');
+                                        var roiBlock = document.getElementById('trailing_step_roi_block');
+                                        var pctBlock = document.getElementById('trailing_step_pct_block');
+                                        if (sel) {
+                                            sel.addEventListener('change', function() {
+                                                var isLadder = sel.value === 'fixed_roi_ladder';
+                                                roiBlock.style.display = isLadder ? '' : 'none';
+                                                pctBlock.style.display = isLadder ? 'none' : '';
+                                            });
+                                        }
+                                    })();
+                                    </script>
                                 </div>
                                 </div>
                             </div>

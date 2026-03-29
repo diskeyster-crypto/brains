@@ -216,6 +216,11 @@ return [
         'profit_addon_enabled' => false,
         'profit_addon_budget_pct' => 0.0,
 
+        // ROI Ladder Trailing step (fixed_roi_ladder mode)
+        // Locked ROI grows in discrete steps of trailing_step_roi from floor_lock base.
+        // Formula: locked_roi = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi
+        'trailing_step_roi' => 1.5,
+
         // Balance checks
         'balance_strict_stable_coin_only' => true,
         'balance_coin' => 'USDT',

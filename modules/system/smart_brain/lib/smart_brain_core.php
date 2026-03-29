@@ -1964,7 +1964,7 @@ final class SmartBrainCore
             }
         }
         $trailingStepMode = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
-        if (!in_array($trailingStepMode, ['fixed', 'auto_strength'], true)) {
+        if (!in_array($trailingStepMode, ['fixed', 'auto_strength', 'fixed_roi_ladder'], true)) {
             $trailingStepMode = 'fixed';
         }
         $trailingStepPctMin = (float)($userLimits['trailing_step_pct_min'] ?? 0.005);
@@ -1972,6 +1972,7 @@ final class SmartBrainCore
         if ($trailingStepPctMin < 0.001) { $trailingStepPctMin = 0.001; }
         if ($trailingStepPctMax < $trailingStepPctMin) { $trailingStepPctMax = $trailingStepPctMin; }
         if ($trailingStepPctMax > 0.10) { $trailingStepPctMax = 0.10; }
+        $trailingStepRoi = max(0.1, min(20.0, (float)($userLimits['trailing_step_roi'] ?? 1.5)));
 
         $botReady['trailing'] = [
             'enabled' => $trailingEnabled,
@@ -1987,6 +1988,7 @@ final class SmartBrainCore
             'trailing_step_mode' => $trailingStepMode,
             'trailing_step_pct_min' => $trailingStepPctMin,
             'trailing_step_pct_max' => $trailingStepPctMax,
+            'trailing_step_roi' => $trailingStepRoi,
             'min_step' => (float)($userLimits['trailing_min_step'] ?? 0.01),
             'min_lock_roi' => (float)($userLimits['trailing_min_lock_roi'] ?? 0.012),
             'break_even_enabled' => (bool)($userLimits['break_even_enabled'] ?? false),
@@ -2090,6 +2092,7 @@ final class SmartBrainCore
                 $contract['trailing_step_mode'] = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
                 $contract['trailing_step_pct_min'] = (float)($userLimits['trailing_step_pct_min'] ?? 0.005);
                 $contract['trailing_step_pct_max'] = (float)($userLimits['trailing_step_pct_max'] ?? 0.02);
+                $contract['trailing_step_roi'] = max(0.1, (float)($userLimits['trailing_step_roi'] ?? 1.5));
                 break;
             case 'price_distance':
                 $rawActivation = (float)($userLimits['trailing_activation_roi'] ?? 0.05);

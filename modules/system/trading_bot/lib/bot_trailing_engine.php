@@ -22,6 +22,11 @@ namespace Modules\System\TradingBot\Lib;
  *   - fixed_roi_ladder: locked ROI grows in discrete ROI steps from floor_lock base
  *     Formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi
  *     Peak ROI is monotonic (never decreases); protection only strengthens.
+ *   - trend_reversal_soft_ladder_short: TEST MODE — SHORT V2/V3 only.
+ *     Activates only when a mirrored long reversal pattern is present (double_bottom_contextual_v2/v3).
+ *     Uses fixed overlay constants: activation=10, base_lock=5, main_step=3, lock_step=1.
+ *     Overlay lock is injected via trade['reversal_overlay_active'] flag (set externally by executor).
+ *     Formula: overlay_locked = 5 + floor((peak_roi - 10) / 3) * 1  (when peak >= 10).
  *
  * In Brain-controlled mode, risk.trailing is populated by
  * normalizeBrainTrailingIntoRisk() in bot_sources_trait.php.
@@ -37,7 +42,7 @@ namespace Modules\System\TradingBot\Lib;
  *   trailing_price_distance_pct — fixed distance ratio (price_distance / price_distance_floor, 0.02 = 2%)
  *   trailing_activation_floor_roi — ROI threshold to activate floor trailing (price_distance_floor)
  *   trailing_floor_lock_roi      — minimum guaranteed ROI once floor trailing activates
- *   trailing_step_mode           — 'fixed' | 'auto_strength' | 'fixed_roi_ladder'
+ *   trailing_step_mode           — 'fixed' | 'auto_strength' | 'fixed_roi_ladder' | 'trend_reversal_soft_ladder_short'
  *   trailing_step_pct_min        — minimum step size for trailing updates (fixed/auto_strength)
  *   trailing_step_pct_max        — maximum step size for trailing updates (fixed/auto_strength)
  *   trailing_step_roi            — ROI step size for fixed_roi_ladder mode
@@ -256,6 +261,9 @@ class BotTrailingEngine
         $stepMode = (string)($trailing['trailing_step_mode'] ?? 'fixed');
         if ($stepMode === 'fixed_roi_ladder') {
             return $this->checkRoiLadderTrailing($trade, $currentPrice, $result, $trailing, $side, $entryPrice);
+        }
+        if ($stepMode === 'trend_reversal_soft_ladder_short') {
+            return $this->checkReversalSoftLadderTrailing($trade, $currentPrice, $result, $trailing, $side, $entryPrice);
         }
 
         $leverage        = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
@@ -637,6 +645,261 @@ class BotTrailingEngine
     }
 
     /**
+     * Trend-Reversal Soft Ladder trailing mode (TEST MODE).
+     *
+     * Short V2/V3 only. Applies a soft ROI-lock overlay when a mirrored long
+     * reversal pattern (double_bottom_contextual_v2 or _v3) is present on the
+     * same symbol. The overlay is signalled by trade['reversal_overlay_active']
+     * being true — this flag is set externally by bot_executor_trait.php before
+     * checkTrailing() is called.
+     *
+     * Fixed test-mode constants (not configurable in v1):
+     *   activation peak ROI = 10
+     *   base lock ROI       = 5
+     *   main step ROI       = 3
+     *   lock step ROI       = 1
+     *
+     * Overlay formula:
+     *   if peak_roi < 10: overlay_locked_roi = 0  (no extra lock)
+     *   else: overlay_locked_roi = 5 + floor((peak_roi - 10) / 3) * 1
+     *
+     * Final locked ROI = max(floor_lock_roi, overlay_locked_roi)
+     * Protection is monotonic — locked ROI never decreases.
+     *
+     * If overlay is NOT active (reversal signal absent), this method falls back
+     * to the standard floor-based price_distance_floor behaviour so existing
+     * protection continues uninterrupted.
+     */
+    private function checkReversalSoftLadderTrailing(
+        array $trade,
+        float $currentPrice,
+        array $result,
+        array $trailing,
+        string $side,
+        float $entryPrice
+    ): array {
+        $leverage = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
+        if ($leverage < 1) { $leverage = 1; }
+
+        // Overlay constants (TEST MODE fixed values)
+        $overlayActivationPeak = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+        $overlayBaseLock       = BotReversalSignalHelper::OVERLAY_BASE_LOCK_ROI;
+        $overlayMainStep       = BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI;
+        $overlayLockStep       = BotReversalSignalHelper::OVERLAY_LOCK_STEP_ROI;
+
+        // Floor / distance parameters (same as standard pdf mode)
+        $distanceRoi  = isset($trailing['trailing_distance_roi']) ? (float)$trailing['trailing_distance_roi'] : null;
+        $presetMode   = (string)($trailing['trailing_preset_mode'] ?? 'custom');
+        if ($distanceRoi !== null && $distanceRoi > 0) {
+            $distancePct = $distanceRoi / $leverage / 100;
+        } else {
+            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+        }
+        $floorLockRoi = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
+
+        // Retrieve persisted overlay state
+        $prevTrailingStop        = (float)($trade['trailing_stop_price'] ?? 0.0);
+        $prevPeakRoi             = (float)($trade['reversal_overlay_peak_roi'] ?? 0.0);
+        $prevOverlayLockedRoi    = (float)($trade['reversal_overlay_locked_roi_current'] ?? 0.0);
+        $prevStepCount           = (int)($trade['reversal_overlay_step_count'] ?? 0);
+        $overlayActive           = (bool)($trade['reversal_overlay_active'] ?? false);
+
+        // Only SHORT is supported for this mode
+        if ($side !== 'short') {
+            // Graceful fallback for long or unknown: just use standard floor trailing
+            $result['changes']['reversal_overlay_active'] = false;
+            $result['changes']['reversal_overlay_skip_reason'] = 'mode_not_applicable_to_long';
+            return $this->checkPriceDistanceFloorTrailingFallback(
+                $trade, $currentPrice, $result, $trailing, $side, $entryPrice, $floorLockRoi, $distancePct, $distanceRoi, $presetMode, $leverage
+            );
+        }
+
+        // Track short watermark
+        $trailingLowWatermark = (float)($trade['trailing_low_watermark'] ?? $currentPrice);
+        if ($currentPrice < $trailingLowWatermark) {
+            $result['updated'] = true;
+            $result['changes']['trailing_low_watermark'] = $currentPrice;
+            $trailingLowWatermark = $currentPrice;
+        }
+
+        // Compute current ROI
+        $currentRoi = $this->calculateRoi($entryPrice, $currentPrice, $side);
+
+        // Update monotonic peak ROI (per-overlay tracking field)
+        $peakRoi = max($prevPeakRoi, $currentRoi);
+        if ($peakRoi > $prevPeakRoi) {
+            $result['updated'] = true;
+            $result['changes']['reversal_overlay_peak_roi'] = round($peakRoi, 4);
+        }
+
+        // Compute overlay locked ROI (only if overlay signal is present)
+        $overlayLockedRoi = 0.0;
+        $stepCount = 0;
+        if ($overlayActive && $peakRoi >= $overlayActivationPeak) {
+            $stepsEarned      = (int)floor(($peakRoi - $overlayActivationPeak) / $overlayMainStep);
+            $overlayLockedRoi = $overlayBaseLock + (float)$stepsEarned * $overlayLockStep;
+            $stepCount        = $stepsEarned;
+        }
+
+        // Merge with floor lock: effective lock = max of floor and overlay
+        $effectiveLockedRoi = max($floorLockRoi, $overlayLockedRoi);
+
+        // Monotonic: effective locked ROI can only increase
+        $effectiveLockedRoi = max($effectiveLockedRoi, $prevOverlayLockedRoi);
+        $stepCount          = max($stepCount, $prevStepCount);
+
+        // Convert effective locked ROI to floor stop price (short: stop is below entry)
+        $lockedPriceMove = ($effectiveLockedRoi / 100.0) / $leverage;
+        $ladderStopPrice = $entryPrice * (1.0 - $lockedPriceMove);
+
+        // Distance-layer candidate (short: stop trails above low watermark)
+        $distCandidateStop = $trailingLowWatermark * (1.0 + $distancePct);
+
+        // Canonical stop = min of distance candidate and ladder stop (most restrictive for short)
+        if ($prevTrailingStop > 0.0) {
+            $candidateStop     = min($distCandidateStop, $ladderStopPrice);
+            $trailingStopPrice = min($candidateStop, $prevTrailingStop);
+        } else {
+            $trailingStopPrice = min($distCandidateStop, $ladderStopPrice);
+        }
+
+        // Next step target ROI (diagnostics)
+        $nextStepTargetRoi = $overlayActive
+            ? BotReversalSignalHelper::computeNextStepTargetRoi($peakRoi)
+            : $overlayActivationPeak;
+
+        // Populate result changes
+        $result['changes']['trailing_stop_price']                       = round($trailingStopPrice, 8);
+        $result['changes']['trailing_mode']                              = 'price_distance_floor';
+        $result['changes']['trailing_step_mode']                         = 'trend_reversal_soft_ladder_short';
+        $result['changes']['trailing_price_distance_pct']                = $distancePct;
+        $result['changes']['trailing_distance_roi']                      = $distanceRoi;
+        $result['changes']['trailing_preset_mode']                       = $presetMode;
+        $result['changes']['floor_lock_active']                          = true;
+        $result['changes']['floor_locked_roi']                           = $floorLockRoi;
+        $result['changes']['floor_stop_price']                           = round($ladderStopPrice, 8);
+        $result['changes']['trailing_reference_price']                   = round($trailingLowWatermark, 8);
+        $result['changes']['exchange_trailing_distance']                 = round($trailingLowWatermark * $distancePct, 8);
+        $result['changes']['theoretical_current_stop_price']             = round($trailingStopPrice, 8);
+        $result['changes']['current_effective_stop_price']               = round($trailingStopPrice, 8);
+        $result['changes']['protection_source_of_truth']                 = 'bot_trailing_engine_reversal_soft_ladder';
+        $result['changes']['trailing_active']                            = true;
+        $result['changes']['stop_moved_from_initial']                    = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
+        $result['changes']['best_roi_seen']                              = round($peakRoi, 4);
+
+        // Reversal overlay specific fields
+        $result['changes']['reversal_overlay_active']                    = $overlayActive;
+        $result['changes']['reversal_overlay_peak_roi']                  = round($peakRoi, 4);
+        $result['changes']['reversal_overlay_locked_roi_current']        = round($effectiveLockedRoi, 4);
+        $result['changes']['reversal_overlay_step_count']                = $stepCount;
+        $result['changes']['reversal_overlay_next_step_target_roi']      = round($nextStepTargetRoi, 4);
+        $result['changes']['reversal_overlay_base_lock_roi']             = $overlayBaseLock;
+        $result['changes']['reversal_overlay_main_step_roi']             = $overlayMainStep;
+        $result['changes']['reversal_overlay_lock_step_roi']             = $overlayLockStep;
+        $result['changes']['reversal_overlay_activation_peak_roi']       = $overlayActivationPeak;
+
+        // Check if triggered
+        if ($currentPrice >= $trailingStopPrice) {
+            $result['triggered']  = true;
+            $result['close_reason'] = 'closed_by_trailing';
+            $result['changes']['trailing_triggered_at']    = date('c');
+            $result['changes']['trailing_triggered_price'] = $currentPrice;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Internal fallback: standard short-side price_distance_floor logic.
+     *
+     * Used when trend_reversal_soft_ladder_short is configured but conditions
+     * are not met (e.g. non-short position). Ensures protection is never dropped.
+     */
+    private function checkPriceDistanceFloorTrailingFallback(
+        array $trade,
+        float $currentPrice,
+        array $result,
+        array $trailing,
+        string $side,
+        float $entryPrice,
+        float $floorLockRoi,
+        float $distancePct,
+        ?float $distanceRoi,
+        string $presetMode,
+        int $leverage
+    ): array {
+        $prevTrailingStop = (float)($trade['trailing_stop_price'] ?? 0.0);
+        $stepMode  = (string)($trailing['trailing_step_mode'] ?? 'fixed');
+        $stepPctMin = (float)($trailing['trailing_step_pct_min'] ?? 0.005);
+        $stepPctMax = (float)($trailing['trailing_step_pct_max'] ?? 0.02);
+
+        $floorPriceMove = ($floorLockRoi / 100.0) / $leverage;
+        if ($side === 'long') {
+            $floorStopPrice = $entryPrice * (1.0 + $floorPriceMove);
+        } else {
+            $floorStopPrice = $entryPrice * (1.0 - $floorPriceMove);
+        }
+
+        $activeStep = $this->computeActiveStep($stepMode, $stepPctMin, $stepPctMax, $trade, $currentPrice, $entryPrice, $side);
+
+        if ($side === 'long') {
+            $hwm = (float)($trade['trailing_high_watermark'] ?? $currentPrice);
+            if ($currentPrice > $hwm) {
+                $hwm = $currentPrice;
+                $result['changes']['trailing_high_watermark'] = $hwm;
+                $result['updated'] = true;
+            }
+            $refPrice = (float)($trade['trailing_reference_price'] ?? $hwm);
+            $moveSinceRef = ($hwm > 0 && $refPrice > 0) ? (($hwm - $refPrice) / $refPrice) : 0.0;
+            if ($moveSinceRef >= $activeStep || $refPrice <= 0) {
+                $refPrice = $hwm;
+                $result['changes']['trailing_reference_price'] = $refPrice;
+            }
+            $candidateStop = max($refPrice * (1.0 - $distancePct), $floorStopPrice);
+            $trailingStopPrice = max($candidateStop, $prevTrailingStop);
+            $triggered = ($currentPrice <= $trailingStopPrice);
+        } else {
+            $lwm = (float)($trade['trailing_low_watermark'] ?? $currentPrice);
+            if ($currentPrice < $lwm) {
+                $lwm = $currentPrice;
+                $result['changes']['trailing_low_watermark'] = $lwm;
+                $result['updated'] = true;
+            }
+            $refPrice = (float)($trade['trailing_reference_price'] ?? $lwm);
+            $moveSinceRef = ($lwm > 0 && $refPrice > 0) ? (($refPrice - $lwm) / $refPrice) : 0.0;
+            if ($moveSinceRef >= $activeStep || $refPrice <= 0) {
+                $refPrice = $lwm;
+                $result['changes']['trailing_reference_price'] = $refPrice;
+            }
+            $candidateStop = min($refPrice * (1.0 + $distancePct), $floorStopPrice);
+            $trailingStopPrice = ($prevTrailingStop > 0.0) ? min($candidateStop, $prevTrailingStop) : $candidateStop;
+            $triggered = ($currentPrice >= $trailingStopPrice);
+        }
+
+        $result['changes']['trailing_stop_price']           = round($trailingStopPrice, 8);
+        $result['changes']['trailing_mode']                  = 'price_distance_floor';
+        $result['changes']['trailing_step_mode']             = $stepMode;
+        $result['changes']['trailing_price_distance_pct']    = $distancePct;
+        $result['changes']['trailing_distance_roi']          = $distanceRoi;
+        $result['changes']['trailing_preset_mode']           = $presetMode;
+        $result['changes']['floor_lock_active']              = true;
+        $result['changes']['floor_locked_roi']               = $floorLockRoi;
+        $result['changes']['floor_stop_price']               = round($floorStopPrice, 8);
+        $result['changes']['current_effective_stop_price']   = round($trailingStopPrice, 8);
+        $result['changes']['protection_source_of_truth']     = 'bot_trailing_engine_pdf_fallback';
+        $result['changes']['trailing_active']                = true;
+        $result['changes']['stop_moved_from_initial']        = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
+
+        if ($triggered) {
+            $result['triggered']  = true;
+            $result['close_reason'] = 'closed_by_trailing';
+            $result['changes']['trailing_triggered_at']    = date('c');
+            $result['changes']['trailing_triggered_price'] = $currentPrice;
+        }
+        return $result;
+    }
+
+    /**
      * Compute active step threshold for trailing updates.
      *
      * Fixed mode: returns step_pct_min as the fixed threshold.
@@ -849,10 +1112,14 @@ class BotTrailingEngine
 - TrailingEngine handles trailing stop calculations and break-even checks
 - Three trailing modes: roi_giveback (default), price_distance (fixed % from current price),
   price_distance_floor (activation floor + locked ROI + price distance follow + step corridor)
-- Step modes for price_distance_floor: fixed, auto_strength, fixed_roi_ladder
+- Step modes for price_distance_floor: fixed, auto_strength, fixed_roi_ladder, trend_reversal_soft_ladder_short
 - fixed_roi_ladder: locked ROI grows in discrete ROI steps using peak ROI (monotonic);
   formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi;
   peak_roi is tracked separately and never decreases; protection only strengthens.
+- trend_reversal_soft_ladder_short: TEST MODE; SHORT V2/V3 only; overlay activates when
+  trade['reversal_overlay_active']=true (set by executor after checking signals.json);
+  overlay formula: locked = 5 + floor((peak_roi - 10) / 3) * 1 for peak >= 10;
+  effective_locked_roi = max(floor_lock_roi, overlay_locked_roi); monotonic protection.
 - Phase-1: "Dumb" trailing - set once on exchange, don't track
 - Trailing activation includes leverage in ROI calculation
 - NO local price tracking - exchange handles trailing

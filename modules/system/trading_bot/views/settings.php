@@ -759,6 +759,46 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                         </div>
                     </div>
 
+                    <!-- Trend-Reversal Soft Ladder (TEST MODE) -->
+                    <div class="card mb-3 border-warning">
+                        <div class="card-header py-2 bg-warning bg-opacity-10">
+                            <strong>🔬 Trend-Reversal Soft Ladder</strong>
+                            <span class="badge bg-warning text-dark ms-2" style="font-size:0.65rem;">TEST MODE</span>
+                            <small class="text-muted ms-2">(short V2/V3 only — step_mode: trend_reversal_soft_ladder_short)</small>
+                        </div>
+                        <div class="card-body py-2">
+                            <div class="alert alert-warning py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                ⚠️ <strong>TEST MODE — fixed constants, not freely configurable in v1.</strong><br>
+                                Short V2/V3 only. Activates after mirrored long reversal pattern on same symbol.<br>
+                                Soft ROI ladder: once peak ROI ≥ 10, locks profit gradually instead of aggressively.
+                            </div>
+                            <table class="table table-sm table-bordered mb-2" style="font-size:0.75rem;">
+                                <thead><tr><th colspan="2" class="table-secondary">Fixed Test Constants</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Activation Peak ROI</td><td><strong>10</strong> ROI%</td></tr>
+                                    <tr><td>Base Lock ROI</td><td><strong>5</strong> ROI%</td></tr>
+                                    <tr><td>Main Step ROI</td><td><strong>3</strong> ROI%</td></tr>
+                                    <tr><td>Lock Step ROI</td><td><strong>1</strong> ROI%</td></tr>
+                                </tbody>
+                            </table>
+                            <table class="table table-sm table-bordered mb-2" style="font-size:0.75rem;">
+                                <thead><tr><th>Peak ROI</th><th>Lock ROI</th></tr></thead>
+                                <tbody>
+                                    <tr><td>&lt; 10</td><td>0 (dormant)</td></tr>
+                                    <tr><td>10.0 – 12.9</td><td>5</td></tr>
+                                    <tr><td>13.0 – 15.9</td><td>6</td></tr>
+                                    <tr><td>16.0 – 18.9</td><td>7</td></tr>
+                                    <tr><td>19.0 – 21.9</td><td>8</td></tr>
+                                </tbody>
+                            </table>
+                            <div class="text-muted" style="font-size:0.72rem;">
+                                <strong>Scope:</strong> double_top_contextual_v2, double_top_contextual_v3 (short source)<br>
+                                <strong>Reversal trigger:</strong> double_bottom_contextual_v2, double_bottom_contextual_v3 (same symbol)<br>
+                                <strong>Enable:</strong> set <code>trailing_step_mode = trend_reversal_soft_ladder_short</code> in Brain trailing contract.
+                            </div>
+                        </div>
+                    </div>
+
                     <hr class="my-4">
 
                     <h6 class="mb-3">Баланс</h6>

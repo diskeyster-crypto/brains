@@ -875,6 +875,64 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                             <?php endif; ?>
                         </td></tr>
                         <?php endif; ?>
+                        <?php
+                            // Reversal Overlay state for this trade (trend_reversal_soft_ladder_short mode)
+                            $rvOverlayMode    = (string)($pdfT['runtime']['reversal_overlay_mode'] ?? '');
+                            $rvOverlayActive  = isset($pdfT['runtime']['reversal_overlay_active']) ? (bool)$pdfT['runtime']['reversal_overlay_active'] : null;
+                            $rvOverlayPattern = $pdfT['runtime']['reversal_overlay_trigger_pattern'] ?? null;
+                            $rvOverlayAt      = $pdfT['runtime']['reversal_overlay_triggered_at'] ?? null;
+                            $rvPeakRoi        = (float)($pdfT['runtime']['reversal_overlay_peak_roi'] ?? 0);
+                            $rvLockedRoi      = (float)($pdfT['runtime']['reversal_overlay_locked_roi_current'] ?? 0);
+                            $rvStepCount      = (int)($pdfT['runtime']['reversal_overlay_step_count'] ?? 0);
+                            $rvNextStep       = (float)($pdfT['runtime']['reversal_overlay_next_step_target_roi'] ?? 0);
+                            $rvSkipReason     = (string)($pdfT['runtime']['reversal_overlay_skip_reason'] ?? '');
+                            $rvComputedStop   = (float)($pdfT['runtime']['reversal_overlay_computed_stop'] ?? 0);
+                            $rvEnforced       = (bool)($pdfT['runtime']['reversal_overlay_stop_enforced'] ?? false);
+                        ?>
+                        <?php if ($rvOverlayMode === 'trend_reversal_soft_ladder_short'): ?>
+                        <tr><td class="text-muted" style="width:40%">
+                            <span class="badge bg-warning text-dark" style="font-size:0.6rem;">TEST</span> Reversal Overlay
+                        </td><td>
+                            <?php if ($rvOverlayActive === true): ?>
+                                <span class="badge bg-success">🔬 active</span>
+                                <?php if ($rvOverlayPattern): ?>
+                                    <br><small class="text-success">trigger: <?= htmlspecialchars($rvOverlayPattern) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvOverlayAt): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars(substr((string)$rvOverlayAt, 0, 16)) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvPeakRoi > 0): ?>
+                                    <br><small class="text-muted">peak: <?= round($rvPeakRoi, 2) ?>% ROI</small>
+                                <?php endif; ?>
+                                <?php if ($rvLockedRoi > 0): ?>
+                                    <br><small class="text-info fw-bold">lock: <?= round($rvLockedRoi, 2) ?>% ROI (step <?= $rvStepCount ?>)</small>
+                                <?php endif; ?>
+                                <?php if ($rvNextStep > 0): ?>
+                                    <br><small class="text-muted">next step @ <?= round($rvNextStep, 1) ?>% ROI</small>
+                                <?php endif; ?>
+                                <?php if ($rvComputedStop > 0): ?>
+                                    <br><small class="text-muted">overlay stop: <?= number_format($rvComputedStop, 4) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvEnforced): ?>
+                                    <br><span class="badge bg-primary" style="font-size:0.6rem;">stop enforced</span>
+                                <?php endif; ?>
+                            <?php elseif ($rvOverlayActive === false): ?>
+                                <span class="badge bg-secondary">⏸ inactive</span>
+                                <?php if ($rvSkipReason !== ''): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars($rvSkipReason) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvPeakRoi > 0): ?>
+                                    <br><small class="text-muted">peak so far: <?= round($rvPeakRoi, 2) ?>% ROI</small>
+                                <?php endif; ?>
+                                <?php if ($rvNextStep > 0): ?>
+                                    <br><small class="text-muted">activates @ <?= round($rvNextStep, 1) ?>% ROI</small>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">⏸ waiting</span>
+                            <?php endif; ?>
+                            <br><small class="text-muted fst-italic" style="font-size:0.65rem;">constants: act=10 base=5 step=3/+1</small>
+                        </td></tr>
+                        <?php endif; ?>
                     </table>
                 </div>
                 <?php endforeach; ?>

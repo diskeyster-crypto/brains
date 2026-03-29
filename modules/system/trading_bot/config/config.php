@@ -221,6 +221,19 @@ return [
         // Formula: locked_roi = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi
         'trailing_step_roi' => 1.5,
 
+        // Trend-Reversal Soft Ladder (TEST MODE — short V2/V3 only).
+        // Activated when trailing_step_mode = 'trend_reversal_soft_ladder_short'.
+        // Requires: short trade from double_top_contextual_v2 or _v3, AND
+        //           mirrored double_bottom_contextual_v2 or _v3 signal present.
+        // Fixed test constants (not user-configurable in v1):
+        //   reversal_overlay_activation_peak_roi = 10
+        //   reversal_overlay_base_lock_roi       = 5
+        //   reversal_overlay_main_step_roi       = 3
+        //   reversal_overlay_lock_step_roi       = 1
+        // To enable: set trailing_step_mode = 'trend_reversal_soft_ladder_short'
+        //            in trailing config (Brain or bot local).
+        'reversal_overlay_enabled' => false,
+
         // Balance checks
         'balance_strict_stable_coin_only' => true,
         'balance_coin' => 'USDT',

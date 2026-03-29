@@ -1207,6 +1207,12 @@ trait BotExecutorTrait
             'profit_addon_too_small' => 0,
             'profit_addon_skip_reason_distribution' => [],
             'profit_addon_fail_reason_distribution' => [],
+            'reversal_overlay_candidates_seen' => 0,
+            'reversal_overlay_activated' => 0,
+            'reversal_overlay_step_advanced' => 0,
+            'reversal_overlay_skipped_wrong_pattern' => 0,
+            'reversal_overlay_skipped_no_signal' => 0,
+            'reversal_overlay_skipped_peak_too_low' => 0,
         ];
         
         if ($mode !== 'live') {
@@ -2297,6 +2303,205 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $trade['runtime'] = $runtime;
 
                             $result['floor_lock_skipped']++;
+                        }
+                    }
+                }
+
+                // ============================================================
+                // P10b: Reversal Overlay Enforcement
+                //       (trend_reversal_soft_ladder_short TEST MODE)
+                //
+                // Applies ONLY when:
+                //   - trailing_step_mode = 'trend_reversal_soft_ladder_short'
+                //   - trade is SHORT
+                //   - trade source pattern is double_top_contextual_v2 or _v3
+                //   - a mirrored long reversal pattern exists in signals.json
+                //     for the same symbol
+                //
+                // When overlay is active and peak_roi >= 10, computes:
+                //   overlay_locked_roi = 5 + floor((peak_roi - 10) / 3) * 1
+                //
+                // Effective locked ROI = max(floor_lock_roi, overlay_locked_roi).
+                // Protection is monotonic — never weakened.
+                //
+                // Sets trade['reversal_overlay_active'] so BotTrailingEngine's
+                // checkReversalSoftLadderTrailing() can read it in subsequent runs.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $rvStepMode = (string)($trailingCfg['trailing_step_mode'] ?? 'fixed');
+
+                    if ($rvStepMode === 'trend_reversal_soft_ladder_short') {
+
+                        $rvSide = strtolower((string)($trade['side'] ?? ''));
+                        if ($rvSide === 'buy') { $rvSide = 'long'; }
+                        if ($rvSide === 'sell') { $rvSide = 'short'; }
+
+                        $rvPattern = (string)($trade['pattern_algorithm'] ?? '');
+                        $rvSymbol  = (string)($trade['symbol'] ?? '');
+
+                        // Always store test-mode constants in runtime for visibility
+                        $runtime['reversal_overlay_mode']                  = 'trend_reversal_soft_ladder_short';
+                        $runtime['reversal_overlay_activation_peak_roi']   = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+                        $runtime['reversal_overlay_base_lock_roi']         = BotReversalSignalHelper::OVERLAY_BASE_LOCK_ROI;
+                        $runtime['reversal_overlay_main_step_roi']         = BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI;
+                        $runtime['reversal_overlay_lock_step_roi']         = BotReversalSignalHelper::OVERLAY_LOCK_STEP_ROI;
+
+                        if ($rvSide !== 'short') {
+                            $runtime['reversal_overlay_active']       = false;
+                            $runtime['reversal_overlay_skip_reason']  = 'not_short_position';
+                            $trade['reversal_overlay_active']         = false;
+                            $trade['runtime'] = $runtime;
+                        } elseif (!BotReversalSignalHelper::isEligibleSourcePattern($rvPattern)) {
+                            $runtime['reversal_overlay_active']       = false;
+                            $runtime['reversal_overlay_skip_reason']  = 'source_pattern_not_eligible';
+                            $runtime['reversal_overlay_source_pattern'] = $rvPattern;
+                            $trade['reversal_overlay_active']         = false;
+                            $trade['runtime'] = $runtime;
+                            $result['reversal_overlay_skipped_wrong_pattern']++;
+                        } else {
+                            // Eligible trade — check for reversal signal
+                            $result['reversal_overlay_candidates_seen']++;
+                            $runtime['reversal_overlay_source_pattern'] = $rvPattern;
+
+                            // Resolve signals.json path
+                            $rvSignalsBase = null;
+                            try {
+                                $rvPaths = \Core\System\SystemPaths::instance();
+                                $rvSignalsKey  = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+                                $rvSignalsFile = $this->config['sources']['signals_file'] ?? 'signals.json';
+                                if ($rvPaths->has($rvSignalsKey)) {
+                                    $rvSignalsBase = $rvPaths->get($rvSignalsKey) . '/' . $rvSignalsFile;
+                                }
+                            } catch (\Throwable $rvEx) {
+                                $rvSignalsBase = null;
+                            }
+
+                            $rvLookup = ($rvSignalsBase !== null)
+                                ? BotReversalSignalHelper::findReversalSignal($rvSymbol, $rvSignalsBase)
+                                : ['found' => false, 'pattern' => null, 'reason' => 'signals_path_unavailable'];
+
+                            $rvReversalFound = (bool)($rvLookup['found'] ?? false);
+                            $runtime['reversal_overlay_trigger_lookup_reason'] = $rvLookup['reason'] ?? '';
+                            $runtime['reversal_overlay_trigger_pattern']       = $rvLookup['pattern'] ?? null;
+
+                            if (!$rvReversalFound) {
+                                $runtime['reversal_overlay_active']      = false;
+                                $runtime['reversal_overlay_skip_reason'] = 'no_reversal_signal_found';
+                                $trade['reversal_overlay_active']        = false;
+                                $trade['runtime'] = $runtime;
+                                $result['reversal_overlay_skipped_no_signal']++;
+                            } else {
+                                // Reversal signal present — compute overlay
+                                $positionIM    = (float)($position['positionIM'] ?? 0);
+                                $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                                $rvRoiBybit    = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                                $entryAvg  = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+                                $rvLeverage = (float)($risk['leverage'] ?? ($trade['leverage'] ?? 1));
+                                if ($rvLeverage <= 0) { $rvLeverage = 1.0; }
+
+                                // Update monotonic peak ROI for overlay
+                                $prevOverlayPeakRoi   = (float)($trade['reversal_overlay_peak_roi'] ?? 0.0);
+                                $prevOverlayLockedRoi = (float)($trade['reversal_overlay_locked_roi_current'] ?? 0.0);
+                                $prevStepCount        = (int)($trade['reversal_overlay_step_count'] ?? 0);
+
+                                $overlayPeakRoi = max($prevOverlayPeakRoi, $rvRoiBybit);
+                                $overlayActivePeakThreshold = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+
+                                // Store overlay as active in trade object for trailing engine
+                                $runtime['reversal_overlay_active']          = true;
+                                $runtime['reversal_overlay_triggered_at']    = $runtime['reversal_overlay_triggered_at'] ?? date('c');
+                                $runtime['reversal_overlay_peak_roi']        = round($overlayPeakRoi, 4);
+                                $trade['reversal_overlay_active']            = true;
+                                $trade['reversal_overlay_peak_roi']          = round($overlayPeakRoi, 4);
+
+                                if ($overlayPeakRoi < $overlayActivePeakThreshold) {
+                                    // Overlay active but peak not yet high enough to lock
+                                    $runtime['reversal_overlay_skip_reason'] = 'peak_below_activation';
+                                    $runtime['reversal_overlay_locked_roi_current'] = 0.0;
+                                    $runtime['reversal_overlay_next_step_target_roi'] = $overlayActivePeakThreshold;
+                                    $trade['runtime'] = $runtime;
+                                    $result['reversal_overlay_skipped_peak_too_low']++;
+                                } else {
+                                    // Compute overlay locked ROI
+                                    $overlayLockedRoi = BotReversalSignalHelper::computeOverlayLockedRoi($overlayPeakRoi);
+                                    $floorLockRoi     = (float)($trailingCfg['trailing_floor_lock_roi'] ?? 3.0);
+                                    $effectiveLocked  = max($floorLockRoi, $overlayLockedRoi);
+
+                                    // Monotonic: never weaken
+                                    $effectiveLocked = max($effectiveLocked, $prevOverlayLockedRoi);
+
+                                    // Step count diagnostic
+                                    $rvSteps = (int)floor(
+                                        ($overlayPeakRoi - $overlayActivePeakThreshold) /
+                                        BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI
+                                    );
+                                    $rvSteps = max($rvSteps, $prevStepCount);
+                                    $stepAdvanced = ($rvSteps > $prevStepCount);
+
+                                    // Store overlay state
+                                    $runtime['reversal_overlay_locked_roi_current']    = round($effectiveLocked, 4);
+                                    $runtime['reversal_overlay_step_count']            = $rvSteps;
+                                    $runtime['reversal_overlay_next_step_target_roi']  = round(
+                                        BotReversalSignalHelper::computeNextStepTargetRoi($overlayPeakRoi), 4
+                                    );
+                                    $trade['reversal_overlay_locked_roi_current'] = round($effectiveLocked, 4);
+                                    $trade['reversal_overlay_step_count']         = $rvSteps;
+
+                                    $result['reversal_overlay_activated']++;
+                                    if ($stepAdvanced) {
+                                        $result['reversal_overlay_step_advanced']++;
+                                    }
+
+                                    // Enforce overlay locked ROI as exchange SL if it improves protection
+                                    if ($entryAvg > 0) {
+                                        $rvPriceMove   = ($effectiveLocked / 100.0) / $rvLeverage;
+                                        $rvOverlayStop = round($entryAvg * (1.0 - $rvPriceMove), 8);
+
+                                        $markPrice  = (float)($position['markPrice'] ?? 0);
+                                        $lastPrice  = (float)($position['lastPrice'] ?? 0);
+                                        $rvRefPrice = $this->pickTrailingReferencePrice('short', $markPrice, $lastPrice);
+                                        $minDistPct = (float)($this->config['execution']['step_trailing_min_distance_to_price_pct'] ?? 0.05);
+
+                                        // Safety: keep SL above current price for short
+                                        if ($rvRefPrice > 0) {
+                                            $rvMinAllowed = $rvRefPrice * (1.0 + ($minDistPct / 100));
+                                            if ($rvOverlayStop < $rvMinAllowed) {
+                                                $rvOverlayStop = round($rvMinAllowed, 8);
+                                            }
+                                        }
+
+                                        $rvExchangeSL = (float)($trade['protection']['stop_loss_price'] ?? 0);
+                                        $rvShouldApply = ($rvOverlayStop > 0 && ($rvExchangeSL <= 0 || $rvOverlayStop < $rvExchangeSL));
+
+                                        $runtime['reversal_overlay_computed_stop'] = $rvOverlayStop;
+                                        $runtime['current_effective_stop_price']   = $rvOverlayStop;
+                                        $runtime['protection_source_of_truth']     = 'reversal_overlay';
+
+                                        if ($rvShouldApply && $this->gateway && $this->gateway->isInitialized()) {
+                                            $rvOpts = [
+                                                'position_idx' => (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0))),
+                                                'tpsl_mode'    => $this->config['exchange']['tpsl_mode'] ?? 'Full',
+                                                'sl_trigger_by' => $this->config['exchange']['sl_trigger_by'] ?? 'IndexPrice',
+                                                'stop_loss'    => $rvOverlayStop,
+                                            ];
+                                            $rvSlRes = $this->gateway->setTradingStop($trade['symbol'], 'short', $rvOpts);
+                                            if (($rvSlRes['success'] ?? false) === true) {
+                                                $trade['protection']['stop_loss_price'] = $rvOverlayStop;
+                                                $runtime['reversal_overlay_stop_enforced']    = true;
+                                                $runtime['reversal_overlay_stop_enforced_at'] = date('c');
+                                            } else {
+                                                $runtime['reversal_overlay_stop_enforce_error'] = $rvSlRes['error'] ?? 'unknown';
+                                            }
+                                        }
+                                    }
+
+                                    $trade['runtime'] = $runtime;
+                                }
+                            }
                         }
                     }
                 }

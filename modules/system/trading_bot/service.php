@@ -788,6 +788,12 @@ final class TradingBotService
             $result['profit_addon_skipped_count'] = $updateResult['profit_addon_skipped'] ?? 0;
             $result['profit_addon_skip_reason_distribution'] = $updateResult['profit_addon_skip_reason_distribution'] ?? [];
             $result['profit_addon_fail_reason_distribution'] = $updateResult['profit_addon_fail_reason_distribution'] ?? [];
+            $result['reversal_overlay_candidates_seen_count'] = $updateResult['reversal_overlay_candidates_seen'] ?? 0;
+            $result['reversal_overlay_activated_count'] = $updateResult['reversal_overlay_activated'] ?? 0;
+            $result['reversal_overlay_step_advanced_count'] = $updateResult['reversal_overlay_step_advanced'] ?? 0;
+            $result['reversal_overlay_skipped_wrong_pattern_count'] = $updateResult['reversal_overlay_skipped_wrong_pattern'] ?? 0;
+            $result['reversal_overlay_skipped_no_reversal_signal_count'] = $updateResult['reversal_overlay_skipped_no_signal'] ?? 0;
+            $result['reversal_overlay_skipped_peak_too_low_count'] = $updateResult['reversal_overlay_skipped_peak_too_low'] ?? 0;
             $result['steps'][] = [
                 'step' => 'update_positions',
                 'status' => 'ok',
@@ -813,6 +819,12 @@ final class TradingBotService
                 'profit_addon_too_small' => $updateResult['profit_addon_too_small'] ?? 0,
                 'profit_addon_skip_reason_distribution' => $updateResult['profit_addon_skip_reason_distribution'] ?? [],
                 'profit_addon_fail_reason_distribution' => $updateResult['profit_addon_fail_reason_distribution'] ?? [],
+                'reversal_overlay_candidates_seen' => $updateResult['reversal_overlay_candidates_seen'] ?? 0,
+                'reversal_overlay_activated' => $updateResult['reversal_overlay_activated'] ?? 0,
+                'reversal_overlay_step_advanced' => $updateResult['reversal_overlay_step_advanced'] ?? 0,
+                'reversal_overlay_skipped_wrong_pattern' => $updateResult['reversal_overlay_skipped_wrong_pattern'] ?? 0,
+                'reversal_overlay_skipped_no_signal' => $updateResult['reversal_overlay_skipped_no_signal'] ?? 0,
+                'reversal_overlay_skipped_peak_too_low' => $updateResult['reversal_overlay_skipped_peak_too_low'] ?? 0,
                 'effective_stop_zero_while_protected_count' => $updateResult['effective_stop_zero_while_protected_count'] ?? 0,
                 'protection_source_missing_count' => $updateResult['protection_source_missing_count'] ?? 0,
                 'best_price_missing_while_trailing_active_count' => $updateResult['best_price_missing_while_trailing_active_count'] ?? 0,

@@ -456,6 +456,12 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $paTooSmallCount = (int)($botMirror['profit_addon_too_small_count'] ?? 0);
                 $paSkipDist = is_array($botMirror['profit_addon_skip_reason_distribution'] ?? null) ? $botMirror['profit_addon_skip_reason_distribution'] : [];
                 $paFailDist = is_array($botMirror['profit_addon_fail_reason_distribution'] ?? null) ? $botMirror['profit_addon_fail_reason_distribution'] : [];
+                $rvCandidates = (int)($botMirror['reversal_overlay_candidates_seen_count'] ?? 0);
+                $rvActivated = (int)($botMirror['reversal_overlay_activated_count'] ?? 0);
+                $rvStepAdv = (int)($botMirror['reversal_overlay_step_advanced_count'] ?? 0);
+                $rvSkipWrongPat = (int)($botMirror['reversal_overlay_skipped_wrong_pattern_count'] ?? 0);
+                $rvSkipNoSig = (int)($botMirror['reversal_overlay_skipped_no_reversal_signal_count'] ?? 0);
+                $rvSkipPeakLow = (int)($botMirror['reversal_overlay_skipped_peak_too_low_count'] ?? 0);
             ?>
             <?php if ($activePosCount > 0): ?>
             <div class="mt-2 small">
@@ -495,6 +501,27 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                         <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;"><?= htmlspecialchars((string)$sr) ?>: <?= (int)$sc ?></span>
                     <?php endforeach; ?>
                 <?php endif; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($rvCandidates > 0): ?>
+            <div class="mt-1 small">
+                <strong><i class="bi bi-arrow-repeat me-1"></i>Reversal Overlay <span class="badge bg-warning text-dark" style="font-size:0.6rem;">TEST</span>:</strong>
+                <?php if ($rvActivated > 0): ?>
+                <span class="badge bg-success me-1">Active: <?= $rvActivated ?></span>
+                <?php endif; ?>
+                <?php if ($rvStepAdv > 0): ?>
+                <span class="badge bg-info me-1">Steps: <?= $rvStepAdv ?></span>
+                <?php endif; ?>
+                <?php if ($rvSkipNoSig > 0): ?>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">no_signal: <?= $rvSkipNoSig ?></span>
+                <?php endif; ?>
+                <?php if ($rvSkipPeakLow > 0): ?>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">peak_low: <?= $rvSkipPeakLow ?></span>
+                <?php endif; ?>
+                <?php if ($rvSkipWrongPat > 0): ?>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_pattern: <?= $rvSkipWrongPat ?></span>
+                <?php endif; ?>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">candidates: <?= $rvCandidates ?></span>
             </div>
             <?php endif; ?>
             <?php

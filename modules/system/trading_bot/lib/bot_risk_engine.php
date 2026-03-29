@@ -383,7 +383,7 @@ class BotRiskEngine
      *   - trailing_activation_floor_roi = activation threshold (percent)
      *   - trailing_floor_lock_roi = minimum locked ROI (percent)
      *   - trailing_price_distance_pct = distance from best price
-     *   - trailing_step_mode = 'fixed' | 'auto_strength'
+     *   - trailing_step_mode = 'fixed' | 'auto_strength' | 'fixed_roi_ladder' | 'trend_reversal_soft_ladder_short'
      * 
      * @param array $risk Risk block
      * @param float $entryAvg Average entry price

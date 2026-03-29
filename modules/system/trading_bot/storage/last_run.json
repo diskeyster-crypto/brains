@@ -1,5 +1,5 @@
 {
-    "ts": "2026-03-26T05:59:01+00:00",
+    "ts": "2026-03-29T14:29:03+01:00",
     "ok": true,
     "status": "ok",
     "mode": "live",
@@ -8,7 +8,7 @@
             "step": "reconcile",
             "status": "ok",
             "positions_synced": 2,
-            "orders_synced": 13,
+            "orders_synced": 20,
             "orphan_positions_count": 0,
             "orphan_positions": []
         },
@@ -27,11 +27,25 @@
             "truncated": 0
         },
         {
+            "step": "claim_intents",
+            "status": "ok",
+            "claimed": 1,
+            "already_claimed": 0,
+            "not_found": 0,
+            "expired_skipped": 0
+        },
+        {
+            "step": "finalize_stale_claims",
+            "status": "ok",
+            "finalized": 0,
+            "stale_found": 0
+        },
+        {
             "step": "execute_intents",
             "status": "ok",
-            "opened": 1,
+            "opened": 0,
             "failed": 0,
-            "executed": 1,
+            "processed": 1,
             "deferred_checked": 0,
             "max_execute_per_run": 1,
             "max_deferred_per_run": 10
@@ -39,18 +53,21 @@
         {
             "step": "update_positions",
             "status": "ok",
-            "updated": 3,
+            "updated": 2,
             "closed": 0,
             "closed_by_logical_stop": 0,
             "closed_by_exchange": 0,
             "trailing_applied": 0,
             "trailing_failed": 0,
-            "trailing_skipped": 3,
+            "trailing_skipped": 2,
             "break_even_applied": 0,
             "hybrid_partial_applied": 0,
             "floor_lock_applied": 0,
             "floor_lock_failed": 0,
-            "floor_lock_skipped": 3,
+            "floor_lock_skipped": 2,
+            "profit_addon_applied": 0,
+            "profit_addon_failed": 0,
+            "profit_addon_skipped": 1,
             "effective_stop_zero_while_protected_count": 0,
             "protection_source_missing_count": 0,
             "best_price_missing_while_trailing_active_count": 0,
@@ -66,38 +83,40 @@
     "intents_loaded": 1,
     "intents_valid": 1,
     "intents_rejected": 0,
-    "intents_rejected_exec": 0,
+    "intents_rejected_exec": 1,
     "intents_failed_exec": 0,
-    "intents_rejected_total": 0,
+    "intents_rejected_total": 1,
     "intents_deferred": 0,
-    "positions_opened": 1,
-    "positions_updated": 3,
+    "positions_opened": 0,
+    "positions_updated": 2,
     "positions_closed": 0,
-    "orders_sent": 1,
-    "orders_filled": 1,
+    "orders_sent": 0,
+    "orders_filled": 0,
     "orders_failed": 0,
     "errors_count": 0,
     "errors": [],
-    "warnings": [],
+    "warnings": [
+        "Rejected: rejected_balance_below_minimum — balance_below_minimum_threshold"
+    ],
     "selected_intent": {
-        "id": "li_sig_878cc43cb08b07ab_d1030e63",
-        "signal_id": "sig_878cc43cb08b07ab",
-        "intent_id": "li_sig_878cc43cb08b07ab_d1030e63",
-        "execution_identity_key": "li_sig_878cc43cb08b07ab_d1030e63",
+        "id": "li_sig_195e8df220bf0585_0ce276f8",
+        "signal_id": "sig_195e8df220bf0585",
+        "intent_id": "li_sig_195e8df220bf0585_0ce276f8",
+        "execution_identity_key": "li_sig_195e8df220bf0585_0ce276f8",
         "dedupe_basis": "intent_id",
-        "source_signal_id": "sig_878cc43cb08b07ab",
-        "symbol": "CROSSUSDT",
-        "side": "long",
+        "source_signal_id": "sig_195e8df220bf0585",
+        "symbol": "APEUSDT",
+        "side": "short",
         "entry_action": "enter_now",
-        "entry_price": 0.068992499999999998,
-        "created_ts": 1774504684,
-        "expires_at": 0,
+        "entry_price": 0.086506100000000002,
+        "created_ts": 1774790885,
+        "expires_at": 1774791185,
         "brain_controlled": true,
         "risk": {
             "profile_id": "111",
             "budget_usdt_per_trade": 3.2999999999999998,
             "leverage": 5,
-            "stop_from_liq_range_pct": 1.1799999999999999,
+            "stop_from_liq_range_pct": 1.03,
             "slippage_bps": 20,
             "fees_bps": 12,
             "order_type": "market",
@@ -122,24 +141,277 @@
         }
     },
     "selected_decision": {
-        "type": "opened",
-        "status": "opened_protected",
-        "reason": null,
-        "context": [],
-        "order_id": "5c81f389-27fd-45da-ab4a-bd76966db0e8",
-        "trade_id": "sig_878cc43cb08b07ab",
-        "filled": true,
-        "rejected_item": null
+        "type": "rejected",
+        "status": "rejected_balance_below_minimum",
+        "reason": "balance_below_minimum_threshold",
+        "context": {
+            "required_usdt": 3.4649999999999999,
+            "available_usdt": 1.9969450200000001,
+            "buffer_pct": 5,
+            "budget_usdt_per_trade": 3.2999999999999998,
+            "account_type": "UNIFIED",
+            "balance_snapshot": {
+                "coin": "USDT",
+                "account_type": "UNIFIED",
+                "available": 1.9969450200000001,
+                "available_usd": 1.9969450200000001,
+                "total_available_balance_usd": 1.9969450200000001,
+                "total_margin_balance_usd": 0,
+                "total_wallet_balance_usd": 8.5940200499999992,
+                "total_equity_usd": 8.5228718800000003,
+                "source": "coin_equity_fallback",
+                "account_totals_missing": true,
+                "raw_totalAvailableBalance": "",
+                "ret_code": 0,
+                "ret_msg": "OK",
+                "deprecated_fields": [
+                    "availableToWithdraw"
+                ],
+                "wallet_balance": 8.5940200499999992,
+                "equity": 8.5228718800000003,
+                "raw_account": {
+                    "accountIMRate": "",
+                    "totalMaintenanceMarginByMp": "",
+                    "totalInitialMargin": "",
+                    "accountType": "UNIFIED",
+                    "accountMMRate": "",
+                    "accountMMRateByMp": "",
+                    "accountIMRateByMp": "",
+                    "totalInitialMarginByMp": "",
+                    "totalMaintenanceMargin": "",
+                    "totalEquity": "8.52287188",
+                    "totalMarginBalance": "",
+                    "totalAvailableBalance": "",
+                    "totalPerpUPL": "-0.07114816",
+                    "totalWalletBalance": "8.59402005",
+                    "accountLTV": "",
+                    "coin": [
+                        {
+                            "spotBorrow": "0",
+                            "availableToBorrow": "",
+                            "bonus": "0",
+                            "accruedInterest": "0",
+                            "availableToWithdraw": "",
+                            "totalOrderIM": "0",
+                            "equity": "8.52908105",
+                            "totalPositionMM": "1.09802002",
+                            "usdValue": "8.52287188",
+                            "unrealisedPnl": "-0.0712",
+                            "collateralSwitch": true,
+                            "spotHedgingQty": "0",
+                            "borrowAmount": "0",
+                            "totalPositionIM": "6.53213603",
+                            "walletBalance": "8.60028105",
+                            "cumRealisedPnl": "-2154.18142179",
+                            "locked": "0",
+                            "marginCollateral": true,
+                            "coin": "USDT"
+                        }
+                    ]
+                }
+            },
+            "coin": "USDT",
+            "shortfall": null
+        },
+        "order_id": null,
+        "trade_id": null,
+        "filled": false,
+        "rejected_item": {
+            "ts": "2026-03-29T14:29:04+01:00",
+            "intent_id": "li_sig_195e8df220bf0585_0ce276f8",
+            "intent": {
+                "id": "li_sig_195e8df220bf0585_0ce276f8",
+                "signal_id": "sig_195e8df220bf0585",
+                "intent_id": "li_sig_195e8df220bf0585_0ce276f8",
+                "schema_version": "intent_live_v1",
+                "symbol": "APEUSDT",
+                "side": "short",
+                "entry_price": 0.086506100000000002,
+                "entry_action": "enter_now",
+                "entry_timeout_minutes": 8,
+                "late_threshold_pct": 1.25,
+                "created_ts": 1774790885,
+                "created_at": "2026-03-29T14:28:05+01:00",
+                "expires_at": 1774791185,
+                "risk": {
+                    "profile_id": "111",
+                    "budget_usdt_per_trade": 3.2999999999999998,
+                    "leverage": 5,
+                    "stop_from_liq_range_pct": 1.03,
+                    "slippage_bps": 20,
+                    "fees_bps": 12,
+                    "order_type": "market",
+                    "limits": {
+                        "max_open_trades": 5,
+                        "one_trade_per_symbol": true
+                    },
+                    "stop_loss": 0.010338999999999999,
+                    "budget": 3.2999999999999998,
+                    "trailing": {
+                        "enabled": true,
+                        "trailing_mode": "price_distance_floor",
+                        "trailing_preset_mode": "custom",
+                        "trailing_distance_roi": 0.10000000000000001,
+                        "trailing_contract_source": "brain_custom",
+                        "activation_roi_pct": 7.0000000000000009,
+                        "drawdown_factor": 0.5,
+                        "trailing_price_distance_pct": 0.02,
+                        "trailing_activation_floor_roi": 3,
+                        "trailing_floor_lock_roi": 2,
+                        "trailing_step_mode": "auto_strength",
+                        "trailing_step_pct_min": 0.0050000000000000001,
+                        "trailing_step_pct_max": 0.02,
+                        "min_step": 0.01,
+                        "min_lock_roi": 0.021999999999999999,
+                        "break_even_enabled": true,
+                        "break_even_activation_roi": 2.5,
+                        "exit_mode": "trailing_tp",
+                        "fixed_take_profit_roi": 0.029999999999999999,
+                        "hybrid_tp_share": 0.40000000000000002,
+                        "brain_trailing_applied": true,
+                        "profit_addon_enabled": false,
+                        "profit_addon_budget_pct": 2,
+                        "unit_system": "activation_pct=percent,drawdown_factor=ratio,trailing_price_distance_pct=ratio,floor_activation=percent,floor_lock=percent,step_pct=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio",
+                        "effective_trailing_contract_source": "brain_canonical_risk_trailing"
+                    },
+                    "logical_stop": {
+                        "enabled": true,
+                        "logical_stop_roi": 0.029999999999999999,
+                        "mode": "strategy_invalidation",
+                        "source": "brain_config"
+                    },
+                    "emergency_stop": {
+                        "enabled": true,
+                        "stop_from_liq_range_pct": 1.03,
+                        "mode": "liquidation_safety_net",
+                        "source": "brain_config"
+                    },
+                    "stop_control": {
+                        "stop_control_mode": "entry_roi",
+                        "stop_loss_from_entry_roi": 0.01,
+                        "manual_stop_loss_roi": 0.029999999999999999,
+                        "source": "brain_config"
+                    }
+                },
+                "trailing": {
+                    "trailing_enabled": true,
+                    "trailing_activation_roi": 0.070000000000000007,
+                    "trailing_min_lock_roi": 0.021999999999999999,
+                    "trailing_min_step": 0.01,
+                    "break_even_enabled": true,
+                    "break_even_activation_roi": 0.025000000000000001,
+                    "exit_mode": "trailing_tp",
+                    "fixed_take_profit_roi": 0.029999999999999999,
+                    "hybrid_tp_share": 0.40000000000000002,
+                    "drawdown_factor": 0.5,
+                    "stop_control_mode": "entry_roi",
+                    "manual_stop_loss_roi": 0.029999999999999999,
+                    "stop_loss_from_entry_roi": 0.01,
+                    "logical_stop_roi": 0.029999999999999999,
+                    "canonical_source": "risk_trailing_derived"
+                },
+                "brain": [],
+                "source": "brain_live_intent",
+                "intent_created_at": "2026-03-29T14:28:05+01:00",
+                "brain_controlled": true,
+                "selection_mode_used": "all",
+                "approval_reason": "mode=all",
+                "execution_limits_snapshot": {
+                    "live_max_positions": 5,
+                    "live_one_trade_per_symbol": true
+                },
+                "effective_trailing_contract_source": "brain_intent",
+                "trailing_contract_normalized": true,
+                "execution_identity_key": "li_sig_195e8df220bf0585_0ce276f8",
+                "dedupe_basis": "intent_id",
+                "normalized_drawdown_factor_source": "n/a",
+                "pattern_algorithm": "",
+                "source_schema_version": "clean_signal_v1"
+            },
+            "rejected_at": "2026-03-29T14:29:04+01:00",
+            "reason": "balance_below_minimum_threshold",
+            "missing_fields": [],
+            "details": null,
+            "context": {
+                "required_usdt": 3.4649999999999999,
+                "available_usdt": 1.9969450200000001,
+                "buffer_pct": 5,
+                "budget_usdt_per_trade": 3.2999999999999998,
+                "account_type": "UNIFIED",
+                "balance_snapshot": {
+                    "coin": "USDT",
+                    "account_type": "UNIFIED",
+                    "available": 1.9969450200000001,
+                    "available_usd": 1.9969450200000001,
+                    "total_available_balance_usd": 1.9969450200000001,
+                    "total_margin_balance_usd": 0,
+                    "total_wallet_balance_usd": 8.5940200499999992,
+                    "total_equity_usd": 8.5228718800000003,
+                    "source": "coin_equity_fallback",
+                    "account_totals_missing": true,
+                    "raw_totalAvailableBalance": "",
+                    "ret_code": 0,
+                    "ret_msg": "OK",
+                    "deprecated_fields": [
+                        "availableToWithdraw"
+                    ],
+                    "wallet_balance": 8.5940200499999992,
+                    "equity": 8.5228718800000003,
+                    "raw_account": {
+                        "accountIMRate": "",
+                        "totalMaintenanceMarginByMp": "",
+                        "totalInitialMargin": "",
+                        "accountType": "UNIFIED",
+                        "accountMMRate": "",
+                        "accountMMRateByMp": "",
+                        "accountIMRateByMp": "",
+                        "totalInitialMarginByMp": "",
+                        "totalMaintenanceMargin": "",
+                        "totalEquity": "8.52287188",
+                        "totalMarginBalance": "",
+                        "totalAvailableBalance": "",
+                        "totalPerpUPL": "-0.07114816",
+                        "totalWalletBalance": "8.59402005",
+                        "accountLTV": "",
+                        "coin": [
+                            {
+                                "spotBorrow": "0",
+                                "availableToBorrow": "",
+                                "bonus": "0",
+                                "accruedInterest": "0",
+                                "availableToWithdraw": "",
+                                "totalOrderIM": "0",
+                                "equity": "8.52908105",
+                                "totalPositionMM": "1.09802002",
+                                "usdValue": "8.52287188",
+                                "unrealisedPnl": "-0.0712",
+                                "collateralSwitch": true,
+                                "spotHedgingQty": "0",
+                                "borrowAmount": "0",
+                                "totalPositionIM": "6.53213603",
+                                "walletBalance": "8.60028105",
+                                "cumRealisedPnl": "-2154.18142179",
+                                "locked": "0",
+                                "marginCollateral": true,
+                                "coin": "USDT"
+                            }
+                        ]
+                    }
+                },
+                "coin": "USDT",
+                "shortfall": null
+            }
+        }
     },
     "balance_snapshot_last": {
         "coin": "USDT",
         "account_type": "UNIFIED",
-        "available": 4.7280509799999999,
-        "available_usd": 4.7280509799999999,
-        "total_available_balance_usd": 4.7280509799999999,
+        "available": 1.9969450200000001,
+        "available_usd": 1.9969450200000001,
+        "total_available_balance_usd": 1.9969450200000001,
         "total_margin_balance_usd": 0,
-        "total_wallet_balance_usd": 11.5462028,
-        "total_equity_usd": 11.31233999,
+        "total_wallet_balance_usd": 8.5940200499999992,
+        "total_equity_usd": 8.5228718800000003,
         "source": "coin_equity_fallback",
         "account_totals_missing": true,
         "raw_totalAvailableBalance": "",
@@ -148,8 +420,8 @@
         "deprecated_fields": [
             "availableToWithdraw"
         ],
-        "wallet_balance": 11.5462028,
-        "equity": 11.31233999,
+        "wallet_balance": 8.5940200499999992,
+        "equity": 8.5228718800000003,
         "raw_account": {
             "accountIMRate": "",
             "totalMaintenanceMarginByMp": "",
@@ -160,11 +432,11 @@
             "accountIMRateByMp": "",
             "totalInitialMarginByMp": "",
             "totalMaintenanceMargin": "",
-            "totalEquity": "11.31233999",
+            "totalEquity": "8.52287188",
             "totalMarginBalance": "",
             "totalAvailableBalance": "",
-            "totalPerpUPL": "-0.23386281",
-            "totalWalletBalance": "11.5462028",
+            "totalPerpUPL": "-0.07114816",
+            "totalWalletBalance": "8.59402005",
             "accountLTV": "",
             "coin": [
                 {
@@ -174,16 +446,16 @@
                     "accruedInterest": "0",
                     "availableToWithdraw": "",
                     "totalOrderIM": "0",
-                    "equity": "11.3189276",
-                    "totalPositionMM": "1.98015001",
-                    "usdValue": "11.31233999",
-                    "unrealisedPnl": "-0.233999",
+                    "equity": "8.52908105",
+                    "totalPositionMM": "1.09802002",
+                    "usdValue": "8.52287188",
+                    "unrealisedPnl": "-0.0712",
                     "collateralSwitch": true,
                     "spotHedgingQty": "0",
                     "borrowAmount": "0",
-                    "totalPositionIM": "6.59087662",
-                    "walletBalance": "11.5529266",
-                    "cumRealisedPnl": "-2151.22877624",
+                    "totalPositionIM": "6.53213603",
+                    "walletBalance": "8.60028105",
+                    "cumRealisedPnl": "-2154.18142179",
                     "locked": "0",
                     "marginCollateral": true,
                     "coin": "USDT"
@@ -191,27 +463,27 @@
             ]
         }
     },
-    "balance_snapshot_ts": 1774504742,
+    "balance_snapshot_ts": 1774790944,
     "intents_preview": [
         {
-            "id": "li_sig_878cc43cb08b07ab_d1030e63",
-            "signal_id": "sig_878cc43cb08b07ab",
-            "intent_id": "li_sig_878cc43cb08b07ab_d1030e63",
-            "execution_identity_key": "li_sig_878cc43cb08b07ab_d1030e63",
+            "id": "li_sig_195e8df220bf0585_0ce276f8",
+            "signal_id": "sig_195e8df220bf0585",
+            "intent_id": "li_sig_195e8df220bf0585_0ce276f8",
+            "execution_identity_key": "li_sig_195e8df220bf0585_0ce276f8",
             "dedupe_basis": "intent_id",
-            "source_signal_id": "sig_878cc43cb08b07ab",
-            "symbol": "CROSSUSDT",
-            "side": "long",
+            "source_signal_id": "sig_195e8df220bf0585",
+            "symbol": "APEUSDT",
+            "side": "short",
             "entry_action": "enter_now",
-            "entry_price": 0.068992499999999998,
-            "created_ts": 1774504684,
-            "expires_at": 0,
+            "entry_price": 0.086506100000000002,
+            "created_ts": 1774790885,
+            "expires_at": 1774791185,
             "brain_controlled": true,
             "risk": {
                 "profile_id": "111",
                 "budget_usdt_per_trade": 3.2999999999999998,
                 "leverage": 5,
-                "stop_from_liq_range_pct": 1.1799999999999999,
+                "stop_from_liq_range_pct": 1.03,
                 "slippage_bps": 20,
                 "fees_bps": 12,
                 "order_type": "market",
@@ -239,35 +511,41 @@
     "intents_preview_total": 1,
     "intent_results": [
         {
-            "intent_id": "li_sig_878cc43cb08b07ab_d1030e63",
-            "signal_id": "sig_878cc43cb08b07ab",
-            "symbol": "CROSSUSDT",
-            "side": "long",
+            "intent_id": "li_sig_195e8df220bf0585_0ce276f8",
+            "signal_id": "sig_195e8df220bf0585",
+            "symbol": "APEUSDT",
+            "side": "short",
             "brain_controlled": true,
-            "execution_identity_key": "li_sig_878cc43cb08b07ab_d1030e63",
-            "lifecycle_state": "trailing_active",
-            "processed_at": "2026-03-26T05:59:03+00:00",
-            "execution_result": "opened_protected",
-            "rejection_reason": null,
+            "execution_identity_key": "li_sig_195e8df220bf0585_0ce276f8",
+            "lifecycle_state": "rejected",
+            "processed_at": "2026-03-29T14:29:04+01:00",
+            "execution_result": "rejected_balance_below_minimum",
+            "rejection_reason": "rejected_insufficient_balance",
             "close_reason": null,
-            "order_id": "5c81f389-27fd-45da-ab4a-bd76966db0e8",
-            "position_id": "sig_878cc43cb08b07ab",
-            "protection_status": "protected",
-            "trailing_status": "active",
+            "order_id": null,
+            "position_id": null,
+            "protection_status": "none",
+            "trailing_status": "enabled",
             "source_status": "brain_live_intent",
-            "debug_message": null,
-            "execution_stage": "finished",
-            "exchange_submit_attempted": true,
+            "debug_message": "balance_below_minimum_threshold",
+            "execution_stage": "execution_guard_check",
+            "exchange_submit_attempted": false,
             "exchange_response_code": null,
             "exchange_response_message": null,
             "validation_error_summary": null,
-            "missing_fields_preview": []
+            "missing_fields_preview": [],
+            "order_send_attempted": false,
+            "order_sent": false,
+            "position_opened": false,
+            "terminal_status": "rejected_balance_below_minimum"
         }
     ],
     "intents_processed": 1,
-    "intents_opened": 1,
+    "intents_opened": 0,
     "intents_skipped": 0,
-    "rejection_reason_stats": [],
+    "rejection_reason_stats": {
+        "rejected_insufficient_balance": 1
+    },
     "close_reason_stats": [],
     "effective_exit_mode": "trailing_tp",
     "effective_break_even_enabled": true,
@@ -277,7 +555,7 @@
     "effective_drawdown_factor": 0.5,
     "effective_hybrid_tp_share": null,
     "effective_stop_control_mode": "entry_roi",
-    "effective_stop_loss_from_entry_roi": 0.050000000000000003,
+    "effective_stop_loss_from_entry_roi": 0.01,
     "input_source": "brain_live_intents",
     "controlled_by_brain": true,
     "effective_selection_mode_from_brain": "all",
@@ -290,6 +568,13 @@
     "approved_intents_loaded": 1,
     "executable_intents_count": 1,
     "duplicate_skipped": 0,
+    "lifecycle_skipped": {
+        "expired": 0,
+        "claimed": 1,
+        "already_executed": 2,
+        "rejected": 3,
+        "invalid_status": 0
+    },
     "brain_detection_diagnostics": {
         "bot_sources_trait_runtime_marker": "brain_detect_v3_diag_2026_03_19",
         "php_file_used_bot_sources_trait": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/trading_bot/lib/bot_sources_trait.php",
@@ -382,6 +667,11 @@
         "activation_roi_pct": 7.0000000000000009,
         "drawdown_factor": 0.5,
         "trailing_price_distance_pct": 0.02,
+        "trailing_distance_roi": 0.10000000000000001,
+        "trailing_preset_mode": "custom",
+        "trailing_contract_source": "brain_custom",
+        "trailing_activation_floor_roi": 3,
+        "trailing_floor_lock_roi": 2,
         "min_step": 0.01,
         "min_lock_roi": 0.021999999999999999,
         "break_even_enabled": true,
@@ -393,17 +683,63 @@
         "effective_trailing_contract_source": "brain_canonical_risk_trailing",
         "unit_system": "activation_pct=percent,drawdown_factor=ratio,trailing_price_distance_pct=ratio,floor_activation=percent,floor_lock=percent,step_pct=ratio,min_step=ratio,min_lock_roi=ratio,fixed_tp_roi=ratio,hybrid_share=ratio"
     },
+    "intents_validation_passed_count": 1,
     "intents_truncated": 0,
+    "intent_claim": {
+        "claimed_count": 1,
+        "already_claimed": 0,
+        "not_found": 0,
+        "expired_skipped": 0,
+        "errors": []
+    },
+    "intents_loaded_count": 1,
+    "intents_claimed_now_count": 1,
+    "stale_claim_finalization": {
+        "finalized_count": 0,
+        "stale_claimed_found": 0,
+        "stale_claimed_preview": [],
+        "errors": []
+    },
     "positions_closed_by_logical_stop": 0,
     "positions_closed_by_exchange": 0,
     "break_even_applied_count": 0,
     "hybrid_partial_applied_count": 0,
     "floor_lock_applied_count": 0,
     "floor_lock_failed_count": 0,
+    "profit_addon_applied_count": 0,
+    "profit_addon_failed_count": 0,
+    "intents_rejected_late_entry_count": 0,
+    "intents_rejected_late_entry_distribution": [],
+    "intents_rejected_late_entry_preview": [],
+    "intents_order_send_attempted_count": 0,
+    "intents_order_sent_count": 0,
+    "intents_exchange_accepted_count": 0,
+    "intents_position_opened_count": 0,
+    "intents_execution_rejected_count": 1,
+    "intents_execution_guard_passed_count": 0,
+    "intents_terminal_executed_count": 0,
+    "intents_terminal_rejected_count": 1,
+    "intents_terminal_failed_count": 0,
+    "intents_claimed_stale_count": 0,
+    "intents_claimed_finalized_count": 0,
+    "lifecycle_current_counts": {
+        "pending": 0,
+        "claimed": 1,
+        "executed": 2,
+        "rejected": 4,
+        "expired": 0,
+        "total": 7
+    },
+    "intents_pending_current_count": 0,
+    "intents_claimed_current_count": 1,
+    "intents_executed_current_count": 2,
+    "intents_rejected_current_count": 4,
+    "intents_expired_current_count": 0,
+    "claimed_without_terminal_commit_count": 0,
     "expectancy_metrics": {
-        "total_closed": 9,
+        "total_closed": 10,
         "wins": 0,
-        "losses": 9,
+        "losses": 10,
         "total_win_roi": 0,
         "total_loss_roi": 0,
         "average_win": 0,
@@ -411,59 +747,59 @@
         "winrate": 0,
         "expectancy": 0,
         "close_reason_stats": {
-            "trailing_stop": 6,
-            "stop_loss": 3
+            "trailing_stop": 5,
+            "stop_loss": 5
         },
         "roi_by_symbol": {
-            "PUNDIXUSDT": {
+            "MORPHOUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "JTOUSDT": {
+            "XLMUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "ARIAUSDT": {
+            "SKYUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "ORDERUSDT": {
+            "LABUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "QTUMUSDT": {
+            "AGLDUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "SONICUSDT": {
+            "SCRUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "XAIUSDT": {
+            "SYSUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
                 "losses": 1
             },
-            "1000NEIROCTOUSDT": {
+            "GRASSUSDT": {
                 "total_roi": 0,
-                "count": 1,
+                "count": 2,
                 "wins": 0,
-                "losses": 1
+                "losses": 2
             },
-            "ORCAUSDT": {
+            "WALUSDT": {
                 "total_roi": 0,
                 "count": 1,
                 "wins": 0,
@@ -471,95 +807,33 @@
             }
         },
         "roi_by_side": {
-            "long": {
+            "short": {
                 "total_roi": 0,
-                "count": 9,
+                "count": 10,
                 "wins": 0,
-                "losses": 9
+                "losses": 10
             }
         },
         "roi_by_pattern": {
             "unknown": {
                 "total_roi": 0,
-                "count": 9,
+                "count": 10,
                 "wins": 0,
-                "losses": 9
+                "losses": 10
             }
         },
         "roi_by_pattern_side": {
-            "unknown×long": {
+            "unknown×short": {
                 "total_roi": 0,
-                "count": 9,
+                "count": 10,
                 "wins": 0,
-                "losses": 9
+                "losses": 10
             }
         }
     },
     "symbol_exit_stats": {
-        "PUNDIXUSDT": {
-            "symbol": "PUNDIXUSDT",
-            "trades_count": 1,
-            "wins": 0,
-            "losses": 1,
-            "winrate": 0,
-            "avg_roi": 0,
-            "roi_stats": {
-                "avg": 0,
-                "median": 0,
-                "p25": 0,
-                "p75": 0,
-                "min": 0,
-                "max": 0,
-                "count": 1
-            },
-            "average_win": 0,
-            "average_loss": 0,
-            "expectancy": 0,
-            "close_reason_distribution": {
-                "trailing_stop": 1
-            },
-            "stop_hit_count": 0,
-            "trailing_enabled_count": 1,
-            "trailing_active_count": 1,
-            "trailing_activation_rate": 1,
-            "trailing_close_count": 0,
-            "break_even_enabled_count": 1,
-            "break_even_armed_count": 1,
-            "break_even_applied_count": 0,
-            "break_even_apply_rate": 0,
-            "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
-                "count": 1
-            },
-            "by_side": {
-                "long": {
-                    "trades": 1,
-                    "wins": 0,
-                    "losses": 1,
-                    "winrate": 0,
-                    "avg_roi": 0,
-                    "roi_stats": {
-                        "avg": 0,
-                        "median": 0,
-                        "p25": 0,
-                        "p75": 0,
-                        "min": 0,
-                        "max": 0,
-                        "count": 1
-                    },
-                    "close_reasons": {
-                        "trailing_stop": 1
-                    }
-                }
-            }
-        },
-        "JTOUSDT": {
-            "symbol": "JTOUSDT",
+        "MORPHOUSDT": {
+            "symbol": "MORPHOUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -590,16 +864,16 @@
             "break_even_applied_count": 1,
             "break_even_apply_rate": 1,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -620,8 +894,8 @@
                 }
             }
         },
-        "ARIAUSDT": {
-            "symbol": "ARIAUSDT",
+        "XLMUSDT": {
+            "symbol": "XLMUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -652,16 +926,16 @@
             "break_even_applied_count": 1,
             "break_even_apply_rate": 1,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -682,8 +956,8 @@
                 }
             }
         },
-        "ORDERUSDT": {
-            "symbol": "ORDERUSDT",
+        "SKYUSDT": {
+            "symbol": "SKYUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -702,28 +976,28 @@
             "average_loss": 0,
             "expectancy": 0,
             "close_reason_distribution": {
-                "trailing_stop": 1
+                "stop_loss": 1
             },
-            "stop_hit_count": 0,
+            "stop_hit_count": 1,
             "trailing_enabled_count": 1,
             "trailing_active_count": 1,
             "trailing_activation_rate": 1,
             "trailing_close_count": 0,
             "break_even_enabled_count": 1,
-            "break_even_armed_count": 0,
+            "break_even_armed_count": 1,
             "break_even_applied_count": 0,
             "break_even_apply_rate": 0,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -739,13 +1013,13 @@
                         "count": 1
                     },
                     "close_reasons": {
-                        "trailing_stop": 1
+                        "stop_loss": 1
                     }
                 }
             }
         },
-        "QTUMUSDT": {
-            "symbol": "QTUMUSDT",
+        "LABUSDT": {
+            "symbol": "LABUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -776,16 +1050,16 @@
             "break_even_applied_count": 1,
             "break_even_apply_rate": 1,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -806,70 +1080,8 @@
                 }
             }
         },
-        "SONICUSDT": {
-            "symbol": "SONICUSDT",
-            "trades_count": 1,
-            "wins": 0,
-            "losses": 1,
-            "winrate": 0,
-            "avg_roi": 0,
-            "roi_stats": {
-                "avg": 0,
-                "median": 0,
-                "p25": 0,
-                "p75": 0,
-                "min": 0,
-                "max": 0,
-                "count": 1
-            },
-            "average_win": 0,
-            "average_loss": 0,
-            "expectancy": 0,
-            "close_reason_distribution": {
-                "trailing_stop": 1
-            },
-            "stop_hit_count": 0,
-            "trailing_enabled_count": 1,
-            "trailing_active_count": 1,
-            "trailing_activation_rate": 1,
-            "trailing_close_count": 0,
-            "break_even_enabled_count": 1,
-            "break_even_armed_count": 1,
-            "break_even_applied_count": 1,
-            "break_even_apply_rate": 1,
-            "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
-                "count": 1
-            },
-            "by_side": {
-                "long": {
-                    "trades": 1,
-                    "wins": 0,
-                    "losses": 1,
-                    "winrate": 0,
-                    "avg_roi": 0,
-                    "roi_stats": {
-                        "avg": 0,
-                        "median": 0,
-                        "p25": 0,
-                        "p75": 0,
-                        "min": 0,
-                        "max": 0,
-                        "count": 1
-                    },
-                    "close_reasons": {
-                        "trailing_stop": 1
-                    }
-                }
-            }
-        },
-        "XAIUSDT": {
-            "symbol": "XAIUSDT",
+        "AGLDUSDT": {
+            "symbol": "AGLDUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -900,16 +1112,16 @@
             "break_even_applied_count": 1,
             "break_even_apply_rate": 1,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -930,8 +1142,8 @@
                 }
             }
         },
-        "1000NEIROCTOUSDT": {
-            "symbol": "1000NEIROCTOUSDT",
+        "SCRUSDT": {
+            "symbol": "SCRUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -958,20 +1170,20 @@
             "trailing_activation_rate": 1,
             "trailing_close_count": 0,
             "break_even_enabled_count": 1,
-            "break_even_armed_count": 0,
-            "break_even_applied_count": 0,
-            "break_even_apply_rate": 0,
+            "break_even_armed_count": 1,
+            "break_even_applied_count": 1,
+            "break_even_apply_rate": 1,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -992,8 +1204,8 @@
                 }
             }
         },
-        "ORCAUSDT": {
-            "symbol": "ORCAUSDT",
+        "SYSUSDT": {
+            "symbol": "SYSUSDT",
             "trades_count": 1,
             "wins": 0,
             "losses": 1,
@@ -1024,16 +1236,16 @@
             "break_even_applied_count": 0,
             "break_even_apply_rate": 0,
             "stop_distance_stats": {
-                "avg": 0.050000000000000003,
-                "median": 0.050000000000000003,
-                "p25": 0.050000000000000003,
-                "p75": 0.050000000000000003,
-                "min": 0.050000000000000003,
-                "max": 0.050000000000000003,
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
                 "count": 1
             },
             "by_side": {
-                "long": {
+                "short": {
                     "trades": 1,
                     "wins": 0,
                     "losses": 1,
@@ -1050,6 +1262,130 @@
                     },
                     "close_reasons": {
                         "trailing_stop": 1
+                    }
+                }
+            }
+        },
+        "GRASSUSDT": {
+            "symbol": "GRASSUSDT",
+            "trades_count": 2,
+            "wins": 0,
+            "losses": 2,
+            "winrate": 0,
+            "avg_roi": 0,
+            "roi_stats": {
+                "avg": 0,
+                "median": 0,
+                "p25": 0,
+                "p75": 0,
+                "min": 0,
+                "max": 0,
+                "count": 2
+            },
+            "average_win": 0,
+            "average_loss": 0,
+            "expectancy": 0,
+            "close_reason_distribution": {
+                "trailing_stop": 2
+            },
+            "stop_hit_count": 0,
+            "trailing_enabled_count": 2,
+            "trailing_active_count": 2,
+            "trailing_activation_rate": 1,
+            "trailing_close_count": 0,
+            "break_even_enabled_count": 2,
+            "break_even_armed_count": 2,
+            "break_even_applied_count": 1,
+            "break_even_apply_rate": 0.5,
+            "stop_distance_stats": {
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
+                "count": 2
+            },
+            "by_side": {
+                "short": {
+                    "trades": 2,
+                    "wins": 0,
+                    "losses": 2,
+                    "winrate": 0,
+                    "avg_roi": 0,
+                    "roi_stats": {
+                        "avg": 0,
+                        "median": 0,
+                        "p25": 0,
+                        "p75": 0,
+                        "min": 0,
+                        "max": 0,
+                        "count": 2
+                    },
+                    "close_reasons": {
+                        "trailing_stop": 2
+                    }
+                }
+            }
+        },
+        "WALUSDT": {
+            "symbol": "WALUSDT",
+            "trades_count": 1,
+            "wins": 0,
+            "losses": 1,
+            "winrate": 0,
+            "avg_roi": 0,
+            "roi_stats": {
+                "avg": 0,
+                "median": 0,
+                "p25": 0,
+                "p75": 0,
+                "min": 0,
+                "max": 0,
+                "count": 1
+            },
+            "average_win": 0,
+            "average_loss": 0,
+            "expectancy": 0,
+            "close_reason_distribution": {
+                "stop_loss": 1
+            },
+            "stop_hit_count": 1,
+            "trailing_enabled_count": 1,
+            "trailing_active_count": 1,
+            "trailing_activation_rate": 1,
+            "trailing_close_count": 0,
+            "break_even_enabled_count": 1,
+            "break_even_armed_count": 1,
+            "break_even_applied_count": 1,
+            "break_even_apply_rate": 1,
+            "stop_distance_stats": {
+                "avg": 0.01,
+                "median": 0.01,
+                "p25": 0.01,
+                "p75": 0.01,
+                "min": 0.01,
+                "max": 0.01,
+                "count": 1
+            },
+            "by_side": {
+                "short": {
+                    "trades": 1,
+                    "wins": 0,
+                    "losses": 1,
+                    "winrate": 0,
+                    "avg_roi": 0,
+                    "roi_stats": {
+                        "avg": 0,
+                        "median": 0,
+                        "p25": 0,
+                        "p75": 0,
+                        "min": 0,
+                        "max": 0,
+                        "count": 1
+                    },
+                    "close_reasons": {
+                        "stop_loss": 1
                     }
                 }
             }
@@ -1058,24 +1394,43 @@
     "executable_after_dedupe": 1,
     "busy_skipped": 0,
     "executable_after_busy": 1,
-    "exchange_submit_attempted_count": 1,
+    "exchange_submit_attempted_count": 0,
     "exchange_submit_failed_count": 0,
-    "exchange_submit_success_count": 1,
-    "position_open_confirmed_count": 1,
+    "exchange_submit_success_count": 0,
+    "position_open_confirmed_count": 0,
     "protection_apply_failed_count": 0,
     "execution_guard_blocked_count": 0,
     "execution_stage_stats": {
-        "finished": 1
+        "execution_guard_check": 1
     },
     "latest_exchange_error_code": null,
     "latest_exchange_error_message": null,
     "last_failed_symbol": null,
     "last_failed_stage": null,
-    "no_order_path_preview": [],
+    "no_order_path_preview": [
+        {
+            "symbol": "APEUSDT",
+            "side": "short",
+            "intent_id": "li_sig_195e8df220bf0585_0ce276f8",
+            "pattern_algorithm": "",
+            "final_outcome": "rejected",
+            "terminal_status": "rejected_balance_below_minimum",
+            "execution_stage": "execution_guard_check",
+            "execution_stage_at_failure": "execution_guard_check",
+            "main_reason": "rejected_insufficient_balance",
+            "reject_subreason": null,
+            "validation_passed": true,
+            "order_send_attempted": false,
+            "order_sent": false,
+            "position_opened": false,
+            "exchange_attempted": false,
+            "claimed_at": "2026-03-29T14:29:04+01:00"
+        }
+    ],
     "active_protection_summary": {
-        "active_positions_count": 3,
-        "protected_positions_count": 3,
-        "trailing_active_count": 3,
+        "active_positions_count": 2,
+        "protected_positions_count": 2,
+        "trailing_active_count": 2,
         "break_even_armed_count": 0,
         "break_even_applied_count": 0,
         "floor_lock_active_count": 0,
@@ -1086,9 +1441,9 @@
     },
     "active_position_protection_details": [
         {
-            "symbol": "CROSSUSDT",
-            "side": "long",
-            "entry_price": 0.069400000000000003,
+            "symbol": "ICNTUSDT",
+            "side": "short",
+            "entry_price": 0.45050000000000001,
             "stop_loss_applied": true,
             "trailing_enabled": true,
             "trailing_active": true,
@@ -1096,6 +1451,11 @@
             "trailing_activation_roi_pct": 7.0000000000000009,
             "trailing_drawdown_factor": 0.5,
             "trailing_price_distance_pct": 0.02,
+            "trailing_distance_roi": 0.20000000000000001,
+            "trailing_preset_mode": "custom",
+            "trailing_activation_floor_roi": 4,
+            "trailing_floor_lock_roi": 3,
+            "trailing_contract_source": "brain_custom",
             "break_even_enabled": true,
             "break_even_activation_roi": 2.5,
             "break_even_armed": false,
@@ -1106,40 +1466,40 @@
             "best_roi_seen": 0,
             "protection_state": "trailing_active",
             "effective_trailing_contract_source": "brain_trailing_contract",
-            "trailing_stop_price": 0.0013879999999999999,
+            "trailing_stop_price": 0.00018019999999999999,
             "logical_stop_enabled": true,
             "logical_stop_roi": 0.029999999999999999,
-            "open_since": "2026-03-26T05:59:03+00:00",
+            "open_since": "2026-03-29T13:44:04+01:00",
             "opened_with_exit_mode": "trailing_tp",
             "contract_generation": "v2_trailing",
             "current_effective_contract_generation": "v2_trailing",
             "contract_migrated": false,
             "stop_control_mode": "entry_roi",
-            "stop_loss_from_entry_roi": 0.050000000000000003,
-            "effective_stop_price": 0.065930000000000002,
-            "initial_computed_stop_price": 0.065930000000000002,
+            "stop_loss_from_entry_roi": 0.01,
+            "effective_stop_price": 0.45500499999999999,
+            "initial_computed_stop_price": 0.45500499999999999,
             "stop_moved_from_initial": false,
             "floor_lock_active": false,
             "floor_locked_roi": 0,
             "floor_stop_price": 0,
-            "current_effective_stop_price": 0.065930000000000002,
+            "current_effective_stop_price": 0.45500499999999999,
             "protection_source_of_truth": "exchange_stop",
             "floor_enforced_via_exchange_stop": false,
             "floor_enforced_via_bot_exit": false,
             "break_even_stop_price": 0,
-            "best_price": 0.069400000000000003,
-            "trailing_reference_price": 0.069400000000000003,
-            "last_protection_update_at": "2026-03-26T05:59:04+00:00",
-            "last_top_level_mirror_sync_at": "2026-03-26T05:59:04+00:00",
+            "best_price": 0.45050000000000001,
+            "trailing_reference_price": 0.45050000000000001,
+            "last_protection_update_at": "2026-03-29T14:29:05+01:00",
+            "last_top_level_mirror_sync_at": "2026-03-29T14:29:05+01:00",
             "warning_effective_stop_zero_while_protected": false,
             "warning_protection_source_missing": false,
             "warning_best_price_missing": false,
             "warning_floor_lock_active_but_not_enforced": false
         },
         {
-            "symbol": "OLUSDT",
-            "side": "long",
-            "entry_price": 0.01370422,
+            "symbol": "COAIUSDT",
+            "side": "short",
+            "entry_price": 0.26619999999999999,
             "stop_loss_applied": true,
             "trailing_enabled": true,
             "trailing_active": true,
@@ -1147,6 +1507,11 @@
             "trailing_activation_roi_pct": 7.0000000000000009,
             "trailing_drawdown_factor": 0.5,
             "trailing_price_distance_pct": 0.02,
+            "trailing_distance_roi": 0.20000000000000001,
+            "trailing_preset_mode": "custom",
+            "trailing_activation_floor_roi": 3,
+            "trailing_floor_lock_roi": 2,
+            "trailing_contract_source": "brain_custom",
             "break_even_enabled": true,
             "break_even_activation_roi": 2.5,
             "break_even_armed": false,
@@ -1157,100 +1522,49 @@
             "best_roi_seen": 0,
             "protection_state": "trailing_active",
             "effective_trailing_contract_source": "brain_trailing_contract",
-            "trailing_stop_price": 0.00027408000000000001,
+            "trailing_stop_price": 0.00010648,
             "logical_stop_enabled": true,
             "logical_stop_roi": 0.029999999999999999,
-            "open_since": "2026-03-26T05:55:06+00:00",
+            "open_since": "2026-03-29T14:17:05+01:00",
             "opened_with_exit_mode": "trailing_tp",
             "contract_generation": "v2_trailing",
             "current_effective_contract_generation": "v2_trailing",
             "contract_migrated": false,
             "stop_control_mode": "entry_roi",
-            "stop_loss_from_entry_roi": 0.050000000000000003,
-            "effective_stop_price": 0.013019009999999999,
-            "initial_computed_stop_price": 0.013019009999999999,
+            "stop_loss_from_entry_roi": 0.01,
+            "effective_stop_price": 0.26886199999999999,
+            "initial_computed_stop_price": 0.26886199999999999,
             "stop_moved_from_initial": false,
             "floor_lock_active": false,
             "floor_locked_roi": 0,
             "floor_stop_price": 0,
-            "current_effective_stop_price": 0.013019009999999999,
+            "current_effective_stop_price": 0.26886199999999999,
             "protection_source_of_truth": "exchange_stop",
             "floor_enforced_via_exchange_stop": false,
             "floor_enforced_via_bot_exit": false,
             "break_even_stop_price": 0,
-            "best_price": 0.01370422,
-            "trailing_reference_price": 0.01370422,
-            "last_protection_update_at": "2026-03-26T05:59:04+00:00",
-            "last_top_level_mirror_sync_at": "2026-03-26T05:59:04+00:00",
-            "warning_effective_stop_zero_while_protected": false,
-            "warning_protection_source_missing": false,
-            "warning_best_price_missing": false,
-            "warning_floor_lock_active_but_not_enforced": false
-        },
-        {
-            "symbol": "OPENUSDT",
-            "side": "long",
-            "entry_price": 0.16641,
-            "stop_loss_applied": true,
-            "trailing_enabled": true,
-            "trailing_active": true,
-            "trailing_mode": "price_distance_floor",
-            "trailing_activation_roi_pct": 7.0000000000000009,
-            "trailing_drawdown_factor": 0.5,
-            "trailing_price_distance_pct": 0.02,
-            "break_even_enabled": true,
-            "break_even_activation_roi": 2.5,
-            "break_even_armed": false,
-            "break_even_applied": false,
-            "exit_mode": "trailing_tp",
-            "fixed_take_profit_roi": 0.029999999999999999,
-            "hybrid_tp_share": 0.40000000000000002,
-            "best_roi_seen": 0,
-            "protection_state": "trailing_active",
-            "effective_trailing_contract_source": "brain_trailing_contract",
-            "trailing_stop_price": 0.0033281999999999999,
-            "logical_stop_enabled": true,
-            "logical_stop_roi": 0.029999999999999999,
-            "open_since": "2026-03-26T05:13:07+00:00",
-            "opened_with_exit_mode": "trailing_tp",
-            "contract_generation": "v2_trailing",
-            "current_effective_contract_generation": "v2_trailing",
-            "contract_migrated": false,
-            "stop_control_mode": "entry_roi",
-            "stop_loss_from_entry_roi": 0.050000000000000003,
-            "effective_stop_price": 0.15808949999999999,
-            "initial_computed_stop_price": 0.15808949999999999,
-            "stop_moved_from_initial": false,
-            "floor_lock_active": false,
-            "floor_locked_roi": 0,
-            "floor_stop_price": 0,
-            "current_effective_stop_price": 0.15808949999999999,
-            "protection_source_of_truth": "exchange_stop",
-            "floor_enforced_via_exchange_stop": false,
-            "floor_enforced_via_bot_exit": false,
-            "break_even_stop_price": 0,
-            "best_price": 0.16641,
-            "trailing_reference_price": 0.16641,
-            "last_protection_update_at": "2026-03-26T05:59:04+00:00",
-            "last_top_level_mirror_sync_at": "2026-03-26T05:59:04+00:00",
+            "best_price": 0.26619999999999999,
+            "trailing_reference_price": 0.26619999999999999,
+            "last_protection_update_at": "2026-03-29T14:29:05+01:00",
+            "last_top_level_mirror_sync_at": "2026-03-29T14:29:05+01:00",
             "warning_effective_stop_zero_while_protected": false,
             "warning_protection_source_missing": false,
             "warning_best_price_missing": false,
             "warning_floor_lock_active_but_not_enforced": false
         }
     ],
-    "effective_stop_price": 0.065930000000000002,
-    "initial_computed_stop_price": 0.065930000000000002,
+    "effective_stop_price": 0.45500499999999999,
+    "initial_computed_stop_price": 0.45500499999999999,
     "stop_moved_from_initial": false,
     "active_trade_contract_generation_stats": {
         "generation_counts": {
-            "v2_trailing": 3
+            "v2_trailing": 2
         },
         "current_bot_generation": "v2_trailing",
-        "current_contract_active_trades_count": 3,
+        "current_contract_active_trades_count": 2,
         "legacy_active_trades_count": 0,
         "migrated_active_trades_count": 0,
         "mixed_generations": false
     },
-    "duration_ms": 2704
+    "duration_ms": 2229
 }

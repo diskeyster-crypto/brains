@@ -32,7 +32,7 @@
         "mae_stop_percentile": 75,
         "stop_control_mode": "entry_roi",
         "manual_stop_loss_roi": 0.029999999999999999,
-        "stop_loss_from_entry_roi": 0.050000000000000003,
+        "stop_loss_from_entry_roi": 0.01,
         "stop_mode": "brain_managed",
         "simple_stop_liq_factor": 0.14999999999999999,
         "brain_stop_corridor_factor": 0.25,
@@ -70,12 +70,19 @@
         "sniper_v3_min_hold_quality_score": 0.75,
         "sniper_v3_min_post_reclaim_stability_score": 0.65000000000000002,
         "sniper_v3_min_zone_defense_score": 0.34999999999999998,
+        "sniper_v3_min_trend_match_score_short": 0.34999999999999998,
+        "sniper_v3_min_entry_quality_score_short": 0.59999999999999998,
+        "sniper_v3_min_corridor_fit_score_short": 0.59999999999999998,
         "execution_profile": "sniper_lite",
         "pattern_profile_mode": "manual_override",
         "trailing_mode": "price_distance_floor",
+        "trailing_preset_mode": "custom",
         "trailing_price_distance_pct": 0.02,
-        "trailing_activation_floor_roi": 0.050000000000000003,
-        "trailing_floor_lock_roi": 0.040000000000000001,
+        "trailing_activation_floor_roi": 0.029999999999999999,
+        "trailing_floor_lock_roi": 0.02,
+        "trailing_distance_roi": 0.10000000000000001,
+        "profit_addon_enabled": false,
+        "profit_addon_budget_pct": 2,
         "trailing_step_mode": "auto_strength",
         "trailing_step_pct_min": 0.0050000000000000001,
         "trailing_step_pct_max": 0.02,
@@ -105,11 +112,12 @@
         "live_reverse_side_enabled": false,
         "patterns": {
             "enabled": [
-                "double_bottom_contextual_v2",
-                "double_bottom_contextual_v3"
+                "double_top_contextual_v2",
+                "double_top_contextual_v3"
             ],
             "mode": "any"
         },
+        "v2_live_min_trend_match_score_short": 0.44,
         "v3_strong_enter_now_enabled": true,
         "v3_zone_widen_weak_pct": 0.40000000000000002,
         "v3_zone_widen_medium_pct": 0.55000000000000004,
@@ -134,8 +142,8 @@
             "trailing_enabled": true,
             "break_even_enabled": true,
             "break_even_activation_roi": 0.025000000000000001,
-            "trailing_activation_floor_roi": 0.050000000000000003,
-            "trailing_floor_lock_roi": 0.040000000000000001,
+            "trailing_activation_floor_roi": 0.029999999999999999,
+            "trailing_floor_lock_roi": 0.02,
             "trailing_price_distance_pct": 0.02,
             "trailing_step_mode": "auto_strength",
             "trailing_step_pct_min": 0.0050000000000000001,
@@ -184,7 +192,7 @@
     "stop_control": {
         "stop_control_mode": "entry_roi",
         "manual_stop_loss_roi": 0.029999999999999999,
-        "stop_loss_from_entry_roi": 0.050000000000000003
+        "stop_loss_from_entry_roi": 0.01
     },
     "symbol_intelligence": {
         "symbol_intelligence_enabled": true,
@@ -208,30 +216,12 @@
     },
     "manual_blacklist": {
         "manual_blacklist_enabled": true,
-        "manual_blacklist_symbols": [
-            "1000NEIROCTOUSD",
-            "ARIAUSDT",
-            "DEEPUSDT",
-            "FIGHTUSDT",
-            "GIGAUSDT",
-            "HOLOUSDT",
-            "HUMAUSDT",
-            "ICXUSDT",
-            "ILVUSDT",
-            "KERNELUSDT",
-            "NEWTUSDT",
-            "ORCAUSDT",
-            "PEAQUSDT",
-            "SONICUSDT",
-            "SOPHUSDT",
-            "VFYUSDT",
-            "ZEREBROUSDT"
-        ],
-        "manual_blacklist_count": 17,
+        "manual_blacklist_symbols": [],
+        "manual_blacklist_count": 0,
         "blacklist_source": "manual_live_blacklist",
         "blacklist_source_file": "storage/manual_live_blacklist.json",
         "blacklist_valid": true,
-        "blacklist_warning": ""
+        "blacklist_warning": "manual_blacklist_empty_ok"
     },
     "live_trading": {
         "live_trading_enabled": true,
@@ -261,8 +251,8 @@
     },
     "pattern_selection": {
         "enabled": [
-            "double_bottom_contextual_v2",
-            "double_bottom_contextual_v3"
+            "double_top_contextual_v2",
+            "double_top_contextual_v3"
         ],
         "mode": "any"
     },
@@ -283,8 +273,8 @@
         },
         "pattern_algorithms": {
             "enabled": [
-                "double_bottom_contextual_v2",
-                "double_bottom_contextual_v3"
+                "double_top_contextual_v2",
+                "double_top_contextual_v3"
             ],
             "mode": "any"
         },
@@ -370,7 +360,8 @@
             "v2_live_quality_floor_enabled",
             "v2_live_min_confirmation_score",
             "v2_live_min_pattern_confidence",
-            "v2_live_min_trend_match_score"
+            "v2_live_min_trend_match_score",
+            "v2_live_min_trend_match_score_short"
         ],
         "active_values": {
             "v2_confirmation_weak_max": 0.45000000000000001,
@@ -406,13 +397,14 @@
             "v2_live_quality_floor_enabled": true,
             "v2_live_min_confirmation_score": 0.59999999999999998,
             "v2_live_min_pattern_confidence": 0.55000000000000004,
-            "v2_live_min_trend_match_score": 0.45000000000000001
+            "v2_live_min_trend_match_score": 0.45000000000000001,
+            "v2_live_min_trend_match_score_short": 0.44
         },
         "pattern_profile_mode": "manual_override",
         "pattern_policy": {
             "live_patterns": [
-                "double_bottom_contextual_v2",
-                "double_bottom_contextual_v3"
+                "double_top_contextual_v2",
+                "double_top_contextual_v3"
             ],
             "shadow_patterns": [],
             "disabled_patterns": [
@@ -420,7 +412,9 @@
                 "double_top",
                 "pullback_trend_continue",
                 "double_bottom_confirm_v2",
-                "double_top_confirm_v2"
+                "double_top_confirm_v2",
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3"
             ],
             "canonical_source": "manual_override",
             "fallback_used": false,
@@ -450,5 +444,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-26T06:01:03+00:00"
+    "generated_at": "2026-03-29T14:31:02+01:00"
 }

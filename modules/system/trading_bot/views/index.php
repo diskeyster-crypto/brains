@@ -818,7 +818,16 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                         <?php
                             // Profit Add-On state for this trade
                             $pdfAddonUsed = (bool)($pdfT['runtime']['profit_addon_used'] ?? false);
-                            $pdfAddonEnabled = (bool)(($pdfT['profit_addon_enabled'] ?? false) || ($pdfT['runtime']['profit_addon_used'] ?? false));
+                            $pdfAddonEnabled = (bool)($pdfT['runtime']['profit_addon_enabled'] ?? ($pdfT['profit_addon_enabled'] ?? false));
+                            $pdfAddonSkipReason = (string)($pdfT['runtime']['profit_addon_skip_reason'] ?? '');
+                            $pdfAddonFailReason = (string)($pdfT['runtime']['profit_addon_fail_reason'] ?? '');
+                            $pdfAddonAttempted = isset($pdfT['runtime']['profit_addon_attempted']) ? (bool)$pdfT['runtime']['profit_addon_attempted'] : null;
+                            $pdfAddonTriggerReached = isset($pdfT['runtime']['profit_addon_trigger_reached']) ? (bool)$pdfT['runtime']['profit_addon_trigger_reached'] : null;
+                            $pdfAddonEligible = isset($pdfT['runtime']['profit_addon_eligible']) ? (bool)$pdfT['runtime']['profit_addon_eligible'] : null;
+                            $pdfAddonMinCheck = isset($pdfT['runtime']['profit_addon_min_order_check_passed']) ? (bool)$pdfT['runtime']['profit_addon_min_order_check_passed'] : null;
+                            $pdfAddonRaw = (float)($pdfT['runtime']['profit_addon_amount_usdt_raw'] ?? 0);
+                            $pdfAddonTriggerRoi = (float)($pdfT['runtime']['profit_addon_trigger_roi'] ?? 0);
+                            $pdfAddonCurrentRoi = (float)($pdfT['runtime']['profit_addon_current_roi'] ?? 0);
                         ?>
                         <?php if ($pdfAddonUsed): ?>
                         <tr><td class="text-muted">Add-On</td><td>
@@ -835,6 +844,34 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                             <?php endif; ?>
                             <?php if (!empty($pdfT['runtime']['profit_addon_stop_restored'])): ?>
                                 <br><span class="badge bg-warning text-dark" style="font-size:0.6rem;">stop restored</span>
+                            <?php endif; ?>
+                        </td></tr>
+                        <?php elseif ($pdfAddonEnabled && !$pdfAddonUsed): ?>
+                        <tr><td class="text-muted">Add-On</td><td>
+                            <?php if ($pdfAddonFailReason !== ''): ?>
+                                <span class="badge bg-danger">❌ failed</span>
+                                <br><small class="text-danger"><?= htmlspecialchars($pdfAddonFailReason) ?></small>
+                                <?php $paErr = (string)($pdfT['runtime']['profit_addon_last_error'] ?? ''); if ($paErr !== ''): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars(substr($paErr, 0, 80)) ?></small>
+                                <?php endif; ?>
+                            <?php elseif ($pdfAddonAttempted === true): ?>
+                                <span class="badge bg-warning text-dark">⏳ attempted</span>
+                            <?php elseif ($pdfAddonSkipReason !== ''): ?>
+                                <span class="badge bg-secondary">⏭ skipped</span>
+                                <br><small class="text-muted"><?= htmlspecialchars($pdfAddonSkipReason) ?></small>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">💰 pending</span>
+                            <?php endif; ?>
+                            <?php if ($pdfAddonTriggerRoi > 0): ?>
+                                <br><small class="text-muted">trigger: <?= round($pdfAddonTriggerRoi, 2) ?>% ROI</small>
+                                <?php if ($pdfAddonCurrentRoi > 0): ?>
+                                    <small class="text-muted"> | now: <?= round($pdfAddonCurrentRoi, 2) ?>%</small>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($pdfAddonRaw > 0 && $pdfAddonMinCheck === false): ?>
+                                <br><small class="text-warning">⚠ amount too small: <?= round($pdfAddonRaw, 4) ?> USDT</small>
+                            <?php elseif ($pdfAddonRaw > 0): ?>
+                                <br><small class="text-muted">raw: <?= round($pdfAddonRaw, 4) ?> USDT</small>
                             <?php endif; ?>
                         </td></tr>
                         <?php endif; ?>

@@ -448,6 +448,14 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $beArmedCount = (int)($botMirror['break_even_armed_count'] ?? 0);
                 $beAppliedCount = (int)($botMirror['break_even_applied_count'] ?? 0);
                 $protErrCount = (int)($botMirror['protection_errors_count'] ?? 0);
+                $paAppliedCount = (int)($botMirror['profit_addon_applied_count'] ?? 0);
+                $paFailedCount = (int)($botMirror['profit_addon_failed_count'] ?? 0);
+                $paCheckedCount = (int)($botMirror['profit_addon_checked_count'] ?? 0);
+                $paTriggerCount = (int)($botMirror['profit_addon_trigger_reached_count'] ?? 0);
+                $paAttemptedCount = (int)($botMirror['profit_addon_attempted_count'] ?? 0);
+                $paTooSmallCount = (int)($botMirror['profit_addon_too_small_count'] ?? 0);
+                $paSkipDist = is_array($botMirror['profit_addon_skip_reason_distribution'] ?? null) ? $botMirror['profit_addon_skip_reason_distribution'] : [];
+                $paFailDist = is_array($botMirror['profit_addon_fail_reason_distribution'] ?? null) ? $botMirror['profit_addon_fail_reason_distribution'] : [];
             ?>
             <?php if ($activePosCount > 0): ?>
             <div class="mt-2 small">
@@ -463,6 +471,32 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <span class="badge bg-danger bg-opacity-25 text-danger me-1">Errors: <?= $protErrCount ?></span>
                 <?php endif; ?>
             </div>
+            <?php if ($paCheckedCount > 0): ?>
+            <div class="mt-1 small">
+                <strong><i class="bi bi-currency-dollar me-1"></i>Add-On:</strong>
+                <?php if ($paAppliedCount > 0): ?>
+                <span class="badge bg-success me-1">Applied: <?= $paAppliedCount ?></span>
+                <?php endif; ?>
+                <?php if ($paAttemptedCount > 0 && $paAppliedCount === 0): ?>
+                <span class="badge bg-warning text-dark me-1">Attempted: <?= $paAttemptedCount ?></span>
+                <?php endif; ?>
+                <?php if ($paFailedCount > 0): ?>
+                <span class="badge bg-danger me-1">Failed: <?= $paFailedCount ?></span>
+                <?php foreach ($paFailDist as $fr => $fc): ?>
+                    <span class="badge bg-danger bg-opacity-25 text-danger me-1" style="font-size:0.6rem;"><?= htmlspecialchars((string)$fr) ?>: <?= (int)$fc ?></span>
+                <?php endforeach; ?>
+                <?php endif; ?>
+                <?php if ($paTooSmallCount > 0): ?>
+                <span class="badge bg-warning text-dark me-1">Too Small: <?= $paTooSmallCount ?></span>
+                <?php endif; ?>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">Checked: <?= $paCheckedCount ?> | Trigger: <?= $paTriggerCount ?></span>
+                <?php if (!empty($paSkipDist)): ?>
+                    <?php foreach ($paSkipDist as $sr => $sc): ?>
+                        <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;"><?= htmlspecialchars((string)$sr) ?>: <?= (int)$sc ?></span>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
             <?php
                 // Effective Exit Contract Summary
                 // Priority: bot mirror flat fields (always populated), then nested contract, then last_run

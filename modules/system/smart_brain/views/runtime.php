@@ -689,6 +689,14 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $rtBeArmedCount = (int)($botMirror['break_even_armed_count'] ?? 0);
                 $rtBeAppliedCount = (int)($botMirror['break_even_applied_count'] ?? 0);
                 $rtProtErrCount = (int)($botMirror['protection_errors_count'] ?? 0);
+                $rtPaApplied = (int)($botMirror['profit_addon_applied_count'] ?? 0);
+                $rtPaFailed = (int)($botMirror['profit_addon_failed_count'] ?? 0);
+                $rtPaChecked = (int)($botMirror['profit_addon_checked_count'] ?? 0);
+                $rtPaTrigger = (int)($botMirror['profit_addon_trigger_reached_count'] ?? 0);
+                $rtPaAttempted = (int)($botMirror['profit_addon_attempted_count'] ?? 0);
+                $rtPaTooSmall = (int)($botMirror['profit_addon_too_small_count'] ?? 0);
+                $rtPaSkipDist = is_array($botMirror['profit_addon_skip_reason_distribution'] ?? null) ? $botMirror['profit_addon_skip_reason_distribution'] : [];
+                $rtPaFailDist = is_array($botMirror['profit_addon_fail_reason_distribution'] ?? null) ? $botMirror['profit_addon_fail_reason_distribution'] : [];
             ?>
             <?php if ($rtActivePosCount > 0): ?>
             <div class="mb-2 small">
@@ -702,6 +710,31 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                     <div class="col-md-2"><small class="text-secondary">Prot. Errors</small><br><strong class="text-danger"><?= $rtProtErrCount ?></strong></div>
                 </div>
             </div>
+            <?php if ($rtPaChecked > 0): ?>
+            <div class="mb-2 small">
+                <strong><i class="bi bi-currency-dollar me-1"></i>Add-On Funnel:</strong>
+                <span class="badge bg-secondary bg-opacity-50 me-1">Checked: <?= $rtPaChecked ?></span>
+                <span class="badge bg-info bg-opacity-50 me-1">Trigger: <?= $rtPaTrigger ?></span>
+                <?php if ($rtPaAttempted > 0): ?><span class="badge bg-warning text-dark me-1">Attempted: <?= $rtPaAttempted ?></span><?php endif; ?>
+                <?php if ($rtPaApplied > 0): ?><span class="badge bg-success me-1">Applied: <?= $rtPaApplied ?></span><?php endif; ?>
+                <?php if ($rtPaFailed > 0): ?><span class="badge bg-danger me-1">Failed: <?= $rtPaFailed ?></span><?php endif; ?>
+                <?php if ($rtPaTooSmall > 0): ?><span class="badge bg-warning text-dark me-1">Too Small: <?= $rtPaTooSmall ?></span><?php endif; ?>
+                <?php if (!empty($rtPaSkipDist)): ?>
+                    <br><small class="text-muted">Skip reasons:
+                    <?php foreach ($rtPaSkipDist as $sr => $sc): ?>
+                        <span class="badge bg-secondary bg-opacity-25 text-secondary ms-1" style="font-size:0.6rem;"><?= htmlspecialchars((string)$sr) ?>: <?= (int)$sc ?></span>
+                    <?php endforeach; ?>
+                    </small>
+                <?php endif; ?>
+                <?php if (!empty($rtPaFailDist)): ?>
+                    <br><small class="text-muted">Fail reasons:
+                    <?php foreach ($rtPaFailDist as $fr => $fc): ?>
+                        <span class="badge bg-danger bg-opacity-25 text-danger ms-1" style="font-size:0.6rem;"><?= htmlspecialchars((string)$fr) ?>: <?= (int)$fc ?></span>
+                    <?php endforeach; ?>
+                    </small>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
             <?php endif; ?>
             <?php
                 // Contract generation mix notice (Part 7: Brain mirror must not flatten mixed generations)

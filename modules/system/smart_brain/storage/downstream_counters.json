@@ -25,55 +25,37 @@
             "drop_reason": "no_candidates_shaped"
         },
         "double_top_contextual_v2": {
-            "candidates_shaped_count": 4,
-            "candidates_selected_count": 4,
+            "candidates_shaped_count": 1,
+            "candidates_selected_count": 1,
             "candidates_dropped_by_rank_count": 0,
             "drop_reason": "all_selected"
         },
         "double_top_contextual_v3": {
-            "candidates_shaped_count": 0,
-            "candidates_selected_count": 0,
+            "candidates_shaped_count": 1,
+            "candidates_selected_count": 1,
             "candidates_dropped_by_rank_count": 0,
-            "drop_reason": "no_candidates_shaped"
+            "drop_reason": "all_selected"
         }
     },
     "debug_preview": [
         {
-            "symbol": "XAIUSDT",
+            "symbol": "SEIUSDT",
             "pattern_algorithm": "double_top_contextual_v2",
             "side": "short",
-            "analyzer_score": 0.66839999999999999,
-            "pattern_confidence": 0.71999999999999997,
+            "analyzer_score": 0.67549999999999999,
+            "pattern_confidence": 0.68999999999999995,
             "stage": "final_output",
             "selected": true
         },
         {
-            "symbol": "HOMEUSDT",
-            "pattern_algorithm": "double_top_contextual_v2",
+            "symbol": "ANIMEUSDT",
+            "pattern_algorithm": "double_top_contextual_v3",
             "side": "short",
-            "analyzer_score": 0.6502,
-            "pattern_confidence": 0.69999999999999996,
-            "stage": "final_output",
-            "selected": true
-        },
-        {
-            "symbol": "APEUSDT",
-            "pattern_algorithm": "double_top_contextual_v2",
-            "side": "short",
-            "analyzer_score": 0.64449999999999996,
-            "pattern_confidence": 0.66000000000000003,
-            "stage": "final_output",
-            "selected": true
-        },
-        {
-            "symbol": "DOLOUSDT",
-            "pattern_algorithm": "double_top_contextual_v2",
-            "side": "short",
-            "analyzer_score": 0.62380000000000002,
-            "pattern_confidence": 0.65000000000000002,
+            "analyzer_score": 0.64549999999999996,
+            "pattern_confidence": 0.60999999999999999,
             "stage": "final_output",
             "selected": true
         }
     ],
-    "updated_at": "2026-03-29T14:31:06+01:00"
+    "updated_at": "2026-03-30T08:07:04+01:00"
 }

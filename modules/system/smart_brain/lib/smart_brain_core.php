@@ -1434,6 +1434,7 @@ final class SmartBrainCore
                 'signal_id_source' => $signalIdSource,
                 'symbol' => $symbol,
                 'side' => $side,
+                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
                 'entry_action' => $entryPolicy,
                 'entry_timeout_minutes' => (int)($signal['entry_timeout_minutes'] ?? 8),
                 'entry_price_reference' => $entryPriceRef,

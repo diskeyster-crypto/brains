@@ -1075,6 +1075,7 @@ trait BotExecutorTrait
             'signal_id' => $intent['signal_id'] ?? $intent['id'],
             'symbol' => $intent['symbol'],
             'side' => $intent['side'],
+            'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
             'mode' => 'live',
             'opened_at' => date('c'),
             'risk' => $intent['risk'],

@@ -1964,7 +1964,7 @@ final class SmartBrainCore
             }
         }
         $trailingStepMode = (string)($userLimits['trailing_step_mode'] ?? 'fixed');
-        if (!in_array($trailingStepMode, ['fixed', 'auto_strength', 'fixed_roi_ladder'], true)) {
+        if (!in_array($trailingStepMode, ['fixed', 'auto_strength', 'fixed_roi_ladder', 'trend_reversal_soft_ladder_short'], true)) {
             $trailingStepMode = 'fixed';
         }
         $trailingStepPctMin = (float)($userLimits['trailing_step_pct_min'] ?? 0.005);

@@ -1049,8 +1049,9 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                             <option value="fixed" <?= $currentStepMode === 'fixed' ? 'selected' : '' ?>>Fixed</option>
                                             <option value="auto_strength" <?= $currentStepMode === 'auto_strength' ? 'selected' : '' ?>>Auto Strength</option>
                                             <option value="fixed_roi_ladder" <?= $currentStepMode === 'fixed_roi_ladder' ? 'selected' : '' ?>>Fixed ROI Ladder</option>
+                                            <option value="trend_reversal_soft_ladder_short" <?= $currentStepMode === 'trend_reversal_soft_ladder_short' ? 'selected' : '' ?>>Trend Reversal Soft Ladder (Short V2/V3 test)</option>
                                         </select>
-                                        <div class="cfg-hint"><code>fixed</code> = фиксированный шаг обновления. <code>auto_strength</code> = динамический шаг по силе движения. <code>fixed_roi_ladder</code> = защита растёт дискретными шагами от ROI.</div>
+                                        <div class="cfg-hint"><code>fixed</code> = фиксированный шаг обновления. <code>auto_strength</code> = динамический шаг по силе движения. <code>fixed_roi_ladder</code> = защита растёт дискретными шагами от ROI. <code>trend_reversal_soft_ladder_short</code> = тестовый overlay для short V2/V3.</div>
                                     </div>
                                     <div class="mb-2" id="trailing_step_roi_block" style="<?= $currentStepMode === 'fixed_roi_ladder' ? '' : 'display:none' ?>">
                                         <label for="trailing_step_roi" class="form-label">Step ROI
@@ -1059,7 +1060,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                         <input type="number" step="0.1" min="0.1" max="20" class="form-control" id="trailing_step_roi" name="trailing_step_roi" value="<?= $v('trailing_step_roi', '1.5') ?>">
                                         <div class="cfg-hint">Шаг ROI-лестницы (единицы ROI). Пример: <code>1.5</code> = каждые 1.5 ROI выше activation добавляет 1.5 к locked ROI. Protection increases by ROI steps from the guaranteed floor after activation.</div>
                                     </div>
-                                    <div id="trailing_step_pct_block" style="<?= $currentStepMode === 'fixed_roi_ladder' ? 'display:none' : '' ?>">
+                                    <div id="trailing_step_pct_block" style="<?= in_array($currentStepMode, ['fixed_roi_ladder', 'trend_reversal_soft_ladder_short'], true) ? 'display:none' : '' ?>">
                                     <div class="row">
                                         <div class="col-md-6 mb-2">
                                             <label for="trailing_step_pct_min" class="form-label">Step Min %
@@ -1077,16 +1078,29 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                         </div>
                                     </div>
                                     </div>
+                                    <div id="trailing_reversal_soft_ladder_block" class="alert alert-info mt-2 py-2 px-3" style="<?= $currentStepMode === 'trend_reversal_soft_ladder_short' ? '' : 'display:none' ?>">
+                                        <strong>⚠ TEST MODE — fixed constants</strong><br>
+                                        Short V2/V3 only. Activates after mirrored long reversal pattern. Soft ROI ladder.<br>
+                                        <small>
+                                            activation peak ROI = <code>10</code> &nbsp;|&nbsp;
+                                            base lock ROI = <code>5</code> &nbsp;|&nbsp;
+                                            main step ROI = <code>3</code> &nbsp;|&nbsp;
+                                            lock step ROI = <code>1</code>
+                                        </small>
+                                    </div>
                                     <script>
                                     (function() {
                                         var sel = document.getElementById('trailing_step_mode');
                                         var roiBlock = document.getElementById('trailing_step_roi_block');
                                         var pctBlock = document.getElementById('trailing_step_pct_block');
+                                        var softLadderBlock = document.getElementById('trailing_reversal_soft_ladder_block');
                                         if (sel) {
                                             sel.addEventListener('change', function() {
                                                 var isLadder = sel.value === 'fixed_roi_ladder';
+                                                var isSoftLadder = sel.value === 'trend_reversal_soft_ladder_short';
                                                 roiBlock.style.display = isLadder ? '' : 'none';
-                                                pctBlock.style.display = isLadder ? 'none' : '';
+                                                pctBlock.style.display = (isLadder || isSoftLadder) ? 'none' : '';
+                                                if (softLadderBlock) { softLadderBlock.style.display = isSoftLadder ? '' : 'none'; }
                                             });
                                         }
                                     })();

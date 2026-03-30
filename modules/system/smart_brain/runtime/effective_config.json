@@ -83,9 +83,10 @@
         "trailing_distance_roi": 0.10000000000000001,
         "profit_addon_enabled": false,
         "profit_addon_budget_pct": 2,
-        "trailing_step_mode": "auto_strength",
+        "trailing_step_mode": "trend_reversal_soft_ladder_short",
         "trailing_step_pct_min": 0.0050000000000000001,
         "trailing_step_pct_max": 0.02,
+        "trailing_step_roi": 1.5,
         "leverage_mode": "manual",
         "manual_leverage": 5,
         "symbol_intelligence_enabled": true,
@@ -145,9 +146,10 @@
             "trailing_activation_floor_roi": 0.029999999999999999,
             "trailing_floor_lock_roi": 0.02,
             "trailing_price_distance_pct": 0.02,
-            "trailing_step_mode": "auto_strength",
+            "trailing_step_mode": "trend_reversal_soft_ladder_short",
             "trailing_step_pct_min": 0.0050000000000000001,
-            "trailing_step_pct_max": 0.02
+            "trailing_step_pct_max": 0.02,
+            "trailing_step_roi": 1.5
         },
         "active_trailing_fields": [
             "trailing_enabled",
@@ -157,7 +159,8 @@
             "trailing_floor_lock_roi",
             "trailing_step_mode",
             "trailing_step_pct_min",
-            "trailing_step_pct_max"
+            "trailing_step_pct_max",
+            "trailing_step_roi"
         ],
         "legacy_trailing_fields_present": true,
         "legacy_trailing_fields": {
@@ -242,7 +245,8 @@
                 "trailing_floor_lock_roi",
                 "trailing_step_mode",
                 "trailing_step_pct_min",
-                "trailing_step_pct_max"
+                "trailing_step_pct_max",
+                "trailing_step_roi"
             ],
             "break_even_enabled": true,
             "exit_mode": "trailing_tp",
@@ -444,5 +448,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-29T14:31:02+01:00"
+    "generated_at": "2026-03-30T08:07:01+01:00"
 }

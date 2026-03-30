@@ -21,6 +21,7 @@ require_once $moduleDir . '/lib/bot_executor_trait.php';
 require_once $moduleDir . '/lib/bot_api_trait.php';
 require_once $moduleDir . '/lib/bot_commands_trait.php';
 require_once $moduleDir . '/lib/bot_risk_engine.php';
+require_once $moduleDir . '/lib/bot_reversal_signal_helper.php';
 require_once $moduleDir . '/lib/bot_trailing_engine.php';
 require_once $moduleDir . '/lib/bot_validator.php';
 require_once $moduleDir . '/lib/bot_store.php';

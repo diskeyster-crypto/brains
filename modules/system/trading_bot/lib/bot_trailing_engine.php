@@ -23,7 +23,8 @@ namespace Modules\System\TradingBot\Lib;
  *     Formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi
  *     Peak ROI is monotonic (never decreases); protection only strengthens.
  *   - trend_reversal_soft_ladder_short: TEST MODE — SHORT V2/V3 only.
- *     Activates only when a mirrored long reversal pattern is present (double_bottom_contextual_v2/v3).
+ *     Activates by peak ROI >= 10 alone — no mirrored long reversal signal required.
+ *     Mirrored long signal lookup (double_bottom_contextual_v2/v3) is optional diagnostics only.
  *     Uses fixed overlay constants: activation=10, base_lock=5, main_step=3, lock_step=1.
  *     Overlay lock is injected via trade['reversal_overlay_active'] flag (set externally by executor).
  *     Formula: overlay_locked = 5 + floor((peak_roi - 10) / 3) * 1  (when peak >= 10).
@@ -647,11 +648,13 @@ class BotTrailingEngine
     /**
      * Trend-Reversal Soft Ladder trailing mode (TEST MODE).
      *
-     * Short V2/V3 only. Applies a soft ROI-lock overlay when a mirrored long
-     * reversal pattern (double_bottom_contextual_v2 or _v3) is present on the
-     * same symbol. The overlay is signalled by trade['reversal_overlay_active']
-     * being true — this flag is set externally by bot_executor_trait.php before
-     * checkTrailing() is called.
+     * Short V2/V3 only. SHORT-ONLY activation — no long reversal signal required.
+     * Activates by peak ROI >= 10 alone (short side, double_top_contextual_v2/v3 source pattern).
+     * Mirrored long reversal lookup (double_bottom_contextual_v2/v3) is optional diagnostics only;
+     * its absence does NOT block overlay activation.
+     *
+     * The overlay is signalled by trade['reversal_overlay_active'] being true — this flag is set
+     * externally by bot_executor_trait.php before checkTrailing() is called.
      *
      * Fixed test-mode constants (not configurable in v1):
      *   activation peak ROI = 10
@@ -666,7 +669,7 @@ class BotTrailingEngine
      * Final locked ROI = max(floor_lock_roi, overlay_locked_roi)
      * Protection is monotonic — locked ROI never decreases.
      *
-     * If overlay is NOT active (reversal signal absent), this method falls back
+     * If overlay is NOT active (peak below threshold), this method falls back
      * to the standard floor-based price_distance_floor behaviour so existing
      * protection continues uninterrupted.
      */
@@ -1116,8 +1119,9 @@ class BotTrailingEngine
 - fixed_roi_ladder: locked ROI grows in discrete ROI steps using peak ROI (monotonic);
   formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi;
   peak_roi is tracked separately and never decreases; protection only strengthens.
-- trend_reversal_soft_ladder_short: TEST MODE; SHORT V2/V3 only; overlay activates when
-  trade['reversal_overlay_active']=true (set by executor after checking signals.json);
+- trend_reversal_soft_ladder_short: TEST MODE; SHORT V2/V3 only; short-only activation by peak_roi >= 10;
+  no mirrored long reversal signal required; mirrored long lookup is optional diagnostics only;
+  trade['reversal_overlay_active']=true is set by executor when eligible (short, V2/V3 pattern, peak >= 10);
   overlay formula: locked = 5 + floor((peak_roi - 10) / 3) * 1 for peak >= 10;
   effective_locked_roi = max(floor_lock_roi, overlay_locked_roi); monotonic protection.
 - Phase-1: "Dumb" trailing - set once on exchange, don't track

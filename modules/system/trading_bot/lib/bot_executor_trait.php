@@ -2413,21 +2413,25 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 $overlayPeakRoi = max($prevOverlayPeakRoi, $rvRoiBybit);
                                 $overlayActivePeakThreshold = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
 
-                                // Store overlay as active in trade object for trailing engine
-                                $runtime['reversal_overlay_active']          = true;
-                                $runtime['reversal_overlay_triggered_at']    = $runtime['reversal_overlay_triggered_at'] ?? date('c');
+                                // Always track monotonic peak ROI regardless of activation state
                                 $runtime['reversal_overlay_peak_roi']        = round($overlayPeakRoi, 4);
-                                $trade['reversal_overlay_active']            = true;
                                 $trade['reversal_overlay_peak_roi']          = round($overlayPeakRoi, 4);
 
                                 if ($overlayPeakRoi < $overlayActivePeakThreshold) {
-                                    // Overlay active but peak not yet high enough to lock
-                                    $runtime['reversal_overlay_skip_reason'] = 'peak_below_activation';
+                                    // Peak not yet high enough — overlay is NOT active
+                                    $runtime['reversal_overlay_active']           = false;
+                                    $runtime['reversal_overlay_skip_reason']      = 'peak_below_activation';
                                     $runtime['reversal_overlay_locked_roi_current'] = 0.0;
                                     $runtime['reversal_overlay_next_step_target_roi'] = $overlayActivePeakThreshold;
+                                    $trade['reversal_overlay_active']            = false;
                                     $trade['runtime'] = $runtime;
                                     $result['reversal_overlay_skipped_peak_too_low']++;
                                 } else {
+                                    // Peak >= activation threshold — overlay is active
+                                    $runtime['reversal_overlay_active']          = true;
+                                    $runtime['reversal_overlay_triggered_at']    = $runtime['reversal_overlay_triggered_at'] ?? date('c');
+                                    $trade['reversal_overlay_active']            = true;
+
                                     // Compute overlay locked ROI
                                     $overlayLockedRoi = BotReversalSignalHelper::computeOverlayLockedRoi($overlayPeakRoi);
                                     $floorLockRoi     = (float)($trailingCfg['trailing_floor_lock_roi'] ?? 3.0);

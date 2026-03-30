@@ -648,30 +648,28 @@ class BotTrailingEngine
     /**
      * Trend-Reversal Soft Ladder trailing mode (TEST MODE).
      *
-     * Short V2/V3 only. SHORT-ONLY activation — no long reversal signal required.
-     * Activates by peak ROI >= 10 alone (short side, double_top_contextual_v2/v3 source pattern).
-     * Mirrored long reversal lookup (double_bottom_contextual_v2/v3) is optional diagnostics only;
-     * its absence does NOT block overlay activation.
+     * Short V2/V3 only. SHORT-ONLY — no long reversal signal required.
+     * Two-stage profit protection (short_two_stage_peak_roi):
      *
-     * The overlay is signalled by trade['reversal_overlay_active'] being true — this flag is set
-     * externally by bot_executor_trait.php before checkTrailing() is called.
+     *   Stage 0 (peak < 5):
+     *     No overlay lock. No aggressive distance trailing. Original exchange SL applies.
+     *     trade['reversal_overlay_active'] is false; this method makes no stop change.
      *
-     * Fixed test-mode constants (not configurable in v1):
-     *   activation peak ROI = 10
-     *   base lock ROI       = 5
-     *   main step ROI       = 3
-     *   lock step ROI       = 1
+     *   Stage 1 (peak >= 5, < 10):
+     *     Guaranteed floor lock: locked ROI = STAGE1_FLOOR_LOCK_ROI (2).
+     *     Only floor-based stop is enforced. Distance-based trailing NOT active.
+     *     trade['reversal_overlay_active'] = true.
      *
-     * Overlay formula:
-     *   if peak_roi < 10: overlay_locked_roi = 0  (no extra lock)
-     *   else: overlay_locked_roi = 5 + floor((peak_roi - 10) / 3) * 1
+     *   Stage 2 (peak >= 10):
+     *     Existing soft ladder activates. Locked ROI follows:
+     *       stage2_locked_roi = 5 + floor((peak_roi - 10) / 3) * 1
+     *     Distance-based trailing candidate also becomes active (tighter trailing).
      *
-     * Final locked ROI = max(floor_lock_roi, overlay_locked_roi)
-     * Protection is monotonic — locked ROI never decreases.
+     *   Final locked ROI = max(stage1_locked_roi, stage2_locked_roi, prev_locked_roi)
+     *   Protection is monotonic — locked ROI never decreases.
      *
-     * If overlay is NOT active (peak below threshold), this method falls back
-     * to the standard floor-based price_distance_floor behaviour so existing
-     * protection continues uninterrupted.
+     * The overlay is signalled by trade['reversal_overlay_active'] being true — this flag is
+     * set by bot_executor_trait.php before checkTrailing() is called.
      */
     private function checkReversalSoftLadderTrailing(
         array $trade,
@@ -684,13 +682,15 @@ class BotTrailingEngine
         $leverage = (int)($trailing['leverage'] ?? (int)($trade['risk']['leverage'] ?? 1));
         if ($leverage < 1) { $leverage = 1; }
 
-        // Overlay constants (TEST MODE fixed values)
-        $overlayActivationPeak = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+        // Stage constants
+        $stage1ActivationPeak  = BotReversalSignalHelper::STAGE1_ACTIVATION_PEAK_ROI;
+        $stage1FloorLock       = BotReversalSignalHelper::STAGE1_FLOOR_LOCK_ROI;
+        $stage2ActivationPeak  = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
         $overlayBaseLock       = BotReversalSignalHelper::OVERLAY_BASE_LOCK_ROI;
         $overlayMainStep       = BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI;
         $overlayLockStep       = BotReversalSignalHelper::OVERLAY_LOCK_STEP_ROI;
 
-        // Floor / distance parameters (same as standard pdf mode)
+        // Floor / distance parameters
         $distanceRoi  = isset($trailing['trailing_distance_roi']) ? (float)$trailing['trailing_distance_roi'] : null;
         $presetMode   = (string)($trailing['trailing_preset_mode'] ?? 'custom');
         if ($distanceRoi !== null && $distanceRoi > 0) {
@@ -698,7 +698,6 @@ class BotTrailingEngine
         } else {
             $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
         }
-        $floorLockRoi = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
 
         // Retrieve persisted overlay state
         $prevTrailingStop        = (float)($trade['trailing_stop_price'] ?? 0.0);
@@ -709,11 +708,11 @@ class BotTrailingEngine
 
         // Only SHORT is supported for this mode
         if ($side !== 'short') {
-            // Graceful fallback for long or unknown: just use standard floor trailing
             $result['changes']['reversal_overlay_active'] = false;
             $result['changes']['reversal_overlay_skip_reason'] = 'mode_not_applicable_to_long';
+            $fallbackFloorLockRoi = (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
             return $this->checkPriceDistanceFloorTrailingFallback(
-                $trade, $currentPrice, $result, $trailing, $side, $entryPrice, $floorLockRoi, $distancePct, $distanceRoi, $presetMode, $leverage
+                $trade, $currentPrice, $result, $trailing, $side, $entryPrice, $fallbackFloorLockRoi, $distancePct, $distanceRoi, $presetMode, $leverage
             );
         }
 
@@ -728,48 +727,70 @@ class BotTrailingEngine
         // Compute current ROI
         $currentRoi = $this->calculateRoi($entryPrice, $currentPrice, $side);
 
-        // Update monotonic peak ROI (per-overlay tracking field)
+        // Update monotonic peak ROI
         $peakRoi = max($prevPeakRoi, $currentRoi);
         if ($peakRoi > $prevPeakRoi) {
             $result['updated'] = true;
             $result['changes']['reversal_overlay_peak_roi'] = round($peakRoi, 4);
         }
 
-        // Compute overlay locked ROI (only if overlay signal is present)
-        $overlayLockedRoi = 0.0;
-        $stepCount = 0;
-        if ($overlayActive && $peakRoi >= $overlayActivationPeak) {
-            $stepsEarned      = (int)floor(($peakRoi - $overlayActivationPeak) / $overlayMainStep);
-            $overlayLockedRoi = $overlayBaseLock + (float)$stepsEarned * $overlayLockStep;
-            $stepCount        = $stepsEarned;
+        // Determine stages from peak ROI
+        $stage1Active = ($peakRoi >= $stage1ActivationPeak);
+        $stage2Active = ($overlayActive && $peakRoi >= $stage2ActivationPeak);
+
+        // Stage 0: no overlay active — do not apply any overlay trailing stop
+        if (!$stage1Active) {
+            $result['changes']['reversal_overlay_active']      = false;
+            $result['changes']['reversal_overlay_stage1_active'] = false;
+            $result['changes']['reversal_overlay_stage2_active'] = false;
+            $result['changes']['reversal_overlay_peak_roi']    = round($peakRoi, 4);
+            $result['changes']['reversal_overlay_skip_reason'] = 'peak_below_stage1';
+            $result['changes']['reversal_overlay_next_step_target_roi'] = $stage1ActivationPeak;
+            $result['changes']['best_roi_seen']                = round($peakRoi, 4);
+            $result['changes']['trailing_step_mode']           = 'trend_reversal_soft_ladder_short';
+            // No trailing stop update — original exchange SL remains
+            return $result;
         }
 
-        // Merge with floor lock: effective lock = max of floor and overlay
-        $effectiveLockedRoi = max($floorLockRoi, $overlayLockedRoi);
+        // Stage 1 or Stage 2 — compute locked ROIs
+        $stage1LockedRoi = $stage1FloorLock; // always 2 when stage1 active
+        $stage2LockedRoi = 0.0;
+        $stepCount       = 0;
+        if ($stage2Active) {
+            $stepsEarned  = (int)floor(($peakRoi - $stage2ActivationPeak) / $overlayMainStep);
+            $stage2LockedRoi = $overlayBaseLock + (float)$stepsEarned * $overlayLockStep;
+            $stepCount    = $stepsEarned;
+        }
 
-        // Monotonic: effective locked ROI can only increase
-        $effectiveLockedRoi = max($effectiveLockedRoi, $prevOverlayLockedRoi);
+        // Final effective locked ROI = max of stages and previous (monotonic)
+        $effectiveLockedRoi = max($stage1LockedRoi, $stage2LockedRoi, $prevOverlayLockedRoi);
         $stepCount          = max($stepCount, $prevStepCount);
 
-        // Convert effective locked ROI to floor stop price (short: stop is below entry)
+        // Convert effective locked ROI to floor stop price
         $lockedPriceMove = ($effectiveLockedRoi / 100.0) / $leverage;
         $ladderStopPrice = $entryPrice * (1.0 - $lockedPriceMove);
 
-        // Distance-layer candidate (short: stop trails above low watermark)
-        $distCandidateStop = $trailingLowWatermark * (1.0 + $distancePct);
-
-        // Canonical stop = min of distance candidate and ladder stop (most restrictive for short)
-        if ($prevTrailingStop > 0.0) {
-            $candidateStop     = min($distCandidateStop, $ladderStopPrice);
-            $trailingStopPrice = min($candidateStop, $prevTrailingStop);
+        // In Stage 2 only: also compute distance-based trailing candidate
+        if ($stage2Active) {
+            $distCandidateStop = $trailingLowWatermark * (1.0 + $distancePct);
+            // Most restrictive (lowest for short) of distance and ladder
+            $candidateStop = min($distCandidateStop, $ladderStopPrice);
+            if ($prevTrailingStop > 0.0) {
+                $trailingStopPrice = min($candidateStop, $prevTrailingStop);
+            } else {
+                $trailingStopPrice = $candidateStop;
+            }
         } else {
-            $trailingStopPrice = min($distCandidateStop, $ladderStopPrice);
+            // Stage 1: floor lock only — no distance trailing
+            $trailingStopPrice = $ladderStopPrice;
+            // Monotonic: stop can only tighten (move lower for short)
+            if ($prevTrailingStop > 0.0) {
+                $trailingStopPrice = min($trailingStopPrice, $prevTrailingStop);
+            }
         }
 
         // Next step target ROI (diagnostics)
-        $nextStepTargetRoi = $overlayActive
-            ? BotReversalSignalHelper::computeNextStepTargetRoi($peakRoi)
-            : $overlayActivationPeak;
+        $nextStepTargetRoi = BotReversalSignalHelper::computeNextStepTargetRoi($peakRoi);
 
         // Populate result changes
         $result['changes']['trailing_stop_price']                       = round($trailingStopPrice, 8);
@@ -779,10 +800,9 @@ class BotTrailingEngine
         $result['changes']['trailing_distance_roi']                      = $distanceRoi;
         $result['changes']['trailing_preset_mode']                       = $presetMode;
         $result['changes']['floor_lock_active']                          = true;
-        $result['changes']['floor_locked_roi']                           = $floorLockRoi;
+        $result['changes']['floor_locked_roi']                           = $effectiveLockedRoi;
         $result['changes']['floor_stop_price']                           = round($ladderStopPrice, 8);
         $result['changes']['trailing_reference_price']                   = round($trailingLowWatermark, 8);
-        $result['changes']['exchange_trailing_distance']                 = round($trailingLowWatermark * $distancePct, 8);
         $result['changes']['theoretical_current_stop_price']             = round($trailingStopPrice, 8);
         $result['changes']['current_effective_stop_price']               = round($trailingStopPrice, 8);
         $result['changes']['protection_source_of_truth']                 = 'bot_trailing_engine_reversal_soft_ladder';
@@ -792,16 +812,20 @@ class BotTrailingEngine
 
         // Reversal overlay specific fields
         $result['changes']['reversal_overlay_active']                    = $overlayActive;
+        $result['changes']['reversal_overlay_stage1_active']             = $stage1Active;
+        $result['changes']['reversal_overlay_stage2_active']             = $stage2Active;
         $result['changes']['reversal_overlay_peak_roi']                  = round($peakRoi, 4);
         $result['changes']['reversal_overlay_locked_roi_current']        = round($effectiveLockedRoi, 4);
         $result['changes']['reversal_overlay_step_count']                = $stepCount;
         $result['changes']['reversal_overlay_next_step_target_roi']      = round($nextStepTargetRoi, 4);
+        $result['changes']['reversal_overlay_stage1_peak_roi']           = $stage1ActivationPeak;
+        $result['changes']['reversal_overlay_stage1_lock_roi']           = $stage1FloorLock;
         $result['changes']['reversal_overlay_base_lock_roi']             = $overlayBaseLock;
         $result['changes']['reversal_overlay_main_step_roi']             = $overlayMainStep;
         $result['changes']['reversal_overlay_lock_step_roi']             = $overlayLockStep;
-        $result['changes']['reversal_overlay_activation_peak_roi']       = $overlayActivationPeak;
+        $result['changes']['reversal_overlay_activation_peak_roi']       = $stage2ActivationPeak;
 
-        // Check if triggered
+        // Check if triggered (short: close when price rises to or above stop)
         if ($currentPrice >= $trailingStopPrice) {
             $result['triggered']  = true;
             $result['close_reason'] = 'closed_by_trailing';
@@ -1119,11 +1143,12 @@ class BotTrailingEngine
 - fixed_roi_ladder: locked ROI grows in discrete ROI steps using peak ROI (monotonic);
   formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi;
   peak_roi is tracked separately and never decreases; protection only strengthens.
-- trend_reversal_soft_ladder_short: TEST MODE; SHORT V2/V3 only; short-only activation by peak_roi >= 10;
-  no mirrored long reversal signal required; mirrored long lookup is optional diagnostics only;
-  trade['reversal_overlay_active']=true is set by executor when eligible (short, V2/V3 pattern, peak >= 10);
+- trend_reversal_soft_ladder_short: TEST MODE; SHORT V2/V3 only; two-stage profit protection (short_two_stage_peak_roi);
+  stage0 (peak<5): no lock, no distance trailing, original exchange SL only;
+  stage1 (peak>=5): guaranteed floor lock = 2 ROI, no distance trailing;
+  stage2 (peak>=10): soft ladder lock + distance trailing;
   overlay formula: locked = 5 + floor((peak_roi - 10) / 3) * 1 for peak >= 10;
-  effective_locked_roi = max(floor_lock_roi, overlay_locked_roi); monotonic protection.
+  final_locked_roi = max(stage1_locked_roi, stage2_locked_roi, prev_locked_roi); monotonic protection.
 - Phase-1: "Dumb" trailing - set once on exchange, don't track
 - Trailing activation includes leverage in ROI calculation
 - NO local price tracking - exchange handles trailing

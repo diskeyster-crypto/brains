@@ -2318,14 +2318,24 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 //   - trade source pattern is double_top_contextual_v2 or _v3
                 //
                 // NOTE: Long reversal mirror signal is NO LONGER a hard requirement.
-                //       Activation is purely peak_roi >= 10 for eligible short V2/V3 trades.
                 //       findReversalSignal() is called as optional diagnostics only.
                 //
-                // When overlay is active and peak_roi >= 10, computes:
-                //   overlay_locked_roi = 5 + floor((peak_roi - 10) / 3) * 1
+                // TWO-STAGE PROFIT PROTECTION (short_two_stage_peak_roi):
                 //
-                // Effective locked ROI = max(floor_lock_roi, overlay_locked_roi).
-                // Protection is monotonic — never weakened.
+                //   Stage 0 (peak < 5):
+                //     No lock. No aggressive distance trailing. Normal SL only.
+                //     reversal_overlay_active = false
+                //
+                //   Stage 1 (peak >= 5, < 10):
+                //     Floor lock guarantee: locked ROI = STAGE1_FLOOR_LOCK_ROI (2).
+                //     reversal_overlay_active = true, stage1_active = true, stage2_active = false
+                //
+                //   Stage 2 (peak >= 10):
+                //     Soft ladder: locked ROI = 5 + floor((peak - 10) / 3) * 1
+                //     reversal_overlay_active = true, stage1_active = true, stage2_active = true
+                //
+                //   Final locked ROI = max(prev_locked_roi, stage1_locked_roi, stage2_locked_roi)
+                //   Protection is monotonic — never weakened.
                 //
                 // Sets trade['reversal_overlay_active'] so BotTrailingEngine's
                 // checkReversalSoftLadderTrailing() can read it in subsequent runs.
@@ -2347,8 +2357,10 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
                         // Always store test-mode constants and activation mode in runtime
                         $runtime['reversal_overlay_mode']                  = 'trend_reversal_soft_ladder_short';
-                        $runtime['reversal_overlay_activation_mode']       = 'short_only_peak_roi';
+                        $runtime['reversal_overlay_activation_mode']       = 'short_two_stage_peak_roi';
                         $runtime['reversal_overlay_trigger_requirement']   = 'none_long_reversal_required';
+                        $runtime['reversal_overlay_stage1_peak_roi']       = BotReversalSignalHelper::STAGE1_ACTIVATION_PEAK_ROI;
+                        $runtime['reversal_overlay_stage1_lock_roi']       = BotReversalSignalHelper::STAGE1_FLOOR_LOCK_ROI;
                         $runtime['reversal_overlay_activation_peak_roi']   = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
                         $runtime['reversal_overlay_base_lock_roi']         = BotReversalSignalHelper::OVERLAY_BASE_LOCK_ROI;
                         $runtime['reversal_overlay_main_step_roi']         = BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI;
@@ -2368,12 +2380,11 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $trade['runtime'] = $runtime;
                             $result['reversal_overlay_skipped_wrong_pattern']++;
                         } else {
-                            // Eligible short V2/V3 trade — overlay active, no long signal required
+                            // Eligible short V2/V3 trade
                             $result['reversal_overlay_candidates_seen']++;
                             $runtime['reversal_overlay_source_pattern'] = $rvPattern;
 
                             // Optional diagnostics: check for mirrored long reversal in signals.json
-                            // (observation only — does NOT block overlay activation)
                             $rvSignalsBase = null;
                             try {
                                 $rvPaths = \Core\System\SystemPaths::instance();
@@ -2396,7 +2407,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $runtime['reversal_overlay_trigger_pattern']           = $rvLookup['pattern'] ?? null;
 
                             if (true) {
-                                // Always proceed — compute overlay
+                                // Always proceed — compute overlay state
                                 $positionIM    = (float)($position['positionIM'] ?? 0);
                                 $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
                                 $rvRoiBybit    = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
@@ -2410,43 +2421,62 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 $prevOverlayLockedRoi = (float)($trade['reversal_overlay_locked_roi_current'] ?? 0.0);
                                 $prevStepCount        = (int)($trade['reversal_overlay_step_count'] ?? 0);
 
-                                $overlayPeakRoi = max($prevOverlayPeakRoi, $rvRoiBybit);
-                                $overlayActivePeakThreshold = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+                                $overlayPeakRoi           = max($prevOverlayPeakRoi, $rvRoiBybit);
+                                $stage1ActivationPeak     = BotReversalSignalHelper::STAGE1_ACTIVATION_PEAK_ROI;
+                                $stage2ActivationPeak     = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
 
                                 // Always track monotonic peak ROI regardless of activation state
-                                $runtime['reversal_overlay_peak_roi']        = round($overlayPeakRoi, 4);
-                                $trade['reversal_overlay_peak_roi']          = round($overlayPeakRoi, 4);
+                                $runtime['reversal_overlay_peak_roi'] = round($overlayPeakRoi, 4);
+                                $trade['reversal_overlay_peak_roi']   = round($overlayPeakRoi, 4);
 
-                                if ($overlayPeakRoi < $overlayActivePeakThreshold) {
-                                    // Peak not yet high enough — overlay is NOT active
-                                    $runtime['reversal_overlay_active']           = false;
-                                    $runtime['reversal_overlay_skip_reason']      = 'peak_below_activation';
-                                    $runtime['reversal_overlay_locked_roi_current'] = 0.0;
-                                    $runtime['reversal_overlay_next_step_target_roi'] = $overlayActivePeakThreshold;
-                                    $trade['reversal_overlay_active']            = false;
+                                // Determine active stages
+                                $stage1Active = ($overlayPeakRoi >= $stage1ActivationPeak);
+                                $stage2Active = ($overlayPeakRoi >= $stage2ActivationPeak);
+
+                                if (!$stage1Active) {
+                                    // Stage 0: peak < 5 — no lock, no aggressive trailing
+                                    $runtime['reversal_overlay_active']                  = false;
+                                    $runtime['reversal_overlay_stage1_active']           = false;
+                                    $runtime['reversal_overlay_stage2_active']           = false;
+                                    $runtime['reversal_overlay_skip_reason']             = 'peak_below_activation';
+                                    $runtime['reversal_overlay_locked_roi_current']      = 0.0;
+                                    $runtime['reversal_overlay_next_step_target_roi']    = $stage1ActivationPeak;
+                                    $trade['reversal_overlay_active']                    = false;
                                     $trade['runtime'] = $runtime;
                                     $result['reversal_overlay_skipped_peak_too_low']++;
                                 } else {
-                                    // Peak >= activation threshold — overlay is active
-                                    $runtime['reversal_overlay_active']          = true;
-                                    $runtime['reversal_overlay_triggered_at']    = $runtime['reversal_overlay_triggered_at'] ?? date('c');
-                                    $trade['reversal_overlay_active']            = true;
+                                    // Stage 1 or Stage 2 active
+                                    $runtime['reversal_overlay_active']        = true;
+                                    $runtime['reversal_overlay_stage1_active'] = true;
+                                    $runtime['reversal_overlay_stage2_active'] = $stage2Active;
+                                    $trade['reversal_overlay_active']          = true;
 
-                                    // Compute overlay locked ROI
-                                    $overlayLockedRoi = BotReversalSignalHelper::computeOverlayLockedRoi($overlayPeakRoi);
-                                    $floorLockRoi     = (float)($trailingCfg['trailing_floor_lock_roi'] ?? 3.0);
-                                    $effectiveLocked  = max($floorLockRoi, $overlayLockedRoi);
+                                    // Compute stage locked ROIs
+                                    $stage1LockedRoi = BotReversalSignalHelper::computeStage1LockedRoi($overlayPeakRoi);
+                                    $stage2LockedRoi = $stage2Active
+                                        ? BotReversalSignalHelper::computeOverlayLockedRoi($overlayPeakRoi)
+                                        : 0.0;
 
-                                    // Monotonic: never weaken
-                                    $effectiveLocked = max($effectiveLocked, $prevOverlayLockedRoi);
+                                    // Final effective = max of stages and previous (monotonic)
+                                    $effectiveLocked = max($stage1LockedRoi, $stage2LockedRoi, $prevOverlayLockedRoi);
 
-                                    // Step count diagnostic
-                                    $rvSteps = (int)floor(
-                                        ($overlayPeakRoi - $overlayActivePeakThreshold) /
-                                        BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI
-                                    );
-                                    $rvSteps = max($rvSteps, $prevStepCount);
-                                    $stepAdvanced = ($rvSteps > $prevStepCount);
+                                    // Set triggered_at when stage 2 first activates
+                                    if ($stage2Active) {
+                                        $runtime['reversal_overlay_triggered_at'] = $runtime['reversal_overlay_triggered_at'] ?? date('c');
+                                    }
+
+                                    // Step count (stage 2 ladder steps)
+                                    if ($stage2Active) {
+                                        $rvSteps = (int)floor(
+                                            ($overlayPeakRoi - $stage2ActivationPeak) /
+                                            BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI
+                                        );
+                                        $rvSteps = max($rvSteps, $prevStepCount);
+                                        $stepAdvanced = ($rvSteps > $prevStepCount);
+                                    } else {
+                                        $rvSteps      = 0;
+                                        $stepAdvanced = false;
+                                    }
 
                                     // Store overlay state
                                     $runtime['reversal_overlay_locked_roi_current']    = round($effectiveLocked, 4);

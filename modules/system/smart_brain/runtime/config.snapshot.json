@@ -161,9 +161,10 @@
             "trailing_distance_roi": 0.10000000000000001,
             "profit_addon_enabled": false,
             "profit_addon_budget_pct": 2,
-            "trailing_step_mode": "auto_strength",
+            "trailing_step_mode": "trend_reversal_soft_ladder_short",
             "trailing_step_pct_min": 0.0050000000000000001,
             "trailing_step_pct_max": 0.02,
+            "trailing_step_roi": 1.5,
             "leverage_mode": "manual",
             "manual_leverage": 5,
             "symbol_intelligence_enabled": true,
@@ -240,5 +241,5 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "updated_at": "2026-03-29T14:31:07+01:00"
+    "updated_at": "2026-03-30T08:07:04+01:00"
 }

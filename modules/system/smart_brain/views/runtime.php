@@ -701,7 +701,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $rtRvActivated = (int)($botMirror['reversal_overlay_activated_count'] ?? 0);
                 $rtRvStepAdv = (int)($botMirror['reversal_overlay_step_advanced_count'] ?? 0);
                 $rtRvSkipWrongPat = (int)($botMirror['reversal_overlay_skipped_wrong_pattern_count'] ?? 0);
-                $rtRvSkipNoSig = (int)($botMirror['reversal_overlay_skipped_no_reversal_signal_count'] ?? 0);
+                $rtRvSkipWrongSide = (int)($botMirror['reversal_overlay_skipped_wrong_side_count'] ?? 0);
                 $rtRvSkipPeakLow = (int)($botMirror['reversal_overlay_skipped_peak_too_low_count'] ?? 0);
             ?>
             <?php if ($rtActivePosCount > 0): ?>
@@ -747,7 +747,7 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <span class="badge bg-secondary bg-opacity-50 me-1">Candidates: <?= $rtRvCandidates ?></span>
                 <?php if ($rtRvActivated > 0): ?><span class="badge bg-success me-1">Active: <?= $rtRvActivated ?></span><?php endif; ?>
                 <?php if ($rtRvStepAdv > 0): ?><span class="badge bg-info me-1">Steps: <?= $rtRvStepAdv ?></span><?php endif; ?>
-                <?php if ($rtRvSkipNoSig > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">no_signal: <?= $rtRvSkipNoSig ?></span><?php endif; ?>
+                <?php if ($rtRvSkipWrongSide > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_side: <?= $rtRvSkipWrongSide ?></span><?php endif; ?>
                 <?php if ($rtRvSkipPeakLow > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">peak_low: <?= $rtRvSkipPeakLow ?></span><?php endif; ?>
                 <?php if ($rtRvSkipWrongPat > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_pattern: <?= $rtRvSkipWrongPat ?></span><?php endif; ?>
             </div>

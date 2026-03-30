@@ -460,7 +460,7 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $rvActivated = (int)($botMirror['reversal_overlay_activated_count'] ?? 0);
                 $rvStepAdv = (int)($botMirror['reversal_overlay_step_advanced_count'] ?? 0);
                 $rvSkipWrongPat = (int)($botMirror['reversal_overlay_skipped_wrong_pattern_count'] ?? 0);
-                $rvSkipNoSig = (int)($botMirror['reversal_overlay_skipped_no_reversal_signal_count'] ?? 0);
+                $rvSkipWrongSide = (int)($botMirror['reversal_overlay_skipped_wrong_side_count'] ?? 0);
                 $rvSkipPeakLow = (int)($botMirror['reversal_overlay_skipped_peak_too_low_count'] ?? 0);
             ?>
             <?php if ($activePosCount > 0): ?>
@@ -512,8 +512,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <?php if ($rvStepAdv > 0): ?>
                 <span class="badge bg-info me-1">Steps: <?= $rvStepAdv ?></span>
                 <?php endif; ?>
-                <?php if ($rvSkipNoSig > 0): ?>
-                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">no_signal: <?= $rvSkipNoSig ?></span>
+                <?php if ($rvSkipWrongSide > 0): ?>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_side: <?= $rvSkipWrongSide ?></span>
                 <?php endif; ?>
                 <?php if ($rvSkipPeakLow > 0): ?>
                 <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">peak_low: <?= $rvSkipPeakLow ?></span>

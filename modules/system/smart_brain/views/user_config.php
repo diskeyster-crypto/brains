@@ -1080,7 +1080,7 @@ $pageContent = function() use ($form_values, $user_limits, $smartBrainUrl, $patt
                                     </div>
                                     <div id="trailing_reversal_soft_ladder_block" class="alert alert-info mt-2 py-2 px-3" style="<?= $currentStepMode === 'trend_reversal_soft_ladder_short' ? '' : 'display:none' ?>">
                                         <strong>⚠ TEST MODE — fixed constants</strong><br>
-                                        Short V2/V3 only. Activates after mirrored long reversal pattern. Soft ROI ladder.<br>
+                                        Short V2/V3 only. Activates by peak ROI ladder in short-only test mode. No long reversal signal required.<br>
                                         <small>
                                             activation peak ROI = <code>10</code> &nbsp;|&nbsp;
                                             base lock ROI = <code>5</code> &nbsp;|&nbsp;

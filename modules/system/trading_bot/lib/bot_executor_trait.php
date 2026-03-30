@@ -1211,7 +1211,7 @@ trait BotExecutorTrait
             'reversal_overlay_activated' => 0,
             'reversal_overlay_step_advanced' => 0,
             'reversal_overlay_skipped_wrong_pattern' => 0,
-            'reversal_overlay_skipped_no_signal' => 0,
+            'reversal_overlay_skipped_wrong_side' => 0,
             'reversal_overlay_skipped_peak_too_low' => 0,
         ];
         
@@ -2309,14 +2309,16 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
                 // ============================================================
                 // P10b: Reversal Overlay Enforcement
-                //       (trend_reversal_soft_ladder_short TEST MODE)
+                //       (trend_reversal_soft_ladder_short TEST MODE — short-only)
                 //
                 // Applies ONLY when:
                 //   - trailing_step_mode = 'trend_reversal_soft_ladder_short'
                 //   - trade is SHORT
                 //   - trade source pattern is double_top_contextual_v2 or _v3
-                //   - a mirrored long reversal pattern exists in signals.json
-                //     for the same symbol
+                //
+                // NOTE: Long reversal mirror signal is NO LONGER a hard requirement.
+                //       Activation is purely peak_roi >= 10 for eligible short V2/V3 trades.
+                //       findReversalSignal() is called as optional diagnostics only.
                 //
                 // When overlay is active and peak_roi >= 10, computes:
                 //   overlay_locked_roi = 5 + floor((peak_roi - 10) / 3) * 1
@@ -2342,8 +2344,10 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                         $rvPattern = (string)($trade['pattern_algorithm'] ?? '');
                         $rvSymbol  = (string)($trade['symbol'] ?? '');
 
-                        // Always store test-mode constants in runtime for visibility
+                        // Always store test-mode constants and activation mode in runtime
                         $runtime['reversal_overlay_mode']                  = 'trend_reversal_soft_ladder_short';
+                        $runtime['reversal_overlay_activation_mode']       = 'short_only_peak_roi';
+                        $runtime['reversal_overlay_trigger_requirement']   = 'none_long_reversal_required';
                         $runtime['reversal_overlay_activation_peak_roi']   = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
                         $runtime['reversal_overlay_base_lock_roi']         = BotReversalSignalHelper::OVERLAY_BASE_LOCK_ROI;
                         $runtime['reversal_overlay_main_step_roi']         = BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI;
@@ -2354,6 +2358,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $runtime['reversal_overlay_skip_reason']  = 'not_short_position';
                             $trade['reversal_overlay_active']         = false;
                             $trade['runtime'] = $runtime;
+                            $result['reversal_overlay_skipped_wrong_side']++;
                         } elseif (!BotReversalSignalHelper::isEligibleSourcePattern($rvPattern)) {
                             $runtime['reversal_overlay_active']       = false;
                             $runtime['reversal_overlay_skip_reason']  = 'source_pattern_not_eligible';
@@ -2362,11 +2367,12 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $trade['runtime'] = $runtime;
                             $result['reversal_overlay_skipped_wrong_pattern']++;
                         } else {
-                            // Eligible trade — check for reversal signal
+                            // Eligible short V2/V3 trade — overlay active, no long signal required
                             $result['reversal_overlay_candidates_seen']++;
                             $runtime['reversal_overlay_source_pattern'] = $rvPattern;
 
-                            // Resolve signals.json path
+                            // Optional diagnostics: check for mirrored long reversal in signals.json
+                            // (observation only — does NOT block overlay activation)
                             $rvSignalsBase = null;
                             try {
                                 $rvPaths = \Core\System\SystemPaths::instance();
@@ -2383,18 +2389,13 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 ? BotReversalSignalHelper::findReversalSignal($rvSymbol, $rvSignalsBase)
                                 : ['found' => false, 'pattern' => null, 'reason' => 'signals_path_unavailable'];
 
-                            $rvReversalFound = (bool)($rvLookup['found'] ?? false);
-                            $runtime['reversal_overlay_trigger_lookup_reason'] = $rvLookup['reason'] ?? '';
-                            $runtime['reversal_overlay_trigger_pattern']       = $rvLookup['pattern'] ?? null;
+                            // Store as diagnostics only — does not gate overlay
+                            $runtime['reversal_overlay_long_mirror_seen']          = (bool)($rvLookup['found'] ?? false);
+                            $runtime['reversal_overlay_trigger_lookup_reason']     = $rvLookup['reason'] ?? '';
+                            $runtime['reversal_overlay_trigger_pattern']           = $rvLookup['pattern'] ?? null;
 
-                            if (!$rvReversalFound) {
-                                $runtime['reversal_overlay_active']      = false;
-                                $runtime['reversal_overlay_skip_reason'] = 'no_reversal_signal_found';
-                                $trade['reversal_overlay_active']        = false;
-                                $trade['runtime'] = $runtime;
-                                $result['reversal_overlay_skipped_no_signal']++;
-                            } else {
-                                // Reversal signal present — compute overlay
+                            if (true) {
+                                // Always proceed — compute overlay
                                 $positionIM    = (float)($position['positionIM'] ?? 0);
                                 $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
                                 $rvRoiBybit    = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;

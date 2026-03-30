@@ -792,7 +792,7 @@ final class TradingBotService
             $result['reversal_overlay_activated_count'] = $updateResult['reversal_overlay_activated'] ?? 0;
             $result['reversal_overlay_step_advanced_count'] = $updateResult['reversal_overlay_step_advanced'] ?? 0;
             $result['reversal_overlay_skipped_wrong_pattern_count'] = $updateResult['reversal_overlay_skipped_wrong_pattern'] ?? 0;
-            $result['reversal_overlay_skipped_no_reversal_signal_count'] = $updateResult['reversal_overlay_skipped_no_signal'] ?? 0;
+            $result['reversal_overlay_skipped_wrong_side_count'] = $updateResult['reversal_overlay_skipped_wrong_side'] ?? 0;
             $result['reversal_overlay_skipped_peak_too_low_count'] = $updateResult['reversal_overlay_skipped_peak_too_low'] ?? 0;
             $result['steps'][] = [
                 'step' => 'update_positions',
@@ -823,7 +823,7 @@ final class TradingBotService
                 'reversal_overlay_activated' => $updateResult['reversal_overlay_activated'] ?? 0,
                 'reversal_overlay_step_advanced' => $updateResult['reversal_overlay_step_advanced'] ?? 0,
                 'reversal_overlay_skipped_wrong_pattern' => $updateResult['reversal_overlay_skipped_wrong_pattern'] ?? 0,
-                'reversal_overlay_skipped_no_signal' => $updateResult['reversal_overlay_skipped_no_signal'] ?? 0,
+                'reversal_overlay_skipped_wrong_side' => $updateResult['reversal_overlay_skipped_wrong_side'] ?? 0,
                 'reversal_overlay_skipped_peak_too_low' => $updateResult['reversal_overlay_skipped_peak_too_low'] ?? 0,
                 'effective_stop_zero_while_protected_count' => $updateResult['effective_stop_zero_while_protected_count'] ?? 0,
                 'protection_source_missing_count' => $updateResult['protection_source_missing_count'] ?? 0,

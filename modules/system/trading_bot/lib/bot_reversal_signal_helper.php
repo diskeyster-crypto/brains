@@ -11,10 +11,16 @@ namespace Modules\System\TradingBot\Lib;
  * Responsibilities:
  *   1. Identify whether a trade's source pattern qualifies for the overlay
  *      (short V2/V3 contextual patterns only).
- *   2. Look up the Brain signals.json to detect a mirrored long reversal
- *      pattern (double_bottom_contextual_v2 or _v3) for the same symbol.
+ *   2. Optionally look up the Brain signals.json to detect a mirrored long
+ *      reversal pattern (double_bottom_contextual_v2 or _v3) for the same
+ *      symbol — stored as diagnostics only, NOT a hard activation requirement.
  *   3. Compute the overlay-locked ROI from peak ROI using the fixed test-mode
  *      constants (activation=10, base=5, main_step=3, lock_step=1).
+ *
+ * SHORT-ONLY TEST MODE (v2):
+ *   Overlay activates purely by peak_roi >= OVERLAY_ACTIVATION_PEAK_ROI for
+ *   eligible short V2/V3 trades. No long reversal signal is required.
+ *   findReversalSignal() is retained for optional observability only.
  *
  * TEST MODE CONSTANTS (not user-configurable in v1):
  *   - OVERLAY_ACTIVATION_PEAK_ROI = 10  — peak ROI threshold to start locking
@@ -88,7 +94,10 @@ class BotReversalSignalHelper
     // ------------------------------------------------------------------ //
 
     /**
-     * Scan signals.json for a mirrored long reversal pattern on the same symbol.
+     * Optionally scan signals.json for a mirrored long reversal pattern on the same symbol.
+     *
+     * NOTE: In short-only test mode this result is stored for observability only.
+     *       It does NOT gate overlay activation — activation is purely peak_roi based.
      *
      * @param string $symbol        Trading symbol (e.g. "BTCUSDT")
      * @param string $signalsPath   Absolute path to signals.json

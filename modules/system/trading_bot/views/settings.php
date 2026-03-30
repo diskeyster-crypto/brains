@@ -769,7 +769,7 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                         <div class="card-body py-2">
                             <div class="alert alert-warning py-1 px-2 mb-2" style="font-size:0.78rem;">
                                 ⚠️ <strong>TEST MODE — fixed constants, not freely configurable in v1.</strong><br>
-                                Short V2/V3 only. Activates after mirrored long reversal pattern on same symbol.<br>
+                                Short V2/V3 only. Activates by peak ROI ladder in short-only test mode. No long reversal signal required.<br>
                                 Soft ROI ladder: once peak ROI ≥ 10, locks profit gradually instead of aggressively.
                             </div>
                             <table class="table table-sm table-bordered mb-2" style="font-size:0.75rem;">
@@ -793,7 +793,7 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                             </table>
                             <div class="text-muted" style="font-size:0.72rem;">
                                 <strong>Scope:</strong> double_top_contextual_v2, double_top_contextual_v3 (short source)<br>
-                                <strong>Reversal trigger:</strong> double_bottom_contextual_v2, double_bottom_contextual_v3 (same symbol)<br>
+                                <strong>Activation:</strong> peak_roi &ge; 10 (short-only, no long reversal required)<br>
                                 <strong>Enable:</strong> set <code>trailing_step_mode = trend_reversal_soft_ladder_short</code> in Brain trailing contract.
                             </div>
                         </div>

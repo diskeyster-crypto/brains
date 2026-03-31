@@ -61,7 +61,7 @@
             <button class="btn btn-primary btn-sm" onclick="runMirror()">
                 <i class="bi bi-play-fill me-1"></i> Run Mirror
             </button>
-            <a href="?page=ai_shadow&tab=settings" class="btn btn-outline-secondary btn-sm">
+            <a href="/admin/smart_brain/ai_shadow" class="btn btn-outline-secondary btn-sm">
                 <i class="bi bi-gear me-1"></i> Settings
             </a>
         </div>
@@ -246,7 +246,7 @@
 // ---- Mirror action ----
 function runMirror() {
     showFlash('Running mirror cycle…', 'info');
-    fetch('?page=ai_shadow&api=run_mirror', { method: 'POST' })
+    fetch('/admin/smart_brain/ai_shadow/run_mirror', { method: 'POST' })
         .then(r => r.json())
         .then(d => {
             if (d.skipped) {

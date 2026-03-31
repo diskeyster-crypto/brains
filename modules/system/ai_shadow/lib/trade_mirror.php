@@ -28,7 +28,7 @@ final class AiShadowTradeMirror
     }
 
     /**
-     * Mirror live active trades from the trading_bot storage directory.
+     * Mirror live active trades from trading_bot/storage/trades/active/.
      *
      * @param  string $liveTradesDir  Absolute path to trading_bot/storage (read-only)
      * @return array{processed:int,skipped_pattern:int,newly_tracked:int,updated:int,ai_skipped:int,errors:int}
@@ -48,11 +48,12 @@ final class AiShadowTradeMirror
             'errors'          => 0,
         ];
 
-        if (!is_dir($liveTradesDir)) {
+        $activeDir = rtrim($liveTradesDir, '/') . '/trades/active';
+        if (!is_dir($activeDir)) {
             return $counts;
         }
 
-        $files     = glob($liveTradesDir . '/sig_*.json') ?: [];
+        $files     = glob($activeDir . '/*.json') ?: [];
         $processed = 0;
 
         foreach ($files as $file) {
@@ -104,7 +105,112 @@ final class AiShadowTradeMirror
     }
 
     /**
-     * Process a single live trade.
+     * Mirror live closed trades from trading_bot/storage/trades/closed/.
+     * For each live closed trade that has a matching active virtual trade,
+     * close the virtual trade and store full comparison fields.
+     *
+     * @param  string $liveTradesDir  Absolute path to trading_bot/storage (read-only)
+     * @return array{processed:int,skipped_no_virtual:int,closed:int,already_closed:int,errors:int}
+     */
+    public function mirrorClosedLiveTrades(string $liveTradesDir): array
+    {
+        $allowedPatterns = (array)($this->config['allowed_patterns'] ?? []);
+        $allowedSides    = (array)($this->config['allowed_sides']    ?? []);
+
+        $counts = [
+            'processed'      => 0,
+            'skipped_no_virtual' => 0,
+            'closed'         => 0,
+            'already_closed' => 0,
+            'errors'         => 0,
+        ];
+
+        $closedDir = rtrim($liveTradesDir, '/') . '/trades/closed';
+        if (!is_dir($closedDir)) {
+            return $counts;
+        }
+
+        $files = glob($closedDir . '/*.json') ?: [];
+
+        foreach ($files as $file) {
+            $liveTrade = json_decode((string)file_get_contents($file), true);
+            if (!is_array($liveTrade)) {
+                $counts['errors']++;
+                continue;
+            }
+
+            $signalId = (string)($liveTrade['signal_id'] ?? $liveTrade['trade_id'] ?? '');
+            $pattern  = (string)($liveTrade['pattern_algorithm']
+                ?? $liveTrade['signal']['pattern_algorithm']
+                ?? '');
+            $side     = (string)($liveTrade['side'] ?? '');
+
+            if ($signalId === '') {
+                $counts['errors']++;
+                continue;
+            }
+
+            // Only mirror allowed patterns/sides
+            if (!in_array($pattern, $allowedPatterns, true) || !in_array($side, $allowedSides, true)) {
+                continue;
+            }
+
+            $vtId      = 'vt_' . $signalId;
+            $activeRel = 'storage/virtual_trades_active/' . $vtId . '.json';
+            $closedRel = 'storage/virtual_trades_closed/' . $vtId . '.json';
+
+            $counts['processed']++;
+
+            // Already closed virtually
+            if ($this->state->fileExists($closedRel)) {
+                $counts['already_closed']++;
+                continue;
+            }
+
+            // No active virtual trade to close (AI skipped or never mirrored)
+            if (!$this->state->fileExists($activeRel)) {
+                // Still create a closed record for skipped trades so comparison is stored
+                $vSigRel = 'storage/virtual_signals/' . $signalId . '.json';
+                if ($this->state->fileExists($vSigRel)) {
+                    $vSig = $this->state->readJson($vSigRel);
+                    $aiDecision = (string)($vSig['ai_decision'] ?? '');
+                    if ($aiDecision === 'skip') {
+                        try {
+                            $this->closeSkippedVirtualTrade($vtId, $signalId, $vSig, $liveTrade);
+                            $counts['closed']++;
+                        } catch (\Throwable $e) {
+                            $counts['errors']++;
+                        }
+                    } else {
+                        $counts['skipped_no_virtual']++;
+                    }
+                } else {
+                    $counts['skipped_no_virtual']++;
+                }
+                continue;
+            }
+
+            // Close the active virtual trade with full comparison fields
+            try {
+                $exitPrice   = $this->extractExitPrice($liveTrade);
+                $closeReason = (string)($liveTrade['close_reason'] ?? 'live_closed');
+
+                $this->lifecycle->closeVirtualTrade($vtId, $closeReason, $exitPrice, $liveTrade);
+                $counts['closed']++;
+            } catch (\Throwable $e) {
+                $counts['errors']++;
+            }
+        }
+
+        return $counts;
+    }
+
+    // =========================================================================
+    // Private
+    // =========================================================================
+
+    /**
+     * Process a single live active trade.
      *
      * @param  array<string,mixed> $liveTrade
      * @return string  'new'|'updated'|'ai_skipped'|'no_virtual_signal'
@@ -140,21 +246,132 @@ final class AiShadowTradeMirror
 
         // New trade – create virtual trade
         if ($aiDecision === 'skip') {
-            // AI said skip: record the skipped virtual trade
-            $this->createSkippedVirtualTrade($vtId, $signalId, $virtualSignal, $liveTrade);
+            // AI said skip: record a skipped virtual trade (active slot, status=skipped)
+            $this->createSkippedActiveRecord($vtId, $signalId, $virtualSignal, $liveTrade);
             return 'ai_skipped';
         }
 
         // AI said enter: open virtual trade
         $aiData = [
-            'decision'     => $aiDecision,
-            'confidence'   => (float)($virtualSignal['ai_confidence']    ?? 0.0),
-            'quality_score'=> (float)($virtualSignal['ai_quality_score'] ?? 0.0),
-            'reasons'      => (array)($virtualSignal['ai_reasons']       ?? []),
+            'decision'      => $aiDecision,
+            'confidence'    => (float)($virtualSignal['ai_confidence']    ?? 0.0),
+            'quality_score' => (float)($virtualSignal['ai_quality_score'] ?? 0.0),
+            'reasons'       => (array)($virtualSignal['ai_reasons']       ?? []),
         ];
 
-        $this->lifecycle->openVirtualTrade($signalId, $this->buildSignalDataFromTrade($liveTrade), $aiData);
+        $signalData = $this->buildSignalDataFromTrade($liveTrade);
+        $signalData['live_trade_id']         = $signalId;
+        $signalData['live_entry_timestamp']  = $this->extractEntryTs($liveTrade);
+        $signalData['live_entry_price']      = (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0);
+
+        $this->lifecycle->openVirtualTrade($signalId, $signalData, $aiData);
         return 'new';
+    }
+
+    /**
+     * Create a closed virtual trade record for a live trade that AI had skipped.
+     *
+     * @param array<string,mixed> $vSig
+     * @param array<string,mixed> $liveTrade
+     */
+    private function closeSkippedVirtualTrade(
+        string $vtId,
+        string $signalId,
+        array  $vSig,
+        array  $liveTrade
+    ): void {
+        $closedRel = 'storage/virtual_trades_closed/' . $vtId . '.json';
+
+        $liveEntryPrice = (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0);
+        $liveExitPrice  = $this->extractExitPrice($liveTrade);
+        $liveEntryTs    = $this->extractEntryTs($liveTrade);
+        $liveClosedTs   = $this->extractClosedTs($liveTrade);
+        $liveCloseReason= (string)($liveTrade['close_reason'] ?? '');
+        $liveSide       = (string)($liveTrade['side'] ?? 'short');
+        $liveRoi        = $liveEntryPrice > 0.0 && $liveExitPrice > 0.0
+            ? $this->calcRoi($liveEntryPrice, $liveExitPrice, $liveSide)
+            : 0.0;
+
+        $record = [
+            'virtual_trade_id'    => $vtId,
+            'source_signal_id'    => $signalId,
+            'live_trade_id'       => $signalId,
+            'symbol'              => (string)($vSig['symbol']            ?? $liveTrade['symbol'] ?? ''),
+            'side'                => $liveSide,
+            'pattern_algorithm'   => (string)($vSig['pattern_algorithm'] ?? $liveTrade['pattern_algorithm'] ?? ''),
+            'ai_decision'         => 'skip',
+            'ai_confidence'       => (float)($vSig['ai_confidence']      ?? 0.0),
+            'ai_quality_score'    => (float)($vSig['ai_quality_score']   ?? 0.0),
+            'ai_reasons'          => (array)($vSig['ai_reasons']         ?? []),
+            'status'              => 'closed',
+            // AI never entered — no AI trade data
+            'entry_price'         => 0.0,
+            'ai_entry_timestamp'  => null,
+            'ai_entry_price'      => null,
+            'ai_exit_timestamp'   => null,
+            'ai_exit_price'       => null,
+            'ai_exit_reason'      => 'ai_skipped',
+            'roi'                 => null,
+            'mfe'                 => null,
+            'mae'                 => null,
+            // Live data
+            'live_entry_timestamp'=> $liveEntryTs,
+            'live_entry_price'    => $liveEntryPrice,
+            'live_closed_at'      => $liveClosedTs,
+            'live_close_reason'   => $liveCloseReason,
+            'live_roi'            => $liveRoi,
+            'live_roi_reference'  => $liveRoi,
+            // Comparison
+            'agreement'           => 'disagree',
+            'delta_roi'           => -$liveRoi,
+            'opened_at'           => $liveEntryTs ?: time(),
+            'closed_at'           => $liveClosedTs ?: time(),
+            'close_reason'        => 'ai_skipped',
+        ];
+
+        $this->state->writeJson($closedRel, $record);
+    }
+
+    /**
+     * Create an active placeholder for AI-skipped trades (status=skipped).
+     *
+     * @param array<string,mixed> $virtualSignal
+     * @param array<string,mixed> $liveTrade
+     */
+    private function createSkippedActiveRecord(
+        string $vtId,
+        string $signalId,
+        array  $virtualSignal,
+        array  $liveTrade
+    ): void {
+        $relPath = 'storage/virtual_trades_active/' . $vtId . '.json';
+
+        $trade = [
+            'virtual_trade_id'    => $vtId,
+            'source_signal_id'    => $signalId,
+            'live_trade_id'       => $signalId,
+            'symbol'              => (string)($virtualSignal['symbol']            ?? $liveTrade['symbol'] ?? ''),
+            'side'                => (string)($liveTrade['side']                  ?? ''),
+            'pattern_algorithm'   => (string)($virtualSignal['pattern_algorithm'] ?? $liveTrade['pattern_algorithm'] ?? ''),
+            'ai_decision'         => 'skip',
+            'ai_confidence'       => (float)($virtualSignal['ai_confidence']      ?? 0.0),
+            'ai_quality_score'    => (float)($virtualSignal['ai_quality_score']   ?? 0.0),
+            'ai_reasons'          => (array)($virtualSignal['ai_reasons']         ?? []),
+            'status'              => 'skipped',
+            'entry_price'         => (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0),
+            'live_entry_timestamp'=> $this->extractEntryTs($liveTrade),
+            'live_entry_price'    => (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0),
+            'current_price'       => 0.0,
+            'mfe'                 => 0.0,
+            'mae'                 => 0.0,
+            'roi'                 => null,
+            'opened_at'           => time(),
+            'closed_at'           => null,
+            'close_reason'        => 'ai_skipped',
+            'exit_price'          => null,
+        ];
+
+        $this->state->writeJson($relPath, $trade);
     }
 
     // -------------------------------------------------------------------------
@@ -167,6 +384,50 @@ final class AiShadowTradeMirror
             ?? $liveTrade['current_price']
             ?? $liveTrade['mark_price']
             ?? 0.0);
+    }
+
+    private function extractExitPrice(array $liveTrade): float
+    {
+        return (float)($liveTrade['close_price']
+            ?? $liveTrade['avg_exit_price']
+            ?? $liveTrade['exit_price']
+            ?? 0.0);
+    }
+
+    private function extractEntryTs(array $liveTrade): int
+    {
+        if (isset($liveTrade['opened_at'])) {
+            $ts = is_int($liveTrade['opened_at'])
+                ? $liveTrade['opened_at']
+                : (int)strtotime((string)$liveTrade['opened_at']);
+            if ($ts > 0) {
+                return $ts;
+            }
+        }
+        return (int)($liveTrade['entry_ts'] ?? $liveTrade['created_ts'] ?? 0);
+    }
+
+    private function extractClosedTs(array $liveTrade): int
+    {
+        if (isset($liveTrade['closed_at'])) {
+            $ts = is_int($liveTrade['closed_at'])
+                ? $liveTrade['closed_at']
+                : (int)strtotime((string)$liveTrade['closed_at']);
+            if ($ts > 0) {
+                return $ts;
+            }
+        }
+        return (int)($liveTrade['closed_ts'] ?? 0);
+    }
+
+    private function calcRoi(float $entry, float $exit, string $side): float
+    {
+        if ($entry === 0.0) {
+            return 0.0;
+        }
+        return $side === 'short'
+            ? round(($entry - $exit) / $entry, 6)
+            : round(($exit - $entry) / $entry, 6);
     }
 
     /**
@@ -182,42 +443,5 @@ final class AiShadowTradeMirror
                 'price' => (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0),
             ],
         ];
-    }
-
-    /**
-     * @param array<string,mixed> $virtualSignal
-     * @param array<string,mixed> $liveTrade
-     */
-    private function createSkippedVirtualTrade(
-        string $vtId,
-        string $signalId,
-        array  $virtualSignal,
-        array  $liveTrade
-    ): void {
-        $relPath = 'storage/virtual_trades_active/' . $vtId . '.json';
-
-        $trade = [
-            'virtual_trade_id'  => $vtId,
-            'source_signal_id'  => $signalId,
-            'symbol'            => (string)($virtualSignal['symbol']            ?? ''),
-            'side'              => (string)($virtualSignal['side']              ?? ''),
-            'pattern_algorithm' => (string)($virtualSignal['pattern_algorithm'] ?? ''),
-            'ai_decision'       => 'skip',
-            'ai_confidence'     => (float)($virtualSignal['ai_confidence']      ?? 0.0),
-            'ai_quality_score'  => (float)($virtualSignal['ai_quality_score']   ?? 0.0),
-            'ai_reasons'        => (array)($virtualSignal['ai_reasons']         ?? []),
-            'status'            => 'skipped',
-            'entry_price'       => (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0),
-            'current_price'     => 0.0,
-            'mfe'               => 0.0,
-            'mae'               => 0.0,
-            'roi'               => null,
-            'opened_at'         => time(),
-            'closed_at'         => null,
-            'close_reason'      => 'ai_skipped',
-            'exit_price'        => null,
-        ];
-
-        $this->state->writeJson($relPath, $trade);
     }
 }

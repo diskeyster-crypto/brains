@@ -36,7 +36,7 @@
             </h4>
             <p class="text-muted mb-0">Configure the AI shadow simulation module</p>
         </div>
-        <a href="?page=ai_shadow" class="btn btn-outline-secondary btn-sm">
+        <a href="/admin/smart_brain/ai_shadow" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i> Dashboard
         </a>
     </div>
@@ -199,7 +199,7 @@ function saveSettings() {
         log_rejections:               document.getElementById('cfg-log-rejections').checked,
     };
 
-    fetch('?page=ai_shadow&api=save_settings', {
+    fetch('/admin/smart_brain/ai_shadow/save_settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg)
@@ -227,7 +227,7 @@ function saveSettings() {
 
 function clearStorage() {
     if (!confirm('Clear all virtual signals and virtual trades? This cannot be undone.')) return;
-    fetch('?page=ai_shadow&api=clear_storage', { method: 'POST' })
+    fetch('/admin/smart_brain/ai_shadow/clear_storage', { method: 'POST' })
         .then(r => r.json())
         .then(d => {
             const el = document.getElementById('save-result');

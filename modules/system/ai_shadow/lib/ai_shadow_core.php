@@ -68,11 +68,14 @@ final class AiShadowCore
         }
 
         if ($this->config['simulate_on_live_trades'] ?? true) {
-            $liveTradesDir         = (string)($this->paths['live_trades_dir'] ?? '');
+            $liveTradesDir           = (string)($this->paths['live_trades_dir'] ?? '');
             $result['trade_counts']  = $this->tradeMirror->mirrorTrades($liveTradesDir);
+            $closedCounts            = $this->tradeMirror->mirrorClosedLiveTrades($liveTradesDir);
+            $result['closed_trade_counts'] = $closedCounts;
         }
 
-        $result['stats'] = $this->statsEngine->compute();
+        $liveClosedTrades      = $this->loadLiveClosedTrades();
+        $result['stats']       = $this->statsEngine->compute($liveClosedTrades);
         return $result;
     }
 
@@ -229,6 +232,30 @@ final class AiShadowCore
     {
         $path = (string)($this->paths['live_signals_path'] ?? '');
         return AiShadowStateManager::readAbsolute($path, []);
+    }
+
+    /**
+     * Load live closed trades from trading_bot/storage/trades/closed/ (read-only).
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function loadLiveClosedTrades(): array
+    {
+        $liveTradesDir = (string)($this->paths['live_trades_dir'] ?? '');
+        $closedDir     = rtrim($liveTradesDir, '/') . '/trades/closed';
+
+        if (!is_dir($closedDir)) {
+            return [];
+        }
+
+        $result = [];
+        foreach (glob($closedDir . '/*.json') ?: [] as $file) {
+            $data = json_decode((string)file_get_contents($file), true);
+            if (is_array($data)) {
+                $result[] = $data;
+            }
+        }
+        return $result;
     }
 
     /**

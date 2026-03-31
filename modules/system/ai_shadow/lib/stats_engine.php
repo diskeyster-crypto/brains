@@ -69,17 +69,36 @@ final class AiShadowStatsEngine
             : 0.0;
 
         // Live performance (from matching live closed trades)
+        $liveWins   = 0;
         $liveRoiSum = 0.0;
         $liveCount  = 0;
         foreach ($liveClosedTrades as $lt) {
             $roi = isset($lt['roi']) ? (float)$lt['roi'] : null;
             if ($roi === null) {
+                // Attempt to compute from close_price / entry_price
+                $entryPx = (float)($lt['entry_price'] ?? $lt['avg_entry_price'] ?? 0.0);
+                $closePx = (float)($lt['close_price'] ?? $lt['avg_exit_price'] ?? 0.0);
+                $side    = (string)($lt['side'] ?? 'short');
+                if ($entryPx > 0.0 && $closePx > 0.0) {
+                    $roi = $side === 'short'
+                        ? ($entryPx - $closePx) / $entryPx
+                        : ($closePx - $entryPx) / $entryPx;
+                }
+            }
+            if ($roi === null) {
                 continue;
             }
             $liveRoiSum += $roi;
             $liveCount++;
+            if ($roi > 0.0) {
+                $liveWins++;
+            }
         }
-        $liveAvgRoi = $liveCount > 0 ? round($liveRoiSum / $liveCount, 6) : 0.0;
+        $liveWinRate    = $liveCount > 0 ? round($liveWins / $liveCount, 4) : 0.0;
+        $liveAvgRoi     = $liveCount > 0 ? round($liveRoiSum / $liveCount, 6) : 0.0;
+        $liveExpectancy = $liveCount > 0
+            ? round(($liveWinRate * $liveAvgRoi) - ((1 - $liveWinRate) * abs($liveAvgRoi)), 6)
+            : 0.0;
 
         $liveVsAiDelta = round($liveAvgRoi - $aiAvgRoi, 6);
 
@@ -102,12 +121,15 @@ final class AiShadowStatsEngine
             'computed_at'              => time(),
             'total_mirrored_signals'   => $totalMirroredSignals,
             'total_virtual_trades'     => $totalVirtualTrades,
+            'total_active_trades'      => count($activeTrades),
             'ai_entered'               => $aiEntered,
             'ai_skipped'               => $aiSkipped,
             'ai_win_rate'              => $aiWinRate,
             'ai_avg_roi'               => $aiAvgRoi,
             'ai_expectancy'            => $aiExpectancy,
+            'live_win_rate'            => $liveWinRate,
             'live_avg_roi'             => $liveAvgRoi,
+            'live_expectancy'          => $liveExpectancy,
             'live_vs_ai_delta'         => $liveVsAiDelta,
             'agreement_rate'           => $agreementRate,
             'disagreement_rate'        => $disagreementRate,

@@ -38,25 +38,30 @@ final class AiShadowVirtualLifecycle
             ?? 0.0);
 
         $trade = [
-            'virtual_trade_id'   => $vtId,
-            'source_signal_id'   => $virtualSignalId,
-            'symbol'             => (string)($signalData['symbol'] ?? ''),
-            'side'               => (string)($signalData['side'] ?? ''),
-            'pattern_algorithm'  => (string)($signalData['pattern_algorithm'] ?? ''),
-            'ai_decision'        => (string)($aiDecision['decision'] ?? 'enter'),
-            'ai_confidence'      => (float)($aiDecision['confidence'] ?? 0.0),
-            'ai_quality_score'   => (float)($aiDecision['quality_score'] ?? 0.0),
-            'ai_reasons'         => (array)($aiDecision['reasons'] ?? []),
-            'status'             => 'active',
-            'entry_price'        => $entryPrice,
-            'current_price'      => $entryPrice,
-            'mfe'                => 0.0,
-            'mae'                => 0.0,
-            'roi'                => 0.0,
-            'opened_at'          => time(),
-            'closed_at'          => null,
-            'close_reason'       => null,
-            'exit_price'         => null,
+            'virtual_trade_id'    => $vtId,
+            'source_signal_id'    => $virtualSignalId,
+            'live_trade_id'       => (string)($signalData['live_trade_id']        ?? $virtualSignalId),
+            'symbol'              => (string)($signalData['symbol']               ?? ''),
+            'side'                => (string)($signalData['side']                 ?? ''),
+            'pattern_algorithm'   => (string)($signalData['pattern_algorithm']    ?? ''),
+            'ai_decision'         => (string)($aiDecision['decision']             ?? 'enter'),
+            'ai_confidence'       => (float)($aiDecision['confidence']            ?? 0.0),
+            'ai_quality_score'    => (float)($aiDecision['quality_score']         ?? 0.0),
+            'ai_reasons'          => (array)($aiDecision['reasons']               ?? []),
+            'status'              => 'active',
+            'entry_price'         => $entryPrice,
+            'ai_entry_price'      => $entryPrice,
+            'ai_entry_timestamp'  => time(),
+            'live_entry_timestamp'=> (int)($signalData['live_entry_timestamp']    ?? 0),
+            'live_entry_price'    => (float)($signalData['live_entry_price']      ?? $entryPrice),
+            'current_price'       => $entryPrice,
+            'mfe'                 => 0.0,
+            'mae'                 => 0.0,
+            'roi'                 => 0.0,
+            'opened_at'           => time(),
+            'closed_at'           => null,
+            'close_reason'        => null,
+            'exit_price'          => null,
         ];
 
         $this->state->writeJson($relPath, $trade);
@@ -65,13 +70,16 @@ final class AiShadowVirtualLifecycle
 
     /**
      * Close a virtual trade and move it to the closed store.
+     * Optionally accepts the live trade data to store comparison fields.
      *
+     * @param  array<string,mixed> $liveTrade  Live closed trade data (read-only, for comparison fields)
      * @return array<string,mixed>
      */
     public function closeVirtualTrade(
         string $virtualTradeId,
         string $reason,
-        float  $exitPrice
+        float  $exitPrice,
+        array  $liveTrade = []
     ): array {
         $activeRel = 'storage/virtual_trades_active/' . $virtualTradeId . '.json';
         $closedRel = 'storage/virtual_trades_closed/' . $virtualTradeId . '.json';
@@ -88,11 +96,51 @@ final class AiShadowVirtualLifecycle
             ? $this->calcRoi($entryPrice, $exitPrice, $side)
             : 0.0;
 
-        $trade['status']      = 'closed';
-        $trade['exit_price']  = $exitPrice;
-        $trade['close_reason']= $reason;
-        $trade['roi']         = $roi;
-        $trade['closed_at']   = time();
+        $now = time();
+
+        $trade['status']            = 'closed';
+        $trade['exit_price']        = $exitPrice;
+        $trade['close_reason']      = $reason;
+        $trade['roi']               = $roi;
+        $trade['closed_at']         = $now;
+
+        // AI trade timing fields
+        $trade['ai_entry_timestamp'] = (int)($trade['opened_at'] ?? $now);
+        $trade['ai_entry_price']     = $entryPrice;
+        $trade['ai_exit_timestamp']  = $now;
+        $trade['ai_exit_price']      = $exitPrice;
+        $trade['ai_exit_reason']     = $reason;
+
+        // Live trade comparison fields
+        if (!empty($liveTrade)) {
+            $liveEntryPrice  = (float)($liveTrade['entry_price'] ?? $liveTrade['avg_entry_price'] ?? 0.0);
+            $liveExitPrice   = (float)($liveTrade['close_price']
+                ?? $liveTrade['avg_exit_price']
+                ?? $liveTrade['exit_price']
+                ?? 0.0);
+            $liveCloseReason = (string)($liveTrade['close_reason'] ?? '');
+            $liveEntryTs     = $this->extractTs($liveTrade['opened_at'] ?? null)
+                ?: (int)($liveTrade['entry_ts'] ?? 0);
+            $liveClosedTs    = $this->extractTs($liveTrade['closed_at'] ?? null)
+                ?: (int)($liveTrade['closed_ts'] ?? 0);
+
+            $liveRoi = $liveEntryPrice > 0.0 && $liveExitPrice > 0.0
+                ? $this->calcRoi($liveEntryPrice, $liveExitPrice, $side)
+                : 0.0;
+
+            $trade['live_trade_id']        = (string)($liveTrade['trade_id'] ?? $liveTrade['signal_id'] ?? '');
+            $trade['live_entry_timestamp'] = $liveEntryTs;
+            $trade['live_entry_price']     = $liveEntryPrice;
+            $trade['live_closed_at']       = $liveClosedTs;
+            $trade['live_close_reason']    = $liveCloseReason;
+            $trade['live_roi']             = $liveRoi;
+            $trade['live_roi_reference']   = $liveRoi;
+
+            // Agreement: both decided the same way (both entered)
+            $aiDecision = (string)($trade['ai_decision'] ?? 'enter');
+            $trade['agreement']  = ($aiDecision === 'enter') ? 'agree' : 'disagree';
+            $trade['delta_roi']  = round($roi - $liveRoi, 6);
+        }
 
         $this->state->writeJson($closedRel, $trade);
 
@@ -165,6 +213,21 @@ final class AiShadowVirtualLifecycle
         return $side === 'short'
             ? round(($entry - $current) / $entry, 6)
             : round(($current - $entry) / $entry, 6);
+    }
+
+    /**
+     * Extract a unix timestamp from either an int or an ISO date string.
+     */
+    private function extractTs(mixed $value): int
+    {
+        if ($value === null) {
+            return 0;
+        }
+        if (is_int($value)) {
+            return $value;
+        }
+        $ts = (int)strtotime((string)$value);
+        return $ts > 0 ? $ts : 0;
     }
 
     /**

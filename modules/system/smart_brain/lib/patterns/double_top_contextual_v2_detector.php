@@ -75,11 +75,13 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         $this->maxNoiseScore              = (float) ($params['max_noise_score']                 ?? 0.80);
         $this->minTrendDurationBars       = (int)   ($params['min_trend_duration_bars']         ?? 8);
         $this->minExhaustionScore         = (float) ($params['min_exhaustion_score']             ?? 0.05);
-        $this->highSimilarityTolerancePct = (float) ($params['high_similarity_tolerance_pct']    ?? 0.015);
+        // Softened: real double tops often have 2-3% difference between the two peaks
+        $this->highSimilarityTolerancePct = (float) ($params['high_similarity_tolerance_pct']    ?? 0.025);
         $this->minPullbackBetweenHighsPct = (float) ($params['min_pullback_between_highs_pct']   ?? 0.005);
         $this->minSpacingBarsBetweenHighs = (int)   ($params['min_spacing_bars_between_highs']   ?? 5);
         $this->maxSpacingBarsBetweenHighs = (int)   ($params['max_spacing_bars_between_highs']   ?? 100);
-        $this->maxSecondHighOvershootPct  = (float) ($params['max_second_high_overshoot_pct']    ?? 0.005);
+        // Softened: second top can slightly exceed first by up to 1% (was 0.5%)
+        $this->maxSecondHighOvershootPct  = (float) ($params['max_second_high_overshoot_pct']    ?? 0.010);
         $this->breakdownTriggerFraction   = (float) ($params['breakdown_trigger_fraction']       ?? 0.5);
         $this->minHoldBars                = (int)   ($params['min_hold_bars']                    ?? 3);
         $this->minFinalConfidence         = (float) ($params['min_final_confidence']              ?? 0.30);
@@ -386,11 +388,27 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
     {
         $ctx = $this->context;
 
-        // Gate 1: Direction — must be bullish-compatible (canonical naming)
+        // Gate 1: Direction — must be bullish-compatible or flat-with-prior-uptrend.
+        //
+        // A double top (short) requires a PRIOR uptrend, not necessarily a current one.
+        // At confirmation time, price may be in a 'flat' transition phase (the regime is
+        // shifting from bullish to neutral as the double top plays out). 'flat' is accepted
+        // when uptrend_duration_bars confirms a meaningful prior uptrend existed.
+        //
+        // Explicitly rejected: 'down' / 'weak_down' — these signal a bearish regime that
+        // pre-dates the pattern, meaning the double top is not from a valid uptrend top.
         $direction = (string) ($ctx['regime_direction'] ?? '');
-        if ($direction !== 'up' && $direction !== 'weak_up' && $direction !== 'bullish') {
-            $this->lastRejectReasons[] = 'reject_context_not_uptrend';
-            $this->trackRejectReason('reject_context_not_uptrend', $ctx);
+        $uptrendDurationBarsGate1 = (int) ($ctx['uptrend_duration_bars'] ?? 0);
+
+        $isUptrend = $direction === 'up' || $direction === 'weak_up' || $direction === 'bullish';
+        $isFlatWithPriorUptrend = $direction === 'flat' && $uptrendDurationBarsGate1 >= $this->minTrendDurationBars;
+
+        if (!$isUptrend && !$isFlatWithPriorUptrend) {
+            $reason = ($direction === 'flat')
+                ? 'reject_context_flat_no_prior_uptrend'
+                : 'reject_context_not_uptrend';
+            $this->lastRejectReasons[] = $reason;
+            $this->trackRejectReason($reason, $ctx);
             return null;
         }
 
@@ -465,14 +483,15 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
 
         if ($ctx !== null && count($this->contextRejectPreview) < $this->contextRejectPreviewLimit) {
             $this->contextRejectPreview[] = [
-                'reject_reason'       => $reason,
-                'regime_direction'    => (string) ($ctx['regime_direction'] ?? ''),
-                'regime_strength'     => round((float) ($ctx['regime_strength'] ?? 0.0), 4),
-                'regime_depth_pct'    => round((float) ($ctx['regime_depth_pct'] ?? 0.0), 4),
-                'regime_duration_bars'=> (int) ($ctx['regime_duration_bars'] ?? 0),
-                'trend_maturity_score'=> round((float) ($ctx['trend_maturity_score'] ?? 0.0), 4),
-                'noise_score'         => round((float) ($ctx['noise_score'] ?? 0.0), 4),
-                'exhaustion_score'    => round((float) ($ctx['exhaustion_score'] ?? 0.0), 4),
+                'reject_reason'         => $reason,
+                'regime_direction'      => (string) ($ctx['regime_direction'] ?? ''),
+                'regime_strength'       => round((float) ($ctx['regime_strength'] ?? 0.0), 4),
+                'regime_depth_pct'      => round((float) ($ctx['regime_depth_pct'] ?? 0.0), 4),
+                'regime_duration_bars'  => (int) ($ctx['regime_duration_bars'] ?? 0),
+                'uptrend_duration_bars' => (int) ($ctx['uptrend_duration_bars'] ?? 0),
+                'trend_maturity_score'  => round((float) ($ctx['trend_maturity_score'] ?? 0.0), 4),
+                'noise_score'           => round((float) ($ctx['noise_score'] ?? 0.0), 4),
+                'exhaustion_score'      => round((float) ($ctx['exhaustion_score'] ?? 0.0), 4),
                 'context_quality_score' => round((float) ($ctx['context_quality_score'] ?? 0.0), 4),
             ];
         }
@@ -905,12 +924,14 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
             return true;
         }
 
+        // For short (double top) patterns: a declining regime is CONFIRMATION, not deterioration.
+        // Deterioration means the uptrend has STRONGLY RESUMED (pattern structurally invalidated).
+        // The structural guard (price above setup highs) is already caught by reject_new_high_after_setup.
+        // Only flag deterioration when the regime returned to a strong bullish state.
         $direction = (string) ($this->context['regime_direction'] ?? '');
-        if ($direction === 'down') {
-            return true;
-        }
+        $strength  = (float) ($this->context['regime_strength'] ?? 0.0);
 
-        return false;
+        return ($direction === 'up' || $direction === 'bullish') && $strength > 0.60;
     }
 
     // ═══════════════════════════════════════════════════════════════════

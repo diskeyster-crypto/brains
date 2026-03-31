@@ -218,7 +218,16 @@ final class Parser4Analyzer
 
             // If detectors are configured but no pattern found, reject
             if ($this->detectors !== [] && $patternResult['pattern_algorithm'] === 'none') {
-                $this->addAnalyzerDebug($symbol, 'no pattern detected');
+                $rejectSummary = $patternResult['detector_reject_summary'] ?? [];
+                if ($rejectSummary !== []) {
+                    $parts = [];
+                    foreach ($rejectSummary as $detName => $reasons) {
+                        $parts[] = $detName . ':' . $reasons;
+                    }
+                    $this->addAnalyzerDebug($symbol, 'no pattern detected [' . implode(' | ', $parts) . ']');
+                } else {
+                    $this->addAnalyzerDebug($symbol, 'no pattern detected');
+                }
                 continue;
             }
 
@@ -880,7 +889,7 @@ final class Parser4Analyzer
      * Run pattern detection for a symbol's history.
      *
      * @param array<int,array{ts_unix:int,price:float}> $history
-     * @return array{pattern_algorithm:string,pattern_confidence:float,trend_bias:string|null}
+     * @return array{pattern_algorithm:string,pattern_confidence:float,trend_bias:string|null,detector_reject_summary:array<string,string>}
      */
     private function runPatternDetection(array $history): array
     {
@@ -888,6 +897,7 @@ final class Parser4Analyzer
             'pattern_algorithm' => 'none',
             'pattern_confidence' => 0.0,
             'trend_bias' => null,
+            'detector_reject_summary' => [],
         ];
 
         if ($this->detectors === []) {
@@ -895,6 +905,7 @@ final class Parser4Analyzer
         }
 
         $results = [];
+        $detectorRejectSummary = [];
 
         foreach ($this->detectors as $detector) {
             $result = $detector->detect($history);
@@ -920,11 +931,21 @@ final class Parser4Analyzer
                     // V3 confirmation tier (computed by V3 detector)
                     'confirmation_tier' => (string)($result['confirmation_tier'] ?? ''),
                 ];
+            } else {
+                // Collect last reject reasons for diagnostics when detection fails
+                if (method_exists($detector, 'getLastRejectReasons')) {
+                    $reasons = $detector->getLastRejectReasons();
+                    if ($reasons !== []) {
+                        $detectorRejectSummary[$detector->getName()] = implode(',', $reasons);
+                    } else {
+                        $detectorRejectSummary[$detector->getName()] = 'no_reasons_recorded';
+                    }
+                }
             }
         }
 
         if ($results === []) {
-            return $default;
+            return array_merge($default, ['detector_reject_summary' => $detectorRejectSummary]);
         }
 
         // Apply mode logic
@@ -945,7 +966,7 @@ final class Parser4Analyzer
             case 'all':
                 // All enabled algorithms must confirm
                 if (count($results) < count($this->detectors)) {
-                    return $default;
+                    return array_merge($default, ['detector_reject_summary' => $detectorRejectSummary]);
                 }
                 // All confirmed — pick highest confidence
                 usort($results, static fn($a, $b) => $b['confidence'] <=> $a['confidence']);
@@ -953,7 +974,7 @@ final class Parser4Analyzer
                 break;
 
             default:
-                return $default;
+                return array_merge($default, ['detector_reject_summary' => $detectorRejectSummary]);
         }
 
         return [
@@ -975,6 +996,7 @@ final class Parser4Analyzer
             'zone_defense_score' => $best['zone_defense_score'],
             // V3 confirmation tier
             'confirmation_tier' => $best['confirmation_tier'] ?? '',
+            'detector_reject_summary' => [],
         ];
     }
 

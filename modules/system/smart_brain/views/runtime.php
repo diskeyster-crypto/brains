@@ -703,6 +703,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 $rtRvSkipWrongPat = (int)($botMirror['reversal_overlay_skipped_wrong_pattern_count'] ?? 0);
                 $rtRvSkipWrongSide = (int)($botMirror['reversal_overlay_skipped_wrong_side_count'] ?? 0);
                 $rtRvSkipPeakLow = (int)($botMirror['reversal_overlay_skipped_peak_too_low_count'] ?? 0);
+                $rtRvShadowMirror = (int)($botMirror['reversal_overlay_shadow_mirror_seen_count'] ?? 0);
+                $rtRvHarvest = (int)($botMirror['reversal_overlay_harvest_applied_count'] ?? 0);
             ?>
             <?php if ($rtActivePosCount > 0): ?>
             <div class="mb-2 small">
@@ -750,6 +752,8 @@ $pageContent = function() use ($config, $snapshot, $last_run, $stats, $smartBrai
                 <?php if ($rtRvSkipWrongSide > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_side: <?= $rtRvSkipWrongSide ?></span><?php endif; ?>
                 <?php if ($rtRvSkipPeakLow > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">peak_low: <?= $rtRvSkipPeakLow ?></span><?php endif; ?>
                 <?php if ($rtRvSkipWrongPat > 0): ?><span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_pattern: <?= $rtRvSkipWrongPat ?></span><?php endif; ?>
+                <?php if ($rtRvShadowMirror > 0): ?><span class="badge bg-info bg-opacity-50 text-info me-1" style="font-size:0.6rem;">shadow_mirror: <?= $rtRvShadowMirror ?></span><?php endif; ?>
+                <?php if ($rtRvHarvest > 0): ?><span class="badge bg-success bg-opacity-50 text-success me-1" style="font-size:0.6rem;">harvest: <?= $rtRvHarvest ?></span><?php endif; ?>
             </div>
             <?php endif; ?>
             <?php endif; ?>

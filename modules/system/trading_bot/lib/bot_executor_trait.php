@@ -1214,6 +1214,8 @@ trait BotExecutorTrait
             'reversal_overlay_skipped_wrong_pattern' => 0,
             'reversal_overlay_skipped_wrong_side' => 0,
             'reversal_overlay_skipped_peak_too_low' => 0,
+            'reversal_overlay_shadow_mirror_seen' => 0,
+            'reversal_overlay_harvest_applied' => 0,
         ];
         
         if ($mode !== 'live') {
@@ -2387,24 +2389,29 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $result['reversal_overlay_candidates_seen']++;
                             $runtime['reversal_overlay_source_pattern'] = $rvPattern;
 
-                            // Optional diagnostics: check for mirrored long reversal in signals.json
-                            $rvSignalsBase = null;
+                            // Shadow mirror lookup — scans candidates.json, monitors.json,
+                            // and signals.json in priority order so it finds mirrored long
+                            // reversal patterns even when long trading is disabled.
+                            $rvStorageDir  = null;
+                            $rvSignalsPath = null;
                             try {
                                 $rvPaths = \Core\System\SystemPaths::instance();
                                 $rvSignalsKey  = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
                                 $rvSignalsFile = $this->config['sources']['signals_file'] ?? 'signals.json';
                                 if ($rvPaths->has($rvSignalsKey)) {
-                                    $rvSignalsBase = $rvPaths->get($rvSignalsKey) . '/' . $rvSignalsFile;
+                                    $rvStorageDir  = $rvPaths->get($rvSignalsKey);
+                                    $rvSignalsPath = $rvStorageDir . '/' . $rvSignalsFile;
                                 }
                             } catch (\Throwable $rvEx) {
-                                $rvSignalsBase = null;
+                                $rvStorageDir  = null;
+                                $rvSignalsPath = null;
                             }
 
-                            $rvLookup = ($rvSignalsBase !== null)
-                                ? BotReversalSignalHelper::findReversalSignal($rvSymbol, $rvSignalsBase)
-                                : ['found' => false, 'pattern' => null, 'reason' => 'signals_path_unavailable'];
+                            $rvLookup = ($rvStorageDir !== null)
+                                ? BotReversalSignalHelper::findShadowMirrorSignal($rvSymbol, $rvStorageDir, $rvSignalsPath)
+                                : ['found' => false, 'pattern' => null, 'shadow_source' => null, 'reason' => 'storage_path_unavailable'];
 
-                            // Store as diagnostics only — does not gate overlay
+                            // Store mirror observability fields — does not gate overlay
                             $runtime['reversal_overlay_long_mirror_seen']          = (bool)($rvLookup['found'] ?? false);
                             $runtime['reversal_overlay_trigger_lookup_reason']     = $rvLookup['reason'] ?? '';
                             $runtime['reversal_overlay_trigger_pattern']           = $rvLookup['pattern'] ?? null;
@@ -2412,9 +2419,11 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             // Step 2 shadow mirror observability — extended fields
                             $rvMirrorFound   = (bool)($rvLookup['found'] ?? false);
                             $rvMirrorPattern = $rvLookup['pattern'] ?? null;
+                            $rvShadowSource  = $rvLookup['shadow_source'] ?? null;
 
                             // Semantic alias for clearer runtime inspection
                             $runtime['reversal_overlay_long_mirror_pattern'] = $rvMirrorPattern;
+                            $runtime['reversal_overlay_shadow_source']       = $rvShadowSource;
 
                             // Persist first-seen timestamp across bot runs; never overwrite once set
                             $prevMirrorSeenAt = (string)($trade['runtime']['reversal_overlay_long_mirror_seen_at'] ?? '');
@@ -2512,18 +2521,47 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                         $result['reversal_overlay_step_advanced']++;
                                     }
 
-                                    // Step 2 — harvest hint: optional assist when mirror signal seen
-                                    // mirror fields are in $rvMirrorFound / $rvMirrorPattern (set above)
-                                    $harvestHintActive = $rvMirrorFound && $overlayPeakRoi > 0;
-                                    $runtime['reversal_overlay_harvest_hint_active'] = $harvestHintActive;
+                                    // Step 2 — shadow mirror harvest assist
+                                    // When a mirrored long reversal pattern is observed for the same
+                                    // symbol while the trade is already in profit (overlay active),
+                                    // apply an optional lock bonus (+1) to tighten protection faster.
+                                    // This is monotonic: only ever increases effectiveLocked.
+                                    $harvestHintActive  = $rvMirrorFound && $overlayPeakRoi > 0;
+                                    $harvestApplied     = false;
+                                    $harvestLockBonus   = 0.0;
+                                    $harvestAction      = null;
+
                                     if ($harvestHintActive) {
-                                        if ($stage2Active) {
-                                            $runtime['reversal_overlay_harvest_action'] = 'advance_ladder_step';
-                                        } else {
-                                            $runtime['reversal_overlay_harvest_action'] = 'early_harvest_floor_lock';
+                                        $harvestAction    = $stage2Active
+                                            ? 'advance_ladder_step'
+                                            : 'early_harvest_floor_lock';
+                                        $bonus            = BotReversalSignalHelper::HARVEST_LOCK_BONUS;
+                                        $boostedLocked    = $effectiveLocked + $bonus;
+                                        // Monotonic: only apply if bonus strictly increases the lock
+                                        if ($boostedLocked > $effectiveLocked) {
+                                            $effectiveLocked  = $boostedLocked;
+                                            $harvestApplied   = true;
+                                            $harvestLockBonus = $bonus;
                                         }
-                                    } else {
-                                        $runtime['reversal_overlay_harvest_action'] = null;
+                                    }
+
+                                    // Persist harvest-boosted lock (monotonic via max with prev)
+                                    $effectiveLocked = max($effectiveLocked, $prevOverlayLockedRoi);
+
+                                    // Re-write stored lock after harvest bonus
+                                    $runtime['reversal_overlay_locked_roi_current']    = round($effectiveLocked, 4);
+                                    $trade['reversal_overlay_locked_roi_current']      = round($effectiveLocked, 4);
+
+                                    $runtime['reversal_overlay_harvest_hint_active']   = $harvestHintActive;
+                                    $runtime['reversal_overlay_harvest_action']        = $harvestAction;
+                                    $runtime['reversal_overlay_harvest_applied']       = $harvestApplied;
+                                    $runtime['reversal_overlay_harvest_lock_bonus']    = $harvestLockBonus;
+
+                                    if ($rvMirrorFound) {
+                                        $result['reversal_overlay_shadow_mirror_seen']++;
+                                    }
+                                    if ($harvestApplied) {
+                                        $result['reversal_overlay_harvest_applied']++;
                                     }
 
                                     // Enforce overlay locked ROI as exchange SL if it improves protection

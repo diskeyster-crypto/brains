@@ -99,6 +99,17 @@ class BotReversalSignalHelper
     /** Peak ROI must reach this to activate Stage 2 (soft ladder). */
     const OVERLAY_ACTIVATION_PEAK_ROI = 10.0;
 
+    // ------------------------------------------------------------------ //
+    // Harvest assist                                                       //
+    // ------------------------------------------------------------------ //
+
+    /**
+     * One-step lock bonus applied to effective locked ROI when a mirrored
+     * long reversal is observed (shadow mirror harvest assist).
+     * Monotonic: only ever increases protection; never weakens stop.
+     */
+    const HARVEST_LOCK_BONUS = 1.0;
+
     /** Locked ROI guaranteed once Stage 2 activation peak is reached. */
     const OVERLAY_BASE_LOCK_ROI = 5.0;
 
@@ -199,6 +210,103 @@ class BotReversalSignalHelper
         }
 
         return ['found' => false, 'pattern' => null, 'reason' => 'no_matching_reversal_signal'];
+    }
+
+    /**
+     * Shadow mirror signal lookup — works even when long trading is disabled.
+     *
+     * Scans multiple Brain output files in priority order:
+     *   1. candidates.json  — Brain detector output (has all patterns regardless of trade eligibility)
+     *   2. monitors.json    — Tracked corridor monitors (all patterns)
+     *   3. signals.json     — Approved signals (may omit long if long trading disabled)
+     *
+     * The candidates and monitors files are written by the Brain on every scan cycle
+     * and contain ALL detected patterns — including double_bottom_contextual_v2/v3 —
+     * even when the risk engine is configured to not trade long side.
+     *
+     * NOTE: Result is used for optional harvest/tightening assist only.
+     *       It does NOT gate overlay activation.
+     *
+     * @param string      $symbol       Trading symbol (e.g. "BTCUSDT")
+     * @param string      $storageDir   Absolute path to Brain storage directory
+     * @param string|null $signalsPath  Absolute path to signals.json (optional fallback)
+     * @return array {
+     *   found:         bool,
+     *   pattern:       string|null,   // matching pattern_algorithm or null
+     *   shadow_source: string|null,   // 'candidates' | 'monitors' | 'signals' | null
+     *   reason:        string,        // diagnostic string
+     * }
+     */
+    public static function findShadowMirrorSignal(
+        string $symbol,
+        string $storageDir,
+        ?string $signalsPath = null
+    ): array {
+        $sources = [
+            'candidates' => rtrim($storageDir, '/') . '/candidates.json',
+            'monitors'   => rtrim($storageDir, '/') . '/monitors.json',
+        ];
+        if ($signalsPath !== null) {
+            $sources['signals'] = $signalsPath;
+        }
+
+        foreach ($sources as $sourceName => $filePath) {
+            if (!is_file($filePath)) {
+                continue;
+            }
+            $content = @file_get_contents($filePath);
+            if ($content === false) {
+                continue;
+            }
+            $data = @json_decode($content, true);
+            if (!is_array($data)) {
+                continue;
+            }
+
+            // Support both wrapped {"signals":[...]} and plain array formats
+            if (isset($data['signals']) && is_array($data['signals'])) {
+                $entries = $data['signals'];
+            } elseif (isset($data['candidates']) && is_array($data['candidates'])) {
+                $entries = $data['candidates'];
+            } elseif (isset($data['monitors']) && is_array($data['monitors'])) {
+                $entries = $data['monitors'];
+            } else {
+                $entries = $data;
+            }
+
+            foreach ($entries as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $entrySymbol  = (string)($entry['symbol'] ?? '');
+                $entryPattern = (string)($entry['pattern_algorithm'] ?? '');
+                $entrySide    = strtolower((string)($entry['side'] ?? ''));
+
+                if ($entrySymbol !== $symbol) {
+                    continue;
+                }
+                if ($entrySide !== 'long') {
+                    continue;
+                }
+                if (!in_array($entryPattern, self::ALLOWED_REVERSAL_PATTERNS, true)) {
+                    continue;
+                }
+
+                return [
+                    'found'         => true,
+                    'pattern'       => $entryPattern,
+                    'shadow_source' => $sourceName,
+                    'reason'        => 'shadow_mirror_found_in_' . $sourceName,
+                ];
+            }
+        }
+
+        return [
+            'found'         => false,
+            'pattern'       => null,
+            'shadow_source' => null,
+            'reason'        => 'no_shadow_mirror_found',
+        ];
     }
 
     // ------------------------------------------------------------------ //

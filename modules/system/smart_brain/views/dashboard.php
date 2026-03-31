@@ -462,6 +462,8 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 $rvSkipWrongPat = (int)($botMirror['reversal_overlay_skipped_wrong_pattern_count'] ?? 0);
                 $rvSkipWrongSide = (int)($botMirror['reversal_overlay_skipped_wrong_side_count'] ?? 0);
                 $rvSkipPeakLow = (int)($botMirror['reversal_overlay_skipped_peak_too_low_count'] ?? 0);
+                $rvShadowMirrorSeen = (int)($botMirror['reversal_overlay_shadow_mirror_seen_count'] ?? 0);
+                $rvHarvestApplied = (int)($botMirror['reversal_overlay_harvest_applied_count'] ?? 0);
             ?>
             <?php if ($activePosCount > 0): ?>
             <div class="mt-2 small">
@@ -522,6 +524,12 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
                 <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">wrong_pattern: <?= $rvSkipWrongPat ?></span>
                 <?php endif; ?>
                 <span class="badge bg-secondary bg-opacity-25 text-secondary me-1" style="font-size:0.6rem;">candidates: <?= $rvCandidates ?></span>
+                <?php if ($rvShadowMirrorSeen > 0): ?>
+                <span class="badge bg-info bg-opacity-50 text-info me-1" style="font-size:0.6rem;">shadow_mirror: <?= $rvShadowMirrorSeen ?></span>
+                <?php endif; ?>
+                <?php if ($rvHarvestApplied > 0): ?>
+                <span class="badge bg-success bg-opacity-50 text-success me-1" style="font-size:0.6rem;">harvest: <?= $rvHarvestApplied ?></span>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
             <?php

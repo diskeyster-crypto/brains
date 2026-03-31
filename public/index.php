@@ -1093,6 +1093,37 @@ Router::post('/admin/smart_brain/blacklist/save', function () {
     $controller->saveBlacklist();
 });
 
+// AI Shadow control-plane routes (Brain UI only; execution stays in ai_shadow module)
+Router::get('/admin/smart_brain/ai_shadow', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadow();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/run_mirror', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowRunMirror();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/run_replay', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowRunReplay();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/save_settings', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowSaveSettings();
+});
+
+Router::get('/admin/smart_brain/ai_shadow/stats', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowStats();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/clear_storage', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowClearStorage();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

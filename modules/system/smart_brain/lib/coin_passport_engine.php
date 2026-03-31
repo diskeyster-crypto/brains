@@ -13,7 +13,12 @@ declare(strict_types=1);
  * Computes: trades_total, winrate, avg_mae, avg_mfe, avg_duration,
  *           corridor_width_avg, volatility_avg, speed_class, reliability_score
  */
-final class CoinPassportEngine
+/**
+ * @deprecated Use CoinPassportEngine from modules/system/coin_passport/lib/passport_engine.php
+ * Kept here only because smart_brain_core.php references it for historical pipeline compatibility.
+ * The standalone coin_passport module is now the single source of truth for passports.
+ */
+final class SmartBrainPassportEngine
 {
     private StateManager $state;
 

@@ -337,10 +337,8 @@ final class SmartBrainCore
 
         $this->state->writeJson('storage/monitors.json', $monitors);
 
-        $passports = new CoinPassportEngine($this->state);
-        $passports->update($monitors);
-
-        // P7: Enrich passports with live bot execution profile
+        // Passport computation is handled by the standalone coin_passport module.
+        // Smart Brain no longer maintains its own passport storage.
         $botStatsLoaded = false;
         $botStatsParseOk = false;
         $botStatsSymbolsCount = 0;
@@ -350,25 +348,6 @@ final class SmartBrainCore
             'passports_with_mae_profile_count' => 0,
             'passport_mae_symbols_preview' => [],
         ];
-        try {
-            $botStoragePath = $this->resolveBotStoragePath();
-            if ($botStoragePath !== null) {
-                $botLastRunPath = $botStoragePath . '/last_run.json';
-                $botStatsSourcePath = $botLastRunPath;
-                if (file_exists($botLastRunPath)) {
-                    $botRunRaw = (string)file_get_contents($botLastRunPath);
-                    $botRunData = json_decode($botRunRaw, true);
-                    $botStatsParseOk = is_array($botRunData);
-                    if ($botStatsParseOk && !empty($botRunData['symbol_exit_stats'])) {
-                        $botStatsLoaded = true;
-                        $botStatsSymbolsCount = count($botRunData['symbol_exit_stats']);
-                        $passportEnrichResult = $passports->enrichWithExecutionProfile($botRunData['symbol_exit_stats']);
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            // Non-fatal: passport enrichment failure does not break pipeline
-        }
 
         $risk = new RiskEngine($riskCfg, $profilesCfg, $this->state);
         $signals = $risk->apply($monitors, $prices, $userLimits);
@@ -3066,7 +3045,8 @@ final class SmartBrainCore
      */
     public function getPassportsData(): array
     {
-        $passportsDir = $this->moduleBase . '/storage/passports';
+        // Read from the standalone coin_passport module — single source of truth.
+        $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
         $passports = [];
 
         if (is_dir($passportsDir)) {
@@ -3102,8 +3082,8 @@ final class SmartBrainCore
         // Read closed trades from trading bot storage
         $closedTrades = $this->readBotClosedTrades(200);
 
-        // Read passports
-        $passportsDir = $this->moduleBase . '/storage/passports';
+        // Read passports from the standalone coin_passport module — single source of truth.
+        $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
         $passports = [];
         if (is_dir($passportsDir)) {
             $files = glob($passportsDir . '/*.json') ?: [];

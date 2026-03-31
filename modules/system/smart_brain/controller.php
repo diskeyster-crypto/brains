@@ -174,16 +174,14 @@ final class SmartBrainController
     }
 
     /**
-     * Coin Passports page
+     * Coin Passports page — delegates to the standalone coin_passport module.
      * GET /admin/smart_brain/passports
      */
     public function passports(): void
     {
-        $data = $this->service->getPassportsData();
-        $data['smartBrainUrl'] = $this->smartBrainUrl;
-
-        extract($data, EXTR_SKIP);
-        include __DIR__ . '/views/passports.php';
+        // The standalone coin_passport module is now the single source of truth.
+        header('Location: /admin/coin_passport', true, 302);
+        exit;
     }
 
     /**

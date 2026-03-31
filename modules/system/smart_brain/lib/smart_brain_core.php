@@ -244,9 +244,12 @@ final class SmartBrainCore
             $missingMirrorPatterns = array_diff($shadowMirrorPatterns, $enabledNow);
             if (!empty($missingMirrorPatterns)) {
                 // Run a dedicated shadow parser with only the mirror patterns enabled.
+                // shadow_mode=true prevents writes to candidates.json / v2_stage_counters.json
+                // / downstream_counters.json so the main Brain pipeline is not polluted.
                 $shadowParser4Cfg = $parser4Cfg;
                 $shadowParser4Cfg['pattern_algorithms']['enabled'] = array_values($shadowMirrorPatterns);
                 $shadowParser4Cfg['pattern_algorithms']['mode']    = 'any';
+                $shadowParser4Cfg['shadow_mode']                   = true;
                 try {
                     $shadowParser = new Parser4Analyzer($shadowParser4Cfg, $this->state);
                     $shadowRaw    = $shadowParser->run();

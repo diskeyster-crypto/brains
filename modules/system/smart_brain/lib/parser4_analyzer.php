@@ -50,6 +50,13 @@ final class Parser4Analyzer
     private ContextAdapter $contextAdapter;
 
     /**
+     * When true, skip all writes to shared storage files (candidates.json,
+     * v2_stage_counters.json, downstream_counters.json).  Used by the shadow
+     * mirror pass so it never pollutes the main Brain pipeline outputs.
+     */
+    private bool $shadowMode = false;
+
+    /**
      * @param array<string,mixed> $cfg  Full parser4 config (settings + pattern_algorithms + analyzer_decision)
      * @param StateManager $state
      */
@@ -62,6 +69,9 @@ final class Parser4Analyzer
             $this->cfg = $cfg;
         }
         $this->state = $state;
+
+        // Shadow mode: skips all shared-storage writes (candidates / counters).
+        $this->shadowMode = !empty($cfg['shadow_mode']);
 
         $patternCfg = (array)($cfg['pattern_algorithms'] ?? []);
         $enabledAlgorithms = (array)($patternCfg['enabled'] ?? []);
@@ -154,7 +164,9 @@ final class Parser4Analyzer
         $symbols = $this->loadSymbols();
 
         if ($symbols === []) {
-            $this->state->writeJson('storage/candidates.json', []);
+            if (!$this->shadowMode) {
+                $this->state->writeJson('storage/candidates.json', []);
+            }
             return [];
         }
 
@@ -307,13 +319,15 @@ final class Parser4Analyzer
             $candidates = array_slice($candidates, 0, $maxCandidates);
         }
 
-        $this->state->writeJson('storage/candidates.json', $candidates);
+        if (!$this->shadowMode) {
+            $this->state->writeJson('storage/candidates.json', $candidates);
 
-        // Persist V2/V3 stage counters for reversal comparison layer
-        $this->persistV2StageCounters();
+            // Persist V2/V3 stage counters for reversal comparison layer
+            $this->persistV2StageCounters();
 
-        // Persist downstream pipeline counters for V2/V3 diagnostics
-        $this->persistDownstreamCounters($downstreamBeforeTrunc, $droppedByLimit, $candidates);
+            // Persist downstream pipeline counters for V2/V3 diagnostics
+            $this->persistDownstreamCounters($downstreamBeforeTrunc, $droppedByLimit, $candidates);
+        }
 
         return $candidates;
     }

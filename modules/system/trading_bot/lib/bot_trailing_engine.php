@@ -655,10 +655,12 @@ class BotTrailingEngine
      *     No overlay lock. No aggressive distance trailing. Original exchange SL applies.
      *     trade['reversal_overlay_active'] is false; this method makes no stop change.
      *
-     *   Stage 1 (peak >= 5, < 10):
-     *     Guaranteed floor lock: locked ROI = STAGE1_FLOOR_LOCK_ROI (2).
-     *     Only floor-based stop is enforced. Distance-based trailing NOT active.
+     *   Stage 1 mini-ladder (5 <= peak < 10):
+     *     Guaranteed floor lock that grows in steps. Distance-based trailing NOT active.
      *     trade['reversal_overlay_active'] = true.
+     *       5 <= peak <  7  → locked ROI = 2
+     *       7 <= peak <  9  → locked ROI = 3
+     *       9 <= peak < 10  → locked ROI = 4
      *
      *   Stage 2 (peak >= 10):
      *     Existing soft ladder activates. Locked ROI follows:
@@ -753,7 +755,7 @@ class BotTrailingEngine
         }
 
         // Stage 1 or Stage 2 — compute locked ROIs
-        $stage1LockedRoi = $stage1FloorLock; // always 2 when stage1 active
+        $stage1LockedRoi = BotReversalSignalHelper::computeStage1LockedRoi($peakRoi); // mini-ladder: 2/3/4
         $stage2LockedRoi = 0.0;
         $stepCount       = 0;
         if ($stage2Active) {
@@ -819,7 +821,7 @@ class BotTrailingEngine
         $result['changes']['reversal_overlay_step_count']                = $stepCount;
         $result['changes']['reversal_overlay_next_step_target_roi']      = round($nextStepTargetRoi, 4);
         $result['changes']['reversal_overlay_stage1_peak_roi']           = $stage1ActivationPeak;
-        $result['changes']['reversal_overlay_stage1_lock_roi']           = $stage1FloorLock;
+        $result['changes']['reversal_overlay_stage1_lock_roi']           = $stage1LockedRoi;
         $result['changes']['reversal_overlay_base_lock_roi']             = $overlayBaseLock;
         $result['changes']['reversal_overlay_main_step_roi']             = $overlayMainStep;
         $result['changes']['reversal_overlay_lock_step_roi']             = $overlayLockStep;
@@ -1145,7 +1147,8 @@ class BotTrailingEngine
   peak_roi is tracked separately and never decreases; protection only strengthens.
 - trend_reversal_soft_ladder_short: TEST MODE; SHORT V2/V3 only; two-stage profit protection (short_two_stage_peak_roi);
   stage0 (peak<5): no lock, no distance trailing, original exchange SL only;
-  stage1 (peak>=5): guaranteed floor lock = 2 ROI, no distance trailing;
+  stage1 mini-ladder (peak>=5, <10): guaranteed floor lock grows in steps, no distance trailing:
+    5<=peak<7 → lock=2, 7<=peak<9 → lock=3, 9<=peak<10 → lock=4;
   stage2 (peak>=10): soft ladder lock + distance trailing;
   overlay formula: locked = 5 + floor((peak_roi - 10) / 3) * 1 for peak >= 10;
   final_locked_roi = max(stage1_locked_roi, stage2_locked_roi, prev_locked_roi); monotonic protection.

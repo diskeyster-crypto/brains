@@ -2318,7 +2318,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 //   - trade source pattern is double_top_contextual_v2 or _v3
                 //
                 // NOTE: Long reversal mirror signal is NO LONGER a hard requirement.
-                //       findReversalSignal() is called as optional diagnostics only.
+                //       findReversalSignal() is called as optional diagnostics / harvest hint only.
                 //
                 // TWO-STAGE PROFIT PROTECTION (short_two_stage_peak_roi):
                 //
@@ -2326,8 +2326,11 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 //     No lock. No aggressive distance trailing. Normal SL only.
                 //     reversal_overlay_active = false
                 //
-                //   Stage 1 (peak >= 5, < 10):
-                //     Floor lock guarantee: locked ROI = STAGE1_FLOOR_LOCK_ROI (2).
+                //   Stage 1 mini-ladder (peak >= 5, < 10):
+                //     Floor lock grows in steps — no distance trailing.
+                //       5 <= peak <  7  → locked ROI = 2
+                //       7 <= peak <  9  → locked ROI = 3
+                //       9 <= peak < 10  → locked ROI = 4
                 //     reversal_overlay_active = true, stage1_active = true, stage2_active = false
                 //
                 //   Stage 2 (peak >= 10):
@@ -2406,6 +2409,21 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             $runtime['reversal_overlay_trigger_lookup_reason']     = $rvLookup['reason'] ?? '';
                             $runtime['reversal_overlay_trigger_pattern']           = $rvLookup['pattern'] ?? null;
 
+                            // Step 2 shadow mirror observability — extended fields
+                            $rvMirrorFound   = (bool)($rvLookup['found'] ?? false);
+                            $rvMirrorPattern = $rvLookup['pattern'] ?? null;
+
+                            // Semantic alias for clearer runtime inspection
+                            $runtime['reversal_overlay_long_mirror_pattern'] = $rvMirrorPattern;
+
+                            // Persist first-seen timestamp across bot runs; never overwrite once set
+                            $prevMirrorSeenAt = (string)($trade['runtime']['reversal_overlay_long_mirror_seen_at'] ?? '');
+                            if ($rvMirrorFound && $prevMirrorSeenAt === '') {
+                                $runtime['reversal_overlay_long_mirror_seen_at'] = date('c');
+                            } elseif ($prevMirrorSeenAt !== '') {
+                                $runtime['reversal_overlay_long_mirror_seen_at'] = $prevMirrorSeenAt;
+                            }
+
                             if (true) {
                                 // Always proceed — compute overlay state
                                 $positionIM    = (float)($position['positionIM'] ?? 0);
@@ -2441,6 +2459,8 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                     $runtime['reversal_overlay_skip_reason']             = 'peak_below_activation';
                                     $runtime['reversal_overlay_locked_roi_current']      = 0.0;
                                     $runtime['reversal_overlay_next_step_target_roi']    = $stage1ActivationPeak;
+                                    $runtime['reversal_overlay_harvest_hint_active']     = false;
+                                    $runtime['reversal_overlay_harvest_action']          = null;
                                     $trade['reversal_overlay_active']                    = false;
                                     $trade['runtime'] = $runtime;
                                     $result['reversal_overlay_skipped_peak_too_low']++;
@@ -2490,6 +2510,20 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                     $result['reversal_overlay_activated']++;
                                     if ($stepAdvanced) {
                                         $result['reversal_overlay_step_advanced']++;
+                                    }
+
+                                    // Step 2 — harvest hint: optional assist when mirror signal seen
+                                    // mirror fields are in $rvMirrorFound / $rvMirrorPattern (set above)
+                                    $harvestHintActive = $rvMirrorFound && $overlayPeakRoi > 0;
+                                    $runtime['reversal_overlay_harvest_hint_active'] = $harvestHintActive;
+                                    if ($harvestHintActive) {
+                                        if ($stage2Active) {
+                                            $runtime['reversal_overlay_harvest_action'] = 'advance_ladder_step';
+                                        } else {
+                                            $runtime['reversal_overlay_harvest_action'] = 'early_harvest_floor_lock';
+                                        }
+                                    } else {
+                                        $runtime['reversal_overlay_harvest_action'] = null;
                                     }
 
                                     // Enforce overlay locked ROI as exchange SL if it improves protection

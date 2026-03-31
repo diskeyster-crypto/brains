@@ -22,8 +22,11 @@ namespace Modules\System\TradingBot\Lib;
  *   Stage 0 (peak < 5):
  *     No lock applied. No aggressive distance trailing. Normal exchange SL only.
  *
- *   Stage 1 (5 <= peak < 10):
- *     Non-burnable profit floor lock. Guaranteed locked ROI = STAGE1_FLOOR_LOCK_ROI (2).
+ *   Stage 1 mini-ladder (5 <= peak < 10):
+ *     Non-burnable profit floor lock. Locked ROI increases via a mini-ladder:
+ *       5 <= peak <  7  → locked ROI = 2  (first step)
+ *       7 <= peak <  9  → locked ROI = 3  (second step)
+ *       9 <= peak < 10  → locked ROI = 4  (third step)
  *     Only floor-lock stop is enforced. Distance-based trailing NOT active.
  *
  *   Stage 2 (peak >= 10):
@@ -35,13 +38,23 @@ namespace Modules\System\TradingBot\Lib;
  *
  * TEST MODE CONSTANTS (not user-configurable in v1):
  *   Stage 1:
- *     - STAGE1_ACTIVATION_PEAK_ROI  = 5   — peak ROI threshold to arm stage 1
- *     - STAGE1_FLOOR_LOCK_ROI       = 2   — guaranteed minimum locked ROI at stage 1
+ *     - STAGE1_ACTIVATION_PEAK_ROI  = 5   — peak ROI threshold to arm stage 1 (first step)
+ *     - STAGE1_FLOOR_LOCK_ROI       = 2   — locked ROI at first stage 1 step (base floor)
+ *     - STAGE1_MINI_LADDER          — full mini-ladder [activation_peak, locked_roi] pairs
  *   Stage 2:
  *     - OVERLAY_ACTIVATION_PEAK_ROI = 10  — peak ROI threshold to start ladder
  *     - OVERLAY_BASE_LOCK_ROI       = 5   — guaranteed ROI at stage 2 activation
  *     - OVERLAY_MAIN_STEP_ROI       = 3   — peak ROI increment per lock step
  *     - OVERLAY_LOCK_STEP_ROI       = 1   — locked ROI increment per step
+ *
+ * Stage 1 mini-ladder examples:
+ *   peak=4.9  → locked=0   (stage 0, no lock)
+ *   peak=5.0  → locked=2   (step 1)
+ *   peak=6.9  → locked=2   (step 1)
+ *   peak=7.0  → locked=3   (step 2)
+ *   peak=8.9  → locked=3   (step 2)
+ *   peak=9.0  → locked=4   (step 3)
+ *   peak=9.9  → locked=4   (step 3)
  *
  * Stage 2 formula:
  *   if peak_roi < OVERLAY_ACTIVATION_PEAK_ROI:
@@ -65,11 +78,22 @@ class BotReversalSignalHelper
     // ------------------------------------------------------------------ //
 
     // Stage 1 — Profit floor guarantee (non-burnable, no distance trailing)
-    /** Peak ROI must reach this to activate Stage 1 floor lock. */
+    /** Peak ROI must reach this to activate Stage 1 (first mini-ladder step). */
     const STAGE1_ACTIVATION_PEAK_ROI = 5.0;
 
-    /** Guaranteed locked ROI once Stage 1 activation peak is reached. */
+    /** Locked ROI at the first Stage 1 mini-ladder step (base floor). */
     const STAGE1_FLOOR_LOCK_ROI = 2.0;
+
+    /**
+     * Stage 1 mini-ladder: each entry is [activation_peak_roi, locked_roi].
+     * Steps are sorted ascending by activation peak.
+     * computeStage1LockedRoi() returns the highest tier whose activation peak <= peakRoi.
+     */
+    const STAGE1_MINI_LADDER = [
+        [5.0, 2.0],   // 5 <= peak <  7  → lock = 2
+        [7.0, 3.0],   // 7 <= peak <  9  → lock = 3
+        [9.0, 4.0],   // 9 <= peak < 10  → lock = 4
+    ];
 
     // Stage 2 — Soft ladder tightening (distance trailing also active)
     /** Peak ROI must reach this to activate Stage 2 (soft ladder). */
@@ -182,17 +206,29 @@ class BotReversalSignalHelper
     // ------------------------------------------------------------------ //
 
     /**
-     * Compute the Stage 1 floor-lock ROI from a peak ROI value.
+     * Compute the Stage 1 mini-ladder locked ROI from a peak ROI value.
      *
-     * Returns STAGE1_FLOOR_LOCK_ROI (2.0) when peak >= STAGE1_ACTIVATION_PEAK_ROI (5).
-     * Returns 0.0 below that (Stage 0 — no lock yet).
+     * Returns the locked ROI of the highest mini-ladder step whose activation
+     * peak <= peakRoi.  Returns 0.0 below STAGE1_ACTIVATION_PEAK_ROI (Stage 0).
+     *
+     * Mini-ladder:
+     *   peak <  5  → 0 (Stage 0, no lock)
+     *   5 <= peak < 7  → 2
+     *   7 <= peak < 9  → 3
+     *   9 <= peak < 10 → 4  (Stage 2 takes over at peak >= 10)
      *
      * @param float $peakRoi Monotonic peak ROI seen so far (percent)
      * @return float Stage 1 locked ROI (percent). 0 if stage 1 not yet reached.
      */
     public static function computeStage1LockedRoi(float $peakRoi): float
     {
-        return ($peakRoi >= self::STAGE1_ACTIVATION_PEAK_ROI) ? self::STAGE1_FLOOR_LOCK_ROI : 0.0;
+        $locked = 0.0;
+        foreach (self::STAGE1_MINI_LADDER as [$activationPeak, $lockRoi]) {
+            if ($peakRoi >= $activationPeak) {
+                $locked = $lockRoi;
+            }
+        }
+        return $locked;
     }
 
     /**
@@ -219,19 +255,24 @@ class BotReversalSignalHelper
      * Compute next step target ROI (for diagnostics / UI display).
      *
      * Returns the ROI at which the next meaningful protection upgrade occurs:
-     *   - Below stage 1: returns STAGE1_ACTIVATION_PEAK_ROI (5)
-     *   - In stage 1:    returns OVERLAY_ACTIVATION_PEAK_ROI (10)
-     *   - In stage 2:    returns the next ladder step peak
+     *   - Below stage 1 (peak < 5):   returns 5 (first mini-ladder step)
+     *   - In stage 1 mini-ladder:     returns the next mini-ladder activation peak,
+     *                                 or OVERLAY_ACTIVATION_PEAK_ROI (10) if all steps passed
+     *   - In stage 2:                 returns the next ladder step peak
      *
      * @param float $peakRoi Current peak ROI
      * @return float ROI at which the next stage/step activates
      */
     public static function computeNextStepTargetRoi(float $peakRoi): float
     {
-        if ($peakRoi < self::STAGE1_ACTIVATION_PEAK_ROI) {
-            return self::STAGE1_ACTIVATION_PEAK_ROI;
-        }
         if ($peakRoi < self::OVERLAY_ACTIVATION_PEAK_ROI) {
+            // Within stage 0 or stage 1 mini-ladder — find the next mini-ladder activation
+            foreach (self::STAGE1_MINI_LADDER as [$activationPeak, ]) {
+                if ($peakRoi < $activationPeak) {
+                    return $activationPeak;
+                }
+            }
+            // All mini-ladder steps passed; next is stage 2 activation
             return self::OVERLAY_ACTIVATION_PEAK_ROI;
         }
         $stepsDone = (int)floor(

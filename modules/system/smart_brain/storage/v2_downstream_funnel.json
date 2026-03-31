@@ -1,47 +1,47 @@
 {
     "by_pattern": {
         "double_top_contextual_v2": {
-            "candidates_count": 1,
-            "monitors_count": 1,
-            "entry_zone_count": 1,
+            "candidates_count": 13,
+            "monitors_count": 13,
+            "entry_zone_count": 13,
             "monitoring_count": 0,
             "invalidated_count": 0,
-            "signals_count": 1,
-            "enter_now_count": 1,
+            "signals_count": 13,
+            "enter_now_count": 13,
             "wait_retrace_count": 0,
-            "enter_now_promoted_count": 1,
-            "short_enter_now_candidates_count": 1,
-            "short_enter_now_signal_emitted_count": 1,
-            "short_enter_now_monitor_bypassed_count": 1,
-            "avg_zone_width_pct": 0.0098370000000000003,
-            "avg_zone_distance": -0.010485,
-            "avg_price_position": 0.75760000000000005,
-            "avg_confirmation_score": 0.90349999999999997,
+            "enter_now_promoted_count": 10,
+            "short_enter_now_candidates_count": 13,
+            "short_enter_now_signal_emitted_count": 13,
+            "short_enter_now_monitor_bypassed_count": 10,
+            "avg_zone_width_pct": 0.024813000000000002,
+            "avg_zone_distance": -0.060783999999999998,
+            "avg_price_position": 0.51910000000000001,
+            "avg_confirmation_score": 0.72440000000000004,
             "whatif_enter_now_would_signal": 0,
             "whatif_wider_zone_would_signal": 0,
             "reject_detail_distribution": [],
             "signals_by_tier": {
                 "weak": 0,
-                "medium": 0,
-                "strong": 1,
+                "medium": 8,
+                "strong": 5,
                 "none": 0
             },
-            "confirmation_score_min": 0.90349999999999997,
-            "confirmation_score_max": 0.90349999999999997,
+            "confirmation_score_min": 0.49320000000000003,
+            "confirmation_score_max": 0.86180000000000001,
             "confirmation_score_buckets": {
                 "weak": 0,
-                "medium": 0,
-                "strong": 0,
-                "very_strong": 1
+                "medium": 2,
+                "strong": 6,
+                "very_strong": 5
             },
             "confirmation_score_zero_on_confirmed_count": 0,
-            "confirmation_score_total_monitors": 1,
+            "confirmation_score_total_monitors": 13,
             "confirmation_score_flat_warning": false,
             "component_score_averages": {
                 "avg_reclaim_strength_score": 0,
-                "avg_hold_quality_score": 1,
+                "avg_hold_quality_score": 0.86570000000000003,
                 "avg_post_reclaim_stability_score": 0,
-                "avg_zone_defense_score": 0.63329999999999997
+                "avg_zone_defense_score": 0.38950000000000001
             },
             "rejection_reasons": []
         },
@@ -52,27 +52,27 @@
             "monitoring_count": 0,
             "invalidated_count": 0,
             "signals_count": 1,
-            "enter_now_count": 0,
-            "wait_retrace_count": 1,
+            "enter_now_count": 1,
+            "wait_retrace_count": 0,
             "enter_now_promoted_count": 0,
-            "short_enter_now_candidates_count": 0,
-            "short_enter_now_signal_emitted_count": 0,
+            "short_enter_now_candidates_count": 1,
+            "short_enter_now_signal_emitted_count": 1,
             "short_enter_now_monitor_bypassed_count": 0,
-            "avg_zone_width_pct": 0.009554,
-            "avg_zone_distance": -0.0063600000000000002,
-            "avg_price_position": 0.84819999999999995,
-            "avg_confirmation_score": 0.69140000000000001,
+            "avg_zone_width_pct": 0.026759999999999999,
+            "avg_zone_distance": -0.016417000000000001,
+            "avg_price_position": 0.85109999999999997,
+            "avg_confirmation_score": 0.77590000000000003,
             "whatif_enter_now_would_signal": 0,
             "whatif_wider_zone_would_signal": 0,
             "reject_detail_distribution": [],
             "signals_by_tier": {
                 "weak": 0,
-                "medium": 1,
-                "strong": 0,
+                "medium": 0,
+                "strong": 1,
                 "none": 0
             },
-            "confirmation_score_min": 0.69140000000000001,
-            "confirmation_score_max": 0.69140000000000001,
+            "confirmation_score_min": 0.77590000000000003,
+            "confirmation_score_max": 0.77590000000000003,
             "confirmation_score_buckets": {
                 "weak": 0,
                 "medium": 0,
@@ -83,10 +83,10 @@
             "confirmation_score_total_monitors": 1,
             "confirmation_score_flat_warning": false,
             "component_score_averages": {
-                "avg_reclaim_strength_score": 0.62549999999999994,
-                "avg_hold_quality_score": 0.83420000000000005,
-                "avg_post_reclaim_stability_score": 0.89790000000000003,
-                "avg_zone_defense_score": 0.3695
+                "avg_reclaim_strength_score": 1,
+                "avg_hold_quality_score": 0.878,
+                "avg_post_reclaim_stability_score": 0.64129999999999998,
+                "avg_zone_defense_score": 0.42130000000000001
             },
             "rejection_reasons": []
         }
@@ -94,6 +94,76 @@
     "failed_monitor_preview": [],
     "whatif_analysis": {
         "double_top_contextual_v2": {
+            "monitors_total": 13,
+            "scenarios": {
+                "current": {
+                    "label": "Current tier-based entry policy",
+                    "entry_zone_count": 13,
+                    "signals_count": 13,
+                    "conversion_rate": 1,
+                    "stalled_monitoring": 0,
+                    "invalidated": 0,
+                    "signals_by_tier": {
+                        "weak": 0,
+                        "medium": 8,
+                        "strong": 5,
+                        "none": 0
+                    }
+                },
+                "enter_now_hypothetical": {
+                    "label": "If enter_now (full corridor)",
+                    "additional_entry_zone": 0,
+                    "potential_signals_gain": 0,
+                    "estimated_total_signals": 13,
+                    "estimated_conversion_rate": 1
+                },
+                "wider_zone_085": {
+                    "label": "If entry zone 85%",
+                    "additional_entry_zone": 0,
+                    "potential_signals_gain": 0,
+                    "estimated_total_signals": 13,
+                    "estimated_conversion_rate": 1
+                },
+                "tier_policy_strong_enter_now": {
+                    "label": "Strong→enter_now, Medium→wait_retrace, Weak→conservative",
+                    "strong_signals": 5,
+                    "medium_signals": 8,
+                    "weak_signals": 0,
+                    "strong_would_enter_now": 5,
+                    "description": "Strong tier uses widest zone + enter_now; medium uses moderate zone; weak uses narrow zone."
+                },
+                "widening_only": {
+                    "label": "Score-driven zone widening only (no action change)",
+                    "description": "All tiers use wait_retrace but zone width is tier-dependent.",
+                    "signals_count": 13
+                }
+            },
+            "diagnostics": {
+                "avg_price_position": 0.51910000000000001,
+                "avg_zone_width_pct": 0.024813000000000002,
+                "avg_zone_distance": -0.060783999999999998,
+                "avg_confirmation_score": 0.72440000000000004,
+                "confirmation_score_min": 0.49320000000000003,
+                "confirmation_score_max": 0.86180000000000001,
+                "confirmation_score_buckets": {
+                    "weak": 0,
+                    "medium": 2,
+                    "strong": 6,
+                    "very_strong": 5
+                },
+                "confirmation_score_zero_on_confirmed_count": 0,
+                "confirmation_score_total_monitors": 13,
+                "confirmation_score_flat_warning": false,
+                "reject_detail_distribution": [],
+                "component_score_averages": {
+                    "avg_reclaim_strength_score": 0,
+                    "avg_hold_quality_score": 0.86570000000000003,
+                    "avg_post_reclaim_stability_score": 0,
+                    "avg_zone_defense_score": 0.38950000000000001
+                }
+            }
+        },
+        "double_top_contextual_v3": {
             "monitors_total": 1,
             "scenarios": {
                 "current": {
@@ -139,82 +209,12 @@
                 }
             },
             "diagnostics": {
-                "avg_price_position": 0.75760000000000005,
-                "avg_zone_width_pct": 0.0098370000000000003,
-                "avg_zone_distance": -0.010485,
-                "avg_confirmation_score": 0.90349999999999997,
-                "confirmation_score_min": 0.90349999999999997,
-                "confirmation_score_max": 0.90349999999999997,
-                "confirmation_score_buckets": {
-                    "weak": 0,
-                    "medium": 0,
-                    "strong": 0,
-                    "very_strong": 1
-                },
-                "confirmation_score_zero_on_confirmed_count": 0,
-                "confirmation_score_total_monitors": 1,
-                "confirmation_score_flat_warning": false,
-                "reject_detail_distribution": [],
-                "component_score_averages": {
-                    "avg_reclaim_strength_score": 0,
-                    "avg_hold_quality_score": 1,
-                    "avg_post_reclaim_stability_score": 0,
-                    "avg_zone_defense_score": 0.63329999999999997
-                }
-            }
-        },
-        "double_top_contextual_v3": {
-            "monitors_total": 1,
-            "scenarios": {
-                "current": {
-                    "label": "Current tier-based entry policy",
-                    "entry_zone_count": 1,
-                    "signals_count": 1,
-                    "conversion_rate": 1,
-                    "stalled_monitoring": 0,
-                    "invalidated": 0,
-                    "signals_by_tier": {
-                        "weak": 0,
-                        "medium": 1,
-                        "strong": 0,
-                        "none": 0
-                    }
-                },
-                "enter_now_hypothetical": {
-                    "label": "If enter_now (full corridor)",
-                    "additional_entry_zone": 0,
-                    "potential_signals_gain": 0,
-                    "estimated_total_signals": 1,
-                    "estimated_conversion_rate": 1
-                },
-                "wider_zone_085": {
-                    "label": "If entry zone 85%",
-                    "additional_entry_zone": 0,
-                    "potential_signals_gain": 0,
-                    "estimated_total_signals": 1,
-                    "estimated_conversion_rate": 1
-                },
-                "tier_policy_strong_enter_now": {
-                    "label": "Strong→enter_now, Medium→wait_retrace, Weak→conservative",
-                    "strong_signals": 0,
-                    "medium_signals": 1,
-                    "weak_signals": 0,
-                    "strong_would_enter_now": 0,
-                    "description": "Strong tier uses widest zone + enter_now; medium uses moderate zone; weak uses narrow zone."
-                },
-                "widening_only": {
-                    "label": "Score-driven zone widening only (no action change)",
-                    "description": "All tiers use wait_retrace but zone width is tier-dependent.",
-                    "signals_count": 1
-                }
-            },
-            "diagnostics": {
-                "avg_price_position": 0.84819999999999995,
-                "avg_zone_width_pct": 0.009554,
-                "avg_zone_distance": -0.0063600000000000002,
-                "avg_confirmation_score": 0.69140000000000001,
-                "confirmation_score_min": 0.69140000000000001,
-                "confirmation_score_max": 0.69140000000000001,
+                "avg_price_position": 0.85109999999999997,
+                "avg_zone_width_pct": 0.026759999999999999,
+                "avg_zone_distance": -0.016417000000000001,
+                "avg_confirmation_score": 0.77590000000000003,
+                "confirmation_score_min": 0.77590000000000003,
+                "confirmation_score_max": 0.77590000000000003,
                 "confirmation_score_buckets": {
                     "weak": 0,
                     "medium": 0,
@@ -226,18 +226,18 @@
                 "confirmation_score_flat_warning": false,
                 "reject_detail_distribution": [],
                 "component_score_averages": {
-                    "avg_reclaim_strength_score": 0.62549999999999994,
-                    "avg_hold_quality_score": 0.83420000000000005,
-                    "avg_post_reclaim_stability_score": 0.89790000000000003,
-                    "avg_zone_defense_score": 0.3695
+                    "avg_reclaim_strength_score": 1,
+                    "avg_hold_quality_score": 0.878,
+                    "avg_post_reclaim_stability_score": 0.64129999999999998,
+                    "avg_zone_defense_score": 0.42130000000000001
                 }
             }
         }
     },
     "signal_tier_distribution": {
         "weak": 0,
-        "medium": 1,
-        "strong": 1,
+        "medium": 8,
+        "strong": 6,
         "none": 0
     },
     "v3_debug_preview": [],
@@ -249,24 +249,24 @@
         "v3_signals_count": 1,
         "v3_rejected_not_entry_zone_count": 0,
         "v3_reject_zone_too_far_count": 0,
-        "v3_wait_retrace_count": 1,
-        "v3_enter_now_count": 0,
+        "v3_wait_retrace_count": 0,
+        "v3_enter_now_count": 1,
         "v3_reject_detail_distribution": [],
         "v3_monitor_preview": [
             {
-                "symbol": "ANIMEUSDT",
+                "symbol": "USUSDT",
                 "status": "entry_zone",
-                "entry_action": "wait_retrace",
-                "confirmation_score": 0.69140000000000001,
-                "confirmation_tier": "medium",
-                "price_position": 0.84819999999999995,
+                "entry_action": "enter_now",
+                "confirmation_score": 0.77590000000000003,
+                "confirmation_tier": "strong",
+                "price_position": 0.85109999999999997,
                 "entry_zone_percent": 0.22,
-                "zone_width_pct": 0.009554,
-                "zone_distance_from_price": -0.0063600000000000002,
+                "zone_width_pct": 0.026759999999999999,
+                "zone_distance_from_price": -0.016417000000000001,
                 "reject_detail": "none",
                 "whatif_enter_now_status": "entry_zone",
                 "whatif_wider_zone_status": "entry_zone",
-                "pattern_confidence": 0.60999999999999999
+                "pattern_confidence": 0.68000000000000005
             }
         ]
     },
@@ -278,30 +278,30 @@
     "sniper_v3_live_rejected_count": 1,
     "sniper_v3_shadow_only_count": 1,
     "sniper_v3_reject_reason_distribution": {
-        "sniper_reject_confirmation_score_too_low": 1,
-        "sniper_reject_reclaim_strength_too_low": 1
+        "sniper_reject_trend_match_too_low": 1,
+        "sniper_reject_post_reclaim_stability_too_low": 1
     },
     "sniper_v3_rejected_preview": [
         {
-            "symbol": "ANIMEUSDT",
+            "symbol": "USUSDT",
             "side": "short",
             "pattern_algorithm": "double_top_contextual_v3",
             "reject_reasons": [
-                "sniper_reject_confirmation_score_too_low",
-                "sniper_reject_reclaim_strength_too_low"
+                "sniper_reject_trend_match_too_low",
+                "sniper_reject_post_reclaim_stability_too_low"
             ],
             "checked_values": {
-                "confirmation_tier": "medium",
-                "confirmation_score": 0.69140000000000001,
-                "pattern_confidence": 0.60999999999999999,
-                "trend_match_score": 0.46039999999999998,
-                "entry_quality_score": 0.8165,
-                "corridor_fit_score": 0.85150000000000003,
+                "confirmation_tier": "strong",
+                "confirmation_score": 0.77590000000000003,
+                "pattern_confidence": 0.68000000000000005,
+                "trend_match_score": 0.3085,
+                "entry_quality_score": 0.80530000000000002,
+                "corridor_fit_score": 0.85940000000000005,
                 "price_position": 0,
-                "reclaim_strength_score": 0.62549999999999994,
-                "hold_quality_score": 0.83420000000000005,
-                "post_reclaim_stability_score": 0.89790000000000003,
-                "zone_defense_score": 0.3695,
+                "reclaim_strength_score": 1,
+                "hold_quality_score": 0.878,
+                "post_reclaim_stability_score": 0.64129999999999998,
+                "zone_defense_score": 0.42130000000000001,
                 "side": "short",
                 "threshold_source": "short_v3",
                 "trend_match_threshold_used": 0.34999999999999998,
@@ -312,19 +312,81 @@
             "short_v3_threshold_applied": true
         }
     ],
-    "v2_live_quality_floor_applied_count": 1,
-    "v2_live_quality_floor_rejected_count": 0,
-    "v2_live_quality_floor_passed_count": 1,
-    "v2_live_quality_floor_reject_reason_distribution": [],
-    "v2_live_quality_floor_rejected_preview": [],
-    "short_enter_now_live_applied_count": 1,
-    "short_enter_now_live_approved_count": 1,
-    "short_enter_now_live_rejected_count": 0,
-    "short_enter_now_live_reject_reasons": [],
+    "v2_live_quality_floor_applied_count": 13,
+    "v2_live_quality_floor_rejected_count": 3,
+    "v2_live_quality_floor_passed_count": 10,
+    "v2_live_quality_floor_reject_reason_distribution": {
+        "reject_short_enter_now_trend_match_too_low": 2,
+        "reject_short_enter_now_confirmation_too_low": 2
+    },
+    "v2_live_quality_floor_rejected_preview": [
+        {
+            "symbol": "SKLUSDT",
+            "reject_reasons": [
+                "reject_short_enter_now_trend_match_too_low"
+            ],
+            "checked_values": {
+                "confirmation_tier": "strong",
+                "confirmation_score": 0.81510000000000005,
+                "pattern_confidence": 0.77000000000000002,
+                "trend_match_score": 0.24560000000000001,
+                "side": "short",
+                "entry_action": "enter_now",
+                "epsilon_used": 0.0050000000000000001,
+                "trend_match_threshold_used": 0.44,
+                "trend_match_side_aware": true,
+                "trend_match_floor_borderline_pass": false
+            }
+        },
+        {
+            "symbol": "AIOZUSDT",
+            "reject_reasons": [
+                "reject_short_enter_now_confirmation_too_low"
+            ],
+            "checked_values": {
+                "confirmation_tier": "medium",
+                "confirmation_score": 0.58709999999999996,
+                "pattern_confidence": 0.63,
+                "trend_match_score": 0.4718,
+                "side": "short",
+                "entry_action": "enter_now",
+                "epsilon_used": 0.0050000000000000001,
+                "trend_match_threshold_used": 0.44,
+                "trend_match_side_aware": true,
+                "trend_match_floor_borderline_pass": false
+            }
+        },
+        {
+            "symbol": "BLASTUSDT",
+            "reject_reasons": [
+                "reject_short_enter_now_confirmation_too_low",
+                "reject_short_enter_now_trend_match_too_low"
+            ],
+            "checked_values": {
+                "confirmation_tier": "medium",
+                "confirmation_score": 0.49320000000000003,
+                "pattern_confidence": 0.60999999999999999,
+                "trend_match_score": 0.4289,
+                "side": "short",
+                "entry_action": "enter_now",
+                "epsilon_used": 0.0050000000000000001,
+                "trend_match_threshold_used": 0.44,
+                "trend_match_side_aware": true,
+                "trend_match_floor_borderline_pass": false
+            }
+        }
+    ],
+    "short_enter_now_live_applied_count": 13,
+    "short_enter_now_live_approved_count": 10,
+    "short_enter_now_live_rejected_count": 3,
+    "short_enter_now_live_reject_reasons": {
+        "reject_short_enter_now_trend_match_too_low": 2,
+        "reject_short_enter_now_confirmation_too_low": 2
+    },
     "short_enter_now_live_borderline_pass_count": 0,
     "manual_blacklist_active": false,
     "manual_blacklist_count": 0,
     "manual_blacklist_rejected_count": 0,
     "manual_blacklist_rejected_preview": [],
-    "updated_at": "2026-03-30T08:07:04+01:00"
+    "updated_at": "2026-03-31T20:19:09+01:00"
 }

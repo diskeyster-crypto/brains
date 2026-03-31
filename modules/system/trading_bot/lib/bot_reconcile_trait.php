@@ -193,20 +193,8 @@ trait BotReconcileTrait
     $this->store->moveTradeToClosedDir($tradeId, $trade);
 
     // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
-    // coin_passport is the single source of truth; updating immediately after close keeps
-    // passports fresh for the next Brain cycle.
     $symbol = (string)($trade['symbol'] ?? '');
-    if ($symbol !== '' && $this->moduleBase !== null) {
-        $coinPassportServicePath = dirname($this->moduleBase) . '/coin_passport/service.php';
-        if (file_exists($coinPassportServicePath)) {
-            try {
-                require_once $coinPassportServicePath;
-                (new CoinPassportService())->rebuildSymbol($symbol);
-            } catch (\Throwable $e) {
-                // Non-blocking: passport rebuild failure must never interrupt trade close.
-            }
-        }
-    }
+    $this->triggerCoinPassportRebuildForSymbol($symbol);
 }
 
 /**

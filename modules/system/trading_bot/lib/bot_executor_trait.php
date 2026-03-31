@@ -1247,6 +1247,7 @@ trait BotExecutorTrait
                         'close_reason' => $closeReason,
                         'close_protection_state' => (string)($rt['protection_state'] ?? 'unknown'),
                     ]));
+                    $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                     continue;
                 }
 
@@ -1610,6 +1611,7 @@ trait BotExecutorTrait
                                     'close_roi' => round($currentRoiLS * 100, 4),
                                     'runtime' => $runtime,
                                 ]));
+                                $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                                 continue;
                             }
                         }
@@ -3495,6 +3497,27 @@ private function computeEntryDeadline(array $intent): array
         $result['ok'] = $result['checks_failed'] === 0;
         
         return $result;
+    }
+
+    /**
+     * Trigger an immediate best-effort coin_passport rebuild for $symbol after a trade close.
+     * Non-blocking: failures must never interrupt trade close flow.
+     */
+    private function triggerCoinPassportRebuildForSymbol(string $symbol): void
+    {
+        if ($symbol === '' || $this->moduleBase === null) {
+            return;
+        }
+        $coinPassportServicePath = dirname($this->moduleBase) . '/coin_passport/service.php';
+        if (!file_exists($coinPassportServicePath)) {
+            return;
+        }
+        try {
+            require_once $coinPassportServicePath;
+            (new CoinPassportService())->rebuildSymbol($symbol);
+        } catch (\Throwable $e) {
+            // Non-blocking: passport rebuild failure must never interrupt trade close.
+        }
     }
 }
 

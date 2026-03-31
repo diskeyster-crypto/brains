@@ -98,6 +98,58 @@ final class AiShadowController
         $this->jsonResponse($stats);
     }
 
+    public function apiSaveSettings(): void
+    {
+        $this->requirePost();
+
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+
+        if (!is_array($body)) {
+            $this->jsonResponse(['ok' => false, 'error' => 'invalid_json']);
+            return;
+        }
+
+        $path   = $this->moduleBase . '/config/ai_shadow.json';
+        $current = is_file($path)
+            ? (json_decode((string)file_get_contents($path), true) ?: [])
+            : [];
+
+        // Merge only allowed non-secret fields — raw API keys must NEVER be stored here
+        $allowed = [
+            'enabled', 'mode', 'provider', 'model', 'credential_id',
+            'allowed_patterns', 'allowed_sides',
+            'simulate_on_live_signals', 'simulate_on_live_trades',
+            'store_prototypes', 'store_images',
+            'max_signals_per_run', 'max_trades_per_run',
+            'confidence_threshold_enter', 'confidence_threshold_skip',
+            'quality_score_threshold',
+            'log_enabled', 'log_decisions', 'log_rejections',
+        ];
+
+        foreach ($allowed as $key) {
+            if (array_key_exists($key, $body)) {
+                $current[$key] = $body[$key];
+            }
+        }
+
+        // mode is always shadow — never allow override to something else
+        $current['mode'] = 'shadow';
+
+        $written = file_put_contents(
+            $path,
+            json_encode($current, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
+        );
+
+        if ($written === false) {
+            $this->jsonResponse(['ok' => false, 'error' => 'write_failed']);
+            return;
+        }
+
+        $this->config = $current;
+        $this->jsonResponse(['ok' => true]);
+    }
+
     public function apiClearStorage(): void
     {
         $this->requirePost();

@@ -315,4 +315,91 @@ final class SmartBrainController
         extract($data, EXTR_SKIP);
         include __DIR__ . '/views/user_config.php';
     }
+
+    // =========================================================================
+    // AI Shadow control-plane (Brain acts as control-plane; execution stays in ai_shadow module)
+    // =========================================================================
+
+    /**
+     * AI Shadow control page
+     * GET /admin/smart_brain/ai_shadow
+     */
+    public function aiShadow(): void
+    {
+        $data = $this->service->getAiShadowData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/ai_shadow.php';
+    }
+
+    /**
+     * POST /admin/smart_brain/ai_shadow/run_mirror
+     */
+    public function aiShadowRunMirror(): void
+    {
+        $result = $this->service->runAiShadowMirror();
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /admin/smart_brain/ai_shadow/run_replay
+     */
+    public function aiShadowRunReplay(): void
+    {
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+        $signals  = is_array($body['signals'] ?? null) ? $body['signals'] : [];
+
+        $result = $this->service->runAiShadowReplay($signals);
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /admin/smart_brain/ai_shadow/save_settings
+     * Body: JSON with non-secret AI Shadow config fields only.
+     * Raw API keys must NEVER be sent here — use credential_id to reference KeyCenter entries.
+     */
+    public function aiShadowSaveSettings(): void
+    {
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+
+        if (!is_array($body)) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'invalid_json']);
+            return;
+        }
+
+        $result = $this->service->saveAiShadowSettings($body);
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/smart_brain/ai_shadow/stats
+     */
+    public function aiShadowStats(): void
+    {
+        $stats = $this->service->getAiShadowStats();
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($stats, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /admin/smart_brain/ai_shadow/clear_storage
+     */
+    public function aiShadowClearStorage(): void
+    {
+        $this->service->clearAiShadowStorage();
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => true, 'cleared_at' => time()]);
+    }
 }

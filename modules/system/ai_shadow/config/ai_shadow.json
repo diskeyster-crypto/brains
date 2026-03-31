@@ -2,6 +2,8 @@
     "enabled": false,
     "mode": "shadow",
     "provider": "mock",
+    "model": "",
+    "credential_id": "",
     "allowed_patterns": ["double_top_contextual_v2", "double_top_contextual_v3"],
     "allowed_sides": ["short"],
     "simulate_on_live_signals": true,

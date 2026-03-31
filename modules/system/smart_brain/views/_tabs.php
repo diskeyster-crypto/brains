@@ -60,4 +60,9 @@ $activeTab = $activeTab ?? 'dashboard';
             <i class="bi bi-wrench-adjustable me-1"></i> Maintenance
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'ai_shadow' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/ai_shadow">
+            <i class="bi bi-robot me-1"></i> AI Shadow
+        </a>
+    </li>
 </ul>

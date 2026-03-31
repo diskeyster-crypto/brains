@@ -16,6 +16,7 @@ final class AiShadowCore
     /** @var array<string,mixed> */
     private array $paths;
 
+    private AiShadowJournal          $journal;
     private AiProviderInterface      $provider;
     private AiShadowSignalMirror     $signalMirror;
     private AiShadowTradeMirror      $tradeMirror;
@@ -31,9 +32,10 @@ final class AiShadowCore
         $this->config = $this->loadAiShadowConfig();
 
         // Boot sub-components
+        $this->journal      = new AiShadowJournal($this->state);
         $this->provider     = $this->resolveProvider();
-        $this->lifecycle    = new AiShadowVirtualLifecycle($this->state);
-        $this->signalMirror = new AiShadowSignalMirror($this->state, $this->provider, $this->config);
+        $this->lifecycle    = new AiShadowVirtualLifecycle($this->state, $this->journal);
+        $this->signalMirror = new AiShadowSignalMirror($this->state, $this->provider, $this->journal, $this->config);
         $this->tradeMirror  = new AiShadowTradeMirror($this->state, $this->lifecycle, $this->config);
         $this->statsEngine  = new AiShadowStatsEngine($this->state);
     }
@@ -177,7 +179,28 @@ final class AiShadowCore
             }
         }
 
+        $this->journal->clearAll();
         $this->state->writeJson('storage/stats.json', []);
+    }
+
+    /**
+     * Get recent journal events.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getRecentJournalEvents(int $limit = 100): array
+    {
+        return $this->journal->getRecentEvents($limit);
+    }
+
+    /**
+     * Get journal for a specific signal.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getSignalJournal(string $signalId): array
+    {
+        return $this->journal->getJournal($signalId);
     }
 
     /**
@@ -187,14 +210,17 @@ final class AiShadowCore
     {
         $stats = $this->statsEngine->getStats();
         return [
-            'module'           => 'ai_shadow',
-            'enabled'          => (bool)($this->config['enabled'] ?? false),
-            'mode'             => (string)($this->config['mode'] ?? 'shadow'),
-            'provider'         => $this->provider->getName(),
+            'module'             => 'ai_shadow',
+            'enabled'            => (bool)($this->config['enabled'] ?? false),
+            'mode'               => (string)($this->config['mode'] ?? 'shadow'),
+            'provider'           => $this->provider->getName(),
             'provider_available' => $this->provider->isAvailable(),
-            'allowed_patterns' => (array)($this->config['allowed_patterns'] ?? []),
-            'allowed_sides'    => (array)($this->config['allowed_sides']    ?? []),
-            'stats_summary'    => $stats,
+            'model'              => (string)($this->config['model'] ?? ''),
+            'credential_id'      => (string)($this->config['credential_id'] ?? ''),
+            'allowed_patterns'   => (array)($this->config['allowed_patterns'] ?? []),
+            'allowed_sides'      => (array)($this->config['allowed_sides']    ?? []),
+            'journal_events'     => $this->journal->countEvents(),
+            'stats_summary'      => $stats,
         ];
     }
 
@@ -217,9 +243,16 @@ final class AiShadowCore
 
     private function resolveProvider(): AiProviderInterface
     {
-        $providerName = (string)($this->config['provider'] ?? 'mock');
+        $providerName = strtolower((string)($this->config['provider'] ?? 'mock'));
 
-        // Phase 1: only mock is supported
+        if ($providerName === 'openai') {
+            $provider = new AiProviderOpenAi($this->config);
+            if ($provider->isAvailable()) {
+                return $provider;
+            }
+            // Fall back to mock if credentials not configured
+        }
+
         return new AiProviderMock();
     }
 

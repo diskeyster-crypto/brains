@@ -18,6 +18,8 @@ final class AiShadowService
         require_once $moduleBase . '/lib/ai_shadow_state_manager.php';
         require_once $moduleBase . '/lib/ai_provider_interface.php';
         require_once $moduleBase . '/lib/ai_provider_mock.php';
+        require_once $moduleBase . '/lib/ai_provider_openai.php';
+        require_once $moduleBase . '/lib/ai_shadow_journal.php';
         require_once $moduleBase . '/lib/virtual_lifecycle.php';
         require_once $moduleBase . '/lib/signal_mirror.php';
         require_once $moduleBase . '/lib/trade_mirror.php';
@@ -82,6 +84,22 @@ final class AiShadowService
     public function clearStorage(): void
     {
         $this->core->clearStorage();
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public function getRecentJournalEvents(int $limit = 100): array
+    {
+        return $this->core->getRecentJournalEvents($limit);
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public function getSignalJournal(string $signalId): array
+    {
+        return $this->core->getSignalJournal($signalId);
     }
 
     /**

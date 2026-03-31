@@ -150,6 +150,8 @@ final class SmartBrainService
             require_once $base . '/lib/ai_shadow_state_manager.php';
             require_once $base . '/lib/ai_provider_interface.php';
             require_once $base . '/lib/ai_provider_mock.php';
+            require_once $base . '/lib/ai_provider_openai.php';
+            require_once $base . '/lib/ai_shadow_journal.php';
             require_once $base . '/lib/virtual_lifecycle.php';
             require_once $base . '/lib/signal_mirror.php';
             require_once $base . '/lib/trade_mirror.php';
@@ -159,6 +161,18 @@ final class SmartBrainService
             $svc = new AiShadowService();
         }
         return $svc;
+    }
+
+    /**
+     * Expose the AiShadowService instance for controller use (journal etc.)
+     */
+    public function getAiShadowServicePublic(): ?AiShadowService
+    {
+        try {
+            return $this->getAiShadowService();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

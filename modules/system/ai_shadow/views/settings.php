@@ -63,9 +63,29 @@
                             </div>
                             <div class="col-6">
                                 <label class="form-label" for="cfg-provider">AI Provider</label>
-                                <select class="form-select form-select-sm" id="cfg-provider">
-                                    <option value="mock" <?= ($config['provider'] ?? 'mock') === 'mock' ? 'selected' : '' ?>>mock (Phase 1)</option>
+                                <select class="form-select form-select-sm" id="cfg-provider" onchange="toggleProviderFields()">
+                                    <option value="mock"   <?= ($config['provider'] ?? 'mock') === 'mock'   ? 'selected' : '' ?>>mock (deterministic stub)</option>
+                                    <option value="openai" <?= ($config['provider'] ?? 'mock') === 'openai' ? 'selected' : '' ?>>openai (real provider)</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        <!-- Simulate on -->
+                        <div class="row g-3 mb-3" id="provider-openai-fields" style="<?= ($config['provider'] ?? 'mock') !== 'openai' ? 'display:none' : '' ?>">
+                            <div class="col-6">
+                                <label class="form-label" for="cfg-model">Model</label>
+                                <input type="text" class="form-control form-control-sm" id="cfg-model"
+                                       placeholder="gpt-4o-mini"
+                                       value="<?= htmlspecialchars((string)($config['model'] ?? '')) ?>">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label" for="cfg-credential-id">Credential ID (KeyCenter)</label>
+                                <input type="text" class="form-control form-control-sm" id="cfg-credential-id"
+                                       placeholder="e.g. openai_main"
+                                       value="<?= htmlspecialchars((string)($config['credential_id'] ?? '')) ?>">
+                                <div class="form-text text-muted" style="font-size:0.75rem;">
+                                    References KeyCenter — no raw API keys stored here.
+                                </div>
                             </div>
                         </div>
 
@@ -178,11 +198,22 @@
 </div>
 
 <script>
+function toggleProviderFields() {
+    const provider = document.getElementById('cfg-provider').value;
+    const fields   = document.getElementById('provider-openai-fields');
+    if (fields) {
+        fields.style.display = provider === 'openai' ? '' : 'none';
+    }
+}
+
 function saveSettings() {
+    const provider = document.getElementById('cfg-provider').value;
     const cfg = {
         enabled:                      document.getElementById('cfg-enabled').checked,
         mode:                         'shadow',
-        provider:                     document.getElementById('cfg-provider').value,
+        provider:                     provider,
+        model:                        document.getElementById('cfg-model')         ? document.getElementById('cfg-model').value.trim()          : '',
+        credential_id:                document.getElementById('cfg-credential-id') ? document.getElementById('cfg-credential-id').value.trim()   : '',
         allowed_patterns:             <?= json_encode((array)($config['allowed_patterns'] ?? [])) ?>,
         allowed_sides:                <?= json_encode((array)($config['allowed_sides'] ?? ['short'])) ?>,
         simulate_on_live_signals:     document.getElementById('cfg-sim-signals').checked,

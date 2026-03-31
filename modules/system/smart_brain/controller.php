@@ -391,6 +391,34 @@ final class SmartBrainController
     }
 
     /**
+     * GET /admin/smart_brain/ai_shadow/journal
+     */
+    public function aiShadowJournal(): void
+    {
+        $svc      = $this->service->getAiShadowServicePublic();
+        $signalId = isset($_GET['signal_id']) ? (string)$_GET['signal_id'] : '';
+        $limit    = isset($_GET['limit'])     ? (int)$_GET['limit']        : 100;
+
+        if ($svc === null) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['error' => 'service_unavailable']);
+            return;
+        }
+
+        if ($signalId !== '') {
+            $data = $svc->getSignalJournal($signalId);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['signal_id' => $signalId, 'events' => $data, 'count' => count($data)],
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        } else {
+            $data = $svc->getRecentJournalEvents($limit);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['events' => $data, 'count' => count($data)],
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+    }
+
+    /**
      * POST /admin/smart_brain/ai_shadow/clear_storage
      */
     public function aiShadowClearStorage(): void

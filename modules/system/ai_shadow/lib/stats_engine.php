@@ -44,29 +44,103 @@ final class AiShadowStatsEngine
         }
 
         // AI performance from closed virtual trades
-        $aiWins   = 0;
-        $aiRoiSum = 0.0;
-        $aiCount  = 0;
+        $aiWins              = 0;
+        $aiRoiSum            = 0.0;
+        $aiCount             = 0;
+        $aiConfOnWinners     = 0.0;
+        $aiConfOnLosers      = 0.0;
+        $aiWinnersWithConf   = 0;
+        $aiLosersWithConf    = 0;
+        $aiRunnerCount       = 0; // ROI > runner threshold (> 2x avg or > 2%)
+        $aiPrematureCloses   = 0; // closed at loss when MFE > 0.02
+
+        // Per-pattern breakdown
+        /** @var array<string,array{wins:int,losses:int,roi_sum:float,count:int}> */
+        $patternStats = [];
+        // Per-symbol breakdown
+        /** @var array<string,array{ai_wins:int,ai_losses:int,ai_roi_sum:float,ai_count:int,live_wins:int,live_losses:int,live_roi_sum:float,live_count:int,agree:int,disagree:int}> */
+        $symbolStats = [];
+
         foreach ($closedTrades as $ct) {
             if ((string)($ct['ai_decision'] ?? '') === 'skip') {
                 continue;
             }
-            $roi = isset($ct['roi']) ? (float)$ct['roi'] : null;
+            $roi     = isset($ct['roi']) ? (float)$ct['roi'] : null;
+            $conf    = (float)($ct['ai_confidence'] ?? 0.0);
+            $mfe     = (float)($ct['mfe'] ?? 0.0);
+            $pattern = (string)($ct['pattern_algorithm'] ?? '');
+            $symbol  = (string)($ct['symbol'] ?? '');
+
             if ($roi === null) {
                 continue;
             }
+
             $aiCount++;
             $aiRoiSum += $roi;
-            if ($roi > 0.0) {
+            $isWin = $roi > 0.0;
+            if ($isWin) {
                 $aiWins++;
+                $aiConfOnWinners += $conf;
+                $aiWinnersWithConf++;
+                if ($roi > 0.02) {
+                    $aiRunnerCount++;
+                }
+            } else {
+                $aiConfOnLosers += $conf;
+                $aiLosersWithConf++;
+                if ($mfe > 0.02 && $roi < 0.0) {
+                    $aiPrematureCloses++;
+                }
+            }
+
+            // Per-pattern
+            if ($pattern !== '') {
+                if (!isset($patternStats[$pattern])) {
+                    $patternStats[$pattern] = ['wins' => 0, 'losses' => 0, 'roi_sum' => 0.0, 'count' => 0];
+                }
+                $patternStats[$pattern]['count']++;
+                $patternStats[$pattern]['roi_sum'] += $roi;
+                if ($isWin) {
+                    $patternStats[$pattern]['wins']++;
+                } else {
+                    $patternStats[$pattern]['losses']++;
+                }
+            }
+
+            // Per-symbol
+            if ($symbol !== '') {
+                if (!isset($symbolStats[$symbol])) {
+                    $symbolStats[$symbol] = [
+                        'ai_wins' => 0, 'ai_losses' => 0, 'ai_roi_sum' => 0.0, 'ai_count' => 0,
+                        'live_wins' => 0, 'live_losses' => 0, 'live_roi_sum' => 0.0, 'live_count' => 0,
+                        'agree' => 0, 'disagree' => 0,
+                    ];
+                }
+                $symbolStats[$symbol]['ai_count']++;
+                $symbolStats[$symbol]['ai_roi_sum'] += $roi;
+                if ($isWin) {
+                    $symbolStats[$symbol]['ai_wins']++;
+                } else {
+                    $symbolStats[$symbol]['ai_losses']++;
+                }
+                $agree = (string)($ct['agreement'] ?? '');
+                if ($agree === 'agree') {
+                    $symbolStats[$symbol]['agree']++;
+                } elseif ($agree === 'disagree') {
+                    $symbolStats[$symbol]['disagree']++;
+                }
             }
         }
 
-        $aiWinRate = $aiCount > 0 ? round($aiWins / $aiCount, 4) : 0.0;
-        $aiAvgRoi  = $aiCount > 0 ? round($aiRoiSum / $aiCount, 6) : 0.0;
+        $aiWinRate    = $aiCount > 0 ? round($aiWins / $aiCount, 4) : 0.0;
+        $aiAvgRoi     = $aiCount > 0 ? round($aiRoiSum / $aiCount, 6) : 0.0;
         $aiExpectancy = $aiCount > 0
             ? round(($aiWinRate * $aiAvgRoi) - ((1 - $aiWinRate) * abs($aiAvgRoi)), 6)
             : 0.0;
+        $aiAvgConfWinners = $aiWinnersWithConf > 0 ? round($aiConfOnWinners / $aiWinnersWithConf, 4) : 0.0;
+        $aiAvgConfLosers  = $aiLosersWithConf  > 0 ? round($aiConfOnLosers  / $aiLosersWithConf,  4) : 0.0;
+        $runnerCatchRate  = $aiCount > 0 ? round($aiRunnerCount / $aiCount, 4) : 0.0;
+        $prematureCloseRate = ($aiCount - $aiWins) > 0 ? round($aiPrematureCloses / max(1, $aiCount - $aiWins), 4) : 0.0;
 
         // Live performance (from matching live closed trades)
         $liveWins   = 0;
@@ -75,9 +149,8 @@ final class AiShadowStatsEngine
         foreach ($liveClosedTrades as $lt) {
             $roi = isset($lt['roi']) ? (float)$lt['roi'] : null;
             if ($roi === null) {
-                // Attempt to compute from close_price / entry_price
                 $entryPx = (float)($lt['entry_price'] ?? $lt['avg_entry_price'] ?? 0.0);
-                $closePx = (float)($lt['close_price'] ?? $lt['avg_exit_price'] ?? 0.0);
+                $closePx = (float)($lt['close_price'] ?? $lt['avg_exit_price']  ?? 0.0);
                 $side    = (string)($lt['side'] ?? 'short');
                 if ($entryPx > 0.0 && $closePx > 0.0) {
                     $roi = $side === 'short'
@@ -93,13 +166,24 @@ final class AiShadowStatsEngine
             if ($roi > 0.0) {
                 $liveWins++;
             }
+
+            // Accumulate per-symbol live stats
+            $symbol = (string)($lt['symbol'] ?? '');
+            if ($symbol !== '' && isset($symbolStats[$symbol])) {
+                $symbolStats[$symbol]['live_count']++;
+                $symbolStats[$symbol]['live_roi_sum'] += $roi;
+                if ($roi > 0.0) {
+                    $symbolStats[$symbol]['live_wins']++;
+                } else {
+                    $symbolStats[$symbol]['live_losses']++;
+                }
+            }
         }
         $liveWinRate    = $liveCount > 0 ? round($liveWins / $liveCount, 4) : 0.0;
         $liveAvgRoi     = $liveCount > 0 ? round($liveRoiSum / $liveCount, 6) : 0.0;
         $liveExpectancy = $liveCount > 0
             ? round(($liveWinRate * $liveAvgRoi) - ((1 - $liveWinRate) * abs($liveAvgRoi)), 6)
             : 0.0;
-
         $liveVsAiDelta = round($liveAvgRoi - $aiAvgRoi, 6);
 
         // Agreement rate
@@ -117,22 +201,79 @@ final class AiShadowStatsEngine
         $agreementRate   = $totalResolved > 0 ? round($agreementCount    / $totalResolved, 4) : 0.0;
         $disagreementRate= $totalResolved > 0 ? round($disagreementCount / $totalResolved, 4) : 0.0;
 
+        // False reject rate: AI skipped but live trade was profitable
+        $falseRejects = 0;
+        $falseAllows  = 0;
+        foreach ($closedTrades as $ct) {
+            $aiDecision = (string)($ct['ai_decision'] ?? '');
+            $liveRoi    = isset($ct['live_roi']) ? (float)$ct['live_roi'] : null;
+            $aiRoi      = isset($ct['roi'])      ? (float)$ct['roi']      : null;
+            if ($aiDecision === 'skip' && $liveRoi !== null && $liveRoi > 0.0) {
+                $falseRejects++;
+            }
+            if ($aiDecision === 'enter' && $aiRoi !== null && $aiRoi < 0.0) {
+                $falseAllows++;
+            }
+        }
+        $totalDecisioned = count($closedTrades);
+        $falseRejectRate = $totalDecisioned > 0 ? round($falseRejects / $totalDecisioned, 4) : 0.0;
+        $falseAllowRate  = $totalDecisioned > 0 ? round($falseAllows  / $totalDecisioned, 4) : 0.0;
+
+        // Finalize per-pattern stats
+        $patternBreakdown = [];
+        foreach ($patternStats as $p => $ps) {
+            $cnt = $ps['count'];
+            $patternBreakdown[$p] = [
+                'count'    => $cnt,
+                'wins'     => $ps['wins'],
+                'losses'   => $ps['losses'],
+                'win_rate' => $cnt > 0 ? round($ps['wins'] / $cnt, 4) : 0.0,
+                'avg_roi'  => $cnt > 0 ? round($ps['roi_sum'] / $cnt, 6) : 0.0,
+            ];
+        }
+
+        // Finalize per-symbol stats
+        $symbolBreakdown = [];
+        foreach ($symbolStats as $sym => $ss) {
+            $ac = $ss['ai_count'];
+            $lc = $ss['live_count'];
+            $tot = $ss['agree'] + $ss['disagree'];
+            $symbolBreakdown[$sym] = [
+                'ai_count'    => $ac,
+                'ai_win_rate' => $ac > 0 ? round($ss['ai_wins'] / $ac, 4) : 0.0,
+                'ai_avg_roi'  => $ac > 0 ? round($ss['ai_roi_sum'] / $ac, 6) : 0.0,
+                'live_count'  => $lc,
+                'live_win_rate' => $lc > 0 ? round($ss['live_wins'] / $lc, 4) : 0.0,
+                'live_avg_roi'  => $lc > 0 ? round($ss['live_roi_sum'] / $lc, 6) : 0.0,
+                'agree_rate'    => $tot > 0 ? round($ss['agree'] / $tot, 4) : 0.0,
+                'disagree_rate' => $tot > 0 ? round($ss['disagree'] / $tot, 4) : 0.0,
+            ];
+        }
+
         $stats = [
-            'computed_at'              => time(),
-            'total_mirrored_signals'   => $totalMirroredSignals,
-            'total_virtual_trades'     => $totalVirtualTrades,
-            'total_active_trades'      => count($activeTrades),
-            'ai_entered'               => $aiEntered,
-            'ai_skipped'               => $aiSkipped,
-            'ai_win_rate'              => $aiWinRate,
-            'ai_avg_roi'               => $aiAvgRoi,
-            'ai_expectancy'            => $aiExpectancy,
-            'live_win_rate'            => $liveWinRate,
-            'live_avg_roi'             => $liveAvgRoi,
-            'live_expectancy'          => $liveExpectancy,
-            'live_vs_ai_delta'         => $liveVsAiDelta,
-            'agreement_rate'           => $agreementRate,
-            'disagreement_rate'        => $disagreementRate,
+            'computed_at'               => time(),
+            'total_mirrored_signals'    => $totalMirroredSignals,
+            'total_virtual_trades'      => $totalVirtualTrades,
+            'total_active_trades'       => count($activeTrades),
+            'ai_entered'                => $aiEntered,
+            'ai_skipped'                => $aiSkipped,
+            'ai_win_rate'               => $aiWinRate,
+            'ai_avg_roi'                => $aiAvgRoi,
+            'ai_expectancy'             => $aiExpectancy,
+            'ai_avg_confidence_winners' => $aiAvgConfWinners,
+            'ai_avg_confidence_losers'  => $aiAvgConfLosers,
+            'runner_catch_rate'         => $runnerCatchRate,
+            'premature_close_rate'      => $prematureCloseRate,
+            'live_win_rate'             => $liveWinRate,
+            'live_avg_roi'              => $liveAvgRoi,
+            'live_expectancy'           => $liveExpectancy,
+            'live_vs_ai_delta'          => $liveVsAiDelta,
+            'agreement_rate'            => $agreementRate,
+            'disagreement_rate'         => $disagreementRate,
+            'false_reject_rate'         => $falseRejectRate,
+            'false_allow_rate'          => $falseAllowRate,
+            'pattern_breakdown'         => $patternBreakdown,
+            'symbol_breakdown'          => $symbolBreakdown,
         ];
 
         $this->state->writeJson('storage/stats.json', $stats);

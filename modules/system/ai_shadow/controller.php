@@ -98,6 +98,20 @@ final class AiShadowController
         $this->jsonResponse($stats);
     }
 
+    public function apiJournal(): void
+    {
+        $signalId = isset($_GET['signal_id']) ? (string)$_GET['signal_id'] : '';
+        $limit    = isset($_GET['limit'])     ? (int)$_GET['limit']        : 100;
+
+        if ($signalId !== '') {
+            $data = $this->service ? $this->service->getSignalJournal($signalId) : [];
+            $this->jsonResponse(['signal_id' => $signalId, 'events' => $data, 'count' => count($data)]);
+        } else {
+            $data = $this->service ? $this->service->getRecentJournalEvents($limit) : [];
+            $this->jsonResponse(['events' => $data, 'count' => count($data)]);
+        }
+    }
+
     public function apiSaveSettings(): void
     {
         $this->requirePost();

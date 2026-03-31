@@ -11,6 +11,7 @@ final class AiShadowSignalMirror
 {
     private AiShadowStateManager $state;
     private AiProviderInterface  $provider;
+    private AiShadowJournal      $journal;
     /** @var array<string,mixed> */
     private array $config;
 
@@ -20,10 +21,12 @@ final class AiShadowSignalMirror
     public function __construct(
         AiShadowStateManager $state,
         AiProviderInterface  $provider,
+        AiShadowJournal      $journal,
         array                $config
     ) {
         $this->state    = $state;
         $this->provider = $provider;
+        $this->journal  = $journal;
         $this->config   = $config;
     }
 
@@ -87,6 +90,12 @@ final class AiShadowSignalMirror
                 $this->state->writeJson($relPath, $virtualSignal);
                 $counts['newly_mirrored']++;
             } catch (\Throwable $e) {
+                $this->journal->record($signalId, 'provider_error', [
+                    'symbol'            => (string)($signal['symbol'] ?? ''),
+                    'pattern_algorithm' => $pattern,
+                    'error'             => $e->getMessage(),
+                    'provider'          => $this->provider->getName(),
+                ]);
                 $counts['errors']++;
             }
 
@@ -111,21 +120,69 @@ final class AiShadowSignalMirror
         $pattern   = (string)($signal['pattern_algorithm'] ?? '');
         $signalTs  = isset($signal['created_ts']) ? (int)$signal['created_ts'] : 0;
 
-        // Build canonical input for AI evaluation
-        $input = [
-            'symbol'             => $symbol,
-            'side'               => $side,
-            'pattern_algorithm'  => $pattern,
-            'signal_ts'          => $signalTs,
-            'confidence_score'   => (float)($signal['pattern_confidence'] ?? $signal['analyzer_score'] ?? 0.0),
-            'entry_quality_score'=> (float)($signal['entry_quality_score'] ?? 0.0),
-            'analyzer_score'     => (float)($signal['analyzer_score'] ?? 0.0),
-            'confirmation_score' => (float)($signal['confirmation_score'] ?? 0.0),
-            'trend_bias'         => (string)($signal['trend_bias'] ?? ''),
-            'signal_mode'        => (string)($signal['signal_mode'] ?? ''),
-        ];
+        // Journal: signal seen
+        $this->journal->record($signalId, 'signal_seen', [
+            'symbol'            => $symbol,
+            'side'              => $side,
+            'pattern_algorithm' => $pattern,
+            'signal_ts'         => $signalTs,
+        ]);
+
+        // Build canonical input packet for AI evaluation
+        $input = $this->buildCanonicalInput($signal);
+
+        // Journal: input built
+        $this->journal->record($signalId, 'ai_input_built', [
+            'symbol'            => $symbol,
+            'pattern_algorithm' => $pattern,
+            'provider'          => $this->provider->getName(),
+            'input_keys'        => array_keys($input),
+        ]);
+
+        // Journal: request sent
+        $this->journal->record($signalId, 'ai_request_sent', [
+            'symbol'            => $symbol,
+            'pattern_algorithm' => $pattern,
+            'provider'          => $this->provider->getName(),
+            'model'             => (string)($input['model'] ?? ''),
+        ]);
 
         $aiResult = $this->provider->evaluate($input);
+
+        // Strip raw_response from the input snapshot (too large) — keep it only in the journal
+        $inputSnapshot = $input;
+        unset($inputSnapshot['ohlcv_window']); // large, omit from virtual signal file
+
+        // Journal: response received
+        $journalPayload = [
+            'symbol'            => $symbol,
+            'pattern_algorithm' => $pattern,
+            'provider'          => $this->provider->getName(),
+            'decision'          => $aiResult['decision'],
+            'confidence'        => $aiResult['confidence'],
+            'quality_score'     => $aiResult['quality_score'],
+            'risk_penalty'      => $aiResult['risk_penalty'],
+            'reasons'           => $aiResult['reasons'],
+        ];
+        if (isset($aiResult['provider_error'])) {
+            $journalPayload['provider_error'] = $aiResult['provider_error'];
+        }
+        $this->journal->record($signalId, 'ai_response_received', $journalPayload);
+
+        // Journal: decision event
+        $decisionEvent = 'ai_decision_' . $aiResult['decision'];
+        $this->journal->record($signalId, $decisionEvent, [
+            'symbol'            => $symbol,
+            'side'              => $side,
+            'pattern_algorithm' => $pattern,
+            'confidence'        => $aiResult['confidence'],
+            'quality_score'     => $aiResult['quality_score'],
+            'reasons'           => $aiResult['reasons'],
+            'recommended_action'=> $aiResult['recommended_action'] ?? $aiResult['decision'],
+            'hold_or_close_bias'=> $aiResult['hold_or_close_bias'] ?? 'none',
+            'runner_probability_estimate' => $aiResult['runner_probability_estimate'] ?? 0.0,
+            'reject_risk_estimate'        => $aiResult['reject_risk_estimate']        ?? 0.0,
+        ]);
 
         // Determine what the live system decided
         $liveDecision = $this->resolveLiveDecision($signal);
@@ -135,21 +192,86 @@ final class AiShadowSignalMirror
             : 'pending';
 
         return [
-            'source_signal_id'   => $signalId,
-            'symbol'             => $symbol,
-            'side'               => $side,
-            'pattern_algorithm'  => $pattern,
-            'signal_ts'          => $signalTs,
-            'ai_decision'        => $aiResult['decision'],
-            'ai_confidence'      => $aiResult['confidence'],
-            'ai_quality_score'   => $aiResult['quality_score'],
-            'ai_reasons'         => $aiResult['reasons'],
-            'live_decision'      => $liveDecision,
-            'agreement'          => $agreement,
-            'mirrored_at'        => time(),
-            'provider'           => $this->provider->getName(),
-            'input_snapshot'     => $input,
+            'source_signal_id'            => $signalId,
+            'symbol'                      => $symbol,
+            'side'                        => $side,
+            'pattern_algorithm'           => $pattern,
+            'signal_ts'                   => $signalTs,
+            'ai_decision'                 => $aiResult['decision'],
+            'ai_confidence'               => $aiResult['confidence'],
+            'ai_quality_score'            => $aiResult['quality_score'],
+            'ai_risk_penalty'             => $aiResult['risk_penalty'],
+            'ai_reasons'                  => $aiResult['reasons'],
+            'ai_recommended_action'       => $aiResult['recommended_action'] ?? $aiResult['decision'],
+            'ai_hold_or_close_bias'       => $aiResult['hold_or_close_bias'] ?? 'none',
+            'ai_runner_probability'       => $aiResult['runner_probability_estimate'] ?? 0.0,
+            'ai_reject_risk'              => $aiResult['reject_risk_estimate'] ?? 0.0,
+            'live_decision'               => $liveDecision,
+            'agreement'                   => $agreement,
+            'mirrored_at'                 => time(),
+            'provider'                    => $this->provider->getName(),
+            'provider_error'              => $aiResult['provider_error'] ?? null,
+            'input_snapshot'              => $inputSnapshot,
         ];
+    }
+
+    /**
+     * Build a canonical structured input packet for the AI provider.
+     *
+     * @param  array<string,mixed> $signal
+     * @return array<string,mixed>
+     */
+    private function buildCanonicalInput(array $signal): array
+    {
+        $input = [
+            'symbol'              => (string)($signal['symbol']            ?? ''),
+            'side'                => (string)($signal['side']              ?? ''),
+            'pattern_algorithm'   => (string)($signal['pattern_algorithm'] ?? ''),
+            'signal_ts'           => isset($signal['created_ts']) ? (int)$signal['created_ts'] : 0,
+
+            // Scores
+            'confidence_score'    => (float)($signal['pattern_confidence']  ?? $signal['analyzer_score']    ?? 0.0),
+            'entry_quality_score' => (float)($signal['entry_quality_score'] ?? 0.0),
+            'analyzer_score'      => (float)($signal['analyzer_score']      ?? 0.0),
+            'confirmation_score'  => (float)($signal['confirmation_score']  ?? 0.0),
+
+            // Context / regime
+            'trend_bias'          => (string)($signal['trend_bias']         ?? ''),
+            'signal_mode'         => (string)($signal['signal_mode']        ?? ''),
+            'regime'              => (string)($signal['regime']             ?? ''),
+            'market_phase'        => (string)($signal['market_phase']       ?? ''),
+
+            // Volatility/noise
+            'atr'                 => (float)($signal['atr']                 ?? 0.0),
+            'volatility'          => (float)($signal['volatility']          ?? 0.0),
+            'noise_score'         => (float)($signal['noise_score']         ?? 0.0),
+
+            // Parser diagnostics if available
+            'parser_diagnostics'  => is_array($signal['diagnostics'] ?? null)
+                ? $signal['diagnostics']
+                : [],
+
+            // Entry zone if available
+            'entry_zone_low'      => (float)($signal['entry_zone_low']      ?? 0.0),
+            'entry_zone_high'     => (float)($signal['entry_zone_high']     ?? 0.0),
+            'entry_price'         => (float)($signal['entry']['price']      ?? $signal['entry_price'] ?? 0.0),
+
+            // OHLCV window (last N candles) if available
+            'ohlcv_window'        => is_array($signal['ohlcv'] ?? null)
+                ? $signal['ohlcv']
+                : [],
+        ];
+
+        // Coin passport guidance if available
+        if (is_array($signal['passport'] ?? null)) {
+            $input['coin_passport'] = [
+                'trend_bias'     => (string)($signal['passport']['trend_bias']     ?? ''),
+                'volatility_rank'=> (float)($signal['passport']['volatility_rank'] ?? 0.0),
+                'guidance'       => (string)($signal['passport']['guidance']       ?? ''),
+            ];
+        }
+
+        return $input;
     }
 
     private function resolveLiveDecision(array $signal): string

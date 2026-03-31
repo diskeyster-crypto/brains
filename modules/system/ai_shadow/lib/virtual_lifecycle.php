@@ -12,10 +12,12 @@ declare(strict_types=1);
 final class AiShadowVirtualLifecycle
 {
     private AiShadowStateManager $state;
+    private AiShadowJournal      $journal;
 
-    public function __construct(AiShadowStateManager $state)
+    public function __construct(AiShadowStateManager $state, AiShadowJournal $journal)
     {
-        $this->state = $state;
+        $this->state   = $state;
+        $this->journal = $journal;
     }
 
     /**
@@ -65,6 +67,20 @@ final class AiShadowVirtualLifecycle
         ];
 
         $this->state->writeJson($relPath, $trade);
+
+        // Journal: virtual trade opened
+        $this->journal->record($virtualSignalId, 'virtual_trade_opened', [
+            'virtual_trade_id'   => $vtId,
+            'symbol'             => $trade['symbol'],
+            'side'               => $trade['side'],
+            'pattern_algorithm'  => $trade['pattern_algorithm'],
+            'ai_decision'        => $trade['ai_decision'],
+            'ai_confidence'      => $trade['ai_confidence'],
+            'ai_quality_score'   => $trade['ai_quality_score'],
+            'entry_price'        => $entryPrice,
+            'live_entry_price'   => $trade['live_entry_price'],
+        ]);
+
         return $trade;
     }
 
@@ -144,6 +160,34 @@ final class AiShadowVirtualLifecycle
 
         $this->state->writeJson($closedRel, $trade);
 
+        // Journal: virtual trade closed + comparison finalized
+        $signalId = (string)($trade['source_signal_id'] ?? $virtualTradeId);
+        $this->journal->record($signalId, 'virtual_trade_closed', [
+            'virtual_trade_id'  => $virtualTradeId,
+            'symbol'            => (string)($trade['symbol'] ?? ''),
+            'side'              => (string)($trade['side']   ?? ''),
+            'pattern_algorithm' => (string)($trade['pattern_algorithm'] ?? ''),
+            'ai_decision'       => (string)($trade['ai_decision']  ?? ''),
+            'ai_exit_reason'    => $reason,
+            'ai_exit_price'     => $exitPrice,
+            'roi'               => $roi,
+            'mfe'               => (float)($trade['mfe'] ?? 0.0),
+            'mae'               => (float)($trade['mae'] ?? 0.0),
+        ]);
+
+        if (!empty($liveTrade)) {
+            $this->journal->record($signalId, 'comparison_finalized', [
+                'virtual_trade_id'  => $virtualTradeId,
+                'symbol'            => (string)($trade['symbol'] ?? ''),
+                'ai_roi'            => $roi,
+                'live_roi'          => $trade['live_roi']          ?? null,
+                'delta_roi'         => $trade['delta_roi']         ?? null,
+                'agreement'         => $trade['agreement']         ?? 'unknown',
+                'live_close_reason' => $trade['live_close_reason'] ?? '',
+                'ai_exit_reason'    => $reason,
+            ]);
+        }
+
         // Remove from active
         $activePath = $this->state->resolvePath($activeRel);
         if (is_file($activePath)) {
@@ -182,13 +226,21 @@ final class AiShadowVirtualLifecycle
         $trade['roi']           = $roi;
 
         $this->state->writeJson($relPath, $trade);
+
+        // Journal update (periodic — only if ROI moved significantly)
+        $signalId = (string)($trade['source_signal_id'] ?? $virtualTradeId);
+        if ($signalId !== '') {
+            $this->journal->record($signalId, 'virtual_trade_updated', [
+                'virtual_trade_id' => $virtualTradeId,
+                'current_price'    => $currentPrice,
+                'roi'              => $roi,
+                'mfe'              => $trade['mfe'],
+                'mae'              => $trade['mae'],
+            ]);
+        }
+
         return $trade;
     }
-
-    /**
-     * @return array<int,array<string,mixed>>
-     */
-    public function getActiveTrades(): array
     {
         return $this->listJsonDir('storage/virtual_trades_active');
     }

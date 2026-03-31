@@ -233,6 +233,47 @@ final class SmartBrainCore
 
         $this->state->writeJson('storage/candidates.json', $candidates);
 
+        // Shadow mirror pass — produces double_bottom_contextual_v2/v3 observations for
+        // trend_reversal_soft_ladder_short exit-side harvest logic, even when long trading
+        // is disabled and those patterns are absent from the main enabled-pattern list.
+        // Output is written to storage/reversal_shadow_mirror.json ONLY — it is NOT fed
+        // into the monitors → risk-engine → signals → live-intents pipeline.
+        if (($userLimits['trailing_step_mode'] ?? '') === 'trend_reversal_soft_ladder_short') {
+            $shadowMirrorPatterns = ['double_bottom_contextual_v2', 'double_bottom_contextual_v3'];
+            $enabledNow = (array)($parser4Cfg['pattern_algorithms']['enabled'] ?? []);
+            $missingMirrorPatterns = array_diff($shadowMirrorPatterns, $enabledNow);
+            if (!empty($missingMirrorPatterns)) {
+                // Run a dedicated shadow parser with only the mirror patterns enabled.
+                $shadowParser4Cfg = $parser4Cfg;
+                $shadowParser4Cfg['pattern_algorithms']['enabled'] = array_values($shadowMirrorPatterns);
+                $shadowParser4Cfg['pattern_algorithms']['mode']    = 'any';
+                try {
+                    $shadowParser = new Parser4Analyzer($shadowParser4Cfg, $this->state);
+                    $shadowRaw    = $shadowParser->run();
+                    $shadowMirrorCandidates = [];
+                    foreach ($shadowRaw as $sc) {
+                        $algo = (string)($sc['pattern_algorithm'] ?? '');
+                        if (in_array($algo, $shadowMirrorPatterns, true)) {
+                            $sc['shadow_mirror_only'] = true;
+                            $shadowMirrorCandidates[] = $sc;
+                        }
+                    }
+                } catch (\Throwable $shadowEx) {
+                    $shadowMirrorCandidates = [];
+                }
+            } else {
+                // Mirror patterns already detected in the main pass — extract them.
+                $shadowMirrorCandidates = [];
+                foreach ($candidates as $c) {
+                    $algo = (string)($c['pattern_algorithm'] ?? '');
+                    if (in_array($algo, $shadowMirrorPatterns, true)) {
+                        $shadowMirrorCandidates[] = $c;
+                    }
+                }
+            }
+            $this->state->writeJson('storage/reversal_shadow_mirror.json', $shadowMirrorCandidates);
+        }
+
         // Write analyzer debug log (Pattern-First Decision Flow)
         $analyzerDebugLines = $parser->getAnalyzerDebugLines();
         if ($analyzerDebugLines !== []) {

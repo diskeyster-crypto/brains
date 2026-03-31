@@ -216,13 +216,18 @@ class BotReversalSignalHelper
      * Shadow mirror signal lookup — works even when long trading is disabled.
      *
      * Scans multiple Brain output files in priority order:
-     *   1. candidates.json  — Brain detector output (has all patterns regardless of trade eligibility)
-     *   2. monitors.json    — Tracked corridor monitors (all patterns)
-     *   3. signals.json     — Approved signals (may omit long if long trading disabled)
+     *   1. reversal_shadow_mirror.json — dedicated shadow file written by Brain for
+     *                                    trend_reversal_soft_ladder_short; contains
+     *                                    double_bottom_contextual_v2/v3 patterns detected
+     *                                    even when long trading is disabled
+     *   2. candidates.json  — Brain detector output (has all patterns regardless of trade eligibility)
+     *   3. monitors.json    — Tracked corridor monitors (all patterns)
+     *   4. signals.json     — Approved signals (may omit long if long trading disabled)
      *
-     * The candidates and monitors files are written by the Brain on every scan cycle
-     * and contain ALL detected patterns — including double_bottom_contextual_v2/v3 —
-     * even when the risk engine is configured to not trade long side.
+     * The reversal_shadow_mirror.json file is written by smart_brain_core.php on every scan
+     * when trailing_step_mode === 'trend_reversal_soft_ladder_short', using a dedicated
+     * shadow parser pass that runs ONLY the double_bottom contextual detectors.  These
+     * candidates are never fed into the monitors/risk/signals/live-intents pipeline.
      *
      * NOTE: Result is used for optional harvest/tightening assist only.
      *       It does NOT gate overlay activation.
@@ -243,6 +248,7 @@ class BotReversalSignalHelper
         ?string $signalsPath = null
     ): array {
         $sources = [
+            'reversal_shadow_mirror' => rtrim($storageDir, '/') . '/reversal_shadow_mirror.json',
             'candidates' => rtrim($storageDir, '/') . '/candidates.json',
             'monitors'   => rtrim($storageDir, '/') . '/monitors.json',
         ];

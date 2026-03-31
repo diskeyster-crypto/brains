@@ -1324,6 +1324,50 @@ Router::get('/admin/assets/js/app.js', function () {
 });
 
 // ============================================================
+// COIN PASSPORT MODULE ROUTES
+// ============================================================
+
+require_once ROOT . '/modules/system/coin_passport/controller.php';
+
+// UI
+Router::get('/admin/coin_passport', function () {
+    $controller = new CoinPassportController();
+    $controller->index();
+});
+
+Router::get('/admin/coin_passport/symbol/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->detail($symbol);
+});
+
+// Actions
+Router::post('/admin/coin_passport/rebuild', function () {
+    $controller = new CoinPassportController();
+    $controller->rebuildAll();
+});
+
+Router::post('/admin/coin_passport/rebuild/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->rebuildSymbol($symbol);
+});
+
+// API (read-only, for future Brain/Bot integration)
+Router::get('/admin/coin_passport/api/passports', function () {
+    $controller = new CoinPassportController();
+    $controller->apiPassports();
+});
+
+Router::get('/admin/coin_passport/api/passport/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->apiPassport($symbol);
+});
+
+Router::get('/admin/coin_passport/api/guidance/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->apiGuidance($symbol);
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

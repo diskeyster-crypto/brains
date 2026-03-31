@@ -98,6 +98,17 @@ $pageContent = function() use ($passports, $count, $smartBrainUrl) {
         </div>
     </div>
 
+    <!-- Link to new Coin Passport module -->
+    <div class="alert alert-info d-flex align-items-center gap-3 mb-4" style="background:rgba(59,130,246,0.08); border-color:#334155;">
+        <i class="bi bi-passport fs-5 text-primary"></i>
+        <div>
+            <strong>New: Per-Symbol Coin Passports</strong> — persistent ROI corridor &amp; trailing intelligence per symbol.
+            <a href="/admin/coin_passport" class="btn btn-sm btn-primary ms-2">
+                <i class="bi bi-arrow-right me-1"></i>Open Coin Passports
+            </a>
+        </div>
+    </div>
+
     <!-- Execution Profile Legend -->
     <div class="card mb-4">
         <div class="card-header"><h5 style="margin: 0;"><i class="bi bi-info-circle me-1"></i> Как читать профиль исполнения</h5></div>

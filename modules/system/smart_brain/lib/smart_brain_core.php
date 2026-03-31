@@ -6,7 +6,6 @@ require_once __DIR__ . '/smart_brain_logger.php';
 require_once __DIR__ . '/state_manager.php';
 require_once __DIR__ . '/parser4_analyzer.php';
 require_once __DIR__ . '/corridor_monitor.php';
-require_once __DIR__ . '/coin_passport_engine.php';
 require_once __DIR__ . '/risk_engine.php';
 require_once __DIR__ . '/signal_builder.php';
 require_once __DIR__ . '/simulator_engine.php';
@@ -3187,8 +3186,8 @@ final class SmartBrainCore
     {
         $result = ['hints' => [], 'applied' => false, 'reason' => 'no_profile'];
 
-        // Read passport for this symbol
-        $passportPath = 'storage/passports/' . $symbol . '.json';
+        // Read passport for this symbol from the standalone coin_passport module (single source of truth).
+        $passportPath = '../coin_passport/storage/passports/' . $symbol . '.json';
         $passport = $this->state->readJson($passportPath, []);
         $ep = $passport['execution_profile'] ?? null;
 

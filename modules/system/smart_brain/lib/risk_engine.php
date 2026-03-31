@@ -227,8 +227,8 @@ final class RiskEngine
                 continue;
             }
 
-            // Load passport for symbol
-            $passport = $this->state->readJson('storage/passports/' . $symbol . '.json', []);
+            // Load passport for symbol from the standalone coin_passport module (single source of truth).
+            $passport = $this->state->readJson('../coin_passport/storage/passports/' . $symbol . '.json', []);
             $tradesTotalRaw = $passport['trades_total'] ?? null;
             $tradesTotal = $tradesTotalRaw !== null ? (int)$tradesTotalRaw : 0;
             $reliabilityScore = (float)($passport['reliability_score'] ?? 0.0);

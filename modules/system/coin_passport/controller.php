@@ -42,9 +42,10 @@ final class CoinPassportController
      */
     public function index(): void
     {
-        $data     = $this->service->getAllPassports();
+        $data      = $this->service->getAllPassports();
         $passports = $data['passports'];
         $count     = $data['count'];
+        $status    = $this->service->getStatus();
         $baseUrl   = $this->baseUrl;
 
         include __DIR__ . '/views/index.php';

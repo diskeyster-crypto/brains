@@ -15,10 +15,15 @@ require_once __DIR__ . '/lib/passport_engine.php';
 final class CoinPassportService
 {
     private CoinPassportEngine $engine;
+    private string $storageDir;
+
+    /** Path to rebuild status file */
+    private const STATUS_FILE = 'status.json';
 
     public function __construct()
     {
-        $passportsDir       = __DIR__ . '/storage/passports';
+        $this->storageDir   = __DIR__ . '/storage';
+        $passportsDir       = $this->storageDir . '/passports';
         $tradingBotStorage  = __DIR__ . '/../trading_bot/storage';
 
         $this->engine = new CoinPassportEngine($passportsDir, $tradingBotStorage);
@@ -52,28 +57,126 @@ final class CoinPassportService
         return $this->engine->load(strtoupper($symbol));
     }
 
+    /**
+     * Return last rebuild status (for UI display).
+     *
+     * @return array<string,mixed>
+     */
+    public function getStatus(): array
+    {
+        $path = $this->storageDir . '/' . self::STATUS_FILE;
+        if (!file_exists($path)) {
+            return [
+                'last_rebuild_at'     => null,
+                'last_rebuild_mode'   => null,
+                'last_rebuild_status' => 'never',
+                'last_rebuild_error'  => null,
+                'last_updated_count'  => 0,
+                'storage_path'        => $this->storageDir . '/passports',
+            ];
+        }
+        $data = json_decode((string)file_get_contents($path), true);
+        return is_array($data) ? $data : [];
+    }
+
     // =========================================================================
     // Write / rebuild
     // =========================================================================
 
     /**
      * Rebuild passports for all symbols from available trade data.
+     * Called by CronManager (coin_passport:rebuildAll) and from UI.
      *
      * @return array{updated:int,symbols:list<string>,errors:list<string>}
      */
     public function rebuildAll(): array
     {
-        return $this->engine->rebuildAll();
+        $result = $this->engine->rebuildAll();
+        $this->saveStatus('rebuild_all', $result);
+        return $result;
+    }
+
+    /**
+     * Rebuild passports only for symbols that had recent trade activity
+     * (closed in the last 7 days).
+     * Called by CronManager (coin_passport:rebuildRecentSymbols).
+     *
+     * @return array{updated:int,symbols:list<string>,errors:list<string>}
+     */
+    public function rebuildRecentSymbols(): array
+    {
+        $cutoff     = time() - 7 * 86400;
+        $closedDir  = __DIR__ . '/../trading_bot/storage/trades/closed';
+        $recent     = [];
+
+        if (is_dir($closedDir)) {
+            foreach (glob($closedDir . '/*.json') ?: [] as $file) {
+                $trade = json_decode((string)file_get_contents($file), true);
+                if (!is_array($trade)) {
+                    continue;
+                }
+                $symbol   = (string)($trade['symbol'] ?? '');
+                $closedTs = (int)($trade['closed_ts'] ?? strtotime((string)($trade['closed_at'] ?? '')) ?: 0);
+                if ($symbol !== '' && $closedTs >= $cutoff) {
+                    $recent[$symbol] = true;
+                }
+            }
+        }
+
+        $result = ['updated' => 0, 'symbols' => [], 'errors' => []];
+
+        foreach (array_keys($recent) as $symbol) {
+            try {
+                $this->engine->rebuildSymbol($symbol);
+                $result['updated']++;
+                $result['symbols'][] = $symbol;
+            } catch (\Throwable $e) {
+                $result['errors'][] = $symbol . ': ' . $e->getMessage();
+            }
+        }
+
+        $this->saveStatus('rebuild_recent', $result);
+        return $result;
     }
 
     /**
      * Rebuild passport for a single symbol.
+     * Also called from trade-close hook for immediate update.
      *
      * @return array<string,mixed>
      */
     public function rebuildSymbol(string $symbol): array
     {
-        return $this->engine->rebuildSymbol(strtoupper($symbol));
+        $passport = $this->engine->rebuildSymbol(strtoupper($symbol));
+        $this->saveStatus('rebuild_symbol:' . strtoupper($symbol), [
+            'updated' => 1,
+            'symbols' => [strtoupper($symbol)],
+            'errors'  => [],
+        ]);
+        return $passport;
+    }
+
+    // =========================================================================
+    // Status persistence
+    // =========================================================================
+
+    /**
+     * Persist rebuild status to storage/status.json.
+     *
+     * @param array{updated:int,symbols:list<string>,errors:list<string>} $result
+     */
+    private function saveStatus(string $mode, array $result): void
+    {
+        $path = $this->storageDir . '/' . self::STATUS_FILE;
+        $status = [
+            'last_rebuild_at'     => date('Y-m-d H:i:s'),
+            'last_rebuild_mode'   => $mode,
+            'last_rebuild_status' => empty($result['errors']) ? 'ok' : 'partial_error',
+            'last_rebuild_error'  => empty($result['errors']) ? null : implode('; ', $result['errors']),
+            'last_updated_count'  => (int)($result['updated'] ?? 0),
+            'storage_path'        => $this->storageDir . '/passports',
+        ];
+        @file_put_contents($path, json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
     // =========================================================================

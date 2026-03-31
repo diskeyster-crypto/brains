@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 JS;
 
-$pageContent = function () use ($passports, $count, $baseUrl) {
+$pageContent = function () use ($passports, $count, $baseUrl, $status) {
     $confidenceBadge = function (string $conf): string {
         $classes = [
             'high'   => 'badge-conf-high',
@@ -86,6 +86,40 @@ $pageContent = function () use ($passports, $count, $baseUrl) {
             <button id="rebuildAllBtn" class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-arrow-clockwise me-1"></i>Rebuild All
             </button>
+        </div>
+    </div>
+
+    <!-- Rebuild Status Bar -->
+    <?php
+        $lastAt    = $status['last_rebuild_at'] ?? null;
+        $lastMode  = $status['last_rebuild_mode'] ?? null;
+        $lastStat  = $status['last_rebuild_status'] ?? 'never';
+        $lastErr   = $status['last_rebuild_error'] ?? null;
+        $lastCount = (int)($status['last_updated_count'] ?? 0);
+        $storagePath = $status['storage_path'] ?? '';
+        $statusCls = match($lastStat) {
+            'ok'            => 'text-success',
+            'partial_error' => 'text-warning',
+            default         => 'text-secondary',
+        };
+    ?>
+    <div class="mb-4 p-3 rounded" style="background:#1e293b; border:1px solid #334155; font-size:0.8rem;">
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+            <span class="text-secondary"><i class="bi bi-hdd me-1"></i>Source of truth:
+                <code class="text-info ms-1"><?= htmlspecialchars($storagePath ?: __DIR__ . '/../storage/passports') ?></code>
+            </span>
+            <span class="<?= $statusCls ?>">
+                <i class="bi bi-circle-fill me-1" style="font-size:0.6rem;"></i>
+                Status: <strong><?= htmlspecialchars($lastStat) ?></strong>
+            </span>
+            <?php if ($lastAt): ?>
+            <span class="text-secondary">Last rebuild: <strong class="text-light"><?= htmlspecialchars($lastAt) ?></strong></span>
+            <span class="text-secondary">Mode: <code class="text-info"><?= htmlspecialchars((string)$lastMode) ?></code></span>
+            <span class="text-secondary">Updated: <strong class="text-light"><?= $lastCount ?></strong> symbol(s)</span>
+            <?php endif; ?>
+            <?php if ($lastErr): ?>
+            <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars((string)$lastErr) ?></span>
+            <?php endif; ?>
         </div>
     </div>
 

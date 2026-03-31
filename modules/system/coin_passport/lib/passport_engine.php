@@ -11,6 +11,7 @@ declare(strict_types=1);
  * Storage: modules/system/coin_passport/storage/passports/{SYMBOL}.json
  * This storage is NEVER wiped by bot/brain runtime clears.
  */
+if (!class_exists('CoinPassportEngine', false)) :
 final class CoinPassportEngine
 {
     private string $passportsDir;
@@ -644,3 +645,4 @@ final class CoinPassportEngine
         return is_array($data) ? $data : null;
     }
 }
+endif; // class_exists CoinPassportEngine

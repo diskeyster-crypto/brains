@@ -56,6 +56,9 @@ final class Parser4Analyzer
      */
     private bool $shadowMode = false;
 
+    /** @var array<string,int> Structural pre-pattern check counters from the most recent run */
+    private array $structuralCounters = [];
+
     /**
      * @param array<string,mixed> $cfg  Full parser4 config (settings + pattern_algorithms + analyzer_decision)
      * @param StateManager $state
@@ -172,10 +175,19 @@ final class Parser4Analyzer
 
         $candidates = [];
 
+        // ── Pre-pattern structural check counters (for diagnostics) ──
+        $structSymbolsTotal = 0;
+        $structFailedHistory = 0;
+        $structFailedVolatility = 0;
+        $structFailedStrength = 0;
+        $structPassedToPattern = 0;
+
         foreach ($symbols as $symbol) {
+            $structSymbolsTotal++;
             $history = $this->loadHistory($symbol);
 
             if (count($history) < $minHistoryPoints) {
+                $structFailedHistory++;
                 continue;
             }
 
@@ -183,15 +195,18 @@ final class Parser4Analyzer
             $volatility = $this->calculateVolatility($history);
 
             if ($volatility <= 0.0) {
+                $structFailedVolatility++;
                 continue;
             }
 
             $strength = $this->calculateStrength($corridor['width'], $volatility);
 
             if ($strength < $strengthThreshold) {
+                $structFailedStrength++;
                 continue;
             }
 
+            $structPassedToPattern++;
             $trendBias = $this->calculateTrend($history);
             $lastPrice = $history[count($history) - 1]['price'];
 
@@ -322,6 +337,15 @@ final class Parser4Analyzer
         if (!$this->shadowMode) {
             $this->state->writeJson('storage/candidates.json', $candidates);
 
+            // Store structural counters so persistV2StageCounters() can include them
+            $this->structuralCounters = [
+                'symbols_total'       => $structSymbolsTotal,
+                'failed_history'      => $structFailedHistory,
+                'failed_volatility'   => $structFailedVolatility,
+                'failed_strength'     => $structFailedStrength,
+                'passed_to_pattern'   => $structPassedToPattern,
+            ];
+
             // Persist V2/V3 stage counters for reversal comparison layer
             $this->persistV2StageCounters();
 
@@ -377,7 +401,10 @@ final class Parser4Analyzer
                 ? $detector->getConfirmRejectPreview()
                 : [];
 
+            $symbolsChecked = (int)($counters['symbols_checked'] ?? 0);
+
             $v2CountersByAlgo[$name] = [
+                'symbols_checked'          => $symbolsChecked,
                 'setup_candidates_count'   => $setup,
                 'confirmed_signals_count'  => $confirmed,
                 'confirm_rejected_count'   => $rejected,
@@ -406,6 +433,7 @@ final class Parser4Analyzer
                     : [];
 
                 $contextDiagnostics[$name] = [
+                    'symbols_checked'            => $symbolsChecked,
                     'reject_reason_distribution' => $distribution,
                     'context_rejected_count'     => $contextRejected,
                     'context_passed_count'       => $contextPassed,
@@ -422,6 +450,7 @@ final class Parser4Analyzer
                         $reasonCounts[$r] = ($reasonCounts[$r] ?? 0) + 1;
                     }
                     $contextDiagnostics[$name] = [
+                        'symbols_checked'        => $symbolsChecked,
                         'reject_reasons' => $reasonCounts,
                         'context_rejected_count' => $contextRejected,
                     ];
@@ -457,6 +486,7 @@ final class Parser4Analyzer
             ],
             'context_diagnostics' => $contextDiagnostics,
             'context_adapter_counters' => $this->contextAdapter->getAdapterCounters(),
+            'structural_checks' => $this->structuralCounters,
             'updated_at' => date('c'),
         ];
 

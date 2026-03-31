@@ -78,6 +78,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
     private int $stageConfirmed       = 0;
     private int $stageConfirmRejected = 0;
     private int $stageContextPassed   = 0;
+    private int $stageSymbolsChecked  = 0;
 
     // ── Reject Tracking ──
 
@@ -172,7 +173,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
     /**
      * Return accumulated stage counters since last reset.
      *
-     * @return array{context_rejected:int,setup_candidates:int,confirmed:int,confirm_rejected:int,context_passed:int}
+     * @return array{context_rejected:int,setup_candidates:int,confirmed:int,confirm_rejected:int,context_passed:int,symbols_checked:int}
      */
     public function getStageCounters(): array
     {
@@ -182,6 +183,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
             'confirmed'        => $this->stageConfirmed,
             'confirm_rejected' => $this->stageConfirmRejected,
             'context_passed'   => $this->stageContextPassed,
+            'symbols_checked'  => $this->stageSymbolsChecked,
         ];
     }
 
@@ -193,6 +195,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         $this->stageConfirmed          = 0;
         $this->stageConfirmRejected    = 0;
         $this->stageContextPassed      = 0;
+        $this->stageSymbolsChecked     = 0;
         $this->rejectReasonDistribution = [];
         $this->contextRejectPreview    = [];
         $this->confirmRejectReasonDistribution = [];
@@ -256,6 +259,7 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
     public function detect(array $history): ?array
     {
         $this->lastRejectReasons = [];
+        $this->stageSymbolsChecked++;
 
         // ── Context Requirement ──
 
@@ -486,9 +490,12 @@ final class DoubleTopContextualV3Detector implements PatternDetectorInterface
         }
 
         // Gate 4: Trend Maturity — duration AND/OR depth must meet minimums
-        $trendDuration  = (int)   ($ctx['regime_duration_bars'] ?? 0);
-        $regimeDepthPct = (float) ($ctx['regime_depth_pct']     ?? 0.0);
-        $trendMaturity  = (float) ($ctx['trend_maturity_score'] ?? 0.0);
+        // Prefer uptrend_duration_bars (actual prior uptrend length) over regime_duration_bars
+        // (which measures current bearish/pullback phase — short for a fresh double top).
+        $uptrendDuration = (int)   ($ctx['uptrend_duration_bars'] ?? 0);
+        $trendDuration   = $uptrendDuration > 0 ? $uptrendDuration : (int) ($ctx['regime_duration_bars'] ?? 0);
+        $regimeDepthPct  = (float) ($ctx['regime_depth_pct']     ?? 0.0);
+        $trendMaturity   = (float) ($ctx['trend_maturity_score'] ?? 0.0);
 
         $durationMet = $trendDuration >= $this->minTrendDurationBars;
         $depthMet    = $regimeDepthPct >= $this->minTrendDepthPct;

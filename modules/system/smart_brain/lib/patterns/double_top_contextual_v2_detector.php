@@ -47,6 +47,7 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
     private int $stageConfirmRejected = 0;
     private int $stageContextRejected = 0;
     private int $stageContextPassed   = 0;
+    private int $stageSymbolsChecked  = 0;
 
     // ── Reject Tracking ──
 
@@ -124,6 +125,7 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
             'confirm_rejected' => $this->stageConfirmRejected,
             'context_rejected' => $this->stageContextRejected,
             'context_passed'   => $this->stageContextPassed,
+            'symbols_checked'  => $this->stageSymbolsChecked,
         ];
     }
 
@@ -135,6 +137,7 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         $this->stageConfirmRejected    = 0;
         $this->stageContextRejected    = 0;
         $this->stageContextPassed      = 0;
+        $this->stageSymbolsChecked     = 0;
         $this->rejectReasonDistribution = [];
         $this->contextRejectPreview    = [];
         $this->confirmRejectReasonDistribution = [];
@@ -198,6 +201,7 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
     public function detect(array $history): ?array
     {
         $this->lastRejectReasons = [];
+        $this->stageSymbolsChecked++;
 
         // ── Context Requirement ──
 
@@ -407,7 +411,10 @@ final class DoubleTopContextualV2Detector implements PatternDetectorInterface
         }
 
         // Gate 4: Duration — minimum trend duration (V2 uses lower minimum than V3)
-        $trendDuration = (int) ($ctx['regime_duration_bars'] ?? 0);
+        // Prefer uptrend_duration_bars (uptrend regime) if available; fall back to regime_duration_bars
+        // (which measures the current bearish/pullback phase — shorter for a fresh double top).
+        $uptrendDuration = (int) ($ctx['uptrend_duration_bars'] ?? 0);
+        $trendDuration   = $uptrendDuration > 0 ? $uptrendDuration : (int) ($ctx['regime_duration_bars'] ?? 0);
         if ($trendDuration < $this->minTrendDurationBars) {
             $this->lastRejectReasons[] = 'reject_context_duration_too_short';
             $this->trackRejectReason('reject_context_duration_too_short', $ctx);

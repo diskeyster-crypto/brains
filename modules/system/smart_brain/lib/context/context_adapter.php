@@ -31,6 +31,7 @@ final class ContextAdapter
     private int $adapterInvalidCount = 0;
     private int $adapterBearishCount = 0;
     private int $adapterMatureBearishCount = 0;
+    private int $adapterBullishCount = 0;
 
     /**
      * Compute canonical normalized context from price history.
@@ -63,18 +64,25 @@ final class ContextAdapter
         $stretchScore    = $this->computeStretchScore($prices);
         $localStructure  = $this->computeLocalStructureScore($prices);
 
+        // ── Uptrend-side metrics (for short-side contextual detectors) ──
+        $uptrendDuration = $this->computeUptrendDuration($prices);
+
         $contextQuality  = $this->computeContextQualityScore(
             $regimeStrength, $noiseScore, $trendMaturity, $regimeDepthPct, $exhaustionScore
         );
 
         $isBearish = in_array($regimeDirection, ['down', 'weak_down'], true);
         $isMatureBearish = $isBearish && $trendMaturity >= 0.3 && $exhaustionScore >= 0.15;
+        $isBullish = in_array($regimeDirection, ['up', 'weak_up'], true);
 
         if ($isBearish) {
             $this->adapterBearishCount++;
         }
         if ($isMatureBearish) {
             $this->adapterMatureBearishCount++;
+        }
+        if ($isBullish) {
+            $this->adapterBullishCount++;
         }
         $this->adapterValidCount++;
 
@@ -86,6 +94,7 @@ final class ContextAdapter
             'exhaustion_subscore' => round($exhaustionScore, 4),
             'stretch_subscore'    => round($stretchScore, 4),
             'structure_subscore'  => round($localStructure, 4),
+            'uptrend_duration_bars' => $uptrendDuration,
         ];
 
         return [
@@ -101,6 +110,9 @@ final class ContextAdapter
             'stretch_score'          => round($stretchScore, 4),
             'local_structure_score'  => round($localStructure, 4),
             'context_quality_score'  => round($contextQuality, 4),
+
+            // Uptrend-side metrics (for short-side contextual detectors needing bullish context)
+            'uptrend_duration_bars'  => $uptrendDuration,
 
             // V2-compatible aliases
             'trend_direction'        => $regimeDirection === 'weak_down' ? 'down' : $regimeDirection,
@@ -181,10 +193,12 @@ final class ContextAdapter
         // Structure (lower highs / lower lows)
         $bearishSignal += $structureScore * 0.25;
 
-        // Depth contribution
-        if ($depthPct > 0.02) {
+        // Depth contribution: only counted as a bearish signal when the net move is also downward.
+        // A large range in an uptrend is NOT a bearish signal — excluding this avoids misclassifying
+        // uptrend markets as 'flat' due to a wide high-low range.
+        if ($overallReturn < 0.0 && $depthPct > 0.02) {
             $bearishSignal += 0.15;
-        } elseif ($depthPct > 0.01) {
+        } elseif ($overallReturn < 0.0 && $depthPct > 0.01) {
             $bearishSignal += 0.08;
         }
 
@@ -380,7 +394,58 @@ final class ContextAdapter
     }
 
     /**
-     * Compute trend maturity score from duration, depth, and structure.
+     * Compute effective uptrend duration (bars of consistent bullish direction).
+     *
+     * Finds the recent price peak and walks backward from it, counting how many
+     * bars were part of the upward move that created the peak.
+     * Used by short-side contextual detectors to validate prior uptrend length.
+     *
+     * @param float[] $prices
+     * @return int Number of bars in the recent uptrend
+     */
+    private function computeUptrendDuration(array $prices): int
+    {
+        $n = count($prices);
+        $window = min($n, self::STRUCTURE_WINDOW);
+        $slice = array_slice($prices, $n - $window);
+        $len = count($slice);
+
+        if ($len < 3) {
+            return $len;
+        }
+
+        // Find the index of the recent high (peak) in the window
+        $peakIdx = 0;
+        $peakPrice = $slice[0];
+        for ($i = 1; $i < $len; $i++) {
+            if ($slice[$i] > $peakPrice) {
+                $peakPrice = $slice[$i];
+                $peakIdx = $i;
+            }
+        }
+
+        if ($peakIdx === 0) {
+            return 1;
+        }
+
+        // Walk backward from the peak, counting bars in the upward regime.
+        // A regime break is: price drops more than 1% below the rolling low from peak.
+        $rollingLow = $slice[$peakIdx];
+        $regimeBars = 0;
+
+        for ($i = $peakIdx; $i >= 0; $i--) {
+            // If price went far below rolling low, regime started there
+            if ($i < $peakIdx && $slice[$i] < $rollingLow * 0.99) {
+                break;
+            }
+            $rollingLow = min($rollingLow, $slice[$i]);
+            $regimeBars++;
+        }
+
+        return $regimeBars;
+    }
+
+    /**
      *
      * A mature trend has lasted long enough and moved deep enough to
      * plausibly reverse.
@@ -596,29 +661,50 @@ final class ContextAdapter
         $slope2 = ($seg2[count($seg2) - 1] - $seg2[0]) / ($refPrice * count($seg2));
         $slope3 = ($seg3[count($seg3) - 1] - $seg3[0]) / ($refPrice * count($seg3));
 
-        // If first segment is not declining, no downtrend exhaustion
-        if ($slope1 >= 0.0) {
-            return 0.0;
+        // If first segment is declining: measure downtrend exhaustion (seller weakening)
+        if ($slope1 < 0.0) {
+            // Progressive deceleration: slope should become less negative
+            $decel12 = $slope2 - $slope1; // positive if second less steep
+            $decel23 = $slope3 - $slope2; // positive if third less steep
+
+            // Rebound quality: is the final segment actually recovering?
+            $reboundBonus = ($slope3 > 0.0) ? 0.15 : 0.0;
+
+            // Combine deceleration signals
+            $exhaustion = 0.0;
+            if ($decel12 > 0) {
+                $exhaustion += min(0.5, $decel12 * 50.0);
+            }
+            if ($decel23 > 0) {
+                $exhaustion += min(0.5, $decel23 * 50.0);
+            }
+            $exhaustion += $reboundBonus;
+
+            return max(0.0, min(1.0, $exhaustion));
         }
 
-        // Progressive deceleration: slope should become less negative
-        $decel12 = $slope2 - $slope1; // positive if second less steep
-        $decel23 = $slope3 - $slope2; // positive if third less steep
+        // If first segment is rising: measure uptrend exhaustion (buyer weakening / momentum loss)
+        // A weakening uptrend has: slope2 < slope1 (second segment rises more slowly)
+        if ($slope1 > 0.0) {
+            $decel12 = $slope1 - $slope2; // positive if second segment gained less
+            $decel23 = $slope2 - $slope3; // positive if third segment gained less
 
-        // Rebound quality: is the final segment actually recovering?
-        $reboundBonus = ($slope3 > 0.0) ? 0.15 : 0.0;
+            // Reversal bonus: if final segment is declining, uptrend exhaustion is stronger
+            $reversalBonus = ($slope3 < 0.0) ? 0.20 : 0.0;
 
-        // Combine deceleration signals
-        $exhaustion = 0.0;
-        if ($decel12 > 0) {
-            $exhaustion += min(0.5, $decel12 * 50.0);
+            $exhaustion = 0.0;
+            if ($decel12 > 0) {
+                $exhaustion += min(0.5, $decel12 * 50.0);
+            }
+            if ($decel23 > 0) {
+                $exhaustion += min(0.5, $decel23 * 50.0);
+            }
+            $exhaustion += $reversalBonus;
+
+            return max(0.0, min(1.0, $exhaustion));
         }
-        if ($decel23 > 0) {
-            $exhaustion += min(0.5, $decel23 * 50.0);
-        }
-        $exhaustion += $reboundBonus;
 
-        return max(0.0, min(1.0, $exhaustion));
+        return 0.0;
     }
 
     /**
@@ -784,6 +870,7 @@ final class ContextAdapter
             'stretch_score'          => 0.0,
             'local_structure_score'  => 0.0,
             'context_quality_score'  => 0.0,
+            'uptrend_duration_bars'  => 0,
 
             'trend_direction'        => 'unknown',
             'trend_strength'         => 0.0,
@@ -812,6 +899,7 @@ final class ContextAdapter
             'context_adapter_invalid_count'       => $this->adapterInvalidCount,
             'context_adapter_bearish_count'       => $this->adapterBearishCount,
             'context_adapter_mature_bearish_count' => $this->adapterMatureBearishCount,
+            'context_adapter_bullish_count'       => $this->adapterBullishCount,
         ];
     }
 
@@ -825,5 +913,6 @@ final class ContextAdapter
         $this->adapterInvalidCount = 0;
         $this->adapterBearishCount = 0;
         $this->adapterMatureBearishCount = 0;
+        $this->adapterBullishCount = 0;
     }
 }

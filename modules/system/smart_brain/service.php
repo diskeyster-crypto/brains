@@ -336,6 +336,10 @@ final class SmartBrainService
                 if (isset($j['enabled'])) {
                     $cfg['module']['enabled'] = (bool)$j['enabled'];
                 }
+                // Expose credentials from flat top-level key (matches bot_config_trait reader)
+                if (isset($j['credentials']) && is_array($j['credentials'])) {
+                    $cfg['module']['credentials'] = $j['credentials'];
+                }
             }
         }
 
@@ -470,6 +474,15 @@ final class SmartBrainService
             'bot_api_base_url'   => $apiBaseUrl,
             'bot_is_real_exchange' => in_array($mode, ['live', 'demo'], true),
             'bot_demo_creds'     => $botDemoCreds,
+            'bot_diag'           => [
+                'mode'                    => $mode,
+                'storage_namespace'       => basename($storageDir),
+                'config_path'             => $base . '/config/bot.json',
+                'demo_api_key_present'    => $demoApiKey !== '',
+                'demo_api_secret_present' => $demoSecretSet,
+                'demo_api_base_url'       => $demoBaseUrl,
+                'is_real_exchange_mode'   => in_array($mode, ['live', 'demo'], true),
+            ],
         ];
     }
 
@@ -502,17 +515,38 @@ final class SmartBrainService
     }
 
     /**
-     * Delegate: get live bot status.
+     * Delegate: get live bot status with safe credential diagnostics.
      *
      * @return array<string,mixed>
      */
     public function getTradingBotStatus(): array
     {
         try {
-            return $this->getTradingBotService()->getStatus();
+            $status = $this->getTradingBotService()->getStatus();
         } catch (\Throwable $e) {
-            return ['ok' => false, 'error' => $e->getMessage()];
+            $status = ['ok' => false, 'error' => $e->getMessage()];
         }
+
+        // Attach safe credential diagnostics (boolean only, never raw values)
+        $res = $this->resolveBotStorageDir();
+        $cfg = $res['config'] ?? [];
+        $mode = $res['mode'] ?? 'paper';
+        $demoCreds = $cfg['module']['credentials']['demo'] ?? [];
+        $demoKey    = trim((string)($demoCreds['api_key']    ?? ''));
+        $demoSecret = trim((string)($demoCreds['api_secret'] ?? ''));
+        $demoUrl    = trim((string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit.com'));
+
+        $status['_diag'] = [
+            'mode'                   => $mode,
+            'storage_namespace'      => basename($res['storageDir'] ?? 'storage_paper'),
+            'config_path'            => ($res['base'] ?? '') . '/config/bot.json',
+            'demo_api_key_present'   => $demoKey !== '',
+            'demo_api_secret_present'=> $demoSecret !== '',
+            'demo_api_base_url'      => $demoUrl,
+            'is_real_exchange_mode'  => in_array($mode, ['live', 'demo'], true),
+        ];
+
+        return $status;
     }
 
     /**
@@ -568,22 +602,23 @@ final class SmartBrainService
         }
 
         // ---- demo credentials (stay local; never go to KeyCenter) ----
-        if (!isset($current['module']['credentials']) || !is_array($current['module']['credentials'])) {
-            $current['module']['credentials'] = [];
+        // Written to the FLAT credentials.demo block that bot_config_trait reads.
+        if (!isset($current['credentials']) || !is_array($current['credentials'])) {
+            $current['credentials'] = [];
         }
-        if (!isset($current['module']['credentials']['demo']) || !is_array($current['module']['credentials']['demo'])) {
-            $current['module']['credentials']['demo'] = [];
+        if (!isset($current['credentials']['demo']) || !is_array($current['credentials']['demo'])) {
+            $current['credentials']['demo'] = [];
         }
 
         if (array_key_exists('demo_api_key', $values)) {
-            $current['module']['credentials']['demo']['api_key'] = (string)$values['demo_api_key'];
+            $current['credentials']['demo']['api_key'] = (string)$values['demo_api_key'];
         }
         // Preserve existing secret when empty is submitted
         if (array_key_exists('demo_api_secret', $values) && (string)$values['demo_api_secret'] !== '') {
-            $current['module']['credentials']['demo']['api_secret'] = (string)$values['demo_api_secret'];
+            $current['credentials']['demo']['api_secret'] = (string)$values['demo_api_secret'];
         }
         if (array_key_exists('demo_api_base_url', $values) && (string)$values['demo_api_base_url'] !== '') {
-            $current['module']['credentials']['demo']['api_base_url'] = (string)$values['demo_api_base_url'];
+            $current['credentials']['demo']['api_base_url'] = (string)$values['demo_api_base_url'];
         }
 
         // ---- exchange block ----

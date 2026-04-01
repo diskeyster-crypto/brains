@@ -22,6 +22,7 @@
  * @var bool                 $bot_is_real_exchange
  * @var string               $bot_storage_dir
  * @var array<string,mixed>  $bot_demo_creds
+ * @var array<string,mixed>  $bot_diag
  */
 
 $pageTitle = 'Smart Brain — Execution';
@@ -276,6 +277,57 @@ $demoBaseUrl    = (string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit
 </div>
 
 <?php if ($bot_available): ?>
+
+<!-- ===== Demo Credential Diagnostics ===== -->
+<?php
+$diag = $bot_diag ?? [];
+$diagKeyPresent    = (bool)($diag['demo_api_key_present']    ?? false);
+$diagSecretPresent = (bool)($diag['demo_api_secret_present'] ?? false);
+$diagBaseUrl       = (string)($diag['demo_api_base_url']      ?? '');
+$diagRealExchange  = (bool)($diag['is_real_exchange_mode']   ?? false);
+$diagNs            = (string)($diag['storage_namespace']      ?? '');
+$diagCfgPath       = (string)($diag['config_path']            ?? '');
+$credBad = $bot_mode === 'demo' && (!$diagKeyPresent || !$diagSecretPresent);
+?>
+<?php if ($bot_mode === 'demo' || $credBad): ?>
+<div class="card mb-4" style="border-color:<?= $credBad ? '#dc2626' : '#334155' ?>;">
+    <div class="card-body">
+        <div class="section-heading">Demo Credential Diagnostics</div>
+        <div class="row g-2">
+            <?php
+            $diagCards = [
+                ['label' => 'Mode',               'value' => strtoupper($bot_mode),         'ok' => null],
+                ['label' => 'Storage Namespace',  'value' => $diagNs,                        'ok' => null],
+                ['label' => 'API Key Present',    'value' => $diagKeyPresent ? 'YES' : 'NO', 'ok' => $diagKeyPresent],
+                ['label' => 'API Secret Present', 'value' => $diagSecretPresent ? 'YES' : 'NO', 'ok' => $diagSecretPresent],
+                ['label' => 'Demo Base URL',      'value' => $diagBaseUrl ?: 'default',       'ok' => null],
+                ['label' => 'Real Exchange Mode', 'value' => $diagRealExchange ? 'YES' : 'NO', 'ok' => $diagRealExchange],
+            ];
+            foreach ($diagCards as $dc):
+                $cls = 'neutral';
+                if ($dc['ok'] === true) $cls = 'positive';
+                if ($dc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars($dc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($dc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($credBad): ?>
+        <div class="alert alert-danger mt-3 mb-0 py-2 small">
+            <strong>Demo credentials are missing.</strong>
+            Enter your Bybit Demo API Key and Secret in the Settings section below and save.
+            Config path: <code><?= htmlspecialchars($diagCfgPath) ?></code>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php endif; ?>
 
 <!-- ===== Stats ===== -->
 <?php if (!empty($bot_stats)): ?>
@@ -695,8 +747,6 @@ $demoBaseUrl    = (string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit
         </form>
     </div>
 </div>
-
-<?php endif; ?>
 
 <script>
 // Init mode-aware visibility on load

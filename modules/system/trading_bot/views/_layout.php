@@ -69,6 +69,8 @@ $baseUrl = System::adminUrl('trading');
         .badge-live { background: var(--danger); }
         .badge-dry { background: var(--warning); color: #000; }
         .badge-test { background: var(--info); color: #000; }
+        .badge-demo { background: #fd7e14; color: #000; }
+        .badge-paper { background: var(--secondary); color: #fff; }
         
         .status-ok { color: var(--success); }
         .status-error { color: var(--danger); }
@@ -240,9 +242,6 @@ $baseUrl = System::adminUrl('trading');
                 </a>
                 <a href="<?= System::adminUrl('brain') ?>" class="btn btn-outline-light btn-sm">
                     <i class="bi bi-cpu me-1"></i> Brain
-                </a>
-                <a href="<?= System::adminUrl('simulator') ?>" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-play-circle me-1"></i> Simulator
                 </a>
             </div>
         </div>

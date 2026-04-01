@@ -9,12 +9,14 @@ use Core\System\System;
 use Core\System\SystemPaths;
 
 $tab = $tab ?? 'dashboard';
-$mode = $this->config['module']['mode'] ?? 'dry';
+$mode = $this->config['module']['mode'] ?? 'paper';
 $enabled = $this->config['module']['enabled'] ?? false;
 $modeClass = [
-    'live' => 'badge-live',
-    'dry' => 'badge-dry',
-    'test' => 'badge-test',
+    'live'  => 'badge-live',
+    'demo'  => 'badge-demo',
+    'paper' => 'badge-paper',
+    'dry'   => 'badge-paper',
+    'test'  => 'badge-paper',
 ][$mode] ?? 'badge-secondary';
 
 // Include tabs via SystemPaths
@@ -36,7 +38,13 @@ require $moduleBase . '/views/_tabs.php';
             <?php endif; ?>
         </h4>
         <p class="text-muted mb-0">
-            LIVE Executor — executes Brain decisions on exchange
+            <?php if ($mode === 'live'): ?>
+                <span class="text-danger fw-bold">LIVE Execution</span> — real exchange, real funds
+            <?php elseif ($mode === 'demo'): ?>
+                <span class="text-warning fw-bold">DEMO Execution</span> — sandbox exchange, no real funds
+            <?php else: ?>
+                <span class="text-secondary fw-bold">Paper Mode</span> — local simulation, no exchange
+            <?php endif; ?>
         </p>
     </div>
     <div class="d-flex gap-2">
@@ -1111,7 +1119,7 @@ $protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $las
                     <div class="card-body">
                         <?php $bal = $lastRun['balance_snapshot_last'] ?? null; ?>
                         <?php if (empty($bal) || !is_array($bal)): ?>
-                            <p class="text-muted mb-0">No balance snapshot captured in last run (may be deferred or dry mode).</p>
+                            <p class="text-muted mb-0">No balance snapshot captured in last run (may be deferred or paper mode).</p>
                         <?php else: ?>
                             <div class="row small">
                                 <div class="col-md-3">

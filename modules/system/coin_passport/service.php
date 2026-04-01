@@ -25,8 +25,9 @@ final class CoinPassportService
         $this->storageDir   = __DIR__ . '/storage';
         $passportsDir       = $this->storageDir . '/passports';
         $tradingBotStorage  = __DIR__ . '/../trading_bot/storage';
+        $aiShadowStorage    = __DIR__ . '/../ai_shadow/storage';
 
-        $this->engine = new CoinPassportEngine($passportsDir, $tradingBotStorage);
+        $this->engine = new CoinPassportEngine($passportsDir, $tradingBotStorage, $aiShadowStorage);
     }
 
     // =========================================================================
@@ -55,6 +56,27 @@ final class CoinPassportService
     public function getPassport(string $symbol): ?array
     {
         return $this->engine->load(strtoupper($symbol));
+    }
+
+    /**
+     * Return the evidence timeline for a symbol.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getEvidenceTimeline(string $symbol): array
+    {
+        return $this->engine->loadEvidence(strtoupper($symbol));
+    }
+
+    /**
+     * Append a single evidence event for a symbol.
+     * Called from trade-close hooks, demotion events etc.
+     *
+     * @param array<string,mixed> $event  Must include 'type' at minimum.
+     */
+    public function appendEvidence(string $symbol, array $event): void
+    {
+        $this->engine->appendEvidence(strtoupper($symbol), $event);
     }
 
     /**
@@ -267,8 +289,21 @@ final class CoinPassportService
             'runner_probability'                    => $passport['runner_probability'],
             'reach_5_roi_rate'                      => $passport['reach_5_roi_rate'] ?? null,
             'reach_10_roi_rate'                     => $passport['reach_10_roi_rate'] ?? null,
+            // Impulse summary
+            'impulse_strength_score'                => $passport['impulse_strength_score'] ?? null,
+            'impulse_speed_score'                   => $passport['impulse_speed_score'] ?? null,
+            'impulse_decay_score'                   => $passport['impulse_decay_score'] ?? null,
+            'sustained_move_score'                  => $passport['sustained_move_score'] ?? null,
+            // Pullback summary
+            'pullback_severity_score'               => $passport['pullback_severity_score'] ?? null,
+            'post_impulse_retrace_habit'            => $passport['post_impulse_retrace_habit'] ?? null,
+            'deep_retrace_probability'              => $passport['deep_retrace_probability'] ?? null,
+            // Pattern-specific summary
+            'pattern_behavior'                      => $passport['pattern_behavior'] ?? null,
             // Regime summary
             'market_regime_health_score'            => $passport['market_regime_health_score'] ?? 0,
+            'bear_regime_behavior_score'            => $passport['bear_regime_behavior_score'] ?? null,
+            'high_vol_regime_behavior_score'        => $passport['high_vol_regime_behavior_score'] ?? null,
             // Scores
             'noise_score'                           => $passport['noise_score'] ?? 0,
             'short_suitability_score'               => $passport['short_suitability_score'] ?? 0,
@@ -277,6 +312,8 @@ final class CoinPassportService
             'recommended_stage1_start_roi'          => $passport['recommended_stage1_start_roi'] ?? $passport['recommended_stage1_threshold_roi'] ?? 0,
             'recommended_stage2_start_roi'          => $passport['recommended_stage2_start_roi'] ?? $passport['recommended_stage2_threshold_roi'] ?? 0,
             'recommended_harvest_aggressiveness'    => $passport['recommended_harvest_aggressiveness'],
+            'recommended_max_hold_minutes'          => $passport['recommended_max_hold_minutes'] ?? null,
+            'recommended_runner_expectation'        => $passport['recommended_runner_expectation'] ?? null,
             // Legacy
             'sample_size'                           => $passport['sample_size'] ?? 0,
             'updated_at'                            => $passport['updated_at'],

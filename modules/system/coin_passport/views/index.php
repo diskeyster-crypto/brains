@@ -242,9 +242,12 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             <th class="text-end" data-sort="p75">Corridor P75</th>
                             <th class="text-end" data-sort="p90">Corridor P90</th>
                             <th class="text-end" data-sort="runner">Runner %</th>
+                            <th class="text-end" data-sort="impulse">Impulse</th>
                             <th class="text-end" data-sort="noise">Noise</th>
                             <th class="text-end" data-sort="reach5">Reach 5%</th>
                             <th class="text-end" data-sort="slrate">SL Rate</th>
+                            <th class="text-end" data-sort="v2succ">V2 Succ</th>
+                            <th class="text-end" data-sort="v3succ">V3 Succ</th>
                             <th class="text-end">Regime</th>
                             <th class="text-center">Harvest</th>
                             <th class="text-center">Updated</th>
@@ -254,7 +257,7 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                     <tbody>
                         <?php if (empty($passports)): ?>
                         <tr>
-                            <td colspan="14" class="text-center text-secondary py-5">
+                            <td colspan="17" class="text-center text-secondary py-5">
                                 <i class="bi bi-inbox display-5 d-block mb-2"></i>
                                 No passports yet — click <strong>Rebuild All</strong> to scan available trades.
                             </td>
@@ -267,6 +270,7 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             $p75        = (float)($p['corridor_p75_roi'] ?? $p['corridor_high_roi'] ?? 0);
                             $p90        = (float)($p['corridor_p90_roi'] ?? $p['p90_max_roi'] ?? 0);
                             $runnerProb = (float)($p['runner_probability'] ?? 0);
+                            $impulse    = (float)($p['impulse_strength_score'] ?? 0);
                             $noise      = (float)($p['noise_score'] ?? 0);
                             $reach5     = (float)($p['reach_5_roi_rate'] ?? 0);
                             $slRate     = (float)($p['stop_loss_hit_rate'] ?? 0);
@@ -275,11 +279,15 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             $updatedAt  = (string)($p['updated_at'] ?? '—');
                             $blockReason = (string)($p['live_block_reason'] ?? '');
                             $insuffFlag = !empty($p['insufficient_data_flag']);
+                            $pb         = is_array($p['pattern_behavior'] ?? null) ? $p['pattern_behavior'] : [];
+                            $v2Succ     = $pb['v2_success_rate'] ?? null;
+                            $v3Succ     = $pb['v3_success_rate'] ?? null;
                         ?>
                         <tr data-symbol="<?= strtolower(htmlspecialchars($sym)) ?>"
                             data-p75="<?= $p75 ?>" data-p90="<?= $p90 ?>"
-                            data-runner="<?= $runnerProb ?>" data-noise="<?= $noise ?>"
-                            data-reach5="<?= $reach5 ?>" data-slrate="<?= $slRate ?>">
+                            data-runner="<?= $runnerProb ?>" data-impulse="<?= $impulse ?>"
+                            data-noise="<?= $noise ?>" data-reach5="<?= $reach5 ?>" data-slrate="<?= $slRate ?>"
+                            data-v2succ="<?= $v2Succ ?? 0 ?>" data-v3succ="<?= $v3Succ ?? 0 ?>">
                             <td>
                                 <strong><?= htmlspecialchars($sym) ?></strong>
                                 <?php if ($insuffFlag): ?>
@@ -298,6 +306,10 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             <td class="text-end"><?= $roiCell($p90) ?></td>
                             <td class="text-end"><?= $pctCell($runnerProb) ?></td>
                             <td class="text-end">
+                                <?php $impCls = $impulse >= 0.5 ? 'positive' : ($impulse >= 0.25 ? 'text-warning' : 'neutral'); ?>
+                                <span class="<?= $impCls ?>"><?= number_format($impulse, 3) ?></span>
+                            </td>
+                            <td class="text-end">
                                 <?php
                                 $noiseCls = $noise <= 0.3 ? 'positive' : ($noise <= 0.6 ? 'text-warning' : 'negative');
                                 ?>
@@ -307,6 +319,12 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             <td class="text-end">
                                 <?php $slCls = $slRate <= 0.2 ? 'positive' : ($slRate <= 0.4 ? 'text-warning' : 'negative'); ?>
                                 <span class="<?= $slCls ?>"><?= number_format($slRate * 100, 1) ?>%</span>
+                            </td>
+                            <td class="text-end">
+                                <?= $v2Succ !== null ? '<span class="' . ($v2Succ >= 0.5 ? 'positive' : 'negative') . '">' . number_format($v2Succ * 100, 0) . '%</span>' : '<span class="neutral">—</span>' ?>
+                            </td>
+                            <td class="text-end">
+                                <?= $v3Succ !== null ? '<span class="' . ($v3Succ >= 0.5 ? 'positive' : 'negative') . '">' . number_format($v3Succ * 100, 0) . '%</span>' : '<span class="neutral">—</span>' ?>
                             </td>
                             <td class="text-end">
                                 <?php $regimeCls = $regime >= 0.6 ? 'positive' : ($regime >= 0.3 ? 'text-warning' : 'negative'); ?>

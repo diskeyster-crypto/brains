@@ -58,8 +58,9 @@ final class CoinPassportController
      */
     public function detail(string $symbol): void
     {
-        $symbol  = strtoupper(preg_replace('/[^A-Za-z0-9_\-]/', '', $symbol));
+        $symbol   = strtoupper(preg_replace('/[^A-Za-z0-9_\-]/', '', $symbol));
         $passport = $this->service->getPassport($symbol);
+        $evidence = $this->service->getEvidenceTimeline($symbol);
         $baseUrl  = $this->baseUrl;
 
         include __DIR__ . '/views/detail.php';
@@ -160,5 +161,22 @@ final class CoinPassportController
 
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/coin_passport/api/evidence/{symbol}
+     * Return the evidence timeline for a single symbol.
+     */
+    public function apiEvidence(string $symbol): void
+    {
+        $symbol   = strtoupper(preg_replace('/[^A-Za-z0-9_\-]/', '', $symbol));
+        $timeline = $this->service->getEvidenceTimeline($symbol);
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'symbol'  => $symbol,
+            'count'   => count($timeline),
+            'items'   => $timeline,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 }

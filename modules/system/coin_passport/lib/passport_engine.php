@@ -16,6 +16,8 @@ final class CoinPassportEngine
 {
     private string $passportsDir;
     private string $tradingBotStorageDir;
+    private string $evidenceDir;
+    private string $aiShadowStorageDir;
 
     /** Minimum trades to compute meaningful confidence */
     private const MIN_SAMPLE_MEDIUM = 5;
@@ -28,20 +30,30 @@ final class CoinPassportEngine
     private const MIN_RECENT_SAMPLES       = 3;
 
     /** Live eligibility gate thresholds (defaults — override via config if needed) */
-    private const LIVE_GATE_CORRIDOR_P75_MIN     = 3.0;   // corridor_p75_roi >= this
-    private const LIVE_GATE_RUNNER_PROB_MIN       = 0.05;  // runner_probability >= this
-    private const LIVE_GATE_SUITABILITY_MIN       = 0.3;   // short_suitability_score >= this
-    private const LIVE_GATE_NOISE_MAX             = 0.65;  // noise_score <= this
-    private const LIVE_GATE_CONFIDENCE_MIN        = 'low'; // data_confidence: none→low→medium→high
-    private const LIVE_GATE_REGIME_HEALTH_MIN     = 0.3;   // market_regime_health_score >= this
+    private const LIVE_GATE_CORRIDOR_P75_MIN      = 3.0;   // corridor_p75_roi >= this
+    private const LIVE_GATE_RUNNER_PROB_MIN        = 0.05;  // runner_probability >= this
+    private const LIVE_GATE_SUITABILITY_MIN        = 0.3;   // short_suitability_score >= this
+    private const LIVE_GATE_NOISE_MAX              = 0.65;  // noise_score <= this
+    private const LIVE_GATE_CONFIDENCE_MIN         = 'low'; // data_confidence: none→low→medium→high
+    private const LIVE_GATE_REGIME_HEALTH_MIN      = 0.3;   // market_regime_health_score >= this
+    private const LIVE_GATE_IMPULSE_STRENGTH_MIN   = 0.2;   // impulse_strength_score >= this
+    private const LIVE_GATE_PULLBACK_SEVERITY_MAX  = 0.75;  // pullback_severity_score <= this
 
-    public function __construct(string $passportsDir, string $tradingBotStorageDir)
+    /** Evidence timeline config */
+    private const MAX_EVIDENCE_ITEMS = 60;
+
+    public function __construct(string $passportsDir, string $tradingBotStorageDir, string $aiShadowStorageDir = '')
     {
-        $this->passportsDir          = $passportsDir;
-        $this->tradingBotStorageDir  = $tradingBotStorageDir;
+        $this->passportsDir         = $passportsDir;
+        $this->tradingBotStorageDir = $tradingBotStorageDir;
+        $this->aiShadowStorageDir   = $aiShadowStorageDir;
+        $this->evidenceDir          = dirname($passportsDir) . '/evidence';
 
         if (!is_dir($this->passportsDir)) {
             @mkdir($this->passportsDir, 0755, true);
+        }
+        if (!is_dir($this->evidenceDir)) {
+            @mkdir($this->evidenceDir, 0755, true);
         }
     }
 
@@ -102,6 +114,7 @@ final class CoinPassportEngine
             try {
                 $passport = $this->buildPassport($symbol, $trades);
                 $this->save($symbol, $passport);
+                $this->rebuildEvidenceTimeline($symbol, $trades);
                 $result['updated']++;
                 $result['symbols'][] = $symbol;
             } catch (\Throwable $e) {
@@ -123,7 +136,52 @@ final class CoinPassportEngine
         $trades = $tradesBySymbol[$symbol] ?? [];
         $passport = $this->buildPassport($symbol, $trades);
         $this->save($symbol, $passport);
+        $this->rebuildEvidenceTimeline($symbol, $trades);
         return $passport;
+    }
+
+    /**
+     * Load the evidence timeline for a symbol (last MAX_EVIDENCE_ITEMS items).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function loadEvidence(string $symbol): array
+    {
+        $path = $this->evidencePath($symbol);
+        $data = $this->readJson($path);
+        if (!is_array($data) || !isset($data['items'])) {
+            return [];
+        }
+        return is_array($data['items']) ? $data['items'] : [];
+    }
+
+    /**
+     * Append a single evidence event for a symbol (called on trade close etc.).
+     *
+     * @param array<string,mixed> $event
+     */
+    public function appendEvidence(string $symbol, array $event): void
+    {
+        $path  = $this->evidencePath($symbol);
+        $data  = $this->readJson($path) ?? ['symbol' => $symbol, 'items' => []];
+        $items = is_array($data['items'] ?? null) ? $data['items'] : [];
+
+        // Prepend newest events first
+        array_unshift($items, array_merge(['ts' => time(), 'symbol' => $symbol], $event));
+
+        // Cap to MAX_EVIDENCE_ITEMS
+        if (count($items) > self::MAX_EVIDENCE_ITEMS) {
+            $items = array_slice($items, 0, self::MAX_EVIDENCE_ITEMS);
+        }
+
+        $data['symbol']     = $symbol;
+        $data['items']      = $items;
+        $data['updated_at'] = date('Y-m-d H:i:s');
+
+        file_put_contents(
+            $path,
+            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
+        );
     }
 
     // =========================================================================
@@ -133,9 +191,11 @@ final class CoinPassportEngine
     /**
      * Collect all available trades grouped by symbol.
      *
-     * Sources (in priority order):
-     *   1. trades/closed/*.json  (completed trades with final ROI)
-     *   2. sig_*.json in storage root (active/legacy trades)
+     * Sources:
+     *   1. trades/closed/*.json       (live closed trades with final ROI)
+     *   2. trades/active/*.json        (active live trades — partial signal)
+     *   3. sig_*.json in storage root  (legacy active/live trades)
+     *   4. ai_shadow/virtual_trades_closed/*.json  (shadow sim outcomes)
      *
      * @return array<string,list<array<string,mixed>>>
      */
@@ -143,25 +203,54 @@ final class CoinPassportEngine
     {
         $bySymbol = [];
 
-        // Source 1: closed trades
+        // Source 1: live closed trades
         $closedDir = $this->tradingBotStorageDir . '/trades/closed';
         if (is_dir($closedDir)) {
             foreach (glob($closedDir . '/*.json') ?: [] as $file) {
                 $trade = $this->readJson($file);
                 if (is_array($trade) && !empty($trade['symbol'])) {
                     $sym = strtoupper((string)$trade['symbol']);
+                    $trade['_source'] = 'live_closed';
                     $bySymbol[$sym][] = $trade;
                 }
             }
         }
 
-        // Source 2: root sig_*.json files (active / legacy trades)
+        // Source 2: active live trades (tag as active so we know they're open)
+        $activeDir = $this->tradingBotStorageDir . '/trades/active';
+        if (is_dir($activeDir)) {
+            foreach (glob($activeDir . '/*.json') ?: [] as $file) {
+                $trade = $this->readJson($file);
+                if (is_array($trade) && !empty($trade['symbol'])) {
+                    $sym = strtoupper((string)$trade['symbol']);
+                    $trade['_source'] = 'live_active';
+                    $bySymbol[$sym][] = $trade;
+                }
+            }
+        }
+
+        // Source 3: root sig_*.json files (active / legacy trades)
         foreach (glob($this->tradingBotStorageDir . '/sig_*.json') ?: [] as $file) {
             $trade = $this->readJson($file);
             if (is_array($trade) && !empty($trade['symbol'])) {
                 $sym = strtoupper((string)$trade['symbol']);
-                // Avoid duplicating if already seen in closed
+                $trade['_source'] = 'live_legacy';
                 $bySymbol[$sym][] = $trade;
+            }
+        }
+
+        // Source 4: AI shadow virtual closed trades (additional signal)
+        if ($this->aiShadowStorageDir !== '' && is_dir($this->aiShadowStorageDir)) {
+            $shadowClosedDir = $this->aiShadowStorageDir . '/virtual_trades_closed';
+            if (is_dir($shadowClosedDir)) {
+                foreach (glob($shadowClosedDir . '/*.json') ?: [] as $file) {
+                    $trade = $this->readJson($file);
+                    if (is_array($trade) && !empty($trade['symbol'])) {
+                        $sym = strtoupper((string)$trade['symbol']);
+                        $trade['_source'] = 'shadow_closed';
+                        $bySymbol[$sym][] = $trade;
+                    }
+                }
             }
         }
 
@@ -173,7 +262,7 @@ final class CoinPassportEngine
     // =========================================================================
 
     /**
-     * Build a complete deep-analytics passport for one symbol from its trades.
+     * Build a complete deep behavioral profile passport for one symbol from its trades.
      *
      * @param list<array<string,mixed>> $trades
      * @return array<string,mixed>
@@ -182,11 +271,11 @@ final class CoinPassportEngine
     {
         $sampleSizeTotal = count($trades);
 
-        // Per-pattern sample counts (V2: double_top/bottom_contextual_v2, V3: v3 equivalents; both sides)
+        // Per-pattern sample counts (V2/V3, both sides)
         $sampleV2 = 0;
         $sampleV3 = 0;
 
-        // Core metric arrays
+        // Core metric arrays (all trades)
         $maxRois      = [];
         $finalRois    = [];
         $adverseRois  = [];
@@ -199,6 +288,18 @@ final class CoinPassportEngine
         $timeTo10Roi  = [];
         $pricePctMoves = [];
 
+        // Pullback-from-peak arrays
+        $pullbacksFromPeak = []; // max_roi - final_roi for every trade
+        $deepRetraces      = 0;  // gave back >70% of peak
+
+        // V2 / V3 pattern-specific arrays
+        $v2MaxRois   = []; $v2FinalRois = []; $v2SlHits = 0; $v2Runners = 0;
+        $v3MaxRois   = []; $v3FinalRois = []; $v3SlHits = 0; $v3Runners = 0;
+
+        // Session / hour-of-day stats: hour (0–23) → [count, roi_sum, runner_count, sl_count, fake_count]
+        $hourStats = [];
+
+        // Counters
         $runners  = 0;
         $shorts   = 0;
         $longs    = 0;
@@ -207,18 +308,32 @@ final class CoinPassportEngine
         $reach10  = 0;
         $reach15  = 0;
         $failBefore3 = 0;
+        $shadowSamples  = 0;  // from AI shadow source
+
+        // Initial burst: hit 2 ROI within the first half of hold time
+        $burstCount = 0;
+        $burstTotal = 0;
 
         // Recent trades: last 30 days
-        $recentCutoff = time() - 30 * 86400;
+        $recentCutoff  = time() - 30 * 86400;
         $recentSamples = 0;
 
         foreach ($trades as $trade) {
-            $finalRoi = $this->extractFinalRoi($trade);
-            $maxRoi   = $this->extractPeakRoi($trade, $finalRoi);
+            $source  = (string)($trade['_source'] ?? 'live_closed');
+            $isLive  = strncmp($source, 'live', 4) === 0;
+            $isShadow = $source === 'shadow_closed';
+
+            if ($isShadow) {
+                $shadowSamples++;
+            }
+
+            $finalRoi   = $this->extractFinalRoi($trade);
+            $maxRoi     = $this->extractPeakRoi($trade, $finalRoi);
             $adverseRoi = $this->extractAdverseRoi($trade);
-            $side     = strtolower((string)($trade['side'] ?? ''));
+            $side       = strtolower((string)($trade['side'] ?? ''));
             $patternAlgo = (string)($trade['pattern_algorithm'] ?? '');
-            $closedTs = (int)($trade['closed_ts'] ?? 0);
+            $closedTs   = (int)($trade['closed_ts'] ?? $trade['closed_at'] ?? 0);
+            $openTs     = (int)($trade['open_ts'] ?? $trade['opened_at'] ?? $trade['created_ts'] ?? 0);
 
             // Pattern counts (V2/V3, both sides)
             if ($side === 'short') {
@@ -237,7 +352,7 @@ final class CoinPassportEngine
                 }
             }
 
-            if ($closedTs >= $recentCutoff) {
+            if ($closedTs >= $recentCutoff || ($openTs >= $recentCutoff && $openTs > 0)) {
                 $recentSamples++;
             }
 
@@ -248,7 +363,7 @@ final class CoinPassportEngine
                 $adverseRois[] = $adverseRoi;
             }
 
-            // Stop-loss detection: finalRoi <= -SL threshold or flagged
+            // Stop-loss detection
             $isSlHit = $this->detectStopLossHit($trade, $finalRoi, $maxRoi);
             if ($isSlHit) {
                 $slHits++;
@@ -262,20 +377,44 @@ final class CoinPassportEngine
                 if ($maxRoi >= 15.0) $reach15++;
 
                 if ($finalRoi !== null) {
-                    // Failure before 3 ROI: peak never broke 3 and final <= 0
+                    // Failure before 3 ROI
                     if ($maxRoi < 3.0 && $finalRoi <= 0.0) {
                         $failBefore3++;
                     }
 
-                    // Pullback analysis
+                    // Pullback-from-peak (all trades)
+                    $pbFromPeak = max(0.0, $maxRoi - $finalRoi);
+                    $pullbacksFromPeak[] = $pbFromPeak;
+
+                    // Deep retrace: gave back >70% of peak
+                    if ($maxRoi > 0 && $pbFromPeak / $maxRoi > 0.70) {
+                        $deepRetraces++;
+                    }
+
+                    // Milestone pullbacks
                     if ($maxRoi >= 2.0) {
-                        $pullbacksAt2[] = max(0.0, $maxRoi - $finalRoi);
+                        $pullbacksAt2[] = $pbFromPeak;
                     }
                     if ($maxRoi >= 3.0) {
-                        $pullbacksAt3[] = max(0.0, $maxRoi - $finalRoi);
+                        $pullbacksAt3[] = $pbFromPeak;
                     }
                     if ($maxRoi >= 5.0) {
-                        $pullbacksAt5[] = max(0.0, $maxRoi - $finalRoi);
+                        $pullbacksAt5[] = $pbFromPeak;
+                    }
+                }
+
+                // Pattern-specific tracking (live trades only for clean stats)
+                if ($isLive) {
+                    if ($patternAlgo === 'double_top_contextual_v2' || $patternAlgo === 'double_bottom_contextual_v2') {
+                        $v2MaxRois[]   = $maxRoi;
+                        if ($finalRoi !== null) $v2FinalRois[] = $finalRoi;
+                        if ($isSlHit)  $v2SlHits++;
+                        if ($maxRoi >= 10.0) $v2Runners++;
+                    } elseif ($patternAlgo === 'double_top_contextual_v3' || $patternAlgo === 'double_bottom_contextual_v3') {
+                        $v3MaxRois[]   = $maxRoi;
+                        if ($finalRoi !== null) $v3FinalRois[] = $finalRoi;
+                        if ($isSlHit)  $v3SlHits++;
+                        if ($maxRoi >= 10.0) $v3Runners++;
                     }
                 }
             }
@@ -292,80 +431,150 @@ final class CoinPassportEngine
             if ($tt5 !== null) $timeTo5Roi[]  = $tt5;
             if ($tt10 !== null) $timeTo10Roi[] = $tt10;
 
-            // Price-pct move (if available)
+            // Price-pct move
             $pricePct = $this->extractPricePct($trade);
             if ($pricePct !== null) {
                 $pricePctMoves[] = $pricePct;
             }
+
+            // Hour-of-day from open_ts
+            if ($openTs > 0) {
+                $hour = (int)gmdate('G', $openTs);
+                if (!isset($hourStats[$hour])) {
+                    $hourStats[$hour] = ['count' => 0, 'roi_sum' => 0.0, 'runner_count' => 0, 'sl_count' => 0, 'fake_count' => 0];
+                }
+                $hourStats[$hour]['count']++;
+                if ($finalRoi !== null) {
+                    $hourStats[$hour]['roi_sum'] += $finalRoi;
+                }
+                if ($maxRoi !== null && $maxRoi >= 10.0) {
+                    $hourStats[$hour]['runner_count']++;
+                }
+                if ($isSlHit) {
+                    $hourStats[$hour]['sl_count']++;
+                }
+                // Fake: peaked >= 3 then closed <= 0
+                if ($maxRoi !== null && $maxRoi >= 3.0 && $finalRoi !== null && $finalRoi <= 0.0) {
+                    $hourStats[$hour]['fake_count']++;
+                }
+            }
+
+            // Initial burst: did trade reach 2 ROI within first 40% of hold time?
+            if ($tt2 !== null && $holdMin !== null && $holdMin > 0) {
+                $burstTotal++;
+                if ($tt2 / $holdMin <= 0.4) {
+                    $burstCount++;
+                }
+            }
         }
 
-        // Sort arrays for percentile computation
+        // ── Sort arrays ──────────────────────────────────────────────────────
         $totalSides = $shorts + $longs;
         sort($maxRois);
         sort($finalRois);
         sort($adverseRois);
         sort($pricePctMoves);
+        sort($v2MaxRois);
+        sort($v3MaxRois);
 
-        // ── Corridor (on favorable move = maxRoi) ──────────────────────────
+        // ── Corridor (on favorable move = maxRoi) ────────────────────────────
         $corridorP50 = $this->percentile($maxRois, 50);
         $corridorP75 = $this->percentile($maxRois, 75);
         $corridorP90 = $this->percentile($maxRois, 90);
 
-        // ── Price pct corridors ─────────────────────────────────────────────
+        // ── Price pct corridors ──────────────────────────────────────────────
         $corridorPricePctP50 = $this->percentile($pricePctMoves, 50);
         $corridorPricePctP75 = $this->percentile($pricePctMoves, 75);
         $corridorPricePctP90 = $this->percentile($pricePctMoves, 90);
 
-        // ── Median adverse ──────────────────────────────────────────────────
+        // ── Median adverse ───────────────────────────────────────────────────
         $medianMaxAdverseRoi = $this->percentile($adverseRois, 50);
 
-        // ── Pullbacks ───────────────────────────────────────────────────────
-        $medianPullback2 = $this->median($pullbacksAt2);
-        $medianPullback3 = $this->median($pullbacksAt3);
-        $medianPullback5 = $this->median($pullbacksAt5);
+        // ── Pullbacks ────────────────────────────────────────────────────────
+        $medianPullback2    = $this->median($pullbacksAt2);
+        $medianPullback3    = $this->median($pullbacksAt3);
+        $medianPullback5    = $this->median($pullbacksAt5);
+        $medianPullbackPeak = $this->median($pullbacksFromPeak);
 
-        // ── Reach rates ─────────────────────────────────────────────────────
-        $reach5Rate  = $sampleSizeTotal > 0 ? round($reach5  / $sampleSizeTotal, 4) : 0.0;
-        $reach10Rate = $sampleSizeTotal > 0 ? round($reach10 / $sampleSizeTotal, 4) : 0.0;
-        $reach15Rate = $sampleSizeTotal > 0 ? round($reach15 / $sampleSizeTotal, 4) : 0.0;
+        // ── Reach rates ──────────────────────────────────────────────────────
+        $reach5Rate      = $sampleSizeTotal > 0 ? round($reach5      / $sampleSizeTotal, 4) : 0.0;
+        $reach10Rate     = $sampleSizeTotal > 0 ? round($reach10     / $sampleSizeTotal, 4) : 0.0;
+        $reach15Rate     = $sampleSizeTotal > 0 ? round($reach15     / $sampleSizeTotal, 4) : 0.0;
         $failBefore3Rate = $sampleSizeTotal > 0 ? round($failBefore3 / $sampleSizeTotal, 4) : 0.0;
-        $slHitRate   = $sampleSizeTotal > 0 ? round($slHits   / $sampleSizeTotal, 4) : 0.0;
+        $slHitRate       = $sampleSizeTotal > 0 ? round($slHits      / $sampleSizeTotal, 4) : 0.0;
+        $deepRetraceProb = count($pullbacksFromPeak) > 0 ? round($deepRetraces / count($pullbacksFromPeak), 4) : 0.0;
 
-        // ── Timing ──────────────────────────────────────────────────────────
+        // ── Timing ───────────────────────────────────────────────────────────
         $avgHoldMinutes = count($holdMinutes) > 0 ? round(array_sum($holdMinutes) / count($holdMinutes), 1) : null;
         $avgTimeTo2Roi  = count($timeTo2Roi)  > 0 ? round(array_sum($timeTo2Roi)  / count($timeTo2Roi),  1) : null;
         $avgTimeTo5Roi  = count($timeTo5Roi)  > 0 ? round(array_sum($timeTo5Roi)  / count($timeTo5Roi),  1) : null;
         $avgTimeTo10Roi = count($timeTo10Roi) > 0 ? round(array_sum($timeTo10Roi) / count($timeTo10Roi), 1) : null;
 
-        // ── Scores ──────────────────────────────────────────────────────────
-        $runnerProb           = $sampleSizeTotal > 0 ? round($runners / $sampleSizeTotal, 4) : 0.0;
+        // ── Core behavioral scores ───────────────────────────────────────────
+        $runnerProb            = $sampleSizeTotal > 0 ? round($runners / $sampleSizeTotal, 4) : 0.0;
         $shortSuitabilityScore = $totalSides > 0 ? round($shorts / $totalSides, 4) : 0.5;
-        $noiseScore           = $this->computeNoiseScore($maxRois, $finalRois);
-        $volatilityScore      = $this->computeVolatilityScore($maxRois);
+        $noiseScore            = $this->computeNoiseScore($maxRois, $finalRois);
+        $volatilityScore       = $this->computeVolatilityScore($maxRois);
         $trendPersistenceScore = $this->computeTrendPersistenceScore($maxRois, $pullbacksAt3);
-        $fakeBreakoutScore    = $this->computeFakeBreakoutScore($maxRois, $finalRois);
-        $slSurvivalScore      = $sampleSizeTotal > 0 ? round(1.0 - $slHitRate, 4) : 0.5;
-        $marketRegimeHealth   = $this->computeMarketRegimeHealthScore($corridorP75, $runnerProb, $recentSamples);
+        $fakeBreakoutScore     = $this->computeFakeBreakoutScore($maxRois, $finalRois);
+        $slSurvivalScore       = $sampleSizeTotal > 0 ? round(1.0 - $slHitRate, 4) : 0.5;
+        $marketRegimeHealth    = $this->computeMarketRegimeHealthScore($corridorP75, $runnerProb, $recentSamples);
 
-        // ── Data confidence ─────────────────────────────────────────────────
+        // ── Impulse behavior ─────────────────────────────────────────────────
+        $impulse = $this->computeImpulseScores(
+            $corridorP75, $corridorP90, $avgTimeTo2Roi, $avgTimeTo5Roi,
+            $avgHoldMinutes, $reach5Rate, $reach10Rate, $trendPersistenceScore,
+            $fakeBreakoutScore, $noiseScore, $burstCount, $burstTotal
+        );
+
+        // ── Pullback behavior ────────────────────────────────────────────────
+        $pullbackBehavior = $this->computePullbackBehavior(
+            $medianPullback3, $medianPullback5, $medianPullbackPeak,
+            $deepRetraceProb, $noiseScore
+        );
+
+        // ── Session / hour-of-day behavior ───────────────────────────────────
+        $sessionBehavior = $this->computeSessionBehavior($hourStats);
+
+        // ── Pattern-specific behavior ─────────────────────────────────────────
+        $patternBehavior = $this->computePatternSpecificBehavior(
+            $v2MaxRois, $v2FinalRois, $v2SlHits, $v2Runners, $sampleV2,
+            $v3MaxRois, $v3FinalRois, $v3SlHits, $v3Runners, $sampleV3
+        );
+
+        // ── Regime behavior ───────────────────────────────────────────────────
+        $regimeBehavior = $this->computeRegimeBehavior(
+            $maxRois, $finalRois, $shorts, $longs,
+            $corridorP75, $corridorP90, $runnerProb, $slHitRate
+        );
+
+        // ── Data confidence ───────────────────────────────────────────────────
         $dataConfidence = $this->computeConfidence($sampleSizeTotal);
 
-        // ── Data sufficiency ────────────────────────────────────────────────
+        // ── Data sufficiency ──────────────────────────────────────────────────
         [$insufficientFlag, $insufficientReason, $fallbackMode] = $this->computeDataSufficiency(
             $sampleSizeTotal, $sampleV2, $sampleV3, $recentSamples, $dataConfidence
         );
         $lastDataGapWarning = $insufficientFlag ? $insufficientReason : null;
 
-        // ── Recommendations ─────────────────────────────────────────────────
-        $recLockStart  = $this->recommendLockStart($corridorP50, $corridorP75, $this->percentile($maxRois, 25), $dataConfidence);
-        $recLockValue  = max(0.0, $recLockStart - 0.5);
-        $recStage1     = $this->recommendStage1($corridorP50, $medianPullback3);
-        $recStage2     = $this->recommendStage2($corridorP75, $corridorP90);
-        $recLadderMode = $this->recommendLadderMode($runnerProb, $corridorP90, $dataConfidence);
-        $recHarvest    = $this->recommendHarvestAggressiveness($medianPullback3, $medianPullback5, $noiseScore);
-        $recLiveFloor  = $this->recommendLiveFloorRoi($corridorP75, $dataConfidence);
+        // Pattern-specific insufficiency flags
+        $patternInsufficient = [
+            'v2' => $sampleV2 < self::MIN_PATTERN_V2_SAMPLES,
+            'v3' => $sampleV3 < self::MIN_PATTERN_V3_SAMPLES,
+        ];
 
-        // ── Live eligibility gate ────────────────────────────────────────────
+        // ── Recommendations ───────────────────────────────────────────────────
+        $recLockStart      = $this->recommendLockStart($corridorP50, $corridorP75, $this->percentile($maxRois, 25), $dataConfidence);
+        $recLockValue      = max(0.0, $recLockStart - 0.5);
+        $recStage1         = $this->recommendStage1($corridorP50, $medianPullback3);
+        $recStage2         = $this->recommendStage2($corridorP75, $corridorP90);
+        $recLadderMode     = $this->recommendLadderMode($runnerProb, $corridorP90, $dataConfidence);
+        $recHarvest        = $this->recommendHarvestAggressiveness($medianPullback3, $medianPullback5, $noiseScore);
+        $recLiveFloor      = $this->recommendLiveFloorRoi($corridorP75, $dataConfidence);
+        $recMaxHold        = $this->recommendMaxHoldMinutes($avgHoldMinutes, $runnerProb, $corridorP75);
+        $recRunnerExpect   = $this->recommendRunnerExpectation($runnerProb, $reach10Rate, $corridorP90);
+
+        // ── Live eligibility gate ─────────────────────────────────────────────
         [$liveEligibility, $liveBlockReason] = $this->computeLiveEligibility(
             $corridorP75,
             $runnerProb,
@@ -374,35 +583,32 @@ final class CoinPassportEngine
             $dataConfidence,
             $marketRegimeHealth,
             $insufficientFlag,
-            $fallbackMode
+            $fallbackMode,
+            $impulse['impulse_strength_score'],
+            $pullbackBehavior['pullback_severity_score'],
+            $patternBehavior['v2_success_rate'] ?? null
         );
 
-        // ── Diagnostic notes ─────────────────────────────────────────────────
+        // ── Diagnostic notes ──────────────────────────────────────────────────
         $notes = $this->buildDiagnosticNotes(
-            $sampleSizeTotal,
-            $dataConfidence,
-            $runnerProb,
-            $corridorP50,
-            $corridorP75,
-            $corridorP90,
-            $this->percentile($maxRois, 25),
-            $corridorP75,
-            $liveEligibility,
-            $liveBlockReason,
-            $insufficientFlag
+            $sampleSizeTotal, $dataConfidence, $runnerProb,
+            $corridorP50, $corridorP75, $corridorP90,
+            $this->percentile($maxRois, 25), $corridorP75,
+            $liveEligibility, $liveBlockReason, $insufficientFlag
         );
 
         return [
-            // ── Identity ─────────────────────────────────────────────────────
+            // ── Identity ──────────────────────────────────────────────────────
             'symbol'                        => $symbol,
             'updated_at'                    => date('Y-m-d H:i:s'),
 
-            // ── Sample sizes ──────────────────────────────────────────────────
+            // ── Sample sizes ───────────────────────────────────────────────────
             'sample_size_total'             => $sampleSizeTotal,
             'sample_size_short_v2'          => $sampleV2,
             'sample_size_short_v3'          => $sampleV3,
+            'sample_size_shadow'            => $shadowSamples,
 
-            // ── Data confidence / sufficiency ─────────────────────────────────
+            // ── Data confidence / sufficiency ──────────────────────────────────
             'data_confidence'               => $dataConfidence,
             'last_data_gap_warning'         => $lastDataGapWarning,
             'minimum_required_samples'      => self::MIN_TOTAL_SAMPLES,
@@ -410,8 +616,11 @@ final class CoinPassportEngine
             'insufficient_data_flag'        => $insufficientFlag,
             'insufficient_data_reason'      => $insufficientReason,
             'fallback_mode'                 => $fallbackMode,
+            'pattern_specific_insufficient_data' => $patternInsufficient,
+            'timing_insufficient_data'      => count($hourStats) < 3,
+            'regime_insufficient_data'      => $sampleSizeTotal < 15,
 
-            // ── Behavioral scores (0.0–1.0) ───────────────────────────────────
+            // ── Core behavioral scores (0.0–1.0) ──────────────────────────────
             'short_suitability_score'       => round($shortSuitabilityScore, 4),
             'runner_probability'            => round($runnerProb, 4),
             'noise_score'                   => round($noiseScore, 4),
@@ -421,31 +630,46 @@ final class CoinPassportEngine
             'sl_survival_score'             => round($slSurvivalScore, 4),
             'market_regime_health_score'    => round($marketRegimeHealth, 4),
 
-            // ── Corridor — favorable ROI (max/peak) ───────────────────────────
-            'corridor_p50_roi'              => round($corridorP50, 2),
-            'corridor_p75_roi'              => round($corridorP75, 2),
-            'corridor_p90_roi'              => round($corridorP90, 2),
+            // ── Impulse behavior ───────────────────────────────────────────────
+            'impulse_strength_score'        => $impulse['impulse_strength_score'],
+            'impulse_speed_score'           => $impulse['impulse_speed_score'],
+            'impulse_decay_score'           => $impulse['impulse_decay_score'],
+            'runner_extension_score'        => $impulse['runner_extension_score'],
+            'time_to_peak_score'            => $impulse['time_to_peak_score'],
+            'initial_burst_score'           => $impulse['initial_burst_score'],
+            'sustained_move_score'          => $impulse['sustained_move_score'],
+            'late_failure_score'            => $impulse['late_failure_score'],
 
-            // ── Corridor — price pct move ─────────────────────────────────────
-            'corridor_price_pct_p50'        => round($corridorPricePctP50, 4),
-            'corridor_price_pct_p75'        => round($corridorPricePctP75, 4),
-            'corridor_price_pct_p90'        => round($corridorPricePctP90, 4),
-
-            // ── Max favorable / adverse ───────────────────────────────────────
-            'median_max_favorable_roi'      => round($corridorP50, 2),
-            'median_max_adverse_roi'        => round($medianMaxAdverseRoi, 2),
-
-            // ── Pullback after milestone ──────────────────────────────────────
+            // ── Pullback behavior ──────────────────────────────────────────────
+            'pullback_severity_score'       => $pullbackBehavior['pullback_severity_score'],
+            'post_impulse_retrace_habit'    => $pullbackBehavior['post_impulse_retrace_habit'],
+            'deep_retrace_probability'      => $deepRetraceProb,
+            'median_pullback_after_peak'    => round($medianPullbackPeak, 2),
             'median_pullback_after_2_roi'   => round($medianPullback2, 2),
             'median_pullback_after_3_roi'   => round($medianPullback3, 2),
             'median_pullback_after_5_roi'   => round($medianPullback5, 2),
 
-            // ── Reach rates ───────────────────────────────────────────────────
+            // ── Corridor — favorable ROI (max/peak) ────────────────────────────
+            'corridor_p50_roi'              => round($corridorP50, 2),
+            'corridor_p75_roi'              => round($corridorP75, 2),
+            'corridor_p90_roi'              => round($corridorP90, 2),
+
+            // ── Corridor — price pct move ──────────────────────────────────────
+            'corridor_price_pct_p50'        => round($corridorPricePctP50, 4),
+            'corridor_price_pct_p75'        => round($corridorPricePctP75, 4),
+            'corridor_price_pct_p90'        => round($corridorPricePctP90, 4),
+
+            // ── Max favorable / adverse ────────────────────────────────────────
+            'median_max_favorable_roi'      => round($corridorP50, 2),
+            'median_max_adverse_roi'        => round($medianMaxAdverseRoi, 2),
+
+            // ── Reach rates ────────────────────────────────────────────────────
             'reach_5_roi_rate'              => $reach5Rate,
             'reach_10_roi_rate'             => $reach10Rate,
             'reach_15_roi_rate'             => $reach15Rate,
             'failure_before_3_roi_rate'     => $failBefore3Rate,
             'stop_loss_hit_rate'            => $slHitRate,
+            'deep_retrace_rate'             => $deepRetraceProb,
 
             // ── Timing ────────────────────────────────────────────────────────
             'avg_hold_minutes'              => $avgHoldMinutes,
@@ -453,17 +677,38 @@ final class CoinPassportEngine
             'avg_time_to_5_roi'             => $avgTimeTo5Roi,
             'avg_time_to_10_roi'            => $avgTimeTo10Roi,
 
-            // ── Live eligibility ──────────────────────────────────────────────
+            // ── Session / timing behavior ──────────────────────────────────────
+            'best_hours_utc'                => $sessionBehavior['best_hours_utc'],
+            'worst_hours_utc'               => $sessionBehavior['worst_hours_utc'],
+            'session_behavior_score'        => $sessionBehavior['session_behavior_score'],
+            'time_of_day_runner_rate'       => $sessionBehavior['time_of_day_runner_rate'],
+            'time_of_day_fake_move_rate'    => $sessionBehavior['time_of_day_fake_move_rate'],
+            'time_of_day_stop_rate'         => $sessionBehavior['time_of_day_stop_rate'],
+
+            // ── Pattern-specific behavior ──────────────────────────────────────
+            'pattern_behavior'              => $patternBehavior,
+
+            // ── Regime behavior ────────────────────────────────────────────────
+            'bull_regime_behavior_score'    => $regimeBehavior['bull_regime_behavior_score'],
+            'bear_regime_behavior_score'    => $regimeBehavior['bear_regime_behavior_score'],
+            'sideways_regime_behavior_score' => $regimeBehavior['sideways_regime_behavior_score'],
+            'high_vol_regime_behavior_score' => $regimeBehavior['high_vol_regime_behavior_score'],
+            'fear_regime_behavior_score'    => $regimeBehavior['fear_regime_behavior_score'],
+            'regime_sensitivity_score'      => $regimeBehavior['regime_sensitivity_score'],
+
+            // ── Live eligibility ───────────────────────────────────────────────
             'recommended_live_eligibility'  => $liveEligibility,
             'live_block_reason'             => $liveBlockReason,
 
-            // ── Recommendations ───────────────────────────────────────────────
-            'recommended_live_floor_roi'         => round($recLiveFloor, 2),
+            // ── Recommendations ────────────────────────────────────────────────
+            'recommended_live_floor_roi'          => round($recLiveFloor, 2),
             'recommended_stage1_start_roi'        => round($recStage1, 2),
             'recommended_stage2_start_roi'        => round($recStage2, 2),
             'recommended_harvest_aggressiveness'  => $recHarvest,
+            'recommended_max_hold_minutes'        => $recMaxHold,
+            'recommended_runner_expectation'      => $recRunnerExpect,
 
-            // ── Legacy field aliases (kept for backward compat with Brain/UI) ──
+            // ── Legacy field aliases (kept for backward compat with Brain/UI) ───
             'sample_size'                        => $sampleSizeTotal,
             'median_max_roi'                     => round($corridorP50, 2),
             'p75_max_roi'                        => round($corridorP75, 2),
@@ -477,7 +722,7 @@ final class CoinPassportEngine
             'recommended_stage2_threshold_roi'      => round($recStage2, 2),
             'recommended_ladder_mode'               => $recLadderMode,
 
-            // ── Diagnostics ───────────────────────────────────────────────────
+            // ── Diagnostics ────────────────────────────────────────────────────
             'notes'                         => $notes,
         ];
     }
@@ -707,7 +952,422 @@ final class CoinPassportEngine
     }
 
     // =========================================================================
-    // Score computation
+    // Impulse behavior
+    // =========================================================================
+
+    /**
+     * Compute impulse behavior scores.
+     *
+     * @return array<string,float>
+     */
+    private function computeImpulseScores(
+        float   $corridorP75,
+        float   $corridorP90,
+        ?float  $avgTimeTo2Roi,
+        ?float  $avgTimeTo5Roi,
+        ?float  $avgHoldMinutes,
+        float   $reach5Rate,
+        float   $reach10Rate,
+        float   $trendPersistenceScore,
+        float   $fakeBreakoutScore,
+        float   $noiseScore,
+        int     $burstCount,
+        int     $burstTotal
+    ): array {
+        // impulse_strength_score: how far typical good trades go (corridor-based)
+        $impulseStrength = min(1.0, $corridorP75 / 10.0);
+
+        // impulse_speed_score: inversely proportional to avg_time_to_2_roi (fast = high)
+        $impulseSpeed = 0.5; // default
+        if ($avgTimeTo2Roi !== null && $avgTimeTo2Roi > 0) {
+            // Fast: < 15 min → 1.0, Slow: > 120 min → 0.0
+            $impulseSpeed = max(0.0, min(1.0, 1.0 - ($avgTimeTo2Roi - 15) / 105));
+        }
+
+        // impulse_decay_score: how quickly gains evaporate after peak (lower = better)
+        // Derived from noise_score and fake_breakout_score
+        $impulseDecay = min(1.0, ($noiseScore + $fakeBreakoutScore) / 1.5);
+
+        // runner_extension_score: how often runners go well beyond initial impulse
+        $runnerExtension = min(1.0, $reach10Rate * 5.0 + ($corridorP90 / 20.0) * 0.3);
+
+        // time_to_peak_score: how quickly trades reach peak (faster = better)
+        $timeToPeakScore = 0.5;
+        if ($avgTimeTo5Roi !== null && $avgHoldMinutes !== null && $avgHoldMinutes > 0) {
+            $peakRatio = $avgTimeTo5Roi / $avgHoldMinutes;
+            // Low ratio (reaches peak quickly) = high score
+            $timeToPeakScore = max(0.0, min(1.0, 1.0 - $peakRatio));
+        }
+
+        // initial_burst_score: fraction of trades that burst to 2 ROI within 40% of hold time
+        $initialBurstScore = $burstTotal > 0 ? round($burstCount / $burstTotal, 4) : 0.3;
+
+        // sustained_move_score: how well moves persist (trend persistence)
+        $sustainedMoveScore = round($trendPersistenceScore, 4);
+
+        // late_failure_score: trades that peaked high but closed badly
+        // High value = many late failures = bad
+        $lateFailureScore = round($fakeBreakoutScore * 1.2 + $noiseScore * 0.3, 4);
+        $lateFailureScore = min(1.0, $lateFailureScore);
+
+        return [
+            'impulse_strength_score'  => round($impulseStrength, 4),
+            'impulse_speed_score'     => round($impulseSpeed, 4),
+            'impulse_decay_score'     => round($impulseDecay, 4),
+            'runner_extension_score'  => round($runnerExtension, 4),
+            'time_to_peak_score'      => round($timeToPeakScore, 4),
+            'initial_burst_score'     => round($initialBurstScore, 4),
+            'sustained_move_score'    => round($sustainedMoveScore, 4),
+            'late_failure_score'      => round($lateFailureScore, 4),
+        ];
+    }
+
+    // =========================================================================
+    // Pullback behavior
+    // =========================================================================
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function computePullbackBehavior(
+        float $medianPullback3,
+        float $medianPullback5,
+        float $medianPullbackPeak,
+        float $deepRetraceProb,
+        float $noiseScore
+    ): array {
+        // pullback_severity_score: 0 = mild pullbacks, 1 = severe
+        // Based on median pullback from peak relative to expected
+        $severity = min(1.0, $medianPullbackPeak / 8.0 + $deepRetraceProb * 0.5 + $noiseScore * 0.2);
+
+        // post_impulse_retrace_habit: qualitative label
+        $habit = 'mild';
+        if ($medianPullback3 >= 3.0 || $deepRetraceProb >= 0.5) {
+            $habit = 'deep';
+        } elseif ($medianPullback3 >= 1.5 || $deepRetraceProb >= 0.25) {
+            $habit = 'moderate';
+        }
+
+        return [
+            'pullback_severity_score'    => round(min(1.0, $severity), 4),
+            'post_impulse_retrace_habit' => $habit,
+        ];
+    }
+
+    // =========================================================================
+    // Session / timing behavior
+    // =========================================================================
+
+    /**
+     * Compute session/hour-of-day behavioral metrics from hourly trade stats.
+     *
+     * @param array<int,array<string,mixed>> $hourStats  hour(0-23) → {count, roi_sum, runner_count, sl_count, fake_count}
+     * @return array<string,mixed>
+     */
+    private function computeSessionBehavior(array $hourStats): array
+    {
+        if (empty($hourStats)) {
+            return [
+                'best_hours_utc'             => [],
+                'worst_hours_utc'            => [],
+                'session_behavior_score'     => 0.5,
+                'time_of_day_runner_rate'    => [],
+                'time_of_day_fake_move_rate' => [],
+                'time_of_day_stop_rate'      => [],
+            ];
+        }
+
+        $hourAvgRoi    = [];
+        $hourRunnerRate = [];
+        $hourFakeRate  = [];
+        $hourStopRate  = [];
+
+        foreach ($hourStats as $hour => $stat) {
+            $cnt = (int)($stat['count'] ?? 0);
+            if ($cnt === 0) continue;
+            $avgRoi  = round((float)($stat['roi_sum'] ?? 0) / $cnt, 2);
+            $hourAvgRoi[$hour]    = $avgRoi;
+            $hourRunnerRate[$hour] = round((int)($stat['runner_count'] ?? 0) / $cnt, 4);
+            $hourFakeRate[$hour]  = round((int)($stat['fake_count']   ?? 0) / $cnt, 4);
+            $hourStopRate[$hour]  = round((int)($stat['sl_count']     ?? 0) / $cnt, 4);
+        }
+
+        if (empty($hourAvgRoi)) {
+            return [
+                'best_hours_utc'             => [],
+                'worst_hours_utc'            => [],
+                'session_behavior_score'     => 0.5,
+                'time_of_day_runner_rate'    => $hourRunnerRate,
+                'time_of_day_fake_move_rate' => $hourFakeRate,
+                'time_of_day_stop_rate'      => $hourStopRate,
+            ];
+        }
+
+        // Sort hours by avg ROI
+        arsort($hourAvgRoi);
+        $best  = array_slice(array_keys($hourAvgRoi), 0, 3);
+        asort($hourAvgRoi);
+        $worst = array_slice(array_keys($hourAvgRoi), 0, 3);
+
+        // session_behavior_score: 1.0 = consistent across hours, 0.0 = highly variable
+        $allRois = array_values($hourAvgRoi);
+        $rng     = count($allRois) > 1 ? (max($allRois) - min($allRois)) : 0.0;
+        $sessionScore = max(0.0, min(1.0, 1.0 - $rng / 15.0));
+
+        return [
+            'best_hours_utc'             => array_values($best),
+            'worst_hours_utc'            => array_values($worst),
+            'session_behavior_score'     => round($sessionScore, 4),
+            'time_of_day_runner_rate'    => $hourRunnerRate,
+            'time_of_day_fake_move_rate' => $hourFakeRate,
+            'time_of_day_stop_rate'      => $hourStopRate,
+        ];
+    }
+
+    // =========================================================================
+    // Pattern-specific behavior
+    // =========================================================================
+
+    /**
+     * Compute per-pattern (V2/V3) behavioral statistics.
+     *
+     * @param list<float> $v2MaxRois
+     * @param list<float> $v2FinalRois
+     * @param list<float> $v3MaxRois
+     * @param list<float> $v3FinalRois
+     * @return array<string,mixed>
+     */
+    private function computePatternSpecificBehavior(
+        array $v2MaxRois,   array $v2FinalRois,   int $v2SlHits,   int $v2Runners,   int $v2Total,
+        array $v3MaxRois,   array $v3FinalRois,   int $v3SlHits,   int $v3Runners,   int $v3Total
+    ): array {
+        $patternStats = function (
+            array $maxRois, array $finalRois, int $slHits, int $runners, int $total
+        ): array {
+            if ($total === 0) {
+                return [
+                    'sample_count'      => 0,
+                    'success_rate'      => null,
+                    'runner_rate'       => null,
+                    'avg_roi'           => null,
+                    'stop_rate'         => null,
+                    'corridor_p75_roi'  => null,
+                    'data_confidence'   => 'none',
+                ];
+            }
+            $successCount = 0;
+            $roiSum       = 0.0;
+            foreach ($finalRois as $roi) {
+                if ($roi > 0) $successCount++;
+                $roiSum += $roi;
+            }
+            sort($maxRois);
+            $conf = $total >= 20 ? 'high' : ($total >= 5 ? 'medium' : ($total > 0 ? 'low' : 'none'));
+
+            return [
+                'sample_count'      => $total,
+                'success_rate'      => $total > 0 ? round($successCount / $total, 4) : null,
+                'runner_rate'       => $total > 0 ? round($runners / $total, 4) : null,
+                'avg_roi'           => count($finalRois) > 0 ? round($roiSum / count($finalRois), 2) : null,
+                'stop_rate'         => $total > 0 ? round($slHits / $total, 4) : null,
+                'corridor_p75_roi'  => count($maxRois) > 0 ? round($this->percentile($maxRois, 75), 2) : null,
+                'data_confidence'   => $conf,
+            ];
+        };
+
+        $v2Stats = $patternStats($v2MaxRois, $v2FinalRois, $v2SlHits, $v2Runners, $v2Total);
+        $v3Stats = $patternStats($v3MaxRois, $v3FinalRois, $v3SlHits, $v3Runners, $v3Total);
+
+        return [
+            // V2 pattern stats (double_top_contextual_v2 / double_bottom_contextual_v2)
+            'v2_sample_count'       => $v2Stats['sample_count'],
+            'v2_success_rate'       => $v2Stats['success_rate'],
+            'short_v2_success_rate' => $v2Stats['success_rate'],  // alias
+            'v2_runner_rate'        => $v2Stats['runner_rate'],
+            'v2_avg_roi'            => $v2Stats['avg_roi'],
+            'v2_stop_rate'          => $v2Stats['stop_rate'],
+            'v2_corridor_p75_roi'   => $v2Stats['corridor_p75_roi'],
+            'v2_data_confidence'    => $v2Stats['data_confidence'],
+            // V3 pattern stats (double_top_contextual_v3 / double_bottom_contextual_v3)
+            'v3_sample_count'       => $v3Stats['sample_count'],
+            'v3_success_rate'       => $v3Stats['success_rate'],
+            'short_v3_success_rate' => $v3Stats['success_rate'],  // alias
+            'v3_runner_rate'        => $v3Stats['runner_rate'],
+            'v3_avg_roi'            => $v3Stats['avg_roi'],
+            'v3_stop_rate'          => $v3Stats['stop_rate'],
+            'v3_corridor_p75_roi'   => $v3Stats['corridor_p75_roi'],
+            'v3_data_confidence'    => $v3Stats['data_confidence'],
+        ];
+    }
+
+    // =========================================================================
+    // Regime behavior
+    // =========================================================================
+
+    /**
+     * Compute simplified regime behavior scores derived from trade data.
+     * Since no external regime labels are available, we infer regime proxies.
+     *
+     * @param list<float> $maxRois
+     * @param list<float> $finalRois
+     * @return array<string,float>
+     */
+    private function computeRegimeBehavior(
+        array $maxRois,
+        array $finalRois,
+        int   $shorts,
+        int   $longs,
+        float $corridorP75,
+        float $corridorP90,
+        float $runnerProb,
+        float $slHitRate
+    ): array {
+        $n = count($maxRois);
+
+        // bear_regime_behavior_score: short-side performance proxy
+        // Short trades = adversarial market for price = "bear" for underlying
+        $totalSides = $shorts + $longs;
+        $bearScore = $totalSides > 0
+            ? min(1.0, ($shorts / $totalSides) * ($corridorP75 / 8.0 + $runnerProb * 2.0))
+            : 0.3;
+
+        // bull_regime_behavior_score: long-side performance proxy
+        $bullScore = $totalSides > 0
+            ? min(1.0, ($longs / $totalSides) * ($corridorP75 / 8.0 + $runnerProb * 2.0))
+            : 0.3;
+
+        // sideways_regime_behavior_score: performance when moves are modest (< 5%)
+        $sidewaysTotal = 0; $sidewaysSuccess = 0;
+        foreach ($maxRois as $i => $maxRoi) {
+            if ($maxRoi < 5.0) {
+                $sidewaysTotal++;
+                if (isset($finalRois[$i]) && $finalRois[$i] > 0) {
+                    $sidewaysSuccess++;
+                }
+            }
+        }
+        $sidewaysScore = $sidewaysTotal > 0 ? round($sidewaysSuccess / $sidewaysTotal, 4) : 0.3;
+
+        // high_vol_regime_behavior_score: performance when moves are very wide (> 8%)
+        $highVolTotal = 0; $highVolSuccess = 0;
+        foreach ($maxRois as $i => $maxRoi) {
+            if ($maxRoi >= 8.0) {
+                $highVolTotal++;
+                if (isset($finalRois[$i]) && $finalRois[$i] > 0) {
+                    $highVolSuccess++;
+                }
+            }
+        }
+        $highVolScore = $highVolTotal > 0 ? round($highVolSuccess / $highVolTotal, 4) : 0.3;
+
+        // fear_regime_behavior_score: performance under high SL pressure
+        // Low SL rate = coin handles stress = high fear score
+        $fearScore = round(1.0 - min(1.0, $slHitRate * 2.0), 4);
+
+        // regime_sensitivity_score: how much performance varies across regimes
+        $scores = array_filter([$bearScore, $bullScore, $sidewaysScore, $highVolScore]);
+        if (count($scores) >= 2) {
+            $spread = max($scores) - min($scores);
+            $regimeSensitivity = min(1.0, $spread * 2.0);
+        } else {
+            $regimeSensitivity = 0.3;
+        }
+
+        return [
+            'bull_regime_behavior_score'    => round(min(1.0, $bullScore), 4),
+            'bear_regime_behavior_score'    => round(min(1.0, $bearScore), 4),
+            'sideways_regime_behavior_score' => round($sidewaysScore, 4),
+            'high_vol_regime_behavior_score' => round($highVolScore, 4),
+            'fear_regime_behavior_score'    => round($fearScore, 4),
+            'regime_sensitivity_score'      => round($regimeSensitivity, 4),
+        ];
+    }
+
+    // =========================================================================
+    // Evidence timeline
+    // =========================================================================
+
+    /**
+     * Rebuild the evidence timeline for a symbol from its trade list.
+     * Generates up to MAX_EVIDENCE_ITEMS events from the most recent trades.
+     *
+     * @param list<array<string,mixed>> $trades
+     */
+    private function rebuildEvidenceTimeline(string $symbol, array $trades): void
+    {
+        if (empty($trades)) {
+            return;
+        }
+
+        // Sort trades by close/open time descending (most recent first)
+        usort($trades, function ($a, $b) {
+            $ta = (int)($a['closed_ts'] ?? $a['closed_at'] ?? $a['open_ts'] ?? $a['opened_at'] ?? 0);
+            $tb = (int)($b['closed_ts'] ?? $b['closed_at'] ?? $b['open_ts'] ?? $b['opened_at'] ?? 0);
+            return $tb <=> $ta;
+        });
+
+        $items = [];
+        foreach ($trades as $trade) {
+            if (count($items) >= self::MAX_EVIDENCE_ITEMS) {
+                break;
+            }
+
+            $source  = (string)($trade['_source'] ?? 'live_closed');
+            $finalRoi = $this->extractFinalRoi($trade);
+            $maxRoi   = $this->extractPeakRoi($trade, $finalRoi);
+            $ts       = (int)($trade['closed_ts'] ?? $trade['closed_at'] ?? $trade['open_ts'] ?? $trade['opened_at'] ?? 0);
+            $patternAlgo = (string)($trade['pattern_algorithm'] ?? '');
+            $side        = (string)($trade['side'] ?? '');
+            $closeReason = strtolower((string)($trade['close_reason'] ?? $trade['exit_reason'] ?? ''));
+            $isSlHit     = $this->detectStopLossHit($trade, $finalRoi, $maxRoi);
+
+            $type = 'trade_closed';
+            $notes = '';
+
+            if ($source === 'shadow_closed') {
+                $type = 'shadow_outcome';
+            } elseif ($source === 'live_active') {
+                $type = 'trade_active';
+            } elseif ($isSlHit) {
+                $type = 'stop_hit';
+            } elseif ($maxRoi !== null && $maxRoi >= 15.0) {
+                $type = 'runner_case';
+                $notes = 'Reached ' . round((float)$maxRoi, 1) . '% peak ROI';
+            } elseif ($maxRoi !== null && $maxRoi >= 10.0) {
+                $type = 'reached_10_roi';
+            } elseif ($maxRoi !== null && $maxRoi >= 5.0) {
+                $type = 'reached_5_roi';
+            } elseif ($maxRoi !== null && $maxRoi < 3.0 && $finalRoi !== null && $finalRoi <= 0.0) {
+                $type = 'fakeout_case';
+            }
+
+            $items[] = [
+                'ts'              => $ts ?: time(),
+                'symbol'          => $symbol,
+                'type'            => $type,
+                'source'          => $source,
+                'pattern_algorithm' => $patternAlgo,
+                'side'            => $side,
+                'final_roi'       => $finalRoi !== null ? round($finalRoi, 2) : null,
+                'peak_roi'        => $maxRoi   !== null ? round($maxRoi, 2)   : null,
+                'close_reason'    => $closeReason ?: null,
+                'notes'           => $notes ?: null,
+            ];
+        }
+
+        $data = [
+            'symbol'     => $symbol,
+            'updated_at' => date('Y-m-d H:i:s'),
+            'items'      => $items,
+        ];
+
+        $path = $this->evidencePath($symbol);
+        file_put_contents(
+            $path,
+            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
+        );
+    }
+
     // =========================================================================
 
     /**
@@ -883,14 +1543,17 @@ final class CoinPassportEngine
      * @return array{string, string|null}  [eligibility, block_reason]
      */
     private function computeLiveEligibility(
-        float  $corridorP75,
-        float  $runnerProb,
-        float  $shortSuitability,
-        float  $noiseScore,
-        string $dataConfidence,
-        float  $regimeHealth,
-        bool   $insufficientFlag,
-        string $fallbackMode
+        float   $corridorP75,
+        float   $runnerProb,
+        float   $shortSuitability,
+        float   $noiseScore,
+        string  $dataConfidence,
+        float   $regimeHealth,
+        bool    $insufficientFlag,
+        string  $fallbackMode,
+        float   $impulseStrength = 0.5,
+        float   $pullbackSeverity = 0.5,
+        ?float  $patternSuccessRate = null
     ): array {
         // Insufficient data → forced fallback
         if ($insufficientFlag) {
@@ -911,7 +1574,7 @@ final class CoinPassportEngine
             return ['sim_only', "corridor_p75_too_low:{$corridorP75}<" . self::LIVE_GATE_CORRIDOR_P75_MIN];
         }
 
-        // Noise gate (high noise → sim only)
+        // Noise gate
         if ($noiseScore > self::LIVE_GATE_NOISE_MAX) {
             return ['sim_only', "noise_score_too_high:{$noiseScore}>" . self::LIVE_GATE_NOISE_MAX];
         }
@@ -929,6 +1592,21 @@ final class CoinPassportEngine
         // Regime health gate
         if ($regimeHealth < self::LIVE_GATE_REGIME_HEALTH_MIN) {
             return ['sim_only', "regime_health_too_low:{$regimeHealth}<" . self::LIVE_GATE_REGIME_HEALTH_MIN];
+        }
+
+        // Impulse strength gate (weak impulse = coin doesn't move meaningfully)
+        if ($impulseStrength < self::LIVE_GATE_IMPULSE_STRENGTH_MIN) {
+            return ['sim_only', "impulse_strength_too_low:{$impulseStrength}<" . self::LIVE_GATE_IMPULSE_STRENGTH_MIN];
+        }
+
+        // Pullback severity gate (extreme retracing = dangerous for live)
+        if ($pullbackSeverity > self::LIVE_GATE_PULLBACK_SEVERITY_MAX) {
+            return ['sim_only', "pullback_severity_too_high:{$pullbackSeverity}>" . self::LIVE_GATE_PULLBACK_SEVERITY_MAX];
+        }
+
+        // Pattern-specific success rate gate (if we have pattern data)
+        if ($patternSuccessRate !== null && $patternSuccessRate < 0.35) {
+            return ['sim_only', "pattern_success_rate_too_low:{$patternSuccessRate}<0.35"];
         }
 
         return ['allow_live', null];
@@ -992,6 +1670,32 @@ final class CoinPassportEngine
             return 'moderate';
         }
         return 'patient';
+    }
+
+    private function recommendMaxHoldMinutes(?float $avgHoldMinutes, float $runnerProb, float $corridorP75): ?float
+    {
+        if ($avgHoldMinutes === null || $avgHoldMinutes <= 0) {
+            return null;
+        }
+        // Runner coins: allow longer holds; weak corridor: tighter hold limit
+        $multiplier = 1.5;
+        if ($runnerProb >= 0.15 || $corridorP75 >= 8.0) {
+            $multiplier = 2.5;
+        } elseif ($runnerProb >= 0.05 || $corridorP75 >= 4.0) {
+            $multiplier = 2.0;
+        }
+        return round($avgHoldMinutes * $multiplier, 0);
+    }
+
+    private function recommendRunnerExpectation(float $runnerProb, float $reach10Rate, float $corridorP90): string
+    {
+        if ($runnerProb >= 0.2 || $reach10Rate >= 0.2 || $corridorP90 >= 15.0) {
+            return 'high_runner';
+        }
+        if ($runnerProb >= 0.07 || $reach10Rate >= 0.07 || $corridorP90 >= 8.0) {
+            return 'occasional_runner';
+        }
+        return 'scalp_coin';
     }
 
     // =========================================================================
@@ -1067,6 +1771,12 @@ final class CoinPassportEngine
     {
         $safe = preg_replace('/[^A-Z0-9_\-]/', '', strtoupper($symbol));
         return $this->passportsDir . '/' . $safe . '.json';
+    }
+
+    private function evidencePath(string $symbol): string
+    {
+        $safe = preg_replace('/[^A-Z0-9_\-]/', '', strtoupper($symbol));
+        return $this->evidenceDir . '/' . $safe . '.json';
     }
 
     /**

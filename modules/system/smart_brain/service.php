@@ -283,4 +283,272 @@ final class SmartBrainService
     {
         return $this->getAiShadowService()->testConnection();
     }
+
+    // =========================================================================
+    // Trading Bot control-plane (Brain acts as UI/control-plane only;
+    // all execution logic stays in the trading_bot module)
+    // =========================================================================
+
+    /**
+     * Lazy-load the TradingBotService.
+     */
+    private function getTradingBotService(): object
+    {
+        static $svc = null;
+        if ($svc === null) {
+            $base = __DIR__ . '/../trading_bot';
+            require_once $base . '/bootstrap.php';
+            require_once $base . '/service.php';
+            $svc = new \Modules\System\TradingBot\TradingBotService();
+        }
+        return $svc;
+    }
+
+    /**
+     * Resolve the bot module base path and derive storage directory.
+     *
+     * @return array{base:string|null,storageDir:string|null,mode:string}
+     */
+    private function resolveBotStorageDir(): array
+    {
+        $base = realpath(__DIR__ . '/../trading_bot');
+        if ($base === false || !is_dir($base)) {
+            return ['base' => null, 'storageDir' => null, 'mode' => 'paper'];
+        }
+
+        // Read config to determine mode
+        $botJson = $base . '/config/bot.json';
+        $configPhp = $base . '/config/config.php';
+
+        $cfg = [];
+        if (is_file($configPhp)) {
+            $loaded = @include $configPhp;
+            if (is_array($loaded)) {
+                $cfg = $loaded;
+            }
+        }
+        if (is_file($botJson)) {
+            $j = @json_decode((string)@file_get_contents($botJson), true);
+            if (is_array($j)) {
+                if (isset($j['mode'])) {
+                    $cfg['module']['mode'] = $j['mode'];
+                }
+                if (isset($j['enabled'])) {
+                    $cfg['module']['enabled'] = (bool)$j['enabled'];
+                }
+            }
+        }
+
+        $mode = strtolower((string)($cfg['module']['mode'] ?? 'paper'));
+        if ($mode === 'live') {
+            $storageSuffix = 'storage_live';
+        } elseif ($mode === 'demo') {
+            $storageSuffix = 'storage_demo';
+        } else {
+            $storageSuffix = 'storage_paper';
+        }
+
+        return [
+            'base'       => $base,
+            'storageDir' => $base . '/' . $storageSuffix,
+            'mode'       => $mode,
+            'config'     => $cfg,
+        ];
+    }
+
+    /**
+     * Read a JSON file; return [] on failure.
+     *
+     * @return array<string,mixed>
+     */
+    private function readBotJsonFile(string $path): array
+    {
+        if (!is_file($path)) {
+            return [];
+        }
+        $c = @file_get_contents($path);
+        if ($c === false || trim($c) === '') {
+            return [];
+        }
+        $d = @json_decode($c, true);
+        return is_array($d) ? $d : [];
+    }
+
+    /**
+     * Aggregate all data the Brain Execution page needs.
+     *
+     * @return array<string,mixed>
+     */
+    public function getTradingBotData(): array
+    {
+        $res = $this->resolveBotStorageDir();
+        $storageDir = $res['storageDir'];
+        $mode       = $res['mode'];
+        $base       = $res['base'];
+        $cfg        = $res['config'] ?? [];
+
+        if ($storageDir === null || $base === null) {
+            return [
+                'bot_available'   => false,
+                'bot_error'       => 'module_base_unknown',
+                'bot_mode'        => 'paper',
+                'bot_config'      => [],
+                'bot_status'      => [],
+                'bot_last_run'    => [],
+                'bot_stats'       => [],
+                'bot_positions'   => [],
+                'bot_active_trades'  => [],
+                'bot_closed_trades'  => [],
+                'bot_balance'     => [],
+            ];
+        }
+
+        // Load status
+        $status = $this->readBotJsonFile($storageDir . '/runtime/status.json');
+
+        // Load last_run
+        $lastRun = $this->readBotJsonFile($storageDir . '/last_run.json');
+        if (empty($lastRun)) {
+            $lastRun = $this->readBotJsonFile($storageDir . '/runtime/last_run.json');
+        }
+
+        // Load stats
+        $stats = $this->readBotJsonFile($storageDir . '/runtime/stats.json');
+
+        // Load active trades
+        $activeTrades = $this->readBotJsonFile($storageDir . '/trades/open_trades.json');
+        if (!isset($activeTrades[0])) {
+            // Might be keyed array — normalize
+            $activeTrades = array_values($activeTrades);
+        }
+
+        // Load closed trades (last 50)
+        $closedTradesRaw = $this->readBotJsonFile($storageDir . '/trades/closed_trades.json');
+        if (!is_array($closedTradesRaw)) {
+            $closedTradesRaw = [];
+        }
+        $closedTrades = array_values(array_slice(array_reverse($closedTradesRaw), 0, 50));
+
+        // Load positions snapshot
+        $positions = $this->readBotJsonFile($storageDir . '/runtime/positions.json');
+
+        // Load balance snapshot
+        $balance = $this->readBotJsonFile($storageDir . '/runtime/balance.json');
+
+        // API base URL for display
+        $apiBaseUrl = 'https://api.bybit.com';
+        if ($mode === 'demo') {
+            $apiBaseUrl = 'https://api-demo.bybit.com';
+        } elseif ($mode === 'paper') {
+            $apiBaseUrl = 'N/A (paper simulation)';
+        }
+
+        return [
+            'bot_available'      => true,
+            'bot_error'          => null,
+            'bot_mode'           => $mode,
+            'bot_enabled'        => (bool)($cfg['module']['enabled'] ?? false),
+            'bot_config'         => $cfg,
+            'bot_status'         => $status,
+            'bot_last_run'       => $lastRun,
+            'bot_stats'          => $stats,
+            'bot_positions'      => $positions,
+            'bot_active_trades'  => $activeTrades,
+            'bot_closed_trades'  => $closedTrades,
+            'bot_balance'        => $balance,
+            'bot_storage_dir'    => $storageDir,
+            'bot_api_base_url'   => $apiBaseUrl,
+            'bot_is_real_exchange' => in_array($mode, ['live', 'demo'], true),
+        ];
+    }
+
+    /**
+     * Delegate: run one bot execution cycle.
+     *
+     * @return array<string,mixed>
+     */
+    public function runTradingBot(): array
+    {
+        try {
+            return $this->getTradingBotService()->execute();
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Delegate: force-reconcile bot positions/orders.
+     *
+     * @return array<string,mixed>
+     */
+    public function reconcileTradingBot(): array
+    {
+        try {
+            return $this->getTradingBotService()->forceReconcile();
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Delegate: get live bot status.
+     *
+     * @return array<string,mixed>
+     */
+    public function getTradingBotStatus(): array
+    {
+        try {
+            return $this->getTradingBotService()->getStatus();
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Save allowed bot config keys to config/bot.json.
+     *
+     * @param array<string,mixed> $values
+     * @return array{ok:bool,error?:string}
+     */
+    public function saveTradingBotConfig(array $values): array
+    {
+        $res = $this->resolveBotStorageDir();
+        $base = $res['base'];
+        if ($base === null) {
+            return ['ok' => false, 'error' => 'module_base_unknown'];
+        }
+
+        $path = $base . '/config/bot.json';
+        $current = is_file($path)
+            ? (@json_decode((string)@file_get_contents($path), true) ?: [])
+            : [];
+
+        // Only allow safe top-level config keys to be written via Brain UI
+        $allowed = [
+            'enabled', 'mode',
+            'max_positions', 'reconcile_before_action',
+            'brain_source_enabled', 'brain_source_auto_run',
+            'order_type', 'leverage_default',
+            'stop_loss_pct', 'take_profit_pct',
+            'trailing_enabled', 'trailing_mode',
+            'trailing_activation_roi', 'trailing_drawdown_factor',
+            'break_even_enabled', 'break_even_activation_roi',
+            'emergency_stop_enabled', 'emergency_stop_loss_pct',
+        ];
+
+        foreach ($allowed as $key) {
+            if (array_key_exists($key, $values)) {
+                $current[$key] = $values[$key];
+            }
+        }
+
+        $written = @file_put_contents(
+            $path,
+            json_encode($current, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
+        );
+
+        return $written !== false
+            ? ['ok' => true]
+            : ['ok' => false, 'error' => 'write_failed'];
+    }
 }

@@ -440,4 +440,87 @@ final class SmartBrainController
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
+
+    // =========================================================================
+    // Trading Bot control-plane (Brain is UI/control-plane; bot stays backend)
+    // =========================================================================
+
+    /**
+     * GET /admin/smart_brain/execution
+     */
+    public function execution(): void
+    {
+        $data = $this->service->getTradingBotData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/execution.php';
+    }
+
+    /**
+     * POST /admin/smart_brain/execution/run
+     */
+    public function executionRunBot(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+            return;
+        }
+
+        $result = $this->service->runTradingBot();
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /admin/smart_brain/execution/reconcile
+     */
+    public function executionReconcile(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+            return;
+        }
+
+        $result = $this->service->reconcileTradingBot();
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/smart_brain/execution/status
+     */
+    public function executionStatus(): void
+    {
+        $result = $this->service->getTradingBotStatus();
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /admin/smart_brain/execution/save_config
+     */
+    public function executionSaveConfig(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+            return;
+        }
+
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+
+        if (!is_array($body)) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'invalid_json']);
+            return;
+        }
+
+        $result = $this->service->saveTradingBotConfig($body);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
 }

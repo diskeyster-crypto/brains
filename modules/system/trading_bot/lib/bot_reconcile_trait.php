@@ -32,8 +32,8 @@ trait BotReconcileTrait
             'error' => null,
         ];
         
-        // In dry mode, just return success
-        if ($this->isDryMode() || $this->isTestMode()) {
+        // In paper/dry mode, just return success (no real exchange calls)
+        if ($this->isPaperMode() || $this->isTestMode()) {
             return $result;
         }
         
@@ -119,8 +119,8 @@ trait BotReconcileTrait
      */
     private function fetchExchangePositions(): array
     {
-        // In dry/test mode, return empty
-        if (!$this->isLiveMode()) {
+        // In paper/dry/test mode, return empty
+        if (!$this->isRealExchangeMode()) {
             return [];
         }
         
@@ -144,8 +144,8 @@ trait BotReconcileTrait
      */
     private function fetchExchangeOrders(): array
     {
-        // In dry/test mode, return empty
-        if (!$this->isLiveMode()) {
+        // In paper/dry/test mode, return empty
+        if (!$this->isRealExchangeMode()) {
             return [];
         }
         

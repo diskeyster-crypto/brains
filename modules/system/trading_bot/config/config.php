@@ -22,13 +22,27 @@ return [
     'module' => [
         'enabled' => true,
 
-        // live | dry
-        // live = sends real exchange calls
-        // dry  = simulates, no real trading-stop updates, no real orders
-        'mode' => 'dry',
+        // live  = sends real exchange calls via KeyCenter credentials
+        // demo  = sends real API calls to Bybit Demo account (credentials stored locally in bot config)
+        // paper = simulates locally, no real orders (legacy alias: dry)
+        'mode' => 'paper',
 
-        // KeyCenter account id for Bybit credentials
+        // KeyCenter account id for Bybit credentials (used only in live mode)
         'account_id' => 'trading_bot',
+
+        // Per-mode local credentials (populated by UI settings, stored in bot.json)
+        // demo credentials are NEVER stored in KeyCenter — local bot config only
+        // live credentials use KeyCenter (account_id above); the block below is informational only
+        'credentials' => [
+            'demo' => [
+                'api_key'      => '',
+                'api_secret'   => '',
+                'api_base_url' => 'https://api-demo.bybit.com',
+            ],
+            'live' => [
+                // live uses KeyCenter via account_id above — no raw keys here
+            ],
+        ],
 
         // Reconcile exchange positions & orders before executing intents
         // true = reconcile first (recommended)

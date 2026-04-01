@@ -16,11 +16,16 @@ $tab = 'settings';
 $cfg = $this->config ?? [];
 
 // --- Module
-$mode = (string)($cfg['module']['mode'] ?? 'dry');
+$mode = (string)($cfg['module']['mode'] ?? 'paper');
 $enabled = (bool)($cfg['module']['enabled'] ?? false);
 $accountId = (string)($cfg['module']['account_id'] ?? 'trading_bot');
 $maxPositions = (int)($cfg['module']['max_concurrent_positions'] ?? 10);
 $reconcileBeforeAction = (bool)($cfg['module']['reconcile_before_action'] ?? true);
+
+// --- Demo credentials (local — NOT KeyCenter)
+$demoApiKey    = (string)($cfg['module']['credentials']['demo']['api_key']      ?? '');
+$demoApiSecret = (string)($cfg['module']['credentials']['demo']['api_secret']   ?? '');
+$demoBaseUrl   = (string)($cfg['module']['credentials']['demo']['api_base_url'] ?? 'https://api-demo.bybit.com');
 
 // --- Exchange
 $exchangeCategory = (string)($cfg['exchange']['category'] ?? 'linear');
@@ -135,18 +140,30 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 
                     <h6 class="mb-3">Основное</h6>
 
+                    <!-- ══════════════════════════════════════════════════
+                         MODE SELECTOR — CURRENT MODE IS ALWAYS VISIBLE
+                         ══════════════════════════════════════════════════ -->
                     <div class="mb-3">
-                        <label class="form-label">
-                            Режим
-                            <?= sprintf($helpIcon, htmlspecialchars('dry — без реальных ордеров. live — реальные ордера на биржу.')) ?>
+                        <label class="form-label fw-bold">
+                            Режим бота
+                            <?= sprintf($helpIcon, htmlspecialchars('demo — реальные API-вызовы на Bybit Demo аккаунт (не влияет на реальные деньги). live — реальный аккаунт. paper — локальная симуляция без ордеров (legacy).')) ?>
                         </label>
-                        <select class="form-select" name="mode" id="mode">
-                            <option value="dry" <?= $mode === 'dry' ? 'selected' : '' ?>>dry — тестовый (без ордеров)</option>
-                            <option value="live" <?= $mode === 'live' ? 'selected' : '' ?>>live — боевой (реальные ордера)</option>
+                        <select class="form-select fw-bold" name="mode" id="mode" onchange="onModeChange(this.value)">
+                            <option value="demo"  <?= $mode === 'demo'  ? 'selected' : '' ?>>🟡 DEMO — Bybit Demo аккаунт (реальное API, без реальных денег)</option>
+                            <option value="live"  <?= $mode === 'live'  ? 'selected' : '' ?>>🔴 LIVE — Реальный аккаунт (БОЕВЫЕ ДЕНЬГИ)</option>
+                            <option value="paper" <?= ($mode === 'paper' || $mode === 'dry') ? 'selected' : '' ?>>⚪ PAPER — локальная симуляция (legacy, без ордеров)</option>
                         </select>
-                        <div class="form-text text-warning">
-                            Внимание: в режиме <b>live</b> бот отправляет реальные ордера на биржу.
-                        </div>
+                    </div>
+
+                    <!-- Current mode badge (always visible) -->
+                    <div id="modeBadgeDemo"  class="alert alert-warning fw-bold mb-3 py-2 <?= $mode === 'demo'  ? '' : 'd-none' ?>">
+                        🟡 DEMO MODE — API-вызовы идут на Bybit Demo аккаунт. Реальные деньги не затрагиваются.
+                    </div>
+                    <div id="modeBadgeLive"  class="alert alert-danger  fw-bold mb-3 py-2 <?= $mode === 'live'  ? '' : 'd-none' ?>">
+                        🔴 LIVE MODE — ВНИМАНИЕ! Бот торгует реальными деньгами на биржу Bybit!
+                    </div>
+                    <div id="modeBadgePaper" class="alert alert-secondary fw-bold mb-3 py-2 <?= ($mode === 'paper' || $mode === 'dry') ? '' : 'd-none' ?>">
+                        ⚪ PAPER MODE — симуляция, ордера не отправляются.
                     </div>
 
                     <div class="mb-3">
@@ -159,18 +176,72 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">
-                            Account ID (KeyCenter)
-                            <?= sprintf($helpIcon, htmlspecialchars('ID аккаунта в KeyCenter (Admin → KeyCenter). Используется для подписи запросов к Bybit.')) ?>
-                        </label>
-                        <select class="form-select" name="account_id" id="account_id">
-                            <?php foreach ($availableAccounts as $acc): ?>
-                                <option value="<?= htmlspecialchars($acc) ?>" <?= $accountId === $acc ? 'selected' : '' ?>><?= htmlspecialchars($acc) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="form-text">
-                            Если ключи были зашифрованы другим storage/.encryption_key — будет <code>decryption failed</code>.
+                    <!-- ══════════════════════════════════════════════════
+                         DEMO CREDENTIALS SECTION (local, NOT KeyCenter)
+                         ══════════════════════════════════════════════════ -->
+                    <div id="demoCreds" class="card border-warning mb-3 <?= $mode !== 'demo' ? 'd-none' : '' ?>">
+                        <div class="card-header bg-warning bg-opacity-25 fw-bold">
+                            🟡 DEMO — API credentials (локально, не в KeyCenter)
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-2">
+                                Demo-ключи хранятся <strong>только</strong> в конфиге бота (<code>config/bot.json</code>) и <strong>никогда</strong> не попадают в KeyCenter.
+                                Создайте Demo API ключ в <a href="https://www.bybit.com/app/user/api-management" target="_blank">Bybit → API</a> с типом аккаунта <b>Demo Trading</b>.
+                            </p>
+                            <div class="mb-2">
+                                <label class="form-label">Demo API Key</label>
+                                <input type="text" class="form-control" id="demo_api_key" name="demo_api_key"
+                                    value="<?= htmlspecialchars($demoApiKey) ?>"
+                                    autocomplete="off" spellcheck="false"
+                                    placeholder="Вставьте Demo API Key">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Demo API Secret</label>
+                                <input type="password" class="form-control" id="demo_api_secret" name="demo_api_secret"
+                                    value=""
+                                    autocomplete="new-password" spellcheck="false"
+                                    placeholder="<?= $demoApiSecret !== '' ? '(сохранён — оставьте пустым чтобы не менять, введите новый чтобы заменить)' : 'Вставьте Demo API Secret' ?>"
+                                    data-has-value="<?= $demoApiSecret !== '' ? '1' : '0' ?>">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Demo API Base URL</label>
+                                <input type="text" class="form-control" id="demo_api_base_url" name="demo_api_base_url"
+                                    value="<?= htmlspecialchars($demoBaseUrl) ?>"
+                                    autocomplete="off">
+                                <div class="form-text">По умолчанию: <code>https://api-demo.bybit.com</code></div>
+                            </div>
+                            <div class="alert alert-warning py-1 px-2 mb-0 small">
+                                <i class="bi bi-shield-exclamation me-1"></i>
+                                Demo-ключи имеют доступ только к Demo Trading аккаунту — они <strong>не могут</strong> управлять реальными средствами.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ══════════════════════════════════════════════════
+                         LIVE CREDENTIALS SECTION (KeyCenter)
+                         ══════════════════════════════════════════════════ -->
+                    <div id="liveCreds" class="card border-danger mb-3 <?= $mode !== 'live' ? 'd-none' : '' ?>">
+                        <div class="card-header bg-danger bg-opacity-25 fw-bold text-danger">
+                            🔴 LIVE — API credentials (KeyCenter)
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-danger fw-bold py-2 mb-2">
+                                ⚠️ В режиме LIVE бот отправляет РЕАЛЬНЫЕ ордера. Убедитесь, что ключ настроен в KeyCenter.
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">
+                                    Account ID (KeyCenter)
+                                    <?= sprintf($helpIcon, htmlspecialchars('ID аккаунта в KeyCenter (Admin → KeyCenter). Используется для подписи запросов к Bybit в режиме LIVE.')) ?>
+                                </label>
+                                <select class="form-select" name="account_id" id="account_id">
+                                    <?php foreach ($availableAccounts as $acc): ?>
+                                        <option value="<?= htmlspecialchars($acc) ?>" <?= $accountId === $acc ? 'selected' : '' ?>><?= htmlspecialchars($acc) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">
+                                    Если ключи были зашифрованы другим <code>storage/.encryption_key</code> — будет <code>decryption failed</code>.
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -898,8 +969,26 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                     </tr>
                     <tr>
                         <td class="text-muted">Mode</td>
-                        <td><?= htmlspecialchars($mode) ?></td>
+                        <td>
+                            <?php if ($mode === 'demo'): ?>
+                                <span class="badge bg-warning text-dark fw-bold">🟡 DEMO</span>
+                            <?php elseif ($mode === 'live'): ?>
+                                <span class="badge bg-danger fw-bold">🔴 LIVE</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">⚪ <?= htmlspecialchars($mode) ?></span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
+                    <tr>
+                        <td class="text-muted">Storage</td>
+                        <td><code><?= htmlspecialchars($mode === 'demo' ? 'storage_demo/' : 'storage/') ?></code></td>
+                    </tr>
+                    <?php if ($mode === 'demo'): ?>
+                    <tr>
+                        <td class="text-muted">Demo API URL</td>
+                        <td><code><?= htmlspecialchars($demoBaseUrl) ?></code></td>
+                    </tr>
+                    <?php endif; ?>
                     <tr>
                         <td class="text-muted">Category</td>
                         <td><?= htmlspecialchars($exchangeCategory) ?></td>
@@ -967,6 +1056,21 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 </div>
 
 <script>
+/**
+ * Mode switching: show/hide demo/live credential sections and badges
+ */
+function onModeChange(mode) {
+    const isDemo  = mode === 'demo';
+    const isLive  = mode === 'live';
+    const isPaper = !isDemo && !isLive;
+
+    document.getElementById('demoCreds').classList.toggle('d-none', !isDemo);
+    document.getElementById('liveCreds').classList.toggle('d-none', !isLive);
+    document.getElementById('modeBadgeDemo').classList.toggle('d-none', !isDemo);
+    document.getElementById('modeBadgeLive').classList.toggle('d-none', !isLive);
+    document.getElementById('modeBadgePaper').classList.toggle('d-none', !isPaper);
+}
+
 /**
  * Symbol overrides UI helpers
  */
@@ -1068,10 +1172,23 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     const config = {
         enabled: document.getElementById('enabled').checked,
         mode: document.getElementById('mode').value,
-        account_id: document.getElementById('account_id').value,
+        account_id: (document.getElementById('account_id') || {value: '<?= htmlspecialchars($accountId) ?>'}).value,
         max_positions: num(document.getElementById('max_positions').value, <?= (int)$maxPositions ?>),
         safety_stop_errors: num(document.getElementById('safety_stop_errors').value, <?= (int)$safetyStopErrors ?>),
         reconcile_before_action: document.getElementById('reconcile_before_action').checked,
+
+        credentials: {
+            demo: {
+                api_key: (document.getElementById('demo_api_key') || {value: ''}).value,
+                api_secret: (() => {
+                    const el = document.getElementById('demo_api_secret');
+                    if (!el) return '';
+                    // Empty value means "keep existing secret unchanged" (server merges)
+                    return el.value.trim();
+                })(),
+                api_base_url: (document.getElementById('demo_api_base_url') || {value: 'https://api-demo.bybit.com'}).value,
+            }
+        },
 
         symbol_overrides: collectSymbolOverrides(),
 

@@ -178,7 +178,7 @@ trait BotExecutorTrait
             $activeTrades = $this->store->loadActiveTrades();
             $localSymbols = array_map(function($t) { return $t['symbol'] ?? ''; }, $activeTrades);
             
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $exchangeOpen = $this->getExchangeOpenPositionsCached();
                 
                 // Check if symbol has orphan position on exchange
@@ -340,9 +340,9 @@ trait BotExecutorTrait
             }
 
 // ============================================================
-            // Step 4: Price check (late entry) - LIVE only
+            // Step 4: Price check (late entry) - real exchange modes only
             // ============================================================
-            if ($mode === 'live' && ($this->config['execution']['require_price_check_live'] ?? true)) {
+            if (in_array($mode, ['live', 'demo'], true) && ($this->config['execution']['require_price_check_live'] ?? true)) {
                 if ($intent['entry_action'] === 'enter_now') {
                     $lateCheck = $this->checkLateEntry($intent);
                     if (!$lateCheck['ok']) {
@@ -380,9 +380,9 @@ trait BotExecutorTrait
             }
             
             // ============================================================
-            // Step 4a: P6.6 Balance preflight check - LIVE only
+            // Step 4a: P6.6 Balance preflight check - real exchange modes only
             // ============================================================
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $balanceCheck = $this->checkBalancePreflight($risk);
                 if (!$balanceCheck['ok']) {
                     // P8: Differentiate "insufficient balance" from "balance unavailable".
@@ -414,10 +414,10 @@ trait BotExecutorTrait
             }
             
             // ============================================================
-            // Step 4b: Set leverage - LIVE only
+            // Step 4b: Set leverage - real exchange modes only
             // ============================================================
             $result['execution_stage'] = 'exchange_prepare_started';
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $leverage = (int)($risk['leverage'] ?? 1);
                 $leverageResult = $this->setLeverageOnExchange($symbol, $leverage);
                 if (!$leverageResult['success']) {
@@ -484,7 +484,7 @@ trait BotExecutorTrait
             $orderLinkId = 'tb_' . substr($signalId, 0, 32);
             $order = $this->buildOrder($intent, $positionSize, $risk, $orderLinkId);
             
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $result['exchange_submit_attempted'] = true;
                 $orderResult = $this->submitOrder($order);
             } else {
@@ -506,9 +506,9 @@ trait BotExecutorTrait
             $result['execution_stage'] = 'order_submitted';
             
             // ============================================================
-            // Step 6: Post-open reconcile (LIVE only)
+            // Step 6: Post-open reconcile (real exchange modes only)
             // ============================================================
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $result['execution_stage'] = 'position_open_confirmed';
                 $positionData = $this->fetchOpenPosition($symbol, $side);
                 
@@ -760,8 +760,8 @@ trait BotExecutorTrait
      */
     private function getExchangeOpenPositionsCached(?int $ttlSec = null): array
     {
-        // Only for LIVE mode
-        if (!$this->isLiveMode()) {
+        // Only for real exchange modes (live / demo)
+        if (!$this->isRealExchangeMode()) {
             return [];
         }
         
@@ -808,8 +808,8 @@ trait BotExecutorTrait
      */
         private function getAvailableMarginCached(): ?float
     {
-        // Only for LIVE mode
-        if (!$this->isLiveMode()) {
+        // Only for real exchange modes (live / demo)
+        if (!$this->isRealExchangeMode()) {
             return null;
         }
 
@@ -1076,8 +1076,7 @@ trait BotExecutorTrait
             'symbol' => $intent['symbol'],
             'side' => $intent['side'],
             'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
-            'mode' => 'live',
-            'opened_at' => date('c'),
+            'mode' => $this->getMode(),
             'risk' => $intent['risk'],
             'exchange' => [
                 'order_id' => $orderResult['order_id'] ?? null,
@@ -1218,7 +1217,7 @@ trait BotExecutorTrait
             'reversal_overlay_harvest_applied' => 0,
         ];
         
-        if ($mode !== 'live') {
+        if (!in_array($mode, ['live', 'demo'], true)) {
             return $result;
         }
         
@@ -3369,15 +3368,17 @@ private function computeEntryDeadline(array $intent): array
      */
     private function submitOrder(array $order): array
     {
-        if (!$this->isLiveMode()) {
+        if (!$this->isRealExchangeMode()) {
             return $this->simulateOrder($order);
         }
         
+        $currentMode = $this->getMode();
+
         if ($this->gateway === null || !$this->gateway->isInitialized()) {
             return [
                 'ok' => false,
                 'error' => 'gateway_not_initialized',
-                'mode' => 'live',
+                'mode' => $currentMode,
             ];
         }
         
@@ -3388,7 +3389,7 @@ private function computeEntryDeadline(array $intent): array
                 return [
                     'ok' => false,
                     'error' => $gatewayResult['error'] ?? 'order_submission_failed',
-                    'mode' => 'live',
+                    'mode' => $currentMode,
                 ];
             }
             
@@ -3401,13 +3402,13 @@ private function computeEntryDeadline(array $intent): array
                 'fill_price' => $fillPrice,
                 'fill_qty' => $gatewayResult['fill_qty'] ?? $order['qty'],
                 'status' => $gatewayResult['status'] ?? 'filled',
-                'mode' => 'live',
+                'mode' => $currentMode,
             ];
         } catch (\Throwable $e) {
             return [
                 'ok' => false,
                 'error' => 'Exception: ' . $e->getMessage(),
-                'mode' => 'live',
+                'mode' => $currentMode,
             ];
         }
     }
@@ -3433,7 +3434,7 @@ private function computeEntryDeadline(array $intent): array
      */
     private function getCurrentPrice(string $symbol): ?float
     {
-        if (!$this->isLiveMode()) {
+        if (!$this->isRealExchangeMode()) {
             return null;
         }
         

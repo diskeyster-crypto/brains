@@ -73,31 +73,58 @@ trait BotCoreTrait
      */
     protected function isLiveMode(): bool
     {
-        return ($this->config['module']['mode'] ?? 'dry') === 'live';
+        return ($this->config['module']['mode'] ?? 'paper') === 'live';
     }
-    
+
     /**
-     * Check if bot is in dry mode
+     * Check if bot is in demo mode (Bybit Demo account, real API calls)
+     */
+    protected function isDemoMode(): bool
+    {
+        return ($this->config['module']['mode'] ?? 'paper') === 'demo';
+    }
+
+    /**
+     * Check if bot is in dry/paper mode (no real exchange calls)
      */
     protected function isDryMode(): bool
     {
-        return ($this->config['module']['mode'] ?? 'dry') === 'dry';
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        return $mode === 'dry' || $mode === 'paper';
     }
-    
+
     /**
      * Check if bot is in test mode
      */
     protected function isTestMode(): bool
     {
-        return ($this->config['module']['mode'] ?? 'dry') === 'test';
+        return ($this->config['module']['mode'] ?? 'paper') === 'test';
     }
-    
+
+    /**
+     * Check if bot is in paper mode (legacy alias for dry)
+     */
+    protected function isPaperMode(): bool
+    {
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        return $mode === 'paper' || $mode === 'dry';
+    }
+
+    /**
+     * Check if bot uses a real exchange (live or demo — actual API calls are made)
+     */
+    protected function isRealExchangeMode(): bool
+    {
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        return $mode === 'live' || $mode === 'demo';
+    }
+
     /**
      * Get bot mode
      */
     protected function getMode(): string
     {
-        return $this->config['module']['mode'] ?? 'dry';
+        return $this->config['module']['mode'] ?? 'paper';
     }
     
     /**

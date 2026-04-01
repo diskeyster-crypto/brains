@@ -69,12 +69,40 @@ trait BotConfigTrait
                     }
                     if (isset($overrides['mode']) && is_string($overrides['mode'])) {
                         $mode = strtolower(trim($overrides['mode']));
-                        $config['module']['mode'] = in_array($mode, ['live', 'dry'], true) ? $mode : ($config['module']['mode'] ?? 'dry');
+                        $validModes = ['live', 'demo', 'dry', 'paper'];
+                        $config['module']['mode'] = in_array($mode, $validModes, true) ? $mode : ($config['module']['mode'] ?? 'paper');
                     }
                     if (isset($overrides['account_id']) && is_string($overrides['account_id'])) {
                         $acc = trim($overrides['account_id']);
                         if ($acc !== '') {
                             $config['module']['account_id'] = $acc;
+                        }
+                    }
+                    // Demo mode local credentials (NOT KeyCenter)
+                    if (isset($overrides['credentials']) && is_array($overrides['credentials'])) {
+                        if (!isset($config['module']['credentials']) || !is_array($config['module']['credentials'])) {
+                            $config['module']['credentials'] = [];
+                        }
+                        foreach (['demo', 'live'] as $credMode) {
+                            if (isset($overrides['credentials'][$credMode]) && is_array($overrides['credentials'][$credMode])) {
+                                $credBlock = $overrides['credentials'][$credMode];
+                                $stored = [];
+                                if (isset($credBlock['api_key']) && is_string($credBlock['api_key'])) {
+                                    $stored['api_key'] = $credBlock['api_key'];
+                                }
+                                if (isset($credBlock['api_secret']) && is_string($credBlock['api_secret'])) {
+                                    $stored['api_secret'] = $credBlock['api_secret'];
+                                }
+                                if (isset($credBlock['api_base_url']) && is_string($credBlock['api_base_url'])) {
+                                    $stored['api_base_url'] = trim($credBlock['api_base_url']);
+                                }
+                                if (!empty($stored)) {
+                                    $config['module']['credentials'][$credMode] = array_merge(
+                                        $config['module']['credentials'][$credMode] ?? [],
+                                        $stored
+                                    );
+                                }
+                            }
                         }
                     }
                     if (array_key_exists('max_positions', $overrides)) {

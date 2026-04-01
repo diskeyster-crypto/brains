@@ -30,6 +30,7 @@ final class Bybit implements GatewayInterface
     
     private string $apiKey = '';
     private string $apiSecret = '';
+    private string $baseUrl = self::BASE_URL;
     private int $timeout = 30;
     private int $maxRetries = 3;
     private int $recvWindow = 5000;
@@ -265,7 +266,7 @@ final class Bybit implements GatewayInterface
             ? $this->buildJsonBody($params)
             : $this->buildQueryString($params);
 
-        $url = self::BASE_URL . $path;
+        $url = $this->baseUrl . $path;
         
         // Build headers (signed or unsigned)
         $headers = $signed ? $this->buildHeaders($timestamp, $recvWindow, $paramString) : $this->buildUnsignedHeaders();
@@ -683,6 +684,14 @@ final class Bybit implements GatewayInterface
         $this->apiSecret = $apiSecret;
     }
 
+    public function setBaseUrl(string $url): void
+    {
+        $url = rtrim(trim($url), '/');
+        if ($url !== '') {
+            $this->baseUrl = $url;
+        }
+    }
+
     public function getApiKey(): string
     {
         return $this->apiKey;
@@ -690,7 +699,7 @@ final class Bybit implements GatewayInterface
 
     public function getBaseUrl(): string
     {
-        return self::BASE_URL;
+        return $this->baseUrl;
     }
 
     /**

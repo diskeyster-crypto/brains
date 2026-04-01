@@ -53,19 +53,22 @@ final class TradingBotService
             return;
         }
         
-        $this->storageDir = $this->moduleBase . '/storage';
-        $this->logsDir = $this->moduleBase . '/storage/logs'; // P7 fix: logs in storage/logs per manifest
         $this->config = $this->loadConfig();
-        
+
+        // Mode-based storage namespace: live → storage/, demo → storage_demo/, paper/dry → storage/
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        $storageSuffix = ($mode === 'demo') ? '/storage_demo' : '/storage';
+        $this->storageDir = $this->moduleBase . $storageSuffix;
+        $this->logsDir    = $this->storageDir . '/logs';
+
         // Initialize sub-components
-        $this->riskEngine = new Lib\BotRiskEngine($this->config);
+        $this->riskEngine    = new Lib\BotRiskEngine($this->config);
         $this->trailingEngine = new Lib\BotTrailingEngine($this->config);
-        $this->validator = new Lib\BotValidator($this->config);
-        $this->store = new Lib\BotStore($this->storageDir, $this->config);
-        
-        // P6: Initialize gateway for LIVE mode only
-        $mode = $this->config['module']['mode'] ?? 'dry';
-        if ($mode === 'live') {
+        $this->validator     = new Lib\BotValidator($this->config);
+        $this->store         = new Lib\BotStore($this->storageDir, $this->config);
+
+        // Initialize gateway for real-exchange modes (live and demo)
+        if ($mode === 'live' || $mode === 'demo') {
             $this->initGateway();
         }
     }

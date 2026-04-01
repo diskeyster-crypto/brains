@@ -1124,6 +1124,32 @@ Router::post('/admin/smart_brain/ai_shadow/clear_storage', function () {
     $controller->aiShadowClearStorage();
 });
 
+// Trading Bot Execution control-plane routes (Brain UI only; execution stays in trading_bot module)
+Router::get('/admin/smart_brain/execution', function () {
+    $controller = new SmartBrainController();
+    $controller->execution();
+});
+
+Router::post('/admin/smart_brain/execution/run', function () {
+    $controller = new SmartBrainController();
+    $controller->executionRunBot();
+});
+
+Router::post('/admin/smart_brain/execution/reconcile', function () {
+    $controller = new SmartBrainController();
+    $controller->executionReconcile();
+});
+
+Router::get('/admin/smart_brain/execution/status', function () {
+    $controller = new SmartBrainController();
+    $controller->executionStatus();
+});
+
+Router::post('/admin/smart_brain/execution/save_config', function () {
+    $controller = new SmartBrainController();
+    $controller->executionSaveConfig();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

@@ -418,7 +418,6 @@ final class SmartBrainService
         // Load active trades
         $activeTrades = $this->readBotJsonFile($storageDir . '/trades/open_trades.json');
         if (!isset($activeTrades[0])) {
-            // Might be keyed array — normalize
             $activeTrades = array_values($activeTrades);
         }
 
@@ -438,10 +437,21 @@ final class SmartBrainService
         // API base URL for display
         $apiBaseUrl = 'https://api.bybit.com';
         if ($mode === 'demo') {
-            $apiBaseUrl = 'https://api-demo.bybit.com';
+            $demoCreds = $cfg['module']['credentials']['demo'] ?? [];
+            $apiBaseUrl = trim((string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit.com'));
         } elseif ($mode === 'paper') {
             $apiBaseUrl = 'N/A (paper simulation)';
         }
+
+        // Demo credentials — expose key (masked) but NEVER the secret in plain text
+        $demoCreds = $cfg['module']['credentials']['demo'] ?? [];
+        $demoApiKey = (string)($demoCreds['api_key'] ?? '');
+        $demoApiSecretSet = $demoApiKey !== '' || (string)($demoCreds['api_secret'] ?? '') !== '';
+        $botDemoCreds = [
+            'api_key'         => $demoApiKey,
+            'api_secret_set'  => $demoApiSecretSet,
+            'api_base_url'    => (string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit.com'),
+        ];
 
         return [
             'bot_available'      => true,
@@ -459,6 +469,7 @@ final class SmartBrainService
             'bot_storage_dir'    => $storageDir,
             'bot_api_base_url'   => $apiBaseUrl,
             'bot_is_real_exchange' => in_array($mode, ['live', 'demo'], true),
+            'bot_demo_creds'     => $botDemoCreds,
         ];
     }
 
@@ -506,6 +517,7 @@ final class SmartBrainService
 
     /**
      * Save allowed bot config keys to config/bot.json.
+     * Merges nested blocks correctly; preserves secrets when empty input submitted.
      *
      * @param array<string,mixed> $values
      * @return array{ok:bool,error?:string}
@@ -523,24 +535,104 @@ final class SmartBrainService
             ? (@json_decode((string)@file_get_contents($path), true) ?: [])
             : [];
 
-        // Only allow safe top-level config keys to be written via Brain UI
-        $allowed = [
-            'enabled', 'mode',
-            'max_positions', 'reconcile_before_action',
-            'brain_source_enabled', 'brain_source_auto_run',
-            'order_type', 'leverage_default',
-            'stop_loss_pct', 'take_profit_pct',
-            'trailing_enabled', 'trailing_mode',
-            'trailing_activation_roi', 'trailing_drawdown_factor',
-            'break_even_enabled', 'break_even_activation_roi',
-            'emergency_stop_enabled', 'emergency_stop_loss_pct',
-        ];
+        // ---- module block ----
+        if (!isset($current['module']) || !is_array($current['module'])) {
+            $current['module'] = [];
+        }
 
-        foreach ($allowed as $key) {
-            if (array_key_exists($key, $values)) {
-                $current[$key] = $values[$key];
+        $moduleFields = ['enabled', 'mode', 'account_id', 'max_positions', 'safety_stop_errors', 'reconcile_before_action'];
+        foreach ($moduleFields as $k) {
+            if (array_key_exists($k, $values)) {
+                $current[$k] = $values[$k]; // flat overrides (bot controller reads flat + nested)
             }
         }
+        if (array_key_exists('enabled', $values)) {
+            $current['module']['enabled'] = (bool)$values['enabled'];
+        }
+        if (array_key_exists('mode', $values)) {
+            $validModes = ['live', 'demo', 'paper', 'dry'];
+            $m = strtolower(trim((string)$values['mode']));
+            if (in_array($m, $validModes, true)) {
+                $current['mode'] = $m;
+                $current['module']['mode'] = $m;
+            }
+        }
+        if (array_key_exists('account_id', $values) && (string)$values['account_id'] !== '') {
+            $current['module']['account_id'] = (string)$values['account_id'];
+        }
+        if (array_key_exists('max_positions', $values)) {
+            $current['max_positions'] = max(0, (int)$values['max_positions']);
+        }
+        if (array_key_exists('reconcile_before_action', $values)) {
+            $current['reconcile_before_action'] = (bool)$values['reconcile_before_action'];
+        }
+
+        // ---- demo credentials (stay local; never go to KeyCenter) ----
+        if (!isset($current['module']['credentials']) || !is_array($current['module']['credentials'])) {
+            $current['module']['credentials'] = [];
+        }
+        if (!isset($current['module']['credentials']['demo']) || !is_array($current['module']['credentials']['demo'])) {
+            $current['module']['credentials']['demo'] = [];
+        }
+
+        if (array_key_exists('demo_api_key', $values)) {
+            $current['module']['credentials']['demo']['api_key'] = (string)$values['demo_api_key'];
+        }
+        // Preserve existing secret when empty is submitted
+        if (array_key_exists('demo_api_secret', $values) && (string)$values['demo_api_secret'] !== '') {
+            $current['module']['credentials']['demo']['api_secret'] = (string)$values['demo_api_secret'];
+        }
+        if (array_key_exists('demo_api_base_url', $values) && (string)$values['demo_api_base_url'] !== '') {
+            $current['module']['credentials']['demo']['api_base_url'] = (string)$values['demo_api_base_url'];
+        }
+
+        // ---- exchange block ----
+        if (!isset($current['exchange']) || !is_array($current['exchange'])) {
+            $current['exchange'] = [];
+        }
+        $exchangeFields = ['category', 'account_type', 'settle_coin', 'position_idx', 'tpsl_mode', 'sl_trigger_by'];
+        foreach ($exchangeFields as $k) {
+            if (array_key_exists('exchange_' . $k, $values)) {
+                $current['exchange'][$k] = $values['exchange_' . $k];
+            }
+        }
+        $leverage = $values['leverage_default'] ?? $values['exchange_leverage'] ?? null;
+        if ($leverage !== null) {
+            $current['exchange']['leverage'] = (int)$leverage;
+        }
+
+        // ---- execution block ----
+        if (!isset($current['execution']) || !is_array($current['execution'])) {
+            $current['execution'] = [];
+        }
+        $execFields = [
+            'order_type', 'stop_loss_pct', 'take_profit_pct',
+            'trailing_enabled', 'trailing_mode', 'trailing_activation_roi', 'trailing_drawdown_factor',
+            'break_even_enabled', 'break_even_activation_roi',
+            'emergency_stop_enabled', 'emergency_stop_loss_pct',
+            'reverse_side_enabled',
+        ];
+        foreach ($execFields as $k) {
+            if (array_key_exists($k, $values)) {
+                $current['execution'][$k] = $values[$k];
+            }
+        }
+
+        // ---- sources block ----
+        if (!isset($current['sources']) || !is_array($current['sources'])) {
+            $current['sources'] = [];
+        }
+        $sourcesFields = ['brain_source_enabled', 'brain_source_auto_run', 'signals_key', 'signals_file'];
+        foreach ($sourcesFields as $k) {
+            if (array_key_exists('sources_' . $k, $values)) {
+                $current['sources'][$k] = $values['sources_' . $k];
+            }
+            if (array_key_exists($k, $values)) {
+                $current['sources'][$k] = $values[$k];
+            }
+        }
+
+        $current['last_modified'] = date('c');
 
         $written = @file_put_contents(
             $path,

@@ -43,5 +43,32 @@
         "error": "reconcile_failed",
         "execution_identity_key": "li_sig_82eee3af70cfcca1_d013bc1b",
         "dedupe_basis": "intent_id"
+    },
+    "li_sig_e9dfd931447cd1fa_146224ed": {
+        "executed_at": "2026-04-01T20:22:04+01:00",
+        "result": "rejected_reconcile_failed",
+        "order_id": "1d5cec8a-bc18-4e6d-b1bc-36b9c8144215",
+        "trade_id": null,
+        "error": "reconcile_failed",
+        "execution_identity_key": "li_sig_e9dfd931447cd1fa_146224ed",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_ab6a335932e1991f_5e9b294b": {
+        "executed_at": "2026-04-01T20:28:04+01:00",
+        "result": "rejected_reconcile_failed",
+        "order_id": "a550333b-7c64-44f5-98b9-1a53aebc2ca9",
+        "trade_id": null,
+        "error": "reconcile_failed",
+        "execution_identity_key": "li_sig_ab6a335932e1991f_5e9b294b",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_8a530cf9222e6b9d_e7933de9": {
+        "executed_at": "2026-04-01T20:30:12+01:00",
+        "result": "rejected_reconcile_failed",
+        "order_id": "644f444f-55e1-429b-bcf2-1483a4fcd75e",
+        "trade_id": null,
+        "error": "reconcile_failed",
+        "execution_identity_key": "li_sig_8a530cf9222e6b9d_e7933de9",
+        "dedupe_basis": "intent_id"
     }
 }

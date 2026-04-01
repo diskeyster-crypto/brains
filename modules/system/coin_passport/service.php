@@ -156,7 +156,7 @@ final class CoinPassportService
                     continue;
                 }
                 $symbol   = (string)($trade['symbol'] ?? '');
-                $closedTs = (int)($trade['closed_at'] ?? $trade['closed_ts'] ?? 0);
+                $closedTs = isset($trade['closed_ts']) ? (int)$trade['closed_ts'] : (strtotime((string)($trade['closed_at'] ?? '')) ?: 0);
                 if ($symbol !== '' && $closedTs >= $cutoff) {
                     $recent[strtoupper($symbol)] = true;
                 }

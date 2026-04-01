@@ -90,6 +90,45 @@ class BotStore
         $path = $this->storageDir . '/last_run.json';
         return $this->readJson($path);
     }
+
+    /**
+     * Write aggregate runtime snapshots for the Brain Execution UI read-model.
+     *
+     * Scans per-file trade storage and writes:
+     *   trades/open_trades.json    — flat array of all active trade records
+     *   trades/closed_trades.json  — flat array of last 200 closed trade records (newest first)
+     *   runtime/stats.json         — lightweight counters derived from the above
+     *
+     * Called at end of execute() so every bot cycle keeps the snapshot in sync.
+     * Does not touch runtime/positions.json or runtime/balance.json — those are
+     * written by the reconcile / gateway call paths.
+     */
+    public function writeRuntimeSnapshot(): void
+    {
+        // Active trades
+        $activeTrades = $this->loadActiveTrades();
+        $this->writeJson($this->storageDir . '/trades/open_trades.json', array_values($activeTrades));
+
+        // Closed trades — sort newest first, cap at 200
+        $closedDir = $this->storageDir . '/trades/closed';
+        $closed = $this->loadAllFromDir($closedDir);
+        usort($closed, static function (array $a, array $b): int {
+            $aTs = strtotime($a['closed_at'] ?? $a['ts'] ?? '1970-01-01');
+            $bTs = strtotime($b['closed_at'] ?? $b['ts'] ?? '1970-01-01');
+            return $bTs - $aTs;
+        });
+        $closed = array_slice($closed, 0, 200);
+        $this->writeJson($this->storageDir . '/trades/closed_trades.json', array_values($closed));
+
+        // Runtime stats snapshot
+        $stats = [
+            'snapshot_at'     => date('c'),
+            'open_positions'  => count($activeTrades),
+            'closed_trades'   => count($closed),
+            'last_updated'    => date('c'),
+        ];
+        $this->writeJson($this->storageDir . '/runtime/stats.json', $stats);
+    }
     
     // =========================================================================
     // Trades

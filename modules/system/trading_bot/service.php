@@ -1418,7 +1418,10 @@ final class TradingBotService
         if (!empty($this->errors)) {
             $this->store->saveErrors($this->errors);
         }
-        
+
+        // Write aggregate UI snapshots so Brain Execution page stays in sync
+        $this->store->writeRuntimeSnapshot();
+
         // Save last run
         $this->store->saveLastRun($result);
         

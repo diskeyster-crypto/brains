@@ -379,6 +379,31 @@ final class SmartBrainService
     }
 
     /**
+     * Scan a trades directory and return all trade records as a flat array.
+     * Used as fallback when aggregate snapshot files are absent.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function scanTradesDir(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $trades = [];
+        foreach (glob($dir . '/*.json') ?: [] as $file) {
+            $c = @file_get_contents($file);
+            if ($c === false || trim($c) === '') {
+                continue;
+            }
+            $d = @json_decode($c, true);
+            if (is_array($d)) {
+                $trades[] = $d;
+            }
+        }
+        return $trades;
+    }
+
+    /**
      * Aggregate all data the Brain Execution page needs.
      *
      * @return array<string,mixed>
@@ -419,14 +444,20 @@ final class SmartBrainService
         // Load stats
         $stats = $this->readBotJsonFile($storageDir . '/runtime/stats.json');
 
-        // Load active trades
+        // Load active trades — prefer aggregate snapshot, fall back to per-file scan
         $activeTrades = $this->readBotJsonFile($storageDir . '/trades/open_trades.json');
+        if (empty($activeTrades)) {
+            $activeTrades = $this->scanTradesDir($storageDir . '/trades/active');
+        }
         if (!isset($activeTrades[0])) {
             $activeTrades = array_values($activeTrades);
         }
 
-        // Load closed trades (last 50)
+        // Load closed trades (last 50) — prefer aggregate snapshot, fall back to per-file scan
         $closedTradesRaw = $this->readBotJsonFile($storageDir . '/trades/closed_trades.json');
+        if (!is_array($closedTradesRaw) || empty($closedTradesRaw)) {
+            $closedTradesRaw = $this->scanTradesDir($storageDir . '/trades/closed');
+        }
         if (!is_array($closedTradesRaw)) {
             $closedTradesRaw = [];
         }

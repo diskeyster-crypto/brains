@@ -1050,9 +1050,12 @@ final class SmartBrainCore
         $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
         if ($passportGateEnabled && is_dir($passportsDir)) {
             foreach (glob($passportsDir . '/*.json') ?: [] as $pFile) {
-                $pData = @json_decode((string)@file_get_contents($pFile), true);
+                $raw = @file_get_contents($pFile);
+                $pData = $raw !== false ? @json_decode($raw, true) : null;
                 if (is_array($pData) && !empty($pData['symbol'])) {
                     $passports[strtoupper((string)$pData['symbol'])] = $pData;
+                } elseif ($raw !== false) {
+                    $this->logger->log('warning', 'Coin Passport: failed to decode passport file: ' . basename($pFile));
                 }
             }
         }

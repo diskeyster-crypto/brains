@@ -218,8 +218,8 @@ $pageContent = function () use ($passport, $symbol, $baseUrl) {
                     <table class="table table-dark mb-0" style="font-size:0.85rem;">
                         <tbody>
                             <tr><td>Total Samples</td><td class="text-end"><strong><?= $sample ?></strong></td></tr>
-                            <tr><td>Short V2 Samples</td><td class="text-end"><?= (int)($passport['sample_size_short_v2'] ?? 0) ?></td></tr>
-                            <tr><td>Short V3 Samples</td><td class="text-end"><?= (int)($passport['sample_size_short_v3'] ?? 0) ?></td></tr>
+                            <tr><td>Pattern V2 Samples</td><td class="text-end"><?= (int)($passport['sample_size_short_v2'] ?? 0) ?></td></tr>
+                            <tr><td>Pattern V3 Samples</td><td class="text-end"><?= (int)($passport['sample_size_short_v3'] ?? 0) ?></td></tr>
                             <tr><td>Minimum Required</td><td class="text-end text-secondary"><?= (int)($passport['minimum_required_samples'] ?? 10) ?></td></tr>
                             <tr><td>Data Confidence</td>
                                 <td class="text-end">

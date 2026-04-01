@@ -182,9 +182,9 @@ final class CoinPassportEngine
     {
         $sampleSizeTotal = count($trades);
 
-        // Per-pattern and per-side sample counts
-        $sampleShortV2 = 0;
-        $sampleShortV3 = 0;
+        // Per-pattern sample counts (V2: double_top/bottom_contextual_v2, V3: v3 equivalents; both sides)
+        $sampleV2 = 0;
+        $sampleV3 = 0;
 
         // Core metric arrays
         $maxRois      = [];
@@ -220,20 +220,20 @@ final class CoinPassportEngine
             $patternAlgo = (string)($trade['pattern_algorithm'] ?? '');
             $closedTs = (int)($trade['closed_ts'] ?? 0);
 
-            // Pattern/side counts
+            // Pattern counts (V2/V3, both sides)
             if ($side === 'short') {
                 $shorts++;
                 if ($patternAlgo === 'double_top_contextual_v2') {
-                    $sampleShortV2++;
+                    $sampleV2++;
                 } elseif ($patternAlgo === 'double_top_contextual_v3') {
-                    $sampleShortV3++;
+                    $sampleV3++;
                 }
             } elseif ($side === 'long') {
                 $longs++;
                 if ($patternAlgo === 'double_bottom_contextual_v2') {
-                    $sampleShortV2++;
+                    $sampleV2++;
                 } elseif ($patternAlgo === 'double_bottom_contextual_v3') {
-                    $sampleShortV3++;
+                    $sampleV3++;
                 }
             }
 
@@ -352,7 +352,7 @@ final class CoinPassportEngine
 
         // ── Data sufficiency ────────────────────────────────────────────────
         [$insufficientFlag, $insufficientReason, $fallbackMode] = $this->computeDataSufficiency(
-            $sampleSizeTotal, $sampleShortV2, $sampleShortV3, $recentSamples, $dataConfidence
+            $sampleSizeTotal, $sampleV2, $sampleV3, $recentSamples, $dataConfidence
         );
         $lastDataGapWarning = $insufficientFlag ? $insufficientReason : null;
 
@@ -399,8 +399,8 @@ final class CoinPassportEngine
 
             // ── Sample sizes ──────────────────────────────────────────────────
             'sample_size_total'             => $sampleSizeTotal,
-            'sample_size_short_v2'          => $sampleShortV2,
-            'sample_size_short_v3'          => $sampleShortV3,
+            'sample_size_short_v2'          => $sampleV2,
+            'sample_size_short_v3'          => $sampleV3,
 
             // ── Data confidence / sufficiency ─────────────────────────────────
             'data_confidence'               => $dataConfidence,
@@ -599,7 +599,7 @@ final class CoinPassportEngine
                 return true;
             }
         }
-        // Heuristic: final ROI <= -3% and final roughly equals some stop value
+        // Heuristic: assume stop-loss if final ROI <= -3%
         if ($finalRoi !== null && $finalRoi <= -3.0) {
             return true;
         }

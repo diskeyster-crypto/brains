@@ -428,4 +428,16 @@ final class SmartBrainController
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => true, 'cleared_at' => time()]);
     }
+
+    /**
+     * POST /admin/smart_brain/ai_shadow/test_connection
+     * Validates credential lookup → provider init → model request path.
+     */
+    public function aiShadowTestConnection(): void
+    {
+        $result = $this->service->testAiShadowConnection();
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
 }

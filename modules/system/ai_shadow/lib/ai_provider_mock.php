@@ -49,13 +49,41 @@ final class AiProviderMock implements AiProviderInterface
 
         $decision = $inputConfidence > 0.55 ? 'enter' : 'skip';
 
+        // Deterministic hold_or_close_bias seed
+        $hashH     = crc32($seedStr . '_h') & 0x7FFFFFFF;
+        $biasSeed  = $hashH % 3;
+        $holdBias  = ['none', 'hold', 'close'][$biasSeed];
+
+        // runner and reject risk — spread across range
+        $hashR    = crc32($seedStr . '_r') & 0x7FFFFFFF;
+        $runnerP  = round(0.10 + ($hashR % 1000) / 1250.0, 4);
+        $hashRej  = crc32($seedStr . '_rej') & 0x7FFFFFFF;
+        $rejectR  = round(0.10 + ($hashRej % 1000) / 1250.0, 4);
+
         return [
-            'decision'           => $decision,
-            'confidence'         => $confidence,
-            'quality_score'      => $qualityScore,
-            'risk_penalty'       => 0.0,
-            'reasons'            => ['mock_provider', 'pattern_match_detected'],
-            'recommended_action' => $decision,
+            'decision'                    => $decision,
+            'confidence'                  => $confidence,
+            'quality_score'               => $qualityScore,
+            'risk_penalty'                => 0.0,
+            'reasons'                     => ['mock_provider', 'pattern_match_detected'],
+            'recommended_action'          => $decision,
+            'hold_or_close_bias'          => $holdBias,
+            'runner_probability_estimate' => $runnerP,
+            'reject_risk_estimate'        => $rejectR,
+        ];
+    }
+
+    /**
+     * @return array{ok:bool,status:string,latency_ms:int,model:string,provider:string}
+     */
+    public function testConnection(): array
+    {
+        return [
+            'ok'         => true,
+            'status'     => 'mock_provider_always_available',
+            'latency_ms' => 0,
+            'model'      => 'mock',
+            'provider'   => 'mock',
         ];
     }
 }

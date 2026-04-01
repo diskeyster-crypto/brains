@@ -48,7 +48,30 @@ function showFlash(msg, type) {
     if (type === 'success') { setTimeout(() => { el.style.display = 'none'; }, 4000); }
 }
 
-// ---------- run live mirror ----------
+// ---------- test connection ----------
+function testConnection() {
+    const btn = document.getElementById('btn-test-conn');
+    btn.disabled = true;
+    btn.textContent = 'Testing…';
+    fetch(AI_SHADOW_URL + '/test_connection', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false;
+            btn.textContent = 'Test Connection';
+            if (d.ok) {
+                showFlash('Connection OK — provider: ' + d.provider + ', model: ' + (d.model || 'n/a') + ', latency: ' + (d.latency_ms || 0) + 'ms', 'success');
+            } else {
+                showFlash('Connection FAILED: ' + (d.error || d.status || 'unknown'), 'danger');
+            }
+            setTimeout(() => location.reload(), 2500);
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.textContent = 'Test Connection';
+            showFlash('Network error testing connection.', 'danger');
+        });
+}
+
 function runMirror() {
     showFlash('Starting live mirror cycle…', 'info');
     fetch(AI_SHADOW_URL + '/run_mirror', { method: 'POST' })
@@ -209,17 +232,113 @@ const AI_SHADOW_URL = '<?= htmlspecialchars($smartBrainUrl) ?>/ai_shadow';
         <button class="btn btn-outline-info btn-sm" onclick="runReplay()">
             <i class="bi bi-clock-history me-1"></i> Run Replay
         </button>
+        <button id="btn-test-conn" class="btn btn-outline-warning btn-sm" onclick="testConnection()">
+            <i class="bi bi-plug me-1"></i> Test Connection
+        </button>
     </div>
 </div>
 
 <!-- Status bar -->
-<div class="alert <?= $enabled ? 'alert-success' : 'alert-warning' ?> d-flex align-items-center mb-4 py-2">
+<div class="alert <?= $enabled ? 'alert-success' : 'alert-warning' ?> d-flex align-items-center mb-3 py-2">
     <i class="bi <?= $enabled ? 'bi-check-circle-fill' : 'bi-pause-circle-fill' ?> me-2"></i>
     <span>
         AI Shadow is <strong><?= $enabled ? 'active' : 'disabled' ?></strong>.
         Provider: <strong><?= htmlspecialchars($provider) ?></strong>.
         Patterns: <?= implode(', ', array_map('htmlspecialchars', $patterns)) ?: '—' ?>.
     </span>
+</div>
+
+<!-- Runtime state panel -->
+<?php
+$status    = $ai_shadow_status;
+$lastRunAt = isset($status['last_run_at']) ? date('Y-m-d H:i:s', (int)$status['last_run_at']) : '—';
+$lastRunStatus = (string)($status['last_run_status'] ?? '');
+$lastConnAt = isset($status['last_connection_test_at']) ? date('Y-m-d H:i:s', (int)$status['last_connection_test_at']) : '—';
+$lastConnOk = $status['last_connection_test_ok'] ?? null;
+$lastConnStatus = (string)($status['last_connection_test_status'] ?? '');
+$lastConnErr = (string)($status['last_connection_test_error'] ?? '');
+$lastProvErr = (string)($status['last_provider_error'] ?? '');
+$journalAvail = !empty($status['journal_available']);
+$protosAvail  = !empty($status['prototypes_available']);
+$credId       = (string)($status['credential_id'] ?? '');
+$model        = (string)($status['model'] ?? '');
+$mirroredCnt  = (int)($status['mirrored_signals_count'] ?? 0);
+$vtActive     = (int)($status['virtual_trades_active_count'] ?? 0);
+$vtClosed     = (int)($status['virtual_trades_closed_count'] ?? 0);
+$vtTotal      = (int)($status['virtual_trades_total'] ?? 0);
+?>
+<div class="card mb-4" style="border-color:#334155;">
+    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-info-circle me-1"></i> Runtime State</span>
+        <small class="text-muted">live data from storage/runtime_state.json</small>
+    </div>
+    <div class="card-body py-2">
+        <div class="row g-2">
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Enabled</div>
+                <div><?= $enabled ? '<span class="badge bg-success">YES</span>' : '<span class="badge bg-secondary">NO</span>' ?></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Provider / Model</div>
+                <div><strong><?= htmlspecialchars($provider) ?></strong><?= $model !== '' ? ' / ' . htmlspecialchars($model) : '' ?></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Credential ID</div>
+                <div><?= $credId !== '' ? '<code class="text-info">' . htmlspecialchars($credId) . '</code>' : '<span class="text-muted">—</span>' ?></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Last Run</div>
+                <div>
+                    <?php if ($lastRunStatus !== ''): ?>
+                        <span class="badge <?= $lastRunStatus === 'ok' ? 'bg-success' : 'bg-warning text-dark' ?>">
+                            <?= htmlspecialchars($lastRunStatus) ?>
+                        </span>
+                        <small class="text-muted ms-1"><?= htmlspecialchars($lastRunAt) ?></small>
+                    <?php else: ?>
+                        <span class="text-muted">—</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Connection Test</div>
+                <div>
+                    <?php if ($lastConnStatus !== ''): ?>
+                        <span class="badge <?= $lastConnOk ? 'bg-success' : 'bg-danger' ?>">
+                            <?= $lastConnOk ? 'OK' : 'FAIL' ?>
+                        </span>
+                        <small class="text-muted ms-1"><?= htmlspecialchars($lastConnAt) ?></small>
+                        <?php if (!$lastConnOk && $lastConnErr !== ''): ?>
+                            <div style="font-size:0.7rem;" class="text-danger mt-1"><?= htmlspecialchars(substr($lastConnErr, 0, 80)) ?></div>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <span class="text-muted">—</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Last Provider Error</div>
+                <div><?= $lastProvErr !== '' ? '<span class="text-warning">' . htmlspecialchars(substr($lastProvErr, 0, 60)) . '</span>' : '<span class="text-muted">none</span>' ?></div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Mirrored Signals / VTrades</div>
+                <div>
+                    <strong><?= $mirroredCnt ?></strong> signals &nbsp;·&nbsp;
+                    <strong><?= $vtTotal ?></strong> vt (<span class="text-success"><?= $vtActive ?> active</span>, <?= $vtClosed ?> closed)
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted" style="font-size:0.72rem;">Journal / Prototypes</div>
+                <div>
+                    <span class="badge <?= $journalAvail ? 'bg-success' : 'bg-secondary' ?>">
+                        <?= $journalAvail ? 'Journal: data' : 'Journal: empty' ?>
+                    </span>
+                    <span class="badge <?= $protosAvail ? 'bg-success' : 'bg-secondary' ?> ms-1">
+                        <?= $protosAvail ? 'Protos: data' : 'Protos: empty' ?>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Stats row -->

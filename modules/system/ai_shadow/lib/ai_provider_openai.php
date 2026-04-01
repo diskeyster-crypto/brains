@@ -77,6 +77,105 @@ final class AiProviderOpenAi implements AiProviderInterface
         return $this->normalizeOutput($parsed, $rawText);
     }
 
+    /**
+     * Test provider connectivity with a minimal, harmless API call.
+     * Validates credential lookup → provider init → model request path.
+     * Stores nothing about live trading. Safe to call at any time.
+     *
+     * @return array{ok:bool,status:string,error?:string,latency_ms:int,model:string,provider:string}
+     */
+    public function testConnection(): array
+    {
+        $startMs = (int)round(microtime(true) * 1000);
+
+        if ($this->credentialId === '') {
+            return [
+                'ok'      => false,
+                'status'  => 'no_credential_id',
+                'error'   => 'credential_id is not configured',
+                'latency_ms' => 0,
+                'model'   => $this->model,
+                'provider'=> 'openai',
+            ];
+        }
+
+        if (!$this->available || $this->apiKey === '') {
+            return [
+                'ok'      => false,
+                'status'  => 'credential_resolve_failed',
+                'error'   => 'API key could not be resolved from KeyCenter (credential_id=' . $this->credentialId . ')',
+                'latency_ms' => 0,
+                'model'   => $this->model,
+                'provider'=> 'openai',
+            ];
+        }
+
+        // Make a minimal, harmless test call (model list endpoint)
+        try {
+            $ch = curl_init('https://api.openai.com/v1/models/' . urlencode($this->model));
+            if ($ch === false) {
+                throw new \RuntimeException('curl_init failed');
+            }
+
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 10,
+                CURLOPT_HTTPHEADER     => [
+                    'Authorization: Bearer ' . $this->apiKey,
+                ],
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlErr  = curl_error($ch);
+            curl_close($ch);
+
+            $latencyMs = (int)round(microtime(true) * 1000) - $startMs;
+
+            if ($response === false || $curlErr !== '') {
+                return [
+                    'ok'         => false,
+                    'status'     => 'curl_error',
+                    'error'      => $curlErr,
+                    'latency_ms' => $latencyMs,
+                    'model'      => $this->model,
+                    'provider'   => 'openai',
+                ];
+            }
+
+            if ($httpCode === 200) {
+                return [
+                    'ok'         => true,
+                    'status'     => 'connected',
+                    'latency_ms' => $latencyMs,
+                    'model'      => $this->model,
+                    'provider'   => 'openai',
+                ];
+            }
+
+            $decoded = json_decode((string)$response, true);
+            $errMsg  = (string)(($decoded['error']['message'] ?? null) ?: ('HTTP ' . $httpCode));
+            return [
+                'ok'         => false,
+                'status'     => 'api_error',
+                'error'      => $errMsg,
+                'latency_ms' => $latencyMs,
+                'model'      => $this->model,
+                'provider'   => 'openai',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok'         => false,
+                'status'     => 'exception',
+                'error'      => $e->getMessage(),
+                'latency_ms' => (int)round(microtime(true) * 1000) - $startMs,
+                'model'      => $this->model,
+                'provider'   => 'openai',
+            ];
+        }
+    }
+
     // =========================================================================
     // Private
     // =========================================================================

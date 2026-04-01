@@ -103,6 +103,28 @@ final class AiShadowService
     }
 
     /**
+     * Run a demo pass that seeds virtual trade artifacts for all stored
+     * enter-decision virtual signals. Used for bootstrap/testing when
+     * no live trading_bot trades exist. Purely research artifacts — no live authority.
+     *
+     * @return array<string,mixed>
+     */
+    public function runDemoWithTrades(): array
+    {
+        return $this->core->runDemoWithTrades();
+    }
+
+    /**
+     * Test the AI provider connection.
+     *
+     * @return array<string,mixed>
+     */
+    public function testConnection(): array
+    {
+        return $this->core->testConnection();
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public function getStatus(): array

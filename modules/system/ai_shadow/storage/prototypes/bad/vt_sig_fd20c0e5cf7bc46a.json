@@ -1,0 +1,25 @@
+{
+    "virtual_trade_id": "vt_sig_fd20c0e5cf7bc46a",
+    "source_signal_id": "sig_fd20c0e5cf7bc46a",
+    "symbol": "PIPPINUSDT",
+    "side": "short",
+    "pattern_algorithm": "double_top_contextual_v2",
+    "ai_decision": "enter",
+    "result_label": "bad",
+    "roi_outcome": -0.015,
+    "live_roi": -0.012,
+    "ai_confidence": 0.8705,
+    "ai_quality_score": 0.5574,
+    "ai_reasons": [
+        "mock_provider",
+        "pattern_match_detected"
+    ],
+    "mfe": 0,
+    "mae": 0,
+    "delta_roi": -0.003,
+    "agreement": "agree",
+    "live_close_reason": "stop_loss",
+    "ai_exit_reason": "stop_loss",
+    "input_snapshot_ref": "sig_fd20c0e5cf7bc46a",
+    "stored_at": 1775036109
+}

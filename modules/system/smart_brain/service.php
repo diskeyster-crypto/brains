@@ -273,4 +273,14 @@ final class SmartBrainService
     {
         $this->getAiShadowService()->clearStorage();
     }
+
+    /**
+     * Test the AI Shadow provider connection.
+     *
+     * @return array<string,mixed>
+     */
+    public function testAiShadowConnection(): array
+    {
+        return $this->getAiShadowService()->testConnection();
+    }
 }

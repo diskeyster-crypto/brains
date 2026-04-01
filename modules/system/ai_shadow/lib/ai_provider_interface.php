@@ -23,8 +23,19 @@ interface AiProviderInterface
      *   quality_score: float,
      *   risk_penalty: float,
      *   reasons: array<int,string>,
-     *   recommended_action: string
+     *   recommended_action: string,
+     *   hold_or_close_bias: string,
+     *   runner_probability_estimate: float,
+     *   reject_risk_estimate: float
      * }
      */
     public function evaluate(array $input): array;
+
+    /**
+     * Test provider connectivity and credential validity.
+     * Performs a minimal, harmless test call (no trading).
+     *
+     * @return array{ok:bool,status:string,error?:string,latency_ms?:int,model?:string,provider:string}
+     */
+    public function testConnection(): array;
 }

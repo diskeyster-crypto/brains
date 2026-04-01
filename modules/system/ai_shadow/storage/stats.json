@@ -1,1 +1,134 @@
-{}
+{
+    "computed_at": 1775036582,
+    "total_mirrored_signals": 14,
+    "total_virtual_trades": 14,
+    "total_active_trades": 4,
+    "ai_entered": 14,
+    "ai_skipped": 0,
+    "ai_win_rate": 0.7,
+    "ai_avg_roi": 0.010899,
+    "ai_expectancy": 0.00436,
+    "ai_avg_confidence_winners": 0.6821,
+    "ai_avg_confidence_losers": 0.734,
+    "runner_catch_rate": 0.7,
+    "premature_close_rate": 0,
+    "live_win_rate": 0,
+    "live_avg_roi": 0,
+    "live_expectancy": 0,
+    "live_vs_ai_delta": -0.010899,
+    "agreement_rate": 0,
+    "disagreement_rate": 0,
+    "false_reject_rate": 0,
+    "false_allow_rate": 0.3,
+    "pattern_breakdown": {
+        "double_top_contextual_v2": {
+            "count": 10,
+            "wins": 7,
+            "losses": 3,
+            "win_rate": 0.7,
+            "avg_roi": 0.010899
+        }
+    },
+    "symbol_breakdown": {
+        "MERLUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.022,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "WCTUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 0,
+            "ai_avg_roi": -0.015,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "BLASTUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.021991,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "UAIUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.022,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "APTUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.022,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "METISUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 0,
+            "ai_avg_roi": -0.015,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "TRIAUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.022,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "FORMUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.022,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "KAITOUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 1,
+            "ai_avg_roi": 0.022,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        },
+        "PIPPINUSDT": {
+            "ai_count": 1,
+            "ai_win_rate": 0,
+            "ai_avg_roi": -0.015,
+            "live_count": 0,
+            "live_win_rate": 0,
+            "live_avg_roi": 0,
+            "agree_rate": 1,
+            "disagree_rate": 0
+        }
+    }
+}

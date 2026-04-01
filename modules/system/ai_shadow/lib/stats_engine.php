@@ -10,10 +10,16 @@ declare(strict_types=1);
 final class AiShadowStatsEngine
 {
     private AiShadowStateManager $state;
+    /** @var array<string,mixed> */
+    private array $config;
 
-    public function __construct(AiShadowStateManager $state)
+    /**
+     * @param array<string,mixed> $config  Module config (used for store_prototypes flag)
+     */
+    public function __construct(AiShadowStateManager $state, array $config = [])
     {
-        $this->state = $state;
+        $this->state  = $state;
+        $this->config = $config;
     }
 
     /**
@@ -277,6 +283,12 @@ final class AiShadowStatsEngine
         ];
 
         $this->state->writeJson('storage/stats.json', $stats);
+
+        // Store prototypes if enabled
+        if (!empty($this->config['store_prototypes'])) {
+            $this->writePrototypes($closedTrades);
+        }
+
         return $stats;
     }
 
@@ -293,6 +305,75 @@ final class AiShadowStatsEngine
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Write prototype artifacts for each closed virtual trade.
+     * Trades with positive ROI → storage/prototypes/good/
+     * Trades with negative/zero ROI → storage/prototypes/bad/
+     * Skipped decisions → storage/prototypes/bad/ (missed opportunity assessment)
+     *
+     * Each prototype is a structured JSON snapshot (no image required).
+     *
+     * @param array<int,array<string,mixed>> $closedTrades
+     */
+    private function writePrototypes(array $closedTrades): void
+    {
+        foreach ($closedTrades as $ct) {
+            $vtId       = (string)($ct['virtual_trade_id'] ?? '');
+            $aiDecision = (string)($ct['ai_decision']      ?? '');
+            $roi        = isset($ct['roi']) ? (float)$ct['roi'] : null;
+
+            if ($vtId === '') {
+                continue;
+            }
+
+            // Determine label: good (positive roi for entered, or correctly skipped losing trade)
+            // bad (negative roi for entered, or missed profitable trade when skipped)
+            if ($aiDecision === 'skip') {
+                $liveRoi = isset($ct['live_roi']) ? (float)$ct['live_roi'] : null;
+                // skipped a losing live trade = correct skip = good prototype
+                // skipped a winning live trade = false reject = bad prototype
+                $label  = ($liveRoi !== null && $liveRoi > 0.0) ? 'bad' : 'good';
+                $folder = $label;
+            } else {
+                // entered: positive roi = good, negative = bad
+                $folder = ($roi !== null && $roi > 0.0) ? 'good' : 'bad';
+                $label  = $folder;
+            }
+
+            $relPath = 'storage/prototypes/' . $folder . '/' . $vtId . '.json';
+
+            // Only write if not already written (idempotent)
+            if ($this->state->fileExists($relPath)) {
+                continue;
+            }
+
+            $prototype = [
+                'virtual_trade_id'   => $vtId,
+                'source_signal_id'   => (string)($ct['source_signal_id']   ?? ''),
+                'symbol'             => (string)($ct['symbol']             ?? ''),
+                'side'               => (string)($ct['side']               ?? ''),
+                'pattern_algorithm'  => (string)($ct['pattern_algorithm']  ?? ''),
+                'ai_decision'        => $aiDecision,
+                'result_label'       => $label,
+                'roi_outcome'        => $roi,
+                'live_roi'           => isset($ct['live_roi'])            ? (float)$ct['live_roi']        : null,
+                'ai_confidence'      => (float)($ct['ai_confidence']      ?? 0.0),
+                'ai_quality_score'   => (float)($ct['ai_quality_score']   ?? 0.0),
+                'ai_reasons'         => (array)($ct['ai_reasons']         ?? []),
+                'mfe'                => isset($ct['mfe'])                  ? (float)$ct['mfe']             : null,
+                'mae'                => isset($ct['mae'])                  ? (float)$ct['mae']             : null,
+                'delta_roi'          => isset($ct['delta_roi'])            ? (float)$ct['delta_roi']       : null,
+                'agreement'          => (string)($ct['agreement']         ?? ''),
+                'live_close_reason'  => (string)($ct['live_close_reason'] ?? ''),
+                'ai_exit_reason'     => (string)($ct['ai_exit_reason']    ?? ''),
+                'input_snapshot_ref' => (string)($ct['source_signal_id']  ?? ''),
+                'stored_at'          => time(),
+            ];
+
+            $this->state->writeJson($relPath, $prototype);
+        }
+    }
 
     /**
      * @return array<int,array<string,mixed>>

@@ -481,7 +481,7 @@ final class SmartBrainService
         // Demo credentials — expose key (masked) but NEVER the secret in plain text
         $demoCreds = $cfg['module']['credentials']['demo'] ?? [];
         $demoApiKey = (string)($demoCreds['api_key'] ?? '');
-        $demoApiSecretSet = $demoApiKey !== '' || (string)($demoCreds['api_secret'] ?? '') !== '';
+        $demoApiSecretSet = (string)($demoCreds['api_secret'] ?? '') !== '';
         $botDemoCreds = [
             'api_key'         => $demoApiKey,
             'api_secret_set'  => $demoApiSecretSet,

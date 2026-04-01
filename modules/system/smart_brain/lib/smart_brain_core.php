@@ -908,8 +908,15 @@ final class SmartBrainCore
             'passport_gate_applied_count' => (int)($liveIntentResult['passport_gate_applied_count'] ?? 0),
             'passport_gate_passed_count' => (int)($liveIntentResult['passport_gate_passed_count'] ?? 0),
             'passport_gate_rejected_count' => (int)($liveIntentResult['passport_gate_rejected_count'] ?? 0),
+            'passport_gate_allow_live_count' => (int)($liveIntentResult['passport_gate_allow_live_count'] ?? 0),
+            'passport_gate_sim_only_count' => (int)($liveIntentResult['passport_gate_sim_only_count'] ?? 0),
+            'passport_gate_shadow_only_count' => (int)($liveIntentResult['passport_gate_shadow_only_count'] ?? 0),
+            'passport_gate_reject_count' => (int)($liveIntentResult['passport_gate_reject_count'] ?? 0),
             'passport_gate_demoted_to_sim_count' => (int)($liveIntentResult['passport_gate_demoted_to_sim_count'] ?? 0),
             'passport_gate_no_passport_count' => (int)($liveIntentResult['passport_gate_no_passport_count'] ?? 0),
+            'passport_gate_low_confidence_count' => (int)($liveIntentResult['passport_gate_low_confidence_count'] ?? 0),
+            'passport_gate_strict_block_count' => (int)($liveIntentResult['passport_gate_strict_block_count'] ?? 0),
+            'passport_gate_signal_blocked_by_passport_count' => (int)($liveIntentResult['passport_gate_signal_blocked_by_passport_count'] ?? 0),
             'passport_gate_reject_reason_distribution' => $liveIntentResult['passport_gate_reject_reason_distribution'] ?? [],
             'passport_gate_rejected_preview' => $liveIntentResult['passport_gate_rejected_preview'] ?? [],
         ];
@@ -996,8 +1003,15 @@ final class SmartBrainCore
             'passport_gate_applied_count' => 0,
             'passport_gate_passed_count' => 0,
             'passport_gate_rejected_count' => 0,
+            'passport_gate_allow_live_count' => 0,
+            'passport_gate_sim_only_count' => 0,
+            'passport_gate_shadow_only_count' => 0,
+            'passport_gate_reject_count' => 0,
             'passport_gate_demoted_to_sim_count' => 0,
             'passport_gate_no_passport_count' => 0,
+            'passport_gate_low_confidence_count' => 0,
+            'passport_gate_strict_block_count' => 0,
+            'passport_gate_signal_blocked_by_passport_count' => 0,
             'passport_gate_reject_reason_distribution' => [],
             'passport_gate_rejected_preview' => [],
             // Intent lifecycle diagnostics
@@ -1046,6 +1060,12 @@ final class SmartBrainCore
         // Passport gate is enabled by default; can be overridden via user config.
         $passportGateEnabled = (bool)($userLimits['passport_gate_enabled'] ?? true);
         $passportGateStrict  = (bool)($userLimits['passport_gate_strict'] ?? false);
+        // Configurable strict-mode thresholds (only used when passport_gate_strict=true)
+        $passportStrictMinConfidence     = (string)($userLimits['passport_gate_strict_min_confidence'] ?? 'medium');
+        $passportStrictMinCorridorP75Roi = (float)($userLimits['passport_gate_strict_min_corridor_p75_roi'] ?? 3.0);
+        $passportStrictMinRunnerProb     = (float)($userLimits['passport_gate_strict_min_runner_probability'] ?? 0.05);
+        $passportStrictMaxNoiseScore     = (float)($userLimits['passport_gate_strict_max_noise_score'] ?? 0.65);
+        $passportStrictMinPatternSuccess = (float)($userLimits['passport_gate_strict_min_pattern_success_rate'] ?? 0.35);
         $passports = [];
         $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
         if ($passportGateEnabled && is_dir($passportsDir)) {
@@ -1387,9 +1407,12 @@ final class SmartBrainCore
                 if ($passport === null) {
                     // No passport found — apply strict vs permissive policy
                     $result['passport_gate_no_passport_count']++;
+                    $result['passport_gate_signal_blocked_by_passport_count']++;
                     if ($passportGateStrict) {
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_no_passport', $selectionMode);
                         $result['passport_gate_rejected_count']++;
+                        $result['passport_gate_reject_count']++;
+                        $result['passport_gate_strict_block_count']++;
                         $result['passport_gate_reject_reason_distribution']['no_passport'] =
                             ($result['passport_gate_reject_reason_distribution']['no_passport'] ?? 0) + 1;
                         continue;
@@ -1397,21 +1420,62 @@ final class SmartBrainCore
                     // Permissive default: no passport → allow but tag signal
                     $signal['passport_gate_result'] = 'no_passport_permissive';
                     $result['passport_gate_passed_count']++;
+                    $result['passport_gate_allow_live_count']++;
                 } else {
-                    $passportEligibility = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
-                    $passportBlockReason = (string)($passport['live_block_reason'] ?? '');
+                    $passportEligibility  = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
+                    $passportBlockReason  = (string)($passport['live_block_reason'] ?? '');
+                    $passportConfidence   = (string)($passport['data_confidence'] ?? 'none');
+                    $passportCorridorP75  = (float)($passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? 0.0);
+                    $passportRunnerProb   = (float)($passport['runner_probability'] ?? 0.0);
+                    $passportNoiseScore   = (float)($passport['noise_score'] ?? 1.0);
+                    $pb                   = is_array($passport['pattern_behavior'] ?? null) ? $passport['pattern_behavior'] : [];
+                    $passportV2Success    = is_float($pb['v2_success_rate'] ?? null) ? (float)$pb['v2_success_rate'] : null;
+
+                    // Track low-confidence passports regardless of eligibility decision
+                    if ($passportConfidence === 'none' || $passportConfidence === 'low') {
+                        $result['passport_gate_low_confidence_count']++;
+                    }
+
+                    // Strict mode: when passport confidence is sufficient, apply extra checks
+                    $strictBlockReason = null;
+                    if ($passportGateStrict && $passportEligibility === 'allow_live') {
+                        $confRankMap = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3];
+                        $strictMinRank = $confRankMap[$passportStrictMinConfidence] ?? 2;
+                        $curConfRank   = $confRankMap[$passportConfidence] ?? 0;
+
+                        if ($curConfRank < $strictMinRank) {
+                            $strictBlockReason = "strict:confidence_below_{$passportStrictMinConfidence}:{$passportConfidence}";
+                        } elseif ($passportCorridorP75 < $passportStrictMinCorridorP75Roi) {
+                            $strictBlockReason = "strict:corridor_p75_too_low:{$passportCorridorP75}<{$passportStrictMinCorridorP75Roi}";
+                        } elseif ($passportRunnerProb < $passportStrictMinRunnerProb) {
+                            $strictBlockReason = "strict:runner_prob_too_low:{$passportRunnerProb}<{$passportStrictMinRunnerProb}";
+                        } elseif ($passportNoiseScore > $passportStrictMaxNoiseScore) {
+                            $strictBlockReason = "strict:noise_too_high:{$passportNoiseScore}>{$passportStrictMaxNoiseScore}";
+                        } elseif ($passportV2Success !== null && $passportV2Success < $passportStrictMinPatternSuccess) {
+                            $strictBlockReason = "strict:v2_success_rate_too_low:{$passportV2Success}<{$passportStrictMinPatternSuccess}";
+                        }
+
+                        if ($strictBlockReason !== null) {
+                            $passportEligibility = 'sim_only';
+                            $passportBlockReason = $strictBlockReason;
+                            $result['passport_gate_strict_block_count']++;
+                        }
+                    }
 
                     if ($passportEligibility === 'allow_live') {
                         $signal['passport_gate_result'] = 'allow_live';
-                        $signal['passport_corridor_p75']  = $passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? null;
-                        $signal['passport_runner_prob']   = $passport['runner_probability'] ?? null;
-                        $signal['passport_noise_score']   = $passport['noise_score'] ?? null;
+                        $signal['passport_corridor_p75']  = $passportCorridorP75;
+                        $signal['passport_runner_prob']   = $passportRunnerProb;
+                        $signal['passport_noise_score']   = $passportNoiseScore;
                         $signal['passport_regime_health'] = $passport['market_regime_health_score'] ?? null;
                         $result['passport_gate_passed_count']++;
+                        $result['passport_gate_allow_live_count']++;
                     } elseif ($passportEligibility === 'reject') {
                         // Hard reject — coin explicitly blocked
+                        $result['passport_gate_signal_blocked_by_passport_count']++;
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_reject:' . $passportBlockReason, $selectionMode);
                         $result['passport_gate_rejected_count']++;
+                        $result['passport_gate_reject_count']++;
                         $result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: 'reject'] =
                             ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: 'reject'] ?? 0) + 1;
                         if (count($result['passport_gate_rejected_preview']) < 10) {
@@ -1424,11 +1488,17 @@ final class SmartBrainCore
                         }
                         continue;
                     } else {
-                        // sim_only / shadow_only — demote to shadow, do not issue live
+                        // sim_only / shadow_only — demote, do not issue live
+                        $result['passport_gate_signal_blocked_by_passport_count']++;
                         $signal['passport_gate_result']    = $passportEligibility;
                         $signal['passport_gate_demoted']   = true;
                         $signal['passport_block_reason']   = $passportBlockReason;
                         $result['passport_gate_demoted_to_sim_count']++;
+                        if ($passportEligibility === 'sim_only') {
+                            $result['passport_gate_sim_only_count']++;
+                        } elseif ($passportEligibility === 'shadow_only') {
+                            $result['passport_gate_shadow_only_count']++;
+                        }
                         $result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: $passportEligibility] =
                             ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: $passportEligibility] ?? 0) + 1;
                         if (count($result['passport_gate_rejected_preview']) < 10) {

@@ -219,14 +219,50 @@ $pageContent = function () use ($passport, $symbol, $baseUrl) {
                     <table class="table table-dark mb-0" style="font-size:0.85rem;">
                         <tbody>
                             <tr><td>Total Samples</td><td class="text-end"><strong><?= $sample ?></strong></td></tr>
+                            <tr>
+                                <td>Live Closed</td>
+                                <td class="text-end <?= (int)($passport['sample_size_live_closed'] ?? 0) >= 5 ? 'positive' : 'neutral' ?>">
+                                    <?= (int)($passport['sample_size_live_closed'] ?? 0) ?>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Live Active</td>
+                                <td class="text-end neutral"><?= (int)($passport['sample_size_live_active'] ?? 0) ?></td>
+                            </tr>
+                            <tr>
+                                <td>Shadow Closed</td>
+                                <td class="text-end <?= (int)($passport['sample_size_shadow_closed'] ?? 0) >= 5 ? 'positive' : 'neutral' ?>">
+                                    <?= (int)($passport['sample_size_shadow_closed'] ?? $passport['sample_size_shadow'] ?? 0) ?>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Shadow Active</td>
+                                <td class="text-end neutral"><?= (int)($passport['sample_size_shadow_active'] ?? 0) ?></td>
+                            </tr>
                             <tr><td>Pattern V2 Samples</td><td class="text-end"><?= (int)($passport['sample_size_short_v2'] ?? 0) ?></td></tr>
                             <tr><td>Pattern V3 Samples</td><td class="text-end"><?= (int)($passport['sample_size_short_v3'] ?? 0) ?></td></tr>
                             <tr><td>Minimum Required</td><td class="text-end text-secondary"><?= (int)($passport['minimum_required_samples'] ?? 10) ?></td></tr>
                             <tr><td>Data Confidence</td>
                                 <td class="text-end">
                                     <span class="badge <?= $confBadge ?>"><?= ucfirst($conf) ?></span>
+                                    <?php
+                                    $confNumeric = $passport['confidence_score_numeric'] ?? null;
+                                    if ($confNumeric !== null):
+                                    ?>
+                                    <span class="text-secondary ms-1" style="font-size:0.72rem;">(<?= number_format((float)$confNumeric, 3) ?>)</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
+                            <?php
+                            $confReason = (string)($passport['confidence_reason_summary'] ?? '');
+                            if ($confReason !== ''):
+                            ?>
+                            <tr>
+                                <td colspan="2" style="font-size:0.72rem; color:#94a3b8; word-break:break-all;">
+                                    <i class="bi bi-info-circle me-1"></i><?= htmlspecialchars($confReason) ?>
+                                </td>
+                            </tr>
+                            <?php endif; ?>
                             <tr><td>Insufficient Data Flag</td>
                                 <td class="text-end">
                                     <?php if ($insuffFlag): ?>

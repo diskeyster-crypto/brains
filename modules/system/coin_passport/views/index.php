@@ -238,7 +238,10 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             <th>Symbol</th>
                             <th class="text-center">Eligibility</th>
                             <th class="text-center">Confidence</th>
+                            <th class="text-center" data-sort="confnum" title="Confidence score (numeric)">Conf Score</th>
                             <th class="text-center">Samples</th>
+                            <th class="text-center" data-sort="live" title="Live closed samples">Live</th>
+                            <th class="text-center" data-sort="shadow" title="Shadow closed samples">Shadow</th>
                             <th class="text-end" data-sort="p75">Corridor P75</th>
                             <th class="text-end" data-sort="p90">Corridor P90</th>
                             <th class="text-end" data-sort="runner">Runner %</th>
@@ -257,7 +260,7 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                     <tbody>
                         <?php if (empty($passports)): ?>
                         <tr>
-                            <td colspan="17" class="text-center text-secondary py-5">
+                            <td colspan="20" class="text-center text-secondary py-5">
                                 <i class="bi bi-inbox display-5 d-block mb-2"></i>
                                 No passports yet — click <strong>Rebuild All</strong> to scan available trades.
                             </td>
@@ -267,6 +270,9 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             $elig       = (string)($p['recommended_live_eligibility'] ?? 'sim_only');
                             $conf       = $p['data_confidence'] ?? 'none';
                             $sample     = (int)($p['sample_size_total'] ?? $p['sample_size'] ?? 0);
+                            $liveClosed = (int)($p['sample_size_live_closed'] ?? 0);
+                            $shadowClosed = (int)($p['sample_size_shadow_closed'] ?? $p['sample_size_shadow'] ?? 0);
+                            $confNumeric = (float)($p['confidence_score_numeric'] ?? 0);
                             $p75        = (float)($p['corridor_p75_roi'] ?? $p['corridor_high_roi'] ?? 0);
                             $p90        = (float)($p['corridor_p90_roi'] ?? $p['p90_max_roi'] ?? 0);
                             $runnerProb = (float)($p['runner_probability'] ?? 0);
@@ -287,7 +293,8 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                             data-p75="<?= $p75 ?>" data-p90="<?= $p90 ?>"
                             data-runner="<?= $runnerProb ?>" data-impulse="<?= $impulse ?>"
                             data-noise="<?= $noise ?>" data-reach5="<?= $reach5 ?>" data-slrate="<?= $slRate ?>"
-                            data-v2succ="<?= $v2Succ ?? 0 ?>" data-v3succ="<?= $v3Succ ?? 0 ?>">
+                            data-v2succ="<?= $v2Succ ?? 0 ?>" data-v3succ="<?= $v3Succ ?? 0 ?>"
+                            data-live="<?= $liveClosed ?>" data-shadow="<?= $shadowClosed ?>" data-confnum="<?= $confNumeric ?>">
                             <td>
                                 <strong><?= htmlspecialchars($sym) ?></strong>
                                 <?php if ($insuffFlag): ?>
@@ -301,7 +308,17 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status, $health) 
                                 <?php endif; ?>
                             </td>
                             <td class="text-center"><?= $confidenceBadge($conf) ?></td>
+                            <td class="text-center">
+                                <?php $cnCls = $confNumeric >= 0.65 ? 'positive' : ($confNumeric >= 0.35 ? 'text-warning' : 'neutral'); ?>
+                                <span class="<?= $cnCls ?>"><?= number_format($confNumeric, 3) ?></span>
+                            </td>
                             <td class="text-center"><?= $sample ?></td>
+                            <td class="text-center <?= $liveClosed >= 10 ? 'positive' : ($liveClosed >= 5 ? 'text-warning' : 'neutral') ?>">
+                                <?= $liveClosed ?>
+                            </td>
+                            <td class="text-center <?= $shadowClosed >= 10 ? 'positive' : ($shadowClosed >= 5 ? 'text-warning' : 'neutral') ?>">
+                                <?= $shadowClosed ?>
+                            </td>
                             <td class="text-end"><?= $roiCell($p75) ?></td>
                             <td class="text-end"><?= $roiCell($p90) ?></td>
                             <td class="text-end"><?= $pctCell($runnerProb) ?></td>

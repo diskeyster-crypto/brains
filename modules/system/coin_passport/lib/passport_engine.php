@@ -40,7 +40,7 @@ final class CoinPassportEngine
     private const LIVE_GATE_PULLBACK_SEVERITY_MAX  = 0.75;  // pullback_severity_score <= this
 
     /** Evidence timeline config */
-    private const MAX_EVIDENCE_ITEMS = 60;
+    private const MAX_EVIDENCE_ITEMS = 100;
 
     public function __construct(string $passportsDir, string $tradingBotStorageDir, string $aiShadowStorageDir = '')
     {
@@ -252,6 +252,19 @@ final class CoinPassportEngine
                     }
                 }
             }
+
+            // Source 5: AI shadow virtual active trades (partial signal — adds recency evidence)
+            $shadowActiveDir = $this->aiShadowStorageDir . '/virtual_trades_active';
+            if (is_dir($shadowActiveDir)) {
+                foreach (glob($shadowActiveDir . '/*.json') ?: [] as $file) {
+                    $trade = $this->readJson($file);
+                    if (is_array($trade) && !empty($trade['symbol'])) {
+                        $sym = strtoupper((string)$trade['symbol']);
+                        $trade['_source'] = 'shadow_active';
+                        $bySymbol[$sym][] = $trade;
+                    }
+                }
+            }
         }
 
         return $bySymbol;
@@ -308,7 +321,11 @@ final class CoinPassportEngine
         $reach10  = 0;
         $reach15  = 0;
         $failBefore3 = 0;
-        $shadowSamples  = 0;  // from AI shadow source
+        $shadowSamples       = 0;  // from AI shadow source (closed + active)
+        $shadowClosedSamples = 0;  // shadow_closed only
+        $shadowActiveSamples = 0;  // shadow_active only
+        $liveClosedSamples   = 0;  // live_closed only
+        $liveActiveSamples   = 0;  // live_active + live_legacy
 
         // Initial burst: hit 2 ROI within the first half of hold time
         $burstCount = 0;
@@ -321,10 +338,20 @@ final class CoinPassportEngine
         foreach ($trades as $trade) {
             $source  = (string)($trade['_source'] ?? 'live_closed');
             $isLive  = strncmp($source, 'live', 4) === 0;
-            $isShadow = $source === 'shadow_closed';
+            $isShadow = $source === 'shadow_closed' || $source === 'shadow_active';
+            $isShadowClosed = $source === 'shadow_closed';
+            $isShadowActive = $source === 'shadow_active';
 
-            if ($isShadow) {
+            if ($isShadowClosed) {
                 $shadowSamples++;
+                $shadowClosedSamples++;
+            } elseif ($isShadowActive) {
+                $shadowSamples++;
+                $shadowActiveSamples++;
+            } elseif ($source === 'live_closed') {
+                $liveClosedSamples++;
+            } elseif ($source === 'live_active' || $source === 'live_legacy') {
+                $liveActiveSamples++;
             }
 
             $finalRoi   = $this->extractFinalRoi($trade);
@@ -549,7 +576,10 @@ final class CoinPassportEngine
         );
 
         // ── Data confidence ───────────────────────────────────────────────────
-        $dataConfidence = $this->computeConfidence($sampleSizeTotal);
+        [$dataConfidence, $confidenceScoreNumeric, $confidenceReasonSummary] = $this->computeConfidenceDetailed(
+            $sampleSizeTotal, $liveClosedSamples, $shadowClosedSamples,
+            $recentSamples, $sampleV2, $sampleV3
+        );
 
         // ── Data sufficiency ──────────────────────────────────────────────────
         [$insufficientFlag, $insufficientReason, $fallbackMode] = $this->computeDataSufficiency(
@@ -607,9 +637,15 @@ final class CoinPassportEngine
             'sample_size_short_v2'          => $sampleV2,
             'sample_size_short_v3'          => $sampleV3,
             'sample_size_shadow'            => $shadowSamples,
+            'sample_size_live_closed'       => $liveClosedSamples,
+            'sample_size_live_active'       => $liveActiveSamples,
+            'sample_size_shadow_closed'     => $shadowClosedSamples,
+            'sample_size_shadow_active'     => $shadowActiveSamples,
 
             // ── Data confidence / sufficiency ──────────────────────────────────
             'data_confidence'               => $dataConfidence,
+            'confidence_score_numeric'      => $confidenceScoreNumeric,
+            'confidence_reason_summary'     => $confidenceReasonSummary,
             'last_data_gap_warning'         => $lastDataGapWarning,
             'minimum_required_samples'      => self::MIN_TOTAL_SAMPLES,
             'current_usable_samples'        => $sampleSizeTotal,
@@ -1324,7 +1360,9 @@ final class CoinPassportEngine
             $type = 'trade_closed';
             $notes = '';
 
-            if ($source === 'shadow_closed') {
+            if ($source === 'shadow_active') {
+                $type = 'shadow_active';
+            } elseif ($source === 'shadow_closed') {
                 $type = 'shadow_outcome';
             } elseif ($source === 'live_active') {
                 $type = 'trade_active';
@@ -1337,6 +1375,8 @@ final class CoinPassportEngine
                 $type = 'reached_10_roi';
             } elseif ($maxRoi !== null && $maxRoi >= 5.0) {
                 $type = 'reached_5_roi';
+            } elseif ($maxRoi !== null && $maxRoi >= 2.0) {
+                $type = 'reached_2_roi';
             } elseif ($maxRoi !== null && $maxRoi < 3.0 && $finalRoi !== null && $finalRoi <= 0.0) {
                 $type = 'fakeout_case';
             }
@@ -1451,7 +1491,7 @@ final class CoinPassportEngine
     }
 
     /**
-     * Data confidence label based on sample size.
+     * Data confidence label based on sample size (legacy helper, kept for pattern-level use).
      */
     private function computeConfidence(int $sampleSize): string
     {
@@ -1468,7 +1508,116 @@ final class CoinPassportEngine
     }
 
     /**
+     * Rich data confidence computation that accounts for source diversity, recency,
+     * and pattern-level coverage.
+     *
+     * Returns [label, numeric_score (0.0–1.0), reason_summary].
+     *
+     * @return array{string, float, string}
+     */
+    private function computeConfidenceDetailed(
+        int $total,
+        int $liveClosed,
+        int $shadowClosed,
+        int $recent,
+        int $v2Samples,
+        int $v3Samples
+    ): array {
+        $score = 0.0;
+        $reasons = [];
+
+        // Component 1: raw sample volume (0–0.35)
+        if ($total >= 50) {
+            $score += 0.35;
+            $reasons[] = "volume:50+({$total})";
+        } elseif ($total >= 20) {
+            $score += 0.25;
+            $reasons[] = "volume:20+({$total})";
+        } elseif ($total >= 10) {
+            $score += 0.15;
+            $reasons[] = "volume:10+({$total})";
+        } elseif ($total >= 5) {
+            $score += 0.08;
+            $reasons[] = "volume:5+({$total})";
+        } elseif ($total > 0) {
+            $score += 0.03;
+            $reasons[] = "volume:sparse({$total})";
+        }
+
+        // Component 2: live closed data quality (0–0.25)
+        if ($liveClosed >= 20) {
+            $score += 0.25;
+            $reasons[] = "live_closed:rich({$liveClosed})";
+        } elseif ($liveClosed >= 10) {
+            $score += 0.18;
+            $reasons[] = "live_closed:good({$liveClosed})";
+        } elseif ($liveClosed >= 5) {
+            $score += 0.10;
+            $reasons[] = "live_closed:some({$liveClosed})";
+        } elseif ($liveClosed >= 1) {
+            $score += 0.04;
+            $reasons[] = "live_closed:minimal({$liveClosed})";
+        }
+
+        // Component 3: shadow data supplement (0–0.15)
+        if ($shadowClosed >= 15) {
+            $score += 0.15;
+            $reasons[] = "shadow:strong({$shadowClosed})";
+        } elseif ($shadowClosed >= 5) {
+            $score += 0.10;
+            $reasons[] = "shadow:moderate({$shadowClosed})";
+        } elseif ($shadowClosed >= 1) {
+            $score += 0.04;
+            $reasons[] = "shadow:some({$shadowClosed})";
+        }
+
+        // Component 4: recency (0–0.15)
+        if ($recent >= 10) {
+            $score += 0.15;
+            $reasons[] = "recent:strong({$recent})";
+        } elseif ($recent >= 5) {
+            $score += 0.10;
+            $reasons[] = "recent:ok({$recent})";
+        } elseif ($recent >= 1) {
+            $score += 0.04;
+            $reasons[] = "recent:sparse({$recent})";
+        } else {
+            $reasons[] = "recent:none";
+        }
+
+        // Component 5: pattern-specific depth (0–0.10)
+        $patternDepth = min($v2Samples, $v3Samples);
+        if ($patternDepth >= 10) {
+            $score += 0.10;
+            $reasons[] = "pattern_depth:rich";
+        } elseif ($patternDepth >= 5) {
+            $score += 0.06;
+            $reasons[] = "pattern_depth:ok";
+        } elseif ($patternDepth >= 1) {
+            $score += 0.02;
+            $reasons[] = "pattern_depth:sparse";
+        }
+
+        $score = min(1.0, round($score, 4));
+
+        // Map score to label
+        $label = 'none';
+        if ($score >= 0.65) {
+            $label = 'high';
+        } elseif ($score >= 0.35) {
+            $label = 'medium';
+        } elseif ($score > 0.0) {
+            $label = 'low';
+        }
+
+        $summary = $label . ':' . implode(',', $reasons);
+
+        return [$label, $score, $summary];
+    }
+
+    /**
      * Compute data sufficiency flags.
+     * Uses numeric confidence score so medium/high applies even without live-only data.
      *
      * @return array{bool, string|null, string}  [insufficient_flag, reason, fallback_mode]
      */
@@ -1488,7 +1637,10 @@ final class CoinPassportEngine
         if ($recent < self::MIN_RECENT_SAMPLES) {
             return [true, "insufficient_recent_samples:{$recent}<" . self::MIN_RECENT_SAMPLES, 'sim_only'];
         }
-        if ($confidence === 'none' || $confidence === 'low') {
+        if ($confidence === 'none') {
+            return [true, "no_data_confidence", 'shadow_only'];
+        }
+        if ($confidence === 'low') {
             return [true, "low_data_confidence:{$confidence}", 'sim_only'];
         }
         return [false, null, 'live_eligible'];

@@ -120,17 +120,18 @@ final class CoinPassportService
 
     /**
      * Rebuild passports only for symbols that had recent trade activity
-     * (closed in the last 7 days).
+     * (closed in the last 7 days, from live or shadow sources).
      * Called by CronManager (coin_passport:rebuildRecentSymbols).
      *
      * @return array{updated:int,symbols:list<string>,errors:list<string>}
      */
     public function rebuildRecentSymbols(): array
     {
-        $cutoff     = time() - 7 * 86400;
-        $closedDir  = __DIR__ . '/../trading_bot/storage/trades/closed';
-        $recent     = [];
+        $cutoff    = time() - 7 * 86400;
+        $recent    = [];
 
+        // Source 1: live closed trades
+        $closedDir = __DIR__ . '/../trading_bot/storage/trades/closed';
         if (is_dir($closedDir)) {
             foreach (glob($closedDir . '/*.json') ?: [] as $file) {
                 $trade = json_decode((string)file_get_contents($file), true);
@@ -140,7 +141,24 @@ final class CoinPassportService
                 $symbol   = (string)($trade['symbol'] ?? '');
                 $closedTs = (int)($trade['closed_ts'] ?? strtotime((string)($trade['closed_at'] ?? '')) ?: 0);
                 if ($symbol !== '' && $closedTs >= $cutoff) {
-                    $recent[$symbol] = true;
+                    $recent[strtoupper($symbol)] = true;
+                }
+            }
+        }
+
+        // Source 2: shadow virtual closed trades
+        // Include shadow-only symbols so they get passports even without live trades.
+        $shadowClosedDir = __DIR__ . '/../ai_shadow/storage/virtual_trades_closed';
+        if (is_dir($shadowClosedDir)) {
+            foreach (glob($shadowClosedDir . '/*.json') ?: [] as $file) {
+                $trade = json_decode((string)file_get_contents($file), true);
+                if (!is_array($trade)) {
+                    continue;
+                }
+                $symbol   = (string)($trade['symbol'] ?? '');
+                $closedTs = (int)($trade['closed_at'] ?? $trade['closed_ts'] ?? 0);
+                if ($symbol !== '' && $closedTs >= $cutoff) {
+                    $recent[strtoupper($symbol)] = true;
                 }
             }
         }

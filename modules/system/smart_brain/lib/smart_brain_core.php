@@ -1403,12 +1403,12 @@ final class SmartBrainCore
             if ($passportGateEnabled) {
                 $result['passport_gate_applied_count']++;
 
-                $passport = $passports[$symbol] ?? null;
+                $passport = $passports[strtoupper($symbol)] ?? null;
                 if ($passport === null) {
                     // No passport found — apply strict vs permissive policy
                     $result['passport_gate_no_passport_count']++;
-                    $result['passport_gate_signal_blocked_by_passport_count']++;
                     if ($passportGateStrict) {
+                        $result['passport_gate_signal_blocked_by_passport_count']++;
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_no_passport', $selectionMode);
                         $result['passport_gate_rejected_count']++;
                         $result['passport_gate_reject_count']++;

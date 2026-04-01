@@ -804,12 +804,24 @@ final class CoinPassportEngine
     /**
      * Extract peak/max ROI (in %) from a trade record.
      * Falls back to final ROI if no peak data available.
+     *
+     * Note: `mfe`/`mfe_roi` fields set to 0 are skipped when a positive
+     * fallback (finalRoi) exists. Shadow/virtual trades use 0 as an
+     * uninitialized default for MFE; skipping it lets the final ROI serve
+     * as a reasonable peak approximation. For genuine loss-only trades
+     * (fallback <= 0) the zero MFE is still returned as-is.
      */
     private function extractPeakRoi(array $trade, ?float $fallback): ?float
     {
         foreach (['trailing_peak_roi', 'peak_roi', 'max_roi', 'mfe', 'mfe_roi'] as $key) {
             if (isset($trade[$key]) && is_numeric($trade[$key])) {
                 $val = (float)$trade[$key];
+                // Skip uninitialized MFE zero defaults when a better fallback exists.
+                // Shadow/virtual trades have mfe=0 as a mock placeholder.
+                if ($val === 0.0 && ($key === 'mfe' || $key === 'mfe_roi')
+                    && $fallback !== null && $fallback > 0.0) {
+                    continue;
+                }
                 if (abs($val) < 2.0 && $val !== 0.0) {
                     $val *= 100.0;
                 }
@@ -817,12 +829,16 @@ final class CoinPassportEngine
             }
         }
 
-        // Check runtime
+        // Check runtime sub-array
         $runtime = $trade['runtime'] ?? [];
         if (is_array($runtime)) {
             foreach (['trailing_peak_roi', 'peak_roi', 'mfe', 'max_roi_reached'] as $key) {
                 if (isset($runtime[$key]) && is_numeric($runtime[$key])) {
                     $val = (float)$runtime[$key];
+                    if ($val === 0.0 && ($key === 'mfe')
+                        && $fallback !== null && $fallback > 0.0) {
+                        continue;
+                    }
                     if (abs($val) < 2.0 && $val !== 0.0) {
                         $val *= 100.0;
                     }

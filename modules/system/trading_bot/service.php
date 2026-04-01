@@ -1949,16 +1949,34 @@ final class TradingBotService
                 'error' => $this->configError,
             ];
         }
-        
-        return [
+
+        $mode = $this->config['module']['mode'] ?? 'dry';
+        $status = [
             'ok' => true,
             'enabled' => $this->config['module']['enabled'] ?? false,
-            'mode' => $this->config['module']['mode'] ?? 'dry',
+            'mode' => $mode,
             'last_run' => $this->store->loadLastRun(),
             'open_positions' => count($this->store->loadActiveTrades()),
             'pending_orders' => count($this->store->loadActiveOrders()),
             'errors_count' => count($this->store->loadErrors()),
+            'gateway_initialized' => ($this->gateway instanceof TradingBotGateway && $this->gateway->isInitialized()),
         ];
+
+        // Safe demo credential diagnostics
+        if ($mode === 'demo') {
+            $demoCreds = $this->config['module']['credentials']['demo'] ?? [];
+            $demoKey    = trim((string)($demoCreds['api_key']    ?? ''));
+            $demoSecret = trim((string)($demoCreds['api_secret'] ?? ''));
+            $demoUrl    = trim((string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit.com'));
+            $status['demo_credentials_diag'] = [
+                'demo_api_key_present'    => $demoKey !== '',
+                'demo_api_secret_present' => $demoSecret !== '',
+                'demo_api_base_url'       => $demoUrl,
+                'is_real_exchange_mode'   => true,
+            ];
+        }
+
+        return $status;
     }
     
     /**

@@ -479,8 +479,8 @@ final class SmartBrainService
                 'storage_namespace'       => basename($storageDir),
                 'config_path'             => $base . '/config/bot.json',
                 'demo_api_key_present'    => $demoApiKey !== '',
-                'demo_api_secret_present' => $demoSecretSet,
-                'demo_api_base_url'       => $demoBaseUrl,
+                'demo_api_secret_present' => $demoApiSecretSet,
+                'demo_api_base_url'       => $botDemoCreds['api_base_url'],
                 'is_real_exchange_mode'   => in_array($mode, ['live', 'demo'], true),
             ],
         ];

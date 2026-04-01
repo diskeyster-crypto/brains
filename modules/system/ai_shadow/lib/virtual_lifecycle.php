@@ -241,6 +241,11 @@ final class AiShadowVirtualLifecycle
 
         return $trade;
     }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public function getActiveTrades(): array
     {
         return $this->listJsonDir('storage/virtual_trades_active');
     }

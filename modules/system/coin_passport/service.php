@@ -179,13 +179,56 @@ final class CoinPassportService
         @file_put_contents($path, json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * Return global market health summary across all passports.
+     * Used by index UI (Phase 6) and Brain to gauge overall market conditions.
+     *
+     * @return array<string,mixed>
+     */
+    public function getMarketHealthSummary(): array
+    {
+        $passports = $this->engine->loadAll();
+        $total = count($passports);
+
+        $corridorHealthy  = 0;
+        $runnerHealthy    = 0;
+        $lowConfOnly      = 0;
+        $shadowOnly       = 0;
+        $simOnly          = 0;
+        $allowLive        = 0;
+
+        foreach ($passports as $p) {
+            $p75    = (float)($p['corridor_p75_roi'] ?? $p['corridor_high_roi'] ?? 0);
+            $runner = (float)($p['runner_probability'] ?? 0);
+            $conf   = (string)($p['data_confidence'] ?? 'none');
+            $elig   = (string)($p['recommended_live_eligibility'] ?? 'sim_only');
+
+            if ($p75 >= 3.0) $corridorHealthy++;
+            if ($runner >= 0.05) $runnerHealthy++;
+            if ($conf === 'low' || $conf === 'none') $lowConfOnly++;
+            if ($elig === 'shadow_only') $shadowOnly++;
+            if ($elig === 'sim_only') $simOnly++;
+            if ($elig === 'allow_live') $allowLive++;
+        }
+
+        return [
+            'total_symbols'                => $total,
+            'corridor_p75_healthy_count'   => $corridorHealthy,
+            'runner_healthy_count'         => $runnerHealthy,
+            'low_confidence_only_count'    => $lowConfOnly,
+            'shadow_only_count'            => $shadowOnly,
+            'sim_only_count'               => $simOnly,
+            'allow_live_count'             => $allowLive,
+        ];
+    }
+
     // =========================================================================
-    // API read path for future Brain/Bot integration
+    // API read path for Brain/Bot integration
     // =========================================================================
 
     /**
-     * Return a minimal guidance block for Brain/Bot to consume.
-     * Intended for future integration — read-only, no authority yet.
+     * Return a full guidance block for Brain to consume before signal approval.
+     * Authoritative live eligibility gate output.
      *
      * @return array<string,mixed>
      */
@@ -194,27 +237,48 @@ final class CoinPassportService
         $passport = $this->engine->load(strtoupper($symbol));
         if ($passport === null) {
             return [
-                'symbol'           => strtoupper($symbol),
-                'available'        => false,
-                'data_confidence'  => 'none',
+                'symbol'                       => strtoupper($symbol),
+                'available'                    => false,
+                'data_confidence'              => 'none',
+                'recommended_live_eligibility' => 'shadow_only',
+                'live_block_reason'            => 'no_passport',
+                'insufficient_data_flag'       => true,
+                'insufficient_data_reason'     => 'passport_not_found',
             ];
         }
 
         return [
             'symbol'                                => $passport['symbol'],
             'available'                             => true,
+            // Eligibility gate output
+            'recommended_live_eligibility'          => $passport['recommended_live_eligibility'] ?? 'sim_only',
+            'live_block_reason'                     => $passport['live_block_reason'] ?? null,
+            // Data confidence
             'data_confidence'                       => $passport['data_confidence'],
-            'sample_size'                           => $passport['sample_size'],
-            'corridor_low_roi'                      => $passport['corridor_low_roi'],
-            'corridor_mid_roi'                      => $passport['corridor_mid_roi'],
-            'corridor_high_roi'                     => $passport['corridor_high_roi'],
-            'recommended_guaranteed_lock_start_roi' => $passport['recommended_guaranteed_lock_start_roi'],
-            'recommended_guaranteed_lock_value_roi' => $passport['recommended_guaranteed_lock_value_roi'],
-            'recommended_stage1_threshold_roi'      => $passport['recommended_stage1_threshold_roi'],
-            'recommended_stage2_threshold_roi'      => $passport['recommended_stage2_threshold_roi'],
-            'recommended_ladder_mode'               => $passport['recommended_ladder_mode'],
-            'recommended_harvest_aggressiveness'    => $passport['recommended_harvest_aggressiveness'],
+            'insufficient_data_flag'                => $passport['insufficient_data_flag'] ?? false,
+            'insufficient_data_reason'              => $passport['insufficient_data_reason'] ?? null,
+            'fallback_mode'                         => $passport['fallback_mode'] ?? 'sim_only',
+            'current_usable_samples'                => $passport['current_usable_samples'] ?? $passport['sample_size'] ?? 0,
+            // Corridor summary
+            'corridor_p50_roi'                      => $passport['corridor_p50_roi'] ?? $passport['corridor_mid_roi'] ?? 0,
+            'corridor_p75_roi'                      => $passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? 0,
+            'corridor_p90_roi'                      => $passport['corridor_p90_roi'] ?? $passport['p90_max_roi'] ?? 0,
+            // Runner summary
             'runner_probability'                    => $passport['runner_probability'],
+            'reach_5_roi_rate'                      => $passport['reach_5_roi_rate'] ?? null,
+            'reach_10_roi_rate'                     => $passport['reach_10_roi_rate'] ?? null,
+            // Regime summary
+            'market_regime_health_score'            => $passport['market_regime_health_score'] ?? 0,
+            // Scores
+            'noise_score'                           => $passport['noise_score'] ?? 0,
+            'short_suitability_score'               => $passport['short_suitability_score'] ?? 0,
+            // Recommended stage thresholds
+            'recommended_live_floor_roi'            => $passport['recommended_live_floor_roi'] ?? 0,
+            'recommended_stage1_start_roi'          => $passport['recommended_stage1_start_roi'] ?? $passport['recommended_stage1_threshold_roi'] ?? 0,
+            'recommended_stage2_start_roi'          => $passport['recommended_stage2_start_roi'] ?? $passport['recommended_stage2_threshold_roi'] ?? 0,
+            'recommended_harvest_aggressiveness'    => $passport['recommended_harvest_aggressiveness'],
+            // Legacy
+            'sample_size'                           => $passport['sample_size'] ?? 0,
             'updated_at'                            => $passport['updated_at'],
         ];
     }

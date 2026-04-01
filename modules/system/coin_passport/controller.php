@@ -46,6 +46,7 @@ final class CoinPassportController
         $passports = $data['passports'];
         $count     = $data['count'];
         $status    = $this->service->getStatus();
+        $health    = $this->service->getMarketHealthSummary();
         $baseUrl   = $this->baseUrl;
 
         include __DIR__ . '/views/index.php';
@@ -138,7 +139,7 @@ final class CoinPassportController
 
     /**
      * GET /admin/coin_passport/api/guidance/{symbol}
-     * Return a minimal guidance block for Brain/Bot integration.
+     * Return a full guidance block for Brain/Bot integration (live eligibility gate output).
      */
     public function apiGuidance(string $symbol): void
     {
@@ -147,5 +148,17 @@ final class CoinPassportController
 
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($guidance, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/coin_passport/api/market_health
+     * Return global market health summary across all passports.
+     */
+    public function apiMarketHealth(): void
+    {
+        $summary = $this->service->getMarketHealthSummary();
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 }

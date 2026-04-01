@@ -904,6 +904,14 @@ final class SmartBrainCore
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
             'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
             'manual_blacklist_rejected_preview' => $liveIntentResult['manual_blacklist_rejected_preview'] ?? [],
+            // Coin Passport live gate diagnostics
+            'passport_gate_applied_count' => (int)($liveIntentResult['passport_gate_applied_count'] ?? 0),
+            'passport_gate_passed_count' => (int)($liveIntentResult['passport_gate_passed_count'] ?? 0),
+            'passport_gate_rejected_count' => (int)($liveIntentResult['passport_gate_rejected_count'] ?? 0),
+            'passport_gate_demoted_to_sim_count' => (int)($liveIntentResult['passport_gate_demoted_to_sim_count'] ?? 0),
+            'passport_gate_no_passport_count' => (int)($liveIntentResult['passport_gate_no_passport_count'] ?? 0),
+            'passport_gate_reject_reason_distribution' => $liveIntentResult['passport_gate_reject_reason_distribution'] ?? [],
+            'passport_gate_rejected_preview' => $liveIntentResult['passport_gate_rejected_preview'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -984,6 +992,14 @@ final class SmartBrainCore
             'manual_blacklist_count' => 0,
             'manual_blacklist_rejected_count' => 0,
             'manual_blacklist_rejected_preview' => [],
+            // Coin Passport live gate diagnostics
+            'passport_gate_applied_count' => 0,
+            'passport_gate_passed_count' => 0,
+            'passport_gate_rejected_count' => 0,
+            'passport_gate_demoted_to_sim_count' => 0,
+            'passport_gate_no_passport_count' => 0,
+            'passport_gate_reject_reason_distribution' => [],
+            'passport_gate_rejected_preview' => [],
             // Intent lifecycle diagnostics
             'lifecycle_counters' => [],
             'lifecycle_summary' => [],
@@ -1024,6 +1040,21 @@ final class SmartBrainCore
         $result['manual_blacklist_count'] = $blacklistData['count'];
         if (!$blacklistData['valid']) {
             $this->logger->log('warning', 'Manual blacklist: ' . $blacklistData['warning']);
+        }
+
+        // Load Coin Passport data for live eligibility gate
+        // Passport gate is enabled by default; can be overridden via user config.
+        $passportGateEnabled = (bool)($userLimits['passport_gate_enabled'] ?? true);
+        $passportGateStrict  = (bool)($userLimits['passport_gate_strict'] ?? false);
+        $passports = [];
+        $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
+        if ($passportGateEnabled && is_dir($passportsDir)) {
+            foreach (glob($passportsDir . '/*.json') ?: [] as $pFile) {
+                $pData = @json_decode((string)@file_get_contents($pFile), true);
+                if (is_array($pData) && !empty($pData['symbol'])) {
+                    $passports[strtoupper((string)$pData['symbol'])] = $pData;
+                }
+            }
         }
 
         $intents = [];
@@ -1343,6 +1374,74 @@ final class SmartBrainCore
                 }
             }
 
+            // === COIN PASSPORT LIVE GATE ===
+            // Brain reads Coin Passport before allowing live signal issuance.
+            // Gate result: allow_live | sim_only | shadow_only | reject
+            if ($passportGateEnabled) {
+                $result['passport_gate_applied_count']++;
+
+                $passport = $passports[$symbol] ?? null;
+                if ($passport === null) {
+                    // No passport found — apply strict vs permissive policy
+                    $result['passport_gate_no_passport_count']++;
+                    if ($passportGateStrict) {
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_no_passport', $selectionMode);
+                        $result['passport_gate_rejected_count']++;
+                        $result['passport_gate_reject_reason_distribution']['no_passport'] =
+                            ($result['passport_gate_reject_reason_distribution']['no_passport'] ?? 0) + 1;
+                        continue;
+                    }
+                    // Permissive default: no passport → allow but tag signal
+                    $signal['passport_gate_result'] = 'no_passport_permissive';
+                    $result['passport_gate_passed_count']++;
+                } else {
+                    $passportEligibility = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
+                    $passportBlockReason = (string)($passport['live_block_reason'] ?? '');
+
+                    if ($passportEligibility === 'allow_live') {
+                        $signal['passport_gate_result'] = 'allow_live';
+                        $signal['passport_corridor_p75']  = $passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? null;
+                        $signal['passport_runner_prob']   = $passport['runner_probability'] ?? null;
+                        $signal['passport_noise_score']   = $passport['noise_score'] ?? null;
+                        $signal['passport_regime_health'] = $passport['market_regime_health_score'] ?? null;
+                        $result['passport_gate_passed_count']++;
+                    } elseif ($passportEligibility === 'reject') {
+                        // Hard reject — coin explicitly blocked
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_reject:' . $passportBlockReason, $selectionMode);
+                        $result['passport_gate_rejected_count']++;
+                        $result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: 'reject'] =
+                            ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: 'reject'] ?? 0) + 1;
+                        if (count($result['passport_gate_rejected_preview']) < 10) {
+                            $result['passport_gate_rejected_preview'][] = [
+                                'symbol'        => $symbol,
+                                'eligibility'   => $passportEligibility,
+                                'block_reason'  => $passportBlockReason,
+                                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                            ];
+                        }
+                        continue;
+                    } else {
+                        // sim_only / shadow_only — demote to shadow, do not issue live
+                        $signal['passport_gate_result']    = $passportEligibility;
+                        $signal['passport_gate_demoted']   = true;
+                        $signal['passport_block_reason']   = $passportBlockReason;
+                        $result['passport_gate_demoted_to_sim_count']++;
+                        $result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: $passportEligibility] =
+                            ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: $passportEligibility] ?? 0) + 1;
+                        if (count($result['passport_gate_rejected_preview']) < 10) {
+                            $result['passport_gate_rejected_preview'][] = [
+                                'symbol'        => $symbol,
+                                'eligibility'   => $passportEligibility,
+                                'block_reason'  => $passportBlockReason,
+                                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                            ];
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_demote:' . $passportEligibility, $selectionMode);
+                        continue;
+                    }
+                }
+            }
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -1490,6 +1589,15 @@ final class SmartBrainCore
 
             if ($reverseEnabled && $sideOriginal !== $side) {
                 $intent['side_original'] = $sideOriginal;
+            }
+
+            // Attach passport gate result for audit trail
+            if ($passportGateEnabled) {
+                $intent['passport_gate_result']     = $signal['passport_gate_result'] ?? 'not_applied';
+                $intent['passport_corridor_p75']    = $signal['passport_corridor_p75'] ?? null;
+                $intent['passport_runner_prob']     = $signal['passport_runner_prob'] ?? null;
+                $intent['passport_noise_score']     = $signal['passport_noise_score'] ?? null;
+                $intent['passport_regime_health']   = $signal['passport_regime_health'] ?? null;
             }
 
             // P7: Attach per-symbol hint metadata for audit trail

@@ -1,11 +1,13 @@
 <?php
 /**
  * Coin Passport Module - Index View
- * Lists all coin passports with key stats.
+ * Lists all coin passports ranked by live eligibility, confidence, corridor quality.
  *
  * @var array<string,array<string,mixed>> $passports
  * @var int                               $count
  * @var string                            $baseUrl
+ * @var array<string,mixed>               $status
+ * @var array<string,mixed>               $health
  */
 
 $pageTitle  = 'Coin Passports';
@@ -51,11 +53,40 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
     }
+
+    // Sort by eligibility column
+    document.querySelectorAll('th[data-sort]').forEach(function(th) {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', function() {
+            const col = th.dataset.sort;
+            const tbody = document.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr[data-symbol]'));
+            const asc = th.dataset.dir !== 'asc';
+            th.dataset.dir = asc ? 'asc' : 'desc';
+            rows.sort((a, b) => {
+                const av = parseFloat(a.dataset[col] || 0);
+                const bv = parseFloat(b.dataset[col] || 0);
+                return asc ? av - bv : bv - av;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
 });
 </script>
 JS;
 
-$pageContent = function () use ($passports, $count, $baseUrl, $status) {
+$pageContent = function () use ($passports, $count, $baseUrl, $status, $health) {
+    $eligBadge = function (string $elig): string {
+        $map = [
+            'allow_live'  => ['bg-success', 'bi-check-circle', 'Live'],
+            'sim_only'    => ['bg-warning text-dark', 'bi-cpu', 'Sim Only'],
+            'shadow_only' => ['bg-secondary', 'bi-eye-slash', 'Shadow'],
+            'reject'      => ['bg-danger', 'bi-x-circle', 'Reject'],
+        ];
+        [$cls, $icon, $label] = $map[$elig] ?? ['bg-secondary', 'bi-question', $elig];
+        return '<span class="badge ' . $cls . '"><i class="bi ' . $icon . ' me-1"></i>' . htmlspecialchars($label) . '</span>';
+    };
+
     $confidenceBadge = function (string $conf): string {
         $classes = [
             'high'   => 'badge-conf-high',
@@ -74,12 +105,32 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status) {
         $cls = $val >= 0 ? 'positive' : 'negative';
         return '<span class="' . $cls . '">' . number_format($val, 1) . '%</span>';
     };
+
+    $pctCell = function (?float $val): string {
+        if ($val === null) return '<span class="neutral">—</span>';
+        $cls = $val >= 0.1 ? 'positive' : ($val >= 0.05 ? 'text-warning' : 'neutral');
+        return '<span class="' . $cls . '">' . number_format($val * 100, 1) . '%</span>';
+    };
+
+    // Sort passports: allow_live first, then sim_only, then shadow_only/reject
+    $eligOrder = ['allow_live' => 0, 'sim_only' => 1, 'shadow_only' => 2, 'reject' => 3];
+    uasort($passports, function ($a, $b) use ($eligOrder) {
+        $ea = $eligOrder[$a['recommended_live_eligibility'] ?? 'sim_only'] ?? 2;
+        $eb = $eligOrder[$b['recommended_live_eligibility'] ?? 'sim_only'] ?? 2;
+        if ($ea !== $eb) return $ea - $eb;
+        // Secondary: data_confidence (high > medium > low > none)
+        $confRank = ['high' => 3, 'medium' => 2, 'low' => 1, 'none' => 0];
+        $ca = $confRank[$a['data_confidence'] ?? 'none'] ?? 0;
+        $cb = $confRank[$b['data_confidence'] ?? 'none'] ?? 0;
+        return $cb - $ca;
+    });
+
     ?>
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="mb-1"><i class="bi bi-passport me-2 text-primary"></i>Coin Passports</h4>
-            <p class="text-secondary mb-0">Persistent per-symbol ROI corridor &amp; trailing intelligence</p>
+            <p class="text-secondary mb-0">Microscopic per-symbol analytics &amp; live eligibility gate</p>
         </div>
         <div class="d-flex gap-2 align-items-center">
             <span class="badge bg-primary fs-6"><?= $count ?> Passports</span>
@@ -123,35 +174,43 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status) {
         </div>
     </div>
 
-    <!-- Summary stats -->
-    <?php if ($count > 0):
-        $highConf   = count(array_filter($passports, fn($p) => ($p['data_confidence'] ?? '') === 'high'));
-        $runners    = count(array_filter($passports, fn($p) => (float)($p['runner_probability'] ?? 0) >= 0.1));
-        $avgMedian  = count($passports) > 0 ? array_sum(array_column($passports, 'median_max_roi')) / count($passports) : 0;
-    ?>
+    <!-- Market Health Summary (Phase 6) -->
+    <?php if ($count > 0): ?>
     <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card">
-                <div class="stat-value"><?= $count ?></div>
-                <div class="stat-label">Symbols tracked</div>
+                <div class="stat-value text-success"><?= (int)($health['allow_live_count'] ?? 0) ?></div>
+                <div class="stat-label">Live Eligible</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card">
-                <div class="stat-value"><?= $highConf ?></div>
-                <div class="stat-label">High confidence</div>
+                <div class="stat-value text-warning"><?= (int)($health['sim_only_count'] ?? 0) ?></div>
+                <div class="stat-label">Sim Only</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card">
-                <div class="stat-value"><?= $runners ?></div>
-                <div class="stat-label">Runner coins (≥10%)</div>
+                <div class="stat-value text-secondary"><?= (int)($health['shadow_only_count'] ?? 0) ?></div>
+                <div class="stat-label">Shadow Only</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card">
-                <div class="stat-value"><?= number_format($avgMedian, 1) ?>%</div>
-                <div class="stat-label">Avg median max ROI</div>
+                <div class="stat-value text-info"><?= (int)($health['corridor_p75_healthy_count'] ?? 0) ?></div>
+                <div class="stat-label">P75 Corridor ≥3%</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="stat-card">
+                <div class="stat-value"><?= (int)($health['runner_healthy_count'] ?? 0) ?></div>
+                <div class="stat-label">Runner Coins</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="stat-card">
+                <div class="stat-value text-danger"><?= (int)($health['low_confidence_only_count'] ?? 0) ?></div>
+                <div class="stat-label">Low Confidence</div>
             </div>
         </div>
     </div>
@@ -167,7 +226,9 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status) {
     <!-- Passports Table -->
     <div class="card">
         <div class="card-header">
-            <h5 class="mb-0"><i class="bi bi-table me-1"></i>Passports (<?= $count ?>)</h5>
+            <h5 class="mb-0"><i class="bi bi-table me-1"></i>Passports (<?= $count ?>)
+                <span class="text-secondary small ms-2" style="font-size:0.75rem;">Ranked by live eligibility → confidence → corridor</span>
+            </h5>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -175,17 +236,16 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status) {
                     <thead>
                         <tr>
                             <th>Symbol</th>
+                            <th class="text-center">Eligibility</th>
                             <th class="text-center">Confidence</th>
                             <th class="text-center">Samples</th>
-                            <th class="text-end">Corridor Low</th>
-                            <th class="text-end">Corridor Mid</th>
-                            <th class="text-end">Corridor High</th>
-                            <th class="text-end">Median Max</th>
-                            <th class="text-end">P75 Max</th>
-                            <th class="text-end">P90 Max</th>
-                            <th class="text-end">Runner %</th>
-                            <th class="text-center">Rec. Lock Start</th>
-                            <th class="text-center">Ladder Mode</th>
+                            <th class="text-end" data-sort="p75">Corridor P75</th>
+                            <th class="text-end" data-sort="p90">Corridor P90</th>
+                            <th class="text-end" data-sort="runner">Runner %</th>
+                            <th class="text-end" data-sort="noise">Noise</th>
+                            <th class="text-end" data-sort="reach5">Reach 5%</th>
+                            <th class="text-end" data-sort="slrate">SL Rate</th>
+                            <th class="text-end">Regime</th>
                             <th class="text-center">Harvest</th>
                             <th class="text-center">Updated</th>
                             <th></th>
@@ -194,63 +254,63 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status) {
                     <tbody>
                         <?php if (empty($passports)): ?>
                         <tr>
-                            <td colspan="15" class="text-center text-secondary py-5">
+                            <td colspan="14" class="text-center text-secondary py-5">
                                 <i class="bi bi-inbox display-5 d-block mb-2"></i>
                                 No passports yet — click <strong>Rebuild All</strong> to scan available trades.
                             </td>
                         </tr>
                         <?php else: ?>
-                        <?php foreach ($passports as $sym => $p): ?>
-                        <?php
+                        <?php foreach ($passports as $sym => $p):
+                            $elig       = (string)($p['recommended_live_eligibility'] ?? 'sim_only');
                             $conf       = $p['data_confidence'] ?? 'none';
-                            $sample     = (int)($p['sample_size'] ?? 0);
-                            $corrLow    = (float)($p['corridor_low_roi'] ?? 0);
-                            $corrMid    = (float)($p['corridor_mid_roi'] ?? 0);
-                            $corrHigh   = (float)($p['corridor_high_roi'] ?? 0);
-                            $medMax     = (float)($p['median_max_roi'] ?? 0);
-                            $p75        = (float)($p['p75_max_roi'] ?? 0);
-                            $p90        = (float)($p['p90_max_roi'] ?? 0);
+                            $sample     = (int)($p['sample_size_total'] ?? $p['sample_size'] ?? 0);
+                            $p75        = (float)($p['corridor_p75_roi'] ?? $p['corridor_high_roi'] ?? 0);
+                            $p90        = (float)($p['corridor_p90_roi'] ?? $p['p90_max_roi'] ?? 0);
                             $runnerProb = (float)($p['runner_probability'] ?? 0);
-                            $lockStart  = (float)($p['recommended_guaranteed_lock_start_roi'] ?? 0);
-                            $ladder     = (string)($p['recommended_ladder_mode'] ?? '—');
+                            $noise      = (float)($p['noise_score'] ?? 0);
+                            $reach5     = (float)($p['reach_5_roi_rate'] ?? 0);
+                            $slRate     = (float)($p['stop_loss_hit_rate'] ?? 0);
+                            $regime     = (float)($p['market_regime_health_score'] ?? 0);
                             $harvest    = (string)($p['recommended_harvest_aggressiveness'] ?? '—');
                             $updatedAt  = (string)($p['updated_at'] ?? '—');
+                            $blockReason = (string)($p['live_block_reason'] ?? '');
+                            $insuffFlag = !empty($p['insufficient_data_flag']);
                         ?>
-                        <tr data-symbol="<?= strtolower(htmlspecialchars($sym)) ?>">
+                        <tr data-symbol="<?= strtolower(htmlspecialchars($sym)) ?>"
+                            data-p75="<?= $p75 ?>" data-p90="<?= $p90 ?>"
+                            data-runner="<?= $runnerProb ?>" data-noise="<?= $noise ?>"
+                            data-reach5="<?= $reach5 ?>" data-slrate="<?= $slRate ?>">
                             <td>
                                 <strong><?= htmlspecialchars($sym) ?></strong>
+                                <?php if ($insuffFlag): ?>
+                                <i class="bi bi-exclamation-triangle text-warning ms-1" title="Insufficient data"></i>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-center">
+                                <?= $eligBadge($elig) ?>
+                                <?php if ($blockReason): ?>
+                                <div style="font-size:0.65rem; color:#64748b; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($blockReason) ?>"><?= htmlspecialchars($blockReason) ?></div>
+                                <?php endif; ?>
                             </td>
                             <td class="text-center"><?= $confidenceBadge($conf) ?></td>
                             <td class="text-center"><?= $sample ?></td>
-                            <td class="text-end"><?= $roiCell($corrLow) ?></td>
-                            <td class="text-end"><?= $roiCell($corrMid) ?></td>
-                            <td class="text-end"><?= $roiCell($corrHigh) ?></td>
-                            <td class="text-end"><?= $roiCell($medMax) ?></td>
                             <td class="text-end"><?= $roiCell($p75) ?></td>
                             <td class="text-end"><?= $roiCell($p90) ?></td>
+                            <td class="text-end"><?= $pctCell($runnerProb) ?></td>
                             <td class="text-end">
-                                <?php if ($runnerProb >= 0.1): ?>
-                                    <span class="positive"><?= number_format($runnerProb * 100, 1) ?>%</span>
-                                <?php else: ?>
-                                    <span class="neutral"><?= number_format($runnerProb * 100, 1) ?>%</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="text-center">
-                                <?php if ($lockStart > 0): ?>
-                                    <span class="badge bg-primary bg-opacity-25 text-primary"><?= number_format($lockStart, 1) ?>%</span>
-                                <?php else: ?>
-                                    <span class="neutral">—</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="text-center">
                                 <?php
-                                $ladderBadge = match($ladder) {
-                                    'aggressive_ladder' => 'bg-success bg-opacity-25 text-success',
-                                    'soft_ladder'       => 'bg-warning bg-opacity-25 text-warning',
-                                    default             => 'bg-secondary bg-opacity-25 text-secondary',
-                                };
+                                $noiseCls = $noise <= 0.3 ? 'positive' : ($noise <= 0.6 ? 'text-warning' : 'negative');
                                 ?>
-                                <span class="badge <?= $ladderBadge ?>"><?= htmlspecialchars($ladder) ?></span>
+                                <span class="<?= $noiseCls ?>"><?= number_format($noise, 3) ?></span>
+                            </td>
+                            <td class="text-end"><?= $pctCell($reach5) ?></td>
+                            <td class="text-end">
+                                <?php $slCls = $slRate <= 0.2 ? 'positive' : ($slRate <= 0.4 ? 'text-warning' : 'negative'); ?>
+                                <span class="<?= $slCls ?>"><?= number_format($slRate * 100, 1) ?>%</span>
+                            </td>
+                            <td class="text-end">
+                                <?php $regimeCls = $regime >= 0.6 ? 'positive' : ($regime >= 0.3 ? 'text-warning' : 'negative'); ?>
+                                <span class="<?= $regimeCls ?>"><?= number_format($regime, 2) ?></span>
                             </td>
                             <td class="text-center">
                                 <?php
@@ -283,9 +343,10 @@ $pageContent = function () use ($passports, $count, $baseUrl, $status) {
     <!-- API reference note -->
     <div class="mt-3 text-secondary" style="font-size:0.75rem;">
         <i class="bi bi-info-circle me-1"></i>
-        API endpoints: <code class="text-info">/admin/coin_passport/api/passports</code> ·
+        API: <code class="text-info">/admin/coin_passport/api/passports</code> ·
         <code class="text-info">/admin/coin_passport/api/passport/{SYMBOL}</code> ·
-        <code class="text-info">/admin/coin_passport/api/guidance/{SYMBOL}</code>
+        <code class="text-info">/admin/coin_passport/api/guidance/{SYMBOL}</code> ·
+        <code class="text-info">/admin/coin_passport/api/market_health</code>
     </div>
     <?php
 };

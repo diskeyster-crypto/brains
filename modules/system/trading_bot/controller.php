@@ -31,8 +31,17 @@ final class TradingBotController
             return;
         }
         
-        $this->storageDir = $this->moduleBase . '/storage';
         $this->config = $this->loadConfig();
+
+        // Mode-aware storage namespace (must match service.php logic)
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        if ($mode === 'live') {
+            $this->storageDir = $this->moduleBase . '/storage_live';
+        } elseif ($mode === 'demo') {
+            $this->storageDir = $this->moduleBase . '/storage_demo';
+        } else {
+            $this->storageDir = $this->moduleBase . '/storage_paper';
+        }
     }
     
     /**

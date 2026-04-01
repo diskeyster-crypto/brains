@@ -504,8 +504,8 @@ class TradingBotGateway
             ], true);
             
             if (!isset($resp['success']) || $resp['success'] !== true) {
-                // In LIVE mode we must surface auth/config failures instead of silently returning empty.
-                if ($this->mode === 'live') {
+                // In real exchange modes (live/demo) surface auth/config failures instead of silently returning empty.
+                if ($this->mode === 'live' || $this->mode === 'demo') {
                     throw new \RuntimeException('Bybit getPositions failed: ' . $this->buildErrorSummary($resp));
                 }
                 return [];
@@ -513,8 +513,8 @@ class TradingBotGateway
             
             return $resp['result']['list'] ?? [];
         } catch (\Throwable $e) {
-            // In LIVE mode we prefer surfacing the reason via BotReconcileTrait (it catches exceptions).
-            if ($this->mode === 'live') {
+            // In real exchange modes surface the reason via BotReconcileTrait (it catches exceptions).
+            if ($this->mode === 'live' || $this->mode === 'demo') {
                 throw $e;
             }
             return [];
@@ -898,8 +898,8 @@ class TradingBotGateway
             ], true);
             
             if (!isset($resp['success']) || $resp['success'] !== true) {
-                // In LIVE mode we must surface auth/config failures instead of silently returning empty.
-                if ($this->mode === 'live') {
+                // In real exchange modes (live/demo) surface auth/config failures instead of silently returning empty.
+                if ($this->mode === 'live' || $this->mode === 'demo') {
                     throw new \RuntimeException('Bybit getOpenOrders failed: ' . $this->buildErrorSummary($resp));
                 }
                 return [];
@@ -907,8 +907,8 @@ class TradingBotGateway
             
             return $resp['result']['list'] ?? [];
         } catch (\Throwable $e) {
-            // In LIVE mode we prefer surfacing the reason via BotReconcileTrait (it catches exceptions).
-            if ($this->mode === 'live') {
+            // In real exchange modes surface the reason via BotReconcileTrait (it catches exceptions).
+            if ($this->mode === 'live' || $this->mode === 'demo') {
                 throw $e;
             }
             return [];

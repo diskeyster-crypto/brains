@@ -55,9 +55,15 @@ final class TradingBotService
         
         $this->config = $this->loadConfig();
 
-        // Mode-based storage namespace: live → storage/, demo → storage_demo/, paper/dry → storage/
+        // Mode-based storage namespace: live → storage_live/, demo → storage_demo/, paper/dry → storage_paper/
         $mode = $this->config['module']['mode'] ?? 'paper';
-        $storageSuffix = ($mode === 'demo') ? '/storage_demo' : '/storage';
+        if ($mode === 'live') {
+            $storageSuffix = '/storage_live';
+        } elseif ($mode === 'demo') {
+            $storageSuffix = '/storage_demo';
+        } else {
+            $storageSuffix = '/storage_paper';
+        }
         $this->storageDir = $this->moduleBase . $storageSuffix;
         $this->logsDir    = $this->storageDir . '/logs';
 
@@ -1381,8 +1387,8 @@ final class TradingBotService
                 $this->releaseRunLock($lockFp);
             }
         }
-        // P6.11: Balance snapshot for UI (sticky between runs)
-        if ($mode === 'live') {
+        // P6.11: Balance snapshot for UI (sticky between runs) — applies to all real exchange modes
+        if ($mode === 'live' || $mode === 'demo') {
             if (is_array($this->balanceCache) && !empty($this->balanceCache)) {
                 $result['balance_snapshot_last'] = $this->balanceCache;
                 $result['balance_snapshot_ts'] = (int)($this->balanceCacheTs ?? 0);
@@ -1979,13 +1985,13 @@ final class TradingBotService
      */
     public function getExchangePositionsUi(): array
     {
-        // In non-live mode: nothing to show from exchange
-        if (!$this->isLiveMode()) {
+        // In non-exchange modes (paper/dry): nothing to show from exchange
+        if (!$this->isRealExchangeMode()) {
             return [
                 'ok' => true,
                 'positions' => [],
                 'count' => 0,
-                'source' => 'not_live_mode',
+                'source' => 'not_real_exchange_mode',
             ];
         }
 

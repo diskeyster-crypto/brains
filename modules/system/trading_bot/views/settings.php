@@ -981,7 +981,11 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                     </tr>
                     <tr>
                         <td class="text-muted">Storage</td>
-                        <td><code><?= htmlspecialchars($mode === 'demo' ? 'storage_demo/' : 'storage/') ?></code></td>
+                        <td><code><?php
+                            if ($mode === 'live') echo 'storage_live/';
+                            elseif ($mode === 'demo') echo 'storage_demo/';
+                            else echo 'storage_paper/';
+                        ?></code></td>
                     </tr>
                     <?php if ($mode === 'demo'): ?>
                     <tr>

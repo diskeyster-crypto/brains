@@ -99,7 +99,7 @@ trait BotApiTrait
         $losses = 0;
         $closedPnlError = null;
 
-        if ($this->gateway !== null && ($this->config['module']['mode'] ?? 'dry') === 'live') {
+        if ($this->gateway !== null && $this->isRealExchangeMode()) {
             $endMs = (int)round(microtime(true) * 1000);
             $startMs = $endMs - ($lookbackHours * 3600 * 1000);
 
@@ -366,8 +366,8 @@ trait BotApiTrait
      */
     public function uiClosePosition(array $input): array
     {
-        if (($this->config['module']['mode'] ?? 'dry') !== 'live') {
-            return ['ok' => false, 'error' => 'not_live'];
+        if (!$this->isRealExchangeMode()) {
+            return ['ok' => false, 'error' => 'not_real_exchange_mode'];
         }
 
         $symbol = trim((string)($input['symbol'] ?? ''));
@@ -397,8 +397,8 @@ trait BotApiTrait
      */
     public function uiUpdatePositionStops(array $input): array
     {
-        if (($this->config['module']['mode'] ?? 'dry') !== 'live') {
-            return ['ok' => false, 'error' => 'not_live'];
+        if (!$this->isRealExchangeMode()) {
+            return ['ok' => false, 'error' => 'not_real_exchange_mode'];
         }
 
         $symbol = trim((string)($input['symbol'] ?? ''));

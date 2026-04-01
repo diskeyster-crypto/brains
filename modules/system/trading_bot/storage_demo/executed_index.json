@@ -1,0 +1,47 @@
+{
+    "li_sig_e9e5ab6a804bca3d_c0756235": {
+        "executed_at": "2026-04-01T19:52:04+01:00",
+        "result": "rejected_reconcile_failed",
+        "order_id": "419edaf6-011f-4832-86e1-25c9e512961c",
+        "trade_id": null,
+        "error": "reconcile_failed",
+        "execution_identity_key": "li_sig_e9e5ab6a804bca3d_c0756235",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_6bd9b6cb8da95358_ea4f0d60": {
+        "executed_at": "2026-04-01T19:55:04+01:00",
+        "result": "rejected_reconcile_failed",
+        "order_id": "062f580d-45a3-4ebb-9042-b3ee5eb599f5",
+        "trade_id": null,
+        "error": "reconcile_failed",
+        "execution_identity_key": "li_sig_6bd9b6cb8da95358_ea4f0d60",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_f4ff5facd02e875e_6bf64a5c": {
+        "executed_at": "2026-04-01T20:00:12+01:00",
+        "result": "opened_protected",
+        "order_id": "a6f86d73-b330-41f8-bdf1-0d9f4d235e73",
+        "trade_id": "sig_f4ff5facd02e875e",
+        "error": null,
+        "execution_identity_key": "li_sig_f4ff5facd02e875e_6bf64a5c",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_c63c22b33c3131cc_42f6a567": {
+        "executed_at": "2026-04-01T20:04:03+01:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved down 2.6105% > effective threshold 2.3500% (base=1.75% + buffer=0.15% + freshness=0.20% + short_enter_now=0.25%)",
+        "execution_identity_key": "li_sig_c63c22b33c3131cc_42f6a567",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_82eee3af70cfcca1_d013bc1b": {
+        "executed_at": "2026-04-01T20:06:11+01:00",
+        "result": "rejected_reconcile_failed",
+        "order_id": "1fb274e5-ec67-4eca-b860-014d7a6bbbf2",
+        "trade_id": null,
+        "error": "reconcile_failed",
+        "execution_identity_key": "li_sig_82eee3af70cfcca1_d013bc1b",
+        "dedupe_basis": "intent_id"
+    }
+}

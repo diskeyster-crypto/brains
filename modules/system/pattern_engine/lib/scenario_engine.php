@@ -89,23 +89,24 @@ final class ScenarioEngine
      */
     public function evaluate(array $signal): array
     {
-        $passport = $this->loadPassport((string)($signal['symbol'] ?? ''));
-        $profiles = $this->matchingProfiles($signal);
+        $passportResult = $this->loadPassportForSignal($signal);
+        $passport       = $passportResult['passport'];
+        $profiles       = $this->matchingProfiles($signal);
 
         if (empty($profiles)) {
-            return $this->buildDecision($signal, null, null, 'reject', 'no_matching_profile', $passport);
+            return $this->buildDecision($signal, null, null, 'reject', 'no_matching_profile', $passport, [], $passportResult);
         }
 
         // Try each profile, return the most permissive allowed result
         $best = null;
         foreach ($profiles as $profileName => $profile) {
-            $decision = $this->applyProfile($signal, $profile, $profileName, $passport);
+            $decision = $this->applyProfile($signal, $profile, $profileName, $passport, $passportResult);
             if ($best === null || $this->statusRank($decision['scenario_status']) > $this->statusRank($best['scenario_status'])) {
                 $best = $decision;
             }
         }
 
-        return $best ?? $this->buildDecision($signal, null, null, 'reject', 'evaluation_failed', $passport);
+        return $best ?? $this->buildDecision($signal, null, null, 'reject', 'evaluation_failed', $passport, [], $passportResult);
     }
 
     /**
@@ -163,7 +164,8 @@ final class ScenarioEngine
         array $signal,
         array $profile,
         string $profileName,
-        ?array $passport
+        ?array $passport,
+        array $passportLookup = []
     ): array {
         $signalStrength  = (float)($signal['signal_strength'] ?? 0);
         $qualityScore    = (float)($signal['quality_score'] ?? 0);
@@ -172,10 +174,10 @@ final class ScenarioEngine
 
         // --- signal quality gate ---
         if ($signalStrength < $minStrength) {
-            return $this->buildDecision($signal, $profile, $profileName, 'reject', 'signal_strength_below_threshold', $passport);
+            return $this->buildDecision($signal, $profile, $profileName, 'reject', 'signal_strength_below_threshold', $passport, [], $passportLookup);
         }
         if ($qualityScore < $minQuality) {
-            return $this->buildDecision($signal, $profile, $profileName, 'reject', 'quality_score_below_threshold', $passport);
+            return $this->buildDecision($signal, $profile, $profileName, 'reject', 'quality_score_below_threshold', $passport, [], $passportLookup);
         }
 
         // --- passport gate ---
@@ -217,7 +219,8 @@ final class ScenarioEngine
                     'market_ok'       => $marketOk,
                     'passport_reason' => $passportReason,
                     'market_reason'   => $marketReason,
-                ]
+                ],
+                $passportLookup
             );
         }
 
@@ -228,7 +231,7 @@ final class ScenarioEngine
             'passport_ok'    => true,
             'market_ok'      => true,
             'scenario_score' => $scenarioScore,
-        ]);
+        ], $passportLookup);
     }
 
     // -------------------------------------------------------------------------
@@ -366,7 +369,8 @@ final class ScenarioEngine
         string $status,
         string $reason,
         ?array $passport,
-        array $extra = []
+        array $extra = [],
+        array $passportLookup = []
     ): array {
         $passportOk  = (bool)($extra['passport_ok'] ?? ($passport !== null));
         $marketOk    = (bool)($extra['market_ok'] ?? true);
@@ -421,6 +425,9 @@ final class ScenarioEngine
                 'engine_live_output_enabled'  => $this->liveOutputEnabled,
                 'final_scenario_status'       => $effectiveStatus,
                 'final_scenario_reason'       => $effectiveReason,
+                'passport_lookup_symbol'      => $passportLookup['lookup_symbol'] ?? ($signal['symbol_canonical'] ?? $signal['symbol'] ?? null),
+                'passport_lookup_status'      => $passportLookup['lookup_status'] ?? ($passport !== null ? 'found' : 'not_found'),
+                'passport_lookup_reason'      => $passportLookup['lookup_reason'] ?? null,
             ]),
         ];
     }
@@ -526,6 +533,54 @@ final class ScenarioEngine
     // -------------------------------------------------------------------------
     // Private: passport loading
     // -------------------------------------------------------------------------
+
+    /**
+     * Load the best available passport for a signal, trying canonical symbol first,
+     * then normalized, then the raw symbol.
+     *
+     * Returns a result array with passport and lookup diagnostics.
+     *
+     * @return array{passport: array<string,mixed>|null, lookup_symbol: string, lookup_status: string, lookup_reason: string}
+     */
+    private function loadPassportForSignal(array $signal): array
+    {
+        $canonical  = strtoupper((string)($signal['symbol_canonical']  ?? ''));
+        $normalized = strtoupper((string)($signal['symbol_normalized'] ?? ''));
+        $original   = strtoupper((string)($signal['symbol']            ?? ''));
+
+        // Try canonical first
+        if ($canonical !== '') {
+            $p = $this->loadPassport($canonical);
+            if ($p !== null) {
+                return ['passport' => $p, 'lookup_symbol' => $canonical, 'lookup_status' => 'found', 'lookup_reason' => 'found_by_canonical'];
+            }
+        }
+
+        // Try normalized if different from canonical
+        if ($normalized !== '' && $normalized !== $canonical) {
+            $p = $this->loadPassport($normalized);
+            if ($p !== null) {
+                return ['passport' => $p, 'lookup_symbol' => $normalized, 'lookup_status' => 'found', 'lookup_reason' => 'found_by_normalized'];
+            }
+        }
+
+        // Try original uppercase if different from both
+        if ($original !== '' && $original !== $canonical && $original !== $normalized) {
+            $p = $this->loadPassport($original);
+            if ($p !== null) {
+                return ['passport' => $p, 'lookup_symbol' => $original, 'lookup_status' => 'found', 'lookup_reason' => 'found_by_original'];
+            }
+        }
+
+        // Not found — collect all tried symbols for the reason string
+        $tried = array_unique(array_filter([$canonical, $normalized, $original]));
+        return [
+            'passport'      => null,
+            'lookup_symbol' => $canonical ?: $original,
+            'lookup_status' => 'not_found',
+            'lookup_reason' => 'no_passport_for:' . implode('|', $tried),
+        ];
+    }
 
     /** @return array<string,mixed>|null */
     private function loadPassport(string $symbol): ?array

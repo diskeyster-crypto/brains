@@ -127,6 +127,14 @@ $scenTruncated  = !empty($pe_last_run['scenarios_truncated'])  || !empty($pe_sta
 $avgPerSym      = $pe_last_run['avg_signals_per_symbol'] ?? $pe_stats['last_run']['avg_signals_per_symbol'] ?? null;
 $symUsedInternal = (int)($pe_last_run['symbols_used_internal'] ?? $pe_stats['last_run']['symbols_used_internal'] ?? 0);
 $symUsedBybit   = (int)($pe_last_run['symbols_used_bybit_fallback'] ?? $pe_stats['last_run']['symbols_used_bybit_fallback'] ?? 0);
+
+$demoSignalsCount   = (int)($pe_last_run['demo_signals_count']               ?? $pe_stats['last_run']['demo_signals_count']               ?? 0);
+$shadowSignalsCount = (int)($pe_last_run['shadow_signals_count']             ?? $pe_stats['last_run']['shadow_signals_count']             ?? 0);
+$simSignalsCount    = (int)($pe_last_run['sim_signals_count']                ?? $pe_stats['last_run']['sim_signals_count']                ?? 0);
+$symNormCount       = (int)($pe_last_run['symbols_normalized_count']         ?? $pe_stats['last_run']['symbols_normalized_count']         ?? 0);
+$symNormFailed      = (int)($pe_last_run['symbols_normalization_failed_count']?? $pe_stats['last_run']['symbols_normalization_failed_count']?? 0);
+$passportOkCount    = (int)($pe_last_run['passport_lookup_success_count']    ?? $pe_stats['last_run']['passport_lookup_success_count']    ?? 0);
+$passportFailCount  = (int)($pe_last_run['passport_lookup_failed_count']     ?? $pe_stats['last_run']['passport_lookup_failed_count']     ?? 0);
 ?>
 <!-- Stats row -->
 <div class="row g-3 mb-4">
@@ -195,6 +203,46 @@ $symUsedBybit   = (int)($pe_last_run['symbols_used_bybit_fallback'] ?? $pe_stats
         </div>
     </div>
 </div>
+
+<!-- Downstream eligibility stats row -->
+<?php if ($demoSignalsCount > 0 || $shadowSignalsCount > 0 || $simSignalsCount > 0 || $passportOkCount > 0): ?>
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card" style="border-color:#2563eb;">
+            <div class="pe-stat-value" style="color:#3b82f6;"><?= $demoSignalsCount ?></div>
+            <div class="pe-stat-label">Demo-Ready</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card" style="border-color:#7c3aed;">
+            <div class="pe-stat-value" style="color:#a78bfa;"><?= $shadowSignalsCount ?></div>
+            <div class="pe-stat-label">Shadow-Ready</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card" style="border-color:#d97706;">
+            <div class="pe-stat-value" style="color:#fbbf24;"><?= $simSignalsCount ?></div>
+            <div class="pe-stat-label">Sim-Ready</div>
+        </div>
+    </div>
+    <?php if ($passportOkCount > 0 || $passportFailCount > 0): ?>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card" style="border-color:<?= $passportFailCount > $passportOkCount ? '#dc2626' : '#22c55e' ?>;">
+            <div class="pe-stat-value" style="color:#22c55e; font-size:1rem;"><?= $passportOkCount ?><span class="text-secondary" style="font-size:0.7rem;"> / <?= $passportOkCount + $passportFailCount ?></span></div>
+            <div class="pe-stat-label">Passport Hits</div>
+        </div>
+    </div>
+    <?php endif; ?>
+    <?php if ($symNormCount > 0 || $symNormFailed > 0): ?>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card<?= $symNormFailed > 0 ? ' border-warning' : '' ?>">
+            <div class="pe-stat-value" style="font-size:1rem; color:#94a3b8;"><?= $symNormCount ?><?= $symNormFailed > 0 ? '<span class="text-warning ms-1" style="font-size:0.7rem;">⚠ ' . $symNormFailed . ' fail</span>' : '' ?></div>
+            <div class="pe-stat-label">Symbols Normalized</div>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <?php if ($sigTruncated || $candTruncated || $scenTruncated): ?>
 <div class="alert alert-warning alert-sm py-2 mb-3 small">
@@ -301,13 +349,24 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
     <table class="table table-dark table-sm table-hover">
         <thead>
             <tr>
-                <th>Symbol</th><th>Side</th><th>Pattern</th><th>Strength</th><th>Quality</th><th>Signal ID</th>
+                <th>Symbol</th><th>Side</th><th>Pattern</th><th>Strength</th><th>Quality</th><th>Norm</th><th>Signal ID</th>
             </tr>
         </thead>
         <tbody>
         <?php foreach (array_slice($pe_signals, 0, 200) as $sig): ?>
+            <?php
+                $symRaw       = $sig['symbol'] ?? '—';
+                $symCanonical = $sig['symbol_canonical'] ?? null;
+                $normStatus   = $sig['symbol_normalization_status'] ?? null;
+                $showCanon    = $symCanonical && $symCanonical !== $symRaw;
+            ?>
             <tr>
-                <td><strong><?= htmlspecialchars($sig['symbol'] ?? '—') ?></strong></td>
+                <td>
+                    <strong><?= htmlspecialchars($symRaw) ?></strong>
+                    <?php if ($showCanon): ?>
+                        <br><small class="text-info" title="Canonical: <?= htmlspecialchars($symCanonical) ?>"><?= htmlspecialchars($symCanonical) ?></small>
+                    <?php endif; ?>
+                </td>
                 <td><?php
                     $side = $sig['side'] ?? '';
                     $sideCls = $side === 'long' ? 'text-success' : ($side === 'short' ? 'text-danger' : 'text-secondary');
@@ -316,6 +375,22 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <td><span class="text-secondary small"><?= htmlspecialchars($sig['pattern_algorithm'] ?? $sig['pattern_family'] ?? '—') ?></span></td>
                 <td><?= number_format((float)($sig['signal_strength'] ?? 0), 2) ?></td>
                 <td><?= number_format((float)($sig['quality_score'] ?? 0), 2) ?></td>
+                <td><?php
+                    $ns = $normStatus ?? '';
+                    if ($ns === 'unchanged' || $ns === '') {
+                        echo '<span class="text-secondary" style="font-size:0.7rem;">—</span>';
+                    } elseif ($ns === 'normalized') {
+                        echo '<span class="badge" style="background:#1e40af; font-size:0.65rem;">norm</span>';
+                    } elseif ($ns === 'normalized_no_passport') {
+                        echo '<span class="badge bg-warning text-dark" style="font-size:0.65rem;" title="No passport for this symbol">no-pp</span>';
+                    } elseif ($ns === 'normalized_fallback_to_original') {
+                        echo '<span class="badge bg-secondary" style="font-size:0.65rem;" title="Canonical not in passport; using original">orig</span>';
+                    } elseif ($ns === 'failed') {
+                        echo '<span class="badge bg-danger" style="font-size:0.65rem;">fail</span>';
+                    } else {
+                        echo '<span class="text-muted" style="font-size:0.65rem;">' . htmlspecialchars($ns) . '</span>';
+                    }
+                ?></td>
                 <td><code class="small text-muted"><?= htmlspecialchars(substr($sig['signal_id'] ?? '—', 0, 20)) ?></code></td>
             </tr>
         <?php endforeach; ?>
@@ -339,13 +414,22 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
             <tr>
                 <th>Symbol</th><th>Side</th><th>Status</th><th>Reason</th>
                 <th>Demo</th><th>Shadow</th><th>Sim</th><th>Live</th>
-                <th>P75 ROI</th><th>Runner Prob</th><th>Noise</th>
+                <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th>
             </tr>
         </thead>
         <tbody>
         <?php foreach (array_slice($pe_scenarios, 0, 200) as $sc): ?>
+            <?php $diag = (array)($sc['diagnostics'] ?? []); ?>
             <tr>
-                <td><strong><?= htmlspecialchars($sc['symbol'] ?? '—') ?></strong></td>
+                <td>
+                    <strong><?= htmlspecialchars($sc['symbol'] ?? '—') ?></strong>
+                    <?php
+                        $ppSym = $diag['passport_lookup_symbol'] ?? null;
+                        if ($ppSym && strtoupper($ppSym) !== strtoupper($sc['symbol'] ?? '')) {
+                            echo '<br><small class="text-info" title="Passport looked up as: ' . htmlspecialchars($ppSym) . '">' . htmlspecialchars($ppSym) . '</small>';
+                        }
+                    ?>
+                </td>
                 <td><?php
                     $side = $sc['side'] ?? '';
                     $sideCls = $side === 'long' ? 'text-success' : ($side === 'short' ? 'text-danger' : 'text-secondary');
@@ -365,9 +449,19 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                         echo '<i class="bi bi-x-circle text-secondary"></i>';
                     }
                 ?></td>
-                <td><?= isset($sc['diagnostics']['passport_corridor_p75_roi']) ? number_format((float)$sc['diagnostics']['passport_corridor_p75_roi'], 2) : '—' ?></td>
-                <td><?= isset($sc['diagnostics']['passport_runner_probability']) ? number_format((float)$sc['diagnostics']['passport_runner_probability'], 3) : '—' ?></td>
-                <td><?= isset($sc['diagnostics']['passport_noise_score']) ? number_format((float)$sc['diagnostics']['passport_noise_score'], 2) : '—' ?></td>
+                <td><?php
+                    $ppStatus = $diag['passport_lookup_status'] ?? null;
+                    if ($ppStatus === 'found') {
+                        echo '<i class="bi bi-check-circle text-success" title="Passport found: ' . htmlspecialchars($diag['passport_lookup_symbol'] ?? '') . '"></i>';
+                    } elseif ($ppStatus === 'not_found') {
+                        echo '<i class="bi bi-x-circle text-secondary" title="' . htmlspecialchars($diag['passport_lookup_reason'] ?? 'no passport') . '"></i>';
+                    } else {
+                        echo '<span class="text-secondary">—</span>';
+                    }
+                ?></td>
+                <td><?= isset($diag['passport_corridor_p75_roi']) ? number_format((float)$diag['passport_corridor_p75_roi'], 2) : '—' ?></td>
+                <td><?= isset($diag['passport_runner_probability']) ? number_format((float)$diag['passport_runner_probability'], 3) : '—' ?></td>
+                <td><?= isset($diag['passport_noise_score']) ? number_format((float)$diag['passport_noise_score'], 2) : '—' ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -440,6 +534,12 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 </a>
                 <a href="<?= $smartBrainUrl ?>/patterns/api/demo_signals" class="btn btn-outline-secondary" target="_blank">
                     <i class="bi bi-code-slash me-1"></i>API: Demo Signals JSON
+                </a>
+                <a href="<?= $smartBrainUrl ?>/patterns/api/shadow_signals" class="btn btn-outline-secondary" target="_blank">
+                    <i class="bi bi-code-slash me-1"></i>API: Shadow Signals JSON
+                </a>
+                <a href="<?= $smartBrainUrl ?>/patterns/api/sim_signals" class="btn btn-outline-secondary" target="_blank">
+                    <i class="bi bi-code-slash me-1"></i>API: Sim Signals JSON
                 </a>
             </div>
         </div>

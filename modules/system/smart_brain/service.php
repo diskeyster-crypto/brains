@@ -727,6 +727,7 @@ final class SmartBrainService
             require_once $base . '/lib/pattern_detector.php';
             require_once $base . '/lib/signal_adapter.php';
             require_once $base . '/lib/scenario_engine.php';
+            require_once $base . '/lib/symbol_normalizer.php';
             require_once $base . '/service.php';
             $svc = new \PatternEngineService();
         }

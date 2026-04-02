@@ -4,11 +4,13 @@ declare(strict_types=1);
 use PatternEngine\PatternDetectorRegistry;
 use PatternEngine\UniversalSignalAdapter;
 use PatternEngine\ScenarioEngine;
+use PatternEngine\SymbolNormalizer;
 
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/lib/pattern_detector.php';
 require_once __DIR__ . '/lib/signal_adapter.php';
 require_once __DIR__ . '/lib/scenario_engine.php';
+require_once __DIR__ . '/lib/symbol_normalizer.php';
 
 /**
  * PatternEngineService
@@ -28,6 +30,7 @@ final class PatternEngineService
     private string $storageDir;
     private UniversalSignalAdapter $adapter;
     private ScenarioEngine $scenarioEngine;
+    private SymbolNormalizer $symbolNormalizer;
 
     /** @var array<string,mixed> Runtime stats for the current run (populated by buildRealBatch / buildTestBatch) */
     private array $realRunStats = [];
@@ -42,8 +45,9 @@ final class PatternEngineService
         $passportDir    = __DIR__ . '/../coin_passport/storage/passports';
         $liveEnabled    = (bool)($config['live_output_enabled'] ?? false);
 
-        $this->adapter        = new UniversalSignalAdapter();
-        $this->scenarioEngine = new ScenarioEngine($profiles, $passportDir, $liveEnabled);
+        $this->adapter          = new UniversalSignalAdapter();
+        $this->scenarioEngine   = new ScenarioEngine($profiles, $passportDir, $liveEnabled);
+        $this->symbolNormalizer = new SymbolNormalizer($passportDir);
 
         PatternDetectorRegistry::init();
     }
@@ -413,13 +417,35 @@ final class PatternEngineService
         // Collect all detections as aligned triplets {raw, signal, scenario}
         $allCombined = [];
 
+        // Symbol normalization tracking — normalize once per unique symbol across the entire run
+        $normalizedSymbolMap              = [];
+        $symbolsNormalizedCount           = 0;
+        $symbolsNormalizationFailedCount  = 0;
+
         foreach ($marketDataBatch as $marketData) {
             $symbol    = (string)($marketData['symbol'] ?? '');
+
+            // Normalize symbol once per unique symbol in this run
+            if (!isset($normalizedSymbolMap[$symbol])) {
+                $normInfo = $this->symbolNormalizer->normalize($symbol);
+                $normalizedSymbolMap[$symbol] = $normInfo;
+
+                $normStatus = $normInfo['symbol_normalization_status'];
+                if ($normStatus === 'failed') {
+                    $symbolsNormalizationFailedCount++;
+                } elseif ($normStatus !== 'unchanged') {
+                    $symbolsNormalizedCount++;
+                }
+            } else {
+                $normInfo = $normalizedSymbolMap[$symbol];
+            }
+
             $marketCtx = [
-                'symbol'       => $symbol,
-                'time_window'  => $marketData['time_window_minutes'] ?? 15,
-                'last_price'   => $marketData['candles'][array_key_last($marketData['candles'] ?? [])]['close'] ?? null,
-                'data_source'  => $marketData['data_source'] ?? 'unknown',
+                'symbol'               => $symbol,
+                'time_window'          => $marketData['time_window_minutes'] ?? 15,
+                'last_price'           => $marketData['candles'][array_key_last($marketData['candles'] ?? [])]['close'] ?? null,
+                'data_source'          => $marketData['data_source'] ?? 'unknown',
+                'symbol_normalization' => $normInfo,
             ];
 
             foreach (PatternDetectorRegistry::all() as $algo => $detector) {
@@ -438,6 +464,10 @@ final class PatternEngineService
         $this->realRunStats['raw_candidates_total'] = $rawTotal;
         $this->realRunStats['raw_signals_total']    = $rawTotal;
         $this->realRunStats['raw_scenarios_total']  = $rawTotal;
+
+        // Store normalization counters (set once, after all symbols processed)
+        $this->realRunStats['symbols_normalized_count']          = $symbolsNormalizedCount;
+        $this->realRunStats['symbols_normalization_failed_count'] = $symbolsNormalizationFailedCount;
 
         // Deduplicate: cap per (symbol × side × pattern_algorithm) and per symbol
         $allCombined = $this->deduplicateCombined($allCombined, $antiFlood);
@@ -479,12 +509,36 @@ final class PatternEngineService
         $allSignals   = array_column($allCombined, 'signal');
         $allScenarios = array_column($allCombined, 'scenario');
 
+        // Count passport lookup outcomes from scenario diagnostics
+        $passportLookupSuccessCount = 0;
+        $passportLookupFailedCount  = 0;
+        foreach ($allScenarios as $sc) {
+            $ls = $sc['diagnostics']['passport_lookup_status'] ?? null;
+            if ($ls === 'found') {
+                $passportLookupSuccessCount++;
+            } elseif ($ls === 'not_found') {
+                $passportLookupFailedCount++;
+            }
+        }
+        $this->realRunStats['passport_lookup_success_count'] = $passportLookupSuccessCount;
+        $this->realRunStats['passport_lookup_failed_count']  = $passportLookupFailedCount;
+
+        // Build downstream-safe filtered signal sets
+        $demoSignals   = $this->buildDownstreamSet($allCombined, 'allowed_for_demo');
+        $shadowSignals = $this->buildDownstreamSet($allCombined, 'allowed_for_shadow');
+        $simSignals    = $this->buildDownstreamSet($allCombined, 'allowed_for_sim');
+
+        $this->realRunStats['demo_signals_count']   = count($demoSignals);
+        $this->realRunStats['shadow_signals_count'] = count($shadowSignals);
+        $this->realRunStats['sim_signals_count']    = count($simSignals);
+
         $stats = $this->computeStats($allRaw, $allSignals, $allScenarios);
 
         // Persist
         $this->saveCandidates($allRaw);
         $this->saveSignals($allSignals);
         $this->saveScenarios($allScenarios);
+        $this->saveDownstreamSnapshots($demoSignals, $shadowSignals, $simSignals);
         $this->saveLastRun($stats);
 
         return [
@@ -614,12 +668,100 @@ final class PatternEngineService
      */
     public function clearStorage(): void
     {
-        foreach (['candidates/candidates.json', 'signals/signals.json', 'scenarios/scenarios.json'] as $f) {
+        foreach ([
+            'candidates/candidates.json',
+            'signals/signals.json',
+            'scenarios/scenarios.json',
+            'downstream/demo_signals.json',
+            'downstream/shadow_signals.json',
+            'downstream/sim_signals.json',
+        ] as $f) {
             $path = $this->storageDir . '/' . $f;
             if (file_exists($path)) {
                 @unlink($path);
             }
         }
+    }
+
+    // =========================================================================
+    // Downstream snapshot helpers
+    // =========================================================================
+
+    /**
+     * Build a downstream-safe signal set from finalized combined triplets.
+     *
+     * Each entry is a clean, self-contained record for Demo / Shadow / Sim
+     * consumption — symbol normalized, scenario metadata, passport summary, TTL.
+     *
+     * @param  list<array{raw:array,signal:array,scenario:array}>  $combined
+     * @param  string  $allowFlag  e.g. 'allowed_for_demo', 'allowed_for_shadow', 'allowed_for_sim'
+     * @return list<array<string,mixed>>
+     */
+    private function buildDownstreamSet(array $combined, string $allowFlag): array
+    {
+        $result = [];
+        foreach ($combined as $item) {
+            $sc  = $item['scenario'] ?? [];
+            $sig = $item['signal']   ?? [];
+
+            if (empty($sc[$allowFlag])) {
+                continue;
+            }
+
+            $diag = (array)($sc['diagnostics'] ?? []);
+
+            $result[] = [
+                'signal_id'                  => $sig['signal_id']                   ?? '',
+                'symbol'                     => $sig['symbol']                      ?? '',
+                'symbol_raw'                 => $sig['symbol_raw']                  ?? ($sig['symbol'] ?? ''),
+                'symbol_normalized'          => $sig['symbol_normalized']           ?? strtoupper($sig['symbol'] ?? ''),
+                'symbol_canonical'           => $sig['symbol_canonical']            ?? strtoupper($sig['symbol'] ?? ''),
+                'symbol_normalization_status'=> $sig['symbol_normalization_status'] ?? 'unchanged',
+                'side'                       => $sig['side']                        ?? '',
+                'pattern_algorithm'          => $sig['pattern_algorithm']           ?? '',
+                'pattern_version'            => $sig['pattern_version']             ?? '',
+                'signal_strength'            => $sig['signal_strength']             ?? 0.0,
+                'quality_score'              => $sig['quality_score']               ?? 0.0,
+                'ttl_seconds'                => $sig['ttl_seconds']                 ?? 0,
+                'detected_at'                => $sig['detected_at']                 ?? '',
+                'scenario_id'                => $sc['scenario_id']                  ?? '',
+                'scenario_status'            => $sc['scenario_status']              ?? '',
+                'scenario_reason'            => $sc['scenario_reason']              ?? '',
+                'scenario_score'             => $sc['scenario_score']               ?? 0.0,
+                'execution_mode_hint'        => $sc['execution_mode_hint']          ?? '',
+                'allowed_for_demo'           => (bool)($sc['allowed_for_demo']      ?? false),
+                'allowed_for_shadow'         => (bool)($sc['allowed_for_shadow']    ?? false),
+                'allowed_for_sim'            => (bool)($sc['allowed_for_sim']       ?? false),
+                'allowed_for_live'           => (bool)($sc['allowed_for_live']      ?? false),
+                'passport_lookup_symbol'     => $diag['passport_lookup_symbol']     ?? null,
+                'passport_lookup_status'     => $diag['passport_lookup_status']     ?? null,
+                'passport_lookup_reason'     => $diag['passport_lookup_reason']     ?? null,
+                'passport_available'         => (bool)($diag['passport_available']  ?? false),
+                'passport_data_confidence'   => $diag['passport_data_confidence']   ?? null,
+                'passport_runner_probability'=> $diag['passport_runner_probability']?? null,
+                'passport_noise_score'       => $diag['passport_noise_score']       ?? null,
+                'entry_hint'                 => $sig['entry_hint']                  ?? null,
+                'invalidation_hint'          => $sig['invalidation_hint']           ?? null,
+                'source_module'              => 'pattern_engine',
+                'snapshot_at'               => date('c'),
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * Write demo / shadow / sim downstream snapshots.
+     *
+     * @param list<array<string,mixed>> $demo
+     * @param list<array<string,mixed>> $shadow
+     * @param list<array<string,mixed>> $sim
+     */
+    private function saveDownstreamSnapshots(array $demo, array $shadow, array $sim): void
+    {
+        $base = $this->storageDir . '/downstream';
+        $this->writeJson($base . '/demo_signals.json',   $demo);
+        $this->writeJson($base . '/shadow_signals.json', $shadow);
+        $this->writeJson($base . '/sim_signals.json',    $sim);
     }
 
     // =========================================================================
@@ -848,6 +990,16 @@ final class PatternEngineService
             'status_counts'                     => $statusCounts,
             // Derived
             'avg_signals_per_symbol'            => $symScanned > 0 ? round($stored / $symScanned, 2) : 0,
+            // Symbol normalization counters
+            'symbols_normalized_count'           => (int)($this->realRunStats['symbols_normalized_count']           ?? 0),
+            'symbols_normalization_failed_count' => (int)($this->realRunStats['symbols_normalization_failed_count'] ?? 0),
+            // Passport lookup counters
+            'passport_lookup_success_count'      => (int)($this->realRunStats['passport_lookup_success_count']      ?? 0),
+            'passport_lookup_failed_count'       => (int)($this->realRunStats['passport_lookup_failed_count']       ?? 0),
+            // Downstream signal counts
+            'demo_signals_count'                 => (int)($this->realRunStats['demo_signals_count']                 ?? 0),
+            'shadow_signals_count'               => (int)($this->realRunStats['shadow_signals_count']               ?? 0),
+            'sim_signals_count'                  => (int)($this->realRunStats['sim_signals_count']                  ?? 0),
         ];
     }
 
@@ -914,7 +1066,7 @@ final class PatternEngineService
 
     private function ensureDirs(): void
     {
-        foreach (['candidates', 'signals', 'scenarios', 'runtime', 'logs'] as $dir) {
+        foreach (['candidates', 'signals', 'scenarios', 'runtime', 'logs', 'downstream'] as $dir) {
             $full = $this->storageDir . '/' . $dir;
             if (!is_dir($full)) {
                 @mkdir($full, 0755, true);

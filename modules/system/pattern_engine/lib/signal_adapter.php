@@ -78,27 +78,37 @@ final class UniversalSignalAdapter
         $qualityScore   = $this->computeQualityScore($rawScore, $context, $timeWindow);
         $ttl            = $this->computeTtl($timeWindow, $rawScore);
 
+        // Symbol normalization fields — injected by service via marketContext
+        $normInfo = isset($marketContext['symbol_normalization']) && is_array($marketContext['symbol_normalization'])
+            ? $marketContext['symbol_normalization']
+            : [];
+
         return [
-            'signal_id'           => $this->generateSignalId($symbol, $algorithm, $detectedAt),
-            'symbol'              => $symbol,
-            'side'                => $side,
-            'pattern_algorithm'   => $algorithm,
-            'pattern_family'      => $family,
-            'pattern_version'     => $version,
-            'source_module'       => self::SOURCE_MODULE,
-            'detected_at'         => $detectedAt,
-            'time_window_minutes' => $timeWindow,
-            'signal_strength'     => round($signalStrength, 4),
-            'quality_score'       => round($qualityScore, 4),
-            'entry_hint'          => $entryHint,
-            'entry_context'       => $this->buildEntryContext($context, $side),
-            'invalidation_hint'   => $invalidHint,
-            'expected_move_hint'  => $expectedMove,
-            'ttl_seconds'         => $ttl,
-            'pattern_diagnostics' => $this->buildDiagnostics($rawDetection),
-            'market_context'      => $marketContext,
-            'source_version'      => self::SOURCE_VERSION,
-            'raw_detection_ref'   => $sourceRef,
+            'signal_id'                   => $this->generateSignalId($symbol, $algorithm, $detectedAt),
+            'symbol'                      => $symbol,
+            'symbol_raw'                  => $normInfo['symbol_raw']                  ?? $symbol,
+            'symbol_normalized'           => $normInfo['symbol_normalized']           ?? strtoupper($symbol),
+            'symbol_canonical'            => $normInfo['symbol_canonical']            ?? strtoupper($symbol),
+            'symbol_normalization_status' => $normInfo['symbol_normalization_status'] ?? 'unchanged',
+            'symbol_normalization_reason' => $normInfo['symbol_normalization_reason'] ?? 'no_normalization_context',
+            'side'                        => $side,
+            'pattern_algorithm'           => $algorithm,
+            'pattern_family'              => $family,
+            'pattern_version'             => $version,
+            'source_module'               => self::SOURCE_MODULE,
+            'detected_at'                 => $detectedAt,
+            'time_window_minutes'         => $timeWindow,
+            'signal_strength'             => round($signalStrength, 4),
+            'quality_score'               => round($qualityScore, 4),
+            'entry_hint'                  => $entryHint,
+            'entry_context'               => $this->buildEntryContext($context, $side),
+            'invalidation_hint'           => $invalidHint,
+            'expected_move_hint'          => $expectedMove,
+            'ttl_seconds'                 => $ttl,
+            'pattern_diagnostics'         => $this->buildDiagnostics($rawDetection),
+            'market_context'              => $marketContext,
+            'source_version'              => self::SOURCE_VERSION,
+            'raw_detection_ref'           => $sourceRef,
         ];
     }
 

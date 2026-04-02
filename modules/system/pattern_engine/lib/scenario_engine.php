@@ -319,7 +319,7 @@ final class ScenarioEngine
         $maxHold = (int)($profile['max_hold_minutes'] ?? 0);
 
         return [
-            'scenario_id'               => 'sc_' . substr(md5(($signal['signal_id'] ?? '') . $status . microtime()), 0, 12),
+            'scenario_id'               => 'sc_' . substr(hash('sha256', ($signal['signal_id'] ?? '') . $status . microtime(true) . random_int(0, PHP_INT_MAX)), 0, 12),
             'signal_id'                 => $signal['signal_id'] ?? '',
             'symbol'                    => $signal['symbol'] ?? '',
             'side'                      => $signal['side'] ?? '',

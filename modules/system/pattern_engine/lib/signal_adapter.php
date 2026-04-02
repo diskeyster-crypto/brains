@@ -117,7 +117,8 @@ final class UniversalSignalAdapter
 
     private function generateSignalId(string $symbol, string $algorithm, string $detectedAt): string
     {
-        $hash = substr(md5($symbol . $algorithm . $detectedAt . microtime()), 0, 16);
+        $entropy = $symbol . $algorithm . $detectedAt . microtime(true) . random_int(0, PHP_INT_MAX);
+        $hash    = substr(hash('sha256', $entropy), 0, 16);
         return 'pe_' . $hash;
     }
 

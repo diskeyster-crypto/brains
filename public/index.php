@@ -1448,18 +1448,18 @@ Router::get('/admin/pattern_engine', function () {
 });
 
 Router::get('/admin/pattern_engine/candidates', function () {
-    $controller = new PatternEngineController();
-    $controller->candidates();
+    header('Location: /admin/smart_brain/patterns', true, 302);
+    exit;
 });
 
 Router::get('/admin/pattern_engine/signals', function () {
-    $controller = new PatternEngineController();
-    $controller->signals();
+    header('Location: /admin/smart_brain/patterns', true, 302);
+    exit;
 });
 
 Router::get('/admin/pattern_engine/scenarios', function () {
-    $controller = new PatternEngineController();
-    $controller->scenarios();
+    header('Location: /admin/smart_brain/patterns', true, 302);
+    exit;
 });
 
 Router::get('/admin/pattern_engine/settings', function () {

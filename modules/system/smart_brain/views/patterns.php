@@ -687,7 +687,7 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
         <thead>
             <tr>
                 <th>Symbol</th><th>Side</th><th>Status</th><th>Reason</th>
-                <th>Demo</th><th>Shadow</th><th>Sim</th><th>Live</th>
+                <th>Bucket</th><th>Live</th>
                 <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th><th>Demo Block</th><th>Near Miss</th>
             </tr>
         </thead>
@@ -711,9 +711,22 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 ?></td>
                 <td><?= $scenarioStatusBadge($sc['final_scenario_status'] ?? $sc['scenario_status'] ?? 'pending') ?></td>
                 <td><small class="text-secondary"><?= htmlspecialchars(substr((string)($sc['final_scenario_reason'] ?? $sc['scenario_reason'] ?? '—'), 0, 60)) ?></small></td>
-                <td><?= !empty($sc['allowed_for_demo'])   ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-secondary"></i>' ?></td>
-                <td><?= !empty($sc['allowed_for_shadow']) ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-secondary"></i>' ?></td>
-                <td><?= !empty($sc['allowed_for_sim'])    ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-secondary"></i>' ?></td>
+                <td><?php
+                    $fb = $diag['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '—';
+                    $fbColors = [
+                        'allow_demo'  => '#3b82f6',
+                        'shadow_only' => '#a78bfa',
+                        'allow_shadow'=> '#a78bfa',
+                        'allow_sim'   => '#fbbf24',
+                        'sim_only'    => '#fbbf24',
+                        'reject'      => '#ef4444',
+                    ];
+                    $fbColor = $fbColors[$fb] ?? '#6b7280';
+                    echo '<span class="badge" style="background:' . $fbColor . ';font-size:0.65rem;" title="final_downstream_bucket">' . htmlspecialchars($fb) . '</span>';
+                    if (!empty($diag['demo_low_confidence_policy_used'])) {
+                        echo '<span class="badge ms-1" style="background:#0d9488;font-size:0.6rem;" title="Graduated via low-confidence demo policy">lc</span>';
+                    }
+                ?></td>
                 <td><?php
                     if (!empty($sc['allowed_for_live'])) {
                         echo '<i class="bi bi-check-circle text-warning"></i>';
@@ -737,9 +750,6 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <td><?= isset($diag['passport_runner_probability']) ? number_format((float)$diag['passport_runner_probability'], 3) : '—' ?></td>
                 <td><?= isset($diag['passport_noise_score']) ? number_format((float)$diag['passport_noise_score'], 2) : '—' ?></td>
                 <td><small class="text-warning" style="font-size:0.65rem;"><?= $diag['demo_block_reason'] ? htmlspecialchars(str_replace('demo_blocked_', '', $diag['demo_block_reason'])) : '' ?><?php
-                    if (!empty($diag['demo_low_confidence_policy_used'])) {
-                        echo '<span class="badge ms-1" style="background:#0d9488;font-size:0.6rem;" title="Graduated via low-confidence demo policy">lc</span>';
-                    }
                     if (!empty($diag['demo_low_confidence_block_reason'])) {
                         echo '<br><span style="color:#94a3b8;font-size:0.6rem;">' . htmlspecialchars(str_replace('lc_demo_', '', (string)$diag['demo_low_confidence_block_reason'])) . '</span>';
                     }

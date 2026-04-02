@@ -940,8 +940,8 @@ final class ScenarioEngine
     {
         return match ($status) {
             'allow_live'    => [true,  true,  true,  true,  null],
-            'allow_demo'    => [false, true,  true,  true,  $reason],
-            'allow_shadow'  => [false, false, true,  true,  $reason],
+            'allow_demo'    => [false, true,  false, false, $reason],
+            'allow_shadow'  => [false, false, true,  false, $reason],
             'shadow_only'   => [false, false, true,  false, $reason],
             'allow_sim'     => [false, false, false, true,  $reason],
             'sim_only'      => [false, false, false, true,  $reason],

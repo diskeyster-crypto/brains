@@ -689,10 +689,10 @@ final class PatternEngineService
         $this->realRunStats['demo_low_confidence_block_count']      = $demoLowConfidenceBlockCount;
         $this->realRunStats['demo_low_confidence_block_reasons']    = $demoLowConfidenceBlockReasons;
 
-        // Build downstream-safe filtered signal sets
-        $demoSignals   = $this->buildDownstreamSet($allCombined, 'allowed_for_demo');
-        $shadowSignals = $this->buildDownstreamSet($allCombined, 'allowed_for_shadow');
-        $simSignals    = $this->buildDownstreamSet($allCombined, 'allowed_for_sim');
+        // Build downstream-safe filtered signal sets — exclusive by final_downstream_bucket
+        $demoSignals   = $this->buildDownstreamSet($allCombined, ['allow_demo']);
+        $shadowSignals = $this->buildDownstreamSet($allCombined, ['shadow_only', 'allow_shadow']);
+        $simSignals    = $this->buildDownstreamSet($allCombined, ['allow_sim', 'sim_only']);
 
         $this->realRunStats['demo_signals_count']   = count($demoSignals);
         $this->realRunStats['shadow_signals_count'] = count($shadowSignals);
@@ -800,33 +800,33 @@ final class PatternEngineService
     }
 
     /**
-     * Return signals allowed for demo execution (allowed_for_demo = true in scenario).
+     * Return signals allowed for demo execution (final_downstream_bucket = allow_demo).
      *
      * @return list<array<string,mixed>>
      */
     public function getDemoSignals(): array
     {
-        return $this->filterScenariosByMode('allowed_for_demo');
+        return $this->filterScenariosByMode(['allow_demo']);
     }
 
     /**
-     * Return signals allowed for AI Shadow (allowed_for_shadow = true in scenario).
+     * Return signals allowed for AI Shadow (final_downstream_bucket = shadow_only|allow_shadow).
      *
      * @return list<array<string,mixed>>
      */
     public function getShadowSignals(): array
     {
-        return $this->filterScenariosByMode('allowed_for_shadow');
+        return $this->filterScenariosByMode(['shadow_only', 'allow_shadow']);
     }
 
     /**
-     * Return signals allowed for Simulator (allowed_for_sim = true in scenario).
+     * Return signals allowed for Simulator (final_downstream_bucket = allow_sim|sim_only).
      *
      * @return list<array<string,mixed>>
      */
     public function getSimSignals(): array
     {
-        return $this->filterScenariosByMode('allowed_for_sim');
+        return $this->filterScenariosByMode(['allow_sim', 'sim_only']);
     }
 
     /**
@@ -859,18 +859,21 @@ final class PatternEngineService
      * Each entry is a clean, self-contained record for Demo / Shadow / Sim
      * consumption — symbol normalized, scenario metadata, passport summary, TTL.
      *
+     * Filtering is exclusive: uses final_downstream_bucket from diagnostics.
+     *
      * @param  list<array{raw:array,signal:array,scenario:array}>  $combined
-     * @param  string  $allowFlag  e.g. 'allowed_for_demo', 'allowed_for_shadow', 'allowed_for_sim'
+     * @param  list<string>  $buckets  e.g. ['allow_demo'] or ['shadow_only','allow_shadow']
      * @return list<array<string,mixed>>
      */
-    private function buildDownstreamSet(array $combined, string $allowFlag): array
+    private function buildDownstreamSet(array $combined, array $buckets): array
     {
         $result = [];
         foreach ($combined as $item) {
             $sc  = $item['scenario'] ?? [];
             $sig = $item['signal']   ?? [];
 
-            if (empty($sc[$allowFlag])) {
+            $finalBucket = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
+            if (!in_array($finalBucket, $buckets, true)) {
                 continue;
             }
 
@@ -935,7 +938,7 @@ final class PatternEngineService
     // =========================================================================
 
     /** @param list<array<string,mixed>> $scenarios */
-    private function filterScenariosByMode(string $flag): array
+    private function filterScenariosByMode(array $buckets): array
     {
         $scenarios = $this->getScenarios();
         $signals   = $this->getSignals();
@@ -946,7 +949,8 @@ final class PatternEngineService
 
         $result = [];
         foreach ($scenarios as $sc) {
-            if (!empty($sc[$flag])) {
+            $finalBucket = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
+            if (in_array($finalBucket, $buckets, true)) {
                 $sid = $sc['signal_id'] ?? '';
                 $result[] = array_merge($sc, ['signal' => $sigMap[$sid] ?? null]);
             }

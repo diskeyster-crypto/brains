@@ -1441,10 +1441,10 @@ Router::get('/admin/coin_passport/api/guidance/{symbol}', function (string $symb
 
 require_once ROOT . '/modules/system/pattern_engine/controller.php';
 
-// UI
+// UI — main page redirects to Brain control-plane
 Router::get('/admin/pattern_engine', function () {
-    $controller = new PatternEngineController();
-    $controller->index();
+    header('Location: /admin/smart_brain/patterns', true, 302);
+    exit;
 });
 
 Router::get('/admin/pattern_engine/candidates', function () {
@@ -1463,8 +1463,8 @@ Router::get('/admin/pattern_engine/scenarios', function () {
 });
 
 Router::get('/admin/pattern_engine/settings', function () {
-    $controller = new PatternEngineController();
-    $controller->settings();
+    header('Location: /admin/smart_brain/patterns', true, 302);
+    exit;
 });
 
 // Actions

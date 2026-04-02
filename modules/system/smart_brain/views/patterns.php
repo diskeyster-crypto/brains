@@ -85,9 +85,6 @@ $pageContent = function() use (
         <button class="btn btn-sm btn-primary" onclick="runPatternEngine()" id="btn-run-now">
             <i class="bi bi-play-fill me-1"></i>Run Now
         </button>
-        <a href="/admin/pattern_engine" class="btn btn-sm btn-outline-secondary" target="_blank">
-            <i class="bi bi-box-arrow-up-right me-1"></i>Standalone Module
-        </a>
     </div>
 </div>
 
@@ -328,10 +325,7 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <button class="btn btn-primary" onclick="runPatternEngine()">
                     <i class="bi bi-play-fill me-1"></i>Run Pattern Engine Now
                 </button>
-                <a href="/admin/pattern_engine/settings" class="btn btn-outline-secondary" target="_blank">
-                    <i class="bi bi-gear me-1"></i>Edit Full Config in Standalone Module
-                </a>
-                <a href="/admin/pattern_engine/api/signals" class="btn btn-outline-secondary" target="_blank">
+                <a href="<?= $smartBrainUrl ?>/patterns/api/signals" class="btn btn-outline-secondary" target="_blank">
                     <i class="bi bi-code-slash me-1"></i>API: Signals JSON
                 </a>
                 <a href="<?= $smartBrainUrl ?>/patterns/api/demo_signals" class="btn btn-outline-secondary" target="_blank">

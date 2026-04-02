@@ -1437,35 +1437,12 @@ Router::get('/admin/coin_passport/api/guidance/{symbol}', function (string $symb
 
 // ============================================================
 // PATTERN ENGINE MODULE ROUTES
+// Pattern Engine is a backend/API module only.
+// User-facing UI lives entirely in Smart Brain: /admin/smart_brain/patterns
+// No standalone GET page routes are registered here.
 // ============================================================
 
 require_once ROOT . '/modules/system/pattern_engine/controller.php';
-
-// UI — main page redirects to Brain control-plane
-Router::get('/admin/pattern_engine', function () {
-    header('Location: /admin/smart_brain/patterns', true, 302);
-    exit;
-});
-
-Router::get('/admin/pattern_engine/candidates', function () {
-    header('Location: /admin/smart_brain/patterns', true, 302);
-    exit;
-});
-
-Router::get('/admin/pattern_engine/signals', function () {
-    header('Location: /admin/smart_brain/patterns', true, 302);
-    exit;
-});
-
-Router::get('/admin/pattern_engine/scenarios', function () {
-    header('Location: /admin/smart_brain/patterns', true, 302);
-    exit;
-});
-
-Router::get('/admin/pattern_engine/settings', function () {
-    header('Location: /admin/smart_brain/patterns', true, 302);
-    exit;
-});
 
 // Actions
 Router::post('/admin/pattern_engine/settings/save', function () {

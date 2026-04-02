@@ -1,6 +1,10 @@
 <?php
 /**
- * Pattern Engine — Settings
+ * Pattern Engine — Settings [INTERNAL DEBUG ASSET]
+ *
+ * NOT part of the normal user flow. No route renders this file.
+ * The user-facing Pattern Engine config UI lives in Smart Brain:
+ *   /admin/smart_brain/patterns  (Engine Config tab)
  *
  * @var array<string,mixed>  $config
  * @var string               $baseUrl

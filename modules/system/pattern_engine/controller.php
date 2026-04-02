@@ -6,20 +6,18 @@ require_once __DIR__ . '/service.php';
 /**
  * PatternEngineController
  *
- * UI and API controller for the standalone Pattern Engine module.
+ * Backend and API controller for the Pattern Engine module.
  *
- * UI routes:
- *   GET  /admin/pattern_engine                    → overview
- *   GET  /admin/pattern_engine/candidates         → raw candidates
- *   GET  /admin/pattern_engine/signals            → normalized signals
- *   GET  /admin/pattern_engine/scenarios          → scenario decisions
- *   GET  /admin/pattern_engine/settings           → settings page
+ * Pattern Engine has no standalone user-facing pages.
+ * All user-facing UI lives in Smart Brain at /admin/smart_brain/patterns.
+ * No GET page routes are registered for /admin/pattern_engine.
  *
- * Action routes:
+ * Action routes (POST only):
+ *   POST /admin/pattern_engine/run                → trigger pipeline run
  *   POST /admin/pattern_engine/settings/save      → save config
  *   POST /admin/pattern_engine/clear              → clear storage
  *
- * API routes:
+ * API routes (read-only JSON, for Demo Execution / AI Shadow / Simulator):
  *   GET  /admin/pattern_engine/api/signals        → normalized signals JSON
  *   GET  /admin/pattern_engine/api/scenarios      → scenario decisions JSON
  *   GET  /admin/pattern_engine/api/demo_signals   → signals allowed for demo
@@ -29,65 +27,10 @@ require_once __DIR__ . '/service.php';
 final class PatternEngineController
 {
     private PatternEngineService $service;
-    private string $baseUrl;
 
     public function __construct()
     {
         $this->service = new PatternEngineService();
-        $this->baseUrl = '/admin/pattern_engine';
-    }
-
-    // =========================================================================
-    // UI pages
-    // =========================================================================
-
-    /** GET /admin/pattern_engine */
-    public function index(): void
-    {
-        $lastRun    = $this->service->getLastRun();
-        $stats      = $this->service->getStats();
-        $candidates = $this->service->getCandidates();
-        $signals    = $this->service->getSignals();
-        $scenarios  = $this->service->getScenarios();
-        $baseUrl    = $this->baseUrl;
-
-        include __DIR__ . '/views/index.php';
-    }
-
-    /** GET /admin/pattern_engine/candidates */
-    public function candidates(): void
-    {
-        $candidates = $this->service->getCandidates();
-        $baseUrl    = $this->baseUrl;
-
-        include __DIR__ . '/views/candidates.php';
-    }
-
-    /** GET /admin/pattern_engine/signals */
-    public function signals(): void
-    {
-        $signals = $this->service->getSignals();
-        $baseUrl = $this->baseUrl;
-
-        include __DIR__ . '/views/signals.php';
-    }
-
-    /** GET /admin/pattern_engine/scenarios */
-    public function scenarios(): void
-    {
-        $scenarios = $this->service->getScenarios();
-        $baseUrl   = $this->baseUrl;
-
-        include __DIR__ . '/views/scenarios.php';
-    }
-
-    /** GET /admin/pattern_engine/settings */
-    public function settings(): void
-    {
-        $config  = $this->service->getConfig();
-        $baseUrl = $this->baseUrl;
-
-        include __DIR__ . '/views/settings.php';
     }
 
     // =========================================================================

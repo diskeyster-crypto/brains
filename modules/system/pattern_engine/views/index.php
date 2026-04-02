@@ -1,6 +1,10 @@
 <?php
 /**
- * Pattern Engine — Overview
+ * Pattern Engine — Overview [INTERNAL DEBUG ASSET]
+ *
+ * NOT part of the normal user flow. No route renders this file.
+ * The user-facing Pattern Engine UI lives in Smart Brain:
+ *   /admin/smart_brain/patterns
  *
  * @var array<string,mixed>               $lastRun
  * @var array<string,mixed>               $stats

@@ -1,6 +1,10 @@
 <?php
 /**
- * Pattern Engine — Normalized Signals
+ * Pattern Engine — Normalized Signals [INTERNAL DEBUG ASSET]
+ *
+ * NOT part of the normal user flow. No route renders this file.
+ * The user-facing Pattern Engine UI lives in Smart Brain:
+ *   /admin/smart_brain/patterns
  *
  * @var list<array<string,mixed>>  $signals
  * @var string                     $baseUrl

@@ -769,13 +769,14 @@ final class SmartBrainService
     /**
      * Trigger a Pattern Engine run from Brain.
      *
-     * @param  list<array<string,mixed>>  $batch  Optional market-data batch
+     * @param  list<array<string,mixed>>  $batch      Optional market-data batch
+     * @param  bool                       $smokeTest  When true, forces synthetic smoke batch (debug only)
      * @return array<string,mixed>
      */
-    public function runPatternEngine(array $batch = []): array
+    public function runPatternEngine(array $batch = [], bool $smokeTest = false): array
     {
         try {
-            return $this->getPatternEngineService()->runNow($batch);
+            return $this->getPatternEngineService()->runNow($batch, $smokeTest);
         } catch (\Throwable $e) {
             return ['ok' => false, 'error' => $e->getMessage()];
         }

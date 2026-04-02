@@ -82,20 +82,24 @@ final class PatternEngineController
      *
      * Triggers a pipeline run. Accepts optional JSON body:
      *   { "batch": [ ...market_data_slices... ] }
-     * If no batch is provided, a synthetic test batch is generated from
-     * available Coin Passport symbols.
+     *   { "smoke_test": true }   — forces synthetic smoke batch (debug only)
+     * Default (no batch, no smoke_test): fetches real klines from Bybit.
      */
     public function runNow(): void
     {
-        $body    = (string)file_get_contents('php://input');
-        $posted  = json_decode($body, true);
-        $batch   = [];
+        $body      = (string)file_get_contents('php://input');
+        $posted    = json_decode($body, true);
+        $batch     = [];
+        $smokeTest = false;
 
-        if (is_array($posted) && isset($posted['batch']) && is_array($posted['batch'])) {
-            $batch = $posted['batch'];
+        if (is_array($posted)) {
+            if (isset($posted['batch']) && is_array($posted['batch'])) {
+                $batch = $posted['batch'];
+            }
+            $smokeTest = !empty($posted['smoke_test']);
         }
 
-        $result = $this->service->runNow($batch);
+        $result = $this->service->runNow($batch, $smokeTest);
 
         header('Content-Type: application/json');
         echo json_encode([

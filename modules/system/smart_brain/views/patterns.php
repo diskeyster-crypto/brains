@@ -82,6 +82,9 @@ $pageContent = function() use (
         <button class="btn btn-sm btn-outline-secondary" onclick="refreshPatterns()">
             <i class="bi bi-arrow-clockwise me-1"></i>Refresh
         </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="runSmokeTest()" id="btn-smoke-test" title="Synthetic smoke test — no real detections">
+            <i class="bi bi-bug me-1"></i>Smoke Test
+        </button>
         <button class="btn btn-sm btn-primary" onclick="runPatternEngine()" id="btn-run-now">
             <i class="bi bi-play-fill me-1"></i>Run Now
         </button>
@@ -105,27 +108,48 @@ $pageContent = function() use (
     <span id="run-error-text"></span>
 </div>
 
+<?php
+$runSource    = $pe_last_run['run_source']    ?? $pe_stats['last_run']['run_source']    ?? null;
+$symScanned   = $pe_last_run['symbols_scanned']   ?? $pe_stats['last_run']['symbols_scanned']   ?? null;
+$symSkipped   = $pe_last_run['symbols_skipped_insufficient_data'] ?? $pe_stats['last_run']['symbols_skipped_insufficient_data'] ?? null;
+$symTotal     = $pe_last_run['symbols_total']  ?? $pe_stats['last_run']['symbols_total']  ?? null;
+$runTimeframe = $pe_last_run['timeframe']      ?? $pe_stats['last_run']['timeframe']      ?? null;
+?>
 <!-- Stats row -->
 <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
         <div class="pe-stat-card">
             <div class="pe-stat-value"><?= $candidatesCount ?></div>
             <div class="pe-stat-label">Candidates</div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
         <div class="pe-stat-card">
             <div class="pe-stat-value"><?= $signalsCount ?></div>
-            <div class="pe-stat-label">Normalized Signals</div>
+            <div class="pe-stat-label">Signals</div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
         <div class="pe-stat-card">
             <div class="pe-stat-value"><?= $scenariosCount ?></div>
-            <div class="pe-stat-label">Scenario Decisions</div>
+            <div class="pe-stat-label">Scenarios</div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <?php if ($symScanned !== null): ?>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card">
+            <div class="pe-stat-value" style="color:#22c55e;"><?= (int)$symScanned ?></div>
+            <div class="pe-stat-label">Symbols Scanned</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card">
+            <div class="pe-stat-value" style="color:#f59e0b;"><?= (int)$symSkipped ?></div>
+            <div class="pe-stat-label">Skipped (data)</div>
+        </div>
+    </div>
+    <?php endif; ?>
+    <div class="col-6 col-md-2">
         <div class="pe-stat-card">
             <div class="pe-stat-value" style="font-size:0.85rem; color:#94a3b8;">
                 <?= $lastRunAt ? htmlspecialchars(date('d M H:i', strtotime($lastRunAt))) : '—' ?>
@@ -134,6 +158,13 @@ $pageContent = function() use (
         </div>
     </div>
 </div>
+<?php if ($runSource): ?>
+<div class="mb-3 small text-secondary">
+    Source: <code><?= htmlspecialchars($runSource) ?></code>
+    <?php if ($runTimeframe): ?> &nbsp;·&nbsp; Timeframe: <code><?= htmlspecialchars($runTimeframe) ?></code><?php endif; ?>
+    <?php if ($symTotal !== null): ?> &nbsp;·&nbsp; <?= (int)$symTotal ?> symbols requested<?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- Per-pattern / per-status counts -->
 <?php
@@ -198,7 +229,16 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
 <!-- Signals tab -->
 <div class="tab-pane fade show active" id="tab-signals">
 <?php if (empty($pe_signals)): ?>
-    <div class="alert alert-secondary">No normalized signals. <a href="javascript:void(0)" onclick="runPatternEngine()">Run the engine</a> to generate signals.</div>
+    <div class="alert alert-secondary">
+        No normalized signals yet.
+        <?php if (!empty($pe_last_run['run_source']) && $pe_last_run['run_source'] === 'bybit_klines'): ?>
+            Real data was scanned — no chart patterns matched in this run.
+        <?php elseif (!empty($pe_last_run['run_source'])): ?>
+            <a href="javascript:void(0)" onclick="runPatternEngine()">Run Now</a> to scan real market data.
+        <?php else: ?>
+            <a href="javascript:void(0)" onclick="runPatternEngine()">Run Now</a> to scan real market data.
+        <?php endif; ?>
+    </div>
 <?php else: ?>
     <div class="table-responsive">
     <table class="table table-dark table-sm table-hover">
@@ -309,6 +349,19 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                     <label class="form-label small text-secondary">Default Time Window</label>
                     <div><?= (int)($pe_config['default_time_window_minutes'] ?? 15) ?> minutes</div>
                 </div>
+                <?php $rr = (array)($pe_config['real_run'] ?? []); ?>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Real Run — Timeframe</label>
+                    <div><?= htmlspecialchars((string)($rr['timeframe'] ?? '15')) ?> min</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Real Run — Max Symbols / Run</label>
+                    <div><?= (int)($rr['max_symbols_per_run'] ?? 30) ?></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">Real Run — Lookback Candles</label>
+                    <div><?= (int)($rr['lookback_candles'] ?? 100) ?></div>
+                </div>
                 <div class="mb-0">
                     <label class="form-label small text-secondary">Scenario Profiles</label>
                     <div><?= count((array)($pe_config['scenario_profiles'] ?? [])) ?> profile(s) configured</div>
@@ -359,10 +412,13 @@ function runPatternEngine() {
                 btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Run Now';
             }
             if (data.ok !== false) {
+                const stats = data.stats ?? {};
+                const src = stats.run_source ? ' [' + stats.run_source + ']' : '';
+                const scanned = stats.symbols_scanned != null ? ', ' + stats.symbols_scanned + ' symbols scanned' : '';
                 const txt = document.getElementById('run-result-text');
-                if (txt) txt.textContent = 'Run complete — ' + (data.candidates_count ?? 0) + ' candidates, ' + (data.signals_count ?? 0) + ' signals, ' + (data.scenarios_count ?? 0) + ' scenarios.';
+                if (txt) txt.textContent = 'Run complete' + src + ' — ' + (data.candidates_count ?? 0) + ' candidates, ' + (data.signals_count ?? 0) + ' signals, ' + (data.scenarios_count ?? 0) + ' scenarios' + scanned + '.';
                 document.getElementById('run-result-banner')?.classList.remove('d-none');
-                setTimeout(() => location.reload(), 1200);
+                setTimeout(() => location.reload(), 1400);
             } else {
                 const txt = document.getElementById('run-error-text');
                 if (txt) txt.textContent = data.error ?? 'Run failed.';
@@ -373,6 +429,38 @@ function runPatternEngine() {
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Run Now';
+            }
+            const txt = document.getElementById('run-error-text');
+            if (txt) txt.textContent = 'Network error: ' + e.message;
+            document.getElementById('run-error-banner')?.classList.remove('d-none');
+        });
+}
+
+function runSmokeTest() {
+    const btn = document.getElementById('btn-smoke-test');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing…';
+    }
+    document.getElementById('run-result-banner')?.classList.add('d-none');
+    document.getElementById('run-error-banner')?.classList.add('d-none');
+
+    fetch('<?= $smartBrainUrl ?>/patterns/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"smoke_test":true}'})
+        .then(r => r.json())
+        .then(data => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-bug me-1"></i>Smoke Test';
+            }
+            const txt = document.getElementById('run-result-text');
+            if (txt) txt.textContent = '[Smoke] Pipeline ok — ' + (data.candidates_count ?? 0) + ' candidates (synthetic, expected 0).';
+            document.getElementById('run-result-banner')?.classList.remove('d-none');
+            setTimeout(() => location.reload(), 1400);
+        })
+        .catch(e => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-bug me-1"></i>Smoke Test';
             }
             const txt = document.getElementById('run-error-text');
             if (txt) txt.textContent = 'Network error: ' + e.message;

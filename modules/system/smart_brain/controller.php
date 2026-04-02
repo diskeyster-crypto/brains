@@ -556,11 +556,12 @@ final class SmartBrainController
             return;
         }
 
-        $rawInput = (string)file_get_contents('php://input');
-        $body     = json_decode($rawInput, true);
-        $batch    = (is_array($body) && isset($body['batch']) && is_array($body['batch'])) ? $body['batch'] : [];
+        $rawInput  = (string)file_get_contents('php://input');
+        $body      = json_decode($rawInput, true);
+        $batch     = (is_array($body) && isset($body['batch']) && is_array($body['batch'])) ? $body['batch'] : [];
+        $smokeTest = is_array($body) && !empty($body['smoke_test']);
 
-        $result = $this->service->runPatternEngine($batch);
+        $result = $this->service->runPatternEngine($batch, $smokeTest);
 
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([

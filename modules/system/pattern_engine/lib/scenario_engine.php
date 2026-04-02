@@ -455,6 +455,11 @@ final class ScenarioEngine
                 'demo_eligibility_checks'     => $downstreamResult['demo_checks'] ?? [],
                 'sim_eligibility_checks'      => $downstreamResult['sim_checks']  ?? [],
                 'demo_block_reason'           => $downstreamResult['demo_block_reason'] ?? null,
+                'demo_near_miss'              => (bool)($downstreamResult['demo_near_miss'] ?? false),
+                'demo_passed_checks'          => $downstreamResult['demo_passed_checks'] ?? [],
+                'demo_failed_checks'          => $downstreamResult['demo_failed_checks'] ?? [],
+                'demo_thresholds_used'        => $downstreamResult['demo_thresholds_used'] ?? null,
+                'demo_actual_values'          => $downstreamResult['demo_actual_values']  ?? null,
                 'downstream_policy_thresholds'=> !empty($downstreamResult) ? [
                     'demo_require_passport'        => $this->downstreamPolicy['demo_require_passport']        ?? null,
                     'demo_min_signal_strength'     => $this->downstreamPolicy['demo_min_signal_strength']     ?? null,
@@ -483,7 +488,7 @@ final class ScenarioEngine
      * @param  array<string,mixed>       $signal
      * @param  array<string,mixed>|null  $passport
      * @param  string                    $profileBucket  Result from profile evaluation (pre-policy)
-     * @return array{bucket:string, reason:string, demo_checks:list<array<string,mixed>>, sim_checks:list<array<string,mixed>>, demo_block_reason:string|null}
+     * @return array{bucket:string, reason:string, demo_checks:list<array<string,mixed>>, sim_checks:list<array<string,mixed>>, demo_block_reason:string|null, demo_near_miss:bool, demo_passed_checks:list<string>, demo_failed_checks:list<string>, demo_thresholds_used:array<string,mixed>, demo_actual_values:array<string,mixed>}
      */
     private function applyDownstreamPolicy(array $signal, ?array $passport, string $profileBucket): array
     {
@@ -499,6 +504,42 @@ final class ScenarioEngine
         $demoChecks      = [];
         $simChecks       = [];
         $demoBlockReason = null;
+
+        // Snapshot threshold config for transparency
+        $demoThresholdsUsed = [
+            'require_passport'        => $policy['demo_require_passport']        ?? null,
+            'min_signal_strength'     => $policy['demo_min_signal_strength']     ?? null,
+            'min_quality_score'       => $policy['demo_min_quality_score']       ?? null,
+            'min_corridor_p75_roi'    => $policy['demo_min_corridor_p75_roi']    ?? null,
+            'min_runner_probability'  => $policy['demo_min_runner_probability']  ?? null,
+            'max_noise_score'         => $policy['demo_max_noise_score']         ?? null,
+            'min_confidence'          => $policy['demo_min_confidence']          ?? null,
+            'require_eligibility'     => $policy['demo_require_passport_eligibility'] ?? null,
+        ];
+
+        // Snapshot actual values for transparency
+        $cp75Actual = $passport !== null ? (float)(
+            $passport['corridor_p75_roi'] ??
+            $passport['pattern_behavior'][$algo]['corridor_p75_roi'] ??
+            $passport['pattern_behavior'][$algo]['corridor_p75'] ??
+            0.0
+        ) : null;
+        $rpActual = $passport !== null ? (float)(
+            $passport['runner_probability'] ??
+            $passport['pattern_behavior'][$algo]['runner_rate'] ??
+            0.0
+        ) : null;
+        $demoActualValues = [
+            'signal_strength'   => $signalStrength,
+            'quality_score'     => $qualityScore,
+            'passport_present'  => $passport !== null,
+            'corridor_p75_roi'  => $cp75Actual,
+            'runner_probability'=> $rpActual,
+            'noise_score'       => $passport !== null ? ($passport['noise_score'] ?? null) : null,
+            'data_confidence'   => $passport !== null ? ($passport['data_confidence'] ?? null) : null,
+            'eligibility'       => $passport !== null ? ($passport['recommended_live_eligibility'] ?? null) : null,
+            'insufficient_data' => $passport !== null ? (!empty($passport['insufficient_data_flag'])) : null,
+        ];
 
         // ---- Demo gate ----
         if ($allowDemoEnabled) {
@@ -555,14 +596,8 @@ final class ScenarioEngine
                     // corridor_p75_roi
                     $minP75 = (float)($policy['demo_min_corridor_p75_roi'] ?? 0.0);
                     if ($minP75 > 0) {
-                        $cp75 = (float)(
-                            $passport['corridor_p75_roi'] ??
-                            $passport['pattern_behavior'][$algo]['corridor_p75_roi'] ??
-                            $passport['pattern_behavior'][$algo]['corridor_p75'] ??
-                            0.0
-                        );
-                        $pass = $cp75 >= $minP75;
-                        $demoChecks[] = ['check' => 'corridor_p75_roi', 'pass' => $pass, 'threshold' => $minP75, 'value' => $cp75];
+                        $pass = ($cp75Actual !== null && $cp75Actual >= $minP75);
+                        $demoChecks[] = ['check' => 'corridor_p75_roi', 'pass' => $pass, 'threshold' => $minP75, 'value' => $cp75Actual ?? 0.0];
                         if (!$pass) {
                             $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_corridor';
                         }
@@ -571,13 +606,8 @@ final class ScenarioEngine
                     // runner_probability
                     $minRunner = (float)($policy['demo_min_runner_probability'] ?? 0.0);
                     if ($minRunner > 0) {
-                        $rp   = (float)(
-                            $passport['runner_probability'] ??
-                            $passport['pattern_behavior'][$algo]['runner_rate'] ??
-                            0.0
-                        );
-                        $pass = $rp >= $minRunner;
-                        $demoChecks[] = ['check' => 'runner_probability', 'pass' => $pass, 'threshold' => $minRunner, 'value' => $rp];
+                        $pass = ($rpActual !== null && $rpActual >= $minRunner);
+                        $demoChecks[] = ['check' => 'runner_probability', 'pass' => $pass, 'threshold' => $minRunner, 'value' => $rpActual ?? 0.0];
                         if (!$pass) {
                             $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_runner';
                         }
@@ -594,7 +624,7 @@ final class ScenarioEngine
                         }
                     }
 
-                    // passport eligibility — must not be in reject-list
+                    // passport eligibility — must be in allowed list
                     $allowedEligibilities = (array)($policy['demo_require_passport_eligibility'] ?? []);
                     if (!empty($allowedEligibilities)) {
                         $eligibility = (string)($passport['recommended_live_eligibility'] ?? '');
@@ -607,18 +637,45 @@ final class ScenarioEngine
                 }
             }
 
+            // Derive passed/failed check name lists for transparency
+            $demoPassedChecks = array_values(array_map(
+                fn($c) => $c['check'],
+                array_filter($demoChecks, fn($c) => $c['pass'] === true)
+            ));
+            $demoFailedChecks = array_values(array_map(
+                fn($c) => $c['check'],
+                array_filter($demoChecks, fn($c) => $c['pass'] === false)
+            ));
+
             // All demo checks passed — graduate to allow_demo
             if ($demoBlockReason === null) {
                 return [
-                    'bucket'           => 'allow_demo',
-                    'reason'           => 'downstream_policy_demo_gate_passed',
-                    'demo_checks'      => $demoChecks,
-                    'sim_checks'       => [],
-                    'demo_block_reason'=> null,
+                    'bucket'             => 'allow_demo',
+                    'reason'             => 'downstream_policy_demo_gate_passed',
+                    'demo_checks'        => $demoChecks,
+                    'sim_checks'         => [],
+                    'demo_block_reason'  => null,
+                    'demo_near_miss'     => false,
+                    'demo_passed_checks' => $demoPassedChecks,
+                    'demo_failed_checks' => [],
+                    'demo_thresholds_used' => $demoThresholdsUsed,
+                    'demo_actual_values'   => $demoActualValues,
                 ];
             }
+
+            // Near-miss: passport present, blocked by only 1–2 non-passport-absence checks
+            $nearMissMax  = (int)($policy['demo_near_miss_max_failed_checks'] ?? 2);
+            $isNearMiss   = (
+                $passport !== null
+                && $demoBlockReason !== 'demo_blocked_no_passport'
+                && count($demoFailedChecks) > 0
+                && count($demoFailedChecks) <= $nearMissMax
+            );
         } else {
-            $demoBlockReason = 'allow_demo_disabled_by_policy';
+            $demoBlockReason  = 'allow_demo_disabled_by_policy';
+            $demoPassedChecks = [];
+            $demoFailedChecks = [];
+            $isNearMiss       = false;
         }
 
         // ---- Sim gate ----
@@ -651,22 +708,32 @@ final class ScenarioEngine
 
             if ($simPasses) {
                 return [
-                    'bucket'           => 'allow_sim',
-                    'reason'           => 'downstream_policy_sim_gate_passed',
-                    'demo_checks'      => $demoChecks,
-                    'sim_checks'       => $simChecks,
-                    'demo_block_reason'=> $demoBlockReason,
+                    'bucket'             => 'allow_sim',
+                    'reason'             => 'downstream_policy_sim_gate_passed',
+                    'demo_checks'        => $demoChecks,
+                    'sim_checks'         => $simChecks,
+                    'demo_block_reason'  => $demoBlockReason,
+                    'demo_near_miss'     => $isNearMiss ?? false,
+                    'demo_passed_checks' => $demoPassedChecks ?? [],
+                    'demo_failed_checks' => $demoFailedChecks ?? [],
+                    'demo_thresholds_used' => $demoThresholdsUsed,
+                    'demo_actual_values'   => $demoActualValues,
                 ];
             }
         }
 
         // Shadow default
         return [
-            'bucket'           => 'shadow_only',
-            'reason'           => 'downstream_policy_shadow_default:' . ($demoBlockReason ?? 'sim_gate_failed'),
-            'demo_checks'      => $demoChecks,
-            'sim_checks'       => $simChecks,
-            'demo_block_reason'=> $demoBlockReason,
+            'bucket'             => 'shadow_only',
+            'reason'             => 'downstream_policy_shadow_default:' . ($demoBlockReason ?? 'sim_gate_failed'),
+            'demo_checks'        => $demoChecks,
+            'sim_checks'         => $simChecks,
+            'demo_block_reason'  => $demoBlockReason,
+            'demo_near_miss'     => $isNearMiss ?? false,
+            'demo_passed_checks' => $demoPassedChecks ?? [],
+            'demo_failed_checks' => $demoFailedChecks ?? [],
+            'demo_thresholds_used' => $demoThresholdsUsed,
+            'demo_actual_values'   => $demoActualValues,
         ];
     }
 

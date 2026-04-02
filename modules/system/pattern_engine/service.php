@@ -602,10 +602,12 @@ final class PatternEngineService
         $this->realRunStats['passport_coverage_candidates'] = array_slice($coverageCandidates, 0, 20);
 
         // Downstream bucket counters (from downstream graduation policy decisions)
-        $allowDemoCount  = 0;
-        $allowSimCount   = 0;
-        $shadowOnlyCount = 0;
-        $rejectCount     = 0;
+        $allowDemoCount       = 0;
+        $allowSimCount        = 0;
+        $shadowOnlyCount      = 0;
+        $rejectCount          = 0;
+        $demoNearMissCount    = 0;
+        $demoCandidateCount   = 0;
         $demoBlockCounts = [
             'demo_blocked_no_passport'                  => 0,
             'demo_blocked_low_quality'                  => 0,
@@ -644,12 +646,32 @@ final class PatternEngineService
             if ($blockReason !== null && array_key_exists($blockReason, $demoBlockCounts)) {
                 $demoBlockCounts[$blockReason]++;
             }
+            // Near-miss counter
+            if (!empty($sc['diagnostics']['demo_near_miss'])) {
+                $demoNearMissCount++;
+            }
+            // Demo-candidate: signal has passport and reached sim (or shadow) — was "considered" for demo
+            $hasPassport = (bool)($sc['diagnostics']['passport_available'] ?? false);
+            if ($hasPassport && in_array($bucket, ['allow_sim', 'sim_only', 'shadow_only', 'allow_shadow'], true)) {
+                $demoCandidateCount++;
+            }
         }
-        $this->realRunStats['allow_demo_count']  = $allowDemoCount;
-        $this->realRunStats['allow_sim_count']   = $allowSimCount;
-        $this->realRunStats['shadow_only_count'] = $shadowOnlyCount;
-        $this->realRunStats['reject_count']      = $rejectCount;
-        $this->realRunStats['demo_block_counts'] = $demoBlockCounts;
+        // Build top_demo_block_reasons (sorted, non-zero only)
+        $activeBlockReasons = array_filter($demoBlockCounts, fn($v) => $v > 0);
+        arsort($activeBlockReasons);
+        $topDemoBlockReasons = [];
+        foreach ($activeBlockReasons as $reason => $cnt) {
+            $topDemoBlockReasons[] = ['reason' => $reason, 'count' => $cnt];
+        }
+
+        $this->realRunStats['allow_demo_count']            = $allowDemoCount;
+        $this->realRunStats['allow_sim_count']             = $allowSimCount;
+        $this->realRunStats['shadow_only_count']           = $shadowOnlyCount;
+        $this->realRunStats['reject_count']                = $rejectCount;
+        $this->realRunStats['demo_block_counts']           = $demoBlockCounts;
+        $this->realRunStats['demo_near_miss_count']        = $demoNearMissCount;
+        $this->realRunStats['demo_candidate_signals_count']= $demoCandidateCount;
+        $this->realRunStats['top_demo_block_reasons']      = $topDemoBlockReasons;
 
         // Build downstream-safe filtered signal sets
         $demoSignals   = $this->buildDownstreamSet($allCombined, 'allowed_for_demo');
@@ -1134,6 +1156,9 @@ final class PatternEngineService
             'shadow_only_count'                  => (int)($this->realRunStats['shadow_only_count']                  ?? 0),
             'reject_count'                       => (int)($this->realRunStats['reject_count']                       ?? 0),
             'demo_block_counts'                  => (array)($this->realRunStats['demo_block_counts']                ?? []),
+            'demo_near_miss_count'               => (int)($this->realRunStats['demo_near_miss_count']               ?? 0),
+            'demo_candidate_signals_count'       => (int)($this->realRunStats['demo_candidate_signals_count']       ?? 0),
+            'top_demo_block_reasons'             => (array)($this->realRunStats['top_demo_block_reasons']           ?? []),
             // Universe overlap diagnostics
             'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
             'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),

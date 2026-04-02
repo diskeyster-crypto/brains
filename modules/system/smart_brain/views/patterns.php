@@ -136,11 +136,14 @@ $symNormFailed      = (int)($pe_last_run['symbols_normalization_failed_count']??
 $passportOkCount    = (int)($pe_last_run['passport_lookup_success_count']    ?? $pe_stats['last_run']['passport_lookup_success_count']    ?? 0);
 $passportFailCount  = (int)($pe_last_run['passport_lookup_failed_count']     ?? $pe_stats['last_run']['passport_lookup_failed_count']     ?? 0);
 
-$allowDemoCount     = (int)($pe_last_run['allow_demo_count']   ?? $pe_stats['last_run']['allow_demo_count']   ?? 0);
-$allowSimCount      = (int)($pe_last_run['allow_sim_count']    ?? $pe_stats['last_run']['allow_sim_count']    ?? 0);
-$shadowOnlyCount    = (int)($pe_last_run['shadow_only_count']  ?? $pe_stats['last_run']['shadow_only_count']  ?? 0);
-$rejectCount        = (int)($pe_last_run['reject_count']       ?? $pe_stats['last_run']['reject_count']       ?? 0);
-$demoBlockCounts    = (array)($pe_last_run['demo_block_counts']?? $pe_stats['last_run']['demo_block_counts']  ?? []);
+$allowDemoCount       = (int)($pe_last_run['allow_demo_count']              ?? $pe_stats['last_run']['allow_demo_count']              ?? 0);
+$allowSimCount        = (int)($pe_last_run['allow_sim_count']               ?? $pe_stats['last_run']['allow_sim_count']               ?? 0);
+$shadowOnlyCount      = (int)($pe_last_run['shadow_only_count']             ?? $pe_stats['last_run']['shadow_only_count']             ?? 0);
+$rejectCount          = (int)($pe_last_run['reject_count']                  ?? $pe_stats['last_run']['reject_count']                  ?? 0);
+$demoBlockCounts      = (array)($pe_last_run['demo_block_counts']           ?? $pe_stats['last_run']['demo_block_counts']             ?? []);
+$demoNearMissCount    = (int)($pe_last_run['demo_near_miss_count']          ?? $pe_stats['last_run']['demo_near_miss_count']          ?? 0);
+$demoCandidateCount   = (int)($pe_last_run['demo_candidate_signals_count']  ?? $pe_stats['last_run']['demo_candidate_signals_count']  ?? 0);
+$topDemoBlockReasons  = (array)($pe_last_run['top_demo_block_reasons']      ?? $pe_stats['last_run']['top_demo_block_reasons']        ?? []);
 
 $patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
 $passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
@@ -275,31 +278,56 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
     </div>
     <div class="card-body p-3">
         <div class="row g-2 mb-3">
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <div class="pe-stat-card" style="border-color:<?= $allowDemoCount > 0 ? '#2563eb' : '#334155' ?>;">
                     <div class="pe-stat-value" style="color:<?= $allowDemoCount > 0 ? '#3b82f6' : '#6b7280' ?>;"><?= $allowDemoCount ?></div>
                     <div class="pe-stat-label">allow_demo</div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <div class="pe-stat-card" style="border-color:<?= $allowSimCount > 0 ? '#d97706' : '#334155' ?>;">
                     <div class="pe-stat-value" style="color:<?= $allowSimCount > 0 ? '#fbbf24' : '#6b7280' ?>;"><?= $allowSimCount ?></div>
                     <div class="pe-stat-label">allow_sim</div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <div class="pe-stat-card" style="border-color:<?= $shadowOnlyCount > 0 ? '#7c3aed' : '#334155' ?>;">
                     <div class="pe-stat-value" style="color:<?= $shadowOnlyCount > 0 ? '#a78bfa' : '#6b7280' ?>;"><?= $shadowOnlyCount ?></div>
                     <div class="pe-stat-label">shadow_only</div>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <div class="pe-stat-card" style="border-color:<?= $rejectCount > 0 ? '#6b7280' : '#334155' ?>;">
                     <div class="pe-stat-value" style="color:#6b7280;"><?= $rejectCount ?></div>
                     <div class="pe-stat-label">reject</div>
                 </div>
             </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $demoCandidateCount > 0 ? '#0891b2' : '#334155' ?>;" title="Signals with passport that reached sim/shadow — were evaluated for demo">
+                    <div class="pe-stat-value" style="color:<?= $demoCandidateCount > 0 ? '#22d3ee' : '#6b7280' ?>;"><?= $demoCandidateCount ?></div>
+                    <div class="pe-stat-label">demo candidates</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $demoNearMissCount > 0 ? '#b45309' : '#334155' ?>;" title="Near-miss: passport present, blocked by 1–2 modest checks only">
+                    <div class="pe-stat-value" style="color:<?= $demoNearMissCount > 0 ? '#f59e0b' : '#6b7280' ?>;"><?= $demoNearMissCount ?></div>
+                    <div class="pe-stat-label">near misses</div>
+                </div>
+            </div>
         </div>
+        <?php if (!empty($topDemoBlockReasons)): ?>
+        <div class="mb-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-exclamation-circle me-1 text-warning"></i>Top demo block reasons (why signals did not graduate to demo):</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach ($topDemoBlockReasons as $item): ?>
+                <span class="badge" style="background:#1e293b; border:1px solid #475569; font-size:0.7rem;" title="<?= (int)($item['count'] ?? 0) ?> scenario(s) blocked by this reason">
+                    <?= htmlspecialchars(str_replace('demo_blocked_', '', (string)($item['reason'] ?? ''))) ?>
+                    <span class="text-warning ms-1"><?= (int)($item['count'] ?? 0) ?></span>
+                </span>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php elseif (!empty($demoBlockCounts)): ?>
         <?php
         $activeBlockReasons = array_filter($demoBlockCounts, fn($v) => $v > 0);
         arsort($activeBlockReasons);
@@ -315,7 +343,7 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
             <?php endforeach; ?>
             </div>
         </div>
-        <?php endif; ?>
+        <?php endif; endif; ?>
         <?php if (!empty($dpBlock)): ?>
         <div class="mt-2">
             <div class="text-secondary small mb-1"><i class="bi bi-sliders me-1"></i>Current demo graduation thresholds:</div>
@@ -341,6 +369,14 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
                 </div>
                 <?php endforeach; ?>
             </div>
+        </div>
+        <?php endif; ?>
+        <?php if ($demoNearMissCount > 0): ?>
+        <div class="mt-2 p-2" style="background:#1c1917; border:1px solid #b45309; border-radius:6px;">
+            <div class="text-warning small"><i class="bi bi-bullseye me-1"></i><strong><?= $demoNearMissCount ?> near-miss signal(s)</strong> — passport present, blocked by only 1–2 checks. These are the closest candidates for demo promotion.</div>
+            <?php if (!empty($topDemoBlockReasons)): ?>
+            <div class="text-secondary small mt-1">Top blocking checks: <?= implode(', ', array_map(fn($i) => htmlspecialchars(str_replace('demo_blocked_', '', (string)($i['reason'] ?? ''))), array_slice($topDemoBlockReasons, 0, 3))) ?></div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
     </div>
@@ -607,7 +643,7 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
             <tr>
                 <th>Symbol</th><th>Side</th><th>Status</th><th>Reason</th>
                 <th>Demo</th><th>Shadow</th><th>Sim</th><th>Live</th>
-                <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th><th>Demo Block</th>
+                <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th><th>Demo Block</th><th>Near Miss</th>
             </tr>
         </thead>
         <tbody>
@@ -656,6 +692,15 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <td><?= isset($diag['passport_runner_probability']) ? number_format((float)$diag['passport_runner_probability'], 3) : '—' ?></td>
                 <td><?= isset($diag['passport_noise_score']) ? number_format((float)$diag['passport_noise_score'], 2) : '—' ?></td>
                 <td><small class="text-warning" style="font-size:0.65rem;"><?= $diag['demo_block_reason'] ? htmlspecialchars(str_replace('demo_blocked_', '', $diag['demo_block_reason'])) : '' ?></small></td>
+                <td><?php
+                    if (!empty($diag['demo_near_miss'])) {
+                        $failedChecks = (array)($diag['demo_failed_checks'] ?? []);
+                        $failedStr = !empty($failedChecks) ? implode(', ', $failedChecks) : '';
+                        echo '<span class="badge" style="background:#92400e; font-size:0.65rem;" title="Near miss: failed ' . htmlspecialchars($failedStr) . '">⚠ near</span>';
+                    } else {
+                        echo '<span class="text-secondary">—</span>';
+                    }
+                ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

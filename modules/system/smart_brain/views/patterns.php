@@ -135,6 +135,16 @@ $symNormCount       = (int)($pe_last_run['symbols_normalized_count']         ?? 
 $symNormFailed      = (int)($pe_last_run['symbols_normalization_failed_count']?? $pe_stats['last_run']['symbols_normalization_failed_count']?? 0);
 $passportOkCount    = (int)($pe_last_run['passport_lookup_success_count']    ?? $pe_stats['last_run']['passport_lookup_success_count']    ?? 0);
 $passportFailCount  = (int)($pe_last_run['passport_lookup_failed_count']     ?? $pe_stats['last_run']['passport_lookup_failed_count']     ?? 0);
+
+$patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
+$passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
+$universeOverlapCnt = (int)($pe_last_run['symbol_universe_overlap_count']          ?? $pe_stats['last_run']['symbol_universe_overlap_count']          ?? 0);
+$universeOverlapRate= (float)($pe_last_run['symbol_universe_overlap_rate']         ?? $pe_stats['last_run']['symbol_universe_overlap_rate']         ?? 0.0);
+$symsWithPassport   = (int)($pe_last_run['pattern_symbols_with_passport_count']    ?? $pe_stats['last_run']['pattern_symbols_with_passport_count']    ?? 0);
+$symsWithoutPassport= (int)($pe_last_run['pattern_symbols_without_passport_count'] ?? $pe_stats['last_run']['pattern_symbols_without_passport_count'] ?? 0);
+$activePolicy       = (string)($pe_last_run['active_universe_policy']              ?? $pe_stats['last_run']['active_universe_policy']              ?? '');
+$coverageCandidates = (array)($pe_last_run['passport_coverage_candidates']         ?? $pe_stats['last_run']['passport_coverage_candidates']         ?? []);
+$symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']     ?? $pe_stats['last_run']['symbols_normalized_but_unmatched']     ?? []);
 ?>
 <!-- Stats row -->
 <div class="row g-3 mb-4">
@@ -241,6 +251,96 @@ $passportFailCount  = (int)($pe_last_run['passport_lookup_failed_count']     ?? 
         </div>
     </div>
     <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($patternSymsTotal > 0 || $passportSymsTotal > 0): ?>
+<!-- Universe overlap panel -->
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="text-secondary small"><i class="bi bi-intersect me-1"></i>Symbol Universe &amp; Passport Coverage</span>
+        <?php if ($activePolicy !== ''): ?>
+            <?php
+                $policyColor = match($activePolicy) {
+                    'passport_only'      => '#22c55e',
+                    'passport_preferred' => '#3b82f6',
+                    default              => '#94a3b8',
+                };
+            ?>
+            <span class="badge" style="background:<?= $policyColor ?>; font-size:0.7rem;"><?= htmlspecialchars($activePolicy) ?></span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body p-3">
+        <div class="row g-3 mb-2">
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card">
+                    <div class="pe-stat-value" style="color:#94a3b8;"><?= $patternSymsTotal ?></div>
+                    <div class="pe-stat-label">Symbols in Run</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card">
+                    <div class="pe-stat-value" style="color:#94a3b8;"><?= $passportSymsTotal ?></div>
+                    <div class="pe-stat-label">Passport Universe</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <?php
+                    $overlapPct = $patternSymsTotal > 0 ? round($universeOverlapRate * 100, 1) : 0;
+                    $overlapColor = $overlapPct >= 50 ? '#22c55e' : ($overlapPct >= 20 ? '#f59e0b' : '#ef4444');
+                ?>
+                <div class="pe-stat-card" style="border-color:<?= $overlapColor ?>;">
+                    <div class="pe-stat-value" style="color:<?= $overlapColor ?>;"><?= $overlapPct ?>%</div>
+                    <div class="pe-stat-label">Overlap Rate <small>(<?= $universeOverlapCnt ?>/<?= $patternSymsTotal ?>)</small></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <?php $missingCount = count($coverageCandidates); ?>
+                <div class="pe-stat-card<?= $missingCount > 0 ? ' border-warning' : '' ?>">
+                    <div class="pe-stat-value" style="color:#f59e0b;"><?= $missingCount ?></div>
+                    <div class="pe-stat-label">Coverage Candidates</div>
+                </div>
+            </div>
+        </div>
+        <?php if ($symsWithPassport > 0 || $symsWithoutPassport > 0): ?>
+        <div class="small text-secondary mb-2">
+            <i class="bi bi-check-circle text-success me-1"></i><?= $symsWithPassport ?> symbols with passport &nbsp;·&nbsp;
+            <i class="bi bi-x-circle text-danger me-1"></i><?= $symsWithoutPassport ?> without passport
+            <?php if (!empty($symsNormUnmatched)): ?>
+                &nbsp;·&nbsp; <i class="bi bi-arrow-right-circle text-warning me-1"></i><?= count($symsNormUnmatched) ?> normalized-but-unmatched
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($coverageCandidates)): ?>
+        <div class="mt-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-binoculars me-1"></i>Passport Coverage Candidates — symbols with detections but no passport (by frequency):</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach (array_slice($coverageCandidates, 0, 15) as $cc): ?>
+                <span class="badge bg-secondary" style="font-size:0.7rem;" title="<?= (int)($cc['detection_count'] ?? 0) ?> detection(s)">
+                    <?= htmlspecialchars($cc['symbol'] ?? '') ?>
+                    <span class="text-warning ms-1"><?= (int)($cc['detection_count'] ?? 0) ?></span>
+                </span>
+            <?php endforeach; ?>
+            <?php if (count($coverageCandidates) > 15): ?>
+                <span class="text-secondary small">&hellip; +<?= count($coverageCandidates) - 15 ?> more</span>
+            <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($symsNormUnmatched)): ?>
+        <div class="mt-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-exclamation-triangle text-warning me-1"></i>Normalized-but-unmatched symbols (canonical form not in passport):</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach (array_slice($symsNormUnmatched, 0, 10) as $u): ?>
+                <span class="badge" style="background:#78350f; font-size:0.7rem;"><?= htmlspecialchars($u) ?></span>
+            <?php endforeach; ?>
+            <?php if (count($symsNormUnmatched) > 10): ?>
+                <span class="text-secondary small">&hellip; +<?= count($symsNormUnmatched) - 10 ?> more</span>
+            <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
 </div>
 <?php endif; ?>
 
@@ -516,6 +616,27 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <div class="mb-0">
                     <label class="form-label small text-secondary">Scenario Profiles</label>
                     <div><?= count((array)($pe_config['scenario_profiles'] ?? [])) ?> profile(s) configured</div>
+                </div>
+                <?php
+                    $rrPolicy = (array)(($pe_config['real_run']['symbol_universe_policy'] ?? []));
+                    $pMode    = (string)($rrPolicy['mode'] ?? 'all_active');
+                    $pMaxNoPP = (int)($rrPolicy['max_symbols_without_passport'] ?? 10);
+                ?>
+                <div class="mb-0 mt-3 pt-2 border-top border-secondary">
+                    <label class="form-label small text-secondary">Symbol Universe Policy</label>
+                    <div>
+                        <?php
+                            $pmColor = match($pMode) {
+                                'passport_only'      => 'bg-success',
+                                'passport_preferred' => 'bg-primary',
+                                default              => 'bg-secondary',
+                            };
+                        ?>
+                        <span class="badge <?= $pmColor ?>"><?= htmlspecialchars($pMode) ?></span>
+                        <?php if ($pMode === 'passport_preferred'): ?>
+                            <small class="text-secondary ms-1">max <?= $pMaxNoPP ?> without passport</small>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>

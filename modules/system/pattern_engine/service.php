@@ -146,9 +146,57 @@ final class PatternEngineService
             return [];
         }
 
-        // Shuffle for variety across runs, then cap at max
-        shuffle($symbols);
-        $symbols = array_slice($symbols, 0, $maxSymbols);
+        // --- Universe overlap analysis + policy ---
+        $passportSymbolsFull = $this->loadPassportSymbols();
+        $passportSet         = array_flip(array_map('strtoupper', $passportSymbolsFull));
+
+        $symbolsWithPassport    = [];
+        $symbolsWithoutPassport = [];
+        foreach ($symbols as $sym) {
+            if (isset($passportSet[strtoupper($sym)])) {
+                $symbolsWithPassport[] = $sym;
+            } else {
+                $symbolsWithoutPassport[] = $sym;
+            }
+        }
+
+        $patternTotal  = count($symbols);
+        $overlapCount  = count($symbolsWithPassport);
+        $passportTotal = count($passportSymbolsFull);
+        $overlapRate   = $patternTotal > 0 ? round($overlapCount / $patternTotal, 4) : 0.0;
+
+        $policyBlock        = (array)($realRun['symbol_universe_policy'] ?? []);
+        $policyMode         = (string)($policyBlock['mode']                        ?? 'passport_preferred');
+        $maxWithoutPassport = (int)($policyBlock['max_symbols_without_passport']   ?? 10);
+
+        $this->realRunStats['pattern_symbols_total']                  = $patternTotal;
+        $this->realRunStats['passport_symbols_total']                 = $passportTotal;
+        $this->realRunStats['symbol_universe_overlap_count']          = $overlapCount;
+        $this->realRunStats['symbol_universe_overlap_rate']           = $overlapRate;
+        $this->realRunStats['pattern_symbols_with_passport_count']    = $overlapCount;
+        $this->realRunStats['pattern_symbols_without_passport_count'] = count($symbolsWithoutPassport);
+        $this->realRunStats['symbols_with_passport']                  = array_slice($symbolsWithPassport, 0, 100);
+        $this->realRunStats['symbols_without_passport']               = array_slice($symbolsWithoutPassport, 0, 100);
+        $this->realRunStats['active_universe_policy']                 = $policyMode;
+
+        // Apply policy to build the final symbol list
+        shuffle($symbolsWithPassport);
+        shuffle($symbolsWithoutPassport);
+        if ($policyMode === 'passport_only') {
+            $symbols = array_slice($symbolsWithPassport, 0, $maxSymbols);
+        } elseif ($policyMode === 'passport_preferred') {
+            $withPass    = array_slice($symbolsWithPassport, 0, $maxSymbols);
+            $allowedNoPP = max(0, $maxSymbols - count($withPass));
+            $withoutPass = array_slice($symbolsWithoutPassport, 0, min($maxWithoutPassport, $allowedNoPP));
+            $symbols = array_merge($withPass, $withoutPass);
+            shuffle($symbols);
+            $symbols = array_slice($symbols, 0, $maxSymbols);
+        } else {
+            // all_active: original behaviour
+            shuffle($symbols);
+            $symbols = array_slice($symbols, 0, $maxSymbols);
+        }
+
         $this->realRunStats['symbols_total'] = count($symbols);
 
         $timeWindowMinutes = $this->timeframeToMinutes($timeframe);
@@ -469,6 +517,18 @@ final class PatternEngineService
         $this->realRunStats['symbols_normalized_count']          = $symbolsNormalizedCount;
         $this->realRunStats['symbols_normalization_failed_count'] = $symbolsNormalizationFailedCount;
 
+        // Track symbols that were normalized but still had no passport match
+        $normalizedButUnmatched = [];
+        foreach ($normalizedSymbolMap as $normInfo) {
+            if (($normInfo['symbol_normalization_status'] ?? '') === 'normalized_no_passport') {
+                $form = (string)($normInfo['symbol_canonical'] !== '' ? $normInfo['symbol_canonical'] : $normInfo['symbol_normalized']);
+                if ($form !== '') {
+                    $normalizedButUnmatched[] = $form;
+                }
+            }
+        }
+        $this->realRunStats['symbols_normalized_but_unmatched'] = $normalizedButUnmatched;
+
         // Deduplicate: cap per (symbol × side × pattern_algorithm) and per symbol
         $allCombined = $this->deduplicateCombined($allCombined, $antiFlood);
         $afterDedup  = count($allCombined);
@@ -522,6 +582,23 @@ final class PatternEngineService
         }
         $this->realRunStats['passport_lookup_success_count'] = $passportLookupSuccessCount;
         $this->realRunStats['passport_lookup_failed_count']  = $passportLookupFailedCount;
+
+        // Coverage candidates: symbols that produced detections but had no passport found
+        $coverageFreq = [];
+        foreach ($allScenarios as $sc) {
+            if (($sc['diagnostics']['passport_lookup_status'] ?? '') === 'not_found') {
+                $sym = (string)($sc['symbol'] ?? '');
+                if ($sym !== '') {
+                    $coverageFreq[$sym] = ($coverageFreq[$sym] ?? 0) + 1;
+                }
+            }
+        }
+        arsort($coverageFreq);
+        $coverageCandidates = [];
+        foreach ($coverageFreq as $sym => $cnt) {
+            $coverageCandidates[] = ['symbol' => $sym, 'detection_count' => $cnt];
+        }
+        $this->realRunStats['passport_coverage_candidates'] = array_slice($coverageCandidates, 0, 20);
 
         // Build downstream-safe filtered signal sets
         $demoSignals   = $this->buildDownstreamSet($allCombined, 'allowed_for_demo');
@@ -1000,6 +1077,18 @@ final class PatternEngineService
             'demo_signals_count'                 => (int)($this->realRunStats['demo_signals_count']                 ?? 0),
             'shadow_signals_count'               => (int)($this->realRunStats['shadow_signals_count']               ?? 0),
             'sim_signals_count'                  => (int)($this->realRunStats['sim_signals_count']                  ?? 0),
+            // Universe overlap diagnostics
+            'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
+            'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),
+            'symbol_universe_overlap_count'          => (int)($this->realRunStats['symbol_universe_overlap_count']          ?? 0),
+            'symbol_universe_overlap_rate'           => (float)($this->realRunStats['symbol_universe_overlap_rate']         ?? 0.0),
+            'pattern_symbols_with_passport_count'    => (int)($this->realRunStats['pattern_symbols_with_passport_count']    ?? 0),
+            'pattern_symbols_without_passport_count' => (int)($this->realRunStats['pattern_symbols_without_passport_count'] ?? 0),
+            'symbols_with_passport'                  => (array)($this->realRunStats['symbols_with_passport']                ?? []),
+            'symbols_without_passport'               => (array)($this->realRunStats['symbols_without_passport']             ?? []),
+            'symbols_normalized_but_unmatched'       => (array)($this->realRunStats['symbols_normalized_but_unmatched']     ?? []),
+            'active_universe_policy'                 => (string)($this->realRunStats['active_universe_policy']              ?? 'all_active'),
+            'passport_coverage_candidates'           => (array)($this->realRunStats['passport_coverage_candidates']         ?? []),
         ];
     }
 

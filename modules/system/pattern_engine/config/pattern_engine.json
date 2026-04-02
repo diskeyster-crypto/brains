@@ -9,7 +9,13 @@
         "min_candles_required": 30,
         "use_internal_source_first": true,
         "bybit_base_url": "https://api.bybit.com",
-        "bybit_timeout_sec": 10
+        "bybit_timeout_sec": 10,
+        "symbol_universe_policy": {
+            "mode": "passport_preferred",
+            "max_symbols_without_passport": 10,
+            "prefer_passport_symbols_first": true,
+            "require_passport_for_default_run": false
+        }
     },
     "anti_flood": {
         "max_signals_per_symbol_per_run": 10,

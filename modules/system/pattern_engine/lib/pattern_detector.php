@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+if (defined('PATTERN_ENGINE_DETECTOR_LOADED')) {
+    return;
+}
+define('PATTERN_ENGINE_DETECTOR_LOADED', true);
+
 /**
  * PatternDetector — base interface and raw detection data contract.
  *

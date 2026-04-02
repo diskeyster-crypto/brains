@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+if (defined('PATTERN_ENGINE_SCENARIO_ENGINE_LOADED')) {
+    return;
+}
+define('PATTERN_ENGINE_SCENARIO_ENGINE_LOADED', true);
+
 /**
  * ScenarioEngine
  *

@@ -39,6 +39,9 @@ arsort($perSymbol);
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Pattern Engine</h4>
     <div>
+      <button id="runNowBtn" class="btn btn-sm btn-success me-2">
+        <i class="bi bi-play-fill me-1"></i>Run Now
+      </button>
       <button id="clearBtn" class="btn btn-sm btn-outline-danger me-2">
         <i class="bi bi-trash me-1"></i>Clear Storage
       </button>
@@ -192,6 +195,32 @@ arsort($perSymbol);
 </div>
 
 <script>
+document.getElementById('runNowBtn')?.addEventListener('click', function () {
+    const btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running…';
+    fetch('<?= $baseUrl ?>/run', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Run Now';
+            if (d.ok) {
+                const msg = 'Run complete. Candidates: ' + (d.candidates_count ?? 0) +
+                            ', Signals: ' + (d.signals_count ?? 0) +
+                            ', Scenarios: ' + (d.scenarios_count ?? 0);
+                alert(msg);
+                location.reload();
+            } else {
+                alert('Run failed: ' + JSON.stringify(d));
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Run Now';
+            alert('Request failed: ' + err);
+        });
+});
+
 document.getElementById('clearBtn')?.addEventListener('click', function () {
     if (!confirm('Clear all pattern engine storage? This cannot be undone.')) return;
     this.disabled = true;

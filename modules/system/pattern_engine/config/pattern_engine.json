@@ -1,5 +1,6 @@
 {
     "enabled": true,
+    "live_output_enabled": false,
     "default_time_window_minutes": 15,
     "detector_config": {
         "double_bottom_contextual_v2": {

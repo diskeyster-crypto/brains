@@ -110,6 +110,9 @@ final class PatternEngineController
         if (isset($posted['enabled'])) {
             $current['enabled'] = (bool)$posted['enabled'];
         }
+        if (isset($posted['live_output_enabled'])) {
+            $current['live_output_enabled'] = (bool)$posted['live_output_enabled'];
+        }
         if (isset($posted['default_time_window_minutes'])) {
             $current['default_time_window_minutes'] = (int)$posted['default_time_window_minutes'];
         }
@@ -129,6 +132,36 @@ final class PatternEngineController
         $this->service->clearStorage();
         header('Content-Type: application/json');
         echo json_encode(['ok' => true]);
+    }
+
+    /**
+     * POST /admin/pattern_engine/run
+     *
+     * Triggers a pipeline run. Accepts optional JSON body:
+     *   { "batch": [ ...market_data_slices... ] }
+     * If no batch is provided, a synthetic test batch is generated from
+     * available Coin Passport symbols.
+     */
+    public function runNow(): void
+    {
+        $body    = (string)file_get_contents('php://input');
+        $posted  = json_decode($body, true);
+        $batch   = [];
+
+        if (is_array($posted) && isset($posted['batch']) && is_array($posted['batch'])) {
+            $batch = $posted['batch'];
+        }
+
+        $result = $this->service->runNow($batch);
+
+        header('Content-Type: application/json');
+        echo json_encode([
+            'ok'                => true,
+            'candidates_count'  => count($result['candidates'] ?? []),
+            'signals_count'     => count($result['signals'] ?? []),
+            'scenarios_count'   => count($result['scenarios'] ?? []),
+            'stats'             => $result['stats'] ?? [],
+        ]);
     }
 
     // =========================================================================

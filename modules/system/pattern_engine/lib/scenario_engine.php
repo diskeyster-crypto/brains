@@ -15,6 +15,22 @@ define('PATTERN_ENGINE_SCENARIO_ENGINE_LOADED', true);
  *
  * A scenario = pattern signal + Coin Passport guidance + market regime + scenario profile.
  *
+ * Coin Passport schema fields consumed (real schema — do NOT use legacy names):
+ *   data_confidence             string  none|low|medium|high
+ *   confidence_score_numeric    float   0-1
+ *   corridor_p50_roi            float
+ *   corridor_p75_roi            float
+ *   corridor_p90_roi            float
+ *   runner_probability          float   0-1
+ *   noise_score                 float   0-1  (lower = better)
+ *   short_suitability_score     float   0-1
+ *   market_regime_health_score  float   0-1
+ *   recommended_live_eligibility string allow_live|sim_only|shadow_only|reject
+ *   live_block_reason           string|null
+ *   pattern_behavior            array   keyed by algorithm name
+ *   insufficient_data_flag      bool
+ *   insufficient_data_reason    string|null
+ *
  * Output (ScenarioDecision):
  * {
  *   scenario_id:                string
@@ -40,19 +56,28 @@ final class ScenarioEngine
     /** @var array<string,array<string,mixed>> */
     private array $profiles;
 
-    /** @var array<string,array<string,mixed>> */
+    /** @var array<string,array<string,mixed>|null> */
     private array $passportCache = [];
 
     private string $passportDir;
 
     /**
-     * @param array<string,array<string,mixed>> $profiles  Scenario profiles from config
-     * @param string                            $passportDir  Path to coin_passport passports/
+     * When false (default), any scenario that would emit allow_live is
+     * downgraded to allow_demo.  Set to true only after the new pattern
+     * stack is proven through demo/shadow/sim.
      */
-    public function __construct(array $profiles, string $passportDir)
+    private bool $liveOutputEnabled;
+
+    /**
+     * @param array<string,array<string,mixed>> $profiles          Scenario profiles from config
+     * @param string                            $passportDir       Path to coin_passport passports/
+     * @param bool                              $liveOutputEnabled Master live-output gate (default false)
+     */
+    public function __construct(array $profiles, string $passportDir, bool $liveOutputEnabled = false)
     {
-        $this->profiles    = $profiles;
-        $this->passportDir = $passportDir;
+        $this->profiles          = $profiles;
+        $this->passportDir       = $passportDir;
+        $this->liveOutputEnabled = $liveOutputEnabled;
     }
 
     /**
@@ -215,24 +240,33 @@ final class ScenarioEngine
     {
         $algorithm = (string)($signal['pattern_algorithm'] ?? '');
 
-        // Corridor P75
+        // Bail early if passport has insufficient data and profile requires passport
+        if (!empty($passport['insufficient_data_flag']) && !empty($profile['require_passport'])) {
+            return [false, 'passport_insufficient_data:' . ($passport['insufficient_data_reason'] ?? 'no_reason')];
+        }
+
+        // Corridor P75 ROI — read real field name; fall back to pattern_behavior per-algo entry
         $minCorridorP75 = (float)($profile['min_corridor_p75_roi'] ?? 0.0);
         if ($minCorridorP75 > 0) {
-            // Try pattern-specific, then generic
             $cp75 = (float)(
-                $passport['pattern_stats'][$algorithm]['corridor_p75'] ??
-                $passport['corridor_p75'] ??
+                $passport['corridor_p75_roi'] ??
+                $passport['pattern_behavior'][$algorithm]['corridor_p75_roi'] ??
+                $passport['pattern_behavior'][$algorithm]['corridor_p75'] ??
                 0
             );
             if ($cp75 < $minCorridorP75) {
-                return [false, 'corridor_p75_below_threshold'];
+                return [false, 'corridor_p75_roi_below_threshold'];
             }
         }
 
-        // Runner probability
+        // Runner probability — read real field; fall back to pattern_behavior per-algo runner_rate
         $minRunnerProb = (float)($profile['min_runner_probability'] ?? 0.0);
         if ($minRunnerProb > 0) {
-            $rp = (float)($passport['runner_probability'] ?? $passport['pattern_stats'][$algorithm]['runner_rate'] ?? 0);
+            $rp = (float)(
+                $passport['runner_probability'] ??
+                $passport['pattern_behavior'][$algorithm]['runner_rate'] ??
+                0
+            );
             if ($rp < $minRunnerProb) {
                 return [false, 'runner_probability_below_threshold'];
             }
@@ -247,22 +281,32 @@ final class ScenarioEngine
             }
         }
 
-        // Confidence
+        // Short suitability (only checked when profile requires it)
+        $minSuitability = (float)($profile['min_suitability_score'] ?? 0.0);
+        if ($minSuitability > 0) {
+            $suitability = (float)($passport['short_suitability_score'] ?? 0);
+            if ($suitability < $minSuitability) {
+                return [false, 'short_suitability_score_below_threshold'];
+            }
+        }
+
+        // Data confidence — real field is data_confidence (string)
         $minConfidence = (string)($profile['min_confidence'] ?? '');
         if ($minConfidence !== '') {
-            $confidenceMap  = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3];
-            $passportConf   = strtolower((string)($passport['confidence'] ?? 'none'));
-            $confLevel      = $confidenceMap[$passportConf] ?? 0;
-            $requiredLevel  = $confidenceMap[$minConfidence] ?? 0;
+            $confidenceMap = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3];
+            $rawConf       = strtolower((string)($passport['data_confidence'] ?? 'none'));
+            $confLevel     = $confidenceMap[$rawConf] ?? 0;
+            $requiredLevel = $confidenceMap[$minConfidence] ?? 0;
             if ($confLevel < $requiredLevel) {
-                return [false, 'confidence_below_threshold'];
+                return [false, 'data_confidence_below_threshold'];
             }
         }
 
         // Live eligibility from passport
         $eligibility = (string)($passport['recommended_live_eligibility'] ?? '');
         if (in_array($eligibility, ['reject'], true)) {
-            return [false, 'passport_live_eligibility_reject'];
+            $blockReason = (string)($passport['live_block_reason'] ?? 'passport_live_eligibility_reject');
+            return [false, $blockReason];
         }
 
         return [true, null];
@@ -273,7 +317,7 @@ final class ScenarioEngine
     {
         $minRegimeHealth = (float)($profile['min_regime_health'] ?? 0.0);
         if ($minRegimeHealth > 0) {
-            $regimeHealth = (float)($passport['market_regime_health_score'] ?? $passport['regime_health'] ?? 0);
+            $regimeHealth = (float)($passport['market_regime_health_score'] ?? 0);
             if ($regimeHealth < $minRegimeHealth) {
                 return [false, 'market_regime_health_below_threshold'];
             }
@@ -286,13 +330,21 @@ final class ScenarioEngine
         if ($passport === null) {
             return 0.4; // neutral when no passport
         }
-        $conf       = strtolower((string)($passport['confidence'] ?? 'none'));
-        $confScore  = match ($conf) {
-            'high'   => 1.0,
-            'medium' => 0.7,
-            'low'    => 0.4,
-            default  => 0.1,
-        };
+
+        // Use confidence_score_numeric if available; otherwise derive from data_confidence label
+        $numericScore = $passport['confidence_score_numeric'] ?? null;
+        if ($numericScore !== null) {
+            $confScore = (float)$numericScore;
+        } else {
+            $conf = strtolower((string)($passport['data_confidence'] ?? 'none'));
+            $confScore = match ($conf) {
+                'high'   => 1.0,
+                'medium' => 0.7,
+                'low'    => 0.4,
+                default  => 0.1,
+            };
+        }
+
         $regimeScore = (float)($passport['market_regime_health_score'] ?? 0.5);
         return round($confScore * 0.5 + $regimeScore * 0.5, 4);
     }
@@ -320,21 +372,32 @@ final class ScenarioEngine
         $marketOk    = (bool)($extra['market_ok'] ?? true);
         $scenScore   = (float)($extra['scenario_score'] ?? 0.0);
 
+        // Enforce live-output policy: downgrade allow_live → allow_demo when disabled
+        $effectiveStatus = $status;
+        $effectiveReason = $reason;
+        if ($status === 'allow_live' && !$this->liveOutputEnabled) {
+            $effectiveStatus = 'allow_demo';
+            $effectiveReason = 'live_output_disabled_by_engine_policy';
+        }
+
         [$allowLive, $allowDemo, $allowShadow, $allowSim, $liveBlockReason] =
-            $this->statusFlags($status, $reason);
+            $this->statusFlags($effectiveStatus, $effectiveReason);
 
         $maxHold = (int)($profile['max_hold_minutes'] ?? 0);
 
+        // Build rich passport diagnostics
+        $passportDiag = $this->buildPassportDiagnostics($passport, $signal);
+
         return [
-            'scenario_id'               => 'sc_' . substr(hash('sha256', ($signal['signal_id'] ?? '') . $status . microtime(true) . random_int(0, PHP_INT_MAX)), 0, 12),
+            'scenario_id'               => 'sc_' . substr(hash('sha256', ($signal['signal_id'] ?? '') . $effectiveStatus . microtime(true) . random_int(0, PHP_INT_MAX)), 0, 12),
             'signal_id'                 => $signal['signal_id'] ?? '',
             'symbol'                    => $signal['symbol'] ?? '',
             'side'                      => $signal['side'] ?? '',
             'pattern_algorithm'         => $signal['pattern_algorithm'] ?? '',
-            'scenario_status'           => $status,
+            'scenario_status'           => $effectiveStatus,
             'scenario_score'            => round($scenScore, 4),
-            'scenario_reason'           => $reason,
-            'execution_mode_hint'       => $this->executionModeHint($status),
+            'scenario_reason'           => $effectiveReason,
+            'execution_mode_hint'       => $this->executionModeHint($effectiveStatus),
             'passport_requirements_met' => $passportOk,
             'market_requirements_met'   => $marketOk,
             'allowed_for_live'          => $allowLive,
@@ -345,15 +408,78 @@ final class ScenarioEngine
             'profile_used'              => $profileName ?? 'default',
             'decided_at'                => date('c'),
             'max_hold_minutes'          => $maxHold > 0 ? $maxHold : null,
-            'diagnostics'               => [
-                'status'          => $status,
-                'reason'          => $reason,
-                'passport_reason' => $extra['passport_reason'] ?? null,
-                'market_reason'   => $extra['market_reason'] ?? null,
-                'signal_strength' => $signal['signal_strength'] ?? null,
-                'quality_score'   => $signal['quality_score'] ?? null,
-                'profile'         => $profileName,
-            ],
+            'diagnostics'               => array_merge($passportDiag, [
+                'status'                      => $effectiveStatus,
+                'original_status'             => $status,
+                'reason'                      => $effectiveReason,
+                'original_reason'             => $reason,
+                'passport_reason'             => $extra['passport_reason'] ?? null,
+                'market_reason'               => $extra['market_reason'] ?? null,
+                'signal_strength'             => $signal['signal_strength'] ?? null,
+                'quality_score'               => $signal['quality_score'] ?? null,
+                'profile'                     => $profileName,
+                'engine_live_output_enabled'  => $this->liveOutputEnabled,
+                'final_scenario_status'       => $effectiveStatus,
+                'final_scenario_reason'       => $effectiveReason,
+            ]),
+        ];
+    }
+
+    /**
+     * Build a flat passport diagnostics array for inclusion in every decision.
+     * All fields are included even when null, so consumers can inspect gaps.
+     *
+     * @param  array<string,mixed>|null $passport
+     * @param  array<string,mixed>      $signal
+     * @return array<string,mixed>
+     */
+    private function buildPassportDiagnostics(?array $passport, array $signal): array
+    {
+        if ($passport === null) {
+            return [
+                'passport_available'              => false,
+                'passport_data_confidence'        => null,
+                'passport_confidence_score_numeric' => null,
+                'passport_corridor_p50_roi'       => null,
+                'passport_corridor_p75_roi'       => null,
+                'passport_corridor_p90_roi'       => null,
+                'passport_runner_probability'     => null,
+                'passport_noise_score'            => null,
+                'passport_short_suitability_score' => null,
+                'passport_market_regime_health_score' => null,
+                'passport_live_eligibility'       => null,
+                'passport_live_block_reason'      => null,
+                'passport_insufficient_data_flag' => null,
+                'passport_insufficient_data_reason' => null,
+                'passport_pattern_behavior_present' => false,
+            ];
+        }
+
+        $algo = (string)($signal['pattern_algorithm'] ?? '');
+        $patternBehavior = (array)($passport['pattern_behavior'] ?? []);
+        $algoData = (array)($patternBehavior[$algo] ?? []);
+
+        return [
+            'passport_available'              => true,
+            'passport_data_confidence'        => $passport['data_confidence'] ?? null,
+            'passport_confidence_score_numeric' => isset($passport['confidence_score_numeric']) ? (float)$passport['confidence_score_numeric'] : null,
+            'passport_corridor_p50_roi'       => isset($passport['corridor_p50_roi']) ? (float)$passport['corridor_p50_roi'] : null,
+            'passport_corridor_p75_roi'       => isset($passport['corridor_p75_roi']) ? (float)$passport['corridor_p75_roi'] : (isset($algoData['corridor_p75_roi']) ? (float)$algoData['corridor_p75_roi'] : null),
+            'passport_corridor_p90_roi'       => isset($passport['corridor_p90_roi']) ? (float)$passport['corridor_p90_roi'] : null,
+            'passport_runner_probability'     => isset($passport['runner_probability']) ? (float)$passport['runner_probability'] : (isset($algoData['runner_rate']) ? (float)$algoData['runner_rate'] : null),
+            'passport_noise_score'            => isset($passport['noise_score']) ? (float)$passport['noise_score'] : null,
+            'passport_short_suitability_score' => isset($passport['short_suitability_score']) ? (float)$passport['short_suitability_score'] : null,
+            'passport_market_regime_health_score' => isset($passport['market_regime_health_score']) ? (float)$passport['market_regime_health_score'] : null,
+            'passport_live_eligibility'       => $passport['recommended_live_eligibility'] ?? null,
+            'passport_live_block_reason'      => $passport['live_block_reason'] ?? null,
+            'passport_insufficient_data_flag' => isset($passport['insufficient_data_flag']) ? (bool)$passport['insufficient_data_flag'] : null,
+            'passport_insufficient_data_reason' => $passport['insufficient_data_reason'] ?? null,
+            'passport_pattern_behavior_present' => !empty($algoData),
+            'passport_pattern_success_rate'   => isset($algoData['success_rate']) ? (float)$algoData['success_rate'] : null,
+            'passport_pattern_runner_rate'    => isset($algoData['runner_rate']) ? (float)$algoData['runner_rate'] : null,
+            'passport_pattern_avg_roi'        => isset($algoData['avg_roi']) ? (float)$algoData['avg_roi'] : null,
+            'passport_pattern_stop_rate'      => isset($algoData['stop_rate']) ? (float)$algoData['stop_rate'] : null,
+            'passport_pattern_data_confidence' => $algoData['data_confidence'] ?? null,
         ];
     }
 

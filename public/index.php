@@ -1436,6 +1436,11 @@ Router::post('/admin/pattern_engine/clear', function () {
     $controller->clearStorage();
 });
 
+Router::post('/admin/pattern_engine/run', function () {
+    $controller = new PatternEngineController();
+    $controller->runNow();
+});
+
 // API (read-only, for Demo Execution / AI Shadow / Simulator integration)
 Router::get('/admin/pattern_engine/api/signals', function () {
     $controller = new PatternEngineController();

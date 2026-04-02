@@ -37,9 +37,10 @@ final class PatternEngineService
         $config         = PatternEngineConfig::load();
         $profiles       = (array)($config['scenario_profiles'] ?? []);
         $passportDir    = __DIR__ . '/../coin_passport/storage/passports';
+        $liveEnabled    = (bool)($config['live_output_enabled'] ?? false);
 
         $this->adapter        = new UniversalSignalAdapter();
-        $this->scenarioEngine = new ScenarioEngine($profiles, $passportDir);
+        $this->scenarioEngine = new ScenarioEngine($profiles, $passportDir, $liveEnabled);
 
         PatternDetectorRegistry::init();
     }
@@ -47,6 +48,64 @@ final class PatternEngineService
     // =========================================================================
     // Run pipeline
     // =========================================================================
+
+    /**
+     * Trigger a run from the UI or API.
+     *
+     * Accepts an optional batch; if none is supplied a synthetic placeholder
+     * batch is generated from available Coin Passport files so the pipeline
+     * exercises storage writes even without live candle data.
+     *
+     * @param  list<array<string,mixed>>  $batch  Optional pre-built market data batch
+     * @return array<string,mixed>
+     */
+    public function runNow(array $batch = []): array
+    {
+        if (empty($batch)) {
+            $batch = $this->buildTestBatch();
+        }
+        return $this->run($batch);
+    }
+
+    /**
+     * Build a minimal synthetic market-data batch from available Coin Passport
+     * symbols for pipeline smoke-testing without real candle feeds.
+     *
+     * Each entry contains just enough fields for detectors to inspect without
+     * crashing; detectors are expected to return empty detection arrays when
+     * the candle history is trivial.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function buildTestBatch(): array
+    {
+        $passportDir = __DIR__ . '/../coin_passport/storage/passports';
+        $batch       = [];
+        if (!is_dir($passportDir)) {
+            return $batch;
+        }
+
+        $config  = PatternEngineConfig::load();
+        $window  = (int)($config['default_time_window_minutes'] ?? 15);
+        $limit   = 20; // max symbols per test run
+
+        $files = glob($passportDir . '/*.json') ?: [];
+        foreach (array_slice($files, 0, $limit) as $file) {
+            $symbol = strtoupper(basename($file, '.json'));
+            // Two synthetic flat candles — detectors will find nothing useful,
+            // but the pipeline traversal and storage writes still execute.
+            $batch[] = [
+                'symbol'              => $symbol,
+                'time_window_minutes' => $window,
+                'candles'             => [
+                    ['ts_unix' => time() - 60, 'open' => 1.0, 'high' => 1.01, 'low' => 0.99, 'close' => 1.0, 'volume' => 0],
+                    ['ts_unix' => time(),       'open' => 1.0, 'high' => 1.01, 'low' => 0.99, 'close' => 1.0, 'volume' => 0],
+                ],
+            ];
+        }
+
+        return $batch;
+    }
 
     /**
      * Run the full pipeline on a batch of market data slices.

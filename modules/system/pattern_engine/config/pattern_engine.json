@@ -7,8 +7,14 @@
         "lookback_candles": 100,
         "timeframe": "15",
         "min_candles_required": 30,
+        "use_internal_source_first": true,
         "bybit_base_url": "https://api.bybit.com",
         "bybit_timeout_sec": 10
+    },
+    "anti_flood": {
+        "max_signals_per_symbol_per_run": 10,
+        "max_signals_per_pattern_per_symbol": 2,
+        "max_scenarios_per_symbol_per_run": 10
     },
     "detector_config": {
         "double_bottom_contextual_v2": {

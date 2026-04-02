@@ -110,29 +110,58 @@ $pageContent = function() use (
 
 <?php
 $runSource    = $pe_last_run['run_source']    ?? $pe_stats['last_run']['run_source']    ?? null;
+$primarySrc   = $pe_last_run['primary_data_source'] ?? $pe_stats['last_run']['primary_data_source'] ?? $runSource;
+$fallbackUsed = !empty($pe_last_run['fallback_data_source_used']) || !empty($pe_stats['last_run']['fallback_data_source_used']);
 $symScanned   = $pe_last_run['symbols_scanned']   ?? $pe_stats['last_run']['symbols_scanned']   ?? null;
 $symSkipped   = $pe_last_run['symbols_skipped_insufficient_data'] ?? $pe_stats['last_run']['symbols_skipped_insufficient_data'] ?? null;
 $symTotal     = $pe_last_run['symbols_total']  ?? $pe_stats['last_run']['symbols_total']  ?? null;
 $runTimeframe = $pe_last_run['timeframe']      ?? $pe_stats['last_run']['timeframe']      ?? null;
+
+$rawCandidates  = $pe_last_run['raw_candidates_total'] ?? $pe_stats['last_run']['raw_candidates_total'] ?? null;
+$rawSignals     = $pe_last_run['raw_signals_total']    ?? $pe_stats['last_run']['raw_signals_total']    ?? null;
+$rawScenarios   = $pe_last_run['raw_scenarios_total']  ?? $pe_stats['last_run']['raw_scenarios_total']  ?? null;
+$afterDedupSig  = $pe_last_run['after_dedup_signals']  ?? $pe_stats['last_run']['after_dedup_signals']  ?? null;
+$candTruncated  = !empty($pe_last_run['candidates_truncated']) || !empty($pe_stats['last_run']['candidates_truncated']);
+$sigTruncated   = !empty($pe_last_run['signals_truncated'])    || !empty($pe_stats['last_run']['signals_truncated']);
+$scenTruncated  = !empty($pe_last_run['scenarios_truncated'])  || !empty($pe_stats['last_run']['scenarios_truncated']);
+$avgPerSym      = $pe_last_run['avg_signals_per_symbol'] ?? $pe_stats['last_run']['avg_signals_per_symbol'] ?? null;
+$symUsedInternal = (int)($pe_last_run['symbols_used_internal'] ?? $pe_stats['last_run']['symbols_used_internal'] ?? 0);
+$symUsedBybit   = (int)($pe_last_run['symbols_used_bybit_fallback'] ?? $pe_stats['last_run']['symbols_used_bybit_fallback'] ?? 0);
 ?>
 <!-- Stats row -->
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-2">
         <div class="pe-stat-card">
             <div class="pe-stat-value"><?= $candidatesCount ?></div>
-            <div class="pe-stat-label">Candidates</div>
+            <?php if ($rawCandidates !== null && $rawCandidates > $candidatesCount): ?>
+                <div class="pe-stat-label text-warning" title="<?= $rawCandidates ?> raw, <?= $candidatesCount ?> stored after dedup+cap">
+                    Candidates <small>(of <?= (int)$rawCandidates ?> raw)</small>
+                </div>
+            <?php else: ?>
+                <div class="pe-stat-label">Candidates</div>
+            <?php endif; ?>
         </div>
     </div>
     <div class="col-6 col-md-2">
-        <div class="pe-stat-card">
+        <div class="pe-stat-card<?= $sigTruncated ? ' border-warning' : '' ?>">
             <div class="pe-stat-value"><?= $signalsCount ?></div>
-            <div class="pe-stat-label">Signals</div>
+            <?php if ($rawSignals !== null && $rawSignals > $signalsCount): ?>
+                <div class="pe-stat-label text-warning" title="<?= $rawSignals ?> raw, <?= $afterDedupSig ?? '?' ?> after dedup, <?= $signalsCount ?> stored">
+                    Signals <small>(of <?= (int)$rawSignals ?> raw)</small>
+                </div>
+            <?php else: ?>
+                <div class="pe-stat-label">Signals</div>
+            <?php endif; ?>
         </div>
     </div>
     <div class="col-6 col-md-2">
-        <div class="pe-stat-card">
+        <div class="pe-stat-card<?= $scenTruncated ? ' border-warning' : '' ?>">
             <div class="pe-stat-value"><?= $scenariosCount ?></div>
-            <div class="pe-stat-label">Scenarios</div>
+            <?php if ($rawScenarios !== null && $rawScenarios > $scenariosCount): ?>
+                <div class="pe-stat-label text-warning">Scenarios <small>(of <?= (int)$rawScenarios ?> raw)</small></div>
+            <?php else: ?>
+                <div class="pe-stat-label">Scenarios</div>
+            <?php endif; ?>
         </div>
     </div>
     <?php if ($symScanned !== null): ?>
@@ -149,6 +178,14 @@ $runTimeframe = $pe_last_run['timeframe']      ?? $pe_stats['last_run']['timefra
         </div>
     </div>
     <?php endif; ?>
+    <?php if ($avgPerSym !== null && $symScanned > 0): ?>
+    <div class="col-6 col-md-2">
+        <div class="pe-stat-card">
+            <div class="pe-stat-value" style="font-size:1.2rem; color:#a78bfa;"><?= number_format((float)$avgPerSym, 1) ?></div>
+            <div class="pe-stat-label">Avg Signals/Symbol</div>
+        </div>
+    </div>
+    <?php endif; ?>
     <div class="col-6 col-md-2">
         <div class="pe-stat-card">
             <div class="pe-stat-value" style="font-size:0.85rem; color:#94a3b8;">
@@ -158,11 +195,31 @@ $runTimeframe = $pe_last_run['timeframe']      ?? $pe_stats['last_run']['timefra
         </div>
     </div>
 </div>
-<?php if ($runSource): ?>
+
+<?php if ($sigTruncated || $candTruncated || $scenTruncated): ?>
+<div class="alert alert-warning alert-sm py-2 mb-3 small">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    <strong>Output truncated by global storage cap.</strong>
+    Raw: <?= (int)$rawSignals ?> signals → <?= $afterDedupSig !== null ? (int)$afterDedupSig . ' after dedup → ' : '' ?><?= $signalsCount ?> stored.
+    Results shown are best-ranked only. Consider increasing <code>storage.max_signals_stored</code> or reducing <code>anti_flood.max_signals_per_symbol_per_run</code>.
+</div>
+<?php endif; ?>
+
+<?php if ($primarySrc): ?>
 <div class="mb-3 small text-secondary">
-    Source: <code><?= htmlspecialchars($runSource) ?></code>
+    Source: <code><?= htmlspecialchars((string)$primarySrc) ?></code>
+    <?php if ($fallbackUsed): ?>
+        <span class="badge bg-warning text-dark ms-1" title="<?= (int)$symUsedInternal ?> internal, <?= (int)$symUsedBybit ?> Bybit fallback">
+            <i class="bi bi-arrow-repeat me-1"></i>Bybit fallback used
+        </span>
+    <?php elseif ($symUsedInternal > 0): ?>
+        <span class="badge bg-success ms-1" title="All symbols used internal Parser2 history">
+            <i class="bi bi-database me-1"></i>Internal
+        </span>
+    <?php endif; ?>
     <?php if ($runTimeframe): ?> &nbsp;·&nbsp; Timeframe: <code><?= htmlspecialchars($runTimeframe) ?></code><?php endif; ?>
     <?php if ($symTotal !== null): ?> &nbsp;·&nbsp; <?= (int)$symTotal ?> symbols requested<?php endif; ?>
+    <?php if ($rawSignals !== null): ?> &nbsp;·&nbsp; <?= (int)$rawSignals ?> raw detections<?php endif; ?>
 </div>
 <?php endif; ?>
 

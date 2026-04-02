@@ -114,14 +114,20 @@ final class PatternEngineService
         $bybitBase  = (string)($realRun['bybit_base_url']    ?? 'https://api.bybit.com');
         $timeoutSec = (int)($realRun['bybit_timeout_sec']    ?? 10);
 
+        $useInternalFirst = (bool)($realRun['use_internal_source_first'] ?? true);
+
         $this->realRunStats = [
             'run_source'                        => 'bybit_klines',
+            'primary_data_source'               => $useInternalFirst ? 'parser2_internal' : 'bybit_klines',
+            'fallback_data_source_used'         => false,
             'timeframe'                         => $timeframe,
             'lookback_candles'                  => $lookback,
             'symbols_total'                     => 0,
             'symbols_scanned'                   => 0,
             'symbols_skipped_insufficient_data' => 0,
             'symbols_skipped_api_error'         => 0,
+            'symbols_used_internal'             => 0,
+            'symbols_used_bybit_fallback'       => 0,
         ];
 
         // 1. Load symbols from Parser1 active registry
@@ -145,7 +151,31 @@ final class PatternEngineService
         $batch = [];
 
         foreach ($symbols as $symbol) {
-            $candles = $this->fetchBybitKlines($symbol, $timeframe, $lookback, $bybitBase, $timeoutSec);
+            $candles      = null;
+            $usedInternal = false;
+
+            // 1. Try internal Parser2 history first (if configured)
+            if ($useInternalFirst) {
+                $candles = $this->loadInternalCandlesForSymbol($symbol, $timeframe, $minCandles);
+                if ($candles !== null && count($candles) >= $minCandles) {
+                    $usedInternal = true;
+                } else {
+                    $candles = null; // insufficient internal data — fall through to Bybit
+                }
+            }
+
+            // 2. Fall back to direct Bybit klines if internal source unavailable
+            if ($candles === null) {
+                $candles = $this->fetchBybitKlines($symbol, $timeframe, $lookback, $bybitBase, $timeoutSec);
+                if ($candles !== null) {
+                    $this->realRunStats['symbols_used_bybit_fallback']++;
+                    if ($useInternalFirst) {
+                        $this->realRunStats['fallback_data_source_used'] = true;
+                    }
+                }
+            } else {
+                $this->realRunStats['symbols_used_internal']++;
+            }
 
             if ($candles === null) {
                 $this->realRunStats['symbols_skipped_api_error']++;
@@ -162,8 +192,19 @@ final class PatternEngineService
                 'symbol'              => $symbol,
                 'time_window_minutes' => $timeWindowMinutes,
                 'candles'             => $candles,
+                'data_source'         => $usedInternal ? 'parser2_internal' : 'bybit_klines',
             ];
         }
+
+        // Update run_source to reflect actual data sources used
+        $internal = (int)($this->realRunStats['symbols_used_internal']      ?? 0);
+        $bybit    = (int)($this->realRunStats['symbols_used_bybit_fallback'] ?? 0);
+        if ($internal > 0 && $bybit > 0) {
+            $this->realRunStats['run_source'] = 'mixed_internal_bybit';
+        } elseif ($internal > 0) {
+            $this->realRunStats['run_source'] = 'parser2_internal';
+        }
+        // else remains 'bybit_klines'
 
         return $batch;
     }
@@ -363,48 +404,80 @@ final class PatternEngineService
         };
     }
 
-    /**
-     * Run the full pipeline on a batch of market data slices.
-     *
-     * @param  list<array<string,mixed>>  $marketDataBatch  One entry per symbol/timeframe
-     * @return array<string,mixed>  {candidates, signals, scenarios, stats}
-     */
     public function run(array $marketDataBatch): array
     {
-        $config         = PatternEngineConfig::load();
-        $detectorCfg    = (array)($config['detector_config'] ?? []);
-        $allRaw         = [];
-        $allSignals     = [];
-        $allScenarios   = [];
+        $config      = PatternEngineConfig::load();
+        $detectorCfg = (array)($config['detector_config'] ?? []);
+        $antiFlood   = (array)($config['anti_flood']      ?? []);
+
+        // Collect all detections as aligned triplets {raw, signal, scenario}
+        $allCombined = [];
 
         foreach ($marketDataBatch as $marketData) {
-            $symbol     = (string)($marketData['symbol'] ?? '');
-            $marketCtx  = [
+            $symbol    = (string)($marketData['symbol'] ?? '');
+            $marketCtx = [
                 'symbol'       => $symbol,
                 'time_window'  => $marketData['time_window_minutes'] ?? 15,
                 'last_price'   => $marketData['candles'][array_key_last($marketData['candles'] ?? [])]['close'] ?? null,
+                'data_source'  => $marketData['data_source'] ?? 'unknown',
             ];
 
             foreach (PatternDetectorRegistry::all() as $algo => $detector) {
                 $cfg        = (array)($detectorCfg[$algo] ?? []);
                 $detections = $detector->detect($marketData, $cfg);
                 foreach ($detections as $raw) {
-                    $allRaw[] = $raw;
                     $signal   = $this->adapter->normalize($raw, $marketCtx);
-                    $allSignals[]   = $signal;
-                    $allScenarios[] = $this->scenarioEngine->evaluate($signal);
+                    $scenario = $this->scenarioEngine->evaluate($signal);
+                    $allCombined[] = ['raw' => $raw, 'signal' => $signal, 'scenario' => $scenario];
                 }
             }
         }
 
-        // Trim to storage limits
-        $maxCand = (int)($config['storage']['max_candidates_per_run'] ?? 200);
-        $maxSig  = (int)($config['storage']['max_signals_stored'] ?? 500);
-        $maxScen = (int)($config['storage']['max_scenarios_stored'] ?? 500);
+        // Track raw totals before any dedup / cap
+        $rawTotal = count($allCombined);
+        $this->realRunStats['raw_candidates_total'] = $rawTotal;
+        $this->realRunStats['raw_signals_total']    = $rawTotal;
+        $this->realRunStats['raw_scenarios_total']  = $rawTotal;
 
-        $allRaw       = array_slice($allRaw, 0, $maxCand);
-        $allSignals   = array_slice($allSignals, 0, $maxSig);
-        $allScenarios = array_slice($allScenarios, 0, $maxScen);
+        // Deduplicate: cap per (symbol × side × pattern_algorithm) and per symbol
+        $allCombined = $this->deduplicateCombined($allCombined, $antiFlood);
+        $afterDedup  = count($allCombined);
+        $this->realRunStats['after_dedup_candidates'] = $afterDedup;
+        $this->realRunStats['after_dedup_signals']    = $afterDedup;
+        $this->realRunStats['after_dedup_scenarios']  = $afterDedup;
+
+        // Rank: best-quality first so global cap keeps the most valuable signals
+        usort($allCombined, function (array $a, array $b): int {
+            // 1. Scenario status priority DESC
+            $pa = $this->scenarioStatusPriority($a['scenario']['final_scenario_status'] ?? $a['scenario']['scenario_status'] ?? '');
+            $pb = $this->scenarioStatusPriority($b['scenario']['final_scenario_status'] ?? $b['scenario']['scenario_status'] ?? '');
+            if ($pa !== $pb) {
+                return $pb - $pa;
+            }
+            // 2. signal_strength DESC
+            $sd = ($b['signal']['signal_strength'] ?? 0.0) - ($a['signal']['signal_strength'] ?? 0.0);
+            if (abs($sd) > 1e-9) {
+                return $sd > 0 ? 1 : -1;
+            }
+            // 3. quality_score DESC
+            return ($b['signal']['quality_score'] ?? 0.0) <=> ($a['signal']['quality_score'] ?? 0.0);
+        });
+
+        // Apply global storage caps (best N survive)
+        $maxCand = (int)($config['storage']['max_candidates_per_run'] ?? 200);
+        $maxSig  = (int)($config['storage']['max_signals_stored']     ?? 500);
+        $maxScen = (int)($config['storage']['max_scenarios_stored']   ?? 500);
+        $cap     = min($maxCand, $maxSig, $maxScen);
+        $allCombined = array_slice($allCombined, 0, $cap);
+
+        $stored = count($allCombined);
+        $this->realRunStats['candidates_truncated'] = $stored < $afterDedup;
+        $this->realRunStats['signals_truncated']    = $stored < $afterDedup;
+        $this->realRunStats['scenarios_truncated']  = $stored < $afterDedup;
+
+        $allRaw       = array_column($allCombined, 'raw');
+        $allSignals   = array_column($allCombined, 'signal');
+        $allScenarios = array_column($allCombined, 'scenario');
 
         $stats = $this->computeStats($allRaw, $allSignals, $allScenarios);
 
@@ -573,40 +646,208 @@ final class PatternEngineService
         return $result;
     }
 
+    // =========================================================================
+    // Anti-flood / deduplication / ranking helpers
+    // =========================================================================
+
+    /**
+     * Deduplicate combined detection triplets.
+     *
+     * Groups by (symbol × side × pattern_algorithm).
+     * Keeps the best N per group (by signal_strength) and caps total per symbol.
+     *
+     * @param  list<array{raw:array,signal:array,scenario:array}>  $combined
+     * @param  array<string,mixed>                                  $config   anti_flood config block
+     * @return list<array{raw:array,signal:array,scenario:array}>
+     */
+    private function deduplicateCombined(array $combined, array $config): array
+    {
+        $maxPerPattern = max(1, (int)($config['max_signals_per_pattern_per_symbol'] ?? 2));
+        $maxPerSymbol  = max(1, (int)($config['max_signals_per_symbol_per_run']     ?? 10));
+
+        // Sort by signal_strength DESC so we keep the strongest within each group
+        usort($combined, fn($a, $b) =>
+            ($b['signal']['signal_strength'] ?? 0.0) <=> ($a['signal']['signal_strength'] ?? 0.0));
+
+        $patternCount = [];
+        $symbolCount  = [];
+        $result       = [];
+
+        foreach ($combined as $item) {
+            $sym  = $item['signal']['symbol']            ?? '';
+            $side = $item['signal']['side']              ?? '';
+            $algo = $item['signal']['pattern_algorithm'] ?? '';
+            $pKey = $sym . '|' . $side . '|' . $algo;
+
+            $pc = $patternCount[$pKey] ?? 0;
+            $sc = $symbolCount[$sym]   ?? 0;
+
+            if ($pc >= $maxPerPattern || $sc >= $maxPerSymbol) {
+                continue;
+            }
+
+            $result[]            = $item;
+            $patternCount[$pKey] = $pc + 1;
+            $symbolCount[$sym]   = $sc + 1;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Map a scenario status string to a numeric sort priority (higher = better).
+     */
+    private function scenarioStatusPriority(string $status): int
+    {
+        return match ($status) {
+            'allow_live'  => 5,
+            'allow_demo'  => 4,
+            'shadow_only' => 3,
+            'sim_only'    => 2,
+            'rejected'    => 1,
+            default       => 0,
+        };
+    }
+
+    /**
+     * Try to load recent candles from Parser2 NDJSON history for a symbol.
+     *
+     * Parser2 stores per-minute ticker snapshots (last_price) in per-symbol NDJSON
+     * files. This method aggregates them into synthetic OHLCV bars for the requested
+     * timeframe. Returns null if no local data is available or data is insufficient.
+     *
+     * @return list<array{ts_unix:int,open:float,high:float,low:float,close:float,volume:float}>|null
+     */
+    private function loadInternalCandlesForSymbol(string $symbol, string $timeframe, int $minCandles): ?array
+    {
+        $bucketSec = $this->timeframeToMinutes($timeframe) * 60;
+        if ($bucketSec <= 0) {
+            return null;
+        }
+
+        $parser2Dir = __DIR__ . '/../../parser/parser2_history_accumulator/storage/' . $symbol;
+        if (!is_dir($parser2Dir)) {
+            return null;
+        }
+
+        $files = glob($parser2Dir . '/*.ndjson') ?: [];
+        if (empty($files)) {
+            return null;
+        }
+
+        // Load last 3 days of NDJSON files to cover sufficient lookback
+        sort($files);
+        $files = array_slice($files, -3);
+
+        $ticks = [];
+        foreach ($files as $f) {
+            $handle = @fopen($f, 'r');
+            if (!$handle) {
+                continue;
+            }
+            while (($line = fgets($handle)) !== false) {
+                $row    = json_decode(trim($line), true);
+                $tsUnix = (int)($row['ts_unix'] ?? 0);
+                $price  = (float)($row['last_price'] ?? 0.0);
+                if (!is_array($row) || $tsUnix <= 0 || $price <= 0.0) {
+                    continue;
+                }
+                $ticks[] = ['ts_unix' => $tsUnix, 'price' => $price];
+            }
+            fclose($handle);
+        }
+
+        if (empty($ticks)) {
+            return null;
+        }
+
+        // Sort chronologically
+        usort($ticks, fn($a, $b) => $a['ts_unix'] <=> $b['ts_unix']);
+
+        // Aggregate into OHLCV buckets for the requested timeframe
+        $buckets = [];
+        foreach ($ticks as $tick) {
+            $bucketTs = (int)(floor($tick['ts_unix'] / $bucketSec) * $bucketSec);
+            $buckets[$bucketTs][] = $tick['price'];
+        }
+        ksort($buckets);
+
+        $candles = [];
+        foreach ($buckets as $bucketTs => $prices) {
+            $candles[] = [
+                'ts_unix' => $bucketTs,
+                'open'    => $prices[0],
+                'high'    => max($prices),
+                'low'     => min($prices),
+                'close'   => $prices[count($prices) - 1],
+                'volume'  => 0.0, // volume24h is cumulative; delta not reliable here
+            ];
+        }
+
+        if (count($candles) < $minCandles) {
+            return null;
+        }
+
+        return $candles;
+    }
+
     /** @return array<string,mixed> */
     private function computeStats(array $candidates, array $signals, array $scenarios): array
     {
-        $perPattern  = [];
-        $perSymbol   = [];
+        $perPattern   = [];
+        $perSymbol    = [];
         $statusCounts = [];
 
         foreach ($candidates as $c) {
             $algo = $c['pattern_algorithm'] ?? 'unknown';
             $sym  = $c['symbol'] ?? 'unknown';
             $perPattern[$algo] = ($perPattern[$algo] ?? 0) + 1;
-            $perSymbol[$sym]   = ($perSymbol[$sym] ?? 0) + 1;
+            $perSymbol[$sym]   = ($perSymbol[$sym]   ?? 0) + 1;
         }
 
         foreach ($scenarios as $sc) {
-            $status = $sc['scenario_status'] ?? 'unknown';
+            $status = $sc['final_scenario_status'] ?? $sc['scenario_status'] ?? 'unknown';
             $statusCounts[$status] = ($statusCounts[$status] ?? 0) + 1;
         }
 
+        $symScanned = (int)($this->realRunStats['symbols_scanned'] ?? 0);
+        $stored     = count($signals);
+
         return [
             'generated_at'                      => date('c'),
-            'run_source'                        => $this->realRunStats['run_source'] ?? 'unknown',
-            'timeframe'                         => $this->realRunStats['timeframe'] ?? '',
-            'lookback_candles'                  => $this->realRunStats['lookback_candles'] ?? 0,
-            'symbols_total'                     => $this->realRunStats['symbols_total'] ?? 0,
-            'symbols_scanned'                   => $this->realRunStats['symbols_scanned'] ?? 0,
-            'symbols_skipped_insufficient_data' => $this->realRunStats['symbols_skipped_insufficient_data'] ?? 0,
-            'symbols_skipped_api_error'         => $this->realRunStats['symbols_skipped_api_error'] ?? 0,
+            'run_source'                        => $this->realRunStats['run_source']                        ?? 'unknown',
+            'primary_data_source'               => $this->realRunStats['primary_data_source']               ?? 'bybit_klines',
+            'fallback_data_source_used'         => (bool)($this->realRunStats['fallback_data_source_used']  ?? false),
+            'symbols_used_internal'             => (int)($this->realRunStats['symbols_used_internal']       ?? 0),
+            'symbols_used_bybit_fallback'       => (int)($this->realRunStats['symbols_used_bybit_fallback'] ?? 0),
+            'timeframe'                         => $this->realRunStats['timeframe']                         ?? '',
+            'lookback_candles'                  => $this->realRunStats['lookback_candles']                  ?? 0,
+            'symbols_total'                     => (int)($this->realRunStats['symbols_total']               ?? 0),
+            'symbols_scanned'                   => $symScanned,
+            'symbols_skipped_insufficient_data' => (int)($this->realRunStats['symbols_skipped_insufficient_data'] ?? 0),
+            'symbols_skipped_api_error'         => (int)($this->realRunStats['symbols_skipped_api_error']   ?? 0),
+            // Raw totals (before anti-flood dedup)
+            'raw_candidates_total'              => (int)($this->realRunStats['raw_candidates_total']        ?? count($candidates)),
+            'raw_signals_total'                 => (int)($this->realRunStats['raw_signals_total']           ?? count($signals)),
+            'raw_scenarios_total'               => (int)($this->realRunStats['raw_scenarios_total']         ?? count($scenarios)),
+            // After-dedup totals (before global cap)
+            'after_dedup_candidates'            => (int)($this->realRunStats['after_dedup_candidates']      ?? count($candidates)),
+            'after_dedup_signals'               => (int)($this->realRunStats['after_dedup_signals']         ?? count($signals)),
+            'after_dedup_scenarios'             => (int)($this->realRunStats['after_dedup_scenarios']       ?? count($scenarios)),
+            // Stored (final written)
             'candidates_count'                  => count($candidates),
-            'signals_count'                     => count($signals),
+            'signals_count'                     => $stored,
             'scenarios_count'                   => count($scenarios),
+            // Truncation flags
+            'candidates_truncated'              => (bool)($this->realRunStats['candidates_truncated']       ?? false),
+            'signals_truncated'                 => (bool)($this->realRunStats['signals_truncated']          ?? false),
+            'scenarios_truncated'               => (bool)($this->realRunStats['scenarios_truncated']        ?? false),
+            // Per-pattern / per-status breakdowns
             'per_pattern'                       => $perPattern,
             'per_symbol'                        => $perSymbol,
             'status_counts'                     => $statusCounts,
+            // Derived
+            'avg_signals_per_symbol'            => $symScanned > 0 ? round($stored / $symScanned, 2) : 0,
         ];
     }
 

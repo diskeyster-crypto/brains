@@ -38,6 +38,7 @@ class BotStore
             $this->storageDir . '/orders/active',
             $this->storageDir . '/orders/closed',
             $this->storageDir . '/runtime',
+            $this->storageDir . '/runtime/errors',
             $this->storageDir . '/stats',
             $this->storageDir . '/logs', // P7 fix: logs in storage/logs per manifest
         ];
@@ -128,6 +129,25 @@ class BotStore
             'last_updated'    => date('c'),
         ];
         $this->writeJson($this->storageDir . '/runtime/stats.json', $stats);
+
+        // Positions snapshot — derived from active trades so the Brain Execution
+        // page can show position data without an extra exchange API call.
+        $positions = [];
+        foreach ($activeTrades as $trade) {
+            $exchange = is_array($trade['exchange'] ?? null) ? $trade['exchange'] : [];
+            $prot     = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+            $positions[] = [
+                'trade_id'      => $trade['trade_id'] ?? null,
+                'symbol'        => $trade['symbol'] ?? null,
+                'side'          => $trade['side'] ?? null,
+                'size'          => $exchange['qty'] ?? 0,
+                'avgPrice'      => $exchange['entry_avg_price'] ?? 0,
+                'stopLoss'      => $prot['stop_loss_price'] ?? 0,
+                'opened_at'     => $trade['opened_at'] ?? null,
+                'protection_state' => $trade['runtime']['protection_state'] ?? ($trade['protection_state'] ?? null),
+            ];
+        }
+        $this->writeJson($this->storageDir . '/runtime/positions.json', $positions);
     }
     
     // =========================================================================
@@ -142,6 +162,30 @@ class BotStore
         $tradeId = $trade['trade_id'] ?? $trade['signal_id'] ?? uniqid('trade_');
         $path = $this->storageDir . '/trades/active/' . $tradeId . '.json';
         $this->writeJson($path, $trade);
+
+        // Verify the file was actually written — silent failures are the #1 cause of
+        // the Brain Execution page showing empty even after a successful opened_protected.
+        if (!is_file($path) || filesize($path) === 0) {
+            $errMsg = 'active_trade_persist_failed: trade_id=' . $tradeId . ' path=' . $path;
+            error_log('TradingBot: ' . $errMsg);
+            $this->logPersistError('active_trade_persist_failed', [
+                'trade_id'   => $tradeId,
+                'path'       => $path,
+                'dir_exists' => is_dir(dirname($path)),
+                'dir_writable' => is_writable(dirname($path)),
+                'ts'         => date('c'),
+            ]);
+
+            // Fallback: attempt non-atomic write so the trade is not silently lost
+            $json = json_encode($trade, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if ($json !== false) {
+                $dir = dirname($path);
+                if (!is_dir($dir)) {
+                    mkdir($dir, 0755, true);
+                }
+                file_put_contents($path, $json, LOCK_EX);
+            }
+        }
     }
     
     /**
@@ -161,7 +205,16 @@ class BotStore
         $dir = $this->storageDir . '/trades/active';
         return $this->loadAllFromDir($dir);
     }
-    
+
+    /**
+     * Check whether an active trade file exists for the given trade_id.
+     */
+    public function activeTradeExists(string $tradeId): bool
+    {
+        $path = $this->storageDir . '/trades/active/' . $tradeId . '.json';
+        return is_file($path) && filesize($path) > 0;
+    }
+
     /**
      * Move trade to closed directory
      */
@@ -398,7 +451,22 @@ public function saveClosedTrade(string $tradeId, array $trade): void
     // =========================================================================
     // Helpers
     // =========================================================================
-    
+
+    /**
+     * Write a named persist-error diagnostic to runtime/errors/ so failures
+     * after successful exchange execution are never silently swallowed.
+     */
+    private function logPersistError(string $code, array $context = []): void
+    {
+        $errorsDir = $this->storageDir . '/runtime/errors';
+        if (!is_dir($errorsDir)) {
+            @mkdir($errorsDir, 0755, true);
+        }
+        $ts = date('Ymd_His');
+        $path = $errorsDir . '/' . $code . '_' . $ts . '.json';
+        @file_put_contents($path, json_encode(array_merge(['code' => $code, 'ts' => date('c')], $context), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
     /**
      * Read JSON file
      */
@@ -450,7 +518,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         }
         
         $result = [];
-        $files = glob($dir . '/*.json');
+        $files = glob($dir . '/*.json') ?: [];
         
         foreach ($files as $file) {
             $data = $this->readJson($file);

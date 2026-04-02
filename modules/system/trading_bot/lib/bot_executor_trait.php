@@ -606,7 +606,16 @@ trait BotExecutorTrait
                 // ============================================================
                 $trade = $this->buildTradeLiveV1($intent, $order, $orderResult, $positionData, $sl, $trailing);
                 $this->store->saveActiveTrade($trade);
-                
+
+                // P-PERSIST-DIAG: Verify the active trade file was actually persisted.
+                // A silent write failure here means the Brain Execution page stays empty
+                // even though executed_index.json correctly shows opened_protected.
+                $persistedTradeId = $trade['trade_id'] ?? null;
+                if ($persistedTradeId !== null && !$this->store->activeTradeExists($persistedTradeId)) {
+                    $this->errors[] = 'opened_protected_without_trade_write: trade_id=' . $persistedTradeId;
+                    error_log('TradingBot: opened_protected but active trade file not found for trade_id=' . $persistedTradeId);
+                }
+
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_protected';
                 $result['ok'] = true;
@@ -1073,6 +1082,7 @@ trait BotExecutorTrait
             'schema_version' => 'trade_live_v2',
             'trade_id' => $intent['signal_id'] ?? $intent['id'],
             'signal_id' => $intent['signal_id'] ?? $intent['id'],
+            'opened_at' => date('c'),
             'symbol' => $intent['symbol'],
             'side' => $intent['side'],
             'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
@@ -1225,6 +1235,16 @@ trait BotExecutorTrait
         
         foreach ($trades as $tradeId => $trade) {
             try {
+                // Freshness guard: skip position verification for trades opened in the last 30 seconds.
+                // This prevents a race condition where updateActivePositions() immediately re-queries
+                // the exchange right after executeIntent() just confirmed the position is open, and
+                // a transient null response causes the trade to be moved to closed in the same cycle.
+                $openedAt = strtotime($trade['opened_at'] ?? '');
+                if ($openedAt > 0 && (time() - $openedAt) < 30) {
+                    $result['updated']++;
+                    continue;
+                }
+
                 // Get position from exchange
                 $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
                 

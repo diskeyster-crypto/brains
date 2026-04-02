@@ -523,4 +523,129 @@ final class SmartBrainController
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
+
+    // =========================================================================
+    // Pattern Engine control-plane (Brain acts as UI; logic stays in pattern_engine)
+    // =========================================================================
+
+    /**
+     * GET /admin/smart_brain/patterns
+     *
+     * Brain Patterns tab: overview, signals, scenario decisions from the new
+     * Pattern Engine — the single active upstream pattern source.
+     */
+    public function patterns(): void
+    {
+        $data = $this->service->getPatternEngineData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/patterns.php';
+    }
+
+    /**
+     * POST /admin/smart_brain/patterns/run
+     *
+     * Trigger a Pattern Engine run from Brain control-plane.
+     */
+    public function patternsRun(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+            return;
+        }
+
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+        $batch    = (is_array($body) && isset($body['batch']) && is_array($body['batch'])) ? $body['batch'] : [];
+
+        $result = $this->service->runPatternEngine($batch);
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'ok'               => true,
+            'candidates_count' => count($result['candidates'] ?? []),
+            'signals_count'    => count($result['signals'] ?? []),
+            'scenarios_count'  => count($result['scenarios'] ?? []),
+            'stats'            => $result['stats'] ?? [],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * POST /admin/smart_brain/patterns/save_config
+     */
+    public function patternsSaveConfig(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+            return;
+        }
+
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+
+        if (!is_array($body)) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'invalid_json']);
+            return;
+        }
+
+        $result = $this->service->savePatternEngineConfig($body);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/smart_brain/patterns/api/signals
+     */
+    public function patternsApiSignals(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($this->service->getPatternEngineSignals(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/smart_brain/patterns/api/scenarios
+     */
+    public function patternsApiScenarios(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($this->service->getPatternEngineScenarios(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * GET /admin/smart_brain/patterns/api/demo_signals
+     *
+     * Returns Pattern Engine demo-approved signals — the primary feed for
+     * downstream demo execution. This replaces the legacy Brain pattern path
+     * as the active upstream source.
+     */
+    public function patternsApiDemoSignals(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($this->service->getPatternEngineDemoSignals(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    // =========================================================================
+    // Module Configs hub (exposes per-module configs in Brain UI)
+    // =========================================================================
+
+    /**
+     * GET /admin/smart_brain/module_configs
+     *
+     * Central module-config hub — surfaces editable configs for all key modules:
+     * Pattern Engine, Coin Passport, Trading Bot, AI Shadow.
+     * Rendered through module-owned config descriptors (preparation for future
+     * unified user config layer).
+     */
+    public function moduleConfigs(): void
+    {
+        $data = $this->service->getModuleConfigsData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/module_configs.php';
+    }
 }

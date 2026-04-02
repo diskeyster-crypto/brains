@@ -1150,6 +1150,48 @@ Router::post('/admin/smart_brain/execution/save_config', function () {
     $controller->executionSaveConfig();
 });
 
+// Pattern Engine control-plane inside Brain
+Router::get('/admin/smart_brain/patterns', function () {
+    $controller = new SmartBrainController();
+    $controller->patterns();
+});
+
+Router::post('/admin/smart_brain/patterns/run', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsRun();
+});
+
+Router::post('/admin/smart_brain/patterns/save_config', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsSaveConfig();
+});
+
+Router::get('/admin/smart_brain/patterns/api/signals', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsApiSignals();
+});
+
+Router::get('/admin/smart_brain/patterns/api/scenarios', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsApiScenarios();
+});
+
+Router::get('/admin/smart_brain/patterns/api/demo_signals', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsApiDemoSignals();
+});
+
+// Module Configs hub inside Brain
+Router::get('/admin/smart_brain/module_configs', function () {
+    $controller = new SmartBrainController();
+    $controller->moduleConfigs();
+});
+
+Router::get('/admin/smart_brain/ai_shadow/journal', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowJournal();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

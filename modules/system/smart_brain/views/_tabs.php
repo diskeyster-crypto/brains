@@ -70,4 +70,14 @@ $activeTab = $activeTab ?? 'dashboard';
             <i class="bi bi-play-circle me-1"></i> Execution
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'patterns' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/patterns">
+            <i class="bi bi-grid-3x3-gap me-1"></i> Patterns
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'module_configs' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/module_configs">
+            <i class="bi bi-puzzle me-1"></i> Module Configs
+        </a>
+    </li>
 </ul>

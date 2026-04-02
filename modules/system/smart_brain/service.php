@@ -709,4 +709,251 @@ final class SmartBrainService
             ? ['ok' => true]
             : ['ok' => false, 'error' => 'write_failed'];
     }
+
+    // =========================================================================
+    // Pattern Engine control-plane delegation
+    // (Brain is UI/control-plane; all pattern logic stays in pattern_engine module)
+    // =========================================================================
+
+    /**
+     * Lazy-load the PatternEngineService.
+     */
+    private function getPatternEngineService(): object
+    {
+        static $svc = null;
+        if ($svc === null) {
+            $base = __DIR__ . '/../pattern_engine';
+            require_once $base . '/config/config.php';
+            require_once $base . '/lib/pattern_detector.php';
+            require_once $base . '/lib/signal_adapter.php';
+            require_once $base . '/lib/scenario_engine.php';
+            require_once $base . '/service.php';
+            $svc = new \PatternEngineService();
+        }
+        return $svc;
+    }
+
+    /**
+     * Aggregate all data the Brain Patterns page needs.
+     *
+     * @return array<string,mixed>
+     */
+    public function getPatternEngineData(): array
+    {
+        try {
+            $svc = $this->getPatternEngineService();
+            return [
+                'pe_available'  => true,
+                'pe_error'      => null,
+                'pe_config'     => $svc->getConfig(),
+                'pe_last_run'   => $svc->getLastRun(),
+                'pe_stats'      => $svc->getStats(),
+                'pe_candidates' => $svc->getCandidates(),
+                'pe_signals'    => $svc->getSignals(),
+                'pe_scenarios'  => $svc->getScenarios(),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'pe_available'  => false,
+                'pe_error'      => $e->getMessage(),
+                'pe_config'     => [],
+                'pe_last_run'   => [],
+                'pe_stats'      => [],
+                'pe_candidates' => [],
+                'pe_signals'    => [],
+                'pe_scenarios'  => [],
+            ];
+        }
+    }
+
+    /**
+     * Trigger a Pattern Engine run from Brain.
+     *
+     * @param  list<array<string,mixed>>  $batch  Optional market-data batch
+     * @return array<string,mixed>
+     */
+    public function runPatternEngine(array $batch = []): array
+    {
+        try {
+            return $this->getPatternEngineService()->runNow($batch);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Return Pattern Engine normalized signals (the new upstream source for Brain).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getPatternEngineSignals(): array
+    {
+        try {
+            return $this->getPatternEngineService()->getSignals();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Return Pattern Engine scenario decisions.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getPatternEngineScenarios(): array
+    {
+        try {
+            return $this->getPatternEngineService()->getScenarios();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Return Pattern Engine demo-approved signals.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function getPatternEngineDemoSignals(): array
+    {
+        try {
+            return $this->getPatternEngineService()->getDemoSignals();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Save Pattern Engine config from Brain UI.
+     *
+     * @param array<string,mixed> $values
+     * @return array{ok:bool,error?:string}
+     */
+    public function savePatternEngineConfig(array $values): array
+    {
+        try {
+            $svc     = $this->getPatternEngineService();
+            $current = $svc->getConfig();
+
+            $allowed = ['enabled', 'live_output_enabled', 'default_time_window_minutes'];
+            foreach ($allowed as $k) {
+                if (array_key_exists($k, $values)) {
+                    $current[$k] = $values[$k];
+                }
+            }
+
+            return $svc->saveConfig($current) ? ['ok' => true] : ['ok' => false, 'error' => 'write_failed'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    // =========================================================================
+    // Module config exposure for Brain config hub
+    // =========================================================================
+
+    /**
+     * Aggregate all module configs for the Brain Module Configs page.
+     *
+     * @return array<string,mixed>
+     */
+    public function getModuleConfigsData(): array
+    {
+        return [
+            'pattern_engine_config'  => $this->getModuleConfigSafe(__DIR__ . '/../pattern_engine/config/pattern_engine.json'),
+            'coin_passport_config'   => $this->getModuleConfigSafe(__DIR__ . '/../coin_passport/config/coin_passport.json'),
+            'trading_bot_config'     => $this->getModuleConfigSafe(__DIR__ . '/../trading_bot/config/bot.json'),
+            'ai_shadow_config'       => $this->getModuleConfigSafe(__DIR__ . '/../ai_shadow/config/ai_shadow.json'),
+            'pattern_engine_descriptor'  => $this->getPatternEngineDescriptor(),
+            'coin_passport_descriptor'   => $this->getCoinPassportDescriptor(),
+            'trading_bot_descriptor'     => $this->getTradingBotDescriptor(),
+            'ai_shadow_descriptor'       => $this->getAiShadowDescriptor(),
+        ];
+    }
+
+    /**
+     * Read a module JSON config safely; return [] if missing.
+     *
+     * @return array<string,mixed>
+     */
+    private function getModuleConfigSafe(string $path): array
+    {
+        if (!is_file($path)) {
+            return [];
+        }
+        $d = @json_decode((string)@file_get_contents($path), true);
+        return is_array($d) ? $d : [];
+    }
+
+    /**
+     * Config descriptor for Pattern Engine.
+     * Provides field metadata for rendering the config form in Brain UI.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function getPatternEngineDescriptor(): array
+    {
+        return [
+            ['key' => 'enabled',                      'label' => 'Engine Enabled',              'type' => 'bool',   'group' => 'Core',    'user_level' => true,  'safe_edit' => true],
+            ['key' => 'live_output_enabled',          'label' => 'Live Output Enabled',         'type' => 'bool',   'group' => 'Core',    'user_level' => true,  'safe_edit' => true,  'default' => false],
+            ['key' => 'default_time_window_minutes',  'label' => 'Default Time Window (min)',   'type' => 'int',    'group' => 'Core',    'user_level' => false, 'safe_edit' => true,  'default' => 15],
+            ['key' => 'storage.max_candidates_per_run','label'=> 'Max Candidates per Run',      'type' => 'int',    'group' => 'Storage', 'user_level' => false, 'safe_edit' => true,  'default' => 200],
+            ['key' => 'storage.max_signals_stored',   'label' => 'Max Signals Stored',          'type' => 'int',    'group' => 'Storage', 'user_level' => false, 'safe_edit' => true,  'default' => 500],
+            ['key' => 'storage.max_scenarios_stored', 'label' => 'Max Scenarios Stored',        'type' => 'int',    'group' => 'Storage', 'user_level' => false, 'safe_edit' => true,  'default' => 500],
+        ];
+    }
+
+    /**
+     * Config descriptor for Coin Passport.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function getCoinPassportDescriptor(): array
+    {
+        return [
+            ['key' => 'enabled',                         'label' => 'Passport Engine Enabled',  'type' => 'bool',  'group' => 'Core',       'user_level' => true,  'safe_edit' => true],
+            ['key' => 'min_corridor_p75_roi',            'label' => 'Min Corridor P75 ROI (%)', 'type' => 'float', 'group' => 'Live Gate',  'user_level' => true,  'safe_edit' => true,  'default' => 3.0],
+            ['key' => 'min_runner_probability',          'label' => 'Min Runner Probability',   'type' => 'float', 'group' => 'Live Gate',  'user_level' => true,  'safe_edit' => true,  'default' => 0.05],
+            ['key' => 'max_noise_score',                 'label' => 'Max Noise Score',          'type' => 'float', 'group' => 'Live Gate',  'user_level' => true,  'safe_edit' => true,  'default' => 0.65],
+            ['key' => 'min_suitability_score',           'label' => 'Min Suitability Score',    'type' => 'float', 'group' => 'Live Gate',  'user_level' => true,  'safe_edit' => true,  'default' => 0.30],
+            ['key' => 'min_market_regime_health_score',  'label' => 'Min Regime Health Score',  'type' => 'float', 'group' => 'Live Gate',  'user_level' => false, 'safe_edit' => true,  'default' => 0.30],
+        ];
+    }
+
+    /**
+     * Config descriptor for Trading Bot.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function getTradingBotDescriptor(): array
+    {
+        return [
+            ['key' => 'enabled',            'label' => 'Bot Enabled',           'type' => 'bool',   'group' => 'Core',      'user_level' => true,  'safe_edit' => true],
+            ['key' => 'mode',               'label' => 'Mode',                  'type' => 'select', 'group' => 'Core',      'user_level' => true,  'safe_edit' => true,  'options' => ['live','demo','paper','dry']],
+            ['key' => 'max_positions',      'label' => 'Max Open Positions',    'type' => 'int',    'group' => 'Core',      'user_level' => true,  'safe_edit' => true,  'default' => 3],
+            ['key' => 'exchange.leverage',  'label' => 'Leverage',              'type' => 'int',    'group' => 'Exchange',  'user_level' => true,  'safe_edit' => true,  'default' => 5],
+            ['key' => 'execution.stop_loss_pct',    'label' => 'Stop Loss %',       'type' => 'float', 'group' => 'Execution', 'user_level' => true, 'safe_edit' => true],
+            ['key' => 'execution.take_profit_pct',  'label' => 'Take Profit %',     'type' => 'float', 'group' => 'Execution', 'user_level' => true, 'safe_edit' => true],
+            ['key' => 'execution.trailing_enabled', 'label' => 'Trailing Stop',     'type' => 'bool',  'group' => 'Execution', 'user_level' => true, 'safe_edit' => true],
+        ];
+    }
+
+    /**
+     * Config descriptor for AI Shadow.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function getAiShadowDescriptor(): array
+    {
+        return [
+            ['key' => 'enabled',                    'label' => 'AI Shadow Enabled',          'type' => 'bool',   'group' => 'Core',      'user_level' => true,  'safe_edit' => true],
+            ['key' => 'mode',                       'label' => 'Shadow Mode',                'type' => 'select', 'group' => 'Core',      'user_level' => false, 'safe_edit' => false, 'options' => ['shadow','sim','disabled']],
+            ['key' => 'provider',                   'label' => 'AI Provider',                'type' => 'string', 'group' => 'AI',        'user_level' => false, 'safe_edit' => true],
+            ['key' => 'model',                      'label' => 'AI Model',                   'type' => 'string', 'group' => 'AI',        'user_level' => false, 'safe_edit' => true],
+            ['key' => 'credential_id',              'label' => 'Credential ID',              'type' => 'string', 'group' => 'AI',        'user_level' => false, 'safe_edit' => true],
+            ['key' => 'max_signals_per_run',        'label' => 'Max Signals per Run',        'type' => 'int',    'group' => 'Limits',    'user_level' => false, 'safe_edit' => true],
+            ['key' => 'confidence_threshold_enter', 'label' => 'Enter Confidence Threshold', 'type' => 'float',  'group' => 'Thresholds','user_level' => false, 'safe_edit' => true],
+            ['key' => 'quality_score_threshold',    'label' => 'Quality Score Threshold',    'type' => 'float',  'group' => 'Thresholds','user_level' => false, 'safe_edit' => true],
+        ];
+    }
 }

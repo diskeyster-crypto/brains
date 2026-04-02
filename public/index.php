@@ -1394,6 +1394,75 @@ Router::get('/admin/coin_passport/api/guidance/{symbol}', function (string $symb
 });
 
 // ============================================================
+// PATTERN ENGINE MODULE ROUTES
+// ============================================================
+
+require_once ROOT . '/modules/system/pattern_engine/controller.php';
+
+// UI
+Router::get('/admin/pattern_engine', function () {
+    $controller = new PatternEngineController();
+    $controller->index();
+});
+
+Router::get('/admin/pattern_engine/candidates', function () {
+    $controller = new PatternEngineController();
+    $controller->candidates();
+});
+
+Router::get('/admin/pattern_engine/signals', function () {
+    $controller = new PatternEngineController();
+    $controller->signals();
+});
+
+Router::get('/admin/pattern_engine/scenarios', function () {
+    $controller = new PatternEngineController();
+    $controller->scenarios();
+});
+
+Router::get('/admin/pattern_engine/settings', function () {
+    $controller = new PatternEngineController();
+    $controller->settings();
+});
+
+// Actions
+Router::post('/admin/pattern_engine/settings/save', function () {
+    $controller = new PatternEngineController();
+    $controller->saveSettings();
+});
+
+Router::post('/admin/pattern_engine/clear', function () {
+    $controller = new PatternEngineController();
+    $controller->clearStorage();
+});
+
+// API (read-only, for Demo Execution / AI Shadow / Simulator integration)
+Router::get('/admin/pattern_engine/api/signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiSignals();
+});
+
+Router::get('/admin/pattern_engine/api/scenarios', function () {
+    $controller = new PatternEngineController();
+    $controller->apiScenarios();
+});
+
+Router::get('/admin/pattern_engine/api/demo_signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiDemoSignals();
+});
+
+Router::get('/admin/pattern_engine/api/shadow_signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiShadowSignals();
+});
+
+Router::get('/admin/pattern_engine/api/sim_signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiSimSignals();
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

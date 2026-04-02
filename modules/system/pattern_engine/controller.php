@@ -1,0 +1,172 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/service.php';
+
+/**
+ * PatternEngineController
+ *
+ * UI and API controller for the standalone Pattern Engine module.
+ *
+ * UI routes:
+ *   GET  /admin/pattern_engine                    → overview
+ *   GET  /admin/pattern_engine/candidates         → raw candidates
+ *   GET  /admin/pattern_engine/signals            → normalized signals
+ *   GET  /admin/pattern_engine/scenarios          → scenario decisions
+ *   GET  /admin/pattern_engine/settings           → settings page
+ *
+ * Action routes:
+ *   POST /admin/pattern_engine/settings/save      → save config
+ *   POST /admin/pattern_engine/clear              → clear storage
+ *
+ * API routes:
+ *   GET  /admin/pattern_engine/api/signals        → normalized signals JSON
+ *   GET  /admin/pattern_engine/api/scenarios      → scenario decisions JSON
+ *   GET  /admin/pattern_engine/api/demo_signals   → signals allowed for demo
+ *   GET  /admin/pattern_engine/api/shadow_signals → signals allowed for shadow
+ *   GET  /admin/pattern_engine/api/sim_signals    → signals allowed for simulator
+ */
+final class PatternEngineController
+{
+    private PatternEngineService $service;
+    private string $baseUrl;
+
+    public function __construct()
+    {
+        $this->service = new PatternEngineService();
+        $this->baseUrl = '/admin/pattern_engine';
+    }
+
+    // =========================================================================
+    // UI pages
+    // =========================================================================
+
+    /** GET /admin/pattern_engine */
+    public function index(): void
+    {
+        $lastRun    = $this->service->getLastRun();
+        $stats      = $this->service->getStats();
+        $candidates = $this->service->getCandidates();
+        $signals    = $this->service->getSignals();
+        $scenarios  = $this->service->getScenarios();
+        $baseUrl    = $this->baseUrl;
+
+        include __DIR__ . '/views/index.php';
+    }
+
+    /** GET /admin/pattern_engine/candidates */
+    public function candidates(): void
+    {
+        $candidates = $this->service->getCandidates();
+        $baseUrl    = $this->baseUrl;
+
+        include __DIR__ . '/views/candidates.php';
+    }
+
+    /** GET /admin/pattern_engine/signals */
+    public function signals(): void
+    {
+        $signals = $this->service->getSignals();
+        $baseUrl = $this->baseUrl;
+
+        include __DIR__ . '/views/signals.php';
+    }
+
+    /** GET /admin/pattern_engine/scenarios */
+    public function scenarios(): void
+    {
+        $scenarios = $this->service->getScenarios();
+        $baseUrl   = $this->baseUrl;
+
+        include __DIR__ . '/views/scenarios.php';
+    }
+
+    /** GET /admin/pattern_engine/settings */
+    public function settings(): void
+    {
+        $config  = $this->service->getConfig();
+        $baseUrl = $this->baseUrl;
+
+        include __DIR__ . '/views/settings.php';
+    }
+
+    // =========================================================================
+    // Action routes
+    // =========================================================================
+
+    /** POST /admin/pattern_engine/settings/save */
+    public function saveSettings(): void
+    {
+        $body   = (string)file_get_contents('php://input');
+        $posted = json_decode($body, true);
+
+        if (!is_array($posted)) {
+            $posted = $_POST;
+        }
+
+        // Merge only safe top-level keys
+        $current = $this->service->getConfig();
+
+        if (isset($posted['enabled'])) {
+            $current['enabled'] = (bool)$posted['enabled'];
+        }
+        if (isset($posted['default_time_window_minutes'])) {
+            $current['default_time_window_minutes'] = (int)$posted['default_time_window_minutes'];
+        }
+        if (isset($posted['scenario_profiles']) && is_array($posted['scenario_profiles'])) {
+            $current['scenario_profiles'] = $posted['scenario_profiles'];
+        }
+
+        $ok = $this->service->saveConfig($current);
+
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => $ok]);
+    }
+
+    /** POST /admin/pattern_engine/clear */
+    public function clearStorage(): void
+    {
+        $this->service->clearStorage();
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => true]);
+    }
+
+    // =========================================================================
+    // API routes (JSON read-only)
+    // =========================================================================
+
+    /** GET /admin/pattern_engine/api/signals */
+    public function apiSignals(): void
+    {
+        header('Content-Type: application/json');
+        echo json_encode($this->service->getSignals());
+    }
+
+    /** GET /admin/pattern_engine/api/scenarios */
+    public function apiScenarios(): void
+    {
+        header('Content-Type: application/json');
+        echo json_encode($this->service->getScenarios());
+    }
+
+    /** GET /admin/pattern_engine/api/demo_signals */
+    public function apiDemoSignals(): void
+    {
+        header('Content-Type: application/json');
+        echo json_encode($this->service->getDemoSignals());
+    }
+
+    /** GET /admin/pattern_engine/api/shadow_signals */
+    public function apiShadowSignals(): void
+    {
+        header('Content-Type: application/json');
+        echo json_encode($this->service->getShadowSignals());
+    }
+
+    /** GET /admin/pattern_engine/api/sim_signals */
+    public function apiSimSignals(): void
+    {
+        header('Content-Type: application/json');
+        echo json_encode($this->service->getSimSignals());
+    }
+}

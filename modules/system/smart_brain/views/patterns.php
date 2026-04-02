@@ -137,6 +137,7 @@ $passportOkCount    = (int)($pe_last_run['passport_lookup_success_count']    ?? 
 $passportFailCount  = (int)($pe_last_run['passport_lookup_failed_count']     ?? $pe_stats['last_run']['passport_lookup_failed_count']     ?? 0);
 
 $allowDemoCount       = (int)($pe_last_run['allow_demo_count']              ?? $pe_stats['last_run']['allow_demo_count']              ?? 0);
+$allowDemoLcCount     = (int)($pe_last_run['allow_demo_low_confidence_count'] ?? $pe_stats['last_run']['allow_demo_low_confidence_count'] ?? 0);
 $allowSimCount        = (int)($pe_last_run['allow_sim_count']               ?? $pe_stats['last_run']['allow_sim_count']               ?? 0);
 $shadowOnlyCount      = (int)($pe_last_run['shadow_only_count']             ?? $pe_stats['last_run']['shadow_only_count']             ?? 0);
 $rejectCount          = (int)($pe_last_run['reject_count']                  ?? $pe_stats['last_run']['reject_count']                  ?? 0);
@@ -144,6 +145,8 @@ $demoBlockCounts      = (array)($pe_last_run['demo_block_counts']           ?? $
 $demoNearMissCount    = (int)($pe_last_run['demo_near_miss_count']          ?? $pe_stats['last_run']['demo_near_miss_count']          ?? 0);
 $demoCandidateCount   = (int)($pe_last_run['demo_candidate_signals_count']  ?? $pe_stats['last_run']['demo_candidate_signals_count']  ?? 0);
 $topDemoBlockReasons  = (array)($pe_last_run['top_demo_block_reasons']      ?? $pe_stats['last_run']['top_demo_block_reasons']        ?? []);
+$demoLcBlockCount     = (int)($pe_last_run['demo_low_confidence_block_count']   ?? $pe_stats['last_run']['demo_low_confidence_block_count']   ?? 0);
+$demoLcBlockReasons   = (array)($pe_last_run['demo_low_confidence_block_reasons'] ?? $pe_stats['last_run']['demo_low_confidence_block_reasons'] ?? []);
 
 $patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
 $passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
@@ -285,6 +288,12 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
                 </div>
             </div>
             <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $allowDemoLcCount > 0 ? '#0d9488' : '#334155' ?>;" title="Signals promoted via low-confidence demo policy (passport present, data low/insufficient, passes quality/noise gates)">
+                    <div class="pe-stat-value" style="color:<?= $allowDemoLcCount > 0 ? '#2dd4bf' : '#6b7280' ?>;"><?= $allowDemoLcCount ?></div>
+                    <div class="pe-stat-label">demo (low-conf)</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
                 <div class="pe-stat-card" style="border-color:<?= $allowSimCount > 0 ? '#d97706' : '#334155' ?>;">
                     <div class="pe-stat-value" style="color:<?= $allowSimCount > 0 ? '#fbbf24' : '#6b7280' ?>;"><?= $allowSimCount ?></div>
                     <div class="pe-stat-label">allow_sim</div>
@@ -294,12 +303,6 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
                 <div class="pe-stat-card" style="border-color:<?= $shadowOnlyCount > 0 ? '#7c3aed' : '#334155' ?>;">
                     <div class="pe-stat-value" style="color:<?= $shadowOnlyCount > 0 ? '#a78bfa' : '#6b7280' ?>;"><?= $shadowOnlyCount ?></div>
                     <div class="pe-stat-label">shadow_only</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-2">
-                <div class="pe-stat-card" style="border-color:<?= $rejectCount > 0 ? '#6b7280' : '#334155' ?>;">
-                    <div class="pe-stat-value" style="color:#6b7280;"><?= $rejectCount ?></div>
-                    <div class="pe-stat-label">reject</div>
                 </div>
             </div>
             <div class="col-6 col-md-2">
@@ -370,7 +373,49 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
                 <?php endforeach; ?>
             </div>
         </div>
-        <?php endif; ?>
+        <?php
+        $lcPolicyCfg = (array)($dpBlock['demo_low_confidence_policy'] ?? []);
+        if (!empty($lcPolicyCfg)):
+        ?>
+        <div class="mt-2 p-2" style="background:#0f172a; border:1px solid <?= !empty($lcPolicyCfg['enabled']) ? '#0d9488' : '#475569' ?>; border-radius:6px;">
+            <div class="small mb-1">
+                <span class="<?= !empty($lcPolicyCfg['enabled']) ? 'text-teal' : 'text-secondary' ?>" style="color:<?= !empty($lcPolicyCfg['enabled']) ? '#2dd4bf' : '#6b7280' ?>;">
+                    <i class="bi bi-shield-check me-1"></i><strong>Low-confidence demo policy:</strong>
+                    <?= !empty($lcPolicyCfg['enabled']) ? '<span class="badge" style="background:#0d9488;font-size:0.65rem;">enabled</span>' : '<span class="badge bg-secondary" style="font-size:0.65rem;">disabled</span>' ?>
+                </span>
+                <?php if ($allowDemoLcCount > 0): ?>
+                <span class="badge ms-2" style="background:#0d9488; font-size:0.65rem;"><?= $allowDemoLcCount ?> promoted this run</span>
+                <?php endif; ?>
+            </div>
+            <div class="row g-1">
+                <?php
+                $lcThresholdItems = [
+                    ['require_signal_strength_min', 'Min Strength'],
+                    ['require_quality_score_min',   'Min Quality'],
+                    ['require_noise_score_max',     'Max Noise'],
+                    ['max_demo_low_confidence_signals_per_run', 'Cap/run'],
+                ];
+                foreach ($lcThresholdItems as [$k, $lbl]):
+                    $v = $lcPolicyCfg[$k] ?? null;
+                    if ($v === null) continue;
+                ?>
+                <div class="col-6 col-md-3">
+                    <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
+                        <span class="text-secondary"><?= $lbl ?>:</span>
+                        <span class="text-info ms-1"><?= htmlspecialchars((string)$v) ?></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (!empty($demoLcBlockReasons)): ?>
+            <div class="mt-1 small text-secondary">Blocked by low-conf policy (<?= $demoLcBlockCount ?>):
+                <?php foreach (array_slice($demoLcBlockReasons, 0, 3, true) as $r => $c): ?>
+                    <span class="badge ms-1" style="background:#1e293b; border:1px solid #475569; font-size:0.65rem;"><?= htmlspecialchars(str_replace('lc_demo_', '', $r)) ?> <span class="text-warning"><?= $c ?></span></span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; endif; ?>
         <?php if ($demoNearMissCount > 0): ?>
         <div class="mt-2 p-2" style="background:#1c1917; border:1px solid #b45309; border-radius:6px;">
             <div class="text-warning small"><i class="bi bi-bullseye me-1"></i><strong><?= $demoNearMissCount ?> near-miss signal(s)</strong> — passport present, blocked by only 1–2 checks. These are the closest candidates for demo promotion.</div>
@@ -691,7 +736,14 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <td><?= isset($diag['passport_corridor_p75_roi']) ? number_format((float)$diag['passport_corridor_p75_roi'], 2) : '—' ?></td>
                 <td><?= isset($diag['passport_runner_probability']) ? number_format((float)$diag['passport_runner_probability'], 3) : '—' ?></td>
                 <td><?= isset($diag['passport_noise_score']) ? number_format((float)$diag['passport_noise_score'], 2) : '—' ?></td>
-                <td><small class="text-warning" style="font-size:0.65rem;"><?= $diag['demo_block_reason'] ? htmlspecialchars(str_replace('demo_blocked_', '', $diag['demo_block_reason'])) : '' ?></small></td>
+                <td><small class="text-warning" style="font-size:0.65rem;"><?= $diag['demo_block_reason'] ? htmlspecialchars(str_replace('demo_blocked_', '', $diag['demo_block_reason'])) : '' ?><?php
+                    if (!empty($diag['demo_low_confidence_policy_used'])) {
+                        echo '<span class="badge ms-1" style="background:#0d9488;font-size:0.6rem;" title="Graduated via low-confidence demo policy">lc</span>';
+                    }
+                    if (!empty($diag['demo_low_confidence_block_reason'])) {
+                        echo '<br><span style="color:#94a3b8;font-size:0.6rem;">' . htmlspecialchars(str_replace('lc_demo_', '', (string)$diag['demo_low_confidence_block_reason'])) . '</span>';
+                    }
+                ?></small></td>
                 <td><?php
                     if (!empty($diag['demo_near_miss'])) {
                         $failedChecks = (array)($diag['demo_failed_checks'] ?? []);

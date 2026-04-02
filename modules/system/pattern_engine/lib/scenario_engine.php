@@ -78,6 +78,12 @@ final class ScenarioEngine
     private array $downstreamPolicy;
 
     /**
+     * Per-run counter for signals graduated via the low-confidence demo policy.
+     * Enforces the max_demo_low_confidence_signals_per_run cap.
+     */
+    private int $demoLowConfidenceGranted = 0;
+
+    /**
      * @param array<string,array<string,mixed>> $profiles          Scenario profiles from config
      * @param string                            $passportDir       Path to coin_passport passports/
      * @param bool                              $liveOutputEnabled Master live-output gate (default false)
@@ -85,10 +91,11 @@ final class ScenarioEngine
      */
     public function __construct(array $profiles, string $passportDir, bool $liveOutputEnabled = false, array $downstreamPolicy = [])
     {
-        $this->profiles          = $profiles;
-        $this->passportDir       = $passportDir;
-        $this->liveOutputEnabled = $liveOutputEnabled;
-        $this->downstreamPolicy  = $downstreamPolicy;
+        $this->profiles                  = $profiles;
+        $this->passportDir               = $passportDir;
+        $this->liveOutputEnabled         = $liveOutputEnabled;
+        $this->downstreamPolicy          = $downstreamPolicy;
+        $this->demoLowConfidenceGranted  = 0;
     }
 
     /**
@@ -460,6 +467,13 @@ final class ScenarioEngine
                 'demo_failed_checks'          => $downstreamResult['demo_failed_checks'] ?? [],
                 'demo_thresholds_used'        => $downstreamResult['demo_thresholds_used'] ?? null,
                 'demo_actual_values'          => $downstreamResult['demo_actual_values']  ?? null,
+                // Low-confidence demo policy diagnostics
+                'demo_graduation_mode'                   => $downstreamResult['demo_graduation_mode']                   ?? null,
+                'demo_graduation_reason'                 => $downstreamResult['demo_graduation_reason']                 ?? null,
+                'demo_low_confidence_policy_used'        => (bool)($downstreamResult['demo_low_confidence_policy_used'] ?? false),
+                'demo_low_confidence_checks_passed'      => $downstreamResult['demo_low_confidence_checks_passed']      ?? [],
+                'demo_low_confidence_checks_failed'      => $downstreamResult['demo_low_confidence_checks_failed']      ?? [],
+                'demo_low_confidence_block_reason'       => $downstreamResult['demo_low_confidence_block_reason']       ?? null,
                 'downstream_policy_thresholds'=> !empty($downstreamResult) ? [
                     'demo_require_passport'        => $this->downstreamPolicy['demo_require_passport']        ?? null,
                     'demo_min_signal_strength'     => $this->downstreamPolicy['demo_min_signal_strength']     ?? null,
@@ -504,6 +518,12 @@ final class ScenarioEngine
         $demoChecks      = [];
         $simChecks       = [];
         $demoBlockReason = null;
+
+        // Low-confidence policy state (set if the policy block runs)
+        $lcPolicyUsed        = false;
+        $lcPassedChecks      = [];
+        $lcFailedChecks      = [];
+        $lcBlockReason       = null;
 
         // Snapshot threshold config for transparency
         $demoThresholdsUsed = [
@@ -671,6 +691,114 @@ final class ScenarioEngine
                 && count($demoFailedChecks) > 0
                 && count($demoFailedChecks) <= $nearMissMax
             );
+
+            // ---- Low-confidence demo policy fallback ----
+            // Applies when standard demo gate failed but passport is present.
+            // Allows a controlled subset of low-confidence / insufficient-data signals
+            // to reach demo, subject to tighter quality/noise gates and a per-run cap.
+            $lcPolicy = (array)($policy['demo_low_confidence_policy'] ?? []);
+            if (
+                $demoBlockReason !== null
+                && !empty($lcPolicy['enabled'])
+                && $passport !== null
+                && $demoBlockReason !== 'demo_blocked_no_passport'
+            ) {
+                $lcChecks = [];
+
+                // cap check
+                $lcCap = (int)($lcPolicy['max_demo_low_confidence_signals_per_run'] ?? 5);
+                if ($this->demoLowConfidenceGranted >= $lcCap) {
+                    $lcBlockReason = 'lc_demo_cap_reached';
+                    $lcChecks[] = ['check' => 'lc_cap', 'pass' => false, 'threshold' => $lcCap, 'value' => $this->demoLowConfidenceGranted];
+                } else {
+                    $lcChecks[] = ['check' => 'lc_cap', 'pass' => true, 'threshold' => $lcCap, 'value' => $this->demoLowConfidenceGranted];
+                }
+
+                // confidence or insufficient_data qualifier: signal must actually be low-confidence
+                if ($lcBlockReason === null) {
+                    $allowWhenConf      = (array)($lcPolicy['allow_when_data_confidence']    ?? ['low', 'none']);
+                    $allowIfInsufficient= (bool)($lcPolicy['allow_if_insufficient_data_flag'] ?? true);
+                    $rawLcConf          = strtolower((string)($passport['data_confidence'] ?? 'none'));
+                    $hasInsufficientFlag= !empty($passport['insufficient_data_flag']);
+                    $qualifiesAsLowConf = in_array($rawLcConf, $allowWhenConf, true) || ($allowIfInsufficient && $hasInsufficientFlag);
+                    if (!$qualifiesAsLowConf) {
+                        $lcBlockReason = 'lc_demo_signal_not_low_confidence';
+                        $lcChecks[] = ['check' => 'lc_confidence_qualifier', 'pass' => false, 'value' => $rawLcConf, 'insufficient_flag' => $hasInsufficientFlag];
+                    } else {
+                        $lcChecks[] = ['check' => 'lc_confidence_qualifier', 'pass' => true, 'value' => $rawLcConf, 'insufficient_flag' => $hasInsufficientFlag];
+                    }
+                }
+
+                // signal_strength
+                $lcMinStr = (float)($lcPolicy['require_signal_strength_min'] ?? 0.0);
+                if ($lcBlockReason === null && $lcMinStr > 0 && $signalStrength < $lcMinStr) {
+                    $lcBlockReason = 'lc_demo_low_strength';
+                    $lcChecks[] = ['check' => 'lc_signal_strength', 'pass' => false, 'threshold' => $lcMinStr, 'value' => $signalStrength];
+                } else {
+                    $lcChecks[] = ['check' => 'lc_signal_strength', 'pass' => true, 'threshold' => $lcMinStr, 'value' => $signalStrength];
+                }
+
+                // quality_score
+                $lcMinQual = (float)($lcPolicy['require_quality_score_min'] ?? 0.0);
+                if ($lcBlockReason === null && $lcMinQual > 0 && $qualityScore < $lcMinQual) {
+                    $lcBlockReason = 'lc_demo_low_quality';
+                    $lcChecks[] = ['check' => 'lc_quality_score', 'pass' => false, 'threshold' => $lcMinQual, 'value' => $qualityScore];
+                } else {
+                    $lcChecks[] = ['check' => 'lc_quality_score', 'pass' => true, 'threshold' => $lcMinQual, 'value' => $qualityScore];
+                }
+
+                // noise_score
+                $lcMaxNoise = (float)($lcPolicy['require_noise_score_max'] ?? 1.0);
+                if ($lcBlockReason === null && $lcMaxNoise < 1.0) {
+                    $lcNoise = (float)($passport['noise_score'] ?? 0.0);
+                    if ($lcNoise > $lcMaxNoise) {
+                        $lcBlockReason = 'lc_demo_high_noise';
+                        $lcChecks[] = ['check' => 'lc_noise_score', 'pass' => false, 'threshold' => $lcMaxNoise, 'value' => $lcNoise];
+                    } else {
+                        $lcChecks[] = ['check' => 'lc_noise_score', 'pass' => true, 'threshold' => $lcMaxNoise, 'value' => $lcNoise];
+                    }
+                }
+
+                // short_suitability (optional gate — only when > 0)
+                $lcMinShort = (float)($lcPolicy['require_short_suitability_min'] ?? 0.0);
+                if ($lcBlockReason === null && $lcMinShort > 0) {
+                    $lcShort = (float)($passport['short_suitability_score'] ?? 0.0);
+                    if ($lcShort < $lcMinShort) {
+                        $lcBlockReason = 'lc_demo_low_short_suitability';
+                        $lcChecks[] = ['check' => 'lc_short_suitability', 'pass' => false, 'threshold' => $lcMinShort, 'value' => $lcShort];
+                    } else {
+                        $lcChecks[] = ['check' => 'lc_short_suitability', 'pass' => true, 'threshold' => $lcMinShort, 'value' => $lcShort];
+                    }
+                }
+
+                $lcPassedChecks = array_values(array_map(fn($c) => $c['check'], array_filter($lcChecks, fn($c) => $c['pass'] === true)));
+                $lcFailedChecks = array_values(array_map(fn($c) => $c['check'], array_filter($lcChecks, fn($c) => $c['pass'] === false)));
+
+                if ($lcBlockReason === null) {
+                    // Low-confidence policy passed — graduate to allow_demo
+                    $this->demoLowConfidenceGranted++;
+                    $lcPolicyUsed = true;
+                    return [
+                        'bucket'                              => 'allow_demo',
+                        'reason'                              => 'downstream_policy_lc_demo_gate_passed',
+                        'demo_checks'                         => $demoChecks,
+                        'sim_checks'                          => [],
+                        'demo_block_reason'                   => null,
+                        'demo_near_miss'                      => false,
+                        'demo_passed_checks'                  => $demoPassedChecks,
+                        'demo_failed_checks'                  => [],
+                        'demo_thresholds_used'                => $demoThresholdsUsed,
+                        'demo_actual_values'                  => $demoActualValues,
+                        'demo_graduation_mode'                => 'low_confidence_policy',
+                        'demo_graduation_reason'              => 'lc_demo_gate_passed',
+                        'demo_low_confidence_policy_used'     => true,
+                        'demo_low_confidence_checks_passed'   => $lcPassedChecks,
+                        'demo_low_confidence_checks_failed'   => [],
+                        'demo_low_confidence_block_reason'    => null,
+                    ];
+                }
+                // Low-confidence policy also failed — outer-scope $lcBlockReason/$lcPassedChecks/$lcFailedChecks are set
+            }
         } else {
             $demoBlockReason  = 'allow_demo_disabled_by_policy';
             $demoPassedChecks = [];
@@ -718,6 +846,12 @@ final class ScenarioEngine
                     'demo_failed_checks' => $demoFailedChecks ?? [],
                     'demo_thresholds_used' => $demoThresholdsUsed,
                     'demo_actual_values'   => $demoActualValues,
+                    'demo_graduation_mode'                => null,
+                    'demo_graduation_reason'              => null,
+                    'demo_low_confidence_policy_used'     => $lcPolicyUsed,
+                    'demo_low_confidence_checks_passed'   => $lcPassedChecks,
+                    'demo_low_confidence_checks_failed'   => $lcFailedChecks,
+                    'demo_low_confidence_block_reason'    => $lcBlockReason,
                 ];
             }
         }
@@ -734,6 +868,12 @@ final class ScenarioEngine
             'demo_failed_checks' => $demoFailedChecks ?? [],
             'demo_thresholds_used' => $demoThresholdsUsed,
             'demo_actual_values'   => $demoActualValues,
+            'demo_graduation_mode'                => null,
+            'demo_graduation_reason'              => null,
+            'demo_low_confidence_policy_used'     => $lcPolicyUsed,
+            'demo_low_confidence_checks_passed'   => $lcPassedChecks,
+            'demo_low_confidence_checks_failed'   => $lcFailedChecks,
+            'demo_low_confidence_block_reason'    => $lcBlockReason,
         ];
     }
 

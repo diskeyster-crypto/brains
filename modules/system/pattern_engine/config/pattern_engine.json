@@ -148,7 +148,18 @@
         "demo_near_miss_max_failed_checks": 2,
         "sim_require_passport": false,
         "sim_min_quality_score": 0.20,
-        "sim_min_signal_strength": 0.25
+        "sim_min_signal_strength": 0.25,
+        "demo_low_confidence_policy": {
+            "enabled": true,
+            "allow_when_data_confidence": ["low", "none"],
+            "allow_if_insufficient_data_flag": true,
+            "require_quality_score_min": 0.30,
+            "require_signal_strength_min": 0.35,
+            "require_noise_score_max": 0.75,
+            "require_short_suitability_min": 0.0,
+            "max_demo_low_confidence_signals_per_run": 5,
+            "require_passport_lookup_success": true
+        }
     },
     "storage": {
         "max_candidates_per_run": 200,

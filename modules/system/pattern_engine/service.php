@@ -602,12 +602,15 @@ final class PatternEngineService
         $this->realRunStats['passport_coverage_candidates'] = array_slice($coverageCandidates, 0, 20);
 
         // Downstream bucket counters (from downstream graduation policy decisions)
-        $allowDemoCount       = 0;
+        $allowDemoCount              = 0;
+        $allowDemoLowConfidenceCount = 0;
         $allowSimCount        = 0;
         $shadowOnlyCount      = 0;
         $rejectCount          = 0;
         $demoNearMissCount    = 0;
         $demoCandidateCount   = 0;
+        $demoLowConfidenceBlockCount   = 0;
+        $demoLowConfidenceBlockReasons = [];
         $demoBlockCounts = [
             'demo_blocked_no_passport'                  => 0,
             'demo_blocked_low_quality'                  => 0,
@@ -624,6 +627,9 @@ final class PatternEngineService
             $bucket = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
             if ($bucket === 'allow_demo') {
                 $allowDemoCount++;
+                if (!empty($sc['diagnostics']['demo_low_confidence_policy_used'])) {
+                    $allowDemoLowConfidenceCount++;
+                }
             } elseif ($bucket === 'allow_sim' || $bucket === 'sim_only') {
                 $allowSimCount++;
             } elseif ($bucket === 'shadow_only' || $bucket === 'allow_shadow') {
@@ -655,6 +661,12 @@ final class PatternEngineService
             if ($hasPassport && in_array($bucket, ['allow_sim', 'sim_only', 'shadow_only', 'allow_shadow'], true)) {
                 $demoCandidateCount++;
             }
+            // Low-confidence policy block counter
+            $lcBlockReason = $sc['diagnostics']['demo_low_confidence_block_reason'] ?? null;
+            if ($lcBlockReason !== null && $bucket !== 'allow_demo') {
+                $demoLowConfidenceBlockCount++;
+                $demoLowConfidenceBlockReasons[$lcBlockReason] = ($demoLowConfidenceBlockReasons[$lcBlockReason] ?? 0) + 1;
+            }
         }
         // Build top_demo_block_reasons (sorted, non-zero only)
         $activeBlockReasons = array_filter($demoBlockCounts, fn($v) => $v > 0);
@@ -663,15 +675,19 @@ final class PatternEngineService
         foreach ($activeBlockReasons as $reason => $cnt) {
             $topDemoBlockReasons[] = ['reason' => $reason, 'count' => $cnt];
         }
+        arsort($demoLowConfidenceBlockReasons);
 
-        $this->realRunStats['allow_demo_count']            = $allowDemoCount;
-        $this->realRunStats['allow_sim_count']             = $allowSimCount;
-        $this->realRunStats['shadow_only_count']           = $shadowOnlyCount;
-        $this->realRunStats['reject_count']                = $rejectCount;
-        $this->realRunStats['demo_block_counts']           = $demoBlockCounts;
-        $this->realRunStats['demo_near_miss_count']        = $demoNearMissCount;
-        $this->realRunStats['demo_candidate_signals_count']= $demoCandidateCount;
-        $this->realRunStats['top_demo_block_reasons']      = $topDemoBlockReasons;
+        $this->realRunStats['allow_demo_count']                     = $allowDemoCount;
+        $this->realRunStats['allow_demo_low_confidence_count']      = $allowDemoLowConfidenceCount;
+        $this->realRunStats['allow_sim_count']                      = $allowSimCount;
+        $this->realRunStats['shadow_only_count']                    = $shadowOnlyCount;
+        $this->realRunStats['reject_count']                         = $rejectCount;
+        $this->realRunStats['demo_block_counts']                    = $demoBlockCounts;
+        $this->realRunStats['demo_near_miss_count']                 = $demoNearMissCount;
+        $this->realRunStats['demo_candidate_signals_count']         = $demoCandidateCount;
+        $this->realRunStats['top_demo_block_reasons']               = $topDemoBlockReasons;
+        $this->realRunStats['demo_low_confidence_block_count']      = $demoLowConfidenceBlockCount;
+        $this->realRunStats['demo_low_confidence_block_reasons']    = $demoLowConfidenceBlockReasons;
 
         // Build downstream-safe filtered signal sets
         $demoSignals   = $this->buildDownstreamSet($allCombined, 'allowed_for_demo');
@@ -1152,6 +1168,7 @@ final class PatternEngineService
             'sim_signals_count'                  => (int)($this->realRunStats['sim_signals_count']                  ?? 0),
             // Downstream graduation policy bucket counts
             'allow_demo_count'                   => (int)($this->realRunStats['allow_demo_count']                   ?? 0),
+            'allow_demo_low_confidence_count'    => (int)($this->realRunStats['allow_demo_low_confidence_count']    ?? 0),
             'allow_sim_count'                    => (int)($this->realRunStats['allow_sim_count']                    ?? 0),
             'shadow_only_count'                  => (int)($this->realRunStats['shadow_only_count']                  ?? 0),
             'reject_count'                       => (int)($this->realRunStats['reject_count']                       ?? 0),
@@ -1159,6 +1176,8 @@ final class PatternEngineService
             'demo_near_miss_count'               => (int)($this->realRunStats['demo_near_miss_count']               ?? 0),
             'demo_candidate_signals_count'       => (int)($this->realRunStats['demo_candidate_signals_count']       ?? 0),
             'top_demo_block_reasons'             => (array)($this->realRunStats['top_demo_block_reasons']           ?? []),
+            'demo_low_confidence_block_count'    => (int)($this->realRunStats['demo_low_confidence_block_count']    ?? 0),
+            'demo_low_confidence_block_reasons'  => (array)($this->realRunStats['demo_low_confidence_block_reasons'] ?? []),
             // Universe overlap diagnostics
             'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
             'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),

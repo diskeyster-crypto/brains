@@ -1,5 +1,5 @@
 {
-    "ts": "2026-04-01T19:49:21+01:00",
+    "ts": "2026-04-02T06:29:03+01:00",
     "ok": true,
     "status": "ok",
     "mode": "live",
@@ -7,10 +7,21 @@
         {
             "step": "reconcile",
             "status": "ok",
-            "positions_synced": 0,
+            "positions_synced": 1,
             "orders_synced": 20,
-            "orphan_positions_count": 0,
-            "orphan_positions": []
+            "orphan_positions_count": 1,
+            "orphan_positions": [
+                {
+                    "symbol": "1000PEPEUSDT",
+                    "side": "Buy",
+                    "size": 285200,
+                    "avgPrice": 0.0032857799999999999,
+                    "liqPrice": 0.0030980000000000001,
+                    "stopLoss": 0.003248,
+                    "trailingStop": 0,
+                    "positionIdx": 0
+                }
+            ]
         },
         {
             "step": "load_intents",
@@ -37,8 +48,8 @@
         {
             "step": "finalize_stale_claims",
             "status": "ok",
-            "finalized": 8,
-            "stale_found": 8
+            "finalized": 0,
+            "stale_found": 0
         },
         {
             "step": "execute_intents",
@@ -111,7 +122,9 @@
     "errors_count": 0,
     "errors": [],
     "warnings": [
-        "Brain-controlled mode active: no pending intents available. Existing intents: 12 claimed, 39 rejected. Legacy fallback disabled."
+        "Orphan position found: 1000PEPEUSDT",
+        "P3: 1 orphan position(s) found on exchange",
+        "Brain-controlled mode active: approved live intents = 0. No trades executed. Legacy fallback disabled."
     ],
     "selected_intent": null,
     "selected_decision": null,
@@ -148,9 +161,9 @@
     "duplicate_skipped": 0,
     "lifecycle_skipped": {
         "expired": 0,
-        "claimed": 20,
+        "claimed": 0,
         "already_executed": 0,
-        "rejected": 31,
+        "rejected": 0,
         "invalid_status": 0
     },
     "brain_detection_diagnostics": {
@@ -249,82 +262,9 @@
     "intents_loaded_count": 0,
     "intents_claimed_now_count": 0,
     "stale_claim_finalization": {
-        "finalized_count": 8,
-        "stale_claimed_found": 8,
-        "stale_claimed_preview": [
-            {
-                "intent_id": "li_sig_08386e9f078a34eb_a843e7e1",
-                "symbol": "1000NEIROCTOUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_e4d3953b4dbe79c6_182fdfea",
-                "symbol": "WALUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_2d31afd91957263b_fd0c829d",
-                "symbol": "MEMEUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_33c10628cbb310b3_b8930c92",
-                "symbol": "ZKPUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_c1c685ba69e25fbe_f973029e",
-                "symbol": "1000BTTUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_5781479fe0286e1a_a4559496",
-                "symbol": "POWERUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_fb3d3f93cea7b37d_d091aa52",
-                "symbol": "PENGUUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            },
-            {
-                "intent_id": "li_sig_1eccebda66594272_985b517d",
-                "symbol": "BARDUSDT",
-                "side": "short",
-                "claimed_at": "2026-04-01T19:39:10+01:00",
-                "claimed_at_ts": 1775068750,
-                "stale_seconds": 611,
-                "finalized_as": "rejected_claim_stale_timeout"
-            }
-        ],
+        "finalized_count": 0,
+        "stale_claimed_found": 0,
+        "stale_claimed_preview": [],
         "errors": []
     },
     "positions_closed_by_logical_stop": 0,
@@ -363,20 +303,20 @@
     "intents_terminal_executed_count": 0,
     "intents_terminal_rejected_count": 0,
     "intents_terminal_failed_count": 0,
-    "intents_claimed_stale_count": 8,
-    "intents_claimed_finalized_count": 8,
+    "intents_claimed_stale_count": 0,
+    "intents_claimed_finalized_count": 0,
     "lifecycle_current_counts": {
         "pending": 0,
-        "claimed": 12,
+        "claimed": 0,
         "executed": 0,
-        "rejected": 39,
+        "rejected": 0,
         "expired": 0,
-        "total": 51
+        "total": 0
     },
     "intents_pending_current_count": 0,
-    "intents_claimed_current_count": 12,
+    "intents_claimed_current_count": 0,
     "intents_executed_current_count": 0,
-    "intents_rejected_current_count": 39,
+    "intents_rejected_current_count": 0,
     "intents_expired_current_count": 0,
     "claimed_without_terminal_commit_count": 0,
     "expectancy_metrics": {
@@ -435,5 +375,5 @@
         "migrated_active_trades_count": 0,
         "mixed_generations": false
     },
-    "duration_ms": 465
+    "duration_ms": 392
 }

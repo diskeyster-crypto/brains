@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+use PatternEngine\PatternDetectorRegistry;
+use PatternEngine\UniversalSignalAdapter;
+use PatternEngine\ScenarioEngine;
+
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/lib/pattern_detector.php';
 require_once __DIR__ . '/lib/signal_adapter.php';

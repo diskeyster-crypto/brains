@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+namespace PatternEngine;
+
 if (defined('PATTERN_ENGINE_SIGNAL_ADAPTER_LOADED')) {
     return;
 }

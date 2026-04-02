@@ -136,6 +136,12 @@ $symNormFailed      = (int)($pe_last_run['symbols_normalization_failed_count']??
 $passportOkCount    = (int)($pe_last_run['passport_lookup_success_count']    ?? $pe_stats['last_run']['passport_lookup_success_count']    ?? 0);
 $passportFailCount  = (int)($pe_last_run['passport_lookup_failed_count']     ?? $pe_stats['last_run']['passport_lookup_failed_count']     ?? 0);
 
+$allowDemoCount     = (int)($pe_last_run['allow_demo_count']   ?? $pe_stats['last_run']['allow_demo_count']   ?? 0);
+$allowSimCount      = (int)($pe_last_run['allow_sim_count']    ?? $pe_stats['last_run']['allow_sim_count']    ?? 0);
+$shadowOnlyCount    = (int)($pe_last_run['shadow_only_count']  ?? $pe_stats['last_run']['shadow_only_count']  ?? 0);
+$rejectCount        = (int)($pe_last_run['reject_count']       ?? $pe_stats['last_run']['reject_count']       ?? 0);
+$demoBlockCounts    = (array)($pe_last_run['demo_block_counts']?? $pe_stats['last_run']['demo_block_counts']  ?? []);
+
 $patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
 $passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
 $universeOverlapCnt = (int)($pe_last_run['symbol_universe_overlap_count']          ?? $pe_stats['last_run']['symbol_universe_overlap_count']          ?? 0);
@@ -251,6 +257,93 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
         </div>
     </div>
     <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($allowDemoCount > 0 || $allowSimCount > 0 || $shadowOnlyCount > 0 || $rejectCount > 0): ?>
+<!-- Downstream graduation policy panel -->
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="text-secondary small"><i class="bi bi-diagram-3 me-1"></i>Downstream Graduation Policy — Bucket Decisions</span>
+        <?php
+            $dpBlock  = (array)($pe_config['downstream_policy'] ?? []);
+            $dpDemo   = !empty($dpBlock['allow_demo_enabled'])   ? 'allow_demo' : 'demo disabled';
+            $dpSim    = !empty($dpBlock['allow_sim_enabled'])    ? 'allow_sim'  : 'sim disabled';
+            $dpPpReq  = !empty($dpBlock['demo_require_passport']) ? 'passport required' : 'passport optional';
+        ?>
+        <span class="badge bg-secondary" style="font-size:0.7rem;"><?= htmlspecialchars($dpPpReq) ?></span>
+    </div>
+    <div class="card-body p-3">
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $allowDemoCount > 0 ? '#2563eb' : '#334155' ?>;">
+                    <div class="pe-stat-value" style="color:<?= $allowDemoCount > 0 ? '#3b82f6' : '#6b7280' ?>;"><?= $allowDemoCount ?></div>
+                    <div class="pe-stat-label">allow_demo</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $allowSimCount > 0 ? '#d97706' : '#334155' ?>;">
+                    <div class="pe-stat-value" style="color:<?= $allowSimCount > 0 ? '#fbbf24' : '#6b7280' ?>;"><?= $allowSimCount ?></div>
+                    <div class="pe-stat-label">allow_sim</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $shadowOnlyCount > 0 ? '#7c3aed' : '#334155' ?>;">
+                    <div class="pe-stat-value" style="color:<?= $shadowOnlyCount > 0 ? '#a78bfa' : '#6b7280' ?>;"><?= $shadowOnlyCount ?></div>
+                    <div class="pe-stat-label">shadow_only</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $rejectCount > 0 ? '#6b7280' : '#334155' ?>;">
+                    <div class="pe-stat-value" style="color:#6b7280;"><?= $rejectCount ?></div>
+                    <div class="pe-stat-label">reject</div>
+                </div>
+            </div>
+        </div>
+        <?php
+        $activeBlockReasons = array_filter($demoBlockCounts, fn($v) => $v > 0);
+        arsort($activeBlockReasons);
+        if (!empty($activeBlockReasons)):
+        ?>
+        <div class="mb-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-exclamation-circle me-1 text-warning"></i>Demo block reasons (why signals did not graduate to demo):</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach ($activeBlockReasons as $reason => $cnt): ?>
+                <span class="badge" style="background:#1e293b; border:1px solid #475569; font-size:0.7rem;" title="<?= $cnt ?> scenario(s) blocked by this reason">
+                    <?= htmlspecialchars($reason) ?> <span class="text-warning ms-1"><?= $cnt ?></span>
+                </span>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($dpBlock)): ?>
+        <div class="mt-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-sliders me-1"></i>Current demo graduation thresholds:</div>
+            <div class="row g-1">
+                <?php
+                $thresholdItems = [
+                    ['demo_min_signal_strength',    'Min Signal Strength'],
+                    ['demo_min_quality_score',      'Min Quality Score'],
+                    ['demo_min_corridor_p75_roi',   'Min Corridor P75 ROI'],
+                    ['demo_min_runner_probability', 'Min Runner Probability'],
+                    ['demo_max_noise_score',        'Max Noise Score'],
+                    ['demo_min_confidence',         'Min Confidence'],
+                ];
+                foreach ($thresholdItems as [$key, $label]):
+                    $val = $dpBlock[$key] ?? null;
+                    if ($val === null) continue;
+                ?>
+                <div class="col-6 col-md-4">
+                    <div class="small" style="background:#0f172a; padding:0.3rem 0.5rem; border-radius:4px;">
+                        <span class="text-secondary"><?= $label ?>:</span>
+                        <span class="text-info ms-1"><?= is_array($val) ? implode(', ', $val) : htmlspecialchars((string)$val) ?></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
 </div>
 <?php endif; ?>
 
@@ -514,7 +607,7 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
             <tr>
                 <th>Symbol</th><th>Side</th><th>Status</th><th>Reason</th>
                 <th>Demo</th><th>Shadow</th><th>Sim</th><th>Live</th>
-                <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th>
+                <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th><th>Demo Block</th>
             </tr>
         </thead>
         <tbody>
@@ -562,6 +655,7 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                 <td><?= isset($diag['passport_corridor_p75_roi']) ? number_format((float)$diag['passport_corridor_p75_roi'], 2) : '—' ?></td>
                 <td><?= isset($diag['passport_runner_probability']) ? number_format((float)$diag['passport_runner_probability'], 3) : '—' ?></td>
                 <td><?= isset($diag['passport_noise_score']) ? number_format((float)$diag['passport_noise_score'], 2) : '—' ?></td>
+                <td><small class="text-warning" style="font-size:0.65rem;"><?= $diag['demo_block_reason'] ? htmlspecialchars(str_replace('demo_blocked_', '', $diag['demo_block_reason'])) : '' ?></small></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -638,6 +732,25 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                         <?php endif; ?>
                     </div>
                 </div>
+                <?php
+                    $dpCfg = (array)($pe_config['downstream_policy'] ?? []);
+                    if (!empty($dpCfg)):
+                ?>
+                <div class="mb-0 mt-3 pt-2 border-top border-secondary">
+                    <label class="form-label small text-secondary">Downstream Graduation Policy</label>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        <span class="badge <?= !empty($dpCfg['allow_demo_enabled']) ? 'bg-primary' : 'bg-secondary' ?>">demo: <?= !empty($dpCfg['allow_demo_enabled']) ? 'enabled' : 'disabled' ?></span>
+                        <span class="badge <?= !empty($dpCfg['allow_sim_enabled']) ? 'bg-warning text-dark' : 'bg-secondary' ?>">sim: <?= !empty($dpCfg['allow_sim_enabled']) ? 'enabled' : 'disabled' ?></span>
+                        <span class="badge <?= !empty($dpCfg['demo_require_passport']) ? 'bg-success' : 'bg-secondary' ?>">passport: <?= !empty($dpCfg['demo_require_passport']) ? 'required' : 'optional' ?></span>
+                    </div>
+                    <div class="small text-secondary mt-1">
+                        Str ≥ <?= htmlspecialchars((string)($dpCfg['demo_min_signal_strength'] ?? '?')) ?> &nbsp;·&nbsp;
+                        Qual ≥ <?= htmlspecialchars((string)($dpCfg['demo_min_quality_score'] ?? '?')) ?> &nbsp;·&nbsp;
+                        P75 ≥ <?= htmlspecialchars((string)($dpCfg['demo_min_corridor_p75_roi'] ?? '?')) ?> &nbsp;·&nbsp;
+                        Runner ≥ <?= htmlspecialchars((string)($dpCfg['demo_min_runner_probability'] ?? '?')) ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

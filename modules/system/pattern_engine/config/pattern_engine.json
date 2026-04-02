@@ -133,6 +133,22 @@
             "max_hold_minutes": 2880
         }
     },
+    "downstream_policy": {
+        "allow_demo_enabled": true,
+        "allow_sim_enabled": true,
+        "shadow_only_default": true,
+        "demo_require_passport": true,
+        "demo_min_quality_score": 0.30,
+        "demo_min_signal_strength": 0.40,
+        "demo_min_corridor_p75_roi": 0.5,
+        "demo_min_runner_probability": 0.02,
+        "demo_max_noise_score": 0.80,
+        "demo_min_confidence": "low",
+        "demo_require_passport_eligibility": ["allow_live", "sim_only", "shadow_only", ""],
+        "sim_require_passport": false,
+        "sim_min_quality_score": 0.20,
+        "sim_min_signal_strength": 0.25
+    },
     "storage": {
         "max_candidates_per_run": 200,
         "max_signals_stored": 500,

@@ -44,9 +44,10 @@ final class PatternEngineService
         $profiles       = (array)($config['scenario_profiles'] ?? []);
         $passportDir    = __DIR__ . '/../coin_passport/storage/passports';
         $liveEnabled    = (bool)($config['live_output_enabled'] ?? false);
+        $downstreamPolicy = (array)($config['downstream_policy'] ?? []);
 
         $this->adapter          = new UniversalSignalAdapter();
-        $this->scenarioEngine   = new ScenarioEngine($profiles, $passportDir, $liveEnabled);
+        $this->scenarioEngine   = new ScenarioEngine($profiles, $passportDir, $liveEnabled, $downstreamPolicy);
         $this->symbolNormalizer = new SymbolNormalizer($passportDir);
 
         PatternDetectorRegistry::init();
@@ -600,6 +601,56 @@ final class PatternEngineService
         }
         $this->realRunStats['passport_coverage_candidates'] = array_slice($coverageCandidates, 0, 20);
 
+        // Downstream bucket counters (from downstream graduation policy decisions)
+        $allowDemoCount  = 0;
+        $allowSimCount   = 0;
+        $shadowOnlyCount = 0;
+        $rejectCount     = 0;
+        $demoBlockCounts = [
+            'demo_blocked_no_passport'                  => 0,
+            'demo_blocked_low_quality'                  => 0,
+            'demo_blocked_low_strength'                 => 0,
+            'demo_blocked_low_corridor'                 => 0,
+            'demo_blocked_low_runner'                   => 0,
+            'demo_blocked_high_noise'                   => 0,
+            'demo_blocked_low_confidence'               => 0,
+            'demo_blocked_insufficient_data'            => 0,
+            'demo_blocked_passport_eligibility_rejected'=> 0,
+            'allow_demo_disabled_by_policy'             => 0,
+        ];
+        foreach ($allScenarios as $sc) {
+            $bucket = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
+            if ($bucket === 'allow_demo') {
+                $allowDemoCount++;
+            } elseif ($bucket === 'allow_sim' || $bucket === 'sim_only') {
+                $allowSimCount++;
+            } elseif ($bucket === 'shadow_only' || $bucket === 'allow_shadow') {
+                $shadowOnlyCount++;
+            } elseif ($bucket === 'reject') {
+                $rejectCount++;
+            } else {
+                // Fallback: use allowed_for flags
+                if (!empty($sc['allowed_for_demo'])) {
+                    $allowDemoCount++;
+                } elseif (!empty($sc['allowed_for_sim'])) {
+                    $allowSimCount++;
+                } elseif (!empty($sc['allowed_for_shadow'])) {
+                    $shadowOnlyCount++;
+                } else {
+                    $rejectCount++;
+                }
+            }
+            $blockReason = $sc['diagnostics']['demo_block_reason'] ?? null;
+            if ($blockReason !== null && array_key_exists($blockReason, $demoBlockCounts)) {
+                $demoBlockCounts[$blockReason]++;
+            }
+        }
+        $this->realRunStats['allow_demo_count']  = $allowDemoCount;
+        $this->realRunStats['allow_sim_count']   = $allowSimCount;
+        $this->realRunStats['shadow_only_count'] = $shadowOnlyCount;
+        $this->realRunStats['reject_count']      = $rejectCount;
+        $this->realRunStats['demo_block_counts'] = $demoBlockCounts;
+
         // Build downstream-safe filtered signal sets
         $demoSignals   = $this->buildDownstreamSet($allCombined, 'allowed_for_demo');
         $shadowSignals = $this->buildDownstreamSet($allCombined, 'allowed_for_shadow');
@@ -1077,6 +1128,12 @@ final class PatternEngineService
             'demo_signals_count'                 => (int)($this->realRunStats['demo_signals_count']                 ?? 0),
             'shadow_signals_count'               => (int)($this->realRunStats['shadow_signals_count']               ?? 0),
             'sim_signals_count'                  => (int)($this->realRunStats['sim_signals_count']                  ?? 0),
+            // Downstream graduation policy bucket counts
+            'allow_demo_count'                   => (int)($this->realRunStats['allow_demo_count']                   ?? 0),
+            'allow_sim_count'                    => (int)($this->realRunStats['allow_sim_count']                    ?? 0),
+            'shadow_only_count'                  => (int)($this->realRunStats['shadow_only_count']                  ?? 0),
+            'reject_count'                       => (int)($this->realRunStats['reject_count']                       ?? 0),
+            'demo_block_counts'                  => (array)($this->realRunStats['demo_block_counts']                ?? []),
             // Universe overlap diagnostics
             'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
             'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),

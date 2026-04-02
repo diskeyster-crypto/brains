@@ -69,15 +69,26 @@ final class ScenarioEngine
     private bool $liveOutputEnabled;
 
     /**
+     * Downstream graduation policy — controls final bucket (allow_demo / allow_sim / shadow_only).
+     * When non-empty this policy is the authoritative gate for demo/sim graduation,
+     * independent of (and able to override) per-profile degraded_execution_mode.
+     *
+     * @var array<string,mixed>
+     */
+    private array $downstreamPolicy;
+
+    /**
      * @param array<string,array<string,mixed>> $profiles          Scenario profiles from config
      * @param string                            $passportDir       Path to coin_passport passports/
      * @param bool                              $liveOutputEnabled Master live-output gate (default false)
+     * @param array<string,mixed>               $downstreamPolicy  Downstream graduation policy (default [])
      */
-    public function __construct(array $profiles, string $passportDir, bool $liveOutputEnabled = false)
+    public function __construct(array $profiles, string $passportDir, bool $liveOutputEnabled = false, array $downstreamPolicy = [])
     {
         $this->profiles          = $profiles;
         $this->passportDir       = $passportDir;
         $this->liveOutputEnabled = $liveOutputEnabled;
+        $this->downstreamPolicy  = $downstreamPolicy;
     }
 
     /**
@@ -384,6 +395,15 @@ final class ScenarioEngine
             $effectiveReason = 'live_output_disabled_by_engine_policy';
         }
 
+        // Apply downstream graduation policy (if configured).
+        // This is the authoritative final-bucket gate for non-rejected scenarios.
+        $downstreamResult = [];
+        if (!empty($this->downstreamPolicy) && $effectiveStatus !== 'reject') {
+            $downstreamResult = $this->applyDownstreamPolicy($signal, $passport, $effectiveStatus);
+            $effectiveStatus  = $downstreamResult['bucket'];
+            $effectiveReason  = $downstreamResult['reason'];
+        }
+
         [$allowLive, $allowDemo, $allowShadow, $allowSim, $liveBlockReason] =
             $this->statusFlags($effectiveStatus, $effectiveReason);
 
@@ -428,7 +448,225 @@ final class ScenarioEngine
                 'passport_lookup_symbol'      => $passportLookup['lookup_symbol'] ?? ($signal['symbol_canonical'] ?? $signal['symbol'] ?? null),
                 'passport_lookup_status'      => $passportLookup['lookup_status'] ?? ($passport !== null ? 'found' : 'not_found'),
                 'passport_lookup_reason'      => $passportLookup['lookup_reason'] ?? null,
+                // Downstream graduation policy fields
+                'final_downstream_bucket'     => $effectiveStatus,
+                'final_downstream_reason'     => $effectiveReason,
+                'downstream_policy_applied'   => !empty($downstreamResult),
+                'demo_eligibility_checks'     => $downstreamResult['demo_checks'] ?? [],
+                'sim_eligibility_checks'      => $downstreamResult['sim_checks']  ?? [],
+                'demo_block_reason'           => $downstreamResult['demo_block_reason'] ?? null,
+                'downstream_policy_thresholds'=> !empty($downstreamResult) ? [
+                    'demo_require_passport'        => $this->downstreamPolicy['demo_require_passport']        ?? null,
+                    'demo_min_signal_strength'     => $this->downstreamPolicy['demo_min_signal_strength']     ?? null,
+                    'demo_min_quality_score'       => $this->downstreamPolicy['demo_min_quality_score']       ?? null,
+                    'demo_min_corridor_p75_roi'    => $this->downstreamPolicy['demo_min_corridor_p75_roi']    ?? null,
+                    'demo_min_runner_probability'  => $this->downstreamPolicy['demo_min_runner_probability']  ?? null,
+                    'demo_max_noise_score'         => $this->downstreamPolicy['demo_max_noise_score']         ?? null,
+                    'demo_min_confidence'          => $this->downstreamPolicy['demo_min_confidence']          ?? null,
+                ] : null,
             ]),
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: downstream graduation policy
+    // -------------------------------------------------------------------------
+
+    /**
+     * Apply the downstream graduation policy to determine the final bucket.
+     *
+     * This is the authoritative gate for demo/sim graduation, independent of
+     * per-profile thresholds.  It can upgrade shadow_only → allow_demo when the
+     * signal's passport metrics meet the policy thresholds, and enforces that
+     * allow_demo_enabled=false always forces shadow.
+     *
+     * @param  array<string,mixed>       $signal
+     * @param  array<string,mixed>|null  $passport
+     * @param  string                    $profileBucket  Result from profile evaluation (pre-policy)
+     * @return array{bucket:string, reason:string, demo_checks:list<array<string,mixed>>, sim_checks:list<array<string,mixed>>, demo_block_reason:string|null}
+     */
+    private function applyDownstreamPolicy(array $signal, ?array $passport, string $profileBucket): array
+    {
+        $policy = $this->downstreamPolicy;
+
+        $allowDemoEnabled = (bool)($policy['allow_demo_enabled'] ?? true);
+        $allowSimEnabled  = (bool)($policy['allow_sim_enabled']  ?? true);
+
+        $signalStrength = (float)($signal['signal_strength'] ?? 0.0);
+        $qualityScore   = (float)($signal['quality_score']   ?? 0.0);
+        $algo           = (string)($signal['pattern_algorithm'] ?? '');
+
+        $demoChecks      = [];
+        $simChecks       = [];
+        $demoBlockReason = null;
+
+        // ---- Demo gate ----
+        if ($allowDemoEnabled) {
+            $requirePassport = (bool)($policy['demo_require_passport'] ?? false);
+
+            if ($requirePassport && $passport === null) {
+                $demoChecks[]    = ['check' => 'passport_available', 'pass' => false, 'reason' => 'passport_required_but_missing'];
+                $demoBlockReason = 'demo_blocked_no_passport';
+            } else {
+                $demoChecks[] = ['check' => 'passport_available', 'pass' => true];
+
+                // signal_strength
+                $minStr = (float)($policy['demo_min_signal_strength'] ?? 0.0);
+                if ($minStr > 0 && $signalStrength < $minStr) {
+                    $demoChecks[]    = ['check' => 'signal_strength', 'pass' => false, 'threshold' => $minStr, 'value' => $signalStrength];
+                    $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_strength';
+                } else {
+                    $demoChecks[] = ['check' => 'signal_strength', 'pass' => true, 'threshold' => $minStr, 'value' => $signalStrength];
+                }
+
+                // quality_score
+                $minQual = (float)($policy['demo_min_quality_score'] ?? 0.0);
+                if ($minQual > 0 && $qualityScore < $minQual) {
+                    $demoChecks[]    = ['check' => 'quality_score', 'pass' => false, 'threshold' => $minQual, 'value' => $qualityScore];
+                    $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_quality';
+                } else {
+                    $demoChecks[] = ['check' => 'quality_score', 'pass' => true, 'threshold' => $minQual, 'value' => $qualityScore];
+                }
+
+                // passport-specific checks (only when passport is present)
+                if ($passport !== null) {
+                    // insufficient_data_flag
+                    if (!empty($passport['insufficient_data_flag'])) {
+                        $demoChecks[]    = ['check' => 'insufficient_data', 'pass' => false, 'reason' => $passport['insufficient_data_reason'] ?? 'flagged'];
+                        $demoBlockReason = $demoBlockReason ?? 'demo_blocked_insufficient_data';
+                    } else {
+                        $demoChecks[] = ['check' => 'insufficient_data', 'pass' => true];
+                    }
+
+                    // data_confidence
+                    $minConf = (string)($policy['demo_min_confidence'] ?? '');
+                    if ($minConf !== '') {
+                        $confMap  = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3];
+                        $rawConf  = strtolower((string)($passport['data_confidence'] ?? 'none'));
+                        $confLvl  = $confMap[$rawConf] ?? 0;
+                        $reqLvl   = $confMap[$minConf]  ?? 0;
+                        $pass     = $confLvl >= $reqLvl;
+                        $demoChecks[] = ['check' => 'data_confidence', 'pass' => $pass, 'threshold' => $minConf, 'value' => $rawConf];
+                        if (!$pass) {
+                            $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_confidence';
+                        }
+                    }
+
+                    // corridor_p75_roi
+                    $minP75 = (float)($policy['demo_min_corridor_p75_roi'] ?? 0.0);
+                    if ($minP75 > 0) {
+                        $cp75 = (float)(
+                            $passport['corridor_p75_roi'] ??
+                            $passport['pattern_behavior'][$algo]['corridor_p75_roi'] ??
+                            $passport['pattern_behavior'][$algo]['corridor_p75'] ??
+                            0.0
+                        );
+                        $pass = $cp75 >= $minP75;
+                        $demoChecks[] = ['check' => 'corridor_p75_roi', 'pass' => $pass, 'threshold' => $minP75, 'value' => $cp75];
+                        if (!$pass) {
+                            $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_corridor';
+                        }
+                    }
+
+                    // runner_probability
+                    $minRunner = (float)($policy['demo_min_runner_probability'] ?? 0.0);
+                    if ($minRunner > 0) {
+                        $rp   = (float)(
+                            $passport['runner_probability'] ??
+                            $passport['pattern_behavior'][$algo]['runner_rate'] ??
+                            0.0
+                        );
+                        $pass = $rp >= $minRunner;
+                        $demoChecks[] = ['check' => 'runner_probability', 'pass' => $pass, 'threshold' => $minRunner, 'value' => $rp];
+                        if (!$pass) {
+                            $demoBlockReason = $demoBlockReason ?? 'demo_blocked_low_runner';
+                        }
+                    }
+
+                    // noise_score (lower is better)
+                    $maxNoise = (float)($policy['demo_max_noise_score'] ?? 1.0);
+                    if ($maxNoise < 1.0) {
+                        $noise = (float)($passport['noise_score'] ?? 0.0);
+                        $pass  = $noise <= $maxNoise;
+                        $demoChecks[] = ['check' => 'noise_score', 'pass' => $pass, 'threshold' => $maxNoise, 'value' => $noise];
+                        if (!$pass) {
+                            $demoBlockReason = $demoBlockReason ?? 'demo_blocked_high_noise';
+                        }
+                    }
+
+                    // passport eligibility — must not be in reject-list
+                    $allowedEligibilities = (array)($policy['demo_require_passport_eligibility'] ?? []);
+                    if (!empty($allowedEligibilities)) {
+                        $eligibility = (string)($passport['recommended_live_eligibility'] ?? '');
+                        $pass = in_array($eligibility, $allowedEligibilities, true);
+                        $demoChecks[] = ['check' => 'passport_eligibility', 'pass' => $pass, 'threshold' => $allowedEligibilities, 'value' => $eligibility];
+                        if (!$pass) {
+                            $demoBlockReason = $demoBlockReason ?? 'demo_blocked_passport_eligibility_rejected';
+                        }
+                    }
+                }
+            }
+
+            // All demo checks passed — graduate to allow_demo
+            if ($demoBlockReason === null) {
+                return [
+                    'bucket'           => 'allow_demo',
+                    'reason'           => 'downstream_policy_demo_gate_passed',
+                    'demo_checks'      => $demoChecks,
+                    'sim_checks'       => [],
+                    'demo_block_reason'=> null,
+                ];
+            }
+        } else {
+            $demoBlockReason = 'allow_demo_disabled_by_policy';
+        }
+
+        // ---- Sim gate ----
+        if ($allowSimEnabled) {
+            $requirePassportSim = (bool)($policy['sim_require_passport'] ?? false);
+            $minSimStr          = (float)($policy['sim_min_signal_strength'] ?? 0.0);
+            $minSimQual         = (float)($policy['sim_min_quality_score']   ?? 0.0);
+            $simPasses          = true;
+
+            if ($requirePassportSim && $passport === null) {
+                $simChecks[] = ['check' => 'passport_available', 'pass' => false];
+                $simPasses   = false;
+            } else {
+                $simChecks[] = ['check' => 'passport_available', 'pass' => true];
+            }
+
+            if ($simPasses && $signalStrength < $minSimStr) {
+                $simChecks[] = ['check' => 'signal_strength', 'pass' => false, 'threshold' => $minSimStr, 'value' => $signalStrength];
+                $simPasses   = false;
+            } elseif ($simPasses) {
+                $simChecks[] = ['check' => 'signal_strength', 'pass' => true, 'threshold' => $minSimStr, 'value' => $signalStrength];
+            }
+
+            if ($simPasses && $qualityScore < $minSimQual) {
+                $simChecks[] = ['check' => 'quality_score', 'pass' => false, 'threshold' => $minSimQual, 'value' => $qualityScore];
+                $simPasses   = false;
+            } elseif ($simPasses) {
+                $simChecks[] = ['check' => 'quality_score', 'pass' => true, 'threshold' => $minSimQual, 'value' => $qualityScore];
+            }
+
+            if ($simPasses) {
+                return [
+                    'bucket'           => 'allow_sim',
+                    'reason'           => 'downstream_policy_sim_gate_passed',
+                    'demo_checks'      => $demoChecks,
+                    'sim_checks'       => $simChecks,
+                    'demo_block_reason'=> $demoBlockReason,
+                ];
+            }
+        }
+
+        // Shadow default
+        return [
+            'bucket'           => 'shadow_only',
+            'reason'           => 'downstream_policy_shadow_default:' . ($demoBlockReason ?? 'sim_gate_failed'),
+            'demo_checks'      => $demoChecks,
+            'sim_checks'       => $simChecks,
+            'demo_block_reason'=> $demoBlockReason,
         ];
     }
 

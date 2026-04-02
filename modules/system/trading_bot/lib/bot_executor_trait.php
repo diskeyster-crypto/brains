@@ -511,12 +511,33 @@ trait BotExecutorTrait
             if (in_array($mode, ['live', 'demo'], true)) {
                 $result['execution_stage'] = 'position_open_confirmed';
                 $positionData = $this->fetchOpenPosition($symbol, $side);
-                
+
                 if ($positionData === null || !$this->isValidPositionData($positionData)) {
-                    // Failed to get position data - fail-safe close
-                    $this->performFailSafeClose($intent, $symbol, $side, $positionSize, 'reconcile_failed', [
+                    // Determine a precise sub-reason so executed_index.json is actionable.
+                    if (!$this->gateway || !$this->gateway->isInitialized()) {
+                        $reconcileSubReason = 'reconcile_failed_gateway_not_initialized';
+                    } elseif ($positionData === null) {
+                        $reconcileSubReason = 'reconcile_failed_exchange_position_missing';
+                    } else {
+                        // Position found but fields are missing/zero
+                        $size     = (float)($positionData['size'] ?? $positionData['qty'] ?? 0);
+                        $avgPrice = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? 0);
+                        $liqPrice = (float)($positionData['liqPrice'] ?? 0);
+                        if ($size <= 0) {
+                            $reconcileSubReason = 'reconcile_failed_position_size_zero';
+                        } elseif ($avgPrice <= 0) {
+                            $reconcileSubReason = 'reconcile_failed_position_avg_price_missing';
+                        } elseif ($liqPrice <= 0) {
+                            $reconcileSubReason = 'reconcile_failed_position_liq_price_missing';
+                        } else {
+                            $reconcileSubReason = 'reconcile_failed_position_data_invalid';
+                        }
+                    }
+
+                    $this->performFailSafeClose($intent, $symbol, $side, $positionSize, $reconcileSubReason, [
                         'order_result' => $orderResult,
                         'position_data' => $positionData,
+                        'reconcile_sub_reason' => $reconcileSubReason,
                     ], $result);
                     return $result;
                 }

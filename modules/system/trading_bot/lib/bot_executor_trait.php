@@ -509,26 +509,28 @@ trait BotExecutorTrait
             // Step 6: Post-open reconcile (real exchange modes only)
             // ============================================================
             if (in_array($mode, ['live', 'demo'], true)) {
+                $isDemoMode = ($mode === 'demo');
                 $result['execution_stage'] = 'position_open_confirmed';
                 $positionData = $this->fetchOpenPosition($symbol, $side);
 
-                if ($positionData === null || !$this->isValidPositionData($positionData)) {
-                    // Determine a precise sub-reason so executed_index.json is actionable.
+                // Minimum required fields: size > 0 and avgPrice > 0 (always fatal if missing)
+                $positionHasMinFields = $this->isValidPositionData($positionData, false);
+                // Full validation: also requires liqPrice > 0
+                $positionHasLiqPrice  = $positionHasMinFields && $this->isValidPositionData($positionData, true);
+
+                if ($positionData === null || !$positionHasMinFields) {
+                    // Truly unusable position — determine precise sub-reason.
                     if (!$this->gateway || !$this->gateway->isInitialized()) {
                         $reconcileSubReason = 'reconcile_failed_gateway_not_initialized';
                     } elseif ($positionData === null) {
                         $reconcileSubReason = 'reconcile_failed_exchange_position_missing';
                     } else {
-                        // Position found but fields are missing/zero
                         $size     = (float)($positionData['size'] ?? $positionData['qty'] ?? 0);
                         $avgPrice = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? 0);
-                        $liqPrice = (float)($positionData['liqPrice'] ?? 0);
                         if ($size <= 0) {
                             $reconcileSubReason = 'reconcile_failed_position_size_zero';
                         } elseif ($avgPrice <= 0) {
                             $reconcileSubReason = 'reconcile_failed_position_avg_price_missing';
-                        } elseif ($liqPrice <= 0) {
-                            $reconcileSubReason = 'reconcile_failed_position_liq_price_missing';
                         } else {
                             $reconcileSubReason = 'reconcile_failed_position_data_invalid';
                         }
@@ -540,6 +542,29 @@ trait BotExecutorTrait
                         'reconcile_sub_reason' => $reconcileSubReason,
                     ], $result);
                     return $result;
+                }
+
+                // liqPrice is missing: hard-fail in live mode; tolerate in demo mode.
+                if (!$positionHasLiqPrice && !$isDemoMode) {
+                    $reconcileSubReason = 'reconcile_failed_position_liq_price_missing';
+                    $this->performFailSafeClose($intent, $symbol, $side, $positionSize, $reconcileSubReason, [
+                        'order_result'          => $orderResult,
+                        'position_data'         => $positionData,
+                        'reconcile_sub_reason'  => $reconcileSubReason,
+                    ], $result);
+                    return $result;
+                }
+
+                // Demo compatibility: Bybit Demo API sometimes omits liqPrice even for a valid
+                // open position. In live mode this would be unsafe (liqPrice is needed for the
+                // liq-based SL formula), so live hard-fails above. In demo mode we continue and
+                // record diagnostic flags. Step 7 will attempt an entry_roi SL fallback when
+                // the liq-based calculation returns null due to liqPrice = 0.
+                if (!$positionHasLiqPrice) {
+                    $result['demo_reconcile_fallback_used']  = true;
+                    $result['demo_reconcile_note']           = 'missing_liq_price';
+                    $result['liq_price_unavailable']         = true;
+                    $result['exchange_position_incomplete']  = true;
                 }
                 
                 $entryAvg = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? 0);
@@ -554,7 +579,7 @@ trait BotExecutorTrait
                 
                 // Determine stop control mode from risk block
                 $stopControlMode = (string)($risk['stop_control']['stop_control_mode'] ?? ($risk['stop_control_mode'] ?? 'auto'));
-                
+
                 if ($stopControlMode === 'entry_roi') {
                     // Entry-based stop: SL = entry price ± stop_loss_from_entry_roi
                     $sl = $this->riskEngine->calculateStopLossFromEntry($risk, $entryAvg, $side);
@@ -564,6 +589,17 @@ trait BotExecutorTrait
                     // Legacy/auto: SL from liquidation distance
                     $sl = $this->riskEngine->calculateStopLossFromLiq($risk, $entryAvg, $liqPrice, $side);
                     $result['stop_control_mode_used'] = $stopControlMode;
+
+                    // Demo compatibility: if liqPrice is absent, fall back to entry_roi SL calculation.
+                    if ($sl === null && $isDemoMode && $liqPrice <= 0) {
+                        $slFallback = $this->riskEngine->calculateStopLossFromEntry($risk, $entryAvg, $side);
+                        if ($slFallback !== null) {
+                            $sl = $slFallback;
+                            $result['demo_reconcile_fallback_used']  = true;
+                            $result['demo_reconcile_sl_fallback']    = 'entry_roi';
+                            $result['stop_control_mode_used']        = $stopControlMode . '_demo_entry_roi_fallback';
+                        }
+                    }
                 }
                 
                 if ($sl === null) {
@@ -626,6 +662,19 @@ trait BotExecutorTrait
                 // Step 9: Success - save trade as opened_protected
                 // ============================================================
                 $trade = $this->buildTradeLiveV1($intent, $order, $orderResult, $positionData, $sl, $trailing);
+
+                // Embed demo compatibility flags into the trade record so they are
+                // visible in the active trade file, Brain page, and reconcile.
+                if (!empty($result['demo_reconcile_fallback_used'])) {
+                    $trade['exchange_position_incomplete'] = true;
+                    $trade['liq_price_unavailable']        = (bool)($result['liq_price_unavailable'] ?? false);
+                    $trade['demo_reconcile_fallback_used'] = true;
+                    $trade['demo_reconcile_note']          = $result['demo_reconcile_note'] ?? null;
+                    if (!empty($result['demo_reconcile_sl_fallback'])) {
+                        $trade['demo_reconcile_sl_fallback'] = $result['demo_reconcile_sl_fallback'];
+                    }
+                }
+
                 $this->store->saveActiveTrade($trade);
 
                 // P-PERSIST-DIAG: Verify the active trade file was actually persisted.
@@ -1038,16 +1087,20 @@ trait BotExecutorTrait
     /**
      * Check if position data is valid for SL calculation
      */
-    private function isValidPositionData(?array $data): bool
+    private function isValidPositionData(?array $data, bool $requireLiqPrice = true): bool
     {
         if ($data === null) {
             return false;
         }
-        
-        $size = (float)($data['size'] ?? $data['qty'] ?? 0);
+
+        $size     = (float)($data['size'] ?? $data['qty'] ?? 0);
         $avgPrice = (float)($data['avgPrice'] ?? $data['entry_price'] ?? 0);
+
+        if (!$requireLiqPrice) {
+            return $size > 0 && $avgPrice > 0;
+        }
+
         $liqPrice = (float)($data['liqPrice'] ?? 0);
-        
         return $size > 0 && $avgPrice > 0 && $liqPrice > 0;
     }
     

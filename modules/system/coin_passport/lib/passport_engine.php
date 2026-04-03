@@ -42,12 +42,32 @@ final class CoinPassportEngine
     /** Evidence timeline config */
     private const MAX_EVIDENCE_ITEMS = 100;
 
+    /** @var list<array{path:string,label:string}> Mode-separated bot storage directories */
+    private array $botStorageDirs;
+
     public function __construct(string $passportsDir, string $tradingBotStorageDir, string $aiShadowStorageDir = '')
     {
         $this->passportsDir         = $passportsDir;
         $this->tradingBotStorageDir = $tradingBotStorageDir;
         $this->aiShadowStorageDir   = $aiShadowStorageDir;
         $this->evidenceDir          = dirname($passportsDir) . '/evidence';
+
+        // Build multi-mode bot storage list: include storage_demo, storage_live, storage_paper,
+        // and also the legacy storage/ path for backwards compatibility.
+        $botBase = dirname($tradingBotStorageDir);
+        $this->botStorageDirs = [];
+
+        foreach (['storage_demo' => 'demo', 'storage_live' => 'live', 'storage_paper' => 'paper'] as $dir => $label) {
+            $path = $botBase . '/' . $dir;
+            if (is_dir($path)) {
+                $this->botStorageDirs[] = ['path' => $path, 'label' => $label];
+            }
+        }
+
+        // Always include legacy storage/ path as 'live' fallback so existing data is never lost
+        if (is_dir($tradingBotStorageDir)) {
+            $this->botStorageDirs[] = ['path' => $tradingBotStorageDir, 'label' => 'live'];
+        }
 
         if (!is_dir($this->passportsDir)) {
             @mkdir($this->passportsDir, 0755, true);
@@ -103,14 +123,32 @@ final class CoinPassportEngine
     /**
      * Rebuild passports for all symbols found in trade data.
      *
-     * @return array{updated:int,symbols:list<string>,errors:list<string>}
+     * @return array{updated:int,symbols:list<string>,errors:list<string>,bot_storage_namespaces_scanned:list<string>,demo_samples_count:int,live_samples_count:int,shadow_samples_count:int}
      */
     public function rebuildAll(): array
     {
         $tradesBySymbol = $this->collectTradesBySymbol();
-        $result = ['updated' => 0, 'symbols' => [], 'errors' => []];
+        $result = [
+            'updated'  => 0,
+            'symbols'  => [],
+            'errors'   => [],
+            'bot_storage_namespaces_scanned' => array_column($this->botStorageDirs, 'label'),
+            'demo_samples_count'   => 0,
+            'live_samples_count'   => 0,
+            'shadow_samples_count' => 0,
+        ];
 
         foreach ($tradesBySymbol as $symbol => $trades) {
+            foreach ($trades as $t) {
+                $src = (string)($t['_source'] ?? '');
+                if (strncmp($src, 'demo', 4) === 0) {
+                    $result['demo_samples_count']++;
+                } elseif (strncmp($src, 'shadow', 6) === 0) {
+                    $result['shadow_samples_count']++;
+                } else {
+                    $result['live_samples_count']++;
+                }
+            }
             try {
                 $passport = $this->buildPassport($symbol, $trades);
                 $this->save($symbol, $passport);
@@ -191,11 +229,17 @@ final class CoinPassportEngine
     /**
      * Collect all available trades grouped by symbol.
      *
-     * Sources:
-     *   1. trades/closed/*.json       (live closed trades with final ROI)
-     *   2. trades/active/*.json        (active live trades — partial signal)
-     *   3. sig_*.json in storage root  (legacy active/live trades)
+     * Sources (in order):
+     *   1. trades/closed/*.json  from each bot storage namespace (demo, live, paper, legacy)
+     *   2. trades/active/*.json  from each bot storage namespace (partial signal)
+     *   3. sig_*.json in legacy storage root
      *   4. ai_shadow/virtual_trades_closed/*.json  (shadow sim outcomes)
+     *   5. ai_shadow/virtual_trades_active/*.json  (shadow partial signal)
+     *
+     * Source labels per namespace:
+     *   demo storage  → demo_closed / demo_active
+     *   live storage  → live_closed / live_active / live_legacy
+     *   paper storage → paper_closed / paper_active
      *
      * @return array<string,list<array<string,mixed>>>
      */
@@ -203,33 +247,39 @@ final class CoinPassportEngine
     {
         $bySymbol = [];
 
-        // Source 1: live closed trades
-        $closedDir = $this->tradingBotStorageDir . '/trades/closed';
-        if (is_dir($closedDir)) {
-            foreach (glob($closedDir . '/*.json') ?: [] as $file) {
-                $trade = $this->readJson($file);
-                if (is_array($trade) && !empty($trade['symbol'])) {
-                    $sym = strtoupper((string)$trade['symbol']);
-                    $trade['_source'] = 'live_closed';
-                    $bySymbol[$sym][] = $trade;
+        // Sources 1+2: scan all mode-separated bot storage directories
+        foreach ($this->botStorageDirs as $dirInfo) {
+            $storePath = $dirInfo['path'];
+            $modeLabel = $dirInfo['label']; // demo | live | paper
+
+            // Closed trades
+            $closedDir = $storePath . '/trades/closed';
+            if (is_dir($closedDir)) {
+                foreach (glob($closedDir . '/*.json') ?: [] as $file) {
+                    $trade = $this->readJson($file);
+                    if (is_array($trade) && !empty($trade['symbol'])) {
+                        $sym = strtoupper((string)$trade['symbol']);
+                        $trade['_source'] = $modeLabel . '_closed';
+                        $bySymbol[$sym][] = $trade;
+                    }
+                }
+            }
+
+            // Active trades (partial signal — adds recency evidence)
+            $activeDir = $storePath . '/trades/active';
+            if (is_dir($activeDir)) {
+                foreach (glob($activeDir . '/*.json') ?: [] as $file) {
+                    $trade = $this->readJson($file);
+                    if (is_array($trade) && !empty($trade['symbol'])) {
+                        $sym = strtoupper((string)$trade['symbol']);
+                        $trade['_source'] = $modeLabel . '_active';
+                        $bySymbol[$sym][] = $trade;
+                    }
                 }
             }
         }
 
-        // Source 2: active live trades (tag as active so we know they're open)
-        $activeDir = $this->tradingBotStorageDir . '/trades/active';
-        if (is_dir($activeDir)) {
-            foreach (glob($activeDir . '/*.json') ?: [] as $file) {
-                $trade = $this->readJson($file);
-                if (is_array($trade) && !empty($trade['symbol'])) {
-                    $sym = strtoupper((string)$trade['symbol']);
-                    $trade['_source'] = 'live_active';
-                    $bySymbol[$sym][] = $trade;
-                }
-            }
-        }
-
-        // Source 3: root sig_*.json files (active / legacy trades)
+        // Source 3: root sig_*.json files in the legacy storage path (active / legacy trades)
         foreach (glob($this->tradingBotStorageDir . '/sig_*.json') ?: [] as $file) {
             $trade = $this->readJson($file);
             if (is_array($trade) && !empty($trade['symbol'])) {
@@ -326,6 +376,8 @@ final class CoinPassportEngine
         $shadowActiveSamples = 0;  // shadow_active only
         $liveClosedSamples   = 0;  // live_closed only
         $liveActiveSamples   = 0;  // live_active + live_legacy
+        $demoClosedSamples   = 0;  // demo_closed only
+        $demoActiveSamples   = 0;  // demo_active only
 
         // Initial burst: hit 2 ROI within the first half of hold time
         $burstCount = 0;
@@ -348,6 +400,10 @@ final class CoinPassportEngine
             } elseif ($isShadowActive) {
                 $shadowSamples++;
                 $shadowActiveSamples++;
+            } elseif ($source === 'demo_closed') {
+                $demoClosedSamples++;
+            } elseif ($source === 'demo_active') {
+                $demoActiveSamples++;
             } elseif ($source === 'live_closed') {
                 $liveClosedSamples++;
             } elseif ($source === 'live_active' || $source === 'live_legacy') {
@@ -577,7 +633,7 @@ final class CoinPassportEngine
 
         // ── Data confidence ───────────────────────────────────────────────────
         [$dataConfidence, $confidenceScoreNumeric, $confidenceReasonSummary] = $this->computeConfidenceDetailed(
-            $sampleSizeTotal, $liveClosedSamples, $shadowClosedSamples,
+            $sampleSizeTotal, $liveClosedSamples + $demoClosedSamples, $shadowClosedSamples,
             $recentSamples, $sampleV2, $sampleV3
         );
 
@@ -641,6 +697,8 @@ final class CoinPassportEngine
             'sample_size_live_active'       => $liveActiveSamples,
             'sample_size_shadow_closed'     => $shadowClosedSamples,
             'sample_size_shadow_active'     => $shadowActiveSamples,
+            'sample_size_demo_closed'       => $demoClosedSamples,
+            'sample_size_demo_active'       => $demoActiveSamples,
 
             // ── Data confidence / sufficiency ──────────────────────────────────
             'data_confidence'               => $dataConfidence,

@@ -1325,21 +1325,32 @@ trait BotExecutorTrait
                 if ($position === null || (float)($position['size'] ?? 0) <= 0) {
                     // Position closed on exchange — determine close reason
                     $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
-                    $closeReason = 'exchange_closed';
+                    $closeReason = 'exchange_closed_unknown';
                     if (!empty($rt['dumb_trailing_applied'])) {
-                        $closeReason = 'closed_by_trailing';
+                        $closeReason = 'trailing_stop';
                     } elseif (!empty($rt['break_even_applied'])) {
-                        $closeReason = 'closed_by_break_even';
+                        $closeReason = 'break_even';
                     } elseif (!empty($rt['close_trigger']) && $rt['close_trigger'] === 'logical_stop') {
-                        $closeReason = 'closed_by_logical_stop';
+                        $closeReason = 'stop_loss';
                     }
                     $result['closed']++;
                     $result['closed_by_exchange']++;
-                    $this->store->moveTradeToClosedDir($tradeId, array_merge($trade, [
-                        'closed_at' => date('c'),
-                        'close_reason' => $closeReason,
-                        'close_protection_state' => (string)($rt['protection_state'] ?? 'unknown'),
-                    ]));
+                    $closedAtTs = time();
+                    $closedTrade = array_merge($trade, [
+                        'closed_at'               => date('c', $closedAtTs),
+                        'closed_ts'               => $closedAtTs,
+                        'close_ts'                => $closedAtTs,
+                        'close_reason'            => $closeReason,
+                        'close_reason_normalized' => $closeReason,
+                        'close_protection_state'  => (string)($rt['protection_state'] ?? 'unknown'),
+                    ]);
+                    // Apply local finalization so fields are never empty
+                    if (method_exists($this, 'applyLocalCloseFinalize')) {
+                        $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                        $closedTrade['close_reason']            = $closeReason;
+                        $closedTrade['close_reason_normalized'] = $closeReason;
+                    }
+                    $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                     $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                     continue;
                 }
@@ -1698,12 +1709,22 @@ trait BotExecutorTrait
                                 $runtime['logical_stop_roi_threshold'] = $logicalStopRoi;
 
                                 $result['closed']++;
-                                $this->store->moveTradeToClosedDir($tradeId, array_merge($trade, [
-                                    'closed_at' => date('c'),
-                                    'close_reason' => 'closed_by_logical_stop',
-                                    'close_roi' => round($currentRoiLS * 100, 4),
-                                    'runtime' => $runtime,
-                                ]));
+                                $closedAtTs2 = time();
+                                $closedTrade2 = array_merge($trade, [
+                                    'closed_at'               => date('c', $closedAtTs2),
+                                    'closed_ts'               => $closedAtTs2,
+                                    'close_ts'                => $closedAtTs2,
+                                    'close_reason'            => 'stop_loss',
+                                    'close_reason_normalized' => 'stop_loss',
+                                    'close_roi'               => round($currentRoiLS * 100, 4),
+                                    'runtime'                 => $runtime,
+                                ]);
+                                if (method_exists($this, 'applyLocalCloseFinalize')) {
+                                    $closedTrade2 = $this->applyLocalCloseFinalize($closedTrade2, $closedAtTs2);
+                                    $closedTrade2['close_reason']            = 'stop_loss';
+                                    $closedTrade2['close_reason_normalized'] = 'stop_loss';
+                                }
+                                $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);
                                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                                 continue;
                             }

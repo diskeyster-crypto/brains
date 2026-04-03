@@ -1267,4 +1267,57 @@ final class PatternEngineService
             }
         }
     }
+
+    // =========================================================================
+    // Cron handler
+    // =========================================================================
+
+    /**
+     * Cron-callable entry point — runs the full real pipeline.
+     *
+     * Called by CronManager as pattern_engine:execute (no-arg invocation).
+     * Wraps runNow() and persists cron-run diagnostics to runtime/cron_last_run.json.
+     *
+     * Diagnostics written:
+     *   - last_cron_run_status  : ok | error
+     *   - last_cron_run_at      : ISO timestamp
+     *   - last_cron_run_source  : run_source from stats (e.g. parser2_internal)
+     *   - last_cron_run_counts  : signals/scenarios/demo/shadow counts
+     *   - last_cron_run_error   : error message if failed
+     */
+    public function execute(): void
+    {
+        $diagPath = $this->storageDir . '/runtime/cron_last_run.json';
+        $startTs  = time();
+
+        try {
+            $result = $this->runNow();
+            $stats  = $result['stats'] ?? [];
+
+            $diag = [
+                'last_cron_run_status'  => 'ok',
+                'last_cron_run_at'      => date('c', $startTs),
+                'last_cron_run_source'  => $stats['run_source'] ?? $stats['primary_data_source'] ?? 'unknown',
+                'last_cron_run_counts'  => [
+                    'signals_stored'    => $stats['after_dedup_signals_count'] ?? $stats['signals_count'] ?? 0,
+                    'scenarios_stored'  => $stats['after_dedup_scenarios_count'] ?? $stats['scenarios_count'] ?? 0,
+                    'demo_signals'      => $stats['demo_signals_count'] ?? 0,
+                    'shadow_signals'    => $stats['shadow_signals_count'] ?? 0,
+                    'symbols_scanned'   => $stats['symbols_scanned'] ?? 0,
+                ],
+                'last_cron_run_error'   => null,
+            ];
+
+        } catch (\Throwable $e) {
+            $diag = [
+                'last_cron_run_status' => 'error',
+                'last_cron_run_at'     => date('c', $startTs),
+                'last_cron_run_source' => 'none',
+                'last_cron_run_counts' => [],
+                'last_cron_run_error'  => $e->getMessage(),
+            ];
+        }
+
+        @file_put_contents($diagPath, json_encode($diag, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
 }

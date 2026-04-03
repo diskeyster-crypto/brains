@@ -173,17 +173,37 @@ trait BotReconcileTrait
     $closedAtTs = time();
 
     // Base close fields (always)
-    $trade['status'] = 'closed';
+    $trade['status']    = 'closed';
     $trade['closed_at'] = date('c', $closedAtTs);
     $trade['closed_ts'] = $closedAtTs;
+    $trade['close_ts']  = $closedAtTs;
 
-    // Enrich with exchange closed-pnl (best-effort)
+    // ── Local finalization (immediate, no exchange call) ────────────────────
+    // Compute local estimates from trade snapshot so closed file is never empty,
+    // even if exchange enrichment is delayed or unavailable.
+    $trade = $this->applyLocalCloseFinalize($trade, $closedAtTs);
+
+    // ── Exchange enrichment (best-effort improvement) ────────────────────────
     $trade = $this->enrichClosedTradeFromExchange($trade, $closedAtTs);
 
-    // Determine close_reason from inferred data or fallback
+    // Upgrade close_result_source if exchange matched
+    if (!empty($trade['exchange_close']['matched'])) {
+        $prevSource = (string)($trade['close_result_source'] ?? 'local_finalize');
+        if ($prevSource === 'local_finalize') {
+            $trade['close_result_source'] = 'mixed';
+        } else {
+            $trade['close_result_source'] = 'exchange_enriched';
+        }
+        $trade['exchange_enrichment_used'] = true;
+    } else {
+        $trade['close_finalize_warning'] = 'exchange_enrichment_skipped_or_no_match';
+    }
+
+    // ── Normalize close reason ────────────────────────────────────────────────
     $closeReason = $this->determineCloseReason($trade);
-    $trade['close_reason'] = $closeReason['reason'];
-    $trade['close_reason_meta'] = $closeReason['meta'];
+    $trade['close_reason']            = $closeReason['reason'];
+    $trade['close_reason_normalized'] = $closeReason['reason'];
+    $trade['close_reason_meta']       = $closeReason['meta'];
 
     // Ensure realized_pnl field exists (alias for pnl)
     if (!isset($trade['realized_pnl']) && isset($trade['pnl'])) {
@@ -195,6 +215,79 @@ trait BotReconcileTrait
     // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
     $symbol = (string)($trade['symbol'] ?? '');
     $this->triggerCoinPassportRebuildForSymbol($symbol);
+}
+
+/**
+ * Apply local close finalization — compute close fields from local trade state
+ * immediately at close time, without relying on the exchange.
+ *
+ * Fields set:
+ *   close_price           — last known price or entry_price estimate
+ *   pnl                   — estimated PnL based on local price (approximate)
+ *   roi                   — estimated ROI %
+ *   hold_minutes          — time held since open
+ *   local_close_finalize_used  — true (diagnostic flag)
+ *   close_result_source   — 'local_finalize'
+ *
+ * The exchange enrichment step may overwrite close_price/pnl with real data later.
+ *
+ * @param array<string,mixed> $trade
+ * @param int $closedAtTs
+ * @return array<string,mixed>
+ */
+private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
+{
+    $trade['local_close_finalize_used'] = true;
+
+    // Hold minutes
+    $openedTs = (int)(strtotime((string)($trade['opened_at'] ?? '')) ?: ($trade['open_ts'] ?? 0));
+    if ($openedTs > 0 && $closedAtTs > $openedTs) {
+        $trade['hold_minutes'] = (int)round(($closedAtTs - $openedTs) / 60);
+    } elseif (!isset($trade['hold_minutes'])) {
+        $trade['hold_minutes'] = 0;
+    }
+
+    // Estimate close_price from last known position data if not already set
+    if (!isset($trade['close_price']) || (float)($trade['close_price'] ?? 0) <= 0) {
+        // Use last known price from runtime or protection
+        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+        $lastPrice = (float)($rt['last_price'] ?? $rt['last_mark_price'] ?? 0);
+        if ($lastPrice > 0) {
+            $trade['close_price'] = $lastPrice;
+        }
+    }
+
+    // Estimate ROI/PnL locally from entry_price + close_price if not already set
+    if (!isset($trade['pnl']) || !isset($trade['roi'])) {
+        $entryPrice  = (float)($trade['entry_price'] ?? 0);
+        $closePrice  = (float)($trade['close_price'] ?? 0);
+        $side        = strtolower((string)($trade['side'] ?? 'long'));
+        $qty         = (float)($trade['position_size'] ?? $trade['qty'] ?? 0);
+
+        if ($entryPrice > 0 && $closePrice > 0 && $qty > 0) {
+            if ($side === 'long') {
+                $priceDiff = $closePrice - $entryPrice;
+            } else {
+                $priceDiff = $entryPrice - $closePrice;
+            }
+            $pnlEst  = round($priceDiff * $qty, 8);
+            $roiEst  = round(($priceDiff / $entryPrice) * 100, 4);
+
+            if (!isset($trade['pnl'])) {
+                $trade['pnl'] = $pnlEst;
+            }
+            if (!isset($trade['roi'])) {
+                $trade['roi'] = $roiEst;
+            }
+        } elseif (!isset($trade['pnl'])) {
+            $trade['pnl'] = 0.0;
+            $trade['roi'] = 0.0;
+        }
+    }
+
+    $trade['close_result_source'] = 'local_finalize';
+
+    return $trade;
 }
 
 /**
@@ -551,7 +644,7 @@ private function backfillRecentClosedTradesMissingExit(): void
         $reason = (string)($trade['close_reason'] ?? '');
 
         $needsExit = ($closePrice <= 0) || (!$hasPnl);
-        $needsReasonFix = ($reason === '' || $reason === 'exchange_closed' || $reason === 'unknown');
+        $needsReasonFix = ($reason === '' || $reason === 'exchange_closed' || $reason === 'exchange_closed_unknown' || $reason === 'unknown');
 
         if (!$needsExit && !$needsReasonFix) {
             continue;
@@ -572,8 +665,17 @@ private function backfillRecentClosedTradesMissingExit(): void
 
         // Re-evaluate close reason to remove legacy reasons like "exchange_closed"
         $closeReason = $this->determineCloseReason($trade);
-        $trade['close_reason'] = $closeReason['reason'];
-        $trade['close_reason_meta'] = $closeReason['meta'];
+        $trade['close_reason']            = $closeReason['reason'];
+        $trade['close_reason_normalized'] = $closeReason['reason'];
+        $trade['close_reason_meta']       = $closeReason['meta'];
+
+        // Update close_result_source based on enrichment outcome
+        if (!empty($trade['exchange_close']['matched'])) {
+            $prevSource = (string)($trade['close_result_source'] ?? 'local_finalize');
+            $trade['close_result_source'] = ($prevSource === 'local_finalize') ? 'mixed' : 'exchange_enriched';
+            $trade['exchange_enrichment_used'] = true;
+            unset($trade['close_finalize_warning']);
+        }
 
         $this->store->saveClosedTrade($tradeId, $trade);
         $processed++;

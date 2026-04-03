@@ -120,7 +120,7 @@ final class CoinPassportService
 
     /**
      * Rebuild passports only for symbols that had recent trade activity
-     * (closed in the last 7 days, from live or shadow sources).
+     * (closed in the last 7 days, from demo, live, or shadow sources).
      * Called by CronManager (coin_passport:rebuildRecentSymbols).
      *
      * @return array{updated:int,symbols:list<string>,errors:list<string>}
@@ -129,10 +129,14 @@ final class CoinPassportService
     {
         $cutoff    = time() - 7 * 86400;
         $recent    = [];
+        $botBase   = __DIR__ . '/../trading_bot';
 
-        // Source 1: live closed trades
-        $closedDir = __DIR__ . '/../trading_bot/storage/trades/closed';
-        if (is_dir($closedDir)) {
+        // Scan mode-separated bot storage directories for recent closed trades
+        foreach (['storage_demo' => 'demo', 'storage_live' => 'live', 'storage_paper' => 'paper', 'storage' => 'live'] as $dir => $label) {
+            $closedDir = $botBase . '/' . $dir . '/trades/closed';
+            if (!is_dir($closedDir)) {
+                continue;
+            }
             foreach (glob($closedDir . '/*.json') ?: [] as $file) {
                 $trade = json_decode((string)file_get_contents($file), true);
                 if (!is_array($trade)) {
@@ -146,8 +150,7 @@ final class CoinPassportService
             }
         }
 
-        // Source 2: shadow virtual closed trades
-        // Include shadow-only symbols so they get passports even without live trades.
+        // Shadow virtual closed trades — include shadow-only symbols too
         $shadowClosedDir = __DIR__ . '/../ai_shadow/storage/virtual_trades_closed';
         if (is_dir($shadowClosedDir)) {
             foreach (glob($shadowClosedDir . '/*.json') ?: [] as $file) {

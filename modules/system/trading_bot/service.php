@@ -1075,6 +1075,24 @@ final class TradingBotService
             $result['symbol_exit_stats'] = $this->computePerSymbolExitStats($closedTrades);
 
             // ============================================================
+            // Demo Data Sufficiency Metrics
+            // Track completeness and AI readiness of local demo dataset.
+            // Computed every demo run so Brain always has current counts.
+            // ============================================================
+            if ($mode === 'demo') {
+                $demoSufficiency = $this->computeDemoSufficiencyMetrics();
+                $result['demo_closed_trades_total']        = $demoSufficiency['demo_closed_trades_total'];
+                $result['demo_closed_trades_complete']     = $demoSufficiency['demo_closed_trades_complete'];
+                $result['demo_closed_trades_complete_rate']= $demoSufficiency['demo_closed_trades_complete_rate'];
+                $result['ai_dataset_ready']                = $demoSufficiency['ai_dataset_ready'];
+                $result['ai_dataset_ready_reason']         = $demoSufficiency['ai_dataset_ready_reason'];
+                $result['demo_ai_dataset_records']         = $demoSufficiency['ai_dataset_records'];
+                $result['demo_data_sufficiency']           = $demoSufficiency;
+                // Persist to dedicated file so Brain can read it regardless of current mode
+                $this->store->saveDemoSufficiency($demoSufficiency);
+            }
+
+            // ============================================================
             // P0.3: Exchange submit visibility counters
             // Derived from finalized intent_results (single source of truth).
             // ============================================================
@@ -1502,6 +1520,46 @@ final class TradingBotService
                 ],
             ],
         ];
+    }
+
+    /**
+     * Compute demo data sufficiency metrics and AI readiness gate.
+     *
+     * Delegates counting to BotStore, then applies the readiness thresholds.
+     * Readiness requires at least 50 complete closed demo trades.
+     *
+     * @return array<string,mixed>
+     */
+    private function computeDemoSufficiencyMetrics(): array
+    {
+        $metrics = $this->store->computeDemoSufficiencyMetrics();
+
+        $minSamples     = 50;
+        $minCompleteRate = 80.0;
+
+        $total        = (int)($metrics['demo_closed_trades_total']        ?? 0);
+        $complete     = (int)($metrics['demo_closed_trades_complete']     ?? 0);
+        $completeRate = (float)($metrics['demo_closed_trades_complete_rate'] ?? 0.0);
+
+        $aiReady       = false;
+        $aiReadyReason = '';
+
+        if ($total === 0) {
+            $aiReadyReason = 'No closed demo trades yet — run the demo bot to accumulate data.';
+        } elseif ($total < $minSamples) {
+            $aiReadyReason = "Insufficient samples: {$total}/{$minSamples} closed demo trades required.";
+        } elseif ($completeRate < $minCompleteRate) {
+            $aiReadyReason = "Incomplete records: {$completeRate}% complete (need {$minCompleteRate}%). Check close finalization.";
+        } else {
+            $aiReady       = true;
+            $aiReadyReason = "Ready: {$total} closed demo trades, {$completeRate}% complete.";
+        }
+
+        $metrics['ai_dataset_ready']        = $aiReady;
+        $metrics['ai_dataset_ready_reason'] = $aiReadyReason;
+        $metrics['ai_dataset_min_samples']  = $minSamples;
+
+        return $metrics;
     }
 
     /**

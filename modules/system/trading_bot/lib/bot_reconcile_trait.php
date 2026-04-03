@@ -212,6 +212,11 @@ trait BotReconcileTrait
 
     $this->store->moveTradeToClosedDir($tradeId, $trade);
 
+    // Demo mode: write AI-ready dataset record for this closed trade.
+    if (($this->config['module']['mode'] ?? '') === 'demo') {
+        $this->store->appendAiDatasetRecord($tradeId, $trade);
+    }
+
     // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
     $symbol = (string)($trade['symbol'] ?? '');
     $this->triggerCoinPassportRebuildForSymbol($symbol);

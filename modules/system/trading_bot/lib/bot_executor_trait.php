@@ -1363,6 +1363,10 @@ trait BotExecutorTrait
                         $closedTrade['close_reason_normalized'] = $closeReason;
                     }
                     $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                    // Demo mode: write AI-ready dataset record for this exchange-closed trade.
+                    if (($this->config['module']['mode'] ?? '') === 'demo') {
+                        $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                    }
                     $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                     continue;
                 }
@@ -1737,6 +1741,10 @@ trait BotExecutorTrait
                                     $closedTrade2['close_reason_normalized'] = 'stop_loss';
                                 }
                                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);
+                                // Demo mode: write AI-ready dataset record for this logical-stop-closed trade.
+                                if (($this->config['module']['mode'] ?? '') === 'demo') {
+                                    $this->store->appendAiDatasetRecord($tradeId, $closedTrade2);
+                                }
                                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                                 continue;
                             }

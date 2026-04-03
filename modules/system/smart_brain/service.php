@@ -514,6 +514,7 @@ final class SmartBrainService
                 'demo_api_base_url'       => $botDemoCreds['api_base_url'],
                 'is_real_exchange_mode'   => in_array($mode, ['live', 'demo'], true),
             ],
+            'bot_demo_data_sufficiency' => $this->readBotJsonFile($base . '/storage_demo/runtime/demo_sufficiency.json'),
         ];
     }
 

@@ -41,6 +41,7 @@ class BotStore
             $this->storageDir . '/runtime/errors',
             $this->storageDir . '/stats',
             $this->storageDir . '/logs', // P7 fix: logs in storage/logs per manifest
+            $this->storageDir . '/ai_dataset', // AI-ready dataset records
         ];
         
         foreach ($dirs as $dir) {
@@ -448,6 +449,160 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
     }
     
+    // =========================================================================
+    // AI Dataset
+    // =========================================================================
+
+    /**
+     * Write a structured AI-ready record for a closed demo trade.
+     *
+     * Extracts the fields relevant for local AI analysis and writes to
+     * ai_dataset/{tradeId}.json. Idempotent — overwrites on re-close.
+     *
+     * @param string              $tradeId
+     * @param array<string,mixed> $trade  Fully-closed trade array
+     */
+    public function appendAiDatasetRecord(string $tradeId, array $trade): void
+    {
+        if ($tradeId === '') {
+            return;
+        }
+
+        $rt   = is_array($trade['runtime']    ?? null) ? $trade['runtime']    : [];
+        $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+        $risk = is_array($trade['risk']       ?? null) ? $trade['risk']       : [];
+        $pp   = is_array($trade['passport_snapshot'] ?? $trade['passport'] ?? null) ? ($trade['passport_snapshot'] ?? $trade['passport']) : [];
+
+        $record = [
+            'ai_dataset_record_version' => 'v1',
+            'created_at'                => date('c'),
+            'trade_id'                  => $tradeId,
+            'signal_id'                 => (string)($trade['signal_id'] ?? ''),
+            'symbol'                    => (string)($trade['symbol'] ?? ''),
+            'side'                      => (string)($trade['side'] ?? ''),
+            'pattern_algorithm'         => (string)($trade['pattern_algorithm'] ?? $trade['algo'] ?? ''),
+            'scenario_id'               => $trade['scenario_id'] ?? null,
+            'signal_strength'           => isset($trade['signal_strength']) ? (float)$trade['signal_strength'] : null,
+            'quality_score'             => isset($trade['quality_score'])   ? (float)$trade['quality_score']   : null,
+            'entry_ts'                  => $trade['open_ts'] ?? (isset($trade['opened_at']) ? strtotime($trade['opened_at']) : null),
+            'entry_price'               => isset($trade['entry_price']) ? (float)$trade['entry_price'] : null,
+            'close_ts'                  => $trade['close_ts'] ?? $trade['closed_ts'] ?? null,
+            'close_price'               => isset($trade['close_price']) ? (float)$trade['close_price'] : null,
+            'roi'                       => isset($trade['roi'])  ? (float)$trade['roi']  : null,
+            'pnl'                       => isset($trade['pnl'])  ? (float)$trade['pnl']  : null,
+            'mfe'                       => isset($rt['best_roi_seen'])  ? (float)$rt['best_roi_seen']  : null,
+            'mae'                       => isset($rt['worst_roi_seen']) ? (float)$rt['worst_roi_seen'] : null,
+            'hold_minutes'              => isset($trade['hold_minutes']) ? (int)$trade['hold_minutes'] : null,
+            'leverage'                  => isset($risk['leverage']) ? (int)$risk['leverage'] : null,
+            'stop_loss_price'           => isset($prot['stop_loss_price']) ? (float)$prot['stop_loss_price'] : null,
+            'trailing_applied'          => (bool)($rt['dumb_trailing_applied']  ?? false),
+            'break_even_applied'        => (bool)($rt['break_even_applied']     ?? false),
+            'close_reason_normalized'   => (string)($trade['close_reason_normalized'] ?? $trade['close_reason'] ?? ''),
+            'close_result_source'       => (string)($trade['close_result_source'] ?? ''),
+            'passport_confidence'       => (string)($pp['data_confidence'] ?? ''),
+            'passport_corridor_p75_roi' => isset($pp['corridor_p75_roi']) ? (float)$pp['corridor_p75_roi'] : null,
+            'source'                    => 'demo',
+        ];
+
+        $path = $this->storageDir . '/ai_dataset/' . $tradeId . '.json';
+        $this->writeJson($path, $record);
+    }
+
+    /**
+     * Scan closed trades and compute demo data sufficiency metrics.
+     *
+     * A trade is considered "complete" when it has a non-zero close_price,
+     * a non-null roi, and a non-empty close_reason_normalized.
+     *
+     * @return array<string,mixed>
+     */
+    public function computeDemoSufficiencyMetrics(): array
+    {
+        $closedDir    = $this->storageDir . '/trades/closed';
+        $aiDatasetDir = $this->storageDir . '/ai_dataset';
+
+        $totalClosed    = 0;
+        $completeClosed = 0;
+        $perSymbol  = [];
+        $perPattern = [];
+        $perSide    = [];
+
+        $files = glob($closedDir . '/*.json') ?: [];
+        foreach ($files as $file) {
+            $data = @json_decode((string)@file_get_contents($file), true);
+            if (!is_array($data)) {
+                continue;
+            }
+            $totalClosed++;
+
+            $closePrice           = (float)($data['close_price'] ?? 0);
+            $roi                  = $data['roi'] ?? null;
+            $closeReasonNormalized = (string)($data['close_reason_normalized'] ?? $data['close_reason'] ?? '');
+            $symbol               = (string)($data['symbol'] ?? '');
+            $pattern              = (string)($data['pattern_algorithm'] ?? $data['algo'] ?? '');
+            $side                 = strtolower((string)($data['side'] ?? ''));
+
+            $isComplete = $closePrice > 0 && $roi !== null && $closeReasonNormalized !== '';
+
+            if ($isComplete) {
+                $completeClosed++;
+            }
+            if ($symbol !== '') {
+                if (!isset($perSymbol[$symbol])) {
+                    $perSymbol[$symbol] = ['total' => 0, 'complete' => 0];
+                }
+                $perSymbol[$symbol]['total']++;
+                if ($isComplete) {
+                    $perSymbol[$symbol]['complete']++;
+                }
+            }
+            if ($pattern !== '') {
+                $perPattern[$pattern] = ($perPattern[$pattern] ?? 0) + 1;
+            }
+            if ($side !== '') {
+                $perSide[$side] = ($perSide[$side] ?? 0) + 1;
+            }
+        }
+
+        // Count AI dataset records
+        $aiDatasetCount = 0;
+        if (is_dir($aiDatasetDir)) {
+            $aiDatasetCount = count(glob($aiDatasetDir . '/*.json') ?: []);
+        }
+
+        $completeRate = $totalClosed > 0 ? round($completeClosed / $totalClosed * 100, 1) : 0.0;
+
+        // Sort per-symbol by total desc (top symbols)
+        arsort($perSymbol);
+        $topSymbols = array_slice($perSymbol, 0, 10, true);
+
+        return [
+            'demo_closed_trades_total'         => $totalClosed,
+            'demo_closed_trades_complete'       => $completeClosed,
+            'demo_closed_trades_complete_rate'  => $completeRate,
+            'demo_active_trades_count'          => count(glob($this->storageDir . '/trades/active/*.json') ?: []),
+            'ai_dataset_records'                => $aiDatasetCount,
+            'per_pattern_counts'                => $perPattern,
+            'per_side_counts'                   => $perSide,
+            'top_symbols'                       => $topSymbols,
+            'computed_at'                       => date('c'),
+        ];
+    }
+
+    /**
+     * Persist demo data sufficiency snapshot to runtime/demo_sufficiency.json.
+     *
+     * Written at end of every demo execute() so Brain can always read it
+     * regardless of current bot mode.
+     *
+     * @param array<string,mixed> $metrics  Output of computeDemoSufficiencyMetrics() + readiness gate
+     */
+    public function saveDemoSufficiency(array $metrics): void
+    {
+        $path = $this->storageDir . '/runtime/demo_sufficiency.json';
+        $this->writeJson($path, $metrics);
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================

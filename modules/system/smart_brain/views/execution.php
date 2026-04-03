@@ -23,6 +23,7 @@
  * @var string               $bot_storage_dir
  * @var array<string,mixed>  $bot_demo_creds
  * @var array<string,mixed>  $bot_diag
+ * @var array<string,mixed>  $bot_demo_data_sufficiency
  */
 
 $pageTitle = 'Smart Brain — Execution';
@@ -370,6 +371,122 @@ $demoStorageNs  = htmlspecialchars($storageNs);
         <div class="mt-2 small text-muted">
             Source file: <code><?= htmlspecialchars($demoSrcPath) ?></code>
         </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// ── Demo Data Readiness panel — always shown in demo mode or when sufficiency data exists ──
+$demoSufficiency    = $bot_demo_data_sufficiency ?? [];
+$demoClosedTotal    = (int)($demoSufficiency['demo_closed_trades_total']        ?? 0);
+$demoClosedComplete = (int)($demoSufficiency['demo_closed_trades_complete']     ?? 0);
+$demoCompleteRate   = (float)($demoSufficiency['demo_closed_trades_complete_rate'] ?? 0.0);
+$demoActiveCount2   = (int)($demoSufficiency['demo_active_trades_count']        ?? 0);
+$aiDatasetRecords   = (int)($demoSufficiency['ai_dataset_records']              ?? 0);
+$aiReady            = (bool)($demoSufficiency['ai_dataset_ready']               ?? false);
+$aiReadyReason      = (string)($demoSufficiency['ai_dataset_ready_reason']      ?? '');
+$aiMinSamples       = (int)($demoSufficiency['ai_dataset_min_samples']          ?? 50);
+$demoSuffAt         = (string)($demoSufficiency['computed_at']                  ?? '');
+$perPatternCounts   = (array)($demoSufficiency['per_pattern_counts']            ?? []);
+$perSideCounts      = (array)($demoSufficiency['per_side_counts']               ?? []);
+$topSymbols         = (array)($demoSufficiency['top_symbols']                   ?? []);
+?>
+<?php if ($bot_mode === 'demo' || !empty($demoSufficiency)): ?>
+<div class="card mb-4" style="border-color:<?= $aiReady ? '#16a34a' : '#334155' ?>;">
+    <div class="card-body">
+        <div class="section-heading">
+            Demo Data Readiness
+            <?php if ($aiReady): ?>
+            <span class="badge bg-success ms-2" style="font-size:.65rem;">READY</span>
+            <?php else: ?>
+            <span class="badge bg-secondary ms-2" style="font-size:.65rem;">BUILDING</span>
+            <?php endif; ?>
+        </div>
+        <div class="row g-2 mb-2">
+            <?php
+            $readCards = [
+                ['label' => 'Closed Trades',       'value' => (string)$demoClosedTotal,
+                 'ok' => $demoClosedTotal >= $aiMinSamples ? true : null],
+                ['label' => 'Complete Records',    'value' => (string)$demoClosedComplete,
+                 'ok' => null],
+                ['label' => 'Completeness Rate',   'value' => $demoClosedTotal > 0 ? $demoCompleteRate . '%' : 'n/a',
+                 'ok' => $demoCompleteRate >= 80 ? true : ($demoClosedTotal > 0 ? false : null)],
+                ['label' => 'Active Trades',       'value' => (string)$demoActiveCount2, 'ok' => null],
+                ['label' => 'AI Dataset Records',  'value' => (string)$aiDatasetRecords, 'ok' => null],
+                ['label' => 'AI Ready',             'value' => $aiReady ? 'YES' : 'NO (' . $demoClosedTotal . '/' . $aiMinSamples . ')',
+                 'ok' => $aiReady],
+            ];
+            foreach ($readCards as $rc):
+                $cls = 'neutral';
+                if ($rc['ok'] === true)  $cls = 'positive';
+                if ($rc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$rc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($rc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($aiReadyReason !== ''): ?>
+        <div class="alert <?= $aiReady ? 'alert-success' : 'alert-secondary' ?> py-2 mb-2 small">
+            <?= htmlspecialchars($aiReadyReason) ?>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($perPatternCounts) || !empty($perSideCounts) || !empty($topSymbols)): ?>
+        <div class="row g-3">
+            <?php if (!empty($perPatternCounts)): ?>
+            <div class="col-md-4">
+                <div class="section-heading" style="font-size:.75rem;">Closed by Pattern</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Pattern</th><th>Trades</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($perPatternCounts as $pat => $cnt): ?>
+                    <tr><td><?= htmlspecialchars($pat) ?></td><td><?= (int)$cnt ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($perSideCounts)): ?>
+            <div class="col-md-2">
+                <div class="section-heading" style="font-size:.75rem;">Closed by Side</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Side</th><th>Trades</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($perSideCounts as $side => $cnt): ?>
+                    <tr><td><?= htmlspecialchars($side) ?></td><td><?= (int)$cnt ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($topSymbols)): ?>
+            <div class="col-md-6">
+                <div class="section-heading" style="font-size:.75rem;">Top Symbols by Demo Evidence</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($topSymbols as $sym => $sc):
+                        $sTotal    = (int)($sc['total']    ?? 0);
+                        $sComplete = (int)($sc['complete'] ?? 0);
+                    ?>
+                    <tr>
+                        <td><?= htmlspecialchars($sym) ?></td>
+                        <td><?= $sTotal ?></td>
+                        <td><?= $sComplete ?> (<?= $sTotal > 0 ? round($sComplete / $sTotal * 100) : 0 ?>%)</td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if ($demoSuffAt !== ''): ?>
+        <div class="mt-2 small text-muted">Last computed: <?= htmlspecialchars($demoSuffAt) ?></div>
         <?php endif; ?>
     </div>
 </div>

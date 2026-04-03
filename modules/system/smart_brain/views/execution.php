@@ -24,6 +24,7 @@
  * @var array<string,mixed>  $bot_demo_creds
  * @var array<string,mixed>  $bot_diag
  * @var array<string,mixed>  $bot_demo_data_sufficiency
+ * @var array<string,mixed>  $bot_demo_truth_audit
  */
 
 $pageTitle = 'Smart Brain — Execution';
@@ -686,6 +687,96 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
             </div>
             <?php endif; ?>
         </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// ── Demo Truth Audit panel — derived from actual storage files ───────────────
+$demoTruthAudit        = $bot_demo_truth_audit ?? [];
+$auditActive           = $demoTruthAudit['active_trades_count']               ?? null;
+$auditClosed           = $demoTruthAudit['closed_trades_count']               ?? null;
+$auditAiDataset        = $demoTruthAudit['ai_dataset_count']                  ?? null;
+$auditOldestAge        = $demoTruthAudit['oldest_active_trade_age_minutes']   ?? null;
+$auditAvgAge           = $demoTruthAudit['avg_active_trade_age_minutes']      ?? null;
+$auditStaleCount       = $demoTruthAudit['stale_active_count']                ?? null;
+$auditPctStale         = $demoTruthAudit['pct_active_trades_stale']           ?? null;
+$auditCompleteRate     = $demoTruthAudit['closed_trades_completeness_rate']   ?? null;
+$auditMatchRate        = $demoTruthAudit['closed_to_ai_dataset_match_rate']   ?? null;
+$auditMissingMfe       = $demoTruthAudit['pct_closed_missing_mfe']            ?? null;
+$auditMissingMae       = $demoTruthAudit['pct_closed_missing_mae']            ?? null;
+$auditMissingHold      = $demoTruthAudit['pct_closed_missing_hold_minutes']   ?? null;
+$auditMissingReason    = $demoTruthAudit['pct_closed_missing_close_reason']   ?? null;
+$auditClosedNoAi       = $demoTruthAudit['closed_trades_without_ai_dataset_count'] ?? null;
+$auditBottleneck       = (string)($demoTruthAudit['primary_demo_bottleneck']        ?? '');
+$auditBottleneckReason = (string)($demoTruthAudit['primary_demo_bottleneck_reason'] ?? '');
+$auditNextFix          = (string)($demoTruthAudit['recommended_next_fix_area']      ?? '');
+$auditAt               = (string)($demoTruthAudit['audited_at']                     ?? '');
+?>
+<?php if ($bot_mode === 'demo' && !empty($demoTruthAudit)): ?>
+<div class="card mb-4" style="border-color:#7c3aed;">
+    <div class="card-body">
+        <div class="section-heading">Demo Truth Audit <span class="badge bg-secondary ms-2" style="font-size:.6rem;">FROM STORAGE</span></div>
+        <div class="row g-2 mb-2">
+            <?php
+            $auditCards = [
+                ['label' => 'Active Trades',         'value' => $auditActive !== null ? (string)$auditActive : 'n/a',          'ok' => null],
+                ['label' => 'Closed Trades',          'value' => $auditClosed !== null ? (string)$auditClosed : 'n/a',          'ok' => $auditClosed > 0 ? true : null],
+                ['label' => 'AI Dataset Records',     'value' => $auditAiDataset !== null ? (string)$auditAiDataset : 'n/a',    'ok' => null],
+                ['label' => 'Oldest Active (min)',    'value' => $auditOldestAge !== null ? (string)$auditOldestAge : 'n/a',    'ok' => null],
+                ['label' => 'Stale Active',           'value' => $auditStaleCount !== null ? $auditStaleCount . ' (' . $auditPctStale . '%)' : 'n/a', 'ok' => ($auditPctStale ?? 0) < 30 ? true : (($auditPctStale ?? 0) > 60 ? false : null)],
+                ['label' => 'Closed Completeness',   'value' => $auditCompleteRate !== null ? $auditCompleteRate . '%' : 'n/a', 'ok' => ($auditCompleteRate ?? 0) >= 80 ? true : ($auditCompleteRate !== null && $auditClosed > 3 ? false : null)],
+                ['label' => 'AI Dataset Match',      'value' => $auditMatchRate !== null ? $auditMatchRate . '%' : 'n/a',       'ok' => ($auditMatchRate ?? 0) >= 90 ? true : ($auditMatchRate !== null && $auditClosed > 0 ? false : null)],
+                ['label' => 'Closed w/o AI Record',  'value' => $auditClosedNoAi !== null ? (string)$auditClosedNoAi : 'n/a',  'ok' => $auditClosedNoAi === 0 ? true : ($auditClosedNoAi > 0 ? false : null)],
+            ];
+            foreach ($auditCards as $ac):
+                $cls = 'neutral';
+                if ($ac['ok'] === true)  $cls = 'positive';
+                if ($ac['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$ac['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($ac['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($auditMissingMfe !== null || $auditMissingMae !== null): ?>
+        <div class="row g-2 mb-2">
+            <?php
+            $fieldCards = [
+                ['label' => 'Missing MFE %',   'value' => $auditMissingMfe !== null ? $auditMissingMfe . '%' : 'n/a',    'ok' => $auditMissingMfe === 0.0 ? true : ($auditMissingMfe !== null && $auditMissingMfe > 20 ? false : null)],
+                ['label' => 'Missing MAE %',   'value' => $auditMissingMae !== null ? $auditMissingMae . '%' : 'n/a',    'ok' => $auditMissingMae === 0.0 ? true : ($auditMissingMae !== null && $auditMissingMae > 20 ? false : null)],
+                ['label' => 'Missing Hold %',  'value' => $auditMissingHold !== null ? $auditMissingHold . '%' : 'n/a',  'ok' => $auditMissingHold === 0.0 ? true : ($auditMissingHold !== null && $auditMissingHold > 20 ? false : null)],
+                ['label' => 'Missing Reason %','value' => $auditMissingReason !== null ? $auditMissingReason . '%' : 'n/a', 'ok' => $auditMissingReason === 0.0 ? true : ($auditMissingReason !== null && $auditMissingReason > 10 ? false : null)],
+            ];
+            foreach ($fieldCards as $fc):
+                $cls = 'neutral';
+                if ($fc['ok'] === true)  $cls = 'positive';
+                if ($fc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$fc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($fc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        <?php if ($auditBottleneck !== ''): ?>
+        <div class="alert <?= $auditBottleneck === 'none_loop_is_cycling' ? 'alert-success' : 'alert-warning' ?> py-2 mb-2 small">
+            <strong>Bottleneck:</strong> <code><?= htmlspecialchars($auditBottleneck) ?></code><br>
+            <?= htmlspecialchars($auditBottleneckReason) ?>
+            <?php if ($auditNextFix !== '' && $auditBottleneck !== 'none_loop_is_cycling'): ?>
+            <br><strong>Next Fix:</strong> <code><?= htmlspecialchars($auditNextFix) ?></code>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if ($auditAt !== ''): ?>
+        <div class="mt-1 small text-muted">Audited from storage: <?= htmlspecialchars($auditAt) ?></div>
         <?php endif; ?>
     </div>
 </div>

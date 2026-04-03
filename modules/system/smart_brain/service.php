@@ -515,6 +515,7 @@ final class SmartBrainService
                 'is_real_exchange_mode'   => in_array($mode, ['live', 'demo'], true),
             ],
             'bot_demo_data_sufficiency' => $this->readBotJsonFile($base . '/storage_demo/runtime/demo_sufficiency.json'),
+            'bot_demo_truth_audit'     => $this->readBotJsonFile($base . '/storage_demo/runtime/demo_truth_audit.json'),
         ];
     }
 

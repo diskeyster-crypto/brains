@@ -645,6 +645,215 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $this->writeJson($path, $metrics);
     }
 
+    /**
+     * Derive a ground-truth runtime audit from actual storage files.
+     *
+     * All numbers are derived directly from disk — never from cached counters.
+     * This function is the authoritative source for demo loop health analysis.
+     *
+     * @param int $learningMaxActiveAgeMinutes  Stale threshold (from demo_learning_mode config)
+     * @return array<string,mixed>
+     */
+    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240): array
+    {
+        $closedDir    = $this->storageDir . '/trades/closed';
+        $activeDir    = $this->storageDir . '/trades/active';
+        $aiDatasetDir = $this->storageDir . '/ai_dataset';
+        $now          = time();
+
+        // ── Active trades ────────────────────────────────────────────────────
+        $activeFiles  = glob($activeDir . '/*.json') ?: [];
+        $activeCount  = count($activeFiles);
+        $activeAges   = [];
+        $staleCount   = 0;
+
+        foreach ($activeFiles as $af) {
+            $d = @json_decode((string)@file_get_contents($af), true);
+            if (!is_array($d)) {
+                continue;
+            }
+            // Determine opened_at timestamp
+            $openTs = null;
+            if (!empty($d['opened_at'])) {
+                $openTs = strtotime($d['opened_at']);
+            } elseif (!empty($d['open_ts'])) {
+                $openTs = (int)$d['open_ts'];
+            }
+            if ($openTs !== null && $openTs > 0) {
+                $ageMin = (int)round(($now - $openTs) / 60);
+                $activeAges[] = $ageMin;
+                if ($ageMin >= $learningMaxActiveAgeMinutes) {
+                    $staleCount++;
+                }
+            }
+        }
+
+        $oldestActiveAgeMin  = count($activeAges) > 0 ? max($activeAges) : null;
+        $avgActiveAgeMin     = count($activeAges) > 0 ? round(array_sum($activeAges) / count($activeAges), 1) : null;
+        $pctStaleActive      = $activeCount > 0 ? round($staleCount / $activeCount * 100, 1) : 0.0;
+
+        // ── Closed trades ────────────────────────────────────────────────────
+        $closedFiles  = glob($closedDir . '/*.json') ?: [];
+        $closedCount  = count($closedFiles);
+        $closedIds    = [];
+
+        $missingMfe          = 0;
+        $missingMae          = 0;
+        $missingHoldMinutes  = 0;
+        $missingCloseReason  = 0;
+        $missingClosePrice   = 0;
+        $missingRoi          = 0;
+        $completeClosedCount = 0;
+
+        foreach ($closedFiles as $cf) {
+            $d = @json_decode((string)@file_get_contents($cf), true);
+            if (!is_array($d)) {
+                continue;
+            }
+            $tradeId = (string)($d['trade_id'] ?? $d['id'] ?? basename($cf, '.json'));
+            if ($tradeId !== '') {
+                $closedIds[$tradeId] = true;
+            }
+
+            $closePrice  = (float)($d['close_price'] ?? 0);
+            $roi         = $d['roi'] ?? null;
+            $closeReason = (string)($d['close_reason_normalized'] ?? $d['close_reason'] ?? '');
+            $mfe         = $d['mfe'] ?? null;
+            $mae         = $d['mae'] ?? null;
+            $holdMin     = $d['hold_minutes'] ?? null;
+
+            if ($closePrice <= 0) {
+                $missingClosePrice++;
+            }
+            if ($roi === null) {
+                $missingRoi++;
+            }
+            if ($closeReason === '') {
+                $missingCloseReason++;
+            }
+            if ($mfe === null) {
+                $missingMfe++;
+            }
+            if ($mae === null) {
+                $missingMae++;
+            }
+            if ($holdMin === null || (int)$holdMin < 0) {
+                $missingHoldMinutes++;
+            }
+
+            $isComplete = $closePrice > 0 && $roi !== null && $closeReason !== '';
+            if ($isComplete) {
+                $completeClosedCount++;
+            }
+        }
+
+        // ── AI dataset records ───────────────────────────────────────────────
+        $aiFiles   = is_dir($aiDatasetDir) ? (glob($aiDatasetDir . '/*.json') ?: []) : [];
+        $aiCount   = count($aiFiles);
+        $aiIds     = [];
+
+        foreach ($aiFiles as $af) {
+            $tradeId = basename($af, '.json');
+            if ($tradeId !== '') {
+                $aiIds[$tradeId] = true;
+            }
+        }
+
+        // ── Consistency cross-checks ─────────────────────────────────────────
+        $closedWithoutAiDataset = 0;
+        foreach (array_keys($closedIds) as $cid) {
+            if (!isset($aiIds[$cid])) {
+                $closedWithoutAiDataset++;
+            }
+        }
+        $aiWithoutClosedTrade = 0;
+        foreach (array_keys($aiIds) as $aid) {
+            if (!isset($closedIds[$aid])) {
+                $aiWithoutClosedTrade++;
+            }
+        }
+        $matchRate = $closedCount > 0 ? round(($closedCount - $closedWithoutAiDataset) / $closedCount * 100, 1) : 0.0;
+
+        // ── Field completeness rates ─────────────────────────────────────────
+        $pctMissingMfe         = $closedCount > 0 ? round($missingMfe / $closedCount * 100, 1) : 0.0;
+        $pctMissingMae         = $closedCount > 0 ? round($missingMae / $closedCount * 100, 1) : 0.0;
+        $pctMissingHoldMinutes = $closedCount > 0 ? round($missingHoldMinutes / $closedCount * 100, 1) : 0.0;
+        $pctMissingCloseReason = $closedCount > 0 ? round($missingCloseReason / $closedCount * 100, 1) : 0.0;
+        $pctMissingClosePrice  = $closedCount > 0 ? round($missingClosePrice / $closedCount * 100, 1) : 0.0;
+        $completenessRate      = $closedCount > 0 ? round($completeClosedCount / $closedCount * 100, 1) : 0.0;
+
+        // ── Bottleneck classification ────────────────────────────────────────
+        $primaryBottleneck       = 'unknown';
+        $primaryBottleneckReason = 'Insufficient data to classify bottleneck yet.';
+        $recommendedNextFixArea  = 'run_demo_and_observe';
+
+        if ($closedCount === 0 && $activeCount === 0) {
+            $primaryBottleneck       = 'demo_feed_too_small';
+            $primaryBottleneckReason = 'No active or closed demo trades found. Pattern Engine demo feed may not be producing signals, or bot has not run yet.';
+            $recommendedNextFixArea  = 'check_pattern_engine_demo_feed';
+        } elseif ($closedCount === 0 && $activeCount > 0) {
+            $primaryBottleneck       = 'close_detection_too_weak';
+            $primaryBottleneckReason = "Active trades exist ({$activeCount}) but none have closed. Exchange close detection or reconcile may not be triggering.";
+            $recommendedNextFixArea  = 'audit_reconcile_and_close_pipeline';
+        } elseif ($pctStaleActive > 50) {
+            $primaryBottleneck       = 'too_many_stale_active_trades';
+            $primaryBottleneckReason = "Over {$pctStaleActive}% of active trades ({$staleCount}/{$activeCount}) are older than {$learningMaxActiveAgeMinutes} min. They are blocking new slots and not closing.";
+            $recommendedNextFixArea  = 'force_reconcile_stale_trades';
+        } elseif ($matchRate < 70 && $closedCount > 0) {
+            $primaryBottleneck       = 'ai_dataset_write_failures';
+            $primaryBottleneckReason = "Only {$matchRate}% of closed trades have a matching AI dataset record ({$closedWithoutAiDataset} missing). AI dataset write path may be failing.";
+            $recommendedNextFixArea  = 'audit_ai_dataset_write_path';
+        } elseif ($completenessRate < 60 && $closedCount > 5) {
+            $primaryBottleneck       = 'incomplete_closed_trade_fields';
+            $primaryBottleneckReason = "Only {$completenessRate}% of closed trades have all required fields (close_price, roi, close_reason). Close finalization may be incomplete.";
+            $recommendedNextFixArea  = 'audit_close_finalization';
+        } elseif ($closedCount > 0 && $closedCount < 10) {
+            $primaryBottleneck       = 'turnover_too_low';
+            $primaryBottleneckReason = "Only {$closedCount} closed demo trades. Loop is functioning but accumulation is too slow. Increase signal throughput or reduce hold times.";
+            $recommendedNextFixArea  = 'increase_demo_signal_throughput';
+        } elseif ($closedCount >= 10) {
+            $primaryBottleneck       = 'none_loop_is_cycling';
+            $primaryBottleneckReason = "{$closedCount} closed trades with {$completenessRate}% completeness and {$matchRate}% AI dataset match rate. Loop is cycling.";
+            $recommendedNextFixArea  = 'maintain_current_config';
+        }
+
+        return [
+            'active_trades_count'                      => $activeCount,
+            'closed_trades_count'                      => $closedCount,
+            'ai_dataset_count'                         => $aiCount,
+            'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,
+            'avg_active_trade_age_minutes'             => $avgActiveAgeMin,
+            'stale_active_count'                       => $staleCount,
+            'pct_active_trades_stale'                  => $pctStaleActive,
+            'stale_threshold_minutes'                  => $learningMaxActiveAgeMinutes,
+            'closed_trades_complete_count'             => $completeClosedCount,
+            'closed_trades_completeness_rate'          => $completenessRate,
+            'pct_closed_missing_mfe'                   => $pctMissingMfe,
+            'pct_closed_missing_mae'                   => $pctMissingMae,
+            'pct_closed_missing_hold_minutes'          => $pctMissingHoldMinutes,
+            'pct_closed_missing_close_reason'          => $pctMissingCloseReason,
+            'pct_closed_missing_close_price'           => $pctMissingClosePrice,
+            'closed_trades_without_ai_dataset_count'   => $closedWithoutAiDataset,
+            'ai_dataset_without_closed_trade_count'    => $aiWithoutClosedTrade,
+            'closed_to_ai_dataset_match_rate'          => $matchRate,
+            'primary_demo_bottleneck'                  => $primaryBottleneck,
+            'primary_demo_bottleneck_reason'           => $primaryBottleneckReason,
+            'recommended_next_fix_area'                => $recommendedNextFixArea,
+            'audited_at'                               => date('c'),
+        ];
+    }
+
+    /**
+     * Persist demo truth audit to runtime/demo_truth_audit.json.
+     *
+     * @param array<string,mixed> $audit  Output of computeDemoTruthAudit()
+     */
+    public function saveDemoTruthAudit(array $audit): void
+    {
+        $path = $this->storageDir . '/runtime/demo_truth_audit.json';
+        $this->writeJson($path, $audit);
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================

@@ -1135,6 +1135,28 @@ final class TradingBotService
                 $result['demo_data_sufficiency']           = $demoSufficiency;
                 // Persist to dedicated file so Brain can read it regardless of current mode
                 $this->store->saveDemoSufficiency($demoSufficiency);
+
+                // --------------------------------------------------------
+                // Demo Truth Audit — derive ground-truth metrics directly
+                // from storage files. Classifies the primary bottleneck.
+                // --------------------------------------------------------
+                $learningMaxAgeMin = (int)(
+                    $this->config['demo_learning_mode']['learning_max_active_age_minutes'] ?? 240
+                );
+                $demoTruthAudit = $this->store->computeDemoTruthAudit($learningMaxAgeMin);
+                $result['demo_truth_audit']              = $demoTruthAudit;
+                $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];
+                $result['primary_demo_bottleneck_reason']= $demoTruthAudit['primary_demo_bottleneck_reason'];
+                $result['recommended_next_fix_area']     = $demoTruthAudit['recommended_next_fix_area'];
+                // Merge consistency fields into sufficiency for downstream reads
+                $demoSufficiency['closed_trades_without_ai_dataset_count'] = $demoTruthAudit['closed_trades_without_ai_dataset_count'];
+                $demoSufficiency['ai_dataset_without_closed_trade_count']  = $demoTruthAudit['ai_dataset_without_closed_trade_count'];
+                $demoSufficiency['closed_to_ai_dataset_match_rate']        = $demoTruthAudit['closed_to_ai_dataset_match_rate'];
+                $demoSufficiency['primary_demo_bottleneck']                = $demoTruthAudit['primary_demo_bottleneck'];
+                $demoSufficiency['primary_demo_bottleneck_reason']         = $demoTruthAudit['primary_demo_bottleneck_reason'];
+                $demoSufficiency['recommended_next_fix_area']              = $demoTruthAudit['recommended_next_fix_area'];
+                $this->store->saveDemoSufficiency($demoSufficiency);
+                $this->store->saveDemoTruthAudit($demoTruthAudit);
             }
 
             // ============================================================

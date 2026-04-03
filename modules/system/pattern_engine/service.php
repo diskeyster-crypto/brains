@@ -571,6 +571,12 @@ final class PatternEngineService
         $this->realRunStats['signals_truncated']    = $stored < $afterDedup;
         $this->realRunStats['scenarios_truncated']  = $stored < $afterDedup;
 
+        // Re-apply paper policy on the post-dedup/truncated set.
+        // This is the core cap-consistency fix: evaluate() runs paper policy
+        // pre-dedup, consuming cap slots for signals that later get removed.
+        // Reclassifying here ensures caps are enforced on the final working set only.
+        $this->scenarioEngine->reclassifyPaperForSet($allCombined);
+
         $allRaw       = array_column($allCombined, 'raw');
         $allSignals   = array_column($allCombined, 'signal');
         $allScenarios = array_column($allCombined, 'scenario');
@@ -700,17 +706,46 @@ final class PatternEngineService
         $paperStrongCandidateCount = 0;
         $paperRejectReasons        = [];
         $demoBlockedByPaperReasons = [];
+        $paperStrongCapHitsCount   = 0;
+        $paperCandidateCapHitsCount= 0;
+        $paperRejectedByStrongCap  = 0;
+        $paperRejectedByCandCap    = 0;
+        $paperStrongNearMissCount  = 0;
+        $paperStrongNearMissReasons= [];
 
         foreach ($allScenarios as $sc) {
             // Read from top-level first (set by scenario_engine); fall back to diagnostics for older data
-            $paperBucket = $sc['paper_bucket'] ?? $sc['diagnostics']['paper_bucket'] ?? null;
-            $paperReason = $sc['paper_reason'] ?? $sc['diagnostics']['paper_reason'] ?? null;
-            $bucket      = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
+            $paperBucket      = $sc['paper_bucket'] ?? $sc['diagnostics']['paper_bucket'] ?? null;
+            $paperReason      = $sc['paper_reason'] ?? $sc['diagnostics']['paper_reason'] ?? null;
+            $bucket           = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
+            $strongCapHit     = (bool)($sc['paper_strong_cap_hit']      ?? $sc['diagnostics']['paper_strong_cap_hit']      ?? false);
+            $candCapHit       = (bool)($sc['paper_candidate_cap_hit']   ?? $sc['diagnostics']['paper_candidate_cap_hit']   ?? false);
+            $nearMiss         = (bool)($sc['paper_strong_near_miss']    ?? $sc['diagnostics']['paper_strong_near_miss']    ?? false);
+            $nearMissReason   = (string)($sc['paper_strong_near_miss_reason'] ?? $sc['diagnostics']['paper_strong_near_miss_reason'] ?? '');
+
+            if ($strongCapHit) {
+                $paperStrongCapHitsCount++;
+            }
+            if ($candCapHit) {
+                $paperCandidateCapHitsCount++;
+            }
+            if ($nearMiss && $paperBucket !== 'paper_strong_candidate') {
+                $paperStrongNearMissCount++;
+                if ($nearMissReason !== '') {
+                    $paperStrongNearMissReasons[$nearMissReason] = ($paperStrongNearMissReasons[$nearMissReason] ?? 0) + 1;
+                }
+            }
 
             if ($paperBucket === 'paper_reject') {
                 $paperRejectCount++;
                 if ($paperReason !== null) {
                     $paperRejectReasons[$paperReason] = ($paperRejectReasons[$paperReason] ?? 0) + 1;
+                }
+                if ($paperReason === 'paper_strong_cap_reached') {
+                    $paperRejectedByStrongCap++;
+                }
+                if ($paperReason === 'paper_candidate_cap_reached') {
+                    $paperRejectedByCandCap++;
                 }
                 if (in_array($bucket, ['allow_demo', 'allow_sim'], true)) {
                     // scenario blocked from demo export by paper classification
@@ -730,6 +765,7 @@ final class PatternEngineService
 
         arsort($paperRejectReasons);
         arsort($demoBlockedByPaperReasons);
+        arsort($paperStrongNearMissReasons);
 
         $topPaperRejectReasons = [];
         foreach (array_slice($paperRejectReasons, 0, 10, true) as $r => $c) {
@@ -739,12 +775,40 @@ final class PatternEngineService
         foreach (array_slice($demoBlockedByPaperReasons, 0, 10, true) as $r => $c) {
             $topDemoBlockedByPaperReasons[] = ['reason' => $r, 'count' => $c];
         }
+        $topPaperStrongNearMissReasons = [];
+        foreach (array_slice($paperStrongNearMissReasons, 0, 5, true) as $r => $c) {
+            $topPaperStrongNearMissReasons[] = ['reason' => $r, 'count' => $c];
+        }
+
+        // Cap logic consistency check:
+        // After reclassify (post-dedup), cap_hit counters from the engine match the reject reasons.
+        // Inconsistency means the reclassify was skipped or counters were corrupted.
+        $engineStrongCapHits    = $this->scenarioEngine->getPaperStrongCapHits();
+        $engineCandCapHits      = $this->scenarioEngine->getPaperCandidateCapHits();
+        $capLogicConsistent     = ($engineStrongCapHits === $paperStrongCapHitsCount) &&
+                                  ($engineCandCapHits  === $paperCandidateCapHitsCount);
+        $capLogicWarning        = null;
+        if (!$capLogicConsistent) {
+            $capLogicWarning = sprintf(
+                'cap_hit_mismatch: engine_strong=%d/counted=%d engine_cand=%d/counted=%d',
+                $engineStrongCapHits, $paperStrongCapHitsCount,
+                $engineCandCapHits,   $paperCandidateCapHitsCount
+            );
+        }
 
         $this->realRunStats['paper_reject_count']               = $paperRejectCount;
         $this->realRunStats['paper_candidate_count']            = $paperCandidateCount;
         $this->realRunStats['paper_strong_candidate_count']     = $paperStrongCandidateCount;
         $this->realRunStats['top_paper_reject_reasons']         = $topPaperRejectReasons;
         $this->realRunStats['top_demo_blocked_by_paper_reasons']= $topDemoBlockedByPaperReasons;
+        $this->realRunStats['paper_strong_cap_hits']            = $paperStrongCapHitsCount;
+        $this->realRunStats['paper_candidate_cap_hits']         = $paperCandidateCapHitsCount;
+        $this->realRunStats['paper_rejected_by_strong_cap_count']    = $paperRejectedByStrongCap;
+        $this->realRunStats['paper_rejected_by_candidate_cap_count'] = $paperRejectedByCandCap;
+        $this->realRunStats['paper_cap_logic_consistent']       = $capLogicConsistent;
+        $this->realRunStats['paper_cap_logic_warning']          = $capLogicWarning;
+        $this->realRunStats['paper_strong_near_miss_count']     = $paperStrongNearMissCount;
+        $this->realRunStats['top_paper_strong_near_miss_reasons'] = $topPaperStrongNearMissReasons;
 
         // Build downstream-safe filtered signal sets with paper policy gating.
         //
@@ -818,15 +882,24 @@ final class PatternEngineService
         $feedTargetMax = (int)(($this->config['demo_feed_targets']['demo_feed_target_soft_max_per_run'] ?? null) ?? 10);
         $feedMetTarget = $demoFeedExportTotal >= $feedTargetMin;
         $feedBelowTargetBy = max(0, $feedTargetMin - $demoFeedExportTotal);
-        // Top block reason preventing target
-        $feedTopBlockPreventingTarget = null;
+
+        // Primary / secondary block reasons preventing target
+        $feedTopBlockPreventingTarget      = null;
+        $feedPrimaryBlockReason            = null;
+        $feedSecondaryBlockReason          = null;
         if (!$feedMetTarget) {
             if ($demoFeedCandidateTotal === 0) {
                 $feedTopBlockPreventingTarget = 'no_scenarios_generated';
+                $feedPrimaryBlockReason       = 'no_scenarios_generated';
             } elseif (!empty($topDemoFeedBlockReasons)) {
-                $feedTopBlockPreventingTarget = (string)($topDemoFeedBlockReasons[0]['reason'] ?? 'unknown');
+                $feedTopBlockPreventingTarget  = (string)($topDemoFeedBlockReasons[0]['reason'] ?? 'unknown');
+                $feedPrimaryBlockReason        = (string)($topDemoFeedBlockReasons[0]['reason'] ?? 'unknown');
+                $feedSecondaryBlockReason      = isset($topDemoFeedBlockReasons[1])
+                    ? (string)($topDemoFeedBlockReasons[1]['reason'] ?? null)
+                    : null;
             } else {
                 $feedTopBlockPreventingTarget = 'unknown';
+                $feedPrimaryBlockReason       = 'unknown';
             }
         }
 
@@ -845,6 +918,8 @@ final class PatternEngineService
         $this->realRunStats['demo_feed_met_target']                         = $feedMetTarget;
         $this->realRunStats['demo_feed_below_target_by']                    = $feedBelowTargetBy;
         $this->realRunStats['demo_feed_top_block_preventing_target']        = $feedTopBlockPreventingTarget;
+        $this->realRunStats['demo_feed_target_blocked_primary_reason']      = $feedPrimaryBlockReason;
+        $this->realRunStats['demo_feed_target_blocked_secondary_reason']    = $feedSecondaryBlockReason;
         // ── End demo feed diagnostics ─────────────────────────────────────────
 
         $stats = $this->computeStats($allRaw, $allSignals, $allScenarios);
@@ -1355,6 +1430,16 @@ final class PatternEngineService
             'shadow_export_count_from_paper'      => (int)($this->realRunStats['shadow_export_count_from_paper']      ?? 0),
             'top_paper_reject_reasons'            => (array)($this->realRunStats['top_paper_reject_reasons']          ?? []),
             'top_demo_blocked_by_paper_reasons'   => (array)($this->realRunStats['top_demo_blocked_by_paper_reasons'] ?? []),
+            // Paper cap diagnostics
+            'paper_strong_cap_hits'               => (int)($this->realRunStats['paper_strong_cap_hits']               ?? 0),
+            'paper_candidate_cap_hits'            => (int)($this->realRunStats['paper_candidate_cap_hits']            ?? 0),
+            'paper_rejected_by_strong_cap_count'  => (int)($this->realRunStats['paper_rejected_by_strong_cap_count']  ?? 0),
+            'paper_rejected_by_candidate_cap_count' => (int)($this->realRunStats['paper_rejected_by_candidate_cap_count'] ?? 0),
+            'paper_cap_logic_consistent'          => (bool)($this->realRunStats['paper_cap_logic_consistent']         ?? true),
+            'paper_cap_logic_warning'             => $this->realRunStats['paper_cap_logic_warning']                   ?? null,
+            // Paper near-miss diagnostics
+            'paper_strong_near_miss_count'        => (int)($this->realRunStats['paper_strong_near_miss_count']        ?? 0),
+            'top_paper_strong_near_miss_reasons'  => (array)($this->realRunStats['top_paper_strong_near_miss_reasons'] ?? []),
             // Demo feed aggregate diagnostics
             'demo_feed_candidate_total'                    => (int)($this->realRunStats['demo_feed_candidate_total']                    ?? 0),
             'demo_feed_export_total'                       => (int)($this->realRunStats['demo_feed_export_total']                       ?? 0),
@@ -1371,6 +1456,8 @@ final class PatternEngineService
             'demo_feed_met_target'                         => (bool)($this->realRunStats['demo_feed_met_target']                        ?? false),
             'demo_feed_below_target_by'                    => (int)($this->realRunStats['demo_feed_below_target_by']                    ?? 0),
             'demo_feed_top_block_preventing_target'        => $this->realRunStats['demo_feed_top_block_preventing_target']              ?? null,
+            'demo_feed_target_blocked_primary_reason'      => $this->realRunStats['demo_feed_target_blocked_primary_reason']            ?? null,
+            'demo_feed_target_blocked_secondary_reason'    => $this->realRunStats['demo_feed_target_blocked_secondary_reason']          ?? null,
             // Universe overlap diagnostics
             'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
             'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),

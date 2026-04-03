@@ -105,6 +105,18 @@ final class ScenarioEngine
     private int $paperCandidateGranted = 0;
 
     /**
+     * Per-run counter for times the strong cap was hit during applyPaperPolicy().
+     * Tracks true cap events for cap-logic consistency diagnostics.
+     */
+    private int $paperStrongCapHits = 0;
+
+    /**
+     * Per-run counter for times the candidate cap was hit during applyPaperPolicy().
+     * Tracks true cap events for cap-logic consistency diagnostics.
+     */
+    private int $paperCandidateCapHits = 0;
+
+    /**
      * @param array<string,array<string,mixed>> $profiles          Scenario profiles from config
      * @param string                            $passportDir       Path to coin_passport passports/
      * @param bool                              $liveOutputEnabled Master live-output gate (default false)
@@ -121,6 +133,8 @@ final class ScenarioEngine
         $this->demoLowConfidenceGranted  = 0;
         $this->paperStrongGranted        = 0;
         $this->paperCandidateGranted     = 0;
+        $this->paperStrongCapHits        = 0;
+        $this->paperCandidateCapHits     = 0;
     }
 
     /**
@@ -135,6 +149,91 @@ final class ScenarioEngine
         $this->demoLowConfidenceGranted = 0;
         $this->paperStrongGranted       = 0;
         $this->paperCandidateGranted    = 0;
+        $this->paperStrongCapHits       = 0;
+        $this->paperCandidateCapHits    = 0;
+    }
+
+    /**
+     * Return the number of strong-cap events in the current run.
+     * Used by service layer for cap-logic consistency diagnostics.
+     */
+    public function getPaperStrongCapHits(): int
+    {
+        return $this->paperStrongCapHits;
+    }
+
+    /**
+     * Return the number of candidate-cap events in the current run.
+     * Used by service layer for cap-logic consistency diagnostics.
+     */
+    public function getPaperCandidateCapHits(): int
+    {
+        return $this->paperCandidateCapHits;
+    }
+
+    /**
+     * Re-apply paper policy to the post-dedup/truncated set.
+     *
+     * The core cap-enforcement problem:
+     *   evaluate() is called for every signal BEFORE deduplication, so
+     *   $paperCandidateGranted/$paperStrongGranted consume cap slots for
+     *   signals that later get removed by dedup or truncation.  After dedup,
+     *   the surviving scenarios may carry paper_reject reasons like
+     *   paper_candidate_cap_reached even though the post-dedup count never
+     *   reached the cap.
+     *
+     * This method resets all counters and re-classifies only the surviving
+     * scenarios so caps are enforced correctly on the final working set.
+     *
+     * Must be called after deduplication and global cap truncation, before
+     * building downstream export sets.
+     *
+     * @param array<int,array{raw:array<string,mixed>, signal:array<string,mixed>, scenario:array<string,mixed>}> $allCombined
+     *        Passed by reference so paper_bucket/paper_reason/paper_score are updated in-place.
+     */
+    public function reclassifyPaperForSet(array &$allCombined): void
+    {
+        $this->paperStrongGranted    = 0;
+        $this->paperCandidateGranted = 0;
+        $this->paperStrongCapHits    = 0;
+        $this->paperCandidateCapHits = 0;
+
+        foreach ($allCombined as &$item) {
+            $signal   = $item['signal'];
+            $scenario = $item['scenario'];
+
+            // Reconstruct minimal passport from scenario diagnostics
+            $passport       = null;
+            $diag           = $scenario['diagnostics'] ?? [];
+            if (!empty($diag['passport_available'])) {
+                $passport = [
+                    'corridor_p75_roi'   => $diag['passport_corridor_p75_roi']   ?? null,
+                    'runner_probability' => $diag['passport_runner_probability']  ?? null,
+                    'noise_score'        => $diag['passport_noise_score']         ?? null,
+                ];
+            }
+
+            $finalBucket = $diag['final_downstream_bucket'] ?? $scenario['scenario_status'] ?? 'shadow_only';
+            $paperResult = $this->applyPaperPolicy($signal, $passport, $finalBucket);
+
+            // Update top-level fields on the scenario in-place
+            $item['scenario']['paper_bucket']              = $paperResult['paper_bucket'];
+            $item['scenario']['paper_reason']              = $paperResult['paper_reason'];
+            $item['scenario']['paper_score']               = $paperResult['paper_score'];
+            $item['scenario']['paper_strong_near_miss']    = $paperResult['paper_strong_near_miss'];
+            $item['scenario']['paper_strong_near_miss_reason'] = $paperResult['paper_strong_near_miss_reason'];
+            $item['scenario']['paper_strong_cap_hit']      = $paperResult['paper_strong_cap_hit'];
+            $item['scenario']['paper_candidate_cap_hit']   = $paperResult['paper_candidate_cap_hit'];
+            // Mirror into diagnostics for completeness
+            $item['scenario']['diagnostics']['paper_bucket']              = $paperResult['paper_bucket'];
+            $item['scenario']['diagnostics']['paper_reason']              = $paperResult['paper_reason'];
+            $item['scenario']['diagnostics']['paper_score']               = $paperResult['paper_score'];
+            $item['scenario']['diagnostics']['paper_checks_passed']       = $paperResult['paper_checks_passed'];
+            $item['scenario']['diagnostics']['paper_checks_failed']       = $paperResult['paper_checks_failed'];
+            $item['scenario']['diagnostics']['paper_strong_near_miss']    = $paperResult['paper_strong_near_miss'];
+            $item['scenario']['diagnostics']['paper_strong_near_miss_reason'] = $paperResult['paper_strong_near_miss_reason'];
+        }
+        unset($item);
     }
 
     /**
@@ -949,7 +1048,7 @@ final class ScenarioEngine
      * @param  array<string,mixed>       $signal
      * @param  array<string,mixed>|null  $passport
      * @param  string                    $finalBucket  The scenario's final downstream bucket
-     * @return array{paper_bucket:string, paper_reason:string, paper_score:float, paper_checks_passed:list<string>, paper_checks_failed:list<string>}
+     * @return array{paper_bucket:string, paper_reason:string, paper_score:float, paper_checks_passed:list<string>, paper_checks_failed:list<string>, paper_strong_near_miss:bool, paper_strong_near_miss_reason:string|null, paper_strong_cap_hit:bool, paper_candidate_cap_hit:bool}
      */
     private function applyPaperPolicy(array $signal, ?array $passport, string $finalBucket): array
     {
@@ -957,11 +1056,15 @@ final class ScenarioEngine
 
         if (empty($policy['enabled'])) {
             return [
-                'paper_bucket'        => 'paper_strong_candidate',
-                'paper_reason'        => 'paper_policy_disabled',
-                'paper_score'         => 1.0,
-                'paper_checks_passed' => [],
-                'paper_checks_failed' => [],
+                'paper_bucket'               => 'paper_strong_candidate',
+                'paper_reason'               => 'paper_policy_disabled',
+                'paper_score'                => 1.0,
+                'paper_checks_passed'        => [],
+                'paper_checks_failed'        => [],
+                'paper_strong_near_miss'     => false,
+                'paper_strong_near_miss_reason' => null,
+                'paper_strong_cap_hit'       => false,
+                'paper_candidate_cap_hit'    => false,
             ];
         }
 
@@ -1049,10 +1152,21 @@ final class ScenarioEngine
             $strongBlockReason = $strongBlockReason ?? 'paper_strong_requires_passport';
         }
 
+        // Count strong check failures BEFORE the cap check (to compute near-miss correctly)
+        $strongChecksFailed = array_filter($strongChecks, fn($c) => $c['pass'] === false);
+        $strongNearMiss = $strongBlockReason !== null && count($strongChecksFailed) === 1;
+        $strongNearMissReason = $strongNearMiss ? $strongBlockReason : null;
+
         $maxStrong = (int)($policy['paper_max_strong_per_run'] ?? 20);
+        $strongCapHit = false;
         if ($strongBlockReason === null && $this->paperStrongGranted >= $maxStrong) {
             $strongBlockReason = 'paper_strong_cap_reached';
             $strongChecks[] = ['check' => 'cap', 'pass' => false, 'threshold' => $maxStrong, 'value' => $this->paperStrongGranted];
+            $strongCapHit = true;
+            $this->paperStrongCapHits++;
+            // A cap hit is a near miss (1 cap condition prevented strong)
+            $strongNearMiss       = true;
+            $strongNearMissReason = 'paper_strong_cap_reached';
         }
 
         if ($strongBlockReason === null) {
@@ -1062,11 +1176,15 @@ final class ScenarioEngine
                 array_filter($strongChecks, fn($c) => $c['pass'] === true)
             ));
             return [
-                'paper_bucket'        => 'paper_strong_candidate',
-                'paper_reason'        => 'paper_strong_checks_passed',
-                'paper_score'         => $paperScore,
-                'paper_checks_passed' => $passedChecks,
-                'paper_checks_failed' => [],
+                'paper_bucket'               => 'paper_strong_candidate',
+                'paper_reason'               => 'paper_strong_checks_passed',
+                'paper_score'                => $paperScore,
+                'paper_checks_passed'        => $passedChecks,
+                'paper_checks_failed'        => [],
+                'paper_strong_near_miss'     => false,
+                'paper_strong_near_miss_reason' => null,
+                'paper_strong_cap_hit'       => false,
+                'paper_candidate_cap_hit'    => false,
             ];
         }
 
@@ -1095,9 +1213,12 @@ final class ScenarioEngine
         }
 
         $maxCandidates = (int)($policy['paper_max_candidates_per_run'] ?? 50);
+        $candidateCapHit = false;
         if ($candidateBlockReason === null && $this->paperCandidateGranted >= $maxCandidates) {
             $candidateBlockReason = 'paper_candidate_cap_reached';
             $candidateChecks[] = ['check' => 'cap', 'pass' => false, 'threshold' => $maxCandidates, 'value' => $this->paperCandidateGranted];
+            $candidateCapHit = true;
+            $this->paperCandidateCapHits++;
         }
 
         if ($candidateBlockReason === null) {
@@ -1111,11 +1232,15 @@ final class ScenarioEngine
                 array_filter($candidateChecks, fn($c) => $c['pass'] === true)
             ));
             return [
-                'paper_bucket'        => 'paper_candidate',
-                'paper_reason'        => $strongBlockReason ?? 'paper_strong_checks_failed',
-                'paper_score'         => $paperScore,
-                'paper_checks_passed' => $candidatePassedChecks,
-                'paper_checks_failed' => $strongFailedChecks,
+                'paper_bucket'               => 'paper_candidate',
+                'paper_reason'               => $strongBlockReason ?? 'paper_strong_checks_failed',
+                'paper_score'                => $paperScore,
+                'paper_checks_passed'        => $candidatePassedChecks,
+                'paper_checks_failed'        => $strongFailedChecks,
+                'paper_strong_near_miss'     => $strongNearMiss,
+                'paper_strong_near_miss_reason' => $strongNearMissReason,
+                'paper_strong_cap_hit'       => $strongCapHit,
+                'paper_candidate_cap_hit'    => false,
             ];
         }
 
@@ -1126,11 +1251,15 @@ final class ScenarioEngine
         )));
 
         return [
-            'paper_bucket'        => 'paper_reject',
-            'paper_reason'        => $candidateBlockReason ?? $strongBlockReason ?? 'paper_checks_failed',
-            'paper_score'         => $paperScore,
-            'paper_checks_passed' => [],
-            'paper_checks_failed' => $allFailedChecks,
+            'paper_bucket'               => 'paper_reject',
+            'paper_reason'               => $candidateBlockReason ?? $strongBlockReason ?? 'paper_checks_failed',
+            'paper_score'                => $paperScore,
+            'paper_checks_passed'        => [],
+            'paper_checks_failed'        => $allFailedChecks,
+            'paper_strong_near_miss'     => $strongNearMiss,
+            'paper_strong_near_miss_reason' => $strongNearMissReason,
+            'paper_strong_cap_hit'       => $strongCapHit,
+            'paper_candidate_cap_hit'    => $candidateCapHit,
         ];
     }
 

@@ -149,15 +149,28 @@ $demoLcBlockCount     = (int)($pe_last_run['demo_low_confidence_block_count']   
 $demoLcBlockReasons   = (array)($pe_last_run['demo_low_confidence_block_reasons'] ?? $pe_stats['last_run']['demo_low_confidence_block_reasons'] ?? []);
 
 // Paper pre-classification stats
-$paperRejectCount      = (int)($pe_last_run['paper_reject_count']               ?? $pe_stats['last_run']['paper_reject_count']               ?? 0);
-$paperCandidateCount   = (int)($pe_last_run['paper_candidate_count']            ?? $pe_stats['last_run']['paper_candidate_count']            ?? 0);
-$paperStrongCount      = (int)($pe_last_run['paper_strong_candidate_count']     ?? $pe_stats['last_run']['paper_strong_candidate_count']     ?? 0);
-$demoFromPaper         = (int)($pe_last_run['demo_export_count_from_paper']     ?? $pe_stats['last_run']['demo_export_count_from_paper']     ?? 0);
-$simFromPaper          = (int)($pe_last_run['sim_export_count_from_paper']      ?? $pe_stats['last_run']['sim_export_count_from_paper']      ?? 0);
-$shadowFromPaper       = (int)($pe_last_run['shadow_export_count_from_paper']   ?? $pe_stats['last_run']['shadow_export_count_from_paper']   ?? 0);
-$topPaperRejectReasons = (array)($pe_last_run['top_paper_reject_reasons']       ?? $pe_stats['last_run']['top_paper_reject_reasons']        ?? []);
-$topDemoBlockedByPaper = (array)($pe_last_run['top_demo_blocked_by_paper_reasons'] ?? $pe_stats['last_run']['top_demo_blocked_by_paper_reasons'] ?? []);
-$paperPolicyCfg        = (array)($pe_config['paper_policy'] ?? []);
+$paperRejectCount          = (int)($pe_last_run['paper_reject_count']               ?? $pe_stats['last_run']['paper_reject_count']               ?? 0);
+$paperCandidateCount       = (int)($pe_last_run['paper_candidate_count']            ?? $pe_stats['last_run']['paper_candidate_count']            ?? 0);
+$paperStrongCount          = (int)($pe_last_run['paper_strong_candidate_count']     ?? $pe_stats['last_run']['paper_strong_candidate_count']     ?? 0);
+$demoFromPaper             = (int)($pe_last_run['demo_export_count_from_paper']     ?? $pe_stats['last_run']['demo_export_count_from_paper']     ?? 0);
+$simFromPaper              = (int)($pe_last_run['sim_export_count_from_paper']      ?? $pe_stats['last_run']['sim_export_count_from_paper']      ?? 0);
+$shadowFromPaper           = (int)($pe_last_run['shadow_export_count_from_paper']   ?? $pe_stats['last_run']['shadow_export_count_from_paper']   ?? 0);
+$topPaperRejectReasons     = (array)($pe_last_run['top_paper_reject_reasons']       ?? $pe_stats['last_run']['top_paper_reject_reasons']        ?? []);
+$topDemoBlockedByPaper     = (array)($pe_last_run['top_demo_blocked_by_paper_reasons'] ?? $pe_stats['last_run']['top_demo_blocked_by_paper_reasons'] ?? []);
+$paperPolicyCfg            = (array)($pe_config['paper_policy'] ?? []);
+// Paper cap diagnostics
+$paperStrongCapHits        = (int)($pe_last_run['paper_strong_cap_hits']               ?? $pe_stats['last_run']['paper_strong_cap_hits']               ?? 0);
+$paperCandCapHits          = (int)($pe_last_run['paper_candidate_cap_hits']            ?? $pe_stats['last_run']['paper_candidate_cap_hits']            ?? 0);
+$paperRejByStrongCap       = (int)($pe_last_run['paper_rejected_by_strong_cap_count']  ?? $pe_stats['last_run']['paper_rejected_by_strong_cap_count']  ?? 0);
+$paperRejByCandCap         = (int)($pe_last_run['paper_rejected_by_candidate_cap_count'] ?? $pe_stats['last_run']['paper_rejected_by_candidate_cap_count'] ?? 0);
+$paperCapLogicConsistent   = (bool)($pe_last_run['paper_cap_logic_consistent']         ?? $pe_stats['last_run']['paper_cap_logic_consistent']         ?? true);
+$paperCapLogicWarning      = (string)($pe_last_run['paper_cap_logic_warning']           ?? $pe_stats['last_run']['paper_cap_logic_warning']           ?? '');
+// Paper near-miss diagnostics
+$paperStrongNearMissCount  = (int)($pe_last_run['paper_strong_near_miss_count']       ?? $pe_stats['last_run']['paper_strong_near_miss_count']       ?? 0);
+$topPaperNearMissReasons   = (array)($pe_last_run['top_paper_strong_near_miss_reasons'] ?? $pe_stats['last_run']['top_paper_strong_near_miss_reasons'] ?? []);
+// Target miss reasons
+$feedPrimaryBlock          = (string)($pe_last_run['demo_feed_target_blocked_primary_reason']   ?? $pe_stats['last_run']['demo_feed_target_blocked_primary_reason']   ?? '');
+$feedSecondaryBlock        = (string)($pe_last_run['demo_feed_target_blocked_secondary_reason'] ?? $pe_stats['last_run']['demo_feed_target_blocked_secondary_reason'] ?? '');
 
 $patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
 $passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
@@ -576,6 +589,55 @@ if ($paperTotal > 0 || !empty($paperPolicyCfg)):
                 </span>
             <?php endforeach; ?>
             </div>
+        </div>
+        <?php endif; ?>
+        <!-- Paper cap diagnostics + near-miss -->
+        <div class="row g-2 mb-2">
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $paperStrongCapHits > 0 ? '#dc2626' : '#334155' ?>;" title="Times the strong cap fired in this run (post-dedup)">
+                    <div class="pe-stat-value" style="color:<?= $paperStrongCapHits > 0 ? '#f87171' : '#6b7280' ?>;"><?= $paperStrongCapHits ?></div>
+                    <div class="pe-stat-label">Strong Cap Hits</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $paperCandCapHits > 0 ? '#dc2626' : '#334155' ?>;" title="Times the candidate cap fired in this run (post-dedup)">
+                    <div class="pe-stat-value" style="color:<?= $paperCandCapHits > 0 ? '#f87171' : '#6b7280' ?>;"><?= $paperCandCapHits ?></div>
+                    <div class="pe-stat-label">Candidate Cap Hits</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $paperStrongNearMissCount > 0 ? '#d97706' : '#334155' ?>;" title="Signals that missed paper_strong by exactly 1 check — near misses for demo feed">
+                    <div class="pe-stat-value" style="color:<?= $paperStrongNearMissCount > 0 ? '#fbbf24' : '#6b7280' ?>;"><?= $paperStrongNearMissCount ?></div>
+                    <div class="pe-stat-label">Strong Near Misses</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="pe-stat-card" style="border-color:<?= $paperCapLogicConsistent ? '#334155' : '#dc2626' ?>;" title="<?= $paperCapLogicWarning !== '' ? htmlspecialchars($paperCapLogicWarning) : 'Cap logic consistent' ?>">
+                    <div class="pe-stat-value" style="color:<?= $paperCapLogicConsistent ? '#22c55e' : '#f87171' ?>; font-size:0.8rem;"><?= $paperCapLogicConsistent ? 'OK' : 'WARN' ?></div>
+                    <div class="pe-stat-label">Cap Logic</div>
+                </div>
+            </div>
+        </div>
+        <?php if (!empty($topPaperNearMissReasons)): ?>
+        <div class="mb-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-arrow-up-short me-1 text-warning"></i>Near-miss reasons (signals that barely missed strong):</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach ($topPaperNearMissReasons as $item): ?>
+                <span class="badge" style="background:#1e293b; border:1px solid #d97706; font-size:0.7rem; color:#fbbf24;">
+                    <?= htmlspecialchars(str_replace('paper_', '', (string)($item['reason'] ?? ''))) ?>
+                    <span style="color:#94a3b8;" class="ms-1"><?= (int)($item['count'] ?? 0) ?></span>
+                </span>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if (!$feedMetTarget && ($feedPrimaryBlock !== '' || $feedSecondaryBlock !== '')): ?>
+        <div class="mb-2 small" style="background:#1c0a0a; border:1px solid #7f1d1d; border-radius:4px; padding:0.4rem 0.6rem;">
+            <i class="bi bi-exclamation-triangle me-1" style="color:#f87171;"></i>
+            <span style="color:#fca5a5;">Target miss — Primary: <code><?= htmlspecialchars($feedPrimaryBlock) ?></code></span>
+            <?php if ($feedSecondaryBlock !== ''): ?>
+            <span class="text-muted ms-2">Secondary: <code><?= htmlspecialchars($feedSecondaryBlock) ?></code></span>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
         <?php if (!empty($paperPolicyCfg)): ?>

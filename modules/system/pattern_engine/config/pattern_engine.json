@@ -163,16 +163,16 @@
     },
     "paper_policy": {
         "enabled": true,
-        "paper_strong_min_signal_strength": 0.45,
-        "paper_strong_min_quality_score": 0.40,
+        "paper_strong_min_signal_strength": 0.42,
+        "paper_strong_min_quality_score": 0.37,
         "paper_strong_min_corridor_p75_roi": 0.0,
         "paper_strong_min_runner_probability": 0.0,
         "paper_strong_max_noise_score": 1.0,
         "paper_strong_require_passport": false,
-        "paper_candidate_min_signal_strength": 0.35,
-        "paper_candidate_min_quality_score": 0.28,
+        "paper_candidate_min_signal_strength": 0.33,
+        "paper_candidate_min_quality_score": 0.26,
         "paper_candidate_require_passport": false,
-        "paper_max_strong_per_run": 30,
+        "paper_max_strong_per_run": 40,
         "paper_max_candidates_per_run": 60
     },
     "demo_feed_targets": {

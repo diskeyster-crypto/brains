@@ -894,11 +894,19 @@ final class TradingBotService
             if ($mode === 'demo') {
                 $demoActiveCountAfter = count($this->store->loadActiveTrades());
                 $result['demo_trades_active_before']               = $demoActiveCountBefore;
+                $result['demo_trades_opened_this_run']             = $result['positions_opened'] ?? 0;
                 $result['demo_trades_closed_this_run']             = $updateResult['closed'] ?? 0;
                 $result['demo_trades_still_active_after']          = $demoActiveCountAfter;
+                $result['demo_trades_stale_this_run']              = $updateResult['stale_trades_found'] ?? 0;
+                $result['demo_trades_reconciled_this_run']         = $updateResult['updated'] ?? 0;
+                $result['demo_trades_finalized_from_exchange_this_run'] = $updateResult['finalized_from_exchange_this_run'] ?? 0;
+                $result['demo_trades_finalized_locally_this_run']  = $updateResult['finalized_locally_this_run'] ?? 0;
+                $result['demo_average_active_age_minutes']         = $updateResult['avg_active_age_minutes'] ?? null;
+                $result['demo_oldest_active_trade_minutes']        = $updateResult['oldest_active_trade_minutes'] ?? null;
                 $result['demo_ai_dataset_records_written_this_run']= $updateResult['ai_dataset_records_written'] ?? 0;
                 $result['demo_close_failures_this_run']            = $updateResult['close_failures'] ?? 0;
                 $result['demo_close_failure_reasons']              = $updateResult['close_failure_reasons'] ?? [];
+                $result['top_stale_trade_reasons']                 = $updateResult['stale_trade_reasons'] ?? [];
             }
 
             // ============================================================

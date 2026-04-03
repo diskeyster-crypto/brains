@@ -349,11 +349,19 @@ $demoSigBlockOther     = $bot_last_run['demo_signals_blocked_other']        ?? n
 $demoRejStats          = (array)($bot_last_run['rejection_reason_stats']    ?? []);
 // Demo close pipeline counters
 $demoTradesActiveBefore     = $bot_last_run['demo_trades_active_before']               ?? null;
+$demoTradesOpenedThisRun    = $bot_last_run['demo_trades_opened_this_run']             ?? null;
 $demoTradesClosedThisRun    = $bot_last_run['demo_trades_closed_this_run']             ?? null;
 $demoTradesStillActive      = $bot_last_run['demo_trades_still_active_after']          ?? null;
+$demoTradesStaleThisRun     = $bot_last_run['demo_trades_stale_this_run']              ?? null;
+$demoTradesReconciledThisRun= $bot_last_run['demo_trades_reconciled_this_run']         ?? null;
+$demoFinalizedExchange      = $bot_last_run['demo_trades_finalized_from_exchange_this_run'] ?? null;
+$demoFinalizedLocally       = $bot_last_run['demo_trades_finalized_locally_this_run']  ?? null;
+$demoAvgAgeMinutes          = $bot_last_run['demo_average_active_age_minutes']         ?? null;
+$demoOldestAgeMinutes       = $bot_last_run['demo_oldest_active_trade_minutes']        ?? null;
 $demoAiWrittenThisRun       = $bot_last_run['demo_ai_dataset_records_written_this_run']?? null;
 $demoCloseFailures          = $bot_last_run['demo_close_failures_this_run']            ?? null;
 $demoCloseFailureReasons    = (array)($bot_last_run['demo_close_failure_reasons']      ?? []);
+$topStaleTradeReasons       = (array)($bot_last_run['top_stale_trade_reasons']         ?? []);
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -394,8 +402,15 @@ $demoCloseFailureReasons    = (array)($bot_last_run['demo_close_failure_reasons'
             <?php
             $closeCards = [
                 ['label' => 'Active Before Run',    'value' => $demoTradesActiveBefore !== null ? (string)$demoTradesActiveBefore : 'n/a',  'ok' => null],
+                ['label' => 'Opened This Run',      'value' => $demoTradesOpenedThisRun !== null ? (string)$demoTradesOpenedThisRun : 'n/a', 'ok' => $demoTradesOpenedThisRun > 0 ? true : null],
                 ['label' => 'Closed This Run',      'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a', 'ok' => $demoTradesClosedThisRun > 0 ? true : null],
                 ['label' => 'Still Active After',   'value' => $demoTradesStillActive !== null ? (string)$demoTradesStillActive : 'n/a',     'ok' => null],
+                ['label' => 'Stale Trades',         'value' => $demoTradesStaleThisRun !== null ? (string)$demoTradesStaleThisRun : 'n/a',   'ok' => $demoTradesStaleThisRun === 0 ? true : ($demoTradesStaleThisRun > 0 ? false : null)],
+                ['label' => 'Reconciled',           'value' => $demoTradesReconciledThisRun !== null ? (string)$demoTradesReconciledThisRun : 'n/a', 'ok' => null],
+                ['label' => 'Closed by Exchange',   'value' => $demoFinalizedExchange !== null ? (string)$demoFinalizedExchange : 'n/a',     'ok' => $demoFinalizedExchange > 0 ? true : null],
+                ['label' => 'Closed Locally (SL)',  'value' => $demoFinalizedLocally !== null ? (string)$demoFinalizedLocally : 'n/a',       'ok' => $demoFinalizedLocally > 0 ? true : null],
+                ['label' => 'Avg Active Age (min)', 'value' => $demoAvgAgeMinutes !== null ? (string)$demoAvgAgeMinutes : 'n/a',             'ok' => null],
+                ['label' => 'Oldest Active (min)',  'value' => $demoOldestAgeMinutes !== null ? (string)$demoOldestAgeMinutes : 'n/a',       'ok' => null],
                 ['label' => 'AI Records Written',   'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',       'ok' => $demoAiWrittenThisRun > 0 ? true : null],
                 ['label' => 'Close Failures',       'value' => $demoCloseFailures !== null ? (string)$demoCloseFailures : 'n/a',             'ok' => $demoCloseFailures === 0 ? true : ($demoCloseFailures > 0 ? false : null)],
             ];
@@ -412,17 +427,34 @@ $demoCloseFailureReasons    = (array)($bot_last_run['demo_close_failure_reasons'
             </div>
             <?php endforeach; ?>
         </div>
-        <?php if (!empty($demoCloseFailureReasons)): ?>
-        <div class="mt-1">
-            <div class="section-heading" style="font-size:.75rem;">Close Failure Reasons (This Run)</div>
-            <table class="table table-sm exec-table mb-0" style="max-width:480px;">
-                <thead><tr><th>Reason</th><th>Count</th></tr></thead>
-                <tbody>
-                <?php foreach ($demoCloseFailureReasons as $cfr => $cfc): ?>
-                <tr><td><?= htmlspecialchars($cfr) ?></td><td><?= (int)$cfc ?></td></tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+        <?php if (!empty($demoCloseFailureReasons) || !empty($topStaleTradeReasons)): ?>
+        <div class="row g-3 mt-1">
+            <?php if (!empty($demoCloseFailureReasons)): ?>
+            <div class="col-md-4">
+                <div class="section-heading" style="font-size:.75rem;">Close Failure Reasons (This Run)</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($demoCloseFailureReasons as $cfr => $cfc): ?>
+                    <tr><td><?= htmlspecialchars($cfr) ?></td><td><?= (int)$cfc ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($topStaleTradeReasons)): ?>
+            <div class="col-md-4">
+                <div class="section-heading" style="font-size:.75rem;">Stale Trade Reasons (This Run)</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($topStaleTradeReasons as $str => $stc): ?>
+                    <tr><td><?= htmlspecialchars($str) ?></td><td><?= (int)$stc ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
         <?php endif; ?>
@@ -581,6 +613,79 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
         <?php endif; ?>
         <?php if ($demoSuffAt !== ''): ?>
         <div class="mt-2 small text-muted">Last computed: <?= htmlspecialchars($demoSuffAt) ?></div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// ── Demo Velocity mini-panel (this run throughput vs cumulative) ─────────────
+$topPatternsByClosed  = (array)($demoSufficiency['top_patterns_by_closed_count'] ?? []);
+$topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count']  ?? $topSymbols);
+?>
+<?php if ($bot_mode === 'demo' && ($demoTradesClosedThisRun !== null || !empty($topPatternsByClosed))): ?>
+<div class="card mb-4" style="border-color:#1e3a5f;">
+    <div class="card-body">
+        <div class="section-heading">Demo Velocity &amp; Dataset Growth</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $velCards = [
+                ['label' => 'Opened This Run',       'value' => $demoTradesOpenedThisRun !== null ? (string)$demoTradesOpenedThisRun : 'n/a',  'ok' => null],
+                ['label' => 'Closed This Run',        'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a',  'ok' => $demoTradesClosedThisRun > 0 ? true : null],
+                ['label' => 'AI Records This Run',    'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',         'ok' => $demoAiWrittenThisRun > 0 ? true : null],
+                ['label' => 'Total Closed (All Time)','value' => (string)$demoClosedTotal,                                                       'ok' => $demoClosedTotal >= 50 ? true : null],
+                ['label' => 'AI Dataset Total',       'value' => (string)$aiDatasetRecords,                                                      'ok' => null],
+                ['label' => 'Next Milestone',         'value' => $nextMilestone !== null ? $demoClosedTotal . '/' . $nextMilestone : $demoClosedTotal . ' ✓', 'ok' => $nextMilestone === null ? true : null],
+            ];
+            foreach ($velCards as $vc):
+                $cls = 'neutral';
+                if ($vc['ok'] === true)  $cls = 'positive';
+                if ($vc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$vc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($vc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!empty($topPatternsByClosed) || !empty($topSymbolsByClosed)): ?>
+        <div class="row g-3">
+            <?php if (!empty($topPatternsByClosed)): ?>
+            <div class="col-md-4">
+                <div class="section-heading" style="font-size:.75rem;">Top Patterns by Closed Trades</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Pattern</th><th>Closed</th></tr></thead>
+                    <tbody>
+                    <?php foreach (array_slice($topPatternsByClosed, 0, 8, true) as $pat => $cnt): ?>
+                    <tr><td><?= htmlspecialchars($pat) ?></td><td><?= (int)$cnt ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($topSymbolsByClosed)): ?>
+            <div class="col-md-4">
+                <div class="section-heading" style="font-size:.75rem;">Top Symbols by Closed Trades</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>
+                    <tbody>
+                    <?php foreach (array_slice($topSymbolsByClosed, 0, 8, true) as $sym => $sc):
+                        $sTotal    = is_array($sc) ? (int)($sc['total']    ?? 0) : (int)$sc;
+                        $sComplete = is_array($sc) ? (int)($sc['complete'] ?? 0) : $sTotal;
+                    ?>
+                    <tr>
+                        <td><?= htmlspecialchars($sym) ?></td>
+                        <td><?= $sTotal ?></td>
+                        <td><?= $sComplete ?> (<?= $sTotal > 0 ? round($sComplete / $sTotal * 100) : 0 ?>%)</td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
         <?php endif; ?>
     </div>
 </div>

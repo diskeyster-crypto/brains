@@ -253,8 +253,10 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
     $openedTs = (int)(strtotime((string)($trade['opened_at'] ?? '')) ?: ($trade['open_ts'] ?? 0));
     if ($openedTs > 0 && $closedAtTs > $openedTs) {
         $trade['hold_minutes'] = (int)round(($closedAtTs - $openedTs) / 60);
+        unset($trade['hold_minutes_missing_reason']);
     } elseif (!isset($trade['hold_minutes'])) {
         $trade['hold_minutes'] = 0;
+        $trade['hold_minutes_missing_reason'] = $openedTs <= 0 ? 'no_opened_at' : 'zero_duration';
     }
 
     // Estimate close_price from last known position data if not already set
@@ -298,18 +300,23 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
     $trade['close_result_source'] = 'local_finalize';
 
     // Copy mfe/mae from runtime if available and not already set on closed trade
+    $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
     if (!isset($trade['mfe']) || $trade['mfe'] === null) {
-        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
         $bestRoi = $rt['best_roi_seen'] ?? null;
         if ($bestRoi !== null) {
             $trade['mfe'] = (float)$bestRoi;
+            unset($trade['mfe_missing_reason']);
+        } else {
+            $trade['mfe_missing_reason'] = 'runtime_no_best_roi_seen';
         }
     }
     if (!isset($trade['mae']) || $trade['mae'] === null) {
-        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
         $worstRoi = $rt['worst_roi_seen'] ?? null;
         if ($worstRoi !== null) {
             $trade['mae'] = (float)$worstRoi;
+            unset($trade['mae_missing_reason']);
+        } else {
+            $trade['mae_missing_reason'] = 'runtime_no_worst_roi_seen';
         }
     }
 

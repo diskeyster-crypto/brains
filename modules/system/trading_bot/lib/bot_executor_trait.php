@@ -1343,6 +1343,13 @@ trait BotExecutorTrait
             'ai_dataset_records_written' => 0,
             'close_failures' => 0,
             'close_failure_reasons' => [],
+            // Demo turnover / staleness counters
+            'stale_trades_found' => 0,
+            'stale_trade_reasons' => [],
+            'avg_active_age_minutes' => null,
+            'oldest_active_trade_minutes' => null,
+            'finalized_from_exchange_this_run' => 0,
+            'finalized_locally_this_run' => 0,
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1350,7 +1357,31 @@ trait BotExecutorTrait
         }
         
         $trades = $this->store->loadActiveTrades();
-        
+
+        // ── Demo learning mode: stale-age config ────────────────────────────
+        $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+        $dlmEnabled = ($dlmCfg['enabled'] ?? false) && $mode === 'demo';
+        $staleAgeMinutes = $dlmEnabled && ($dlmCfg['learning_max_active_age_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_max_active_age_minutes']
+            : 0;
+
+        // Compute active-age stats across all trades (demo mode only)
+        if ($mode === 'demo' && count($trades) > 0) {
+            $ageAccum = 0;
+            $maxAge   = 0;
+            $nowTs    = time();
+            foreach ($trades as $t) {
+                $ots = (int)(strtotime((string)($t['opened_at'] ?? '')) ?: ($t['open_ts'] ?? 0));
+                $ageMin = $ots > 0 ? (int)round(($nowTs - $ots) / 60) : 0;
+                $ageAccum += $ageMin;
+                if ($ageMin > $maxAge) {
+                    $maxAge = $ageMin;
+                }
+            }
+            $result['avg_active_age_minutes']    = (int)round($ageAccum / count($trades));
+            $result['oldest_active_trade_minutes'] = $maxAge;
+        }
+
         foreach ($trades as $tradeId => $trade) {
             try {
                 // Freshness guard: skip position verification for trades opened in the last 30 seconds.
@@ -1361,6 +1392,25 @@ trait BotExecutorTrait
                 if ($openedAt > 0 && (time() - $openedAt) < 30) {
                     $result['updated']++;
                     continue;
+                }
+
+                // ── Trade age & staleness annotation (demo only) ────────────
+                if ($mode === 'demo') {
+                    $tradeOpenedTs = $openedAt > 0 ? $openedAt : (int)($trade['open_ts'] ?? 0);
+                    $ageMin = $tradeOpenedTs > 0 ? (int)round((time() - $tradeOpenedTs) / 60) : 0;
+                    $trade['age_minutes'] = $ageMin;
+                    $trade['last_reconcile_ts'] = date('c');
+                    $isStale = $staleAgeMinutes > 0 && $ageMin >= $staleAgeMinutes;
+                    if ($isStale) {
+                        $staleReason = 'age_exceeded_' . $staleAgeMinutes . 'min';
+                        $trade['is_stale_trade'] = true;
+                        $trade['stale_reason']   = $staleReason;
+                        $result['stale_trades_found']++;
+                        $result['stale_trade_reasons'][$staleReason] = ($result['stale_trade_reasons'][$staleReason] ?? 0) + 1;
+                    } else {
+                        $trade['is_stale_trade'] = false;
+                        $trade['stale_reason']   = null;
+                    }
                 }
 
                 // Get position from exchange
@@ -1379,6 +1429,7 @@ trait BotExecutorTrait
                     }
                     $result['closed']++;
                     $result['closed_by_exchange']++;
+                    $result['finalized_from_exchange_this_run']++;
                     $closedAtTs = time();
                     $closedTrade = array_merge($trade, [
                         'closed_at'               => date('c', $closedAtTs),
@@ -1763,6 +1814,7 @@ trait BotExecutorTrait
                                 $runtime['logical_stop_roi_threshold'] = $logicalStopRoi;
 
                                 $result['closed']++;
+                                $result['finalized_locally_this_run']++;
                                 $closedAtTs2 = time();
                                 $closedTrade2 = array_merge($trade, [
                                     'closed_at'               => date('c', $closedAtTs2),
@@ -3041,6 +3093,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
                         // Update last_update timestamp
                 $trade['last_update'] = date('c');
+                $trade['last_runtime_update_ts'] = date('c');
                 $trade['last_price'] = (float)($position['markPrice'] ?? $position['lastPrice'] ?? $trade['last_price']);
                 $this->store->updateActiveTrade($tradeId, $trade);
                 $result['updated']++;

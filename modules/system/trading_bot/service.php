@@ -1241,7 +1241,13 @@ final class TradingBotService
                 }
                 $result['demo_orphan_positions_detected_count'] = $demoOrphanBlockingCount;
                 $result['demo_orphan_positions_blocking_count'] = $demoOrphanBlockingCount;
-                $demoTruthAudit = $this->store->computeDemoTruthAudit($learningMaxAgeMin, $demoOrphanBlockingCount);
+                $demoTruthAudit = $this->store->computeDemoTruthAudit(
+                    $learningMaxAgeMin,
+                    $demoOrphanBlockingCount,
+                    (int)($result['demo_feed_available_count'] ?? 0),
+                    (int)($result['demo_feed_selected_count'] ?? 0),
+                    (int)($result['positions_opened'] ?? 0)
+                );
                 $result['demo_truth_audit']              = $demoTruthAudit;
                 $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];
                 $result['primary_demo_bottleneck_reason']= $demoTruthAudit['primary_demo_bottleneck_reason'];

@@ -14,6 +14,7 @@ return [
     'execute' => [
         'interval'    => 120, // 2 minutes
         'enabled'     => true,
+        'priority'    => 80,  // Run before Trading Bot in the same cron tick
         'description' => 'Pattern Engine: run full detection pipeline (detectors → signals → scenarios)',
     ],
 ];

@@ -61,12 +61,17 @@
         "source_mode": "pattern_engine_demo",
         "demo_signals_file": "downstream/demo_signals.json",
         "demo_risk_defaults": {
+            "profile_id": "pattern_engine_demo_default",
             "budget_usdt_per_trade": 10,
             "leverage": 5,
             "stop_from_liq_range_pct": 0.2,
             "slippage_bps": 20,
             "fees_bps": 10,
             "order_type": "market",
+            "stop_control": {
+                "stop_control_mode": "auto",
+                "stop_loss_from_entry_roi": 0.03
+            },
             "limits": {
                 "max_open_trades": 5,
                 "max_open_trades_per_symbol": 1,
@@ -74,8 +79,7 @@
             },
             "trailing": {
                 "enabled": false
-            },
-            "profile_id": "pattern_engine_demo_default"
+            }
         }
     },
     "demo_learning_mode": {

@@ -954,6 +954,9 @@ trait BotSourcesTrait
             'source_status'  => 'unknown',
             'signals_loaded' => 0,
             'signals_skipped'=> 0,
+            'feed_generated_at'          => null,
+            'feed_freshness_seconds'     => null,
+            'feed_is_newer_than_previous_run' => null,
         ];
 
         try {
@@ -965,6 +968,15 @@ trait BotSourcesTrait
             $peBase   = dirname(dirname(__DIR__)) . '/pattern_engine/storage';
             $signalsPath = rtrim($peBase, '/') . '/' . ltrim($peFile, '/');
             $result['source_path'] = $signalsPath;
+
+            // Feed freshness: record mtime of demo_signals.json
+            if (is_file($signalsPath)) {
+                $feedMtime = @filemtime($signalsPath) ?: 0;
+                if ($feedMtime > 0) {
+                    $result['feed_generated_at']      = date('c', $feedMtime);
+                    $result['feed_freshness_seconds'] = max(0, time() - $feedMtime);
+                }
+            }
 
             if (!is_file($signalsPath)) {
                 $result['source_status'] = 'missing';
@@ -992,6 +1004,8 @@ trait BotSourcesTrait
 
             // Build risk block from demo_risk_defaults
             // profile_id is always included — required by validateRisk() — config value takes priority.
+            // stop_control.stop_loss_from_entry_roi is always included as fallback for Bybit Demo API
+            // which often omits liqPrice, making the liq-based SL formula unavailable.
             $riskDefaults = array_replace_recursive([
                 'profile_id'              => 'pattern_engine_demo_default',
                 'budget_usdt_per_trade'   => 10,
@@ -1000,6 +1014,10 @@ trait BotSourcesTrait
                 'slippage_bps'            => 20,
                 'fees_bps'                => 10,
                 'order_type'              => 'market',
+                'stop_control'            => [
+                    'stop_control_mode'        => 'auto',
+                    'stop_loss_from_entry_roi' => 0.03,
+                ],
                 'limits'                  => [
                     'max_open_trades'            => 5,
                     'max_open_trades_per_symbol'  => 1,

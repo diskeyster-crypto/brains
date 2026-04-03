@@ -276,6 +276,11 @@ final class TradingBotService
                 $result['demo_source_path']         = $peDemoResult['source_path'] ?? '';
                 $result['demo_signals_loaded']      = $peDemoResult['signals_loaded'] ?? 0;
                 $result['demo_signals_skipped']     = $peDemoResult['signals_skipped'] ?? 0;
+                // Feed freshness diagnostics
+                $result['pattern_engine_demo_feed_generated_at'] = $peDemoResult['feed_generated_at'] ?? null;
+                $result['demo_feed_freshness_seconds']           = $peDemoResult['feed_freshness_seconds'] ?? null;
+                $result['trading_bot_run_at']                    = date('c');
+                $result['demo_feed_consumed_this_run']           = ($peDemoResult['signals_loaded'] ?? 0) > 0;
                 // demo_learning_mode: cap signals per run
                 $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
                 if (($dlmCfg['enabled'] ?? false) && ($dlmCfg['max_demo_signals_per_run'] ?? 0) > 0) {

@@ -615,13 +615,41 @@ trait BotExecutorTrait
                 }
                 
                 if ($sl === null) {
-                    // Cannot calculate SL - fail-safe close
-                    $result['execution_stage'] = 'protection_apply_failed';
-                    $this->performFailSafeClose($intent, $symbol, $side, $actualQty, 'sl_calculation_failed', [
-                        'order_result' => $orderResult,
-                        'position_data' => $positionData,
-                        'entry_avg' => $entryAvg,
-                        'liq_price' => $liqPrice,
+                    // Cannot calculate SL — build precise reason for diagnostics
+                    $slFailReason = 'sl_calculation_failed';
+                    $slFailDetail = [];
+                    if ($entryAvg <= 0) {
+                        $slFailDetail[] = 'missing_entry_price';
+                    }
+                    if ($liqPrice <= 0 && $stopControlMode !== 'entry_roi') {
+                        $slFailDetail[] = 'liq_price_unavailable';
+                    }
+                    $stopRangePct = (float)($risk['stop_from_liq_range_pct'] ?? 0);
+                    if ($stopRangePct <= 0 && $stopControlMode !== 'entry_roi') {
+                        $slFailDetail[] = 'stop_from_liq_range_pct_invalid';
+                    }
+                    $entryRoi = (float)($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0);
+                    if ($entryRoi <= 0) {
+                        $slFailDetail[] = 'entry_roi_fallback_unavailable:stop_loss_from_entry_roi_missing_or_zero';
+                    } elseif ($entryRoi > 1.0) {
+                        $slFailDetail[] = 'entry_roi_fallback_unavailable:stop_loss_from_entry_roi_exceeds_1';
+                    }
+                    if (!empty($slFailDetail)) {
+                        $slFailReason = 'sl_calculation_failed:' . implode(',', $slFailDetail);
+                    }
+
+                    $result['execution_stage']   = 'protection_apply_failed';
+                    $result['sl_fail_reason']    = $slFailReason;
+                    $result['sl_fail_detail']    = $slFailDetail;
+                    $this->performFailSafeClose($intent, $symbol, $side, $actualQty, $slFailReason, [
+                        'order_result'          => $orderResult,
+                        'position_data'         => $positionData,
+                        'entry_avg'             => $entryAvg,
+                        'liq_price'             => $liqPrice,
+                        'stop_control_mode'     => $stopControlMode,
+                        'stop_from_liq_range_pct' => $stopRangePct,
+                        'stop_loss_from_entry_roi' => $entryRoi,
+                        'sl_fail_detail'        => $slFailDetail,
                     ], $result);
                     return $result;
                 }

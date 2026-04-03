@@ -14,6 +14,7 @@ return [
     'execute' => [
         'interval' => 60, // 1 minute
         'enabled' => true,
+        'priority' => 40,  // Run after Pattern Engine (priority 80) in the same cron tick
         'description' => 'Main execution loop: reconcile, load intents, execute, safety checks',
     ],
 ];

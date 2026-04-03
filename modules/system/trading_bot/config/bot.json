@@ -1,20 +1,21 @@
 {
     "enabled": true,
-    "mode": "live",
+    "mode": "demo",
     "account_id": "trading_bot",
-    "max_positions": 10,
+    "max_positions": 50,
     "safety_stop_errors": 5,
-    "last_modified": "2026-02-17T19:50:43+03:00",
+    "last_modified": "2026-04-03T10:36:12+01:00",
     "modified_by": null,
     "notes": "Trading Bot v1 runtime settings. Edit via UI or this file.",
-    "reconcile_before_action": true,
+    "reconcile_before_action": false,
     "exchange": {
         "category": "linear",
         "account_type": "UNIFIED",
         "settle_coin": "USDT",
-        "position_idx": 0,
+        "position_idx": "0",
         "tpsl_mode": "Full",
-        "sl_trigger_by": "IndexPrice"
+        "sl_trigger_by": "IndexPrice",
+        "leverage": 5
     },
     "sources": {
         "signals_key": "system.brain.storage",
@@ -22,7 +23,8 @@
         "risk_active_key": "system.brain.storage",
         "risk_active_file": "runtime/risk_active.json",
         "commands_key": "system.brain.storage",
-        "commands_file": "runtime/trading_commands.json"
+        "commands_file": "runtime/trading_commands.json",
+        "brain_source_enabled": false
     },
     "execution": {
         "max_scan_intents_per_run": 200,
@@ -30,7 +32,7 @@
         "max_deferred_intents_per_run": 10,
         "default_entry_timeout_minutes": 8,
         "default_late_threshold_pct": 1.25,
-        "retrace_slack_pct": 0.05,
+        "retrace_slack_pct": 0.050000000000000003,
         "exchange_positions_cache_ttl_sec": 2,
         "require_price_check_live": true,
         "reverse_side_enabled": true,
@@ -45,7 +47,15 @@
         "balance_required_buffer_pct": 5,
         "balance_reject_below_usdt": 2,
         "balance_cache_ttl_sec": 8,
-        "balance_strict_stable_coin_only": true
+        "balance_strict_stable_coin_only": true,
+        "order_type": "Market",
+        "stop_loss_pct": "2",
+        "take_profit_pct": "5",
+        "trailing_mode": "",
+        "trailing_activation_roi": "0",
+        "trailing_drawdown_factor": "0",
+        "break_even_activation_roi": "0",
+        "emergency_stop_loss_pct": "5"
     },
     "demo_sources": {
         "source_mode": "pattern_engine_demo",
@@ -53,7 +63,7 @@
         "demo_risk_defaults": {
             "budget_usdt_per_trade": 10,
             "leverage": 5,
-            "stop_from_liq_range_pct": 0.2,
+            "stop_from_liq_range_pct": 0.20000000000000001,
             "slippage_bps": 20,
             "fees_bps": 10,
             "order_type": "market",
@@ -93,6 +103,18 @@
         "RAYDIUM": {
             "enabled": true,
             "reverse_side_enabled": false
+        }
+    },
+    "module": {
+        "enabled": true,
+        "mode": "demo",
+        "account_id": "trading_bot"
+    },
+    "credentials": {
+        "demo": {
+            "api_key": "gdGtgUltMZOduZpgMV",
+            "api_secret": "vT8QzLW3XDwN3tWDDXN4iru6MczGC1fjDY1b",
+            "api_base_url": "https://api-demo.bybit.com"
         }
     }
 }

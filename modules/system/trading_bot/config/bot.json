@@ -67,6 +67,14 @@
             }
         }
     },
+    "demo_learning_mode": {
+        "enabled": false,
+        "max_concurrent_demo_positions": 10,
+        "max_demo_signals_per_run": 5,
+        "prefer_short_holds": false,
+        "allow_low_confidence_demo": false,
+        "learning_target_closed_trades": 100
+    },
     "validation": {
         "signal_schema_version": "clean_signal_v1"
     },

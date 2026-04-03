@@ -461,11 +461,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
      *
      * @param string              $tradeId
      * @param array<string,mixed> $trade  Fully-closed trade array
+     * @return bool True if the record was successfully written to disk, false otherwise
      */
-    public function appendAiDatasetRecord(string $tradeId, array $trade): void
+    public function appendAiDatasetRecord(string $tradeId, array $trade): bool
     {
         if ($tradeId === '') {
-            return;
+            return false;
         }
 
         $rt   = is_array($trade['runtime']    ?? null) ? $trade['runtime']    : [];
@@ -506,6 +507,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
 
         $path = $this->storageDir . '/ai_dataset/' . $tradeId . '.json';
         $this->writeJson($path, $record);
+        return is_file($path);
     }
 
     /**
@@ -526,6 +528,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $perSymbol  = [];
         $perPattern = [];
         $perSide    = [];
+
+        $perCloseReason = [];
 
         $files = glob($closedDir . '/*.json') ?: [];
         foreach ($files as $file) {
@@ -562,12 +566,27 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             if ($side !== '') {
                 $perSide[$side] = ($perSide[$side] ?? 0) + 1;
             }
+            if ($closeReasonNormalized !== '') {
+                $perCloseReason[$closeReasonNormalized] = ($perCloseReason[$closeReasonNormalized] ?? 0) + 1;
+            }
         }
 
-        // Count AI dataset records
-        $aiDatasetCount = 0;
+        // Count AI dataset records and completeness
+        $aiDatasetCount    = 0;
+        $aiDatasetComplete = 0;
         if (is_dir($aiDatasetDir)) {
-            $aiDatasetCount = count(glob($aiDatasetDir . '/*.json') ?: []);
+            $aiFiles = glob($aiDatasetDir . '/*.json') ?: [];
+            $aiDatasetCount = count($aiFiles);
+            foreach ($aiFiles as $af) {
+                $ad = @json_decode((string)@file_get_contents($af), true);
+                if (is_array($ad)
+                    && (float)($ad['close_price'] ?? 0) > 0
+                    && ($ad['roi'] ?? null) !== null
+                    && (string)($ad['close_reason_normalized'] ?? '') !== ''
+                ) {
+                    $aiDatasetComplete++;
+                }
+            }
         }
 
         $completeRate = $totalClosed > 0 ? round($completeClosed / $totalClosed * 100, 1) : 0.0;
@@ -576,15 +595,38 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         arsort($perSymbol);
         $topSymbols = array_slice($perSymbol, 0, 10, true);
 
+        // Sort per-pattern by count desc (top patterns)
+        arsort($perPattern);
+        $topPatterns = array_slice($perPattern, 0, 10, true);
+
+        // Sort close reasons by count desc
+        arsort($perCloseReason);
+
+        // Next readiness milestone
+        $milestones = [10, 25, 50, 100, 250, 500];
+        $nextMilestone = null;
+        foreach ($milestones as $m) {
+            if ($totalClosed < $m) {
+                $nextMilestone = $m;
+                break;
+            }
+        }
+
         return [
             'demo_closed_trades_total'         => $totalClosed,
             'demo_closed_trades_complete'       => $completeClosed,
             'demo_closed_trades_complete_rate'  => $completeRate,
             'demo_active_trades_count'          => count(glob($this->storageDir . '/trades/active/*.json') ?: []),
             'ai_dataset_records'                => $aiDatasetCount,
+            'ai_dataset_records_total'          => $aiDatasetCount,
+            'ai_dataset_records_complete'       => $aiDatasetComplete,
             'per_pattern_counts'                => $perPattern,
+            'top_patterns_by_closed_count'      => $topPatterns,
             'per_side_counts'                   => $perSide,
+            'per_close_reason_counts'           => $perCloseReason,
             'top_symbols'                       => $topSymbols,
+            'top_symbols_by_closed_count'       => $topSymbols,
+            'next_readiness_milestone'          => $nextMilestone,
             'computed_at'                       => date('c'),
         ];
     }

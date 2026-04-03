@@ -332,27 +332,41 @@ $credBad = $bot_mode === 'demo' && (!$diagKeyPresent || !$diagSecretPresent);
 
 <?php
 // ── Demo Signal Source panel — only shown in demo mode ──────────────────────
-$demoSrcMode    = (string)($bot_last_run['demo_source_mode']     ?? '');
-$demoSrcPath    = (string)($bot_last_run['demo_source_path']     ?? '');
-$demoSigLoaded  = (int)   ($bot_last_run['demo_signals_loaded']  ?? -1);
-$demoSigSkipped = (int)   ($bot_last_run['demo_signals_skipped'] ?? -1);
-$demoIntents    = (int)   ($bot_last_run['intents_loaded']       ?? 0);
-$demoActivePos  = (int)   $activeCount;
-$demoStorageNs  = htmlspecialchars($storageNs);
+$demoSrcMode           = (string)($bot_last_run['demo_source_mode']               ?? '');
+$demoSrcPath           = (string)($bot_last_run['demo_source_path']               ?? '');
+$demoSigLoaded         = (int)   ($bot_last_run['demo_signals_loaded']            ?? -1);
+$demoSigSkipped        = (int)   ($bot_last_run['demo_signals_skipped']           ?? -1);
+$demoIntents           = (int)   ($bot_last_run['intents_loaded']                 ?? 0);
+$demoActivePos         = (int)   $activeCount;
+$demoStorageNs         = htmlspecialchars($storageNs);
+// Pipeline open counters (added by demo pipeline block in service.php)
+$demoSigAttempted      = $bot_last_run['demo_signals_attempted']            ?? null;
+$demoSigOpened         = $bot_last_run['demo_signals_opened']               ?? null;
+$demoSigBlockLimits    = $bot_last_run['demo_signals_blocked_by_limits']    ?? null;
+$demoSigBlockValid     = $bot_last_run['demo_signals_blocked_by_validation']?? null;
+$demoSigBlockExchange  = $bot_last_run['demo_signals_blocked_by_exchange']  ?? null;
+$demoSigBlockOther     = $bot_last_run['demo_signals_blocked_other']        ?? null;
+$demoRejStats          = (array)($bot_last_run['rejection_reason_stats']    ?? []);
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
     <div class="card-body">
-        <div class="section-heading">Demo Signal Source</div>
-        <div class="row g-2">
+        <div class="section-heading">Demo Pipeline Health</div>
+        <div class="row g-2 mb-2">
             <?php
             $srcCards = [
-                ['label' => 'Source Mode',         'value' => htmlspecialchars($demoSrcMode),                      'ok' => null],
-                ['label' => 'Storage Namespace',   'value' => $demoStorageNs,                                      'ok' => null],
-                ['label' => 'Active Demo Positions','value' => (string)$demoActivePos,                             'ok' => null],
-                ['label' => 'Signals Loaded (PE)', 'value' => $demoSigLoaded >= 0 ? (string)$demoSigLoaded : 'n/a','ok' => null],
-                ['label' => 'Signals Skipped',     'value' => $demoSigSkipped >= 0 ? (string)$demoSigSkipped : 'n/a','ok' => null],
-                ['label' => 'Intents to Execute',  'value' => (string)$demoIntents,                               'ok' => $demoIntents > 0],
+                ['label' => 'Source Mode',          'value' => htmlspecialchars($demoSrcMode),                       'ok' => null],
+                ['label' => 'Storage Namespace',    'value' => $demoStorageNs,                                       'ok' => null],
+                ['label' => 'Signals Loaded (PE)',  'value' => $demoSigLoaded >= 0 ? (string)$demoSigLoaded : 'n/a', 'ok' => null],
+                ['label' => 'Signals Skipped (TTL/dup)', 'value' => $demoSigSkipped >= 0 ? (string)$demoSigSkipped : 'n/a', 'ok' => null],
+                ['label' => 'Signals Attempted',   'value' => $demoSigAttempted !== null ? (string)$demoSigAttempted : 'n/a', 'ok' => null],
+                ['label' => 'Signals Opened',      'value' => $demoSigOpened !== null ? (string)$demoSigOpened : 'n/a',       'ok' => $demoSigOpened > 0 ?: null],
+                ['label' => 'Active Demo Positions','value' => (string)$demoActivePos,                                'ok' => null],
+                ['label' => 'Blocked by Limits',   'value' => $demoSigBlockLimits !== null ? (string)$demoSigBlockLimits : 'n/a',   'ok' => $demoSigBlockLimits === 0 ? true : null],
+                ['label' => 'Blocked Validation',  'value' => $demoSigBlockValid !== null ? (string)$demoSigBlockValid : 'n/a',     'ok' => null],
+                ['label' => 'Blocked Exchange',    'value' => $demoSigBlockExchange !== null ? (string)$demoSigBlockExchange : 'n/a','ok' => $demoSigBlockExchange === 0 ? true : null],
+                ['label' => 'Blocked Other',       'value' => $demoSigBlockOther !== null ? (string)$demoSigBlockOther : 'n/a',     'ok' => null],
+                ['label' => 'Intents to Execute',  'value' => (string)$demoIntents,                                  'ok' => $demoIntents > 0],
             ];
             foreach ($srcCards as $sc):
                 $cls = 'neutral';
@@ -367,6 +381,22 @@ $demoStorageNs  = htmlspecialchars($storageNs);
             </div>
             <?php endforeach; ?>
         </div>
+        <?php if (!empty($demoRejStats)): ?>
+        <div class="mt-2">
+            <div class="section-heading" style="font-size:.75rem;">Top Failure Reasons (This Run)</div>
+            <table class="table table-sm exec-table mb-0" style="max-width:420px;">
+                <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                <tbody>
+                <?php
+                arsort($demoRejStats);
+                foreach (array_slice($demoRejStats, 0, 6, true) as $rrk => $rrc):
+                ?>
+                <tr><td><?= htmlspecialchars($rrk) ?></td><td><?= (int)$rrc ?></td></tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
         <?php if ($demoSrcPath !== ''): ?>
         <div class="mt-2 small text-muted">
             Source file: <code><?= htmlspecialchars($demoSrcPath) ?></code>
@@ -378,19 +408,22 @@ $demoStorageNs  = htmlspecialchars($storageNs);
 
 <?php
 // ── Demo Data Readiness panel — always shown in demo mode or when sufficiency data exists ──
-$demoSufficiency    = $bot_demo_data_sufficiency ?? [];
-$demoClosedTotal    = (int)($demoSufficiency['demo_closed_trades_total']        ?? 0);
-$demoClosedComplete = (int)($demoSufficiency['demo_closed_trades_complete']     ?? 0);
-$demoCompleteRate   = (float)($demoSufficiency['demo_closed_trades_complete_rate'] ?? 0.0);
-$demoActiveCount2   = (int)($demoSufficiency['demo_active_trades_count']        ?? 0);
-$aiDatasetRecords   = (int)($demoSufficiency['ai_dataset_records']              ?? 0);
-$aiReady            = (bool)($demoSufficiency['ai_dataset_ready']               ?? false);
-$aiReadyReason      = (string)($demoSufficiency['ai_dataset_ready_reason']      ?? '');
-$aiMinSamples       = (int)($demoSufficiency['ai_dataset_min_samples']          ?? 50);
-$demoSuffAt         = (string)($demoSufficiency['computed_at']                  ?? '');
-$perPatternCounts   = (array)($demoSufficiency['per_pattern_counts']            ?? []);
-$perSideCounts      = (array)($demoSufficiency['per_side_counts']               ?? []);
-$topSymbols         = (array)($demoSufficiency['top_symbols']                   ?? []);
+$demoSufficiency      = $bot_demo_data_sufficiency ?? [];
+$demoClosedTotal      = (int)($demoSufficiency['demo_closed_trades_total']        ?? 0);
+$demoClosedComplete   = (int)($demoSufficiency['demo_closed_trades_complete']     ?? 0);
+$demoCompleteRate     = (float)($demoSufficiency['demo_closed_trades_complete_rate'] ?? 0.0);
+$demoActiveCount2     = (int)($demoSufficiency['demo_active_trades_count']        ?? 0);
+$aiDatasetRecords     = (int)($demoSufficiency['ai_dataset_records']              ?? 0);
+$aiDatasetComplete    = (int)($demoSufficiency['ai_dataset_records_complete']     ?? 0);
+$aiReady              = (bool)($demoSufficiency['ai_dataset_ready']               ?? false);
+$aiReadyReason        = (string)($demoSufficiency['ai_dataset_ready_reason']      ?? '');
+$aiMinSamples         = (int)($demoSufficiency['ai_dataset_min_samples']          ?? 50);
+$demoSuffAt           = (string)($demoSufficiency['computed_at']                  ?? '');
+$perPatternCounts     = (array)($demoSufficiency['per_pattern_counts']            ?? []);
+$perSideCounts        = (array)($demoSufficiency['per_side_counts']               ?? []);
+$topSymbols           = (array)($demoSufficiency['top_symbols']                   ?? []);
+$perCloseReason       = (array)($demoSufficiency['per_close_reason_counts']       ?? []);
+$nextMilestone        = $demoSufficiency['next_readiness_milestone']              ?? null;
 ?>
 <?php if ($bot_mode === 'demo' || !empty($demoSufficiency)): ?>
 <div class="card mb-4" style="border-color:<?= $aiReady ? '#16a34a' : '#334155' ?>;">
@@ -405,17 +438,20 @@ $topSymbols         = (array)($demoSufficiency['top_symbols']                   
         </div>
         <div class="row g-2 mb-2">
             <?php
+            $nextMs = $nextMilestone !== null ? $demoClosedTotal . '/' . $nextMilestone : ($demoClosedTotal . ' (done)');
             $readCards = [
-                ['label' => 'Closed Trades',       'value' => (string)$demoClosedTotal,
+                ['label' => 'Closed Trades',        'value' => (string)$demoClosedTotal,
                  'ok' => $demoClosedTotal >= $aiMinSamples ? true : null],
-                ['label' => 'Complete Records',    'value' => (string)$demoClosedComplete,
+                ['label' => 'Complete Records',     'value' => (string)$demoClosedComplete,
                  'ok' => null],
-                ['label' => 'Completeness Rate',   'value' => $demoClosedTotal > 0 ? $demoCompleteRate . '%' : 'n/a',
+                ['label' => 'Completeness Rate',    'value' => $demoClosedTotal > 0 ? $demoCompleteRate . '%' : 'n/a',
                  'ok' => $demoCompleteRate >= 80 ? true : ($demoClosedTotal > 0 ? false : null)],
-                ['label' => 'Active Trades',       'value' => (string)$demoActiveCount2, 'ok' => null],
-                ['label' => 'AI Dataset Records',  'value' => (string)$aiDatasetRecords, 'ok' => null],
-                ['label' => 'AI Ready',             'value' => $aiReady ? 'YES' : 'NO (' . $demoClosedTotal . '/' . $aiMinSamples . ')',
+                ['label' => 'Active Trades',        'value' => (string)$demoActiveCount2, 'ok' => null],
+                ['label' => 'AI Dataset Records',   'value' => (string)$aiDatasetRecords, 'ok' => null],
+                ['label' => 'AI Records Complete',  'value' => (string)$aiDatasetComplete, 'ok' => null],
+                ['label' => 'AI Ready',              'value' => $aiReady ? 'YES' : 'NO (' . $demoClosedTotal . '/' . $aiMinSamples . ')',
                  'ok' => $aiReady],
+                ['label' => 'Next Milestone',       'value' => $nextMs, 'ok' => null],
             ];
             foreach ($readCards as $rc):
                 $cls = 'neutral';
@@ -435,10 +471,10 @@ $topSymbols         = (array)($demoSufficiency['top_symbols']                   
             <?= htmlspecialchars($aiReadyReason) ?>
         </div>
         <?php endif; ?>
-        <?php if (!empty($perPatternCounts) || !empty($perSideCounts) || !empty($topSymbols)): ?>
+        <?php if (!empty($perPatternCounts) || !empty($perSideCounts) || !empty($topSymbols) || !empty($perCloseReason)): ?>
         <div class="row g-3">
             <?php if (!empty($perPatternCounts)): ?>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="section-heading" style="font-size:.75rem;">Closed by Pattern</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Pattern</th><th>Trades</th></tr></thead>
@@ -463,8 +499,21 @@ $topSymbols         = (array)($demoSufficiency['top_symbols']                   
                 </table>
             </div>
             <?php endif; ?>
+            <?php if (!empty($perCloseReason)): ?>
+            <div class="col-md-3">
+                <div class="section-heading" style="font-size:.75rem;">Close Reason Distribution</div>
+                <table class="table table-sm exec-table mb-0">
+                    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($perCloseReason as $cr => $crc): ?>
+                    <tr><td><?= htmlspecialchars($cr) ?></td><td><?= (int)$crc ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
             <?php if (!empty($topSymbols)): ?>
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <div class="section-heading" style="font-size:.75rem;">Top Symbols by Demo Evidence</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>

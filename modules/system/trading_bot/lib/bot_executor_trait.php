@@ -1362,11 +1362,15 @@ trait BotExecutorTrait
                         $closedTrade['close_reason']            = $closeReason;
                         $closedTrade['close_reason_normalized'] = $closeReason;
                     }
-                    $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
-                    // Demo mode: write AI-ready dataset record for this exchange-closed trade.
+                    // Demo mode: write AI-ready dataset record BEFORE moving to closed dir.
                     if (($this->config['module']['mode'] ?? '') === 'demo') {
-                        $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                        $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                        if (!$aiWritten) {
+                            $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                        }
                     }
+                    $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                     $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                     continue;
                 }
@@ -1740,11 +1744,15 @@ trait BotExecutorTrait
                                     $closedTrade2['close_reason']            = 'stop_loss';
                                     $closedTrade2['close_reason_normalized'] = 'stop_loss';
                                 }
-                                $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);
-                                // Demo mode: write AI-ready dataset record for this logical-stop-closed trade.
+                                // Demo mode: write AI-ready dataset record BEFORE moving to closed dir.
                                 if (($this->config['module']['mode'] ?? '') === 'demo') {
-                                    $this->store->appendAiDatasetRecord($tradeId, $closedTrade2);
+                                    $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade2);
+                                    $closedTrade2['ai_dataset_record_written'] = $aiWritten;
+                                    if (!$aiWritten) {
+                                        $closedTrade2['ai_dataset_write_fail_reason'] = 'write_failed';
+                                    }
                                 }
+                                $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);
                                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                                 continue;
                             }

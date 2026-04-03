@@ -210,12 +210,17 @@ trait BotReconcileTrait
         $trade['realized_pnl'] = $trade['pnl'];
     }
 
-    $this->store->moveTradeToClosedDir($tradeId, $trade);
-
-    // Demo mode: write AI-ready dataset record for this closed trade.
+    // Demo mode: write AI-ready dataset record BEFORE moving to closed dir,
+    // so the closed trade file can carry the ai_dataset_record_written flag.
     if (($this->config['module']['mode'] ?? '') === 'demo') {
-        $this->store->appendAiDatasetRecord($tradeId, $trade);
+        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $trade);
+        $trade['ai_dataset_record_written'] = $aiWritten;
+        if (!$aiWritten) {
+            $trade['ai_dataset_write_fail_reason'] = 'write_failed';
+        }
     }
+
+    $this->store->moveTradeToClosedDir($tradeId, $trade);
 
     // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
     $symbol = (string)($trade['symbol'] ?? '');

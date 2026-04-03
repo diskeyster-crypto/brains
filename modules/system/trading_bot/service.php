@@ -1203,6 +1203,43 @@ final class TradingBotService
             $result['no_order_path_preview'] = $noOrderPathPreview;
 
             // ============================================================
+            // Demo pipeline open counters
+            // Derived from rejection_reason_stats and intent result counts.
+            // Only emitted in demo mode to avoid cluttering live runs.
+            // ============================================================
+            if ($mode === 'demo') {
+                $limitBlockReasons = [
+                    'rejected_limits',
+                    'skipped_max_positions_reached',
+                    'rejected_max_positions_reached',
+                    'skipped_active_trade_exists',
+                    'rejected_active_trade_exists',
+                    'skipped_one_per_symbol',
+                    'rejected_one_per_symbol',
+                ];
+                $demoBlockedByLimits = 0;
+                foreach ($limitBlockReasons as $lr) {
+                    $demoBlockedByLimits += (int)($result['rejection_reason_stats'][$lr] ?? 0);
+                }
+                $demoOpened           = (int)($result['intents_opened']             ?? 0);
+                $demoAttempted        = (int)($result['intents_processed']          ?? 0);
+                $demoValidRejected    = (int)($result['intents_rejected']           ?? 0);
+                $demoExchangeBlocked  = (int)($result['exchange_submit_failed_count'] ?? 0);
+                // Other blocks = attempted minus opens minus limit-blocks minus exchange-blocks
+                $demoOtherBlocked = max(0,
+                    $demoAttempted - $demoOpened - $demoBlockedByLimits - $demoExchangeBlocked
+                    - (int)($result['intents_deferred'] ?? 0)
+                );
+
+                $result['demo_signals_attempted']             = $demoAttempted;
+                $result['demo_signals_opened']                = $demoOpened;
+                $result['demo_signals_blocked_by_limits']     = $demoBlockedByLimits;
+                $result['demo_signals_blocked_by_validation'] = $demoValidRejected;
+                $result['demo_signals_blocked_by_exchange']   = $demoExchangeBlocked;
+                $result['demo_signals_blocked_other']         = $demoOtherBlocked;
+            }
+
+            // ============================================================
             // Active protection summary (normalized detection).
             // trailing_active is a stronger sub-state of protected:
             //   protected_positions_count includes trailing_active trades.
@@ -1558,6 +1595,19 @@ final class TradingBotService
         $metrics['ai_dataset_ready']        = $aiReady;
         $metrics['ai_dataset_ready_reason'] = $aiReadyReason;
         $metrics['ai_dataset_min_samples']  = $minSamples;
+
+        // Next readiness milestone (propagate from store metrics)
+        if (!isset($metrics['next_readiness_milestone'])) {
+            $milestones = [10, 25, 50, 100, 250, 500];
+            $nextMilestone = null;
+            foreach ($milestones as $m) {
+                if ($total < $m) {
+                    $nextMilestone = $m;
+                    break;
+                }
+            }
+            $metrics['next_readiness_milestone'] = $nextMilestone;
+        }
 
         return $metrics;
     }

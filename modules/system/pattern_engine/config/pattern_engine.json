@@ -161,6 +161,20 @@
             "require_passport_lookup_success": true
         }
     },
+    "paper_policy": {
+        "enabled": true,
+        "paper_strong_min_signal_strength": 0.50,
+        "paper_strong_min_quality_score": 0.45,
+        "paper_strong_min_corridor_p75_roi": 0.0,
+        "paper_strong_min_runner_probability": 0.0,
+        "paper_strong_max_noise_score": 1.0,
+        "paper_strong_require_passport": false,
+        "paper_candidate_min_signal_strength": 0.38,
+        "paper_candidate_min_quality_score": 0.32,
+        "paper_candidate_require_passport": false,
+        "paper_max_strong_per_run": 20,
+        "paper_max_candidates_per_run": 50
+    },
     "storage": {
         "max_candidates_per_run": 200,
         "max_signals_stored": 500,

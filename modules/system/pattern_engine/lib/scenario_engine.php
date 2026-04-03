@@ -78,24 +78,49 @@ final class ScenarioEngine
     private array $downstreamPolicy;
 
     /**
+     * Paper pre-classification policy — applied after downstream graduation.
+     * Controls which downstream-demo signals are promoted to paper_strong_candidate
+     * (and thus eligible for actual demo export) vs paper_candidate (sim) vs paper_reject (shadow).
+     *
+     * @var array<string,mixed>
+     */
+    private array $paperPolicy;
+
+    /**
      * Per-run counter for signals graduated via the low-confidence demo policy.
      * Enforces the max_demo_low_confidence_signals_per_run cap.
      */
     private int $demoLowConfidenceGranted = 0;
 
     /**
+     * Per-run counter for paper_strong_candidate grants.
+     * Enforces the paper_max_strong_per_run cap.
+     */
+    private int $paperStrongGranted = 0;
+
+    /**
+     * Per-run counter for paper_candidate grants.
+     * Enforces the paper_max_candidates_per_run cap.
+     */
+    private int $paperCandidateGranted = 0;
+
+    /**
      * @param array<string,array<string,mixed>> $profiles          Scenario profiles from config
      * @param string                            $passportDir       Path to coin_passport passports/
      * @param bool                              $liveOutputEnabled Master live-output gate (default false)
      * @param array<string,mixed>               $downstreamPolicy  Downstream graduation policy (default [])
+     * @param array<string,mixed>               $paperPolicy       Paper pre-classification policy (default [])
      */
-    public function __construct(array $profiles, string $passportDir, bool $liveOutputEnabled = false, array $downstreamPolicy = [])
+    public function __construct(array $profiles, string $passportDir, bool $liveOutputEnabled = false, array $downstreamPolicy = [], array $paperPolicy = [])
     {
         $this->profiles                  = $profiles;
         $this->passportDir               = $passportDir;
         $this->liveOutputEnabled         = $liveOutputEnabled;
         $this->downstreamPolicy          = $downstreamPolicy;
+        $this->paperPolicy               = $paperPolicy;
         $this->demoLowConfidenceGranted  = 0;
+        $this->paperStrongGranted        = 0;
+        $this->paperCandidateGranted     = 0;
     }
 
     /**
@@ -411,6 +436,11 @@ final class ScenarioEngine
             $effectiveReason  = $downstreamResult['reason'];
         }
 
+        // Apply paper pre-classification policy (independent of downstream bucket).
+        // This annotates every scenario with a paper_bucket so the service layer
+        // can restrict demo export to paper_strong_candidate only.
+        $paperResult = $this->applyPaperPolicy($signal, $passport, $effectiveStatus);
+
         [$allowLive, $allowDemo, $allowShadow, $allowSim, $liveBlockReason] =
             $this->statusFlags($effectiveStatus, $effectiveReason);
 
@@ -483,6 +513,12 @@ final class ScenarioEngine
                     'demo_max_noise_score'         => $this->downstreamPolicy['demo_max_noise_score']         ?? null,
                     'demo_min_confidence'          => $this->downstreamPolicy['demo_min_confidence']          ?? null,
                 ] : null,
+                // Paper pre-classification (applied to all scenarios; gates demo export)
+                'paper_bucket'               => $paperResult['paper_bucket'],
+                'paper_reason'               => $paperResult['paper_reason'],
+                'paper_score'                => $paperResult['paper_score'],
+                'paper_checks_passed'        => $paperResult['paper_checks_passed'],
+                'paper_checks_failed'        => $paperResult['paper_checks_failed'],
             ]),
         ];
     }
@@ -874,6 +910,209 @@ final class ScenarioEngine
             'demo_low_confidence_checks_passed'   => $lcPassedChecks,
             'demo_low_confidence_checks_failed'   => $lcFailedChecks,
             'demo_low_confidence_block_reason'    => $lcBlockReason,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: paper pre-classification policy
+    // -------------------------------------------------------------------------
+
+    /**
+     * Apply paper pre-classification to a signal.
+     *
+     * Every scenario gets one paper classification:
+     *   paper_strong_candidate — passes all strong thresholds; eligible for demo export
+     *   paper_candidate        — passes lower thresholds; eligible for sim export
+     *   paper_reject           — fails even candidate thresholds; routed to shadow
+     *
+     * Uses only internal data: signal_strength, quality_score, corridor_p75_roi,
+     * runner_probability, noise_score (from passport when available).
+     *
+     * @param  array<string,mixed>       $signal
+     * @param  array<string,mixed>|null  $passport
+     * @param  string                    $finalBucket  The scenario's final downstream bucket
+     * @return array{paper_bucket:string, paper_reason:string, paper_score:float, paper_checks_passed:list<string>, paper_checks_failed:list<string>}
+     */
+    private function applyPaperPolicy(array $signal, ?array $passport, string $finalBucket): array
+    {
+        $policy = $this->paperPolicy;
+
+        if (empty($policy['enabled'])) {
+            return [
+                'paper_bucket'        => 'paper_strong_candidate',
+                'paper_reason'        => 'paper_policy_disabled',
+                'paper_score'         => 1.0,
+                'paper_checks_passed' => [],
+                'paper_checks_failed' => [],
+            ];
+        }
+
+        $signalStrength  = (float)($signal['signal_strength'] ?? 0.0);
+        $qualityScore    = (float)($signal['quality_score']   ?? 0.0);
+        $algo            = (string)($signal['pattern_algorithm'] ?? '');
+        $passportPresent = $passport !== null;
+
+        // Extract passport metrics when available
+        $cp75Actual  = null;
+        $rpActual    = null;
+        $noiseActual = null;
+        if ($passport !== null) {
+            $cp75Actual = (float)(
+                $passport['corridor_p75_roi'] ??
+                ($passport['pattern_behavior'][$algo]['corridor_p75_roi'] ?? null) ??
+                ($passport['pattern_behavior'][$algo]['corridor_p75'] ?? null) ??
+                0.0
+            );
+            $rpActual = (float)(
+                $passport['runner_probability'] ??
+                ($passport['pattern_behavior'][$algo]['runner_rate'] ?? null) ??
+                0.0
+            );
+            $noiseActual = (float)($passport['noise_score'] ?? 0.0);
+        }
+
+        // Composite paper_score (0–1) using only available internal data
+        $paperScore = round(
+            $signalStrength * 0.35
+            + $qualityScore * 0.30
+            + ($rpActual !== null ? min(1.0, $rpActual * 5.0) * 0.20 : 0.0)
+            + ($cp75Actual !== null ? min(1.0, $cp75Actual / 10.0) * 0.15 : 0.0),
+            4
+        );
+
+        // ---- Strong candidate check ----
+        $strongChecks      = [];
+        $strongBlockReason = null;
+
+        $strongMinStr = (float)($policy['paper_strong_min_signal_strength'] ?? 0.50);
+        $pass = $signalStrength >= $strongMinStr;
+        $strongChecks[] = ['check' => 'signal_strength', 'pass' => $pass, 'threshold' => $strongMinStr, 'value' => $signalStrength];
+        if (!$pass) {
+            $strongBlockReason = $strongBlockReason ?? 'paper_weak_signal_strength';
+        }
+
+        $strongMinQual = (float)($policy['paper_strong_min_quality_score'] ?? 0.45);
+        $pass = $qualityScore >= $strongMinQual;
+        $strongChecks[] = ['check' => 'quality_score', 'pass' => $pass, 'threshold' => $strongMinQual, 'value' => $qualityScore];
+        if (!$pass) {
+            $strongBlockReason = $strongBlockReason ?? 'paper_weak_quality_score';
+        }
+
+        $strongMinP75 = (float)($policy['paper_strong_min_corridor_p75_roi'] ?? 0.0);
+        if ($strongMinP75 > 0 && $cp75Actual !== null) {
+            $pass = $cp75Actual >= $strongMinP75;
+            $strongChecks[] = ['check' => 'corridor_p75_roi', 'pass' => $pass, 'threshold' => $strongMinP75, 'value' => $cp75Actual];
+            if (!$pass) {
+                $strongBlockReason = $strongBlockReason ?? 'paper_weak_corridor_p75_roi';
+            }
+        }
+
+        $strongMinRP = (float)($policy['paper_strong_min_runner_probability'] ?? 0.0);
+        if ($strongMinRP > 0 && $rpActual !== null) {
+            $pass = $rpActual >= $strongMinRP;
+            $strongChecks[] = ['check' => 'runner_probability', 'pass' => $pass, 'threshold' => $strongMinRP, 'value' => $rpActual];
+            if (!$pass) {
+                $strongBlockReason = $strongBlockReason ?? 'paper_weak_runner_probability';
+            }
+        }
+
+        $strongMaxNoise = (float)($policy['paper_strong_max_noise_score'] ?? 1.0);
+        if ($strongMaxNoise < 1.0 && $noiseActual !== null) {
+            $pass = $noiseActual <= $strongMaxNoise;
+            $strongChecks[] = ['check' => 'noise_score', 'pass' => $pass, 'threshold' => $strongMaxNoise, 'value' => $noiseActual];
+            if (!$pass) {
+                $strongBlockReason = $strongBlockReason ?? 'paper_high_noise_score';
+            }
+        }
+
+        $strongRequirePassport = (bool)($policy['paper_strong_require_passport'] ?? false);
+        if ($strongRequirePassport && !$passportPresent) {
+            $strongChecks[] = ['check' => 'passport_available', 'pass' => false];
+            $strongBlockReason = $strongBlockReason ?? 'paper_strong_requires_passport';
+        }
+
+        $maxStrong = (int)($policy['paper_max_strong_per_run'] ?? 20);
+        if ($strongBlockReason === null && $this->paperStrongGranted >= $maxStrong) {
+            $strongBlockReason = 'paper_strong_cap_reached';
+            $strongChecks[] = ['check' => 'cap', 'pass' => false, 'threshold' => $maxStrong, 'value' => $this->paperStrongGranted];
+        }
+
+        if ($strongBlockReason === null) {
+            $this->paperStrongGranted++;
+            $passedChecks = array_values(array_map(
+                fn($c) => $c['check'],
+                array_filter($strongChecks, fn($c) => $c['pass'] === true)
+            ));
+            return [
+                'paper_bucket'        => 'paper_strong_candidate',
+                'paper_reason'        => 'paper_strong_checks_passed',
+                'paper_score'         => $paperScore,
+                'paper_checks_passed' => $passedChecks,
+                'paper_checks_failed' => [],
+            ];
+        }
+
+        // ---- Candidate check ----
+        $candidateChecks      = [];
+        $candidateBlockReason = null;
+
+        $candidateMinStr = (float)($policy['paper_candidate_min_signal_strength'] ?? 0.38);
+        $pass = $signalStrength >= $candidateMinStr;
+        $candidateChecks[] = ['check' => 'signal_strength', 'pass' => $pass, 'threshold' => $candidateMinStr, 'value' => $signalStrength];
+        if (!$pass) {
+            $candidateBlockReason = $candidateBlockReason ?? 'paper_weak_signal_strength';
+        }
+
+        $candidateMinQual = (float)($policy['paper_candidate_min_quality_score'] ?? 0.32);
+        $pass = $qualityScore >= $candidateMinQual;
+        $candidateChecks[] = ['check' => 'quality_score', 'pass' => $pass, 'threshold' => $candidateMinQual, 'value' => $qualityScore];
+        if (!$pass) {
+            $candidateBlockReason = $candidateBlockReason ?? 'paper_weak_quality_score';
+        }
+
+        $candidateRequirePassport = (bool)($policy['paper_candidate_require_passport'] ?? false);
+        if ($candidateRequirePassport && !$passportPresent) {
+            $candidateChecks[] = ['check' => 'passport_available', 'pass' => false];
+            $candidateBlockReason = $candidateBlockReason ?? 'paper_candidate_requires_passport';
+        }
+
+        $maxCandidates = (int)($policy['paper_max_candidates_per_run'] ?? 50);
+        if ($candidateBlockReason === null && $this->paperCandidateGranted >= $maxCandidates) {
+            $candidateBlockReason = 'paper_candidate_cap_reached';
+            $candidateChecks[] = ['check' => 'cap', 'pass' => false, 'threshold' => $maxCandidates, 'value' => $this->paperCandidateGranted];
+        }
+
+        if ($candidateBlockReason === null) {
+            $this->paperCandidateGranted++;
+            $strongFailedChecks = array_values(array_map(
+                fn($c) => $c['check'],
+                array_filter($strongChecks, fn($c) => $c['pass'] === false)
+            ));
+            $candidatePassedChecks = array_values(array_map(
+                fn($c) => $c['check'],
+                array_filter($candidateChecks, fn($c) => $c['pass'] === true)
+            ));
+            return [
+                'paper_bucket'        => 'paper_candidate',
+                'paper_reason'        => $strongBlockReason ?? 'paper_strong_checks_failed',
+                'paper_score'         => $paperScore,
+                'paper_checks_passed' => $candidatePassedChecks,
+                'paper_checks_failed' => $strongFailedChecks,
+            ];
+        }
+
+        // ---- Reject ----
+        $allFailedChecks = array_values(array_unique(array_merge(
+            array_map(fn($c) => $c['check'], array_filter($strongChecks, fn($c) => $c['pass'] === false)),
+            array_map(fn($c) => $c['check'], array_filter($candidateChecks, fn($c) => $c['pass'] === false))
+        )));
+
+        return [
+            'paper_bucket'        => 'paper_reject',
+            'paper_reason'        => $candidateBlockReason ?? $strongBlockReason ?? 'paper_checks_failed',
+            'paper_score'         => $paperScore,
+            'paper_checks_passed' => [],
+            'paper_checks_failed' => $allFailedChecks,
         ];
     }
 

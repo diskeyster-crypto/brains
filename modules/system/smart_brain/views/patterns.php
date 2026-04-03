@@ -148,6 +148,17 @@ $topDemoBlockReasons  = (array)($pe_last_run['top_demo_block_reasons']      ?? $
 $demoLcBlockCount     = (int)($pe_last_run['demo_low_confidence_block_count']   ?? $pe_stats['last_run']['demo_low_confidence_block_count']   ?? 0);
 $demoLcBlockReasons   = (array)($pe_last_run['demo_low_confidence_block_reasons'] ?? $pe_stats['last_run']['demo_low_confidence_block_reasons'] ?? []);
 
+// Paper pre-classification stats
+$paperRejectCount      = (int)($pe_last_run['paper_reject_count']               ?? $pe_stats['last_run']['paper_reject_count']               ?? 0);
+$paperCandidateCount   = (int)($pe_last_run['paper_candidate_count']            ?? $pe_stats['last_run']['paper_candidate_count']            ?? 0);
+$paperStrongCount      = (int)($pe_last_run['paper_strong_candidate_count']     ?? $pe_stats['last_run']['paper_strong_candidate_count']     ?? 0);
+$demoFromPaper         = (int)($pe_last_run['demo_export_count_from_paper']     ?? $pe_stats['last_run']['demo_export_count_from_paper']     ?? 0);
+$simFromPaper          = (int)($pe_last_run['sim_export_count_from_paper']      ?? $pe_stats['last_run']['sim_export_count_from_paper']      ?? 0);
+$shadowFromPaper       = (int)($pe_last_run['shadow_export_count_from_paper']   ?? $pe_stats['last_run']['shadow_export_count_from_paper']   ?? 0);
+$topPaperRejectReasons = (array)($pe_last_run['top_paper_reject_reasons']       ?? $pe_stats['last_run']['top_paper_reject_reasons']        ?? []);
+$topDemoBlockedByPaper = (array)($pe_last_run['top_demo_blocked_by_paper_reasons'] ?? $pe_stats['last_run']['top_demo_blocked_by_paper_reasons'] ?? []);
+$paperPolicyCfg        = (array)($pe_config['paper_policy'] ?? []);
+
 $patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
 $passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
 $universeOverlapCnt = (int)($pe_last_run['symbol_universe_overlap_count']          ?? $pe_stats['last_run']['symbol_universe_overlap_count']          ?? 0);
@@ -428,6 +439,117 @@ $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']  
 </div>
 <?php endif; ?>
 
+<?php
+$paperTotal = $paperRejectCount + $paperCandidateCount + $paperStrongCount;
+if ($paperTotal > 0 || !empty($paperPolicyCfg)):
+?>
+<!-- Paper pre-classification panel -->
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span class="text-secondary small"><i class="bi bi-funnel me-1"></i>Paper Pre-Classification — Demo Export Gate</span>
+        <span class="badge" style="background:<?= !empty($paperPolicyCfg['enabled']) ? '#0d9488' : '#475569' ?>; font-size:0.7rem;">
+            <?= !empty($paperPolicyCfg['enabled']) ? 'enabled' : 'disabled' ?>
+        </span>
+    </div>
+    <div class="card-body p-3">
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $paperRejectCount > 0 ? '#6b7280' : '#334155' ?>;" title="Signals that failed both strong and candidate checks — routed to shadow">
+                    <div class="pe-stat-value" style="color:<?= $paperRejectCount > 0 ? '#9ca3af' : '#6b7280' ?>;"><?= $paperRejectCount ?></div>
+                    <div class="pe-stat-label">Paper Reject</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $paperCandidateCount > 0 ? '#d97706' : '#334155' ?>;" title="Signals that passed candidate but not strong checks — routed to sim">
+                    <div class="pe-stat-value" style="color:<?= $paperCandidateCount > 0 ? '#fbbf24' : '#6b7280' ?>;"><?= $paperCandidateCount ?></div>
+                    <div class="pe-stat-label">Paper Candidate</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $paperStrongCount > 0 ? '#2563eb' : '#334155' ?>;" title="Signals that passed all strong checks — eligible for demo export">
+                    <div class="pe-stat-value" style="color:<?= $paperStrongCount > 0 ? '#3b82f6' : '#6b7280' ?>;"><?= $paperStrongCount ?></div>
+                    <div class="pe-stat-label">Paper Strong</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $demoFromPaper > 0 ? '#22c55e' : '#334155' ?>;" title="Signals actually exported to demo (paper_strong_candidate only)">
+                    <div class="pe-stat-value" style="color:<?= $demoFromPaper > 0 ? '#22c55e' : '#6b7280' ?>;"><?= $demoFromPaper ?></div>
+                    <div class="pe-stat-label">→ Demo Export</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $simFromPaper > 0 ? '#d97706' : '#334155' ?>;" title="allow_demo scenarios rerouted to sim as paper_candidate">
+                    <div class="pe-stat-value" style="color:<?= $simFromPaper > 0 ? '#fbbf24' : '#6b7280' ?>;"><?= $simFromPaper ?></div>
+                    <div class="pe-stat-label">→ Sim (from demo)</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="pe-stat-card" style="border-color:<?= $shadowFromPaper > 0 ? '#7c3aed' : '#334155' ?>;" title="allow_demo scenarios rerouted to shadow as paper_reject">
+                    <div class="pe-stat-value" style="color:<?= $shadowFromPaper > 0 ? '#a78bfa' : '#6b7280' ?>;"><?= $shadowFromPaper ?></div>
+                    <div class="pe-stat-label">→ Shadow (from demo)</div>
+                </div>
+            </div>
+        </div>
+        <?php if (!empty($topDemoBlockedByPaper)): ?>
+        <div class="mb-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-funnel me-1 text-warning"></i>Why allow_demo signals were blocked from demo by paper policy:</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach ($topDemoBlockedByPaper as $item): ?>
+                <span class="badge" style="background:#1e293b; border:1px solid #475569; font-size:0.7rem;">
+                    <?= htmlspecialchars(str_replace('paper_', '', (string)($item['reason'] ?? ''))) ?>
+                    <span class="text-warning ms-1"><?= (int)($item['count'] ?? 0) ?></span>
+                </span>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($topPaperRejectReasons)): ?>
+        <div class="mb-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-x-circle me-1 text-danger"></i>Top paper reject reasons:</div>
+            <div class="d-flex flex-wrap gap-1">
+            <?php foreach ($topPaperRejectReasons as $item): ?>
+                <span class="badge" style="background:#1e293b; border:1px solid #475569; font-size:0.7rem;">
+                    <?= htmlspecialchars(str_replace('paper_', '', (string)($item['reason'] ?? ''))) ?>
+                    <span class="text-danger ms-1"><?= (int)($item['count'] ?? 0) ?></span>
+                </span>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($paperPolicyCfg)): ?>
+        <div class="mt-2">
+            <div class="text-secondary small mb-1"><i class="bi bi-sliders me-1"></i>Paper policy thresholds:</div>
+            <div class="row g-1">
+                <?php
+                $paperThresholdItems = [
+                    ['paper_strong_min_signal_strength',    'Strong Min Strength'],
+                    ['paper_strong_min_quality_score',      'Strong Min Quality'],
+                    ['paper_strong_min_corridor_p75_roi',   'Strong Min P75 ROI'],
+                    ['paper_strong_min_runner_probability', 'Strong Min Runner'],
+                    ['paper_strong_max_noise_score',        'Strong Max Noise'],
+                    ['paper_candidate_min_signal_strength', 'Candidate Min Strength'],
+                    ['paper_candidate_min_quality_score',   'Candidate Min Quality'],
+                    ['paper_max_strong_per_run',            'Max Strong/run'],
+                    ['paper_max_candidates_per_run',        'Max Candidates/run'],
+                ];
+                foreach ($paperThresholdItems as [$key, $label]):
+                    $val = $paperPolicyCfg[$key] ?? null;
+                    if ($val === null) continue;
+                ?>
+                <div class="col-6 col-md-4">
+                    <div class="small" style="background:#0f172a; padding:0.3rem 0.5rem; border-radius:4px;">
+                        <span class="text-secondary"><?= $label ?>:</span>
+                        <span class="text-info ms-1"><?= htmlspecialchars((string)$val) ?></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if ($patternSymsTotal > 0 || $passportSymsTotal > 0): ?>
 <!-- Universe overlap panel -->
 <div class="card bg-dark border-secondary mb-3">
@@ -687,7 +809,7 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
         <thead>
             <tr>
                 <th>Symbol</th><th>Side</th><th>Status</th><th>Reason</th>
-                <th>Bucket</th><th>Live</th>
+                <th>Bucket</th><th>Paper</th><th>Live</th>
                 <th>Passport</th><th>P75 ROI</th><th>Runner Prob</th><th>Noise</th><th>Demo Block</th><th>Near Miss</th>
             </tr>
         </thead>
@@ -725,6 +847,20 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                     echo '<span class="badge" style="background:' . $fbColor . ';font-size:0.65rem;" title="final_downstream_bucket">' . htmlspecialchars($fb) . '</span>';
                     if (!empty($diag['demo_low_confidence_policy_used'])) {
                         echo '<span class="badge ms-1" style="background:#0d9488;font-size:0.6rem;" title="Graduated via low-confidence demo policy">lc</span>';
+                    }
+                ?></td>
+                <td><?php
+                    $pb = $diag['paper_bucket'] ?? null;
+                    if ($pb === 'paper_strong_candidate') {
+                        echo '<span class="badge" style="background:#1d4ed8;font-size:0.65rem;" title="' . htmlspecialchars((string)($diag['paper_reason'] ?? '')) . ' | score:' . number_format((float)($diag['paper_score'] ?? 0), 3) . '">strong</span>';
+                    } elseif ($pb === 'paper_candidate') {
+                        echo '<span class="badge" style="background:#92400e;font-size:0.65rem;" title="' . htmlspecialchars((string)($diag['paper_reason'] ?? '')) . ' | score:' . number_format((float)($diag['paper_score'] ?? 0), 3) . '">cand.</span>';
+                    } elseif ($pb === 'paper_reject') {
+                        echo '<span class="badge" style="background:#374151;font-size:0.65rem;" title="' . htmlspecialchars((string)($diag['paper_reason'] ?? '')) . ' | score:' . number_format((float)($diag['paper_score'] ?? 0), 3) . '">reject</span>';
+                    } elseif ($pb === null && !empty($diag['paper_reason']) && $diag['paper_reason'] === 'paper_policy_disabled') {
+                        echo '<span class="text-secondary" style="font-size:0.65rem;">off</span>';
+                    } else {
+                        echo '<span class="text-secondary">—</span>';
                     }
                 ?></td>
                 <td><?php

@@ -45,9 +45,10 @@ final class PatternEngineService
         $passportDir    = __DIR__ . '/../coin_passport/storage/passports';
         $liveEnabled    = (bool)($config['live_output_enabled'] ?? false);
         $downstreamPolicy = (array)($config['downstream_policy'] ?? []);
+        $paperPolicy      = (array)($config['paper_policy']      ?? []);
 
         $this->adapter          = new UniversalSignalAdapter();
-        $this->scenarioEngine   = new ScenarioEngine($profiles, $passportDir, $liveEnabled, $downstreamPolicy);
+        $this->scenarioEngine   = new ScenarioEngine($profiles, $passportDir, $liveEnabled, $downstreamPolicy, $paperPolicy);
         $this->symbolNormalizer = new SymbolNormalizer($passportDir);
 
         PatternDetectorRegistry::init();
@@ -689,10 +690,83 @@ final class PatternEngineService
         $this->realRunStats['demo_low_confidence_block_count']      = $demoLowConfidenceBlockCount;
         $this->realRunStats['demo_low_confidence_block_reasons']    = $demoLowConfidenceBlockReasons;
 
-        // Build downstream-safe filtered signal sets — exclusive by final_downstream_bucket
-        $demoSignals   = $this->buildDownstreamSet($allCombined, ['allow_demo']);
-        $shadowSignals = $this->buildDownstreamSet($allCombined, ['shadow_only', 'allow_shadow']);
-        $simSignals    = $this->buildDownstreamSet($allCombined, ['allow_sim', 'sim_only']);
+        // Paper pre-classification counters (from scenario diagnostics)
+        $paperRejectCount          = 0;
+        $paperCandidateCount       = 0;
+        $paperStrongCandidateCount = 0;
+        $paperRejectReasons        = [];
+        $demoBlockedByPaperReasons = [];
+
+        foreach ($allScenarios as $sc) {
+            $paperBucket = $sc['diagnostics']['paper_bucket'] ?? null;
+            $paperReason = $sc['diagnostics']['paper_reason'] ?? null;
+            $bucket      = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
+
+            if ($paperBucket === 'paper_reject') {
+                $paperRejectCount++;
+                if ($paperReason !== null) {
+                    $paperRejectReasons[$paperReason] = ($paperRejectReasons[$paperReason] ?? 0) + 1;
+                }
+                if ($bucket === 'allow_demo') {
+                    // allow_demo scenario blocked from demo export by paper classification
+                    $key = $paperReason ?? 'unknown';
+                    $demoBlockedByPaperReasons[$key] = ($demoBlockedByPaperReasons[$key] ?? 0) + 1;
+                }
+            } elseif ($paperBucket === 'paper_candidate') {
+                $paperCandidateCount++;
+                if ($bucket === 'allow_demo') {
+                    $key = $paperReason ?? 'paper_not_strong';
+                    $demoBlockedByPaperReasons[$key] = ($demoBlockedByPaperReasons[$key] ?? 0) + 1;
+                }
+            } elseif ($paperBucket === 'paper_strong_candidate') {
+                $paperStrongCandidateCount++;
+            }
+        }
+
+        arsort($paperRejectReasons);
+        arsort($demoBlockedByPaperReasons);
+
+        $topPaperRejectReasons = [];
+        foreach (array_slice($paperRejectReasons, 0, 10, true) as $r => $c) {
+            $topPaperRejectReasons[] = ['reason' => $r, 'count' => $c];
+        }
+        $topDemoBlockedByPaperReasons = [];
+        foreach (array_slice($demoBlockedByPaperReasons, 0, 10, true) as $r => $c) {
+            $topDemoBlockedByPaperReasons[] = ['reason' => $r, 'count' => $c];
+        }
+
+        $this->realRunStats['paper_reject_count']               = $paperRejectCount;
+        $this->realRunStats['paper_candidate_count']            = $paperCandidateCount;
+        $this->realRunStats['paper_strong_candidate_count']     = $paperStrongCandidateCount;
+        $this->realRunStats['top_paper_reject_reasons']         = $topPaperRejectReasons;
+        $this->realRunStats['top_demo_blocked_by_paper_reasons']= $topDemoBlockedByPaperReasons;
+
+        // Build downstream-safe filtered signal sets with paper policy gating.
+        //
+        // Routing rules (exclusive):
+        //   allow_demo  + paper_strong_candidate → demo export
+        //   allow_demo  + paper_candidate         → sim export (paper pre-filter, not strong enough)
+        //   allow_demo  + paper_reject            → shadow export (below candidate threshold)
+        //   allow_sim / sim_only                  → sim export (unchanged)
+        //   shadow_only / allow_shadow            → shadow export (unchanged)
+        $demoSignals   = $this->buildDownstreamSet($allCombined, ['allow_demo'], 'paper_strong_candidate');
+        $shadowSignals = array_merge(
+            $this->buildDownstreamSet($allCombined, ['shadow_only', 'allow_shadow']),
+            $this->buildDownstreamSet($allCombined, ['allow_demo'], 'paper_reject')
+        );
+        $simSignals    = array_merge(
+            $this->buildDownstreamSet($allCombined, ['allow_sim', 'sim_only']),
+            $this->buildDownstreamSet($allCombined, ['allow_demo'], 'paper_candidate')
+        );
+
+        // Count paper-routed signals for diagnostics
+        $demoFromPaperCount   = count($demoSignals);
+        $simFromPaperCount    = count(array_filter($simSignals,    fn($s) => ($s['paper_bucket'] ?? null) === 'paper_candidate'));
+        $shadowFromPaperCount = count(array_filter($shadowSignals, fn($s) => ($s['paper_bucket'] ?? null) === 'paper_reject'));
+
+        $this->realRunStats['demo_export_count_from_paper']   = $demoFromPaperCount;
+        $this->realRunStats['sim_export_count_from_paper']    = $simFromPaperCount;
+        $this->realRunStats['shadow_export_count_from_paper'] = $shadowFromPaperCount;
 
         $this->realRunStats['demo_signals_count']   = count($demoSignals);
         $this->realRunStats['shadow_signals_count'] = count($shadowSignals);
@@ -860,12 +934,15 @@ final class PatternEngineService
      * consumption — symbol normalized, scenario metadata, passport summary, TTL.
      *
      * Filtering is exclusive: uses final_downstream_bucket from diagnostics.
+     * When $requiredPaperBucket is provided, only signals whose paper_bucket
+     * matches are included (used to gate demo export to paper_strong_candidate).
      *
      * @param  list<array{raw:array,signal:array,scenario:array}>  $combined
-     * @param  list<string>  $buckets  e.g. ['allow_demo'] or ['shadow_only','allow_shadow']
+     * @param  list<string>  $buckets             e.g. ['allow_demo'] or ['shadow_only','allow_shadow']
+     * @param  string|null   $requiredPaperBucket Optional paper classification filter
      * @return list<array<string,mixed>>
      */
-    private function buildDownstreamSet(array $combined, array $buckets): array
+    private function buildDownstreamSet(array $combined, array $buckets, ?string $requiredPaperBucket = null): array
     {
         $result = [];
         foreach ($combined as $item) {
@@ -875,6 +952,14 @@ final class PatternEngineService
             $finalBucket = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
             if (!in_array($finalBucket, $buckets, true)) {
                 continue;
+            }
+
+            // Paper classification gate — restrict demo to paper_strong_candidate
+            if ($requiredPaperBucket !== null) {
+                $paperBucket = $sc['diagnostics']['paper_bucket'] ?? null;
+                if ($paperBucket !== $requiredPaperBucket) {
+                    continue;
+                }
             }
 
             $diag = (array)($sc['diagnostics'] ?? []);
@@ -911,6 +996,10 @@ final class PatternEngineService
                 'passport_noise_score'       => $diag['passport_noise_score']       ?? null,
                 'entry_hint'                 => $sig['entry_hint']                  ?? null,
                 'invalidation_hint'          => $sig['invalidation_hint']           ?? null,
+                // Paper pre-classification fields
+                'paper_bucket'               => $diag['paper_bucket']               ?? null,
+                'paper_reason'               => $diag['paper_reason']               ?? null,
+                'paper_score'                => $diag['paper_score']                ?? null,
                 'source_module'              => 'pattern_engine',
                 'snapshot_at'               => date('c'),
             ];
@@ -1182,6 +1271,15 @@ final class PatternEngineService
             'top_demo_block_reasons'             => (array)($this->realRunStats['top_demo_block_reasons']           ?? []),
             'demo_low_confidence_block_count'    => (int)($this->realRunStats['demo_low_confidence_block_count']    ?? 0),
             'demo_low_confidence_block_reasons'  => (array)($this->realRunStats['demo_low_confidence_block_reasons'] ?? []),
+            // Paper pre-classification layer counts
+            'paper_reject_count'                  => (int)($this->realRunStats['paper_reject_count']                  ?? 0),
+            'paper_candidate_count'               => (int)($this->realRunStats['paper_candidate_count']               ?? 0),
+            'paper_strong_candidate_count'        => (int)($this->realRunStats['paper_strong_candidate_count']        ?? 0),
+            'demo_export_count_from_paper'        => (int)($this->realRunStats['demo_export_count_from_paper']        ?? 0),
+            'sim_export_count_from_paper'         => (int)($this->realRunStats['sim_export_count_from_paper']         ?? 0),
+            'shadow_export_count_from_paper'      => (int)($this->realRunStats['shadow_export_count_from_paper']      ?? 0),
+            'top_paper_reject_reasons'            => (array)($this->realRunStats['top_paper_reject_reasons']          ?? []),
+            'top_demo_blocked_by_paper_reasons'   => (array)($this->realRunStats['top_demo_blocked_by_paper_reasons'] ?? []),
             // Universe overlap diagnostics
             'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
             'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),

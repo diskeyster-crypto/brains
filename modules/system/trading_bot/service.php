@@ -276,6 +276,15 @@ final class TradingBotService
                 $result['demo_source_path']         = $peDemoResult['source_path'] ?? '';
                 $result['demo_signals_loaded']      = $peDemoResult['signals_loaded'] ?? 0;
                 $result['demo_signals_skipped']     = $peDemoResult['signals_skipped'] ?? 0;
+                // demo_learning_mode: cap signals per run
+                $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+                if (($dlmCfg['enabled'] ?? false) && ($dlmCfg['max_demo_signals_per_run'] ?? 0) > 0) {
+                    $maxDemoSignals = (int)$dlmCfg['max_demo_signals_per_run'];
+                    if (count($intentsResult['intents'] ?? []) > $maxDemoSignals) {
+                        $intentsResult['intents'] = array_slice($intentsResult['intents'], 0, $maxDemoSignals);
+                        $intentsResult['count']   = $maxDemoSignals;
+                    }
+                }
             } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.
@@ -614,6 +623,14 @@ final class TradingBotService
                 $maxDeferredPerRun = (int)($this->config['execution']['max_deferred_intents_per_run'] ?? 10);
                 if ($maxDeferredPerRun <= 0) {
                     $maxDeferredPerRun = 10;
+                }
+
+                // demo_learning_mode: cap max concurrent positions for demo mode
+                if ($mode === 'demo') {
+                    $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+                    if (($dlmCfg['enabled'] ?? false) && ($dlmCfg['max_concurrent_demo_positions'] ?? 0) > 0) {
+                        $this->config['module']['max_concurrent_positions'] = (int)$dlmCfg['max_concurrent_demo_positions'];
+                    }
                 }
 
                 // Aggregate deferred reasons to avoid log spam

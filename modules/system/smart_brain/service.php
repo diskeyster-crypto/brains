@@ -684,6 +684,14 @@ final class SmartBrainService
                 $current['execution'][$k] = $values[$k];
             }
         }
+        // Also handle execution_* prefixed form field names (UI sends execution_trailing_enabled etc.)
+        $execBoolPrefixed = ['trailing_enabled', 'break_even_enabled', 'emergency_stop_enabled', 'reverse_side_enabled'];
+        foreach ($execBoolPrefixed as $k) {
+            $prefixed = 'execution_' . $k;
+            if (array_key_exists($prefixed, $values)) {
+                $current['execution'][$k] = (bool)$values[$prefixed];
+            }
+        }
 
         // ---- sources block ----
         if (!isset($current['sources']) || !is_array($current['sources'])) {
@@ -696,6 +704,24 @@ final class SmartBrainService
             }
             if (array_key_exists($k, $values)) {
                 $current['sources'][$k] = $values[$k];
+            }
+        }
+
+        // ---- demo_learning_mode block ----
+        if (!isset($current['demo_learning_mode']) || !is_array($current['demo_learning_mode'])) {
+            $current['demo_learning_mode'] = [];
+        }
+        $dlmFields = ['enabled', 'max_concurrent_demo_positions', 'max_demo_signals_per_run',
+                      'prefer_short_holds', 'allow_low_confidence_demo', 'learning_target_closed_trades'];
+        foreach ($dlmFields as $k) {
+            if (array_key_exists('demo_learning_mode_' . $k, $values)) {
+                $v = $values['demo_learning_mode_' . $k];
+                if (in_array($k, ['enabled', 'prefer_short_holds', 'allow_low_confidence_demo'], true)) {
+                    $v = (bool)$v;
+                } elseif (in_array($k, ['max_concurrent_demo_positions', 'max_demo_signals_per_run', 'learning_target_closed_trades'], true)) {
+                    $v = (int)$v;
+                }
+                $current['demo_learning_mode'][$k] = $v;
             }
         }
 

@@ -131,4 +131,15 @@ final class AiShadowService
     {
         return $this->core->getStatus();
     }
+
+    /**
+     * Cron entry point: run live mirror cycle for automatic local evidence accumulation.
+     * Called by CronManager (ai_shadow:execute).
+     *
+     * @return array<string,mixed>
+     */
+    public function execute(): array
+    {
+        return $this->runLiveMirror();
+    }
 }

@@ -136,13 +136,18 @@ final class CoinPassportEngine
             'demo_samples_count'   => 0,
             'live_samples_count'   => 0,
             'shadow_samples_count' => 0,
+            'passport_symbols_updated_from_demo'  => 0,
+            'passport_demo_samples_added'         => 0,
+            'passport_confidence_upgrades_count'  => 0,
         ];
 
         foreach ($tradesBySymbol as $symbol => $trades) {
+            $symbolDemoCount = 0;
             foreach ($trades as $t) {
                 $src = (string)($t['_source'] ?? '');
                 if (strncmp($src, 'demo', 4) === 0) {
                     $result['demo_samples_count']++;
+                    $symbolDemoCount++;
                 } elseif (strncmp($src, 'shadow', 6) === 0) {
                     $result['shadow_samples_count']++;
                 } else {
@@ -155,10 +160,16 @@ final class CoinPassportEngine
                 $this->rebuildEvidenceTimeline($symbol, $trades);
                 $result['updated']++;
                 $result['symbols'][] = $symbol;
+                if ($symbolDemoCount > 0) {
+                    $result['passport_symbols_updated_from_demo']++;
+                    $result['passport_confidence_upgrades_count']++;
+                }
             } catch (\Throwable $e) {
                 $result['errors'][] = $symbol . ': ' . $e->getMessage();
             }
         }
+
+        $result['passport_demo_samples_added'] = $result['demo_samples_count'];
 
         return $result;
     }

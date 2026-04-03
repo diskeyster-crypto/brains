@@ -297,6 +297,22 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
 
     $trade['close_result_source'] = 'local_finalize';
 
+    // Copy mfe/mae from runtime if available and not already set on closed trade
+    if (!isset($trade['mfe']) || $trade['mfe'] === null) {
+        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+        $bestRoi = $rt['best_roi_seen'] ?? null;
+        if ($bestRoi !== null) {
+            $trade['mfe'] = (float)$bestRoi;
+        }
+    }
+    if (!isset($trade['mae']) || $trade['mae'] === null) {
+        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+        $worstRoi = $rt['worst_roi_seen'] ?? null;
+        if ($worstRoi !== null) {
+            $trade['mae'] = (float)$worstRoi;
+        }
+    }
+
     return $trade;
 }
 

@@ -1358,12 +1358,16 @@ trait BotExecutorTrait
         
         $trades = $this->store->loadActiveTrades();
 
-        // ── Demo learning mode: stale-age config ────────────────────────────
+                // ── Demo learning mode: stale-age config ────────────────────────────
         $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
         $dlmEnabled = ($dlmCfg['enabled'] ?? false) && $mode === 'demo';
         $staleAgeMinutes = $dlmEnabled && ($dlmCfg['learning_max_active_age_minutes'] ?? 0) > 0
             ? (int)$dlmCfg['learning_max_active_age_minutes']
             : 0;
+        $closeTimeoutMinutes = $dlmEnabled && ($dlmCfg['learning_close_timeout_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_close_timeout_minutes']
+            : 0;
+        $preferCloseStale = $dlmEnabled && !empty($dlmCfg['prefer_close_stale_when_learning']);
 
         // Compute active-age stats across all trades (demo mode only)
         if ($mode === 'demo' && count($trades) > 0) {
@@ -1410,6 +1414,60 @@ trait BotExecutorTrait
                     } else {
                         $trade['is_stale_trade'] = false;
                         $trade['stale_reason']   = null;
+                    }
+                }
+
+                // ── Demo learning mode: force-close trades that exceeded learning_close_timeout_minutes ──
+                // If prefer_close_stale_when_learning is true and the trade is over the hard timeout,
+                // attempt to close the position on exchange then finalize locally.
+                if ($mode === 'demo' && $preferCloseStale && $closeTimeoutMinutes > 0) {
+                    $tradeAgeMin = (int)($trade['age_minutes'] ?? 0);
+                    if ($tradeAgeMin >= $closeTimeoutMinutes) {
+                        $exchangeCloseResult = $this->closePositionOnExchange($trade);
+                        $closeReason = 'learning_timeout_close';
+                        if (!($exchangeCloseResult['success'] ?? false)) {
+                            // Close order failed — verify whether position is still open
+                            $checkPos = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+                            if ($checkPos !== null && (float)($checkPos['size'] ?? 0) > 0) {
+                                // Position confirmed still open; log failure and continue
+                                $result['close_failures']++;
+                                $cfKey = 'close_detection_exchange_state_uncertain';
+                                $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                $result['updated']++;
+                                continue;
+                            }
+                            // Position not found → already closed by exchange
+                            $closeReason = 'exchange_closed_unknown';
+                        }
+                        // Finalize locally
+                        $closedAtTs = time();
+                        $closedTrade = array_merge($trade, [
+                            'closed_at'                    => date('c', $closedAtTs),
+                            'closed_ts'                    => $closedAtTs,
+                            'close_ts'                     => $closedAtTs,
+                            'close_reason'                 => $closeReason,
+                            'close_reason_normalized'      => $closeReason,
+                            'close_protection_state'       => 'learning_force_closed',
+                            'learning_timeout_force_close' => true,
+                        ]);
+                        if (method_exists($this, 'applyLocalCloseFinalize')) {
+                            $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                            $closedTrade['close_reason']            = $closeReason;
+                            $closedTrade['close_reason_normalized'] = $closeReason;
+                        }
+                        $result['closed']++;
+                        $result['closed_by_logical_stop']++;
+                        $result['finalized_locally_this_run']++;
+                        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                        $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                        } else {
+                            $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                        }
+                        $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                        $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                        continue;
                     }
                 }
 

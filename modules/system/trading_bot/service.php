@@ -189,8 +189,10 @@ final class TradingBotService
         
         try {
             // Step 1: Reconcile with exchange
+            $reconciledThisRun = false;
             if ($this->config['module']['reconcile_before_action'] ?? true) {
                 $reconcileResult = $this->reconcileWithExchange();
+                $reconciledThisRun = true;
                 $result['steps'][] = [
                     'step' => 'reconcile',
                     'status' => $reconcileResult['ok'] ? 'ok' : 'error',
@@ -208,6 +210,24 @@ final class TradingBotService
                 
                 if (!$reconcileResult['ok']) {
                     $this->errors[] = 'Reconcile failed: ' . ($reconcileResult['error'] ?? 'unknown');
+                }
+            }
+
+            // ── Demo learning mode: force reconcile even when reconcile_before_action is disabled ──
+            // This ensures exchange-closed positions are detected every demo cycle.
+            if (!$reconciledThisRun && $mode === 'demo') {
+                $dlmCfgRec = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+                if (($dlmCfgRec['enabled'] ?? false) && ($dlmCfgRec['force_reconcile_each_run_demo'] ?? false)) {
+                    $demoRecResult = $this->reconcileWithExchange();
+                    $result['steps'][] = [
+                        'step'             => 'reconcile_demo_forced',
+                        'status'           => $demoRecResult['ok'] ? 'ok' : 'error',
+                        'positions_synced' => $demoRecResult['positions_synced'] ?? 0,
+                        'orders_synced'    => $demoRecResult['orders_synced'] ?? 0,
+                    ];
+                    if (!$demoRecResult['ok']) {
+                        $this->errors[] = 'Demo force reconcile failed: ' . ($demoRecResult['error'] ?? 'unknown');
+                    }
                 }
             }
             
@@ -309,6 +329,10 @@ final class TradingBotService
                     $result['demo_signals_deferred_by_rotation'] = 0;
                 }
                 $result['demo_feed_selected_count'] = count($intentsResult['intents'] ?? []);
+                // PART 2 (runtime proof): effective demo_learning_mode values
+                $result['demo_learning_mode_enabled']              = (bool)($dlmCfg['enabled'] ?? false);
+                $result['demo_max_signals_per_run_effective']      = (int)($dlmCfg['max_demo_signals_per_run'] ?? 0);
+                $result['demo_max_concurrent_positions_effective'] = (int)($dlmCfg['max_concurrent_demo_positions'] ?? 0);
             } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.

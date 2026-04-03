@@ -245,6 +245,42 @@ trait BotConfigTrait
                         }
                     }
 
+                    // Demo learning mode block
+                    if (isset($overrides['demo_learning_mode']) && is_array($overrides['demo_learning_mode'])) {
+                        if (!isset($config['demo_learning_mode']) || !is_array($config['demo_learning_mode'])) {
+                            $config['demo_learning_mode'] = [];
+                        }
+                        $dlm = $overrides['demo_learning_mode'];
+
+                        $dlmBools = [
+                            'enabled',
+                            'prefer_short_holds',
+                            'allow_low_confidence_demo',
+                            'force_reconcile_each_run_demo',
+                            'prefer_close_stale_when_learning',
+                        ];
+                        foreach ($dlmBools as $k) {
+                            if (array_key_exists($k, $dlm)) {
+                                $config['demo_learning_mode'][$k] = (bool)$dlm[$k];
+                            }
+                        }
+
+                        $dlmInts = [
+                            'max_concurrent_demo_positions',
+                            'max_demo_signals_per_run',
+                            'learning_target_closed_trades',
+                            'max_hold_minutes_demo_learning',
+                            'stale_trade_review_minutes',
+                            'learning_close_timeout_minutes',
+                            'learning_max_active_age_minutes',
+                        ];
+                        foreach ($dlmInts as $k) {
+                            if (array_key_exists($k, $dlm)) {
+                                $config['demo_learning_mode'][$k] = max(0, (int)$dlm[$k]);
+                            }
+                        }
+                    }
+
                     // Demo sources block (Pattern Engine demo feed wiring)
                     if (isset($overrides['demo_sources']) && is_array($overrides['demo_sources'])) {
                         if (!isset($config['demo_sources']) || !is_array($config['demo_sources'])) {

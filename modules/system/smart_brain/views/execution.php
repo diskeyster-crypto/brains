@@ -387,11 +387,42 @@ $demoClosedNoAiRun      = $bot_last_run['demo_closed_without_ai_dataset_this_run
 $demoClosureBottleneck  = (string)($bot_last_run['primary_demo_closure_bottleneck']        ?? '');
 $demoClosureReason      = (string)($bot_last_run['primary_demo_closure_bottleneck_reason'] ?? '');
 $demoTurnoverFix        = (string)($bot_last_run['recommended_turnover_fix_area']          ?? '');
+// PART 7: demo learning mode effective settings (proof that config is loaded)
+$dlmEnabled             = $bot_last_run['demo_learning_mode_enabled']              ?? null;
+$dlmMaxSignals          = $bot_last_run['demo_max_signals_per_run_effective']      ?? null;
+$dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective'] ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
     <div class="card-body">
         <div class="section-heading">Demo Pipeline Health</div>
+        <?php if ($dlmEnabled !== null): ?>
+        <div class="row g-2 mb-3">
+            <?php
+            $dlmCards = [
+                ['label' => 'DLM Enabled',        'value' => $dlmEnabled ? 'YES' : 'NO',                                              'ok' => $dlmEnabled],
+                ['label' => 'Max Signals/Run',     'value' => $dlmMaxSignals !== null ? (string)$dlmMaxSignals : 'n/a',               'ok' => ($dlmMaxSignals ?? 0) > 0 ? true : null],
+                ['label' => 'Max Concurrent Pos',  'value' => $dlmMaxConcurrent !== null ? (string)$dlmMaxConcurrent : 'n/a',         'ok' => ($dlmMaxConcurrent ?? 0) > 0 ? true : null],
+            ];
+            foreach ($dlmCards as $dc):
+                $cls = 'neutral';
+                if ($dc['ok'] === true) $cls = 'positive';
+                if ($dc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$dc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($dc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!$dlmEnabled): ?>
+        <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Demo Learning Mode is disabled.</strong> Enable it in bot.json or via Settings to activate signal cap and stale-trade closure.
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
         <div class="row g-2 mb-2">
             <?php
             $srcCards = [

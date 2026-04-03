@@ -83,10 +83,10 @@
         }
     },
     "demo_learning_mode": {
-        "enabled": false,
-        "max_concurrent_demo_positions": 10,
-        "max_demo_signals_per_run": 5,
-        "prefer_short_holds": false,
+        "enabled": true,
+        "max_concurrent_demo_positions": 15,
+        "max_demo_signals_per_run": 8,
+        "prefer_short_holds": true,
         "allow_low_confidence_demo": false,
         "learning_target_closed_trades": 100,
         "max_hold_minutes_demo_learning": 360,
@@ -94,7 +94,7 @@
         "force_reconcile_each_run_demo": true,
         "prefer_close_stale_when_learning": true,
         "learning_close_timeout_minutes": 480,
-        "learning_max_active_age_minutes": 240
+        "learning_max_active_age_minutes": 180
     },
     "validation": {
         "signal_schema_version": "clean_signal_v1"

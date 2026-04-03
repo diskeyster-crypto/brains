@@ -281,15 +281,34 @@ final class TradingBotService
                 $result['demo_feed_freshness_seconds']           = $peDemoResult['feed_freshness_seconds'] ?? null;
                 $result['trading_bot_run_at']                    = date('c');
                 $result['demo_feed_consumed_this_run']           = ($peDemoResult['signals_loaded'] ?? 0) > 0;
+                // PART 1: detailed feed diagnostics
+                $result['demo_feed_available_count']             = $peDemoResult['demo_feed_available_count'] ?? 0;
+                $result['demo_feed_skipped_due_to_idempotency']  = $peDemoResult['demo_feed_skipped_due_to_idempotency'] ?? 0;
+                $result['demo_feed_skipped_due_to_ttl']          = $peDemoResult['demo_feed_skipped_due_to_ttl'] ?? 0;
+                $result['demo_feed_skipped_due_to_validation']   = $peDemoResult['demo_feed_skipped_due_to_validation'] ?? 0;
+                $result['demo_feed_skipped_other']               = $peDemoResult['demo_feed_skipped_other'] ?? 0;
+                // PART 2: rotation diagnostics
+                $result['demo_signal_rotation_mode']             = $peDemoResult['demo_signal_rotation_mode'] ?? 'fifo';
+                $result['demo_signals_selected_by_rotation']     = $peDemoResult['demo_signals_selected_by_rotation'] ?? 0;
                 // demo_learning_mode: cap signals per run
                 $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+                $capApplied = false;
                 if (($dlmCfg['enabled'] ?? false) && ($dlmCfg['max_demo_signals_per_run'] ?? 0) > 0) {
                     $maxDemoSignals = (int)$dlmCfg['max_demo_signals_per_run'];
-                    if (count($intentsResult['intents'] ?? []) > $maxDemoSignals) {
+                    $countBeforeCap = count($intentsResult['intents'] ?? []);
+                    if ($countBeforeCap > $maxDemoSignals) {
                         $intentsResult['intents'] = array_slice($intentsResult['intents'], 0, $maxDemoSignals);
                         $intentsResult['count']   = $maxDemoSignals;
+                        $capApplied = true;
+                        $result['demo_feed_skipped_due_to_cap'] = $countBeforeCap - $maxDemoSignals;
+                        $result['demo_signals_deferred_by_rotation'] = $countBeforeCap - $maxDemoSignals;
                     }
                 }
+                if (!$capApplied) {
+                    $result['demo_feed_skipped_due_to_cap']      = 0;
+                    $result['demo_signals_deferred_by_rotation'] = 0;
+                }
+                $result['demo_feed_selected_count'] = count($intentsResult['intents'] ?? []);
             } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.
@@ -907,6 +926,53 @@ final class TradingBotService
                 $result['demo_close_failures_this_run']            = $updateResult['close_failures'] ?? 0;
                 $result['demo_close_failure_reasons']              = $updateResult['close_failure_reasons'] ?? [];
                 $result['top_stale_trade_reasons']                 = $updateResult['stale_trade_reasons'] ?? [];
+
+                // ── PART 3: Open capacity diagnostics ───────────────────────
+                $dlmCfgPost = is_array($this->config['demo_learning_mode'] ?? null)
+                    ? $this->config['demo_learning_mode'] : [];
+                $maxConcurrentDemoPos = ($dlmCfgPost['enabled'] ?? false)
+                    ? (int)($dlmCfgPost['max_concurrent_demo_positions'] ?? 0)
+                    : (int)($this->config['module']['max_concurrent_positions'] ?? 0);
+                $openedThisRun = (int)($result['demo_trades_opened_this_run'] ?? 0);
+                if ($maxConcurrentDemoPos > 0) {
+                    $capacityAvailable = max(0, $maxConcurrentDemoPos - $demoActiveCountBefore);
+                    $capacityUsed      = min($openedThisRun, $capacityAvailable);
+                    $blockedByCap      = max(0, $openedThisRun === 0
+                        ? (int)($result['demo_signals_attempted'] ?? 0) - $openedThisRun
+                        : 0);
+                    // More accurate: blocked_by_limits already tracks this
+                    $blockedByCap = (int)($result['demo_signals_blocked_by_limits'] ?? 0);
+                } else {
+                    $capacityAvailable = -1; // unlimited / not enforced
+                    $capacityUsed      = $openedThisRun;
+                    $blockedByCap      = 0;
+                }
+                $result['demo_open_capacity_available']          = $capacityAvailable;
+                $result['demo_open_capacity_used']               = $capacityUsed;
+                $result['demo_open_blocked_by_capacity_count']   = $blockedByCap;
+
+                // ── PART 4: Stale trade prioritization counters ──────────────
+                $staleTotal = (int)($updateResult['stale_trades_found'] ?? 0);
+                $staleFinalizedExchange = (int)($updateResult['finalized_from_exchange_this_run'] ?? 0);
+                $staleFinalizedLocally  = (int)($updateResult['finalized_locally_this_run'] ?? 0);
+                // Stale trades finalized = those that closed (either via exchange or local) that were stale
+                $stalePrioritized = $staleTotal;
+                $staleFinalized   = min($staleTotal, $staleFinalizedExchange + $staleFinalizedLocally);
+                $staleRemaining   = max(0, $demoActiveCountAfter - ($demoActiveCountBefore - $staleFinalizedExchange - $staleFinalizedLocally));
+                $result['demo_stale_trades_prioritized_this_run'] = $stalePrioritized;
+                $result['demo_stale_trades_finalized_this_run']   = $staleFinalized;
+                $result['demo_stale_trades_remaining_after_run']  = max(0, $demoActiveCountAfter);
+
+                // ── PART 5: Per-run AI dataset consistency counters ──────────
+                $closedThisRun   = (int)($result['demo_trades_closed_this_run'] ?? 0);
+                $aiWrittenThisRun= (int)($result['demo_ai_dataset_records_written_this_run'] ?? 0);
+                $closedWithoutAi = max(0, $closedThisRun - $aiWrittenThisRun);
+                $aiMatchRateRun  = $closedThisRun > 0
+                    ? round(($aiWrittenThisRun / $closedThisRun) * 100, 1)
+                    : null;
+                $result['demo_closed_trades_this_run']              = $closedThisRun;
+                $result['demo_closed_without_ai_dataset_this_run']  = $closedWithoutAi;
+                $result['demo_closed_to_ai_match_rate_this_run']    = $aiMatchRateRun;
             }
 
             // ============================================================
@@ -1148,6 +1214,16 @@ final class TradingBotService
                 $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];
                 $result['primary_demo_bottleneck_reason']= $demoTruthAudit['primary_demo_bottleneck_reason'];
                 $result['recommended_next_fix_area']     = $demoTruthAudit['recommended_next_fix_area'];
+
+                // ── PART 5: Per-run AI match-rate also in sufficiency ────────
+                $result['demo_closed_to_ai_match_rate_total'] = $demoTruthAudit['closed_to_ai_dataset_match_rate'] ?? null;
+                $result['demo_closed_without_ai_dataset_total'] = $demoTruthAudit['closed_trades_without_ai_dataset_count'] ?? 0;
+
+                // ── PART 6: Closure bottleneck fields ────────────────────────
+                $result['primary_demo_closure_bottleneck']        = $demoTruthAudit['primary_demo_bottleneck'];
+                $result['primary_demo_closure_bottleneck_reason'] = $demoTruthAudit['primary_demo_bottleneck_reason'];
+                $result['recommended_turnover_fix_area']          = $demoTruthAudit['recommended_next_fix_area'];
+
                 // Merge consistency fields into sufficiency for downstream reads
                 $demoSufficiency['closed_trades_without_ai_dataset_count'] = $demoTruthAudit['closed_trades_without_ai_dataset_count'];
                 $demoSufficiency['ai_dataset_without_closed_trade_count']  = $demoTruthAudit['ai_dataset_without_closed_trade_count'];
@@ -1155,6 +1231,11 @@ final class TradingBotService
                 $demoSufficiency['primary_demo_bottleneck']                = $demoTruthAudit['primary_demo_bottleneck'];
                 $demoSufficiency['primary_demo_bottleneck_reason']         = $demoTruthAudit['primary_demo_bottleneck_reason'];
                 $demoSufficiency['recommended_next_fix_area']              = $demoTruthAudit['recommended_next_fix_area'];
+                // Also persist per-run stats into sufficiency for UI
+                $demoSufficiency['demo_closed_trades_this_run']             = $result['demo_closed_trades_this_run'] ?? 0;
+                $demoSufficiency['demo_ai_dataset_records_written_this_run']= $result['demo_ai_dataset_records_written_this_run'] ?? 0;
+                $demoSufficiency['demo_closed_without_ai_dataset_this_run'] = $result['demo_closed_without_ai_dataset_this_run'] ?? 0;
+                $demoSufficiency['demo_closed_to_ai_match_rate_this_run']   = $result['demo_closed_to_ai_match_rate_this_run'] ?? null;
                 $this->store->saveDemoSufficiency($demoSufficiency);
                 $this->store->saveDemoTruthAudit($demoTruthAudit);
             }

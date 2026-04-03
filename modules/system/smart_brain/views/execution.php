@@ -364,6 +364,29 @@ $demoAiWrittenThisRun       = $bot_last_run['demo_ai_dataset_records_written_thi
 $demoCloseFailures          = $bot_last_run['demo_close_failures_this_run']            ?? null;
 $demoCloseFailureReasons    = (array)($bot_last_run['demo_close_failure_reasons']      ?? []);
 $topStaleTradeReasons       = (array)($bot_last_run['top_stale_trade_reasons']         ?? []);
+// PART 1 & 2: Feed intake diagnostics
+$demoFeedAvailable      = $bot_last_run['demo_feed_available_count']            ?? null;
+$demoFeedSelected       = $bot_last_run['demo_feed_selected_count']             ?? null;
+$demoFeedCapSkip        = $bot_last_run['demo_feed_skipped_due_to_cap']         ?? null;
+$demoFeedIdempSkip      = $bot_last_run['demo_feed_skipped_due_to_idempotency'] ?? null;
+$demoFeedRotMode        = (string)($bot_last_run['demo_signal_rotation_mode']   ?? '');
+$demoFeedDeferred       = $bot_last_run['demo_signals_deferred_by_rotation']    ?? null;
+// PART 3: Open capacity
+$demoCapAvail           = $bot_last_run['demo_open_capacity_available']         ?? null;
+$demoCapUsed            = $bot_last_run['demo_open_capacity_used']              ?? null;
+$demoCapBlocked         = $bot_last_run['demo_open_blocked_by_capacity_count']  ?? null;
+// PART 4: Stale prioritization
+$demoStalePrioritized   = $bot_last_run['demo_stale_trades_prioritized_this_run'] ?? null;
+$demoStaleFinalized     = $bot_last_run['demo_stale_trades_finalized_this_run']   ?? null;
+$demoStaleRemaining     = $bot_last_run['demo_stale_trades_remaining_after_run']  ?? null;
+// PART 5: per-run AI consistency
+$demoClosedThisRun      = $bot_last_run['demo_closed_trades_this_run']               ?? null;
+$demoAiMatchRateRun     = $bot_last_run['demo_closed_to_ai_match_rate_this_run']     ?? null;
+$demoClosedNoAiRun      = $bot_last_run['demo_closed_without_ai_dataset_this_run']   ?? null;
+// PART 6: closure bottleneck
+$demoClosureBottleneck  = (string)($bot_last_run['primary_demo_closure_bottleneck']        ?? '');
+$demoClosureReason      = (string)($bot_last_run['primary_demo_closure_bottleneck_reason'] ?? '');
+$demoTurnoverFix        = (string)($bot_last_run['recommended_turnover_fix_area']          ?? '');
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -480,6 +503,64 @@ $topStaleTradeReasons       = (array)($bot_last_run['top_stale_trade_reasons']  
         <div class="mt-2 small text-muted">
             Source file: <code><?= htmlspecialchars($demoSrcPath) ?></code>
         </div>
+        <?php endif; ?>
+
+        <?php
+        // ── Turnover Diagnostics sub-section (PART 7) ───────────────────────
+        $hasTurnoverData = $demoFeedAvailable !== null || $demoCapAvail !== null
+            || $demoStalePrioritized !== null || $demoClosedThisRun !== null
+            || $demoClosureBottleneck !== '';
+        ?>
+        <?php if ($hasTurnoverData): ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Demo Turnover Diagnostics (This Run)</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $twCards = [
+                ['label' => 'Feed Available',       'value' => $demoFeedAvailable !== null ? (string)$demoFeedAvailable : 'n/a', 'ok' => null],
+                ['label' => 'Feed Selected',        'value' => $demoFeedSelected !== null ? (string)$demoFeedSelected : 'n/a',   'ok' => ($demoFeedSelected ?? 0) > 0 ? true : null],
+                ['label' => 'Deferred by Cap',      'value' => $demoFeedCapSkip !== null ? (string)$demoFeedCapSkip : 'n/a',     'ok' => ($demoFeedCapSkip ?? 0) === 0 ? true : null],
+                ['label' => 'Skipped Idempotency',  'value' => $demoFeedIdempSkip !== null ? (string)$demoFeedIdempSkip : 'n/a', 'ok' => null],
+                ['label' => 'Rotation Mode',        'value' => $demoFeedRotMode !== '' ? htmlspecialchars($demoFeedRotMode) : 'n/a', 'ok' => null],
+                ['label' => 'Deferred by Rotation', 'value' => $demoFeedDeferred !== null ? (string)$demoFeedDeferred : 'n/a',   'ok' => null],
+                ['label' => 'Cap Available',        'value' => $demoCapAvail !== null ? ($demoCapAvail === -1 ? 'unlimited' : (string)$demoCapAvail) : 'n/a', 'ok' => null],
+                ['label' => 'Cap Used',             'value' => $demoCapUsed !== null ? (string)$demoCapUsed : 'n/a',             'ok' => null],
+                ['label' => 'Blocked by Cap',       'value' => $demoCapBlocked !== null ? (string)$demoCapBlocked : 'n/a',       'ok' => ($demoCapBlocked ?? 0) === 0 ? true : null],
+                ['label' => 'Stale Prioritized',    'value' => $demoStalePrioritized !== null ? (string)$demoStalePrioritized : 'n/a', 'ok' => null],
+                ['label' => 'Stale Finalized',      'value' => $demoStaleFinalized !== null ? (string)$demoStaleFinalized : 'n/a',     'ok' => ($demoStaleFinalized ?? 0) > 0 ? true : null],
+                ['label' => 'Stale Remaining',      'value' => $demoStaleRemaining !== null ? (string)$demoStaleRemaining : 'n/a',     'ok' => ($demoStaleRemaining ?? 0) === 0 ? true : ($demoStaleRemaining > 3 ? false : null)],
+                ['label' => 'Closed This Run',      'value' => $demoClosedThisRun !== null ? (string)$demoClosedThisRun : 'n/a', 'ok' => ($demoClosedThisRun ?? 0) > 0 ? true : null],
+                ['label' => 'AI Written This Run',  'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a', 'ok' => ($demoAiWrittenThisRun ?? 0) > 0 ? true : null],
+                ['label' => 'Closed w/o AI (run)',  'value' => $demoClosedNoAiRun !== null ? (string)$demoClosedNoAiRun : 'n/a', 'ok' => ($demoClosedNoAiRun ?? 0) === 0 ? true : ($demoClosedNoAiRun > 0 ? false : null)],
+                ['label' => 'AI Match Rate (run)',   'value' => $demoAiMatchRateRun !== null ? $demoAiMatchRateRun . '%' : 'n/a', 'ok' => ($demoAiMatchRateRun ?? 0) >= 100 ? true : (($demoAiMatchRateRun ?? 0) < 80 ? false : null)],
+            ];
+            foreach ($twCards as $twc):
+                $cls = 'neutral';
+                if ($twc['ok'] === true)  $cls = 'positive';
+                if ($twc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= $twc['value'] ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($twc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($demoClosureBottleneck !== '' && $demoClosureBottleneck !== 'none_loop_is_cycling'): ?>
+        <div class="alert alert-warning py-1 px-3 mt-2 mb-0" style="font-size:.8rem;">
+            <strong>Closure Bottleneck:</strong> <code><?= htmlspecialchars($demoClosureBottleneck) ?></code>
+            <?php if ($demoClosureReason !== ''): ?>
+            — <?= htmlspecialchars($demoClosureReason) ?>
+            <?php endif; ?>
+            <?php if ($demoTurnoverFix !== ''): ?>
+            <br><strong>Fix Area:</strong> <code><?= htmlspecialchars($demoTurnoverFix) ?></code>
+            <?php endif; ?>
+        </div>
+        <?php elseif ($demoClosureBottleneck === 'none_loop_is_cycling'): ?>
+        <div class="alert alert-success py-1 px-3 mt-2 mb-0" style="font-size:.8rem;">
+            <strong>Loop is cycling.</strong> <?= htmlspecialchars($demoClosureReason) ?>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>

@@ -954,9 +954,21 @@ trait BotSourcesTrait
             'source_status'  => 'unknown',
             'signals_loaded' => 0,
             'signals_skipped'=> 0,
-            'feed_generated_at'          => null,
-            'feed_freshness_seconds'     => null,
+            'feed_generated_at'               => null,
+            'feed_freshness_seconds'          => null,
             'feed_is_newer_than_previous_run' => null,
+            // PART 1 diagnostics
+            'demo_feed_available_count'          => 0,
+            'demo_feed_selected_count'           => 0,
+            'demo_feed_skipped_due_to_cap'       => 0,
+            'demo_feed_skipped_due_to_idempotency' => 0,
+            'demo_feed_skipped_due_to_ttl'       => 0,
+            'demo_feed_skipped_due_to_validation' => 0,
+            'demo_feed_skipped_other'            => 0,
+            // PART 2 diagnostics
+            'demo_signal_rotation_mode'          => 'fifo',
+            'demo_signals_deferred_by_rotation'  => 0,
+            'demo_signals_selected_by_rotation'  => 0,
         ];
 
         try {
@@ -1031,11 +1043,35 @@ trait BotSourcesTrait
             $skipped  = 0;
             $now      = time();
 
-            foreach ($signals as $sig) {
-                if (!is_array($sig)) { $skipped++; continue; }
+            // ── PART 1: per-skip-reason counters ────────────────────────────
+            $skipIdempotency = 0;
+            $skipTtl         = 0;
+            $skipValidation  = 0;
+            $skipOther       = 0;
 
+            // ── PART 2: Fair rotation ────────────────────────────────────────
+            // Load the per-signal last-attempted timestamp file (rotation state).
+            // Signals never attempted come first; among attempted, oldest-first.
+            // This prevents the same first-N signals from being retried forever.
+            $rotationStatePath = $this->storageDir . '/demo_signal_rotation.json';
+            $rotationState = [];
+            if (is_file($rotationStatePath)) {
+                $rsContent = @file_get_contents($rotationStatePath);
+                if ($rsContent !== false) {
+                    $rs = @json_decode($rsContent, true);
+                    if (is_array($rs)) {
+                        $rotationState = $rs;
+                    }
+                }
+            }
+            $rotationApplied = false;
+
+            // Build candidate list (pre-validation pass)
+            $candidateSignals = [];
+            foreach ($signals as $sig) {
+                if (!is_array($sig)) { $skipped++; $skipOther++; continue; }
                 $signalId = (string)($sig['signal_id'] ?? '');
-                if ($signalId === '') { $skipped++; continue; }
+                if ($signalId === '') { $skipped++; $skipOther++; continue; }
 
                 // Idempotency: skip already-executed signals.
                 // Exception: allow retry if the previous rejection was a config/schema validation
@@ -1046,6 +1082,7 @@ trait BotSourcesTrait
                         && strpos((string)($prev['error'] ?? ''), 'missing_field:') !== false;
                     if (!$isConfigRejection) {
                         $skipped++;
+                        $skipIdempotency++;
                         continue;
                     }
                 }
@@ -1056,6 +1093,7 @@ trait BotSourcesTrait
                     $detectedAt = strtotime((string)($sig['detected_at'] ?? '')) ?: 0;
                     if ($detectedAt > 0 && ($now - $detectedAt) > $ttlSec) {
                         $skipped++;
+                        $skipTtl++;
                         continue;
                     }
                 }
@@ -1067,6 +1105,7 @@ trait BotSourcesTrait
                 $side = strtolower((string)($sig['side'] ?? ''));
                 if ($symbol === '' || !in_array($side, ['long', 'short'], true)) {
                     $skipped++;
+                    $skipValidation++;
                     continue;
                 }
 
@@ -1075,8 +1114,40 @@ trait BotSourcesTrait
                 $entryHint = isset($sig['entry_hint']) ? (float)$sig['entry_hint'] : 0.0;
                 if ($entryHint <= 0.0) {
                     $skipped++;
+                    $skipValidation++;
                     continue;
                 }
+
+                // Attach rotation weight: signals never attempted get priority (0),
+                // then older last_attempted_ts comes first.
+                $lastAttempted = (int)($rotationState[$signalId] ?? 0);
+                $sig['_signal_id_resolved'] = $signalId;
+                $sig['_symbol_resolved']    = $symbol;
+                $sig['_side_resolved']      = $side;
+                $sig['_entry_hint_resolved']= $entryHint;
+                $sig['_ttl_sec_resolved']   = $ttlSec;
+                $sig['_last_attempted']     = $lastAttempted;
+                $candidateSignals[]         = $sig;
+            }
+
+            $result['demo_feed_available_count'] = count($candidateSignals);
+
+            // Sort candidates by last_attempted ascending (0 = never attempted → first).
+            if (count($candidateSignals) > 1) {
+                usort($candidateSignals, static function (array $a, array $b): int {
+                    return $a['_last_attempted'] <=> $b['_last_attempted'];
+                });
+                $rotationApplied = true;
+            }
+
+            $result['demo_signal_rotation_mode'] = $rotationApplied ? 'last_attempted_asc' : 'fifo';
+
+            foreach ($candidateSignals as $sig) {
+                $signalId  = $sig['_signal_id_resolved'];
+                $symbol    = $sig['_symbol_resolved'];
+                $side      = $sig['_side_resolved'];
+                $entryHint = $sig['_entry_hint_resolved'];
+                $ttlSec    = $sig['_ttl_sec_resolved'];
 
                 $createdTs = strtotime((string)($sig['detected_at'] ?? '')) ?: $now;
 
@@ -1113,6 +1184,15 @@ trait BotSourcesTrait
 
                 $intents[] = $intent;
             }
+
+            // Record skip-reason breakdown and selection counts
+            $result['demo_feed_skipped_due_to_idempotency'] = $skipIdempotency;
+            $result['demo_feed_skipped_due_to_ttl']         = $skipTtl;
+            $result['demo_feed_skipped_due_to_validation']  = $skipValidation;
+            $result['demo_feed_skipped_other']              = $skipOther;
+            $result['demo_feed_selected_count']             = count($intents);
+            $result['demo_signals_selected_by_rotation']    = count($intents);
+            // demo_signals_deferred_by_rotation is set later in service.php after cap truncation
 
             $result['count']          = count($intents);
             $result['intents']        = $intents;

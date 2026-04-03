@@ -838,6 +838,10 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'closed_to_ai_dataset_match_rate'          => $matchRate,
             'primary_demo_bottleneck'                  => $primaryBottleneck,
             'primary_demo_bottleneck_reason'           => $primaryBottleneckReason,
+            // PART 6: closure-specific bottleneck aliases
+            'primary_demo_closure_bottleneck'          => $primaryBottleneck,
+            'primary_demo_closure_bottleneck_reason'   => $primaryBottleneckReason,
+            'recommended_turnover_fix_area'            => $recommendedNextFixArea,
             'recommended_next_fix_area'                => $recommendedNextFixArea,
             'audited_at'                               => date('c'),
         ];

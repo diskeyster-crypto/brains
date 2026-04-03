@@ -256,7 +256,27 @@ final class TradingBotService
             // so the message reflects the final post-cleanup lifecycle state, not the pre-load snapshot.
             $noPendingWarningDeferred = false;
 
-            if ($brainControlled) {
+            // Step 2.1: Demo mode — Pattern Engine demo feed takes priority when configured
+            $demoSourceMode = null;
+            if ($mode === 'demo') {
+                $demoSourceMode = (string)($this->config['demo_sources']['source_mode'] ?? '');
+            }
+
+            if ($demoSourceMode === 'pattern_engine_demo') {
+                // Pattern Engine demo feed: read demo_signals.json, no Brain involvement
+                $peDemoResult     = $this->loadPatternEngineDemoIntents();
+                $intentsResult    = $peDemoResult;
+                $inputSource      = 'pattern_engine_demo_feed';
+                $brainControlled  = false;
+                $legacyFallbackAllowed = false;
+                $legacyFallbackUsed    = false;
+                $sourceStatus          = $peDemoResult['source_status'] ?? ($peDemoResult['ok'] ? 'loaded' : 'invalid');
+                $sourceError           = implode('; ', $peDemoResult['errors'] ?? []);
+                $result['demo_source_mode']         = 'pattern_engine_demo';
+                $result['demo_source_path']         = $peDemoResult['source_path'] ?? '';
+                $result['demo_signals_loaded']      = $peDemoResult['signals_loaded'] ?? 0;
+                $result['demo_signals_skipped']     = $peDemoResult['signals_skipped'] ?? 0;
+            } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.
                 $brainLiveResult = $this->loadBrainLiveIntents();

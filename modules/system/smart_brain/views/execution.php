@@ -329,6 +329,52 @@ $credBad = $bot_mode === 'demo' && (!$diagKeyPresent || !$diagSecretPresent);
 
 <?php endif; ?>
 
+<?php
+// ── Demo Signal Source panel — only shown in demo mode ──────────────────────
+$demoSrcMode    = (string)($bot_last_run['demo_source_mode']     ?? '');
+$demoSrcPath    = (string)($bot_last_run['demo_source_path']     ?? '');
+$demoSigLoaded  = (int)   ($bot_last_run['demo_signals_loaded']  ?? -1);
+$demoSigSkipped = (int)   ($bot_last_run['demo_signals_skipped'] ?? -1);
+$demoIntents    = (int)   ($bot_last_run['intents_loaded']       ?? 0);
+$demoActivePos  = (int)   $activeCount;
+$demoStorageNs  = htmlspecialchars($storageNs);
+?>
+<?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
+<div class="card mb-4" style="border-color:#1e40af;">
+    <div class="card-body">
+        <div class="section-heading">Demo Signal Source</div>
+        <div class="row g-2">
+            <?php
+            $srcCards = [
+                ['label' => 'Source Mode',         'value' => htmlspecialchars($demoSrcMode),                      'ok' => null],
+                ['label' => 'Storage Namespace',   'value' => $demoStorageNs,                                      'ok' => null],
+                ['label' => 'Active Demo Positions','value' => (string)$demoActivePos,                             'ok' => null],
+                ['label' => 'Signals Loaded (PE)', 'value' => $demoSigLoaded >= 0 ? (string)$demoSigLoaded : 'n/a','ok' => null],
+                ['label' => 'Signals Skipped',     'value' => $demoSigSkipped >= 0 ? (string)$demoSigSkipped : 'n/a','ok' => null],
+                ['label' => 'Intents to Execute',  'value' => (string)$demoIntents,                               'ok' => $demoIntents > 0],
+            ];
+            foreach ($srcCards as $sc):
+                $cls = 'neutral';
+                if ($sc['ok'] === true) $cls = 'positive';
+                if ($sc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= $sc['value'] ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($sc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($demoSrcPath !== ''): ?>
+        <div class="mt-2 small text-muted">
+            Source file: <code><?= htmlspecialchars($demoSrcPath) ?></code>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- ===== Stats ===== -->
 <?php if (!empty($bot_stats)): ?>
 <div class="card mb-4">

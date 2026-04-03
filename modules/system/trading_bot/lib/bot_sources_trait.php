@@ -932,6 +932,172 @@ trait BotSourcesTrait
     }
 
     /**
+     * Load demo intents from Pattern Engine downstream demo_signals.json.
+     *
+     * Used when mode=demo and demo_sources.source_mode=pattern_engine_demo.
+     * Converts Pattern Engine downstream scenario records to bot-executable intents
+     * using demo_risk_defaults from config. Entry price taken from entry_hint.
+     * Signals without a valid entry_hint (price) are skipped.
+     *
+     * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,source_mode:string,source_path:string,signals_loaded:int,signals_skipped:int}
+     */
+    protected function loadPatternEngineDemoIntents(): array
+    {
+        $result = [
+            'ok'             => true,
+            'count'          => 0,
+            'intents'        => [],
+            'errors'         => [],
+            'source'         => 'pattern_engine_demo_feed',
+            'source_mode'    => 'pattern_engine_demo',
+            'source_path'    => '',
+            'source_status'  => 'unknown',
+            'signals_loaded' => 0,
+            'signals_skipped'=> 0,
+        ];
+
+        try {
+            $demoSrc = (array)($this->config['demo_sources'] ?? []);
+
+            // Resolve path to Pattern Engine downstream demo_signals.json.
+            // Priority: config demo_signals_file → default relative path from module base.
+            $peFile   = (string)($demoSrc['demo_signals_file'] ?? 'downstream/demo_signals.json');
+            $peBase   = dirname(dirname(__DIR__)) . '/pattern_engine/storage';
+            $signalsPath = rtrim($peBase, '/') . '/' . ltrim($peFile, '/');
+            $result['source_path'] = $signalsPath;
+
+            if (!is_file($signalsPath)) {
+                $result['source_status'] = 'missing';
+                return $result; // Not an error — Pattern Engine may not have run yet
+            }
+
+            $content = @file_get_contents($signalsPath);
+            if ($content === false) {
+                $result['ok'] = false;
+                $result['errors'][] = 'Failed to read demo_signals.json';
+                $result['source_status'] = 'read_error';
+                return $result;
+            }
+
+            $signals = @json_decode($content, true);
+            if (!is_array($signals)) {
+                $result['ok'] = false;
+                $result['errors'][] = 'Invalid JSON in demo_signals.json';
+                $result['source_status'] = 'invalid';
+                return $result;
+            }
+
+            $result['signals_loaded'] = count($signals);
+            $result['source_status']  = 'loaded';
+
+            // Build risk block from demo_risk_defaults
+            $riskDefaults = array_replace_recursive([
+                'budget_usdt_per_trade'   => 10,
+                'leverage'                => 5,
+                'stop_from_liq_range_pct' => 0.2,
+                'slippage_bps'            => 20,
+                'fees_bps'                => 10,
+                'order_type'              => 'market',
+                'limits'                  => [
+                    'max_open_trades'            => 5,
+                    'max_open_trades_per_symbol'  => 1,
+                    'one_trade_per_symbol'        => true,
+                ],
+                'trailing'                => ['enabled' => false],
+            ], (array)($demoSrc['demo_risk_defaults'] ?? []));
+
+            $executedIndex = $this->loadExecutedIndex();
+            $intents  = [];
+            $skipped  = 0;
+            $now      = time();
+
+            foreach ($signals as $sig) {
+                if (!is_array($sig)) { $skipped++; continue; }
+
+                $signalId = (string)($sig['signal_id'] ?? '');
+                if ($signalId === '') { $skipped++; continue; }
+
+                // Idempotency: skip already-executed signals
+                if (isset($executedIndex[$signalId])) { $skipped++; continue; }
+
+                // TTL check
+                $ttlSec = (int)($sig['ttl_seconds'] ?? 0);
+                if ($ttlSec > 0) {
+                    $detectedAt = strtotime((string)($sig['detected_at'] ?? '')) ?: 0;
+                    if ($detectedAt > 0 && ($now - $detectedAt) > $ttlSec) {
+                        $skipped++;
+                        continue;
+                    }
+                }
+
+                // Symbol: prefer canonical → normalized → raw
+                $symbol = strtoupper((string)(
+                    $sig['symbol_canonical'] ?? $sig['symbol_normalized'] ?? $sig['symbol'] ?? ''
+                ));
+                $side = strtolower((string)($sig['side'] ?? ''));
+                if ($symbol === '' || !in_array($side, ['long', 'short'], true)) {
+                    $skipped++;
+                    continue;
+                }
+
+                // Entry price from entry_hint (pattern formation price).
+                // Signals without a valid price cannot be executed safely — skip.
+                $entryHint = isset($sig['entry_hint']) ? (float)$sig['entry_hint'] : 0.0;
+                if ($entryHint <= 0.0) {
+                    $skipped++;
+                    continue;
+                }
+
+                $createdTs = strtotime((string)($sig['detected_at'] ?? '')) ?: $now;
+
+                $intent = [
+                    'id'                       => $signalId,
+                    'signal_id'                => $signalId,
+                    'schema_version'           => 'intent_live_v1',
+                    'symbol'                   => $symbol,
+                    'side'                     => $side,
+                    'entry_price'              => $entryHint,
+                    'entry_action'             => 'enter_now',
+                    'entry_timeout_minutes'    => null,
+                    'late_threshold_pct'       => (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25),
+                    'created_ts'               => $createdTs,
+                    'expires_at'               => ($ttlSec > 0) ? ($createdTs + $ttlSec) : 0,
+                    'risk'                     => $riskDefaults,
+                    'brain'                    => [],
+                    'source'                   => 'pattern_engine_demo',
+                    'brain_controlled'         => false,
+                    'pattern_engine_meta'      => [
+                        'signal_id'            => $signalId,
+                        'pattern_algorithm'    => (string)($sig['pattern_algorithm'] ?? ''),
+                        'pattern_version'      => (string)($sig['pattern_version']   ?? ''),
+                        'signal_strength'      => (float)($sig['signal_strength']    ?? 0),
+                        'quality_score'        => (float)($sig['quality_score']      ?? 0),
+                        'scenario_id'          => (string)($sig['scenario_id']       ?? ''),
+                        'scenario_score'       => (float)($sig['scenario_score']     ?? 0),
+                        'execution_mode_hint'  => (string)($sig['execution_mode_hint'] ?? ''),
+                        'passport_available'   => (bool)($sig['passport_available']  ?? false),
+                        'source_module'        => 'pattern_engine',
+                    ],
+                    'intent_created_at' => date('c'),
+                ];
+
+                $intents[] = $intent;
+            }
+
+            $result['count']          = count($intents);
+            $result['intents']        = $intents;
+            $result['signals_skipped']= $skipped;
+
+        } catch (\Throwable $e) {
+            $result['ok']      = false;
+            $result['errors'][]= 'Exception: ' . $e->getMessage();
+            $result['source_status'] = 'exception';
+        }
+
+        return $result;
+    }
+
+    /**
      * Load intents from Brain signals (legacy fallback).
      *
      * @legacy — this path is only used when Brain's live_intents.json is unavailable

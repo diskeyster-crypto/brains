@@ -47,6 +47,26 @@
         "balance_cache_ttl_sec": 8,
         "balance_strict_stable_coin_only": true
     },
+    "demo_sources": {
+        "source_mode": "pattern_engine_demo",
+        "demo_signals_file": "downstream/demo_signals.json",
+        "demo_risk_defaults": {
+            "budget_usdt_per_trade": 10,
+            "leverage": 5,
+            "stop_from_liq_range_pct": 0.2,
+            "slippage_bps": 20,
+            "fees_bps": 10,
+            "order_type": "market",
+            "limits": {
+                "max_open_trades": 5,
+                "max_open_trades_per_symbol": 1,
+                "one_trade_per_symbol": true
+            },
+            "trailing": {
+                "enabled": false
+            }
+        }
+    },
     "validation": {
         "signal_schema_version": "clean_signal_v1"
     },

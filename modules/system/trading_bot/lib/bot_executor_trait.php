@@ -236,14 +236,26 @@ trait BotExecutorTrait
                     }
                 }
                 $effectiveActiveTrades = array_values(array_merge($activeTrades, $orphanTrades));
+
+                // Demo mode: global position-limit checks must only count LOCAL demo trades.
+                // Exchange orphan positions in demo are from the demo exchange account and may
+                // include stale / untracked positions. Mixing them into the global limit count
+                // would block new demo entries with counts that have nothing to do with the
+                // current bot-managed demo portfolio.
+                // Per-symbol exchange-orphan checks (above) are still enforced so we never
+                // open a duplicate on a symbol that already has an exchange position.
+                $limitsActiveTrades = ($mode === 'demo') ? $activeTrades : $effectiveActiveTrades;
             } else {
                 $effectiveActiveTrades = array_values($activeTrades);
+                $limitsActiveTrades    = $activeTrades;
             }
             
             // ============================================================
             // Step 3: Check limits (with effective count)
             // ============================================================
             $effectiveOpenSymbols = array_map(function($t) { return $t['symbol'] ?? ''; }, $effectiveActiveTrades);
+            // For global limit counting use the mode-appropriate set (demo = local only)
+            $limitsOpenCount = count($limitsActiveTrades ?? $effectiveActiveTrades);
             
             // Brain-owned execution limits enforcement
             if ($isBrainControlled) {
@@ -251,12 +263,12 @@ trait BotExecutorTrait
                 $brainMaxPositions = (int)($brainLimits['live_max_positions'] ?? 0);
                 $brainOnePerSymbol = (bool)($brainLimits['live_one_trade_per_symbol'] ?? true);
 
-                if ($brainMaxPositions > 0 && count($effectiveActiveTrades) >= $brainMaxPositions) {
+                if ($brainMaxPositions > 0 && $limitsOpenCount >= $brainMaxPositions) {
                     $result['execution_stage'] = 'execution_guard_blocked';
                     return $this->rejectIntent($intent, 'skipped_max_positions_reached',
-                        "Brain limit: max {$brainMaxPositions} positions reached (current: " . count($effectiveActiveTrades) . ")", $result, [
+                        "Brain limit: max {$brainMaxPositions} positions reached (current: " . $limitsOpenCount . ")", $result, [
                             'effective_live_max_positions' => $brainMaxPositions,
-                            'current_positions' => count($effectiveActiveTrades),
+                            'current_positions' => $limitsOpenCount,
                             'limits_controlled_by_brain' => true,
                         ]);
                 }
@@ -283,7 +295,7 @@ trait BotExecutorTrait
                 }
             }
 
-            $limitsCheck = $this->riskEngine->checkLimits($risk, count($effectiveActiveTrades), $effectiveOpenSymbols, $symbol);
+            $limitsCheck = $this->riskEngine->checkLimits($risk, $limitsOpenCount, $effectiveOpenSymbols, $symbol);
             if (!$limitsCheck['allowed']) {
                 $result['execution_stage'] = 'execution_guard_blocked';
                 return $this->rejectIntent($intent, 'rejected_limits', $limitsCheck['reason'], $result);

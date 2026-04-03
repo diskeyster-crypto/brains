@@ -991,7 +991,9 @@ trait BotSourcesTrait
             $result['source_status']  = 'loaded';
 
             // Build risk block from demo_risk_defaults
+            // profile_id is always included — required by validateRisk() — config value takes priority.
             $riskDefaults = array_replace_recursive([
+                'profile_id'              => 'pattern_engine_demo_default',
                 'budget_usdt_per_trade'   => 10,
                 'leverage'                => 5,
                 'stop_from_liq_range_pct' => 0.2,
@@ -1017,8 +1019,18 @@ trait BotSourcesTrait
                 $signalId = (string)($sig['signal_id'] ?? '');
                 if ($signalId === '') { $skipped++; continue; }
 
-                // Idempotency: skip already-executed signals
-                if (isset($executedIndex[$signalId])) { $skipped++; continue; }
+                // Idempotency: skip already-executed signals.
+                // Exception: allow retry if the previous rejection was a config/schema validation
+                // failure (missing_field) — these are safe to retry after the config is fixed.
+                if (isset($executedIndex[$signalId])) {
+                    $prev = $executedIndex[$signalId];
+                    $isConfigRejection = ($prev['result'] ?? '') === 'rejected_validation'
+                        && strpos((string)($prev['error'] ?? ''), 'missing_field:') !== false;
+                    if (!$isConfigRejection) {
+                        $skipped++;
+                        continue;
+                    }
+                }
 
                 // TTL check
                 $ttlSec = (int)($sig['ttl_seconds'] ?? 0);

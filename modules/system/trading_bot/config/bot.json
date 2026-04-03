@@ -32,7 +32,7 @@
         "max_deferred_intents_per_run": 10,
         "default_entry_timeout_minutes": 8,
         "default_late_threshold_pct": 1.25,
-        "retrace_slack_pct": 0.050000000000000003,
+        "retrace_slack_pct": 0.05,
         "exchange_positions_cache_ttl_sec": 2,
         "require_price_check_live": true,
         "reverse_side_enabled": true,
@@ -63,7 +63,7 @@
         "demo_risk_defaults": {
             "budget_usdt_per_trade": 10,
             "leverage": 5,
-            "stop_from_liq_range_pct": 0.20000000000000001,
+            "stop_from_liq_range_pct": 0.2,
             "slippage_bps": 20,
             "fees_bps": 10,
             "order_type": "market",
@@ -74,7 +74,8 @@
             },
             "trailing": {
                 "enabled": false
-            }
+            },
+            "profile_id": "pattern_engine_demo_default"
         }
     },
     "demo_learning_mode": {

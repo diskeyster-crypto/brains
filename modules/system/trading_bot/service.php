@@ -807,6 +807,8 @@ final class TradingBotService
             ];
             
             // Step 5: Update active positions
+            // Capture active count before update for demo closure tracking
+            $demoActiveCountBefore = $mode === 'demo' ? count($this->store->loadActiveTrades()) : 0;
             $updateResult = $this->updateActivePositions($mode);
 
             // Merge update_positions diagnostics into global warnings/errors (UI explainability)
@@ -885,6 +887,19 @@ final class TradingBotService
                 'best_price_missing_while_trailing_active_count' => $updateResult['best_price_missing_while_trailing_active_count'] ?? 0,
                 'top_level_runtime_mismatch_count' => $updateResult['top_level_runtime_mismatch_count'] ?? 0,
             ];
+
+            // ============================================================
+            // Demo close pipeline per-run counters
+            // ============================================================
+            if ($mode === 'demo') {
+                $demoActiveCountAfter = count($this->store->loadActiveTrades());
+                $result['demo_trades_active_before']               = $demoActiveCountBefore;
+                $result['demo_trades_closed_this_run']             = $updateResult['closed'] ?? 0;
+                $result['demo_trades_still_active_after']          = $demoActiveCountAfter;
+                $result['demo_ai_dataset_records_written_this_run']= $updateResult['ai_dataset_records_written'] ?? 0;
+                $result['demo_close_failures_this_run']            = $updateResult['close_failures'] ?? 0;
+                $result['demo_close_failure_reasons']              = $updateResult['close_failure_reasons'] ?? [];
+            }
 
             // ============================================================
             // Post-process: upgrade intent result lifecycle states based on

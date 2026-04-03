@@ -1339,6 +1339,10 @@ trait BotExecutorTrait
             'reversal_overlay_skipped_peak_too_low' => 0,
             'reversal_overlay_shadow_mirror_seen' => 0,
             'reversal_overlay_harvest_applied' => 0,
+            // Demo close pipeline counters
+            'ai_dataset_records_written' => 0,
+            'close_failures' => 0,
+            'close_failure_reasons' => [],
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1394,7 +1398,9 @@ trait BotExecutorTrait
                     if (($this->config['module']['mode'] ?? '') === 'demo') {
                         $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if (!$aiWritten) {
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                        } else {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
                         }
                     }
@@ -1776,7 +1782,9 @@ trait BotExecutorTrait
                                 if (($this->config['module']['mode'] ?? '') === 'demo') {
                                     $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade2);
                                     $closedTrade2['ai_dataset_record_written'] = $aiWritten;
-                                    if (!$aiWritten) {
+                                    if ($aiWritten) {
+                                        $result['ai_dataset_records_written']++;
+                                    } else {
                                         $closedTrade2['ai_dataset_write_fail_reason'] = 'write_failed';
                                     }
                                 }
@@ -3039,6 +3047,9 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 
             } catch (\Throwable $e) {
                 $result['errors'][] = "Error updating {$tradeId}: " . $e->getMessage();
+                $result['close_failures']++;
+                $failReason = 'exception:' . substr($e->getMessage(), 0, 80);
+                $result['close_failure_reasons'][$failReason] = ($result['close_failure_reasons'][$failReason] ?? 0) + 1;
             }
         }
         

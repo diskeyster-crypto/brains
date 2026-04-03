@@ -347,6 +347,13 @@ $demoSigBlockValid     = $bot_last_run['demo_signals_blocked_by_validation']?? n
 $demoSigBlockExchange  = $bot_last_run['demo_signals_blocked_by_exchange']  ?? null;
 $demoSigBlockOther     = $bot_last_run['demo_signals_blocked_other']        ?? null;
 $demoRejStats          = (array)($bot_last_run['rejection_reason_stats']    ?? []);
+// Demo close pipeline counters
+$demoTradesActiveBefore     = $bot_last_run['demo_trades_active_before']               ?? null;
+$demoTradesClosedThisRun    = $bot_last_run['demo_trades_closed_this_run']             ?? null;
+$demoTradesStillActive      = $bot_last_run['demo_trades_still_active_after']          ?? null;
+$demoAiWrittenThisRun       = $bot_last_run['demo_ai_dataset_records_written_this_run']?? null;
+$demoCloseFailures          = $bot_last_run['demo_close_failures_this_run']            ?? null;
+$demoCloseFailureReasons    = (array)($bot_last_run['demo_close_failure_reasons']      ?? []);
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -381,6 +388,44 @@ $demoRejStats          = (array)($bot_last_run['rejection_reason_stats']    ?? [
             </div>
             <?php endforeach; ?>
         </div>
+        <?php if ($demoTradesActiveBefore !== null || $demoTradesClosedThisRun !== null): ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Close Pipeline (This Run)</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $closeCards = [
+                ['label' => 'Active Before Run',    'value' => $demoTradesActiveBefore !== null ? (string)$demoTradesActiveBefore : 'n/a',  'ok' => null],
+                ['label' => 'Closed This Run',      'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a', 'ok' => $demoTradesClosedThisRun > 0 ? true : null],
+                ['label' => 'Still Active After',   'value' => $demoTradesStillActive !== null ? (string)$demoTradesStillActive : 'n/a',     'ok' => null],
+                ['label' => 'AI Records Written',   'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',       'ok' => $demoAiWrittenThisRun > 0 ? true : null],
+                ['label' => 'Close Failures',       'value' => $demoCloseFailures !== null ? (string)$demoCloseFailures : 'n/a',             'ok' => $demoCloseFailures === 0 ? true : ($demoCloseFailures > 0 ? false : null)],
+            ];
+            foreach ($closeCards as $cc):
+                $cls = 'neutral';
+                if ($cc['ok'] === true) $cls = 'positive';
+                if ($cc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$cc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($cc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!empty($demoCloseFailureReasons)): ?>
+        <div class="mt-1">
+            <div class="section-heading" style="font-size:.75rem;">Close Failure Reasons (This Run)</div>
+            <table class="table table-sm exec-table mb-0" style="max-width:480px;">
+                <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                <tbody>
+                <?php foreach ($demoCloseFailureReasons as $cfr => $cfc): ?>
+                <tr><td><?= htmlspecialchars($cfr) ?></td><td><?= (int)$cfc ?></td></tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
         <?php if (!empty($demoRejStats)): ?>
         <div class="mt-2">
             <div class="section-heading" style="font-size:.75rem;">Top Failure Reasons (This Run)</div>

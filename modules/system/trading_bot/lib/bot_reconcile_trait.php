@@ -322,7 +322,9 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
  * Contract: close_reason MUST be one of:
  * - stop_loss
  * - trailing_stop
- * - manual_close (fallback, also covers liquidation/other)
+ * - break_even
+ * - manual_close
+ * - exchange_closed_unknown (fallback when closed by exchange with no matching known trigger)
  *
  * @param array<string,mixed> $trade
  * @return array{reason:string,meta:array<string,mixed>}
@@ -392,12 +394,12 @@ private function determineCloseReason(array $trade): array
         ];
     }
 
-    // 3) Fallback (also covers liquidation / manual close without marker / unknown)
+    // 3) Fallback: closed by exchange with no identifiable local trigger
     return [
-        'reason' => 'manual_close',
+        'reason' => 'exchange_closed_unknown',
         'meta' => [
             'schema_version' => 'close_reason_meta_v1',
-            'method' => 'fallback_manual_close',
+            'method' => 'fallback_exchange_closed_unknown',
             'confidence' => 0.20,
         ],
     ];
@@ -832,7 +834,8 @@ private function inferCloseCause(array $trade): array
 - Closed trades are enriched via Bybit /v5/position/closed-pnl:
   - "side" in closed-pnl is treated as closing-order side (Sell closes LONG, Buy closes SHORT)
   - match is STRICTLY constrained by reconcile_closed_pnl_match_window_sec
-- close_reason is ALWAYS one of: stop_loss | trailing_stop | manual_close (fallback)
+- close_reason_normalized contract: stop_loss | trailing_stop | break_even | manual_close | exchange_closed_unknown (fallback)
+- exchange_closed_unknown triggers backfill so richer exchange data can upgrade the reason later
 - backfillRecentClosedTradesMissingExit retries enrichment for recently closed trades to fill close_price/pnl and fix legacy reasons
 */
 

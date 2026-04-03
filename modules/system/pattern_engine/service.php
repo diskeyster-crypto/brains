@@ -460,6 +460,10 @@ final class PatternEngineService
 
     public function run(array $marketDataBatch): array
     {
+        // Reset per-run counters so caps are enforced fresh each run,
+        // even when the service instance is reused (e.g. via static cache).
+        $this->scenarioEngine->resetRunCounters();
+
         $config      = PatternEngineConfig::load();
         $detectorCfg = (array)($config['detector_config'] ?? []);
         $antiFlood   = (array)($config['anti_flood']      ?? []);
@@ -690,7 +694,7 @@ final class PatternEngineService
         $this->realRunStats['demo_low_confidence_block_count']      = $demoLowConfidenceBlockCount;
         $this->realRunStats['demo_low_confidence_block_reasons']    = $demoLowConfidenceBlockReasons;
 
-        // Paper pre-classification counters (from scenario diagnostics)
+        // Paper pre-classification counters (from top-level paper fields; fallback to diagnostics)
         $paperRejectCount          = 0;
         $paperCandidateCount       = 0;
         $paperStrongCandidateCount = 0;
@@ -698,8 +702,9 @@ final class PatternEngineService
         $demoBlockedByPaperReasons = [];
 
         foreach ($allScenarios as $sc) {
-            $paperBucket = $sc['diagnostics']['paper_bucket'] ?? null;
-            $paperReason = $sc['diagnostics']['paper_reason'] ?? null;
+            // Read from top-level first (set by scenario_engine); fall back to diagnostics for older data
+            $paperBucket = $sc['paper_bucket'] ?? $sc['diagnostics']['paper_bucket'] ?? null;
+            $paperReason = $sc['paper_reason'] ?? $sc['diagnostics']['paper_reason'] ?? null;
             $bucket      = $sc['diagnostics']['final_downstream_bucket'] ?? $sc['scenario_status'] ?? '';
 
             if ($paperBucket === 'paper_reject') {
@@ -707,14 +712,14 @@ final class PatternEngineService
                 if ($paperReason !== null) {
                     $paperRejectReasons[$paperReason] = ($paperRejectReasons[$paperReason] ?? 0) + 1;
                 }
-                if ($bucket === 'allow_demo') {
-                    // allow_demo scenario blocked from demo export by paper classification
+                if (in_array($bucket, ['allow_demo', 'allow_sim'], true)) {
+                    // scenario blocked from demo export by paper classification
                     $key = $paperReason ?? 'unknown';
                     $demoBlockedByPaperReasons[$key] = ($demoBlockedByPaperReasons[$key] ?? 0) + 1;
                 }
             } elseif ($paperBucket === 'paper_candidate') {
                 $paperCandidateCount++;
-                if ($bucket === 'allow_demo') {
+                if (in_array($bucket, ['allow_demo', 'allow_sim'], true)) {
                     $key = $paperReason ?? 'paper_not_strong';
                     $demoBlockedByPaperReasons[$key] = ($demoBlockedByPaperReasons[$key] ?? 0) + 1;
                 }
@@ -743,20 +748,25 @@ final class PatternEngineService
 
         // Build downstream-safe filtered signal sets with paper policy gating.
         //
-        // Routing rules (exclusive):
-        //   allow_demo  + paper_strong_candidate → demo export
-        //   allow_demo  + paper_candidate         → sim export (paper pre-filter, not strong enough)
-        //   allow_demo  + paper_reject            → shadow export (below candidate threshold)
-        //   allow_sim / sim_only                  → sim export (unchanged)
-        //   shadow_only / allow_shadow            → shadow export (unchanged)
-        $demoSignals   = $this->buildDownstreamSet($allCombined, ['allow_demo'], 'paper_strong_candidate');
+        // Routing rules (exclusive — no signal lands in more than one export):
+        //   (allow_demo | allow_sim) + paper_strong_candidate → demo export
+        //   (allow_demo | allow_sim) + paper_candidate        → sim export
+        //   (allow_demo | allow_sim) + paper_reject           → shadow export (paper rejects)
+        //   sim_only (any paper bucket)                       → sim export (sim_only overrides paper)
+        //   shadow_only / allow_shadow                        → shadow export (unchanged)
+        //
+        // Note: allow_sim signals are now treated as demo-eligible when paper says strong,
+        // because paper is the pre-filter and downstream policy already validated the signal
+        // for at least sim. This fixes the case where allow_demo_count=0 yet strong candidates
+        // exist — they are no longer silently dropped.
+        $demoSignals   = $this->buildDownstreamSet($allCombined, ['allow_demo', 'allow_sim'], 'paper_strong_candidate');
         $shadowSignals = array_merge(
             $this->buildDownstreamSet($allCombined, ['shadow_only', 'allow_shadow']),
-            $this->buildDownstreamSet($allCombined, ['allow_demo'], 'paper_reject')
+            $this->buildDownstreamSet($allCombined, ['allow_demo', 'allow_sim'], 'paper_reject')
         );
         $simSignals    = array_merge(
-            $this->buildDownstreamSet($allCombined, ['allow_sim', 'sim_only']),
-            $this->buildDownstreamSet($allCombined, ['allow_demo'], 'paper_candidate')
+            $this->buildDownstreamSet($allCombined, ['sim_only']),
+            $this->buildDownstreamSet($allCombined, ['allow_demo', 'allow_sim'], 'paper_candidate')
         );
 
         // Count paper-routed signals for diagnostics
@@ -956,7 +966,7 @@ final class PatternEngineService
 
             // Paper classification gate — restrict demo to paper_strong_candidate
             if ($requiredPaperBucket !== null) {
-                $paperBucket = $sc['diagnostics']['paper_bucket'] ?? null;
+                $paperBucket = $sc['paper_bucket'] ?? $sc['diagnostics']['paper_bucket'] ?? null;
                 if ($paperBucket !== $requiredPaperBucket) {
                     continue;
                 }
@@ -996,10 +1006,10 @@ final class PatternEngineService
                 'passport_noise_score'       => $diag['passport_noise_score']       ?? null,
                 'entry_hint'                 => $sig['entry_hint']                  ?? null,
                 'invalidation_hint'          => $sig['invalidation_hint']           ?? null,
-                // Paper pre-classification fields
-                'paper_bucket'               => $diag['paper_bucket']               ?? null,
-                'paper_reason'               => $diag['paper_reason']               ?? null,
-                'paper_score'                => $diag['paper_score']                ?? null,
+                // Paper pre-classification — top-level for fast consumption
+                'paper_bucket'               => $sc['paper_bucket'] ?? $diag['paper_bucket']               ?? null,
+                'paper_reason'               => $sc['paper_reason'] ?? $diag['paper_reason']               ?? null,
+                'paper_score'                => $sc['paper_score']  ?? $diag['paper_score']                ?? null,
                 'source_module'              => 'pattern_engine',
                 'snapshot_at'               => date('c'),
             ];

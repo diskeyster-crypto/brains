@@ -124,6 +124,20 @@ final class ScenarioEngine
     }
 
     /**
+     * Reset all per-run counters.
+     *
+     * Must be called at the start of every run() in PatternEngineService so that
+     * per-run caps (paper_max_strong_per_run, paper_max_candidates_per_run, lc cap)
+     * are enforced per-run even when the service instance is reused across runs.
+     */
+    public function resetRunCounters(): void
+    {
+        $this->demoLowConfidenceGranted = 0;
+        $this->paperStrongGranted       = 0;
+        $this->paperCandidateGranted    = 0;
+    }
+
+    /**
      * Evaluate a normalized signal against all matching profiles.
      * Returns the most permissive scenario decision.
      *
@@ -469,6 +483,10 @@ final class ScenarioEngine
             'profile_used'              => $profileName ?? 'default',
             'decided_at'                => date('c'),
             'max_hold_minutes'          => $maxHold > 0 ? $maxHold : null,
+            // Paper pre-classification — top-level for fast access by routing and UI
+            'paper_bucket'              => $paperResult['paper_bucket'],
+            'paper_reason'              => $paperResult['paper_reason'],
+            'paper_score'               => $paperResult['paper_score'],
             'diagnostics'               => array_merge($passportDiag, [
                 'status'                      => $effectiveStatus,
                 'original_status'             => $status,

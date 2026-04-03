@@ -850,14 +850,18 @@ $statusCounts= $pe_last_run['status_counts']?? $pe_stats['last_run']['status_cou
                     }
                 ?></td>
                 <td><?php
-                    $pb = $diag['paper_bucket'] ?? null;
+                    // Read from top-level first (set directly on scenario); fall back to diagnostics
+                    $pb        = $sc['paper_bucket'] ?? $diag['paper_bucket'] ?? null;
+                    $pr        = $sc['paper_reason'] ?? $diag['paper_reason'] ?? '';
+                    $ps        = $sc['paper_score']  ?? $diag['paper_score']  ?? 0;
+                    $ptip      = htmlspecialchars((string)$pr) . ' | score:' . number_format((float)$ps, 3);
                     if ($pb === 'paper_strong_candidate') {
-                        echo '<span class="badge" style="background:#1d4ed8;font-size:0.65rem;" title="' . htmlspecialchars((string)($diag['paper_reason'] ?? '')) . ' | score:' . number_format((float)($diag['paper_score'] ?? 0), 3) . '">strong</span>';
+                        echo '<span class="badge" style="background:#1d4ed8;font-size:0.65rem;" title="' . $ptip . '">strong</span>';
                     } elseif ($pb === 'paper_candidate') {
-                        echo '<span class="badge" style="background:#92400e;font-size:0.65rem;" title="' . htmlspecialchars((string)($diag['paper_reason'] ?? '')) . ' | score:' . number_format((float)($diag['paper_score'] ?? 0), 3) . '">cand.</span>';
+                        echo '<span class="badge" style="background:#92400e;font-size:0.65rem;" title="' . $ptip . '">cand.</span>';
                     } elseif ($pb === 'paper_reject') {
-                        echo '<span class="badge" style="background:#374151;font-size:0.65rem;" title="' . htmlspecialchars((string)($diag['paper_reason'] ?? '')) . ' | score:' . number_format((float)($diag['paper_score'] ?? 0), 3) . '">reject</span>';
-                    } elseif ($pb === null && !empty($diag['paper_reason']) && $diag['paper_reason'] === 'paper_policy_disabled') {
+                        echo '<span class="badge" style="background:#374151;font-size:0.65rem;" title="' . $ptip . '">reject</span>';
+                    } elseif ($pb === null && $pr === 'paper_policy_disabled') {
                         echo '<span class="text-secondary" style="font-size:0.65rem;">off</span>';
                     } else {
                         echo '<span class="text-secondary">—</span>';

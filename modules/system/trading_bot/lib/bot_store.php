@@ -654,7 +654,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
      * @param int $learningMaxActiveAgeMinutes  Stale threshold (from demo_learning_mode config)
      * @return array<string,mixed>
      */
-    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240): array
+    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0): array
     {
         $closedDir    = $this->storageDir . '/trades/closed';
         $activeDir    = $this->storageDir . '/trades/active';
@@ -786,11 +786,19 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $primaryBottleneck       = 'unknown';
         $primaryBottleneckReason = 'Insufficient data to classify bottleneck yet.';
         $recommendedNextFixArea  = 'run_demo_and_observe';
+        $primaryExecutionBlocker = 'none';
 
-        if ($closedCount === 0 && $activeCount === 0) {
+        if ($orphanBlockingCount > 0) {
+            // Orphan positions are actively blocking execution — highest priority
+            $primaryBottleneck       = 'orphan_positions_blocking_demo';
+            $primaryBottleneckReason = "{$orphanBlockingCount} orphan exchange position(s) blocked demo trade execution this run. Reconcile or finalize orphan positions to unblock demo learning.";
+            $recommendedNextFixArea  = 'audit_orphan_exchange_positions';
+            $primaryExecutionBlocker = 'orphan_positions';
+        } elseif ($closedCount === 0 && $activeCount === 0) {
             $primaryBottleneck       = 'demo_feed_too_small';
             $primaryBottleneckReason = 'No active or closed demo trades found. Pattern Engine demo feed may not be producing signals, or bot has not run yet.';
             $recommendedNextFixArea  = 'check_pattern_engine_demo_feed';
+            $primaryExecutionBlocker = 'feed_empty';
         } elseif ($closedCount === 0 && $activeCount > 0) {
             $primaryBottleneck       = 'close_detection_too_weak';
             $primaryBottleneckReason = "Active trades exist ({$activeCount}) but none have closed. Exchange close detection or reconcile may not be triggering.";
@@ -836,6 +844,14 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'closed_trades_without_ai_dataset_count'   => $closedWithoutAiDataset,
             'ai_dataset_without_closed_trade_count'    => $aiWithoutClosedTrade,
             'closed_to_ai_dataset_match_rate'          => $matchRate,
+            // Orphan exchange position fields (injected from runtime)
+            'orphan_exchange_positions_detected'       => $orphanBlockingCount,
+            'orphan_exchange_positions_blocking_count' => $orphanBlockingCount,
+            'orphan_exchange_positions_adopted_count'  => 0,
+            'orphan_exchange_positions_finalized_count'=> 0,
+            'primary_execution_blocker'                => $primaryExecutionBlocker,
+            'primary_execution_blocker_reason'         => $primaryBottleneckReason,
+            // Bottleneck classification
             'primary_demo_bottleneck'                  => $primaryBottleneck,
             'primary_demo_bottleneck_reason'           => $primaryBottleneckReason,
             // PART 6: closure-specific bottleneck aliases

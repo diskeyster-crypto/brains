@@ -189,16 +189,25 @@ trait BotExecutorTrait
                         if (!in_array($symbol, $localSymbols, true)) {
                             // Not in local trades - this is an ORPHAN position
                             $result['execution_stage'] = 'execution_guard_blocked';
-                            return $this->rejectIntent($intent, 'skipped_exchange_position_exists', 
-                                "Orphan position on exchange for {$symbol}", $result, [
-                                    'blocked_symbol' => $symbol,
+                            $exSize = (float)($exPos['size'] ?? 0);
+                            // In demo mode emit a precise orphan reason so diagnostics can classify
+                            // the blocking cause. In live mode keep the existing generic reason code.
+                            $orphanReason = ($mode === 'demo')
+                                ? ($exSize > 0
+                                    ? 'orphan_exchange_position_open_local_missing'
+                                    : 'orphan_exchange_position_stale_unreconciled')
+                                : 'skipped_exchange_position_exists';
+                            return $this->rejectIntent($intent, $orphanReason,
+                                "Orphan position on exchange for {$symbol} (size={$exSize})", $result, [
+                                    'blocked_symbol'    => $symbol,
+                                    'orphan_reason'     => $orphanReason,
                                     'exchange_position' => [
-                                        'symbol' => $exSymbol,
-                                        'side' => $exPos['side'] ?? 'unknown',
-                                        'size' => $exPos['size'] ?? 0,
-                                        'avgPrice' => $exPos['avgPrice'] ?? 0,
-                                        'liqPrice' => $exPos['liqPrice'] ?? 0,
-                                        'positionIdx' => $exPos['positionIdx'] ?? 0,
+                                        'symbol'       => $exSymbol,
+                                        'side'         => $exPos['side'] ?? 'unknown',
+                                        'size'         => $exSize,
+                                        'avgPrice'     => (float)($exPos['avgPrice'] ?? 0),
+                                        'liqPrice'     => (float)($exPos['liqPrice'] ?? 0),
+                                        'positionIdx'  => (int)($exPos['positionIdx'] ?? 0),
                                     ],
                                     'intent_side' => $side,
                                 ]);

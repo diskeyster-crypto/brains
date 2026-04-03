@@ -391,6 +391,10 @@ $demoTurnoverFix        = (string)($bot_last_run['recommended_turnover_fix_area'
 $dlmEnabled             = $bot_last_run['demo_learning_mode_enabled']              ?? null;
 $dlmMaxSignals          = $bot_last_run['demo_max_signals_per_run_effective']      ?? null;
 $dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective'] ?? null;
+// Orphan exchange position blocking diagnostics
+$demoOrphanDetected     = $bot_last_run['demo_orphan_positions_detected_count']    ?? null;
+$demoOrphanBlocking     = $bot_last_run['demo_orphan_positions_blocking_count']    ?? null;
+$demoPrimaryExecBlocker = (string)($bot_last_run['demo_primary_execution_blocker'] ?? '');
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -591,6 +595,36 @@ $dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective
         <div class="alert alert-success py-1 px-3 mt-2 mb-0" style="font-size:.8rem;">
             <strong>Loop is cycling.</strong> <?= htmlspecialchars($demoClosureReason) ?>
         </div>
+        <?php endif; ?>
+        <?php if ($demoOrphanDetected !== null || $demoOrphanBlocking !== null): ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Orphan Exchange Position Diagnostics</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $orphanCards = [
+                ['label' => 'Orphans Detected',    'value' => $demoOrphanDetected !== null ? (string)$demoOrphanDetected : 'n/a',  'ok' => ($demoOrphanDetected ?? 0) === 0 ? true : false],
+                ['label' => 'Orphans Blocking',    'value' => $demoOrphanBlocking !== null ? (string)$demoOrphanBlocking : 'n/a',  'ok' => ($demoOrphanBlocking ?? 0) === 0 ? true : false],
+                ['label' => 'Primary Exec Blocker','value' => $demoPrimaryExecBlocker !== '' ? htmlspecialchars($demoPrimaryExecBlocker) : 'none', 'ok' => ($demoPrimaryExecBlocker === '' || $demoPrimaryExecBlocker === 'none') ? true : false],
+            ];
+            foreach ($orphanCards as $oc):
+                $cls = 'neutral';
+                if ($oc['ok'] === true)  $cls = 'positive';
+                if ($oc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= $oc['value'] ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($oc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (($demoOrphanBlocking ?? 0) > 0): ?>
+        <div class="alert alert-danger py-1 px-3 mt-1 mb-0" style="font-size:.8rem;">
+            <strong>Orphan Blocking:</strong> <?= (int)$demoOrphanBlocking ?> exchange position(s) are blocking new demo trades.
+            These positions exist on the exchange but have no matching local trade record.
+            Reconcile or finalize these orphan positions to unblock demo learning.
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
         <?php endif; ?>
     </div>
@@ -826,6 +860,9 @@ $auditBottleneck       = (string)($demoTruthAudit['primary_demo_bottleneck']    
 $auditBottleneckReason = (string)($demoTruthAudit['primary_demo_bottleneck_reason'] ?? '');
 $auditNextFix          = (string)($demoTruthAudit['recommended_next_fix_area']      ?? '');
 $auditAt               = (string)($demoTruthAudit['audited_at']                     ?? '');
+$auditOrphanDetected   = $demoTruthAudit['orphan_exchange_positions_detected']       ?? null;
+$auditOrphanBlocking   = $demoTruthAudit['orphan_exchange_positions_blocking_count'] ?? null;
+$auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']       ?? '');
 ?>
 <?php if ($bot_mode === 'demo' && !empty($demoTruthAudit)): ?>
 <div class="card mb-4" style="border-color:#7c3aed;">
@@ -880,12 +917,38 @@ $auditAt               = (string)($demoTruthAudit['audited_at']                 
         </div>
         <?php endif; ?>
         <?php if ($auditBottleneck !== ''): ?>
-        <div class="alert <?= $auditBottleneck === 'none_loop_is_cycling' ? 'alert-success' : 'alert-warning' ?> py-2 mb-2 small">
+        <?php
+        $auditAlertClass = 'alert-warning';
+        if ($auditBottleneck === 'none_loop_is_cycling') $auditAlertClass = 'alert-success';
+        elseif ($auditBottleneck === 'orphan_positions_blocking_demo') $auditAlertClass = 'alert-danger';
+        ?>
+        <div class="alert <?= $auditAlertClass ?> py-2 mb-2 small">
             <strong>Bottleneck:</strong> <code><?= htmlspecialchars($auditBottleneck) ?></code><br>
             <?= htmlspecialchars($auditBottleneckReason) ?>
             <?php if ($auditNextFix !== '' && $auditBottleneck !== 'none_loop_is_cycling'): ?>
             <br><strong>Next Fix:</strong> <code><?= htmlspecialchars($auditNextFix) ?></code>
             <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if ($auditOrphanDetected !== null): ?>
+        <div class="row g-2 mb-2">
+            <?php
+            $orphanAuditCards = [
+                ['label' => 'Orphans Blocking (run)', 'value' => (string)($auditOrphanDetected ?? 0), 'ok' => ($auditOrphanDetected ?? 0) === 0 ? true : false],
+                ['label' => 'Primary Exec Blocker',   'value' => $auditExecBlocker !== '' ? htmlspecialchars($auditExecBlocker) : 'none', 'ok' => ($auditExecBlocker === '' || $auditExecBlocker === 'none') ? true : false],
+            ];
+            foreach ($orphanAuditCards as $oac):
+                $cls = 'neutral';
+                if ($oac['ok'] === true)  $cls = 'positive';
+                if ($oac['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= $oac['value'] ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($oac['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
         </div>
         <?php endif; ?>
         <?php if ($auditAt !== ''): ?>

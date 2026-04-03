@@ -1233,11 +1233,20 @@ final class TradingBotService
                 $learningMaxAgeMin = (int)(
                     $this->config['demo_learning_mode']['learning_max_active_age_minutes'] ?? 240
                 );
-                $demoTruthAudit = $this->store->computeDemoTruthAudit($learningMaxAgeMin);
+                // Compute orphan-blocking count from rejection stats so the audit can
+                // use real runtime evidence when classifying the primary bottleneck.
+                $demoOrphanBlockingCount = 0;
+                foreach (['orphan_exchange_position_open_local_missing', 'orphan_exchange_position_stale_unreconciled', 'skipped_exchange_position_exists'] as $_or) {
+                    $demoOrphanBlockingCount += (int)($result['rejection_reason_stats'][$_or] ?? 0);
+                }
+                $result['demo_orphan_positions_detected_count'] = $demoOrphanBlockingCount;
+                $result['demo_orphan_positions_blocking_count'] = $demoOrphanBlockingCount;
+                $demoTruthAudit = $this->store->computeDemoTruthAudit($learningMaxAgeMin, $demoOrphanBlockingCount);
                 $result['demo_truth_audit']              = $demoTruthAudit;
                 $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];
                 $result['primary_demo_bottleneck_reason']= $demoTruthAudit['primary_demo_bottleneck_reason'];
                 $result['recommended_next_fix_area']     = $demoTruthAudit['recommended_next_fix_area'];
+                $result['demo_primary_execution_blocker']= $demoTruthAudit['primary_execution_blocker'] ?? 'none';
 
                 // ── PART 5: Per-run AI match-rate also in sufficiency ────────
                 $result['demo_closed_to_ai_match_rate_total'] = $demoTruthAudit['closed_to_ai_dataset_match_rate'] ?? null;
@@ -1348,7 +1357,15 @@ final class TradingBotService
             $result['executable_after_dedupe'] = max(0, ($result['approved_intents_loaded'] ?? 0) - ($result['duplicate_skipped'] ?? 0));
 
             // P0.6: busy_skipped = count of symbol_busy + active_trade_exists + exchange_position_exists + max_positions_reached
-            $busyReasons = ['skipped_symbol_busy', 'skipped_active_trade_exists', 'skipped_exchange_position_exists', 'skipped_max_positions_reached'];
+            // Includes demo-specific orphan reason codes that replaced the generic skipped_exchange_position_exists.
+            $busyReasons = [
+                'skipped_symbol_busy',
+                'skipped_active_trade_exists',
+                'skipped_exchange_position_exists',
+                'orphan_exchange_position_open_local_missing',
+                'orphan_exchange_position_stale_unreconciled',
+                'skipped_max_positions_reached',
+            ];
             $busySkipped = 0;
             foreach ($busyReasons as $br) {
                 $busySkipped += ($result['rejection_reason_stats'][$br] ?? 0);

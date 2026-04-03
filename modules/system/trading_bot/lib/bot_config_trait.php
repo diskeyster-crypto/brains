@@ -245,6 +245,24 @@ trait BotConfigTrait
                         }
                     }
 
+                    // Demo sources block (Pattern Engine demo feed wiring)
+                    if (isset($overrides['demo_sources']) && is_array($overrides['demo_sources'])) {
+                        if (!isset($config['demo_sources']) || !is_array($config['demo_sources'])) {
+                            $config['demo_sources'] = [];
+                        }
+                        $ds = $overrides['demo_sources'];
+
+                        if (isset($ds['source_mode']) && is_string($ds['source_mode'])) {
+                            $config['demo_sources']['source_mode'] = trim($ds['source_mode']);
+                        }
+                        if (isset($ds['demo_signals_file']) && is_string($ds['demo_signals_file'])) {
+                            $config['demo_sources']['demo_signals_file'] = trim($ds['demo_signals_file']);
+                        }
+                        if (isset($ds['demo_risk_defaults']) && is_array($ds['demo_risk_defaults'])) {
+                            $config['demo_sources']['demo_risk_defaults'] = $ds['demo_risk_defaults'];
+                        }
+                    }
+
                     // Symbol overrides from runtime (bot.json)
                     if (isset($overrides['symbol_overrides']) && is_array($overrides['symbol_overrides'])) {
                         $clean = [];

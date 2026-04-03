@@ -167,8 +167,70 @@ $symsWithPassport   = (int)($pe_last_run['pattern_symbols_with_passport_count'] 
 $symsWithoutPassport= (int)($pe_last_run['pattern_symbols_without_passport_count'] ?? $pe_stats['last_run']['pattern_symbols_without_passport_count'] ?? 0);
 $activePolicy       = (string)($pe_last_run['active_universe_policy']              ?? $pe_stats['last_run']['active_universe_policy']              ?? '');
 $coverageCandidates = (array)($pe_last_run['passport_coverage_candidates']         ?? $pe_stats['last_run']['passport_coverage_candidates']         ?? []);
+$patternSymsTotal   = (int)($pe_last_run['pattern_symbols_total']                  ?? $pe_stats['last_run']['pattern_symbols_total']                  ?? 0);
+$passportSymsTotal  = (int)($pe_last_run['passport_symbols_total']                 ?? $pe_stats['last_run']['passport_symbols_total']                 ?? 0);
+$universeOverlapCnt = (int)($pe_last_run['symbol_universe_overlap_count']          ?? $pe_stats['last_run']['symbol_universe_overlap_count']          ?? 0);
+$universeOverlapRate= (float)($pe_last_run['symbol_universe_overlap_rate']         ?? $pe_stats['last_run']['symbol_universe_overlap_rate']         ?? 0.0);
+$symsWithPassport   = (int)($pe_last_run['pattern_symbols_with_passport_count']    ?? $pe_stats['last_run']['pattern_symbols_with_passport_count']    ?? 0);
+$symsWithoutPassport= (int)($pe_last_run['pattern_symbols_without_passport_count'] ?? $pe_stats['last_run']['pattern_symbols_without_passport_count'] ?? 0);
+$activePolicy       = (string)($pe_last_run['active_universe_policy']              ?? $pe_stats['last_run']['active_universe_policy']              ?? '');
+$coverageCandidates = (array)($pe_last_run['passport_coverage_candidates']         ?? $pe_stats['last_run']['passport_coverage_candidates']         ?? []);
 $symsNormUnmatched  = (array)($pe_last_run['symbols_normalized_but_unmatched']     ?? $pe_stats['last_run']['symbols_normalized_but_unmatched']     ?? []);
+
+// Demo feed diagnostics
+$feedExportTotal  = (int)($pe_last_run['demo_feed_export_total']                ?? $pe_stats['last_run']['demo_feed_export_total']                ?? $demoSignalsCount);
+$feedCandTotal    = (int)($pe_last_run['demo_feed_candidate_total']             ?? $pe_stats['last_run']['demo_feed_candidate_total']             ?? 0);
+$feedTargetMin    = (int)($pe_last_run['demo_feed_target_min_per_run']          ?? $pe_stats['last_run']['demo_feed_target_min_per_run']          ?? 3);
+$feedTargetMax    = (int)($pe_last_run['demo_feed_target_soft_max_per_run']     ?? $pe_stats['last_run']['demo_feed_target_soft_max_per_run']     ?? 10);
+$feedMetTarget    = (bool)($pe_last_run['demo_feed_met_target']                 ?? $pe_stats['last_run']['demo_feed_met_target']                  ?? false);
+$feedBelowBy      = (int)($pe_last_run['demo_feed_below_target_by']             ?? $pe_stats['last_run']['demo_feed_below_target_by']             ?? 0);
+$feedTopBlock     = (string)($pe_last_run['demo_feed_top_block_preventing_target'] ?? $pe_stats['last_run']['demo_feed_top_block_preventing_target'] ?? '');
+$topFeedBlocks    = (array)($pe_last_run['top_demo_feed_block_reasons']         ?? $pe_stats['last_run']['top_demo_feed_block_reasons']          ?? []);
+$feedStarved      = !$feedMetTarget && $lastRunAt !== null;
 ?>
+<?php if ($lastRunAt !== null && $feedStarved): ?>
+<!-- Demo Feed Health Banner (shown when feed is below target) -->
+<div class="alert py-2 mb-3" style="background:#1c0a0a; border:1px solid #dc2626;">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <span class="fw-bold" style="color:#f87171;"><i class="bi bi-broadcast me-1"></i>Demo Feed Starved</span>
+            <span class="badge ms-2" style="background:#7f1d1d; font-size:0.7rem;">exported <?= $feedExportTotal ?> / min <?= $feedTargetMin ?></span>
+            <?php if ($feedBelowBy > 0): ?><span class="text-muted small ms-2"><?= $feedBelowBy ?> below target</span><?php endif; ?>
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+            <span class="pe-stat-card" style="padding:0.2rem 0.5rem; font-size:0.75rem; min-width:0;">
+                <span class="text-secondary">Candidates:</span> <span class="text-white"><?= $feedCandTotal ?></span>
+            </span>
+            <span class="pe-stat-card" style="padding:0.2rem 0.5rem; font-size:0.75rem; min-width:0;">
+                <span class="text-secondary">Strong:</span> <span style="color:#3b82f6;"><?= $paperStrongCount ?></span>
+            </span>
+            <span class="pe-stat-card" style="padding:0.2rem 0.5rem; font-size:0.75rem; min-width:0;">
+                <span class="text-secondary">allow_demo:</span> <span style="color:#3b82f6;"><?= $allowDemoCount ?></span>
+            </span>
+        </div>
+    </div>
+    <?php if ($feedTopBlock !== ''): ?>
+    <div class="small mt-1" style="color:#fca5a5;"><i class="bi bi-exclamation-triangle me-1"></i>Top blocker: <code><?= htmlspecialchars($feedTopBlock) ?></code></div>
+    <?php endif; ?>
+    <?php if (!empty($topFeedBlocks)): ?>
+    <div class="d-flex flex-wrap gap-1 mt-1">
+        <?php foreach (array_slice($topFeedBlocks, 0, 5) as $blk): ?>
+        <span class="badge" style="background:#1e293b; border:1px solid #475569; font-size:0.7rem;">
+            <?= htmlspecialchars(str_replace('demo_feed_blocked_by_', '', (string)($blk['reason'] ?? ''))) ?>
+            <span class="text-warning ms-1"><?= (int)($blk['count'] ?? 0) ?></span>
+        </span>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</div>
+<?php elseif ($lastRunAt !== null && $feedMetTarget): ?>
+<!-- Demo Feed Health Banner (target met) -->
+<div class="alert py-2 mb-3" style="background:#052e16; border:1px solid #22c55e;">
+    <span class="fw-bold" style="color:#22c55e;"><i class="bi bi-broadcast me-1"></i>Demo Feed OK</span>
+    <span class="badge ms-2" style="background:#14532d; font-size:0.7rem;"><?= $feedExportTotal ?> exported / target min <?= $feedTargetMin ?></span>
+    <span class="text-secondary small ms-2">soft max: <?= $feedTargetMax ?></span>
+</div>
+<?php endif; ?>
 <!-- Stats row -->
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-2">

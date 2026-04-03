@@ -25,6 +25,7 @@
  * @var array<string,mixed>  $bot_diag
  * @var array<string,mixed>  $bot_demo_data_sufficiency
  * @var array<string,mixed>  $bot_demo_truth_audit
+ * @var array<string,mixed>  $pe_last_run
  */
 
 $pageTitle = 'Smart Brain — Execution';
@@ -777,6 +778,72 @@ $auditAt               = (string)($demoTruthAudit['audited_at']                 
         <?php endif; ?>
         <?php if ($auditAt !== ''): ?>
         <div class="mt-1 small text-muted">Audited from storage: <?= htmlspecialchars($auditAt) ?></div>
+        <?php endif; ?>
+        <?php
+        // ── Pattern Engine feed contribution (shown when feed is the bottleneck) ──
+        $peFeedExport   = (int)(($pe_last_run ?? [])['demo_feed_export_total']            ?? (($pe_last_run ?? [])['demo_signals_count'] ?? -1));
+        $peFeedTarget   = (int)(($pe_last_run ?? [])['demo_feed_target_min_per_run']      ?? 3);
+        $peFeedMax      = (int)(($pe_last_run ?? [])['demo_feed_target_soft_max_per_run'] ?? 10);
+        $peFeedMet      = (bool)(($pe_last_run ?? [])['demo_feed_met_target']             ?? false);
+        $peFeedBelow    = (int)(($pe_last_run ?? [])['demo_feed_below_target_by']         ?? 0);
+        $peFeedBlock    = (string)(($pe_last_run ?? [])['demo_feed_top_block_preventing_target'] ?? '');
+        $peTopBlocks    = (array)(($pe_last_run ?? [])['top_demo_feed_block_reasons']     ?? []);
+        $peCandTotal    = (int)(($pe_last_run ?? [])['demo_feed_candidate_total']         ?? 0);
+        $peRunAt        = (string)(($pe_last_run ?? [])['generated_at']                   ?? '');
+        if ($auditBottleneck === 'demo_feed_too_small' && $peFeedExport >= 0):
+        ?>
+        <div class="mt-2 p-2" style="background:#0f172a; border:1px solid <?= $peFeedMet ? '#22c55e' : '#dc2626' ?>; border-radius:6px;">
+            <div class="small mb-1 fw-bold" style="color:<?= $peFeedMet ? '#22c55e' : '#f87171' ?>;">
+                <i class="bi bi-broadcast me-1"></i>Pattern Engine Demo Feed
+                <?php if ($peFeedMet): ?>
+                    <span class="badge ms-1" style="background:#166534; font-size:0.65rem;">target met</span>
+                <?php else: ?>
+                    <span class="badge ms-1" style="background:#7f1d1d; font-size:0.65rem;">starved — <?= $peFeedBelow ?> below min</span>
+                <?php endif; ?>
+            </div>
+            <div class="row g-1 mb-1">
+                <div class="col-4 col-md-2">
+                    <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
+                        <span class="text-secondary">Exported:</span>
+                        <span class="<?= $peFeedMet ? 'text-success' : 'text-danger' ?> ms-1 fw-bold"><?= $peFeedExport ?></span>
+                    </div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
+                        <span class="text-secondary">Target min:</span>
+                        <span class="text-info ms-1"><?= $peFeedTarget ?></span>
+                    </div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
+                        <span class="text-secondary">Soft max:</span>
+                        <span class="text-secondary ms-1"><?= $peFeedMax ?></span>
+                    </div>
+                </div>
+                <div class="col-4 col-md-2">
+                    <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
+                        <span class="text-secondary">Candidates:</span>
+                        <span class="text-secondary ms-1"><?= $peCandTotal ?></span>
+                    </div>
+                </div>
+            </div>
+            <?php if (!$peFeedMet && $peFeedBlock !== ''): ?>
+            <div class="small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Top block: <code><?= htmlspecialchars($peFeedBlock) ?></code></div>
+            <?php endif; ?>
+            <?php if (!empty($peTopBlocks)): ?>
+            <div class="d-flex flex-wrap gap-1 mt-1">
+                <?php foreach (array_slice($peTopBlocks, 0, 4) as $blk): ?>
+                <span class="badge" style="background:#1e293b; border:1px solid #475569; font-size:0.65rem;">
+                    <?= htmlspecialchars(str_replace('demo_feed_blocked_by_', '', (string)($blk['reason'] ?? ''))) ?>
+                    <span class="text-warning ms-1"><?= (int)($blk['count'] ?? 0) ?></span>
+                </span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($peRunAt !== ''): ?>
+            <div class="mt-1 small text-muted">PE last run: <?= htmlspecialchars(date('d M H:i', strtotime($peRunAt))) ?></div>
+            <?php endif; ?>
+        </div>
         <?php endif; ?>
     </div>
 </div>

@@ -157,23 +157,27 @@
             "require_signal_strength_min": 0.35,
             "require_noise_score_max": 0.75,
             "require_short_suitability_min": 0.0,
-            "max_demo_low_confidence_signals_per_run": 5,
+            "max_demo_low_confidence_signals_per_run": 10,
             "require_passport_lookup_success": true
         }
     },
     "paper_policy": {
         "enabled": true,
-        "paper_strong_min_signal_strength": 0.50,
-        "paper_strong_min_quality_score": 0.45,
+        "paper_strong_min_signal_strength": 0.45,
+        "paper_strong_min_quality_score": 0.40,
         "paper_strong_min_corridor_p75_roi": 0.0,
         "paper_strong_min_runner_probability": 0.0,
         "paper_strong_max_noise_score": 1.0,
         "paper_strong_require_passport": false,
-        "paper_candidate_min_signal_strength": 0.38,
-        "paper_candidate_min_quality_score": 0.32,
+        "paper_candidate_min_signal_strength": 0.35,
+        "paper_candidate_min_quality_score": 0.28,
         "paper_candidate_require_passport": false,
-        "paper_max_strong_per_run": 20,
-        "paper_max_candidates_per_run": 50
+        "paper_max_strong_per_run": 30,
+        "paper_max_candidates_per_run": 60
+    },
+    "demo_feed_targets": {
+        "demo_feed_target_min_per_run": 3,
+        "demo_feed_target_soft_max_per_run": 10
     },
     "storage": {
         "max_candidates_per_run": 200,

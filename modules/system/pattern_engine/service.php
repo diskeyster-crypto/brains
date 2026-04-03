@@ -782,6 +782,71 @@ final class PatternEngineService
         $this->realRunStats['shadow_signals_count'] = count($shadowSignals);
         $this->realRunStats['sim_signals_count']    = count($simSignals);
 
+        // ── Demo feed aggregate diagnostics ──────────────────────────────────
+        // These alias/derive from the already-computed block counts above and
+        // make the feed health explicit and queryable as named fields.
+        $demoFeedExportTotal          = count($demoSignals);
+        $demoFeedCandidateTotal       = count($allScenarios);
+        $demoFeedBlockedByPassport    = (int)($demoBlockCounts['demo_blocked_no_passport']                   ?? 0);
+        $demoFeedBlockedByConfidence  = (int)($demoBlockCounts['demo_blocked_low_confidence']                ?? 0)
+                                      + (int)($demoBlockCounts['demo_blocked_insufficient_data']             ?? 0);
+        $demoFeedBlockedByCorridor    = (int)($demoBlockCounts['demo_blocked_low_corridor']                  ?? 0);
+        $demoFeedBlockedByRunner      = (int)($demoBlockCounts['demo_blocked_low_runner']                    ?? 0);
+        $demoFeedBlockedByNoise       = (int)($demoBlockCounts['demo_blocked_high_noise']                    ?? 0);
+        // Downstream policy total = sum of all downstream block reasons
+        $demoFeedBlockedByDownstream  = (int)array_sum($demoBlockCounts);
+        // Paper policy blocked: scenarios that had allow_demo/sim bucket but ended up in sim/shadow due to paper
+        $demoFeedBlockedByPaper       = $paperCandidateCount + $paperRejectCount;
+
+        // Build top_demo_feed_block_reasons sorted descending, named feed-style
+        $feedBlockMap = array_filter([
+            'demo_feed_blocked_by_passport'   => $demoFeedBlockedByPassport,
+            'demo_feed_blocked_by_confidence' => $demoFeedBlockedByConfidence,
+            'demo_feed_blocked_by_corridor'   => $demoFeedBlockedByCorridor,
+            'demo_feed_blocked_by_runner'     => $demoFeedBlockedByRunner,
+            'demo_feed_blocked_by_noise'      => $demoFeedBlockedByNoise,
+            'demo_feed_blocked_by_paper'      => $demoFeedBlockedByPaper,
+        ], fn($v) => $v > 0);
+        arsort($feedBlockMap);
+        $topDemoFeedBlockReasons = [];
+        foreach ($feedBlockMap as $reason => $cnt) {
+            $topDemoFeedBlockReasons[] = ['reason' => $reason, 'count' => $cnt];
+        }
+
+        // Target computation
+        $feedTargetMin = (int)(($this->config['demo_feed_targets']['demo_feed_target_min_per_run'] ?? null) ?? 3);
+        $feedTargetMax = (int)(($this->config['demo_feed_targets']['demo_feed_target_soft_max_per_run'] ?? null) ?? 10);
+        $feedMetTarget = $demoFeedExportTotal >= $feedTargetMin;
+        $feedBelowTargetBy = max(0, $feedTargetMin - $demoFeedExportTotal);
+        // Top block reason preventing target
+        $feedTopBlockPreventingTarget = null;
+        if (!$feedMetTarget) {
+            if ($demoFeedCandidateTotal === 0) {
+                $feedTopBlockPreventingTarget = 'no_scenarios_generated';
+            } elseif (!empty($topDemoFeedBlockReasons)) {
+                $feedTopBlockPreventingTarget = (string)($topDemoFeedBlockReasons[0]['reason'] ?? 'unknown');
+            } else {
+                $feedTopBlockPreventingTarget = 'unknown';
+            }
+        }
+
+        $this->realRunStats['demo_feed_candidate_total']                    = $demoFeedCandidateTotal;
+        $this->realRunStats['demo_feed_export_total']                       = $demoFeedExportTotal;
+        $this->realRunStats['demo_feed_blocked_by_downstream_policy_count'] = $demoFeedBlockedByDownstream;
+        $this->realRunStats['demo_feed_blocked_by_paper_policy_count']      = $demoFeedBlockedByPaper;
+        $this->realRunStats['demo_feed_blocked_by_passport_count']          = $demoFeedBlockedByPassport;
+        $this->realRunStats['demo_feed_blocked_by_confidence_count']        = $demoFeedBlockedByConfidence;
+        $this->realRunStats['demo_feed_blocked_by_corridor_count']          = $demoFeedBlockedByCorridor;
+        $this->realRunStats['demo_feed_blocked_by_runner_count']            = $demoFeedBlockedByRunner;
+        $this->realRunStats['demo_feed_blocked_by_noise_count']             = $demoFeedBlockedByNoise;
+        $this->realRunStats['top_demo_feed_block_reasons']                  = $topDemoFeedBlockReasons;
+        $this->realRunStats['demo_feed_target_min_per_run']                 = $feedTargetMin;
+        $this->realRunStats['demo_feed_target_soft_max_per_run']            = $feedTargetMax;
+        $this->realRunStats['demo_feed_met_target']                         = $feedMetTarget;
+        $this->realRunStats['demo_feed_below_target_by']                    = $feedBelowTargetBy;
+        $this->realRunStats['demo_feed_top_block_preventing_target']        = $feedTopBlockPreventingTarget;
+        // ── End demo feed diagnostics ─────────────────────────────────────────
+
         $stats = $this->computeStats($allRaw, $allSignals, $allScenarios);
 
         // Persist
@@ -1290,6 +1355,22 @@ final class PatternEngineService
             'shadow_export_count_from_paper'      => (int)($this->realRunStats['shadow_export_count_from_paper']      ?? 0),
             'top_paper_reject_reasons'            => (array)($this->realRunStats['top_paper_reject_reasons']          ?? []),
             'top_demo_blocked_by_paper_reasons'   => (array)($this->realRunStats['top_demo_blocked_by_paper_reasons'] ?? []),
+            // Demo feed aggregate diagnostics
+            'demo_feed_candidate_total'                    => (int)($this->realRunStats['demo_feed_candidate_total']                    ?? 0),
+            'demo_feed_export_total'                       => (int)($this->realRunStats['demo_feed_export_total']                       ?? 0),
+            'demo_feed_blocked_by_downstream_policy_count' => (int)($this->realRunStats['demo_feed_blocked_by_downstream_policy_count'] ?? 0),
+            'demo_feed_blocked_by_paper_policy_count'      => (int)($this->realRunStats['demo_feed_blocked_by_paper_policy_count']      ?? 0),
+            'demo_feed_blocked_by_passport_count'          => (int)($this->realRunStats['demo_feed_blocked_by_passport_count']          ?? 0),
+            'demo_feed_blocked_by_confidence_count'        => (int)($this->realRunStats['demo_feed_blocked_by_confidence_count']        ?? 0),
+            'demo_feed_blocked_by_corridor_count'          => (int)($this->realRunStats['demo_feed_blocked_by_corridor_count']          ?? 0),
+            'demo_feed_blocked_by_runner_count'            => (int)($this->realRunStats['demo_feed_blocked_by_runner_count']            ?? 0),
+            'demo_feed_blocked_by_noise_count'             => (int)($this->realRunStats['demo_feed_blocked_by_noise_count']             ?? 0),
+            'top_demo_feed_block_reasons'                  => (array)($this->realRunStats['top_demo_feed_block_reasons']                ?? []),
+            'demo_feed_target_min_per_run'                 => (int)($this->realRunStats['demo_feed_target_min_per_run']                 ?? 3),
+            'demo_feed_target_soft_max_per_run'            => (int)($this->realRunStats['demo_feed_target_soft_max_per_run']            ?? 10),
+            'demo_feed_met_target'                         => (bool)($this->realRunStats['demo_feed_met_target']                        ?? false),
+            'demo_feed_below_target_by'                    => (int)($this->realRunStats['demo_feed_below_target_by']                    ?? 0),
+            'demo_feed_top_block_preventing_target'        => $this->realRunStats['demo_feed_top_block_preventing_target']              ?? null,
             // Universe overlap diagnostics
             'pattern_symbols_total'                  => (int)($this->realRunStats['pattern_symbols_total']                  ?? 0),
             'passport_symbols_total'                 => (int)($this->realRunStats['passport_symbols_total']                 ?? 0),

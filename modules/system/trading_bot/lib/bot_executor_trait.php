@@ -4278,6 +4278,263 @@ private function computeEntryDeadline(array $intent): array
             // Non-blocking: passport rebuild failure must never interrupt trade close.
         }
     }
+
+    // =========================================================================
+    // Demo Slot Recovery / Turnover Pass
+    // =========================================================================
+
+    /**
+     * Attempt to free active-trade slots when demo capacity is full.
+     *
+     * Scores each active trade by close priority, then processes the top N
+     * candidates — dead shells are quarantined immediately, timeout-exceeded
+     * trades are force-closed, and exchange-gone positions are finalized
+     * locally.  Only runs in demo mode; never touches live trades.
+     *
+     * @return array{
+     *   turnover_candidates_found: int,
+     *   turnover_candidates_processed: int,
+     *   turnover_slots_freed: int,
+     *   turnover_block_reason: string,
+     *   turnover_priority_stats: array<string,int>,
+     *   turnover_ai_records_written: int,
+     *   turnover_close_priority_scores: array<string,array{score:int,reason:string,age_min:int}>
+     * }
+     */
+    protected function performDemoTurnoverPass(string $mode): array
+    {
+        $result = [
+            'turnover_candidates_found'       => 0,
+            'turnover_candidates_processed'   => 0,
+            'turnover_slots_freed'            => 0,
+            'turnover_block_reason'           => 'none',
+            'turnover_priority_stats'         => [],
+            'turnover_ai_records_written'     => 0,
+            'turnover_close_priority_scores'  => [],
+        ];
+
+        if ($mode !== 'demo') {
+            return $result;
+        }
+
+        $trades = $this->store->loadActiveTrades();
+        if (empty($trades)) {
+            $result['turnover_block_reason'] = 'no_active_trades';
+            return $result;
+        }
+
+        $dlmCfg           = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+        $dlmEnabled        = ($dlmCfg['enabled'] ?? false);
+        $closeTimeoutMin   = $dlmEnabled && ($dlmCfg['learning_close_timeout_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_close_timeout_minutes'] : 0;
+        $staleAgeMin       = $dlmEnabled && ($dlmCfg['learning_max_active_age_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_max_active_age_minutes'] : 0;
+        $preferCloseStale  = $dlmEnabled && !empty($dlmCfg['prefer_close_stale_when_learning']);
+        $maxPerRun         = max(1, (int)($dlmCfg['max_turnover_per_run'] ?? 5));
+        $nowTs             = time();
+
+        // ── Score every active trade ────────────────────────────────────────
+        $scored = [];
+        foreach ($trades as $tradeId => $trade) {
+            $openedAt = strtotime($trade['opened_at'] ?? '') ?: 0;
+            $openedTs = $openedAt > 0
+                ? $openedAt
+                : (int)($trade['opened_ts'] ?? $trade['adoption_ts'] ?? $trade['orphan_resolution_ts'] ?? 0);
+            $ageMin = $openedTs > 0 ? (int)round(($nowTs - $openedTs) / 60) : 0;
+
+            $isOrphan    = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+            $hasEntry    = (float)($trade['entry_price'] ?? 0) > 0;
+            $hasQty      = (float)($trade['position_size'] ?? $trade['qty'] ?? 0) > 0;
+            $hasSide     = in_array($trade['side'] ?? '', ['long', 'short'], true);
+            $isDeadShell = $isOrphan && (!$hasEntry || !$hasQty || !$hasSide);
+
+            $isTimeout   = $closeTimeoutMin > 0 && $ageMin >= $closeTimeoutMin;
+            $isStale     = $staleAgeMin > 0 && $ageMin >= $staleAgeMin;
+
+            $score  = 0;
+            $reason = 'age_based';
+
+            if ($isDeadShell) {
+                $score  = 100;
+                $reason = 'orphan_dead_shell';
+            } elseif ($isOrphan && $isTimeout) {
+                $score  = 90 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
+                $reason = 'orphan_adopted_timeout_exceeded';
+            } elseif ($isTimeout && $preferCloseStale) {
+                $score  = 80 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
+                $reason = 'timeout_exceeded_prefer_close';
+            } elseif ($isOrphan && $isStale) {
+                $score  = 70;
+                $reason = 'orphan_adopted_stale';
+            } elseif ($isStale) {
+                $score  = 60;
+                $reason = 'trade_stale';
+            } elseif ($ageMin > 0) {
+                $score  = min(50, (int)($ageMin / 30));
+                $reason = 'age_based';
+            }
+
+            if ($score > 0 || $isDeadShell || $isTimeout) {
+                $scored[$tradeId] = compact('trade', 'score', 'reason', 'ageMin', 'isDeadShell', 'isTimeout', 'isOrphan', 'isStale');
+                $result['turnover_close_priority_scores'][$tradeId] = [
+                    'score'   => $score,
+                    'reason'  => $reason,
+                    'age_min' => $ageMin,
+                ];
+            }
+        }
+
+        $result['turnover_candidates_found'] = count($scored);
+
+        if (empty($scored)) {
+            $result['turnover_block_reason'] = 'no_finalize_eligible_candidates';
+            return $result;
+        }
+
+        uasort($scored, static fn($a, $b) => $b['score'] <=> $a['score']);
+
+        $processed = 0;
+        $freed     = 0;
+
+        foreach ($scored as $tradeId => $info) {
+            if ($processed >= $maxPerRun) {
+                break;
+            }
+
+            $trade       = $info['trade'];
+            $isDeadShell = $info['isDeadShell'];
+            $isTimeout   = $info['isTimeout'];
+            $isOrphan    = $info['isOrphan'];
+            $reason      = $info['reason'];
+
+            $result['turnover_priority_stats'][$reason] = ($result['turnover_priority_stats'][$reason] ?? 0) + 1;
+            $processed++;
+
+            // ── Dead shell: quarantine immediately (no exchange call) ─────
+            if ($isDeadShell) {
+                $closedAtTs = $nowTs;
+                $closedTrade = array_merge($trade, [
+                    'status'                        => 'quarantined',
+                    'closed_at'                     => date('c', $closedAtTs),
+                    'closed_ts'                     => $closedAtTs,
+                    'close_ts'                      => $closedAtTs,
+                    'close_reason'                  => 'orphan_dead_shell_quarantined',
+                    'close_reason_normalized'       => 'orphan_dead_shell_quarantined',
+                    'close_detection_result'        => 'close_detected_turnover_pass_dead_shell',
+                    'close_detection_source'        => 'demo_turnover_pass',
+                    'turnover_pass_closed'          => true,
+                    'turnover_priority_reason'      => $reason,
+                    'close_priority_score'          => $info['score'],
+                    'pnl'                           => 0.0,
+                    'roi'                           => 0.0,
+                    'hold_minutes'                  => 0,
+                    'local_close_finalize_used'     => false,
+                ]);
+                $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                $freed++;
+                continue;
+            }
+
+            // ── Timeout-exceeded: force close via exchange ────────────────
+            if ($isTimeout && ($isOrphan || $preferCloseStale)) {
+                $exchangeResult = $this->closePositionOnExchange($trade);
+                $closeReason    = 'turnover_pass_timeout_close';
+                if (!($exchangeResult['success'] ?? false)) {
+                    if ($this->gateway && $this->gateway->isInitialized()) {
+                        $checkPos = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+                        if ($checkPos !== null && (float)($checkPos['size'] ?? 0) > 0) {
+                            if ($result['turnover_block_reason'] === 'none') {
+                                $result['turnover_block_reason'] = 'exchange_positions_still_open';
+                            }
+                            continue;
+                        }
+                    }
+                    $closeReason = 'turnover_pass_exchange_gone_after_close_failure';
+                }
+                $closedAtTs  = $nowTs;
+                $closedTrade = array_merge($trade, [
+                    'closed_at'                     => date('c', $closedAtTs),
+                    'closed_ts'                     => $closedAtTs,
+                    'close_ts'                      => $closedAtTs,
+                    'close_reason'                  => $closeReason,
+                    'close_reason_normalized'       => $closeReason,
+                    'close_detection_result'        => 'close_detected_turnover_pass',
+                    'close_detection_source'        => 'demo_turnover_pass',
+                    'turnover_pass_closed'          => true,
+                    'turnover_priority_reason'      => $reason,
+                    'close_priority_score'          => $info['score'],
+                    'learning_timeout_force_close'  => true,
+                ]);
+                if (method_exists($this, 'applyLocalCloseFinalize')) {
+                    $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                    $closedTrade['close_reason']            = $closeReason;
+                    $closedTrade['close_reason_normalized'] = $closeReason;
+                }
+                $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                if ($aiWritten) {
+                    $result['turnover_ai_records_written']++;
+                }
+                $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                $freed++;
+                continue;
+            }
+
+            // ── Check if already closed on exchange ───────────────────────
+            if (!$this->gateway || !$this->gateway->isInitialized()) {
+                if ($result['turnover_block_reason'] === 'none') {
+                    $result['turnover_block_reason'] = 'local_finalize_not_triggered';
+                }
+                continue;
+            }
+            $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+            if ($position === null || (float)($position['size'] ?? 0) <= 0) {
+                $closedAtTs  = $nowTs;
+                $closeReason = 'turnover_pass_exchange_gone';
+                $closedTrade = array_merge($trade, [
+                    'closed_at'                     => date('c', $closedAtTs),
+                    'closed_ts'                     => $closedAtTs,
+                    'close_ts'                      => $closedAtTs,
+                    'close_reason'                  => $closeReason,
+                    'close_reason_normalized'       => $closeReason,
+                    'close_detection_result'        => 'close_detected_turnover_pass_exchange_gone',
+                    'close_detection_source'        => 'demo_turnover_pass',
+                    'turnover_pass_closed'          => true,
+                    'turnover_priority_reason'      => $reason,
+                    'close_priority_score'          => $info['score'],
+                ]);
+                if (method_exists($this, 'applyLocalCloseFinalize')) {
+                    $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                    $closedTrade['close_reason']            = $closeReason;
+                    $closedTrade['close_reason_normalized'] = $closeReason;
+                }
+                $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                if ($aiWritten) {
+                    $result['turnover_ai_records_written']++;
+                }
+                $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                $freed++;
+            } else {
+                if ($result['turnover_block_reason'] === 'none') {
+                    $result['turnover_block_reason'] = 'exchange_positions_still_open';
+                }
+            }
+        }
+
+        $result['turnover_candidates_processed'] = $processed;
+        $result['turnover_slots_freed']          = $freed;
+
+        if ($freed === 0 && $result['turnover_block_reason'] === 'none') {
+            $result['turnover_block_reason'] = 'capacity_recovery_failed';
+        } elseif ($freed > 0 && $result['turnover_block_reason'] === 'capacity_recovery_failed') {
+            $result['turnover_block_reason'] = 'none';
+        }
+
+        return $result;
+    }
 }
 
 /* RULES

@@ -506,6 +506,26 @@ $auditOrphanUnresolved   = $bot_demo_truth_audit['orphan_unresolved_blocking_cou
 $orphanResolvedAsLocal   = $bot_last_run['orphan_positions_resolved_as_local_ownership_this_run'] ?? null;
 $orphanStillBlocking     = $bot_last_run['orphan_positions_still_blocking_this_run']              ?? null;
 $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trade_count']         ?? null;
+// Capacity / Turnover diagnostics (this run)
+$demoCapacityFullRun     = $bot_last_run['demo_capacity_full']                       ?? null;
+$demoCapSlotsTotalRun    = $bot_last_run['demo_capacity_slots_total']                ?? null;
+$demoCapSlotsBeforeRun   = $bot_last_run['demo_capacity_slots_used_before_turnover'] ?? null;
+$demoCapSlotsFreedRun    = $bot_last_run['demo_capacity_slots_freed_this_run']       ?? null;
+$demoCapSlotsAfterRun    = $bot_last_run['demo_capacity_slots_used_after_turnover']  ?? null;
+$demoTurnoverModeRun     = $bot_last_run['demo_turnover_mode_triggered']             ?? null;
+$demoTurnoverCandRun     = $bot_last_run['demo_turnover_candidates_count']           ?? null;
+$demoTurnoverProcRun     = $bot_last_run['demo_turnover_processed_count']            ?? null;
+$demoTurnoverFreedRun    = $bot_last_run['demo_turnover_freed_capacity']             ?? null;
+$demoTurnoverBlockRun    = (string)($bot_last_run['demo_turnover_block_reason']      ?? '');
+$demoTurnoverPriStats    = (array)($bot_last_run['demo_turnover_priority_stats']     ?? []);
+$demoTurnoverAiRun       = $bot_last_run['demo_turnover_pass_ai_records_written']    ?? null;
+// Capacity fields from truth audit
+$auditCapFull            = $bot_demo_truth_audit['capacity_full']                    ?? null;
+$auditCapSlotsTotal      = $bot_demo_truth_audit['capacity_slots_total']             ?? null;
+$auditCapSlotsUsed       = $bot_demo_truth_audit['capacity_slots_used']              ?? null;
+$auditCapSlotsFreed      = $bot_demo_truth_audit['capacity_slots_freed_this_run']    ?? null;
+$auditRecoverableCount   = $bot_demo_truth_audit['recoverable_active_trades_count']  ?? null;
+$auditTurnoverCandCount  = $bot_demo_truth_audit['turnover_candidates_count']        ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -1170,6 +1190,65 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
         <?php endif; ?>
         <?php endif; ?>
         <?php endif; ?>
+
+        <?php
+        // ── Capacity / Turnover sub-section ─────────────────────────────────
+        $hasCapTurnoverData = $demoCapacityFullRun !== null || $demoTurnoverModeRun !== null
+            || $auditCapFull !== null || $demoCapSlotsTotalRun !== null;
+        if ($hasCapTurnoverData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Capacity / Turnover</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $capSlotsSat = ($demoCapacityFullRun === true) ? false : ($demoCapacityFullRun === false ? true : null);
+            $capCards = [
+                ['label' => 'Capacity Full',         'value' => $demoCapacityFullRun !== null ? ($demoCapacityFullRun ? 'YES' : 'NO') : (($auditCapFull !== null) ? ($auditCapFull ? 'YES' : 'NO') : 'n/a'),
+                 'ok' => $demoCapacityFullRun !== null ? !$demoCapacityFullRun : ($auditCapFull !== null ? !$auditCapFull : null)],
+                ['label' => 'Slots Total',           'value' => ($demoCapSlotsTotalRun ?? $auditCapSlotsTotal) !== null ? (string)($demoCapSlotsTotalRun ?? $auditCapSlotsTotal) : 'n/a', 'ok' => null],
+                ['label' => 'Slots Used (before)',   'value' => ($demoCapSlotsBeforeRun ?? $auditCapSlotsUsed) !== null ? (string)($demoCapSlotsBeforeRun ?? $auditCapSlotsUsed) : 'n/a', 'ok' => null],
+                ['label' => 'Slots Freed This Run',  'value' => ($demoCapSlotsFreedRun ?? $auditCapSlotsFreed) !== null ? (string)($demoCapSlotsFreedRun ?? $auditCapSlotsFreed) : 'n/a',
+                 'ok' => ($demoCapSlotsFreedRun ?? 0) > 0 ? true : (($demoCapacityFullRun === true && ($demoCapSlotsFreedRun ?? 0) === 0) ? false : null)],
+                ['label' => 'Turnover Mode',         'value' => $demoTurnoverModeRun !== null ? ($demoTurnoverModeRun ? 'YES' : 'NO') : 'n/a',
+                 'ok' => $demoTurnoverModeRun !== null ? $demoTurnoverModeRun : null],
+                ['label' => 'Turnover Candidates',   'value' => ($demoTurnoverCandRun ?? $auditTurnoverCandCount) !== null ? (string)($demoTurnoverCandRun ?? $auditTurnoverCandCount) : 'n/a', 'ok' => null],
+                ['label' => 'Turnover Processed',    'value' => $demoTurnoverProcRun !== null ? (string)$demoTurnoverProcRun : 'n/a', 'ok' => null],
+                ['label' => 'Slots Freed by Pass',   'value' => $demoCapSlotsFreedRun !== null ? (string)$demoCapSlotsFreedRun : 'n/a',
+                 'ok' => ($demoCapSlotsFreedRun ?? 0) > 0 ? true : (($demoTurnoverModeRun && ($demoCapSlotsFreedRun ?? 0) === 0) ? false : null)],
+                ['label' => 'Recoverable Active',    'value' => $auditRecoverableCount !== null ? (string)$auditRecoverableCount : 'n/a',
+                 'ok' => ($auditRecoverableCount ?? 0) > 0 ? null : true],
+                ['label' => 'Turnover AI Written',   'value' => $demoTurnoverAiRun !== null ? (string)$demoTurnoverAiRun : 'n/a',
+                 'ok' => ($demoTurnoverAiRun ?? 0) > 0 ? true : null],
+                ['label' => 'Freed Cap This Run',    'value' => $demoTurnoverFreedRun !== null ? ($demoTurnoverFreedRun ? 'YES' : 'NO') : 'n/a',
+                 'ok' => $demoTurnoverFreedRun !== null ? (bool)$demoTurnoverFreedRun : null],
+                ['label' => 'Slots Used (after)',    'value' => $demoCapSlotsAfterRun !== null ? (string)$demoCapSlotsAfterRun : 'n/a', 'ok' => null],
+            ];
+            foreach ($capCards as $cc):
+                $cls = 'neutral';
+                if ($cc['ok'] === true)  $cls = 'positive';
+                if ($cc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$cc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($cc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($demoTurnoverBlockRun !== '' && $demoTurnoverBlockRun !== 'none'): ?>
+        <div class="alert alert-warning py-1 px-3 mt-1 mb-1" style="font-size:.8rem;">
+            <strong>Turnover Block Reason:</strong> <code><?= htmlspecialchars($demoTurnoverBlockRun) ?></code>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($demoTurnoverPriStats)): ?>
+        <div class="mt-1 small text-muted">
+            <strong>Priority Reasons:</strong>
+            <?php foreach ($demoTurnoverPriStats as $priReason => $priCount): ?>
+            <span class="badge bg-secondary me-1"><?= htmlspecialchars($priReason) ?>: <?= (int)$priCount ?></span>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        <?php endif; // $hasCapTurnoverData ?>
     </div>
 </div>
 <?php endif; ?>

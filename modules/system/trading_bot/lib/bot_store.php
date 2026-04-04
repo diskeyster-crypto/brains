@@ -814,7 +814,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
      * @param int $closedThisRun                Trades closed during the current run (from updateActivePositions)
      * @return array<string,mixed>
      */
-    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0, int $feedAvailableCount = 0, int $feedSelectedCount = 0, int $positionsOpenedThisRun = 0, int $closedThisRun = 0, int $reconcileBlockedThisRun = 0): array
+    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0, int $feedAvailableCount = 0, int $feedSelectedCount = 0, int $positionsOpenedThisRun = 0, int $closedThisRun = 0, int $reconcileBlockedThisRun = 0, bool $capacityFull = false, int $capacitySlotsTotal = 0, int $capacitySlotsUsed = 0, int $capacitySlotsFreed = 0): array
     {
         $closedDir    = $this->storageDir . '/trades/closed';
         $activeDir    = $this->storageDir . '/trades/active';
@@ -1107,6 +1107,20 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $pctMissingRoi         = $closedCount > 0 ? round($missingRoi / $closedCount * 100, 1) : 0.0;
         $completenessRate      = $closedCount > 0 ? round($completeClosedCount / $closedCount * 100, 1) : 0.0;
 
+        // Derive capacity full state from store config when not provided via runtime params
+        $storeMaxCap    = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['max_concurrent_demo_positions'] ?? 0) : 0;
+        $capacityFullDerived = $storeMaxCap > 0 && $activeCount >= $storeMaxCap;
+        $capacityFullEffective = $capacityFull || $capacityFullDerived;
+        // Use store-derived slot count when runtime params are absent
+        if ($capacitySlotsTotal === 0 && $storeMaxCap > 0) {
+            $capacitySlotsTotal = $storeMaxCap;
+        }
+        if ($capacitySlotsUsed === 0) {
+            $capacitySlotsUsed = $activeCount;
+        }
+        // Recoverable = stale + timeout-eligible + dead shells (can be freed by turnover pass)
+        $recoverableCount = $staleCount + $orphanDeadShellCount + $orphanAdoptedTimeoutEligibleCount;
+
         // ── Bottleneck classification ────────────────────────────────────────
         $primaryBottleneck       = 'unknown';
         $primaryBottleneckReason = 'Insufficient data to classify bottleneck yet.';
@@ -1132,6 +1146,24 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $primaryBottleneck       = 'adopted_orphans_missing_timing';
             $primaryBottleneckReason = "{$orphanAdoptedMissingTimingCount} adopted orphan trade(s) have no valid timing baseline. They cannot age out or be marked stale/timeout-eligible. Check exchange position createdTime availability.";
             $recommendedNextFixArea  = 'audit_adopted_orphan_timing_fields';
+        } elseif ($capacityFullEffective && $positionsOpenedThisRun === 0 && $feedIsAvailable) {
+            // Capacity is saturated — classify by recoverability
+            if ($capacitySlotsFreed > 0) {
+                $primaryBottleneck       = 'demo_capacity_recovered_waiting_for_next_cycle';
+                $primaryBottleneckReason = "Demo capacity full ({$capacitySlotsUsed}/{$capacitySlotsTotal}): {$capacitySlotsFreed} slot(s) freed by turnover pass this run. New opens should proceed in next cycle.";
+                $recommendedNextFixArea  = 'wait_for_demo_trades_to_close';
+                $primaryExecutionBlocker = 'awaiting_more_cycles_for_closure';
+            } elseif ($recoverableCount > 0) {
+                $primaryBottleneck       = 'demo_capacity_full_turnover_needed';
+                $primaryBottleneckReason = "Demo capacity full ({$capacitySlotsUsed}/{$capacitySlotsTotal}): {$recoverableCount} recoverable slot(s) identified (stale/timeout-eligible/dead-shells). Turnover pass ran but did not free slots — verify learning_close_timeout_minutes and prefer_close_stale_when_learning config.";
+                $recommendedNextFixArea  = 'check_turnover_config_and_exchange_close';
+                $primaryExecutionBlocker = 'execution_blocked_by_capacity';
+            } else {
+                $primaryBottleneck       = 'demo_capacity_full_no_recoverable_slots';
+                $primaryBottleneckReason = "Demo capacity full ({$capacitySlotsUsed}/{$capacitySlotsTotal}): no stale or timeout-eligible trades found. Active positions are still within allowed age. Wait for natural closes or reduce learning_close_timeout_minutes.";
+                $recommendedNextFixArea  = 'wait_for_active_trades_to_close_naturally';
+                $primaryExecutionBlocker = 'execution_blocked_by_capacity';
+            }
         } elseif ($reconcileBlockedThisRun > 0 && $closedCount === 0 && $activeCount === 0) {
             // Reconcile failures are the dominant blocker — orders submitted but positions not saved
             $primaryBottleneck       = 'demo_feed_available_but_execution_blocked';
@@ -1291,6 +1323,14 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'primary_demo_closure_bottleneck_reason'   => $primaryBottleneckReason,
             'recommended_turnover_fix_area'            => $recommendedNextFixArea,
             'recommended_next_fix_area'                => $recommendedNextFixArea,
+            // Capacity saturation fields
+            'capacity_full'                            => $capacityFullEffective,
+            'capacity_slots_total'                     => $capacitySlotsTotal,
+            'capacity_slots_used'                      => $capacitySlotsUsed,
+            'capacity_slots_freed_this_run'            => $capacitySlotsFreed,
+            'recoverable_active_trades_count'          => $recoverableCount,
+            'stale_active_trades_count'                => $staleCount,
+            'turnover_candidates_count'                => $staleCount + $orphanAdoptedTimeoutEligibleCount,
             'audited_at'                               => date('c'),
         ];
     }

@@ -694,6 +694,19 @@ final class TradingBotService
                 $demoSelectedAttemptedCount   = 0;
                 $demoOpenedCount              = 0;
                 $demoLoopStoppedReason        = 'selected_feed_exhausted';
+                // Capacity / turnover tracking variables (demo mode only)
+                $demoCapacityFull             = false;
+                $demoCapacitySlotsTotalEff    = 0;
+                $demoCapacitySlotsBefore      = 0;
+                $demoCapacitySlotsFreed       = 0;
+                $demoCapacitySlotsAfter       = 0;
+                $demoTurnoverModeTriggered    = false;
+                $demoTurnoverCandidatesCount  = 0;
+                $demoTurnoverProcessedCount   = 0;
+                $demoTurnoverFreedCapacity    = false;
+                $demoTurnoverBlockReason      = 'none';
+                $demoTurnoverPriorityStats    = [];
+                $demoTurnoverAiWritten        = 0;
 
                 // demo_learning_mode: cap max concurrent positions + override attempt budget
                 if ($mode === 'demo') {
@@ -713,6 +726,36 @@ final class TradingBotService
                         $demoMaxNewPerRun = (int)($dlmCfg['max_new_positions_per_run'] ?? 3);
                         if ($demoMaxNewPerRun <= 0) { $demoMaxNewPerRun = 3; }
                         $demoOpenBudgetEffective = min($demoMaxNewPerRun, $demoCapRemaining);
+
+                        // ── Capacity saturation: trigger slot-recovery pass ──────────
+                        // When no capacity remains, attempt to free slots BEFORE executing
+                        // new signals so that at least some new opens can proceed this run.
+                        if ($demoCapRemaining === 0 && $demoMaxCap > 0) {
+                            $demoCapacityFull          = true;
+                            $demoCapacitySlotsTotalEff = $demoMaxCap;
+                            $demoCapacitySlotsBefore   = $demoActiveNow;
+
+                            if (method_exists($this, 'performDemoTurnoverPass')) {
+                                $demoTurnoverModeTriggered = true;
+                                $turnoverPassResult        = $this->performDemoTurnoverPass($mode);
+                                $demoTurnoverCandidatesCount = (int)($turnoverPassResult['turnover_candidates_found']     ?? 0);
+                                $demoTurnoverProcessedCount  = (int)($turnoverPassResult['turnover_candidates_processed']  ?? 0);
+                                $demoTurnoverAiWritten       = (int)($turnoverPassResult['turnover_ai_records_written']    ?? 0);
+                                $demoTurnoverBlockReason     = (string)($turnoverPassResult['turnover_block_reason']       ?? 'none');
+                                $demoTurnoverPriorityStats   = (array)($turnoverPassResult['turnover_priority_stats']      ?? []);
+                                $slotsFreedByPass            = (int)($turnoverPassResult['turnover_slots_freed']           ?? 0);
+                                if ($slotsFreedByPass > 0) {
+                                    $demoCapacitySlotsFreed  = $slotsFreedByPass;
+                                    // Re-read active count after turnover pass freed some slots
+                                    $demoActiveNow           = count($this->store->loadActiveTrades());
+                                    $demoCapRemaining        = max(0, $demoMaxCap - $demoActiveNow);
+                                    $demoOpenBudgetEffective = min($demoMaxNewPerRun, $demoCapRemaining);
+                                    $demoCapacityFull        = ($demoCapRemaining === 0);
+                                    $demoTurnoverFreedCapacity = true;
+                                }
+                            }
+                            $demoCapacitySlotsAfter = $demoActiveNow;
+                        }
                     }
                 }
 
@@ -907,6 +950,19 @@ final class TradingBotService
                     $result['demo_selected_attempted_count']            = $demoSelectedAttemptedCount;
                     $result['demo_opened_count']                        = $demoOpenedCount;
                     $result['demo_loop_stopped_reason']                 = $demoLoopStoppedReason;
+                    // Capacity / turnover diagnostics
+                    $result['demo_capacity_full']                       = $demoCapacityFull;
+                    $result['demo_capacity_slots_total']                = $demoCapacitySlotsTotalEff;
+                    $result['demo_capacity_slots_used_before_turnover'] = $demoCapacitySlotsBefore;
+                    $result['demo_capacity_slots_freed_this_run']       = $demoCapacitySlotsFreed;
+                    $result['demo_capacity_slots_used_after_turnover']  = $demoCapacitySlotsAfter;
+                    $result['demo_turnover_mode_triggered']             = $demoTurnoverModeTriggered;
+                    $result['demo_turnover_candidates_count']           = $demoTurnoverCandidatesCount;
+                    $result['demo_turnover_processed_count']            = $demoTurnoverProcessedCount;
+                    $result['demo_turnover_freed_capacity']             = $demoTurnoverFreedCapacity;
+                    $result['demo_turnover_block_reason']               = $demoTurnoverBlockReason;
+                    $result['demo_turnover_priority_stats']             = $demoTurnoverPriorityStats;
+                    $result['demo_turnover_pass_ai_records_written']    = $demoTurnoverAiWritten;
                 }
 
             }
@@ -1372,7 +1428,11 @@ final class TradingBotService
                     (int)($result['demo_feed_selected_count'] ?? 0),
                     (int)($result['positions_opened'] ?? 0),
                     (int)($result['demo_trades_closed_this_run'] ?? 0),
-                    (int)($result['demo_reconcile_blocked_this_run'] ?? 0)
+                    (int)($result['demo_reconcile_blocked_this_run'] ?? 0),
+                    (bool)($result['demo_capacity_full'] ?? false),
+                    (int)($result['demo_capacity_slots_total'] ?? 0),
+                    (int)($result['demo_capacity_slots_used_before_turnover'] ?? 0),
+                    (int)($result['demo_capacity_slots_freed_this_run'] ?? 0)
                 );
                 $result['demo_truth_audit']              = $demoTruthAudit;
                 $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];

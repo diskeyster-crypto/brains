@@ -1464,7 +1464,9 @@ final class TradingBotService
                         $demoBlockedByReconcile += (int)$_rCnt;
                     }
                 }
-                // Orphan-blocked rejections (includes both "blocked" and "adopted then busy")
+                // Orphan-blocked rejections: only count TRUE unresolved orphan blocks.
+                // 'symbol_busy_local_adopted_trade' means the orphan is already owned locally —
+                // it must NOT inflate the orphan blocker count.
                 $demoBlockedByOrphan = 0;
                 foreach ([
                     'orphan_exchange_position_open_local_missing',
@@ -1479,6 +1481,21 @@ final class TradingBotService
                 }
                 // Orphan positions adopted this run (creates local record, prevents future orphan blocks)
                 $demoOrphansAdopted = (int)($result['rejection_reason_stats']['orphan_adopted_then_symbol_busy'] ?? 0);
+                // Orphan resolved as local ownership: the adopted trade was already in local active
+                // storage and the execution guard correctly identified it as locally-owned.
+                $demoOrphanResolvedAsLocal = (int)($result['rejection_reason_stats']['symbol_busy_local_adopted_trade'] ?? 0);
+                // Unresolved orphan: detected on exchange with no valid local record
+                $demoOrphanStillBlocking = 0;
+                foreach ([
+                    'orphan_exchange_position_open_local_missing',
+                    'orphan_exchange_position_stale_unreconciled',
+                    'orphan_adoption_missing_entry_price',
+                    'orphan_adoption_missing_qty',
+                    'orphan_adoption_missing_side',
+                    'orphan_adoption_insufficient_data',
+                ] as $_unr) {
+                    $demoOrphanStillBlocking += (int)($result['rejection_reason_stats'][$_unr] ?? 0);
+                }
 
                 $demoBlockedByLateEntry  = (int)($result['intents_rejected_late_entry_count'] ?? 0);
                 $lateEntryThreshold      = (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25);
@@ -1508,6 +1525,10 @@ final class TradingBotService
                 $result['orphan_positions_blocked_this_run']   = (int)($result['orphan_adoption_failed_count'] ?? 0);
                 $result['orphan_positions_adopted_this_run']   = $demoOrphansAdopted;
                 $result['orphan_positions_cleared_this_run']   = 0; // cleared via reconcile path, not here
+                // Ownership resolution counters
+                $result['orphan_positions_resolved_as_local_ownership_this_run'] = $demoOrphanResolvedAsLocal;
+                $result['orphan_positions_still_blocking_this_run']              = $demoOrphanStillBlocking;
+                $result['symbols_busy_due_to_local_adopted_trade_count']         = $demoOrphanResolvedAsLocal;
 
                 // ── Specific execution blocker label ─────────────────────────────
                 // Determines which stage is the dominant blocker this run.

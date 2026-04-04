@@ -674,6 +674,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $orphanAdoptedCount   = 0;  // adopted orphan trades (reusable)
         $orphanDeadShellCount = 0;  // adopted orphan trades missing critical fields (dead shells)
         $healthyActiveCount   = 0;  // normal active trades (not orphan-adopted)
+        $orphanResolvedCount  = 0;  // adopted orphan trades with orphan_resolved_local_ownership=true
 
         foreach ($activeFiles as $af) {
             $d = @json_decode((string)@file_get_contents($af), true);
@@ -695,7 +696,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 }
             }
 
-            // Classify trade as healthy, orphan-adopted-reusable, or orphan dead shell.
+            // Classify trade as healthy, orphan-adopted-reusable, orphan dead shell,
+            // or orphan-resolved (adopted with explicit local-ownership flag).
             $isOrphanAdopted = !empty($d['is_orphan_adopted']) || !empty($d['adopted_from_exchange_orphan']);
             if ($isOrphanAdopted) {
                 $hasEntryPrice = (float)($d['entry_price'] ?? 0) > 0;
@@ -703,6 +705,10 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $hasSide       = in_array($d['side'] ?? '', ['long', 'short'], true);
                 if ($hasEntryPrice && $hasQty && $hasSide) {
                     $orphanAdoptedCount++;
+                    // Count as resolved if it carries the local-ownership marker.
+                    if (!empty($d['orphan_resolved_local_ownership'])) {
+                        $orphanResolvedCount++;
+                    }
                 } else {
                     $orphanDeadShellCount++;
                 }
@@ -860,6 +866,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $primaryBottleneck       = 'orphan_dead_shells_blocking_truth_loop';
                 $primaryBottleneckReason = "{$orphanDeadShellCount} orphan dead shells dominate active trades ({$activeCount} total, {$healthyActiveCount} healthy). Dead shells cannot close or generate AI data.";
                 $recommendedNextFixArea  = 'audit_orphan_adopted_dead_shells';
+            } elseif ($orphanAdoptedCount > 0 && $orphanDeadShellCount === 0
+                      && ($healthyActiveCount + $orphanAdoptedCount) === $activeCount) {
+                // All actives are valid adopted orphan trades — they are locally owned and will
+                // close normally; the loop is cycling but no positions have closed yet.
+                $primaryBottleneck       = 'adopted_orphans_awaiting_close';
+                $primaryBottleneckReason = "{$orphanAdoptedCount} active trade(s) are adopted orphan positions (local ownership resolved, {$orphanResolvedCount} marked resolved). They are in normal active lifecycle but no closures recorded yet. Waiting for exchange close events or stale-timeout.";
+                $recommendedNextFixArea  = 'wait_for_adopted_orphan_trades_to_close';
             } elseif ($closedThisRun === 0 && $staleCount > 0) {
                 $primaryBottleneck       = 'close_detection_too_weak';
                 $primaryBottleneckReason = "Active trades exist ({$activeCount}, {$staleCount} stale ≥{$learningMaxActiveAgeMinutes}min) but none have closed. Check learning_close_timeout_minutes (force-close stale trades when exceeded) and reconcile pipeline.";
@@ -899,6 +912,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'active_trades_count'                      => $activeCount,
             'healthy_active_trades_count'              => $healthyActiveCount,
             'orphan_adopted_active_trades_count'       => $orphanAdoptedCount,
+            'orphan_resolved_active_trades_count'      => $orphanResolvedCount,
+            'orphan_unresolved_blocking_count'         => $orphanBlockingCount,
             'orphan_dead_shells_count'                 => $orphanDeadShellCount,
             'closed_trades_count'                      => $closedCount,
             'ai_dataset_count'                         => $aiCount,

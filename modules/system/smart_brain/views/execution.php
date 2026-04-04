@@ -414,6 +414,12 @@ $orphanAdoptionDeadShell = $bot_last_run['orphan_adoption_dead_shell_count'] ?? 
 $auditHealthyActive      = $bot_demo_truth_audit['healthy_active_trades_count']        ?? null;
 $auditOrphanAdopted      = $bot_demo_truth_audit['orphan_adopted_active_trades_count'] ?? null;
 $auditOrphanDeadShells   = $bot_demo_truth_audit['orphan_dead_shells_count']           ?? null;
+$auditOrphanResolved     = $bot_demo_truth_audit['orphan_resolved_active_trades_count'] ?? null;
+$auditOrphanUnresolved   = $bot_demo_truth_audit['orphan_unresolved_blocking_count']   ?? null;
+// Orphan ownership resolution counters (this run)
+$orphanResolvedAsLocal   = $bot_last_run['orphan_positions_resolved_as_local_ownership_this_run'] ?? null;
+$orphanStillBlocking     = $bot_last_run['orphan_positions_still_blocking_this_run']              ?? null;
+$symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trade_count']         ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -567,6 +573,18 @@ $auditOrphanDeadShells   = $bot_demo_truth_audit['orphan_dead_shells_count']    
                     'ok' => null],
                 ['label' => 'Active: Dead Shells',   'value' => $auditOrphanDeadShells !== null ? (string)$auditOrphanDeadShells : 'n/a',
                     'ok' => $auditOrphanDeadShells === 0 ? true : ($auditOrphanDeadShells > 0 ? false : null)],
+                // Ownership resolution
+                ['label' => 'Orphan→Local Owned',    'value' => $auditOrphanResolved !== null ? (string)$auditOrphanResolved : 'n/a',
+                    'ok' => ($auditOrphanResolved ?? 0) > 0 ? true : null],
+                ['label' => 'Orphan Unresolved',     'value' => $auditOrphanUnresolved !== null ? (string)$auditOrphanUnresolved : 'n/a',
+                    'ok' => $auditOrphanUnresolved === 0 ? true : ($auditOrphanUnresolved > 0 ? false : null)],
+                // This-run ownership resolution
+                ['label' => 'Run: Resolved Local',   'value' => $orphanResolvedAsLocal !== null ? (string)$orphanResolvedAsLocal : 'n/a',
+                    'ok' => ($orphanResolvedAsLocal ?? 0) > 0 ? true : null],
+                ['label' => 'Run: Still Blocking',   'value' => $orphanStillBlocking !== null ? (string)$orphanStillBlocking : 'n/a',
+                    'ok' => $orphanStillBlocking === 0 ? true : ($orphanStillBlocking > 0 ? false : null)],
+                ['label' => 'Busy via Adopted',      'value' => $symbolsBusyAdopted !== null ? (string)$symbolsBusyAdopted : 'n/a',
+                    'ok' => ($symbolsBusyAdopted ?? 0) > 0 ? true : null],
             ];
             foreach ($adoptCards as $ac):
                 $cls = 'neutral';
@@ -1047,7 +1065,8 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         <?php
         $auditAlertClass = 'alert-warning';
         if ($auditBottleneck === 'none_loop_is_cycling') $auditAlertClass = 'alert-success';
-        elseif ($auditBottleneck === 'orphan_positions_blocking_demo') $auditAlertClass = 'alert-danger';
+        elseif (in_array($auditBottleneck, ['orphan_positions_blocking_demo','orphan_dead_shells_blocking_truth_loop'], true)) $auditAlertClass = 'alert-danger';
+        elseif ($auditBottleneck === 'adopted_orphans_awaiting_close') $auditAlertClass = 'alert-info';
         ?>
         <div class="alert <?= $auditAlertClass ?> py-2 mb-2 small">
             <strong>Bottleneck:</strong> <code><?= htmlspecialchars($auditBottleneck) ?></code><br>
@@ -1062,6 +1081,8 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             <?php
             $orphanAuditCards = [
                 ['label' => 'Orphans Blocking (run)', 'value' => (string)($auditOrphanDetected ?? 0), 'ok' => ($auditOrphanDetected ?? 0) === 0 ? true : false],
+                ['label' => 'Orphan→Local Resolved',  'value' => $auditOrphanResolved !== null ? (string)$auditOrphanResolved : 'n/a', 'ok' => ($auditOrphanResolved ?? 0) > 0 ? true : null],
+                ['label' => 'Orphan Unresolved',      'value' => $auditOrphanUnresolved !== null ? (string)$auditOrphanUnresolved : 'n/a', 'ok' => $auditOrphanUnresolved === 0 ? true : ($auditOrphanUnresolved > 0 ? false : null)],
                 ['label' => 'Primary Exec Blocker',   'value' => $auditExecBlocker !== '' ? htmlspecialchars($auditExecBlocker) : 'none', 'ok' => ($auditExecBlocker === '' || $auditExecBlocker === 'none') ? true : false],
             ];
             foreach ($orphanAuditCards as $oac):

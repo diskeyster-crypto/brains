@@ -288,6 +288,12 @@ trait BotExecutorTrait
                                         'orphan_adoption_succeeded'        => true,
                                         'orphan_adoption_data_quality'     => 'sufficient',
                                         'orphan_adoption_reusable_as_active_trade' => true,
+                                        // Resolved-ownership markers — future execution checks will find this
+                                        // trade in local active storage and treat the symbol as owned locally,
+                                        // NOT as an unresolved orphan.
+                                        'orphan_resolved_local_ownership'  => true,
+                                        'orphan_resolution_ts'             => $adoptedNowTs,
+                                        'orphan_resolution_reason'         => 'adopted_into_local_active_trade',
                                     ];
                                     $this->store->saveActiveTrade($adoptedTrade);
                                     // Invalidate position cache so this symbol is seen as local next check
@@ -300,6 +306,8 @@ trait BotExecutorTrait
                                     $result['orphan_adoption_succeeded']            = true;
                                     $result['orphan_adoption_data_quality']         = 'sufficient';
                                     $result['orphan_adoption_reusable_as_active_trade'] = true;
+                                    $result['orphan_resolved_local_ownership']      = true;
+                                    $result['orphan_resolution_reason']             = 'adopted_into_local_active_trade';
                                 } else {
                                     // Insufficient data — do not create a dead shell.
                                     // The symbol will be blocked for this run with a precise reason.
@@ -311,8 +319,13 @@ trait BotExecutorTrait
                                 }
                             }
 
+                            // Use a message that reflects actual state: after adoption the orphan is
+                            // locally owned so the message must not say "Orphan position on exchange".
+                            $orphanRejectMsg = ($orphanReason === 'orphan_adopted_then_symbol_busy')
+                                ? "Orphan adopted as local trade for {$symbol} — symbol now busy (this signal deferred)"
+                                : "Orphan position on exchange for {$symbol} (size={$exSize})";
                             return $this->rejectIntent($intent, $orphanReason,
-                                "Orphan position on exchange for {$symbol} (size={$exSize})", $result, [
+                                $orphanRejectMsg, $result, [
                                     'blocked_symbol'    => $symbol,
                                     'orphan_reason'     => $orphanReason,
                                     'exchange_position' => [
@@ -326,22 +339,42 @@ trait BotExecutorTrait
                                     'intent_side' => $side,
                                 ]);
                         } else {
-                            // Symbol is already being tracked - reject as busy
+                            // Symbol is already being tracked locally — reject as busy.
+                            // Detect whether the local trade is an adopted orphan so we can use
+                            // a precise reason code and expose that the orphan is resolved.
                             $result['execution_stage'] = 'execution_guard_blocked';
-                            // Find the active trade for linkage
-                            $relatedTrade = null;
+                            $relatedTrade    = null;
+                            $isAdoptedOrphan = false;
                             foreach ($activeTrades as $at) {
                                 if (($at['symbol'] ?? '') === $symbol) {
-                                    $relatedTrade = $at;
+                                    $relatedTrade    = $at;
+                                    $isAdoptedOrphan = !empty($at['adopted_from_exchange_orphan'])
+                                        || !empty($at['is_orphan_adopted']);
                                     break;
                                 }
                             }
-                            return $this->rejectIntent($intent, 'skipped_symbol_busy', 
+                            if ($isAdoptedOrphan) {
+                                // The local trade is a previously-adopted orphan: this symbol is
+                                // owned locally.  Emit a distinct reason so it is NOT counted as an
+                                // unresolved orphan blocker in diagnostics.
+                                $result['orphan_resolved_local_ownership'] = true;
+                                $result['orphan_resolution_reason']        = 'adopted_into_local_active_trade';
+                                return $this->rejectIntent($intent, 'symbol_busy_local_adopted_trade',
+                                    "symbol_busy:{$symbol} — adopted orphan trade exists (local ownership resolved)", $result, [
+                                        'blocked_symbol'                  => $symbol,
+                                        'orphan_resolved_local_ownership' => true,
+                                        'orphan_resolution_reason'        => 'adopted_into_local_active_trade',
+                                        'related_active_trade_id'         => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
+                                        'related_position_symbol'         => $symbol,
+                                        'open_since'                      => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                    ]);
+                            }
+                            return $this->rejectIntent($intent, 'skipped_symbol_busy',
                                 "symbol_busy:{$symbol} — already has active exchange position and local trade", $result, [
-                                    'blocked_symbol' => $symbol,
-                                    'related_active_trade_id' => $relatedTrade['id'] ?? null,
+                                    'blocked_symbol'          => $symbol,
+                                    'related_active_trade_id' => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
                                     'related_position_symbol' => $symbol,
-                                    'open_since' => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                    'open_since'              => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
                                 ]);
                         }
                     }

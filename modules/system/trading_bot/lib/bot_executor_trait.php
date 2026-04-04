@@ -1535,6 +1535,14 @@ trait BotExecutorTrait
             'oldest_active_trade_minutes' => null,
             'finalized_from_exchange_this_run' => 0,
             'finalized_locally_this_run' => 0,
+            // Adopted orphan turnover counters (demo only)
+            'adopted_orphans_active_before' => 0,
+            'adopted_orphans_closed_this_run' => 0,
+            'adopted_orphans_stale_this_run' => 0,
+            'adopted_orphans_finalized_locally_this_run' => 0,
+            'adopted_orphans_finalized_from_exchange_this_run' => 0,
+            'adopted_orphans_close_failures_this_run' => 0,
+            'adopted_orphan_close_failure_reasons' => [],
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1542,6 +1550,15 @@ trait BotExecutorTrait
         }
         
         $trades = $this->store->loadActiveTrades();
+
+        // Count adopted orphans before processing for per-run turnover diagnostics (demo only)
+        if ($mode === 'demo') {
+            foreach ($trades as $_t) {
+                if (!empty($_t['is_orphan_adopted']) || !empty($_t['adopted_from_exchange_orphan'])) {
+                    $result['adopted_orphans_active_before']++;
+                }
+            }
+        }
 
                 // ── Demo learning mode: stale-age config ────────────────────────────
         $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
@@ -1698,6 +1715,74 @@ trait BotExecutorTrait
                     }
                 }
 
+                // ── Adopted orphan force-close when learning timeout exceeded ─────────────
+                // Runs for adopted orphan trades even when prefer_close_stale_when_learning is false.
+                // Adopted orphans must progress through the lifecycle; they should not sit forever.
+                if ($mode === 'demo' && !empty($trade['is_orphan_adopted']) && $closeTimeoutMinutes > 0) {
+                    $adoptedOrphanAgeMin = (int)($trade['age_minutes'] ?? 0);
+                    if ($adoptedOrphanAgeMin >= $closeTimeoutMinutes) {
+                        $result['adopted_orphans_stale_this_run']++;
+                        $trade['adopted_orphan_is_stale']   = true;
+                        $trade['is_stale_trade']            = true;
+                        $staleReason = 'adopted_orphan_age_exceeded_close_timeout';
+                        if (empty($trade['stale_reason'])) {
+                            $trade['stale_reason'] = $staleReason;
+                        }
+                        $result['stale_trade_reasons'][$staleReason] = ($result['stale_trade_reasons'][$staleReason] ?? 0) + 1;
+                        $exchangeCloseResult = $this->closePositionOnExchange($trade);
+                        $adoptedCloseReason = 'adopted_orphan_close_forced_by_learning_timeout';
+                        if (!($exchangeCloseResult['success'] ?? false)) {
+                            $checkPos = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+                            if ($checkPos !== null && (float)($checkPos['size'] ?? 0) > 0) {
+                                // Position confirmed still open; cannot close yet
+                                $result['close_failures']++;
+                                $result['adopted_orphans_close_failures_this_run']++;
+                                $cfKey = 'adopted_orphan_close_order_failed_position_still_open';
+                                $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                $result['adopted_orphan_close_failure_reasons'][$cfKey] = ($result['adopted_orphan_close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                $result['updated']++;
+                                continue;
+                            }
+                            // Position gone on exchange after close failure
+                            $adoptedCloseReason = 'adopted_orphan_close_detected_exchange_gone';
+                        }
+                        $closedAtTs = time();
+                        $closedTrade = array_merge($trade, [
+                            'closed_at'                    => date('c', $closedAtTs),
+                            'closed_ts'                    => $closedAtTs,
+                            'close_ts'                     => $closedAtTs,
+                            'close_reason'                 => $adoptedCloseReason,
+                            'close_reason_normalized'      => $adoptedCloseReason,
+                            'close_protection_state'       => 'adopted_orphan_force_closed',
+                            'learning_timeout_force_close' => true,
+                            'adopted_orphan_force_close'   => true,
+                            'adopted_orphan_close_path'    => 'stale_timeout',
+                            'close_detection_result'       => 'adopted_orphan_close_finalize_triggered',
+                            'close_detection_source'       => 'updateActivePositions_adopted_orphan_stale',
+                        ]);
+                        if (method_exists($this, 'applyLocalCloseFinalize')) {
+                            $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                            $closedTrade['close_reason']            = $adoptedCloseReason;
+                            $closedTrade['close_reason_normalized'] = $adoptedCloseReason;
+                        }
+                        $result['closed']++;
+                        $result['closed_by_logical_stop']++;
+                        $result['finalized_locally_this_run']++;
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['adopted_orphans_finalized_locally_this_run']++;
+                        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                        $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                        } else {
+                            $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                        }
+                        $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                        $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                        continue;
+                    }
+                }
+
                 // Get position from exchange
                 // Guard: if gateway is not initialized, skip position check to avoid false-positive closure.
                 if (!$this->gateway || !$this->gateway->isInitialized()) {
@@ -1713,9 +1798,10 @@ trait BotExecutorTrait
                 
                 if ($position === null || (float)($position['size'] ?? 0) <= 0) {
                     // Position closed on exchange — determine close reason and detection state
+                    $isAdoptedOrphanTrade = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
                     $closeDetectionResult = $position === null
-                        ? 'close_detected_exchange_gone'
-                        : 'close_detected_size_zero';
+                        ? ($isAdoptedOrphanTrade ? 'adopted_orphan_close_detected_exchange_gone'   : 'close_detected_exchange_gone')
+                        : ($isAdoptedOrphanTrade ? 'adopted_orphan_close_detected_size_zero'        : 'close_detected_size_zero');
                     $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
                     $closeReason = 'exchange_closed_unknown';
                     if (!empty($rt['dumb_trailing_applied'])) {
@@ -1728,6 +1814,10 @@ trait BotExecutorTrait
                     $result['closed']++;
                     $result['closed_by_exchange']++;
                     $result['finalized_from_exchange_this_run']++;
+                    if ($isAdoptedOrphanTrade) {
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['adopted_orphans_finalized_from_exchange_this_run']++;
+                    }
                     $closedAtTs = time();
                     $closedTrade = array_merge($trade, [
                         'closed_at'               => date('c', $closedAtTs),

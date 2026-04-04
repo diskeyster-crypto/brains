@@ -393,6 +393,19 @@ $dlmMaxSignals          = $bot_last_run['demo_max_signals_per_run_effective']   
 $dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective'] ?? null;
 // Orphan exchange position blocking diagnostics
 $demoOrphanDetected     = $bot_last_run['demo_orphan_positions_detected_count']    ?? null;
+// Adopted orphan turnover counters (this run)
+$adoptedOrphansActiveBefore          = $bot_last_run['adopted_orphans_active_before']                    ?? null;
+$adoptedOrphansClosedThisRun         = $bot_last_run['adopted_orphans_closed_this_run']                  ?? null;
+$adoptedOrphansStaleThisRun          = $bot_last_run['adopted_orphans_stale_this_run']                   ?? null;
+$adoptedOrphansFinalizedLocally      = $bot_last_run['adopted_orphans_finalized_locally_this_run']       ?? null;
+$adoptedOrphansFinalizedExchange     = $bot_last_run['adopted_orphans_finalized_from_exchange_this_run'] ?? null;
+$adoptedOrphansCloseFailures         = $bot_last_run['adopted_orphans_close_failures_this_run']          ?? null;
+$adoptedOrphanCloseFailureReasons    = (array)($bot_last_run['adopted_orphan_close_failure_reasons']     ?? []);
+// Adopted orphan audit fields (from truth audit)
+$auditAdoptedOrphansStale            = $bot_demo_truth_audit['adopted_orphans_stale_count']              ?? null;
+$auditAdoptedOrphansClosedTotal      = $bot_demo_truth_audit['adopted_orphans_closed_total']             ?? null;
+$auditAdoptedOrphansClosedCompleteRate = $bot_demo_truth_audit['adopted_orphans_closed_complete_rate']   ?? null;
+$auditAdoptedOrphansWithoutAi        = $bot_demo_truth_audit['adopted_orphans_without_ai_dataset_count'] ?? null;
 $demoOrphanBlocking     = $bot_last_run['demo_orphan_positions_blocking_count']    ?? null;
 $demoPrimaryExecBlocker = (string)($bot_last_run['demo_primary_execution_blocker'] ?? '');
 // Granular execution-stage blocking counters
@@ -660,6 +673,72 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
                 </table>
             </div>
             <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
+        <?php
+        // ── Adopted Orphan Turnover sub-section ─────────────────────────────
+        $hasAdoptedOrphanData = ($adoptedOrphansActiveBefore !== null || $auditAdoptedOrphansClosedTotal !== null);
+        if ($hasAdoptedOrphanData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Adopted Orphan Turnover</div>
+        <?php if (($auditAdoptedOrphansStale ?? 0) > 0 && ($auditAdoptedOrphansClosedTotal ?? 0) === 0): ?>
+        <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Stale Adopted Orphans:</strong> <?= (int)$auditAdoptedOrphansStale ?> adopted orphan trade(s) are stale but no closures yet. Verify <code>learning_close_timeout_minutes</code> is set and demo runs are cycling.
+        </div>
+        <?php elseif (($adoptedOrphansClosedThisRun ?? 0) > 0): ?>
+        <div class="alert alert-success py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Adopted Orphans Progressing:</strong> <?= (int)$adoptedOrphansClosedThisRun ?> adopted orphan trade(s) closed this run.
+        </div>
+        <?php endif; ?>
+        <div class="row g-2 mb-2">
+            <?php
+            $aoCards = [
+                ['label' => 'Active Before Run',     'value' => $adoptedOrphansActiveBefore !== null ? (string)$adoptedOrphansActiveBefore : 'n/a',
+                    'ok' => null],
+                ['label' => 'Stale (Audit)',          'value' => $auditAdoptedOrphansStale !== null ? (string)$auditAdoptedOrphansStale : 'n/a',
+                    'ok' => $auditAdoptedOrphansStale === 0 ? true : ($auditAdoptedOrphansStale > 0 ? false : null)],
+                ['label' => 'Closed This Run',        'value' => $adoptedOrphansClosedThisRun !== null ? (string)$adoptedOrphansClosedThisRun : 'n/a',
+                    'ok' => ($adoptedOrphansClosedThisRun ?? 0) > 0 ? true : null],
+                ['label' => 'Fin. via Exchange',      'value' => $adoptedOrphansFinalizedExchange !== null ? (string)$adoptedOrphansFinalizedExchange : 'n/a',
+                    'ok' => ($adoptedOrphansFinalizedExchange ?? 0) > 0 ? true : null],
+                ['label' => 'Fin. Locally (TO)',      'value' => $adoptedOrphansFinalizedLocally !== null ? (string)$adoptedOrphansFinalizedLocally : 'n/a',
+                    'ok' => ($adoptedOrphansFinalizedLocally ?? 0) > 0 ? true : null],
+                ['label' => 'Close Failures',         'value' => $adoptedOrphansCloseFailures !== null ? (string)$adoptedOrphansCloseFailures : 'n/a',
+                    'ok' => $adoptedOrphansCloseFailures === 0 ? true : ($adoptedOrphansCloseFailures > 0 ? false : null)],
+                ['label' => 'Closed Total (Audit)',   'value' => $auditAdoptedOrphansClosedTotal !== null ? (string)$auditAdoptedOrphansClosedTotal : 'n/a',
+                    'ok' => ($auditAdoptedOrphansClosedTotal ?? 0) > 0 ? true : null],
+                ['label' => 'Complete Rate (Audit)',  'value' => $auditAdoptedOrphansClosedCompleteRate !== null ? $auditAdoptedOrphansClosedCompleteRate . '%' : 'n/a',
+                    'ok' => ($auditAdoptedOrphansClosedCompleteRate ?? 0) >= 80 ? true : (($auditAdoptedOrphansClosedTotal ?? 0) > 0 && ($auditAdoptedOrphansClosedCompleteRate ?? 0) < 50 ? false : null)],
+                ['label' => 'Without AI (Audit)',     'value' => $auditAdoptedOrphansWithoutAi !== null ? (string)$auditAdoptedOrphansWithoutAi : 'n/a',
+                    'ok' => $auditAdoptedOrphansWithoutAi === 0 ? true : ($auditAdoptedOrphansWithoutAi > 0 ? false : null)],
+                ['label' => 'Stale This Run',         'value' => $adoptedOrphansStaleThisRun !== null ? (string)$adoptedOrphansStaleThisRun : 'n/a',
+                    'ok' => null],
+            ];
+            foreach ($aoCards as $aoc):
+                $cls = 'neutral';
+                if ($aoc['ok'] === true)  $cls = 'positive';
+                if ($aoc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$aoc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($aoc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!empty($adoptedOrphanCloseFailureReasons)): ?>
+        <div class="mt-1">
+            <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Close Failure Reasons (This Run)</div>
+            <table class="table table-sm exec-table mb-0" style="max-width:420px;">
+                <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                <tbody>
+                <?php foreach ($adoptedOrphanCloseFailureReasons as $aofr => $aofc): ?>
+                <tr><td><?= htmlspecialchars($aofr) ?></td><td><?= (int)$aofc ?></td></tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
         <?php endif; ?>
         <?php endif; ?>
@@ -1066,6 +1145,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         $auditAlertClass = 'alert-warning';
         if ($auditBottleneck === 'none_loop_is_cycling') $auditAlertClass = 'alert-success';
         elseif (in_array($auditBottleneck, ['orphan_positions_blocking_demo','orphan_dead_shells_blocking_truth_loop'], true)) $auditAlertClass = 'alert-danger';
+        elseif ($auditBottleneck === 'adopted_orphans_stale_not_closing') $auditAlertClass = 'alert-warning';
         elseif ($auditBottleneck === 'adopted_orphans_awaiting_close') $auditAlertClass = 'alert-info';
         ?>
         <div class="alert <?= $auditAlertClass ?> py-2 mb-2 small">

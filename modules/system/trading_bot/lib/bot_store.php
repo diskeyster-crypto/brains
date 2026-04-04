@@ -675,6 +675,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $orphanDeadShellCount = 0;  // adopted orphan trades missing critical fields (dead shells)
         $healthyActiveCount   = 0;  // normal active trades (not orphan-adopted)
         $orphanResolvedCount  = 0;  // adopted orphan trades with orphan_resolved_local_ownership=true
+        $adoptedOrphanStaleCount = 0;  // adopted orphans that are stale (age >= threshold)
 
         foreach ($activeFiles as $af) {
             $d = @json_decode((string)@file_get_contents($af), true);
@@ -709,6 +710,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                     if (!empty($d['orphan_resolved_local_ownership'])) {
                         $orphanResolvedCount++;
                     }
+                    // Count as stale if age exceeds threshold (adopted orphan specific)
+                    if ($openTs !== null && $openTs > 0) {
+                        $ageMin = (int)round(($now - $openTs) / 60);
+                        if ($learningMaxActiveAgeMinutes > 0 && $ageMin >= $learningMaxActiveAgeMinutes) {
+                            $adoptedOrphanStaleCount++;
+                        }
+                    }
                 } else {
                     $orphanDeadShellCount++;
                 }
@@ -733,6 +741,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $missingClosePrice   = 0;
         $missingRoi          = 0;
         $completeClosedCount = 0;
+        $adoptedOrphanClosedCount    = 0;
+        $adoptedOrphanClosedComplete = 0;
 
         foreach ($closedFiles as $cf) {
             $d = @json_decode((string)@file_get_contents($cf), true);
@@ -774,6 +784,14 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             if ($isComplete) {
                 $completeClosedCount++;
             }
+
+            // Count adopted orphan closed trades separately
+            if (!empty($d['adopted_from_exchange_orphan']) || !empty($d['is_orphan_adopted'])) {
+                $adoptedOrphanClosedCount++;
+                if ($isComplete) {
+                    $adoptedOrphanClosedComplete++;
+                }
+            }
         }
 
         // ── AI dataset records ───────────────────────────────────────────────
@@ -790,9 +808,28 @@ public function saveClosedTrade(string $tradeId, array $trade): void
 
         // ── Consistency cross-checks ─────────────────────────────────────────
         $closedWithoutAiDataset = 0;
+        $adoptedOrphanWithoutAi = 0;
         foreach (array_keys($closedIds) as $cid) {
             if (!isset($aiIds[$cid])) {
                 $closedWithoutAiDataset++;
+            }
+        }
+        // For adopted orphan AI cross-check we need to match closed adopted orphan IDs to AI IDs.
+        // Re-scan closed dir for adopted orphan tradeIds.
+        $adoptedOrphanClosedIds = [];
+        foreach ($closedFiles as $cf) {
+            $d = @json_decode((string)@file_get_contents($cf), true);
+            if (!is_array($d)) {
+                continue;
+            }
+            if (!empty($d['adopted_from_exchange_orphan']) || !empty($d['is_orphan_adopted'])) {
+                $tid = (string)($d['trade_id'] ?? $d['id'] ?? basename($cf, '.json'));
+                if ($tid !== '') {
+                    $adoptedOrphanClosedIds[$tid] = true;
+                    if (!isset($aiIds[$tid])) {
+                        $adoptedOrphanWithoutAi++;
+                    }
+                }
             }
         }
         $aiWithoutClosedTrade = 0;
@@ -802,6 +839,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             }
         }
         $matchRate = $closedCount > 0 ? round(($closedCount - $closedWithoutAiDataset) / $closedCount * 100, 1) : 0.0;
+        $adoptedOrphanClosedCompleteRate = $adoptedOrphanClosedCount > 0
+            ? round($adoptedOrphanClosedComplete / $adoptedOrphanClosedCount * 100, 1)
+            : 0.0;
 
         // ── Field completeness rates ─────────────────────────────────────────
         $pctMissingMfe         = $closedCount > 0 ? round($missingMfe / $closedCount * 100, 1) : 0.0;
@@ -868,11 +908,16 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $recommendedNextFixArea  = 'audit_orphan_adopted_dead_shells';
             } elseif ($orphanAdoptedCount > 0 && $orphanDeadShellCount === 0
                       && ($healthyActiveCount + $orphanAdoptedCount) === $activeCount) {
-                // All actives are valid adopted orphan trades — they are locally owned and will
-                // close normally; the loop is cycling but no positions have closed yet.
-                $primaryBottleneck       = 'adopted_orphans_awaiting_close';
-                $primaryBottleneckReason = "{$orphanAdoptedCount} active trade(s) are adopted orphan positions (local ownership resolved, {$orphanResolvedCount} marked resolved). They are in normal active lifecycle but no closures recorded yet. Waiting for exchange close events or stale-timeout.";
-                $recommendedNextFixArea  = 'wait_for_adopted_orphan_trades_to_close';
+                // All actives are valid adopted orphan trades — distinguish waiting vs stale/stuck
+                if ($adoptedOrphanStaleCount > 0) {
+                    $primaryBottleneck       = 'adopted_orphans_stale_not_closing';
+                    $primaryBottleneckReason = "{$orphanAdoptedCount} active trade(s) are adopted orphan positions ({$adoptedOrphanStaleCount} stale ≥{$learningMaxActiveAgeMinutes}min, {$orphanResolvedCount} marked resolved). Stale adopted orphans should be force-closed by the learning timeout. Verify learning_close_timeout_minutes is configured.";
+                    $recommendedNextFixArea  = 'verify_learning_close_timeout_for_adopted_orphans';
+                } else {
+                    $primaryBottleneck       = 'adopted_orphans_awaiting_close';
+                    $primaryBottleneckReason = "{$orphanAdoptedCount} active trade(s) are adopted orphan positions (local ownership resolved, {$orphanResolvedCount} marked resolved). They are in normal active lifecycle but no closures recorded yet. Waiting for exchange close events or stale-timeout.";
+                    $recommendedNextFixArea  = 'wait_for_adopted_orphan_trades_to_close';
+                }
             } elseif ($closedThisRun === 0 && $staleCount > 0) {
                 $primaryBottleneck       = 'close_detection_too_weak';
                 $primaryBottleneckReason = "Active trades exist ({$activeCount}, {$staleCount} stale ≥{$learningMaxActiveAgeMinutes}min) but none have closed. Check learning_close_timeout_minutes (force-close stale trades when exceeded) and reconcile pipeline.";
@@ -915,6 +960,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'orphan_resolved_active_trades_count'      => $orphanResolvedCount,
             'orphan_unresolved_blocking_count'         => $orphanBlockingCount,
             'orphan_dead_shells_count'                 => $orphanDeadShellCount,
+            // Adopted orphan close pipeline metrics
+            'adopted_orphans_stale_count'              => $adoptedOrphanStaleCount,
+            'adopted_orphans_closed_total'             => $adoptedOrphanClosedCount,
+            'adopted_orphans_closed_complete_count'    => $adoptedOrphanClosedComplete,
+            'adopted_orphans_closed_complete_rate'     => $adoptedOrphanClosedCompleteRate,
+            'adopted_orphans_without_ai_dataset_count' => $adoptedOrphanWithoutAi,
             'closed_trades_count'                      => $closedCount,
             'ai_dataset_count'                         => $aiCount,
             'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,

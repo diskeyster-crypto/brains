@@ -951,6 +951,15 @@ final class TradingBotService
                 $result['demo_close_failure_reasons']              = $updateResult['close_failure_reasons'] ?? [];
                 $result['top_stale_trade_reasons']                 = $updateResult['stale_trade_reasons'] ?? [];
 
+                // ── Adopted orphan turnover counters ────────────────────────
+                $result['adopted_orphans_active_before']                   = $updateResult['adopted_orphans_active_before'] ?? 0;
+                $result['adopted_orphans_closed_this_run']                 = $updateResult['adopted_orphans_closed_this_run'] ?? 0;
+                $result['adopted_orphans_stale_this_run']                  = $updateResult['adopted_orphans_stale_this_run'] ?? 0;
+                $result['adopted_orphans_finalized_locally_this_run']      = $updateResult['adopted_orphans_finalized_locally_this_run'] ?? 0;
+                $result['adopted_orphans_finalized_from_exchange_this_run']= $updateResult['adopted_orphans_finalized_from_exchange_this_run'] ?? 0;
+                $result['adopted_orphans_close_failures_this_run']         = $updateResult['adopted_orphans_close_failures_this_run'] ?? 0;
+                $result['adopted_orphan_close_failure_reasons']            = $updateResult['adopted_orphan_close_failure_reasons'] ?? [];
+
                 // ── PART 3: Open capacity diagnostics ───────────────────────
                 $dlmCfgPost = is_array($this->config['demo_learning_mode'] ?? null)
                     ? $this->config['demo_learning_mode'] : [];

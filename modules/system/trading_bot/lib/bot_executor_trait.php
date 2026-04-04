@@ -197,6 +197,50 @@ trait BotExecutorTrait
                                     ? 'orphan_exchange_position_open_local_missing'
                                     : 'orphan_exchange_position_stale_unreconciled')
                                 : 'skipped_exchange_position_exists';
+
+                            // Demo mode: attempt to adopt the orphan into local state so it no
+                            // longer blocks future runs.  Only adopt when the exchange position
+                            // has enough data (size > 0, avgPrice > 0).  Live mode unchanged.
+                            if ($mode === 'demo' && $exSize > 0) {
+                                $orphanAvgPrice = (float)($exPos['avgPrice'] ?? 0);
+                                if ($orphanAvgPrice > 0) {
+                                    $orphanSide = strtolower($exPos['side'] ?? 'unknown');
+                                    if ($orphanSide === 'buy')  $orphanSide = 'long';
+                                    if ($orphanSide === 'sell') $orphanSide = 'short';
+                                    $adoptedTradeId = 'orphan_adopted_' . strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $exSymbol)) . '_' . time();
+                                    $adoptedTrade = [
+                                        'schema_version'         => 'trade_live_v2',
+                                        'trade_id'               => $adoptedTradeId,
+                                        'signal_id'              => $adoptedTradeId,
+                                        'opened_at'              => date('c'),
+                                        'symbol'                 => $exSymbol,
+                                        'side'                   => $orphanSide,
+                                        'mode'                   => 'demo',
+                                        'reconcile_status'       => 'orphan_adopted_demo',
+                                        'orphan_adopted_at'      => date('c'),
+                                        'orphan_adoption_reason' => $orphanReason,
+                                        'is_orphan_adopted'      => true,
+                                        'exchange'               => [
+                                            'qty'             => $exSize,
+                                            'entry_avg_price' => $orphanAvgPrice,
+                                            'liq_price'       => (float)($exPos['liqPrice'] ?? 0),
+                                            'position_idx'    => (int)($exPos['positionIdx'] ?? 0),
+                                        ],
+                                        'protection'             => [],
+                                        'protection_state'       => 'orphan_adopted_unprotected',
+                                        'runtime'                => [],
+                                    ];
+                                    $this->store->saveActiveTrade($adoptedTrade);
+                                    // Invalidate position cache so this symbol is seen as local next check
+                                    $this->exchangeOpenPositionsCache   = [];
+                                    $this->exchangeOpenPositionsCacheTs = 0;
+                                    // Use a dedicated reason so it is counted separately
+                                    $orphanReason = 'orphan_adopted_then_symbol_busy';
+                                    $result['orphan_adopted']          = true;
+                                    $result['orphan_adopted_trade_id'] = $adoptedTradeId;
+                                }
+                            }
+
                             return $this->rejectIntent($intent, $orphanReason,
                                 "Orphan position on exchange for {$symbol} (size={$exSize})", $result, [
                                     'blocked_symbol'    => $symbol,
@@ -538,6 +582,35 @@ trait BotExecutorTrait
                 $positionHasMinFields = $this->isValidPositionData($positionData, false);
                 // Full validation: also requires liqPrice > 0
                 $positionHasLiqPrice  = $positionHasMinFields && $this->isValidPositionData($positionData, true);
+
+                // Demo compatibility: Bybit Demo API sometimes takes several seconds to
+                // reflect a newly-opened position.  If fetchOpenPosition() returns null
+                // (or incomplete data) after all retries in demo mode, build a synthetic
+                // position record from the confirmed order-fill data instead of calling
+                // performFailSafeClose().  This prevents creating orphan positions that
+                // would block every subsequent demo signal on the next run.
+                if (($positionData === null || !$positionHasMinFields) && $isDemoMode) {
+                    $fillPrice = (float)($orderResult['fill_price'] ?? $intent['entry_price'] ?? 0);
+                    $fillQty   = (float)($orderResult['fill_qty']   ?? $positionSize);
+                    if ($fillPrice > 0 && $fillQty > 0) {
+                        $positionData = [
+                            'avgPrice'    => $fillPrice,
+                            'size'        => $fillQty,
+                            'liqPrice'    => 0,  // triggers entry_roi SL fallback below
+                            'positionIdx' => (int)($this->config['exchange']['position_idx'] ?? 0),
+                        ];
+                        $result['demo_reconcile_fallback_used']         = true;
+                        $result['demo_reconcile_note']                  = 'position_not_visible_using_order_fill';
+                        $result['demo_reconcile_position_source']       = 'order_fill_data';
+                        $result['exchange_position_incomplete']         = true;
+                        $result['liq_price_unavailable']                = true;
+                        $result['close_detection_result']               = 'close_detected_uncertain_exchange_state';
+                        // Re-evaluate validation flags for the synthetic data
+                        $positionHasMinFields = true;
+                        $positionHasLiqPrice  = false;
+                    }
+                    // If fill data is also unavailable, fall through to the hard-fail block.
+                }
 
                 if ($positionData === null || !$positionHasMinFields) {
                     // Truly unusable position — determine precise sub-reason.

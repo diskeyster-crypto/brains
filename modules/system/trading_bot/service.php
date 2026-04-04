@@ -1247,13 +1247,16 @@ final class TradingBotService
                     (int)($result['demo_feed_available_count'] ?? 0),
                     (int)($result['demo_feed_selected_count'] ?? 0),
                     (int)($result['positions_opened'] ?? 0),
-                    (int)($result['demo_trades_closed_this_run'] ?? 0)
+                    (int)($result['demo_trades_closed_this_run'] ?? 0),
+                    (int)($result['demo_reconcile_blocked_this_run'] ?? 0)
                 );
                 $result['demo_truth_audit']              = $demoTruthAudit;
                 $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];
                 $result['primary_demo_bottleneck_reason']= $demoTruthAudit['primary_demo_bottleneck_reason'];
                 $result['recommended_next_fix_area']     = $demoTruthAudit['recommended_next_fix_area'];
-                $result['demo_primary_execution_blocker']= $demoTruthAudit['primary_execution_blocker'] ?? 'none';
+                // Use the specific per-run execution blocker label when available
+                $result['demo_primary_execution_blocker']= $result['demo_primary_execution_blocker_specific']
+                    ?? ($demoTruthAudit['primary_execution_blocker'] ?? 'none');
 
                 // ── PART 5: Per-run AI match-rate also in sufficiency ────────
                 $result['demo_closed_to_ai_match_rate_total'] = $demoTruthAudit['closed_to_ai_dataset_match_rate'] ?? null;
@@ -1433,6 +1436,62 @@ final class TradingBotService
                 $result['demo_signals_blocked_by_validation'] = $demoValidRejected;
                 $result['demo_signals_blocked_by_exchange']   = $demoExchangeBlocked;
                 $result['demo_signals_blocked_other']         = $demoOtherBlocked;
+
+                // ── Granular execution-stage blocking counters ──────────────────
+                // Reconcile-failed rejections (any sub-reason prefixed with reconcile_failed)
+                $demoBlockedByReconcile = 0;
+                foreach ($result['rejection_reason_stats'] as $_rKey => $_rCnt) {
+                    if (strpos($_rKey, 'reconcile_failed') !== false) {
+                        $demoBlockedByReconcile += (int)$_rCnt;
+                    }
+                }
+                // Orphan-blocked rejections (includes both "blocked" and "adopted then busy")
+                $demoBlockedByOrphan = 0;
+                foreach ([
+                    'orphan_exchange_position_open_local_missing',
+                    'orphan_exchange_position_stale_unreconciled',
+                    'orphan_adopted_then_symbol_busy',
+                ] as $_or) {
+                    $demoBlockedByOrphan += (int)($result['rejection_reason_stats'][$_or] ?? 0);
+                }
+                // Orphan positions adopted this run (creates local record, prevents future orphan blocks)
+                $demoOrphansAdopted = (int)($result['rejection_reason_stats']['orphan_adopted_then_symbol_busy'] ?? 0);
+
+                $demoBlockedByLateEntry  = (int)($result['intents_rejected_late_entry_count'] ?? 0);
+                $lateEntryThreshold      = (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25);
+
+                $result['demo_signals_blocked_by_reconcile']    = $demoBlockedByReconcile;
+                $result['demo_signals_blocked_by_orphan']       = $demoBlockedByOrphan;
+                $result['demo_signals_blocked_by_late_entry']   = $demoBlockedByLateEntry;
+                $result['orphan_positions_adopted_this_run']    = $demoOrphansAdopted;
+                $result['late_entry_reject_count']              = $demoBlockedByLateEntry;
+                $result['late_entry_threshold_effective']       = $lateEntryThreshold;
+
+                // ── Specific execution blocker label ─────────────────────────────
+                // Determines which stage is the dominant blocker this run.
+                $topBlocker = 'none';
+                $maxBlockCount = 0;
+                if ($demoBlockedByReconcile > $maxBlockCount) {
+                    $topBlocker    = 'execution_blocked_by_reconcile';
+                    $maxBlockCount = $demoBlockedByReconcile;
+                }
+                if ($demoBlockedByOrphan > $maxBlockCount) {
+                    $topBlocker    = 'execution_blocked_by_orphan_positions';
+                    $maxBlockCount = $demoBlockedByOrphan;
+                }
+                if ($demoBlockedByLateEntry > $maxBlockCount) {
+                    $topBlocker    = 'execution_blocked_by_late_entry';
+                    $maxBlockCount = $demoBlockedByLateEntry;
+                }
+                if ($demoBlockedByLimits > $maxBlockCount) {
+                    $topBlocker    = 'execution_blocked_by_capacity';
+                }
+                if ($demoOpened > 0 && $maxBlockCount === 0) {
+                    $topBlocker = 'execution_healthy_waiting_for_closure';
+                }
+                $result['demo_primary_execution_blocker_specific'] = $topBlocker;
+                // Passed to computeDemoTruthAudit for storage-level bottleneck classification
+                $result['demo_reconcile_blocked_this_run'] = $demoBlockedByReconcile;
             }
 
             // ============================================================

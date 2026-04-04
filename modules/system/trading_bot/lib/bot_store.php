@@ -659,7 +659,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
      * @param int $closedThisRun                Trades closed during the current run (from updateActivePositions)
      * @return array<string,mixed>
      */
-    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0, int $feedAvailableCount = 0, int $feedSelectedCount = 0, int $positionsOpenedThisRun = 0, int $closedThisRun = 0): array
+    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0, int $feedAvailableCount = 0, int $feedSelectedCount = 0, int $positionsOpenedThisRun = 0, int $closedThisRun = 0, int $reconcileBlockedThisRun = 0): array
     {
         $closedDir    = $this->storageDir . '/trades/closed';
         $activeDir    = $this->storageDir . '/trades/active';
@@ -801,7 +801,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $primaryBottleneck       = 'orphan_positions_blocking_demo';
             $primaryBottleneckReason = "{$orphanBlockingCount} orphan exchange position(s) blocked demo trade execution this run. Reconcile or finalize orphan positions to unblock demo learning.";
             $recommendedNextFixArea  = 'audit_orphan_exchange_positions';
-            $primaryExecutionBlocker = 'orphan_positions';
+            $primaryExecutionBlocker = 'execution_blocked_by_orphan_positions';
+        } elseif ($reconcileBlockedThisRun > 0 && $closedCount === 0 && $activeCount === 0) {
+            // Reconcile failures are the dominant blocker — orders submitted but positions not saved
+            $primaryBottleneck       = 'demo_feed_available_but_execution_blocked';
+            $primaryBottleneckReason = "{$reconcileBlockedThisRun} signal(s) blocked by reconcile failures this run (position not found after order submission). Using order-fill fallback in demo mode. Verify Bybit Demo API connectivity and position visibility delay.";
+            $recommendedNextFixArea  = 'audit_reconcile_post_open_position_visibility';
+            $primaryExecutionBlocker = 'execution_blocked_by_reconcile';
         } elseif ($closedCount === 0 && $activeCount === 0) {
             if ($feedIsAvailable) {
                 // Feed had signals but no trades opened or closed — execution is blocked downstream
@@ -897,6 +903,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'runtime_feed_selected_count'              => $feedSelectedCount,
             'runtime_positions_opened_this_run'        => $positionsOpenedThisRun,
             'runtime_closed_this_run'                  => $closedThisRun,
+            'runtime_reconcile_blocked_this_run'       => $reconcileBlockedThisRun,
             'runtime_feed_is_available'                => $feedIsAvailable,
             'primary_execution_blocker'                => $primaryExecutionBlocker,
             'primary_execution_blocker_reason'         => $primaryBottleneckReason,

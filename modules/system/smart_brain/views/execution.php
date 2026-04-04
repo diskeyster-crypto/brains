@@ -395,6 +395,13 @@ $dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective
 $demoOrphanDetected     = $bot_last_run['demo_orphan_positions_detected_count']    ?? null;
 $demoOrphanBlocking     = $bot_last_run['demo_orphan_positions_blocking_count']    ?? null;
 $demoPrimaryExecBlocker = (string)($bot_last_run['demo_primary_execution_blocker'] ?? '');
+// Granular execution-stage blocking counters
+$demoBlockedByReconcile = $bot_last_run['demo_signals_blocked_by_reconcile']  ?? null;
+$demoBlockedByOrphan    = $bot_last_run['demo_signals_blocked_by_orphan']     ?? null;
+$demoBlockedByLateEntry = $bot_last_run['demo_signals_blocked_by_late_entry'] ?? null;
+$demoOrphansAdopted     = $bot_last_run['orphan_positions_adopted_this_run']  ?? null;
+$lateEntryThreshold     = $bot_last_run['late_entry_threshold_effective']     ?? null;
+$demoExecBlockerSpecific= (string)($bot_last_run['demo_primary_execution_blocker_specific'] ?? $demoPrimaryExecBlocker);
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -456,6 +463,61 @@ $demoPrimaryExecBlocker = (string)($bot_last_run['demo_primary_execution_blocker
             </div>
             <?php endforeach; ?>
         </div>
+        <?php
+        // ── Execution-Stage Diagnostics (shows WHERE selected signals are blocked) ──
+        $execBlockerLabel = [
+            'execution_blocked_by_reconcile'       => 'Reconcile Failure (post-open position not found)',
+            'execution_blocked_by_orphan_positions'=> 'Orphan Positions (no local trade for exchange position)',
+            'execution_blocked_by_late_entry'      => 'Late Entry (price moved beyond threshold)',
+            'execution_blocked_by_capacity'        => 'Capacity (max concurrent positions reached)',
+            'execution_blocked_by_validation'      => 'Validation (intent field missing/invalid)',
+            'execution_healthy_waiting_for_closure'=> 'Healthy — waiting for open positions to close',
+            'none'                                 => 'None detected this run',
+        ];
+        $execBlockerText = $execBlockerLabel[$demoExecBlockerSpecific] ?? $demoExecBlockerSpecific;
+        $hasExecData = ($demoBlockedByReconcile !== null || $demoBlockedByOrphan !== null);
+        if ($hasExecData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Execution Stage Diagnostics</div>
+        <?php if ($demoExecBlockerSpecific !== '' && $demoExecBlockerSpecific !== 'none' && $demoExecBlockerSpecific !== 'execution_healthy_waiting_for_closure'): ?>
+        <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Primary Execution Blocker:</strong> <?= htmlspecialchars($execBlockerText) ?>
+        </div>
+        <?php elseif ($demoExecBlockerSpecific === 'execution_healthy_waiting_for_closure'): ?>
+        <div class="alert alert-success py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Execution healthy</strong> — positions opened, waiting for closures.
+        </div>
+        <?php endif; ?>
+        <div class="row g-2 mb-3">
+            <?php
+            $execStageCards = [
+                ['label' => 'Blocked by Reconcile', 'value' => $demoBlockedByReconcile !== null ? (string)$demoBlockedByReconcile : 'n/a',
+                    'ok' => $demoBlockedByReconcile === 0 ? true : ($demoBlockedByReconcile > 0 ? false : null)],
+                ['label' => 'Blocked by Orphan',    'value' => $demoBlockedByOrphan !== null ? (string)$demoBlockedByOrphan : 'n/a',
+                    'ok' => $demoBlockedByOrphan === 0 ? true : ($demoBlockedByOrphan > 0 ? false : null)],
+                ['label' => 'Orphans Adopted',       'value' => $demoOrphansAdopted !== null ? (string)$demoOrphansAdopted : 'n/a',
+                    'ok' => ($demoOrphansAdopted ?? 0) > 0 ? true : null],
+                ['label' => 'Blocked Late Entry',   'value' => $demoBlockedByLateEntry !== null ? (string)$demoBlockedByLateEntry : 'n/a',
+                    'ok' => $demoBlockedByLateEntry === 0 ? true : null],
+                ['label' => 'Late Entry Threshold', 'value' => $lateEntryThreshold !== null ? round($lateEntryThreshold, 2) . '%' : 'n/a',
+                    'ok' => null],
+                ['label' => 'Exec Blocker',         'value' => $demoExecBlockerSpecific ?: 'n/a',
+                    'ok' => in_array($demoExecBlockerSpecific, ['none','execution_healthy_waiting_for_closure']) ? true : ($demoExecBlockerSpecific !== '' ? false : null)],
+            ];
+            foreach ($execStageCards as $ec):
+                $cls = 'neutral';
+                if ($ec['ok'] === true) $cls = 'positive';
+                if ($ec['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$ec['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($ec['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
         <?php if ($demoTradesActiveBefore !== null || $demoTradesClosedThisRun !== null): ?>
         <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Close Pipeline (This Run)</div>
         <div class="row g-2 mb-2">

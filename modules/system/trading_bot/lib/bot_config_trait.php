@@ -268,6 +268,7 @@ trait BotConfigTrait
                         $dlmInts = [
                             'max_concurrent_demo_positions',
                             'max_demo_signals_per_run',
+                            'max_new_positions_per_run',
                             'learning_target_closed_trades',
                             'max_hold_minutes_demo_learning',
                             'stale_trade_review_minutes',

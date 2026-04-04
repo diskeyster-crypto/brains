@@ -414,6 +414,15 @@ $demoTurnoverFix        = (string)($bot_last_run['recommended_turnover_fix_area'
 $dlmEnabled             = $bot_last_run['demo_learning_mode_enabled']              ?? null;
 $dlmMaxSignals          = $bot_last_run['demo_max_signals_per_run_effective']      ?? null;
 $dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective'] ?? null;
+$dlmMaxNewPerRun        = $bot_last_run['demo_max_new_positions_per_run_effective']?? null;
+// PART 3: Demo attempt/open budget proof fields
+$demoAttemptBudget      = $bot_last_run['demo_attempt_budget_effective']               ?? null;
+$demoOpenBudget         = $bot_last_run['demo_open_budget_effective']                  ?? null;
+$demoSelectedScanned    = $bot_last_run['demo_selected_scanned_count']                 ?? null;
+$demoSkippedBefore      = $bot_last_run['demo_selected_skipped_before_attempt_count']  ?? null;
+$demoLoopAttempted      = $bot_last_run['demo_selected_attempted_count']               ?? null;
+$demoLoopOpened         = $bot_last_run['demo_opened_count']                           ?? null;
+$demoLoopStopReason     = (string)($bot_last_run['demo_loop_stopped_reason']           ?? '');
 // Orphan exchange position blocking diagnostics
 $demoOrphanDetected     = $bot_last_run['demo_orphan_positions_detected_count']    ?? null;
 // Adopted orphan turnover counters (this run)
@@ -610,6 +619,75 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
             </div>
             <?php endforeach; ?>
         </div>
+        <?php
+        // ── Demo Attempt / Open Budget Proof ─────────────────────────────
+        $hasBudgetData = ($demoAttemptBudget !== null || $demoSelectedScanned !== null);
+        if ($hasBudgetData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Attempt / Open Budget (This Run)</div>
+        <?php
+        $stopReasonLabels = [
+            'selected_feed_exhausted'      => 'All selected signals scanned (healthy)',
+            'demo_open_budget_exhausted'   => 'Open budget exhausted (max_new_positions_per_run reached)',
+            'demo_attempt_budget_exhausted'=> 'Attempt budget exhausted (max_demo_signals_per_run reached)',
+            'fatal_exchange_blocker'       => 'Fatal exchange error / safety stop',
+            'global_break_unexpected'      => 'Unexpected global break (deferred limit hit)',
+        ];
+        $stopLabel = $stopReasonLabels[$demoLoopStopReason] ?? ($demoLoopStopReason ?: 'n/a');
+        $stopOk = ($demoLoopStopReason === 'selected_feed_exhausted' || $demoLoopStopReason === 'demo_open_budget_exhausted');
+        $stopBad = in_array($demoLoopStopReason, ['fatal_exchange_blocker','global_break_unexpected']);
+        ?>
+        <div class="row g-2 mb-2">
+            <?php
+            $budgetCards = [
+                ['label' => 'Attempt Budget',       'value' => $demoAttemptBudget !== null ? (string)$demoAttemptBudget : 'n/a',
+                    'ok' => ($demoAttemptBudget ?? 0) > 1 ? true : null],
+                ['label' => 'Open Budget',          'value' => $demoOpenBudget !== null ? (string)$demoOpenBudget : 'n/a',
+                    'ok' => ($demoOpenBudget ?? 0) > 0 ? true : null],
+                ['label' => 'Max New/Run (cfg)',    'value' => $dlmMaxNewPerRun !== null ? (string)$dlmMaxNewPerRun : 'n/a',
+                    'ok' => null],
+                ['label' => 'Selected Scanned',     'value' => $demoSelectedScanned !== null ? (string)$demoSelectedScanned : 'n/a',
+                    'ok' => ($demoSelectedScanned ?? 0) > 0 ? true : null],
+                ['label' => 'Skipped (non-fatal)',  'value' => $demoSkippedBefore !== null ? (string)$demoSkippedBefore : 'n/a',
+                    'ok' => $demoSkippedBefore === 0 ? true : null],
+                ['label' => 'Attempted',            'value' => $demoLoopAttempted !== null ? (string)$demoLoopAttempted : 'n/a',
+                    'ok' => null],
+                ['label' => 'Opened This Run',      'value' => $demoLoopOpened !== null ? (string)$demoLoopOpened : 'n/a',
+                    'ok' => ($demoLoopOpened ?? 0) > 0 ? true : ($demoLoopOpened === 0 ? null : null)],
+                ['label' => 'Loop Stop Reason',     'value' => $demoLoopStopReason ?: 'n/a',
+                    'ok' => $stopOk ? true : ($stopBad ? false : null)],
+            ];
+            foreach ($budgetCards as $bc):
+                $cls = 'neutral';
+                if ($bc['ok'] === true) $cls = 'positive';
+                if ($bc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>" title="<?= htmlspecialchars((string)$bc['value']) ?>"><?= htmlspecialchars((string)$bc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($bc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($demoLoopStopReason !== '' && $demoLoopStopReason !== 'selected_feed_exhausted'): ?>
+        <div class="alert alert-<?= $stopBad ? 'danger' : 'info' ?> py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Loop stopped:</strong> <?= htmlspecialchars($stopLabel) ?>
+        </div>
+        <?php endif; ?>
+        <?php
+        // Explanation when selected > attempted
+        $selectedCount  = (int)($demoFeedSelected ?? 0);
+        $attemptedCount = (int)($demoLoopAttempted ?? 0);
+        $skippedCount   = (int)($demoSkippedBefore ?? 0);
+        if ($selectedCount > 0 && $skippedCount > 0):
+        ?>
+        <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Selected (<?= $selectedCount ?>) &gt; Attempted (<?= $attemptedCount ?>):</strong>
+            <?= $skippedCount ?> signal(s) were skipped (non-fatal) — symbol busy, idempotency, late entry, or validation rejects. Loop continued scanning through them.
+        </div>
+        <?php endif; ?>
+        <?php endif; // hasBudgetData ?>
         <?php
         // ── Orphan Adoption Quality sub-section ──────────────────────────────
         $hasAdoptionData = ($orphanAdoptionAttempted !== null || $auditOrphanDeadShells !== null);
@@ -1561,9 +1639,19 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                     <?php
                     $roi = (float)($t['roi_pct'] ?? $t['roi'] ?? 0);
                     $pnl = (float)($t['realised_pnl'] ?? $t['pnl'] ?? 0);
-                    $mfe = (float)($t['mfe_roi'] ?? $t['mfe'] ?? 0);
-                    $holdSec = (int)($t['hold_seconds'] ?? $t['hold_time'] ?? 0);
+                    $mfe = (float)($t['mfe_roi'] ?? $t['mfe_pct'] ?? $t['mfe'] ?? 0);
+                    // hold: prefer hold_minutes, fall back to hold_seconds/hold_time
+                    $holdMin = isset($t['hold_minutes']) && $t['hold_minutes'] !== null ? (float)$t['hold_minutes'] : null;
+                    if ($holdMin !== null && $holdMin >= 0) {
+                        $holdSec = (int)round($holdMin * 60);
+                    } else {
+                        $holdSec = (int)($t['hold_seconds'] ?? $t['hold_time'] ?? 0);
+                    }
                     $holdStr = $holdSec > 0 ? gmdate('H:i:s', $holdSec) : '—';
+                    // exit price: prefer close_price, fall back to exit_price
+                    $exitPrice = $t['close_price'] ?? $t['exit_price'] ?? null;
+                    // reason: prefer close_reason_normalized, fall back to close_reason
+                    $closeReason = $t['close_reason_normalized'] ?? $t['close_reason'] ?? null;
                     $rc = $roi >= 0 ? 'positive' : 'negative';
                     $pc = $pnl >= 0 ? 'positive' : 'negative';
                     ?>
@@ -1572,10 +1660,10 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                         <td><?= htmlspecialchars((string)($t['side'] ?? '—')) ?></td>
                         <td><small><?= htmlspecialchars((string)($t['pattern_algorithm'] ?? $t['pattern'] ?? '—')) ?></small></td>
                         <td><?= htmlspecialchars((string)($t['entry_price'] ?? '—')) ?></td>
-                        <td><?= htmlspecialchars((string)($t['exit_price'] ?? '—')) ?></td>
+                        <td><?= htmlspecialchars($exitPrice !== null ? (string)$exitPrice : '—') ?></td>
                         <td class="<?= $rc ?>"><?= round($roi, 2) ?>%</td>
                         <td class="<?= $pc ?>"><?= round($pnl, 4) ?></td>
-                        <td><small><?= htmlspecialchars((string)($t['close_reason'] ?? '—')) ?></small></td>
+                        <td><small><?= htmlspecialchars((string)($closeReason ?? '—')) ?></small></td>
                         <td><?= htmlspecialchars($holdStr) ?></td>
                         <td><?= round($mfe, 2) ?>%</td>
                     </tr>

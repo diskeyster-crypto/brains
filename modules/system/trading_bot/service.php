@@ -333,6 +333,7 @@ final class TradingBotService
                 $result['demo_learning_mode_enabled']              = (bool)($dlmCfg['enabled'] ?? false);
                 $result['demo_max_signals_per_run_effective']      = (int)($dlmCfg['max_demo_signals_per_run'] ?? 0);
                 $result['demo_max_concurrent_positions_effective'] = (int)($dlmCfg['max_concurrent_demo_positions'] ?? 0);
+                $result['demo_max_new_positions_per_run_effective']= (int)($dlmCfg['max_new_positions_per_run'] ?? 3);
             } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.
@@ -673,11 +674,34 @@ final class TradingBotService
                     $maxDeferredPerRun = 10;
                 }
 
-                // demo_learning_mode: cap max concurrent positions for demo mode
+                // Demo budget tracking variables (populated below for demo mode)
+                $isDemoLearning               = false;
+                $demoAttemptBudgetEffective   = $maxExecutePerRun;
+                $demoOpenBudgetEffective      = PHP_INT_MAX;
+                $demoSelectedScannedCount     = 0;
+                $demoSkippedBeforeAttemptCount= 0;
+                $demoSelectedAttemptedCount   = 0;
+                $demoOpenedCount              = 0;
+                $demoLoopStoppedReason        = 'selected_feed_exhausted';
+
+                // demo_learning_mode: cap max concurrent positions + override attempt budget
                 if ($mode === 'demo') {
                     $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
                     if (($dlmCfg['enabled'] ?? false) && ($dlmCfg['max_concurrent_demo_positions'] ?? 0) > 0) {
                         $this->config['module']['max_concurrent_positions'] = (int)$dlmCfg['max_concurrent_demo_positions'];
+                    }
+                    if ($dlmCfg['enabled'] ?? false) {
+                        $isDemoLearning = true;
+                        // Attempt budget: override global throttle with demo-specific signal budget
+                        $demoAttemptBudgetEffective = max(1, (int)($dlmCfg['max_demo_signals_per_run'] ?? $maxExecutePerRun));
+                        $maxExecutePerRun           = $demoAttemptBudgetEffective;
+                        // Open budget: cap new positions per run at min(max_new_positions_per_run, remaining capacity)
+                        $demoMaxCap       = (int)($dlmCfg['max_concurrent_demo_positions'] ?? 15);
+                        $demoActiveNow    = count($this->store->loadActiveTrades());
+                        $demoCapRemaining = max(0, $demoMaxCap - $demoActiveNow);
+                        $demoMaxNewPerRun = (int)($dlmCfg['max_new_positions_per_run'] ?? 3);
+                        if ($demoMaxNewPerRun <= 0) { $demoMaxNewPerRun = 3; }
+                        $demoOpenBudgetEffective = min($demoMaxNewPerRun, $demoCapRemaining);
                     }
                 }
 
@@ -690,20 +714,31 @@ final class TradingBotService
                         $result['selected_intent'] = $this->summarizeIntent($intent);
                     }
 
+                    // Demo budget: count each scanned signal
+                    if ($isDemoLearning) {
+                        $demoSelectedScannedCount++;
+                    }
+
                     // P5.12: Stop when max intents executed for this run (deferred does NOT count).
+                    // In demo mode $maxExecutePerRun = $demoAttemptBudgetEffective (attempt budget).
                     if ($executedThisRun >= $maxExecutePerRun) {
+                        if ($isDemoLearning && $demoLoopStoppedReason === 'selected_feed_exhausted') {
+                            $demoLoopStoppedReason = 'demo_attempt_budget_exhausted';
+                        }
                         break;
                     }
 
                     // P5.12: Safety stop if too many deferred wait_retrace checks in one run.
                     if ($deferredChecked >= $maxDeferredPerRun) {
                         $this->warnings[] = "P5.12: Deferred check limit reached ({$maxDeferredPerRun})";
+                        if ($isDemoLearning) { $demoLoopStoppedReason = 'global_break_unexpected'; }
                         break;
                     }
 
                     // P5: Break if too many errors
                     if (count($this->errors) >= $safetyStopThreshold) {
                         $this->warnings[] = "P5: Execution stopped early - error threshold ({$safetyStopThreshold}) reached";
+                        if ($isDemoLearning) { $demoLoopStoppedReason = 'fatal_exchange_blocker'; }
                         break;
                     }
                     
@@ -796,6 +831,15 @@ final class TradingBotService
                         if ($execResult['filled']) {
                             $result['orders_filled']++;
                         }
+                        // Demo: track opened and check open budget
+                        if ($isDemoLearning) {
+                            $demoSelectedAttemptedCount++;
+                            $demoOpenedCount++;
+                            if ($demoOpenedCount >= $demoOpenBudgetEffective) {
+                                $demoLoopStoppedReason = 'demo_open_budget_exhausted';
+                                break;
+                            }
+                        }
                     } else {
                         // P6.7: Distinguish rejected_* (soft reject) from real errors
                         // P6.9: Also handle deferred_* (wait_retrace not met yet)
@@ -811,17 +855,24 @@ final class TradingBotService
                                 $deferredReasonCounts[$reason] = 0;
                             }
                             $deferredReasonCounts[$reason]++;
-                        } elseif (str_starts_with($execStatus, 'rejected_')) {
-                            // Soft reject: NOT an error, just a warning
-                            // Do NOT increment orders_failed
-                            // Do NOT add to $this->errors (safety-stop)
-                            // NOTE: intents_rejected_exec is derived from intent_results post-processing
-                            $executedThisRun++;
+                        } elseif (str_starts_with($execStatus, 'rejected_') || str_starts_with($execStatus, 'skipped_') || str_starts_with($execStatus, 'orphan_')) {
+                            // Soft reject / non-fatal per-signal skip: NOT an error, just a warning.
+                            // Do NOT increment orders_failed.
+                            // Do NOT add to $this->errors (safety-stop).
+                            // NOTE: intents_rejected_exec is derived from intent_results post-processing.
+                            // In demo mode: do NOT count against $executedThisRun so the loop keeps scanning.
+                            if (!$isDemoLearning) {
+                                $executedThisRun++;
+                            } else {
+                                // Demo: non-fatal skip — continue scanning, do not burn attempt budget
+                                $demoSkippedBeforeAttemptCount++;
+                            }
                             $this->warnings[] = "Rejected: {$execStatus} — " . ($execResult['error'] ?? 'no_reason_provided');
                         } else {
                             // Real execution error: counts towards safety-stop
                             // NOTE: intents_failed_exec is derived from intent_results post-processing
                             $executedThisRun++;
+                            if ($isDemoLearning) { $demoSelectedAttemptedCount++; }
                             $result['orders_failed']++;
                             $this->errors[] = $execResult['error'] ?? 'Unknown execution error';
                         }
@@ -834,6 +885,17 @@ final class TradingBotService
                         $suffix = ($cnt > 1) ? (' x' . $cnt) : '';
                         $this->warnings[] = 'Deferred: ' . $r . $suffix;
                     }
+                }
+
+                // Demo: emit budget proof fields
+                if ($isDemoLearning) {
+                    $result['demo_attempt_budget_effective']            = $demoAttemptBudgetEffective;
+                    $result['demo_open_budget_effective']               = $demoOpenBudgetEffective;
+                    $result['demo_selected_scanned_count']              = $demoSelectedScannedCount;
+                    $result['demo_selected_skipped_before_attempt_count'] = $demoSkippedBeforeAttemptCount;
+                    $result['demo_selected_attempted_count']            = $demoSelectedAttemptedCount;
+                    $result['demo_opened_count']                        = $demoOpenedCount;
+                    $result['demo_loop_stopped_reason']                 = $demoLoopStoppedReason;
                 }
 
             }

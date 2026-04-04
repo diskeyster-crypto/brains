@@ -86,6 +86,7 @@
         "enabled": true,
         "max_concurrent_demo_positions": 15,
         "max_demo_signals_per_run": 8,
+        "max_new_positions_per_run": 3,
         "prefer_short_holds": true,
         "allow_low_confidence_demo": false,
         "learning_target_closed_trades": 100,

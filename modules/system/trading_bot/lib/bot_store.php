@@ -991,8 +991,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $missingHoldMinutes++;
             }
 
-            $isComplete     = $closePrice > 0 && $roi !== null && $closeReason !== '';
-            $isFullComplete = $isComplete && $mfe !== null && $mae !== null;
+            $isComplete = $closePrice > 0 && $roi !== null && $closeReason !== '';
+            // mfe_missing_reason / mae_missing_reason are explicit signals that mfe/mae are absent
+            // (Part 3 contract). Check both the null value AND the missing-reason flag so records
+            // carrying an explicit missing-reason flag are never silently counted as fully complete.
+            $mfeMissing = ($mfe === null) || !empty($d['mfe_missing_reason']);
+            $maeMissing = ($mae === null) || !empty($d['mae_missing_reason']);
             if ($isComplete) {
                 $completeClosedCount++;
             }
@@ -1000,23 +1004,40 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             // Count adopted orphan closed trades separately
             if (!empty($d['adopted_from_exchange_orphan']) || !empty($d['is_orphan_adopted'])) {
                 $adoptedOrphanClosedCount++;
-                if ($isComplete) {
+
+                // Adopted-orphan operational completeness: requires the core close fields
+                // plus entry_price, hold_minutes, and ai_dataset_record_written (Part 1 contract).
+                $aoEntryPrice  = (float)($d['entry_price'] ?? 0);
+                $aoAiWritten   = !empty($d['ai_dataset_record_written']);
+                $isAdoptedOrphanComplete = $closePrice > 0
+                    && $roi !== null
+                    && $closeReason !== ''
+                    && $aoEntryPrice > 0
+                    && $holdMin !== null && (int)$holdMin >= 0
+                    && $aoAiWritten;
+
+                // Adopted-orphan full completeness: additionally requires mfe+mae with no
+                // missing-reason flags (Part 3 contract).
+                $isAdoptedOrphanFullComplete = $isAdoptedOrphanComplete && !$mfeMissing && !$maeMissing;
+
+                if ($isAdoptedOrphanComplete) {
                     $adoptedOrphanClosedComplete++;
                 }
-                if ($isFullComplete) {
+                if ($isAdoptedOrphanFullComplete) {
                     $adoptedOrphanClosedFullComplete++;
                 }
-                // Track per-field incompleteness for adopted orphans
+                // Track per-field incompleteness for adopted orphans.
+                // Use mfe_missing_reason / mae_missing_reason as an explicit signal (Part 3).
                 if ($closePrice <= 0) {
                     $adoptedOrphanMissingClosePrice++;
                 }
                 if ($roi === null) {
                     $adoptedOrphanMissingRoi++;
                 }
-                if ($mfe === null) {
+                if ($mfeMissing) {
                     $adoptedOrphanMissingMfe++;
                 }
-                if ($mae === null) {
+                if ($maeMissing) {
                     $adoptedOrphanMissingMae++;
                 }
                 if ($holdMin === null || (int)$holdMin < 0) {

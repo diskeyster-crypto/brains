@@ -73,7 +73,7 @@
                 "stop_loss_from_entry_roi": 0.03
             },
             "limits": {
-                "max_open_trades": 5,
+                "max_open_trades": 15,
                 "max_open_trades_per_symbol": 1,
                 "one_trade_per_symbol": true
             },

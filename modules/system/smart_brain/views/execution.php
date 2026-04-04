@@ -415,6 +415,10 @@ $dlmEnabled             = $bot_last_run['demo_learning_mode_enabled']           
 $dlmMaxSignals          = $bot_last_run['demo_max_signals_per_run_effective']      ?? null;
 $dlmMaxConcurrent       = $bot_last_run['demo_max_concurrent_positions_effective'] ?? null;
 $dlmMaxNewPerRun        = $bot_last_run['demo_max_new_positions_per_run_effective']?? null;
+// Demo intent risk limit proof fields
+$demoEffRiskMaxOpen     = $bot_last_run['demo_effective_risk_max_open_trades']            ?? null;
+$demoEffRiskMaxPerSym   = $bot_last_run['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
+$demoLimitsSource       = (string)($bot_last_run['demo_limits_source']                    ?? '');
 // PART 3: Demo attempt/open budget proof fields
 $demoAttemptBudget      = $bot_last_run['demo_attempt_budget_effective']               ?? null;
 $demoOpenBudget         = $bot_last_run['demo_open_budget_effective']                  ?? null;
@@ -619,6 +623,41 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
             </div>
             <?php endforeach; ?>
         </div>
+        <?php
+        // ── Demo Intent Risk Limits (proof that intents carry real capacity) ─
+        $hasLimitData = ($demoEffRiskMaxOpen !== null);
+        if ($hasLimitData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Intent Risk Limits</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $limitCards = [
+                ['label' => 'Max Open Trades (intent)', 'value' => $demoEffRiskMaxOpen !== null ? (string)$demoEffRiskMaxOpen : 'n/a',
+                    'ok' => ($demoEffRiskMaxOpen ?? 0) >= ($dlmMaxConcurrent ?? 0) ? true : ($demoEffRiskMaxOpen !== null ? false : null)],
+                ['label' => 'Max/Symbol (intent)',      'value' => $demoEffRiskMaxPerSym !== null ? (string)$demoEffRiskMaxPerSym : 'n/a',
+                    'ok' => null],
+                ['label' => 'Limits Source',            'value' => $demoLimitsSource ?: 'n/a',
+                    'ok' => ($demoLimitsSource === 'demo_learning_mode.max_concurrent_demo_positions') ? true : null],
+            ];
+            foreach ($limitCards as $lc):
+                $lcls = 'neutral';
+                if ($lc['ok'] === true) $lcls = 'positive';
+                if ($lc['ok'] === false) $lcls = 'negative';
+            ?>
+            <div class="col-6 col-md-4">
+                <div class="stat-card">
+                    <div class="stat-value <?= $lcls ?>" title="<?= htmlspecialchars((string)$lc['value']) ?>"><?= htmlspecialchars((string)$lc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($lc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($demoEffRiskMaxOpen !== null && $dlmMaxConcurrent !== null && $demoEffRiskMaxOpen < $dlmMaxConcurrent): ?>
+        <div class="alert alert-danger py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Limit mismatch:</strong> intent max_open_trades (<?= (int)$demoEffRiskMaxOpen ?>) &lt; max_concurrent_demo_positions (<?= (int)$dlmMaxConcurrent ?>). Signals will be blocked by rejected_limits.
+        </div>
+        <?php endif; ?>
+        <?php endif; // hasLimitData ?>
         <?php
         // ── Demo Attempt / Open Budget Proof ─────────────────────────────
         $hasBudgetData = ($demoAttemptBudget !== null || $demoSelectedScanned !== null);

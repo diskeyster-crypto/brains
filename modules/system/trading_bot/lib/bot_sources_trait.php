@@ -1076,6 +1076,23 @@ trait BotSourcesTrait
                 }
             }
 
+            // Override limits.max_open_trades from demo_learning_mode.max_concurrent_demo_positions.
+            // demo_risk_defaults.limits.max_open_trades may carry a stale lower cap (e.g. 5),
+            // while the real enforced demo capacity is max_concurrent_demo_positions.
+            // Without this override demo signals are rejected_limits:max_open_trades_reached even
+            // when actual demo capacity exists.
+            $dlmCfgLimits = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+            if (($dlmCfgLimits['enabled'] ?? false) && (int)($dlmCfgLimits['max_concurrent_demo_positions'] ?? 0) > 0) {
+                $effectiveMaxOpenTrades = (int)$dlmCfgLimits['max_concurrent_demo_positions'];
+                $riskDefaults['limits']['max_open_trades'] = $effectiveMaxOpenTrades;
+                $result['demo_effective_risk_max_open_trades'] = $effectiveMaxOpenTrades;
+                $result['demo_limits_source']                  = 'demo_learning_mode.max_concurrent_demo_positions';
+            } else {
+                $result['demo_effective_risk_max_open_trades'] = (int)($riskDefaults['limits']['max_open_trades'] ?? 5);
+                $result['demo_limits_source']                  = 'demo_risk_defaults';
+            }
+            $result['demo_effective_risk_max_open_trades_per_symbol'] = (int)($riskDefaults['limits']['max_open_trades_per_symbol'] ?? 1);
+
             // Runtime proof: record what effective trailing settings were applied to intents.
             $result['demo_effective_trailing_enabled']           = (bool)($riskDefaults['trailing']['enabled'] ?? false);
             $result['demo_effective_trailing_mode']              = (string)($riskDefaults['trailing']['mode'] ?? '');

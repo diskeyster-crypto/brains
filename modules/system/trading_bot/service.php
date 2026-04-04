@@ -334,6 +334,10 @@ final class TradingBotService
                 $result['demo_max_signals_per_run_effective']      = (int)($dlmCfg['max_demo_signals_per_run'] ?? 0);
                 $result['demo_max_concurrent_positions_effective'] = (int)($dlmCfg['max_concurrent_demo_positions'] ?? 0);
                 $result['demo_max_new_positions_per_run_effective']= (int)($dlmCfg['max_new_positions_per_run'] ?? 3);
+                // PART 4: effective demo intent risk limits (populated by loadPatternEngineDemoIntents)
+                $result['demo_effective_risk_max_open_trades']            = $peDemoResult['demo_effective_risk_max_open_trades'] ?? null;
+                $result['demo_effective_risk_max_open_trades_per_symbol'] = $peDemoResult['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
+                $result['demo_limits_source']                             = $peDemoResult['demo_limits_source'] ?? null;
             } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.

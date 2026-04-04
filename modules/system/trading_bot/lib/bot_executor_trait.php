@@ -1543,6 +1543,10 @@ trait BotExecutorTrait
             'adopted_orphans_finalized_from_exchange_this_run' => 0,
             'adopted_orphans_close_failures_this_run' => 0,
             'adopted_orphan_close_failure_reasons' => [],
+            // Close quality counters for adopted orphans
+            'adopted_orphans_closed_complete_this_run' => 0,
+            'adopted_orphans_ai_dataset_written_this_run' => 0,
+            'adopted_orphans_closed_without_ai_dataset_this_run' => 0,
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1774,8 +1778,17 @@ trait BotExecutorTrait
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
                         if ($aiWritten) {
                             $result['ai_dataset_records_written']++;
+                            $result['adopted_orphans_ai_dataset_written_this_run']++;
                         } else {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                            $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                        }
+                        // Count complete close (close_price + roi + close_reason all present)
+                        $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
+                            && ($closedTrade['roi'] ?? null) !== null
+                            && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
+                        if ($isComplete) {
+                            $result['adopted_orphans_closed_complete_this_run']++;
                         }
                         $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                         $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
@@ -1841,8 +1854,22 @@ trait BotExecutorTrait
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
                         if ($aiWritten) {
                             $result['ai_dataset_records_written']++;
+                            if ($isAdoptedOrphanTrade) {
+                                $result['adopted_orphans_ai_dataset_written_this_run']++;
+                            }
                         } else {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                            if ($isAdoptedOrphanTrade) {
+                                $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                            }
+                        }
+                        if ($isAdoptedOrphanTrade) {
+                            $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
+                                && ($closedTrade['roi'] ?? null) !== null
+                                && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
+                            if ($isComplete) {
+                                $result['adopted_orphans_closed_complete_this_run']++;
+                            }
                         }
                     }
                     $this->store->moveTradeToClosedDir($tradeId, $closedTrade);

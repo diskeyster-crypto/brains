@@ -959,6 +959,22 @@ final class TradingBotService
                 $result['adopted_orphans_finalized_from_exchange_this_run']= $updateResult['adopted_orphans_finalized_from_exchange_this_run'] ?? 0;
                 $result['adopted_orphans_close_failures_this_run']         = $updateResult['adopted_orphans_close_failures_this_run'] ?? 0;
                 $result['adopted_orphan_close_failure_reasons']            = $updateResult['adopted_orphan_close_failure_reasons'] ?? [];
+                // Close quality counters
+                $result['adopted_orphans_closed_complete_this_run']             = $updateResult['adopted_orphans_closed_complete_this_run'] ?? 0;
+                $result['adopted_orphans_ai_dataset_written_this_run']          = $updateResult['adopted_orphans_ai_dataset_written_this_run'] ?? 0;
+                $result['adopted_orphans_closed_without_ai_dataset_this_run']   = $updateResult['adopted_orphans_closed_without_ai_dataset_this_run'] ?? 0;
+
+                // ── Adopted orphan close repair pass (demo only) ────────────
+                if (method_exists($this->store, 'repairIncompleteAdoptedOrphanClosedRecords')) {
+                    $repairStats = $this->store->repairIncompleteAdoptedOrphanClosedRecords();
+                    $result['adopted_orphans_close_repair_attempted_this_run'] = $repairStats['adopted_orphans_close_repair_attempted_this_run'] ?? 0;
+                    $result['adopted_orphans_close_repair_succeeded_this_run'] = $repairStats['adopted_orphans_close_repair_succeeded_this_run'] ?? 0;
+                    $result['adopted_orphans_close_repair_failed_this_run']    = $repairStats['adopted_orphans_close_repair_failed_this_run'] ?? 0;
+                } else {
+                    $result['adopted_orphans_close_repair_attempted_this_run'] = 0;
+                    $result['adopted_orphans_close_repair_succeeded_this_run'] = 0;
+                    $result['adopted_orphans_close_repair_failed_this_run']    = 0;
+                }
 
                 // ── PART 3: Open capacity diagnostics ───────────────────────
                 $dlmCfgPost = is_array($this->config['demo_learning_mode'] ?? null)

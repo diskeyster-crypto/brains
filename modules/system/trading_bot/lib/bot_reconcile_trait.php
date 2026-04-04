@@ -252,6 +252,7 @@ trait BotReconcileTrait
 private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
 {
     $trade['local_close_finalize_used'] = true;
+    $isAdoptedOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
 
     // Hold minutes
     $openedTs = (int)(strtotime((string)($trade['opened_at'] ?? '')) ?: ($trade['open_ts'] ?? 0));
@@ -270,6 +271,21 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
         $lastPrice = (float)($rt['last_price'] ?? $rt['last_mark_price'] ?? 0);
         if ($lastPrice > 0) {
             $trade['close_price'] = $lastPrice;
+            unset($trade['close_price_missing_reason']);
+        } else {
+            // Explicit missing reason so closed record is never silently incomplete
+            $trade['close_price_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_no_runtime_price'
+                : 'no_runtime_price';
+        }
+    }
+
+    // Explicit missing reason for entry_price if absent (adopted orphans may lack it)
+    if (!isset($trade['entry_price_missing_reason'])) {
+        if (!isset($trade['entry_price']) || (float)($trade['entry_price'] ?? 0) <= 0) {
+            $trade['entry_price_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_entry_price_unavailable'
+                : 'entry_price_unavailable';
         }
     }
 
@@ -291,13 +307,18 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
 
             if (!isset($trade['pnl'])) {
                 $trade['pnl'] = $pnlEst;
+                unset($trade['pnl_missing_reason']);
             }
             if (!isset($trade['roi'])) {
                 $trade['roi'] = $roiEst;
+                unset($trade['roi_missing_reason']);
             }
         } elseif (!isset($trade['pnl'])) {
             $trade['pnl'] = 0.0;
             $trade['roi'] = 0.0;
+            $missingReason = $isAdoptedOrphan ? 'adopted_orphan_no_price_data' : 'no_price_data';
+            $trade['pnl_missing_reason'] = $missingReason;
+            $trade['roi_missing_reason'] = $missingReason;
         }
     }
 
@@ -311,7 +332,9 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
             $trade['mfe'] = (float)$bestRoi;
             unset($trade['mfe_missing_reason']);
         } else {
-            $trade['mfe_missing_reason'] = 'runtime_no_best_roi_seen';
+            $trade['mfe_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_runtime_no_best_roi_seen'
+                : 'runtime_no_best_roi_seen';
         }
     }
     if (!isset($trade['mae']) || $trade['mae'] === null) {
@@ -320,7 +343,26 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
             $trade['mae'] = (float)$worstRoi;
             unset($trade['mae_missing_reason']);
         } else {
-            $trade['mae_missing_reason'] = 'runtime_no_worst_roi_seen';
+            $trade['mae_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_runtime_no_worst_roi_seen'
+                : 'runtime_no_worst_roi_seen';
+        }
+    }
+
+    // ── Adopted-orphan metadata preservation ─────────────────────────────────
+    // Ensure adopted-orphan lineage fields are always present in the closed record.
+    if ($isAdoptedOrphan) {
+        $trade['adopted_from_exchange_orphan']  = true;
+        $trade['orphan_resolved_local_ownership'] = (bool)($trade['orphan_resolved_local_ownership'] ?? false);
+        // Preserve or set orphan_resolution_ts
+        if (!isset($trade['orphan_resolution_ts'])) {
+            $trade['orphan_resolution_ts'] = (int)($trade['orphan_adopted_at']
+                ? strtotime((string)$trade['orphan_adopted_at'])
+                : $closedAtTs);
+        }
+        // Preserve or default orphan_resolution_reason
+        if (!isset($trade['orphan_resolution_reason']) || $trade['orphan_resolution_reason'] === '') {
+            $trade['orphan_resolution_reason'] = 'orphan_adopted_as_local_demo_trade';
         }
     }
 

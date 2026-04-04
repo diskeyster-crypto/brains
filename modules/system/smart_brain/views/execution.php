@@ -401,11 +401,24 @@ $adoptedOrphansFinalizedLocally      = $bot_last_run['adopted_orphans_finalized_
 $adoptedOrphansFinalizedExchange     = $bot_last_run['adopted_orphans_finalized_from_exchange_this_run'] ?? null;
 $adoptedOrphansCloseFailures         = $bot_last_run['adopted_orphans_close_failures_this_run']          ?? null;
 $adoptedOrphanCloseFailureReasons    = (array)($bot_last_run['adopted_orphan_close_failure_reasons']     ?? []);
+// Close quality counters (this run)
+$adoptedOrphansClosedCompleteThisRun = $bot_last_run['adopted_orphans_closed_complete_this_run']              ?? null;
+$adoptedOrphansAiWrittenThisRun      = $bot_last_run['adopted_orphans_ai_dataset_written_this_run']           ?? null;
+$adoptedOrphansClosedNoAiThisRun     = $bot_last_run['adopted_orphans_closed_without_ai_dataset_this_run']    ?? null;
+$adoptedOrphansRepairAttempted       = $bot_last_run['adopted_orphans_close_repair_attempted_this_run']       ?? null;
+$adoptedOrphansRepairSucceeded       = $bot_last_run['adopted_orphans_close_repair_succeeded_this_run']       ?? null;
+$adoptedOrphansRepairFailed          = $bot_last_run['adopted_orphans_close_repair_failed_this_run']          ?? null;
 // Adopted orphan audit fields (from truth audit)
 $auditAdoptedOrphansStale            = $bot_demo_truth_audit['adopted_orphans_stale_count']              ?? null;
 $auditAdoptedOrphansClosedTotal      = $bot_demo_truth_audit['adopted_orphans_closed_total']             ?? null;
 $auditAdoptedOrphansClosedCompleteRate = $bot_demo_truth_audit['adopted_orphans_closed_complete_rate']   ?? null;
 $auditAdoptedOrphansWithoutAi        = $bot_demo_truth_audit['adopted_orphans_without_ai_dataset_count'] ?? null;
+// Adopted orphan missing-field detail counts (from audit)
+$auditOrphanMissingClosePrice        = $bot_demo_truth_audit['adopted_orphans_closed_missing_close_price_count']  ?? null;
+$auditOrphanMissingRoi               = $bot_demo_truth_audit['adopted_orphans_closed_missing_roi_count']          ?? null;
+$auditOrphanMissingMfe               = $bot_demo_truth_audit['adopted_orphans_closed_missing_mfe_count']          ?? null;
+$auditOrphanMissingMae               = $bot_demo_truth_audit['adopted_orphans_closed_missing_mae_count']          ?? null;
+$auditOrphanMissingHoldMin           = $bot_demo_truth_audit['adopted_orphans_closed_missing_hold_minutes_count'] ?? null;
 $demoOrphanBlocking     = $bot_last_run['demo_orphan_positions_blocking_count']    ?? null;
 $demoPrimaryExecBlocker = (string)($bot_last_run['demo_primary_execution_blocker'] ?? '');
 // Granular execution-stage blocking counters
@@ -714,6 +727,19 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
                     'ok' => $auditAdoptedOrphansWithoutAi === 0 ? true : ($auditAdoptedOrphansWithoutAi > 0 ? false : null)],
                 ['label' => 'Stale This Run',         'value' => $adoptedOrphansStaleThisRun !== null ? (string)$adoptedOrphansStaleThisRun : 'n/a',
                     'ok' => null],
+                // Close quality counters (this run)
+                ['label' => 'Complete (This Run)',    'value' => $adoptedOrphansClosedCompleteThisRun !== null ? (string)$adoptedOrphansClosedCompleteThisRun : 'n/a',
+                    'ok' => ($adoptedOrphansClosedCompleteThisRun ?? 0) > 0 ? true : (($adoptedOrphansClosedThisRun ?? 0) > 0 && ($adoptedOrphansClosedCompleteThisRun ?? 0) === 0 ? false : null)],
+                ['label' => 'AI Written (This Run)',  'value' => $adoptedOrphansAiWrittenThisRun !== null ? (string)$adoptedOrphansAiWrittenThisRun : 'n/a',
+                    'ok' => ($adoptedOrphansAiWrittenThisRun ?? 0) > 0 ? true : (($adoptedOrphansClosedThisRun ?? 0) > 0 && ($adoptedOrphansAiWrittenThisRun ?? 0) === 0 ? false : null)],
+                ['label' => 'Closed w/o AI (Run)',    'value' => $adoptedOrphansClosedNoAiThisRun !== null ? (string)$adoptedOrphansClosedNoAiThisRun : 'n/a',
+                    'ok' => ($adoptedOrphansClosedNoAiThisRun ?? 0) === 0 ? true : (($adoptedOrphansClosedNoAiThisRun ?? 0) > 0 ? false : null)],
+                ['label' => 'Repair Attempted',       'value' => $adoptedOrphansRepairAttempted !== null ? (string)$adoptedOrphansRepairAttempted : 'n/a',
+                    'ok' => null],
+                ['label' => 'Repair Succeeded',       'value' => $adoptedOrphansRepairSucceeded !== null ? (string)$adoptedOrphansRepairSucceeded : 'n/a',
+                    'ok' => ($adoptedOrphansRepairAttempted ?? 0) > 0 ? (($adoptedOrphansRepairSucceeded ?? 0) === ($adoptedOrphansRepairAttempted ?? 0) ? true : null) : null],
+                ['label' => 'Repair Failed',          'value' => $adoptedOrphansRepairFailed !== null ? (string)$adoptedOrphansRepairFailed : 'n/a',
+                    'ok' => ($adoptedOrphansRepairFailed ?? 0) === 0 ? true : (($adoptedOrphansRepairFailed ?? 0) > 0 ? false : null)],
             ];
             foreach ($aoCards as $aoc):
                 $cls = 'neutral';
@@ -728,6 +754,40 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
             </div>
             <?php endforeach; ?>
         </div>
+        <?php
+        // Missing-field detail counts (only shown when there are closed adopted orphan trades)
+        $hasOrphanMissingData = ($auditAdoptedOrphansClosedTotal ?? 0) > 0
+            && (($auditOrphanMissingClosePrice ?? 0) + ($auditOrphanMissingRoi ?? 0)
+              + ($auditOrphanMissingMfe ?? 0) + ($auditOrphanMissingMae ?? 0)
+              + ($auditOrphanMissingHoldMin ?? 0)) > 0;
+        if ($hasOrphanMissingData):
+        ?>
+        <div class="mt-1">
+            <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Closed — Missing Field Counts (Audit)</div>
+            <div class="row g-2 mb-1">
+            <?php
+            $mfCards = [
+                ['label' => 'Missing close_price', 'value' => (string)($auditOrphanMissingClosePrice ?? 0), 'ok' => ($auditOrphanMissingClosePrice ?? 0) === 0 ? true : false],
+                ['label' => 'Missing roi',         'value' => (string)($auditOrphanMissingRoi ?? 0),        'ok' => ($auditOrphanMissingRoi ?? 0) === 0 ? true : false],
+                ['label' => 'Missing mfe',         'value' => (string)($auditOrphanMissingMfe ?? 0),        'ok' => ($auditOrphanMissingMfe ?? 0) === 0 ? true : null],
+                ['label' => 'Missing mae',         'value' => (string)($auditOrphanMissingMae ?? 0),        'ok' => ($auditOrphanMissingMae ?? 0) === 0 ? true : null],
+                ['label' => 'Missing hold_min',    'value' => (string)($auditOrphanMissingHoldMin ?? 0),    'ok' => ($auditOrphanMissingHoldMin ?? 0) === 0 ? true : null],
+            ];
+            foreach ($mfCards as $mfc):
+                $mfCls = 'neutral';
+                if ($mfc['ok'] === true)  $mfCls = 'positive';
+                if ($mfc['ok'] === false) $mfCls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $mfCls ?>"><?= htmlspecialchars($mfc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($mfc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
         <?php if (!empty($adoptedOrphanCloseFailureReasons)): ?>
         <div class="mt-1">
             <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Close Failure Reasons (This Run)</div>

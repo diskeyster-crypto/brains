@@ -474,10 +474,21 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $risk = is_array($trade['risk']       ?? null) ? $trade['risk']       : [];
         $pp   = is_array($trade['passport_snapshot'] ?? $trade['passport'] ?? null) ? ($trade['passport_snapshot'] ?? $trade['passport']) : [];
 
+        $isAdoptedOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+
+        // Prefer closed-trade mfe/mae fields; fall back to runtime
+        $mfe = isset($trade['mfe']) && $trade['mfe'] !== null
+            ? (float)$trade['mfe']
+            : (isset($rt['best_roi_seen']) ? (float)$rt['best_roi_seen'] : null);
+        $mae = isset($trade['mae']) && $trade['mae'] !== null
+            ? (float)$trade['mae']
+            : (isset($rt['worst_roi_seen']) ? (float)$rt['worst_roi_seen'] : null);
+
         $record = [
             'ai_dataset_record_version' => 'v1',
             'created_at'                => date('c'),
             'trade_id'                  => $tradeId,
+            // Signal lineage — absent for adopted orphans; tolerated
             'signal_id'                 => (string)($trade['signal_id'] ?? ''),
             'symbol'                    => (string)($trade['symbol'] ?? ''),
             'side'                      => (string)($trade['side'] ?? ''),
@@ -485,14 +496,15 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'scenario_id'               => $trade['scenario_id'] ?? null,
             'signal_strength'           => isset($trade['signal_strength']) ? (float)$trade['signal_strength'] : null,
             'quality_score'             => isset($trade['quality_score'])   ? (float)$trade['quality_score']   : null,
+            // Core trade fields
             'entry_ts'                  => $trade['open_ts'] ?? (isset($trade['opened_at']) ? strtotime($trade['opened_at']) : null),
             'entry_price'               => isset($trade['entry_price']) ? (float)$trade['entry_price'] : null,
             'close_ts'                  => $trade['close_ts'] ?? $trade['closed_ts'] ?? null,
             'close_price'               => isset($trade['close_price']) ? (float)$trade['close_price'] : null,
             'roi'                       => isset($trade['roi'])  ? (float)$trade['roi']  : null,
             'pnl'                       => isset($trade['pnl'])  ? (float)$trade['pnl']  : null,
-            'mfe'                       => isset($rt['best_roi_seen'])  ? (float)$rt['best_roi_seen']  : null,
-            'mae'                       => isset($rt['worst_roi_seen']) ? (float)$rt['worst_roi_seen'] : null,
+            'mfe'                       => $mfe,
+            'mae'                       => $mae,
             'hold_minutes'              => isset($trade['hold_minutes']) ? (int)$trade['hold_minutes'] : null,
             'leverage'                  => isset($risk['leverage']) ? (int)$risk['leverage'] : null,
             'stop_loss_price'           => isset($prot['stop_loss_price']) ? (float)$prot['stop_loss_price'] : null,
@@ -500,14 +512,157 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'break_even_applied'        => (bool)($rt['break_even_applied']     ?? false),
             'close_reason_normalized'   => (string)($trade['close_reason_normalized'] ?? $trade['close_reason'] ?? ''),
             'close_result_source'       => (string)($trade['close_result_source'] ?? ''),
+            'close_detection_result'    => (string)($trade['close_detection_result'] ?? ''),
             'passport_confidence'       => (string)($pp['data_confidence'] ?? ''),
             'passport_corridor_p75_roi' => isset($pp['corridor_p75_roi']) ? (float)$pp['corridor_p75_roi'] : null,
-            'source'                    => 'demo',
+            'source'                    => $isAdoptedOrphan ? 'orphan_exchange_recovery' : 'demo',
+            // Adopted-orphan lineage (null-safe — normal trades just get false/null)
+            'adopted_from_exchange_orphan'    => $isAdoptedOrphan,
+            'orphan_resolved_local_ownership' => (bool)($trade['orphan_resolved_local_ownership'] ?? false),
+            'orphan_resolution_ts'            => $isAdoptedOrphan ? ($trade['orphan_resolution_ts'] ?? null) : null,
+            'orphan_resolution_reason'        => $isAdoptedOrphan ? ($trade['orphan_resolution_reason'] ?? null) : null,
+            // Missing-field reasons (populated by applyLocalCloseFinalize)
+            'entry_price_missing_reason'  => $trade['entry_price_missing_reason']  ?? null,
+            'close_price_missing_reason'  => $trade['close_price_missing_reason']  ?? null,
+            'roi_missing_reason'          => $trade['roi_missing_reason']           ?? null,
+            'pnl_missing_reason'          => $trade['pnl_missing_reason']           ?? null,
+            'mfe_missing_reason'          => $trade['mfe_missing_reason']           ?? null,
+            'mae_missing_reason'          => $trade['mae_missing_reason']           ?? null,
+            'hold_minutes_missing_reason' => $trade['hold_minutes_missing_reason']  ?? null,
         ];
 
         $path = $this->storageDir . '/ai_dataset/' . $tradeId . '.json';
         $this->writeJson($path, $record);
         return is_file($path);
+    }
+
+    /**
+     * Scan recently-closed adopted orphan trades and repair incomplete records.
+     *
+     * A closed adopted orphan record is considered incomplete if:
+     *   - close_price is missing / zero
+     *   - roi is null
+     *   - AI dataset file does not exist
+     *
+     * For each incomplete record the method:
+     *   1. Tags it with adopted_orphan_close_repair_attempted = true
+     *   2. Attempts to re-write missing fields from what is now available
+     *   3. Retries AI dataset write if missing
+     *   4. Saves the patched closed file back in place
+     *
+     * Returns an array of counters suitable for emission into last_run.json.
+     *
+     * @return array<string, int|array>
+     */
+    public function repairIncompleteAdoptedOrphanClosedRecords(): array
+    {
+        $closedDir    = $this->storageDir . '/trades/closed';
+        $aiDatasetDir = $this->storageDir . '/ai_dataset';
+
+        $stats = [
+            'adopted_orphans_close_repair_attempted_this_run' => 0,
+            'adopted_orphans_close_repair_succeeded_this_run' => 0,
+            'adopted_orphans_close_repair_failed_this_run'    => 0,
+        ];
+
+        if (!is_dir($closedDir)) {
+            return $stats;
+        }
+
+        $files = glob($closedDir . '/*.json') ?: [];
+        foreach ($files as $file) {
+            $data = @json_decode((string)@file_get_contents($file), true);
+            if (!is_array($data)) {
+                continue;
+            }
+            $isAdoptedOrphan = !empty($data['is_orphan_adopted']) || !empty($data['adopted_from_exchange_orphan']);
+            if (!$isAdoptedOrphan) {
+                continue;
+            }
+
+            $tradeId = (string)($data['trade_id'] ?? $data['id'] ?? basename($file, '.json'));
+            $closePrice  = (float)($data['close_price'] ?? 0);
+            $roi         = $data['roi'] ?? null;
+            $aiPath      = $aiDatasetDir . '/' . $tradeId . '.json';
+            $hasAiRecord = is_file($aiPath);
+
+            $needsRepair = $closePrice <= 0 || $roi === null || !$hasAiRecord;
+            if (!$needsRepair) {
+                continue;
+            }
+
+            $stats['adopted_orphans_close_repair_attempted_this_run']++;
+            $data['adopted_orphan_close_repair_attempted'] = true;
+
+            $repaired = false;
+
+            // Re-apply close finalization heuristics if close_price or roi is missing
+            if ($closePrice <= 0 || $roi === null) {
+                $closedAtTs = (int)($data['close_ts'] ?? $data['closed_ts'] ?? time());
+                $entryPrice = (float)($data['entry_price'] ?? 0);
+                $side       = strtolower((string)($data['side'] ?? 'long'));
+                $qty        = (float)($data['position_size'] ?? $data['qty'] ?? 0);
+
+                if ($closePrice <= 0 && $entryPrice > 0) {
+                    // No close_price available — flag it but do not fabricate
+                    $data['close_price_missing_reason'] = $data['close_price_missing_reason']
+                        ?? 'adopted_orphan_repair_no_price_available';
+                }
+
+                if ($roi === null && $entryPrice > 0 && $closePrice > 0 && $qty > 0) {
+                    $priceDiff = ($side === 'long') ? ($closePrice - $entryPrice) : ($entryPrice - $closePrice);
+                    $data['pnl'] = round($priceDiff * $qty, 8);
+                    $data['roi'] = round(($priceDiff / $entryPrice) * 100, 4);
+                    unset($data['roi_missing_reason'], $data['pnl_missing_reason']);
+                    $repaired = true;
+                }
+            }
+
+            // Ensure orphan lineage fields are present
+            if (!isset($data['orphan_resolution_ts'])) {
+                $adoptedAt = $data['orphan_adopted_at'] ?? null;
+                $data['orphan_resolution_ts'] = $adoptedAt
+                    ? (int)strtotime((string)$adoptedAt)
+                    : (int)($data['close_ts'] ?? time());
+                $repaired = true;
+            }
+            if (!isset($data['orphan_resolution_reason']) || $data['orphan_resolution_reason'] === '') {
+                $data['orphan_resolution_reason'] = 'orphan_adopted_as_local_demo_trade';
+                $repaired = true;
+            }
+            $data['adopted_from_exchange_orphan']    = true;
+            $data['orphan_resolved_local_ownership'] = (bool)($data['orphan_resolved_local_ownership'] ?? false);
+
+            // Retry AI dataset write if missing
+            if (!$hasAiRecord) {
+                $aiWritten = $this->appendAiDatasetRecord($tradeId, $data);
+                $data['ai_dataset_record_written']   = $aiWritten;
+                if ($aiWritten) {
+                    unset($data['ai_dataset_write_fail_reason']);
+                    $repaired = true;
+                } else {
+                    $data['ai_dataset_write_fail_reason'] = 'repair_write_failed';
+                }
+            }
+
+            $data['adopted_orphan_close_repair_ts'] = time();
+            if ($repaired) {
+                $data['adopted_orphan_close_repair_succeeded'] = true;
+                $data['adopted_orphan_close_repair_failed']    = false;
+                $data['adopted_orphan_close_repair_reason']    = 'repair_pass_applied';
+                $stats['adopted_orphans_close_repair_succeeded_this_run']++;
+            } else {
+                $data['adopted_orphan_close_repair_succeeded'] = false;
+                $data['adopted_orphan_close_repair_failed']    = true;
+                $data['adopted_orphan_close_repair_reason']    = 'repair_pass_no_new_data_available';
+                $stats['adopted_orphans_close_repair_failed_this_run']++;
+            }
+
+            // Write patched record back in place
+            $this->writeJson($file, $data);
+        }
+
+        return $stats;
     }
 
     /**
@@ -743,6 +898,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $completeClosedCount = 0;
         $adoptedOrphanClosedCount    = 0;
         $adoptedOrphanClosedComplete = 0;
+        // Adopted orphan missing-field detail counts
+        $adoptedOrphanMissingClosePrice  = 0;
+        $adoptedOrphanMissingRoi         = 0;
+        $adoptedOrphanMissingMfe         = 0;
+        $adoptedOrphanMissingMae         = 0;
+        $adoptedOrphanMissingHoldMinutes = 0;
 
         foreach ($closedFiles as $cf) {
             $d = @json_decode((string)@file_get_contents($cf), true);
@@ -790,6 +951,22 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $adoptedOrphanClosedCount++;
                 if ($isComplete) {
                     $adoptedOrphanClosedComplete++;
+                }
+                // Track per-field incompleteness for adopted orphans
+                if ($closePrice <= 0) {
+                    $adoptedOrphanMissingClosePrice++;
+                }
+                if ($roi === null) {
+                    $adoptedOrphanMissingRoi++;
+                }
+                if ($mfe === null) {
+                    $adoptedOrphanMissingMfe++;
+                }
+                if ($mae === null) {
+                    $adoptedOrphanMissingMae++;
+                }
+                if ($holdMin === null || (int)$holdMin < 0) {
+                    $adoptedOrphanMissingHoldMinutes++;
                 }
             }
         }
@@ -966,6 +1143,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'adopted_orphans_closed_complete_count'    => $adoptedOrphanClosedComplete,
             'adopted_orphans_closed_complete_rate'     => $adoptedOrphanClosedCompleteRate,
             'adopted_orphans_without_ai_dataset_count' => $adoptedOrphanWithoutAi,
+            // Adopted orphan missing-field detail counts
+            'adopted_orphans_closed_missing_close_price_count'  => $adoptedOrphanMissingClosePrice,
+            'adopted_orphans_closed_missing_roi_count'          => $adoptedOrphanMissingRoi,
+            'adopted_orphans_closed_missing_mfe_count'          => $adoptedOrphanMissingMfe,
+            'adopted_orphans_closed_missing_mae_count'          => $adoptedOrphanMissingMae,
+            'adopted_orphans_closed_missing_hold_minutes_count' => $adoptedOrphanMissingHoldMinutes,
             'closed_trades_count'                      => $closedCount,
             'ai_dataset_count'                         => $aiCount,
             'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,

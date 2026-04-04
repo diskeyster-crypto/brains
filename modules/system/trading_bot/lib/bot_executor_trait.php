@@ -1450,6 +1450,9 @@ trait BotExecutorTrait
                         }
                         // Finalize locally
                         $closedAtTs = time();
+                        $closeDetectionResultTimeout = ($closeReason === 'learning_timeout_close')
+                            ? 'close_detected_local_finalize_triggered'
+                            : 'close_detected_exchange_gone_after_close_failure';
                         $closedTrade = array_merge($trade, [
                             'closed_at'                    => date('c', $closedAtTs),
                             'closed_ts'                    => $closedAtTs,
@@ -1458,6 +1461,8 @@ trait BotExecutorTrait
                             'close_reason_normalized'      => $closeReason,
                             'close_protection_state'       => 'learning_force_closed',
                             'learning_timeout_force_close' => true,
+                            'close_detection_result'       => $closeDetectionResultTimeout,
+                            'close_detection_source'       => 'learning_timeout_force_close',
                         ]);
                         if (method_exists($this, 'applyLocalCloseFinalize')) {
                             $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
@@ -1481,10 +1486,23 @@ trait BotExecutorTrait
                 }
 
                 // Get position from exchange
+                // Guard: if gateway is not initialized, skip position check to avoid false-positive closure.
+                if (!$this->gateway || !$this->gateway->isInitialized()) {
+                    if ($mode === 'demo') {
+                        $cfKey = 'close_detection_skipped_gateway_unavailable';
+                        $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                        $result['close_failures']++;
+                    }
+                    $result['updated']++;
+                    continue;
+                }
                 $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
                 
                 if ($position === null || (float)($position['size'] ?? 0) <= 0) {
-                    // Position closed on exchange — determine close reason
+                    // Position closed on exchange — determine close reason and detection state
+                    $closeDetectionResult = $position === null
+                        ? 'close_detected_exchange_gone'
+                        : 'close_detected_size_zero';
                     $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
                     $closeReason = 'exchange_closed_unknown';
                     if (!empty($rt['dumb_trailing_applied'])) {
@@ -1505,6 +1523,8 @@ trait BotExecutorTrait
                         'close_reason'            => $closeReason,
                         'close_reason_normalized' => $closeReason,
                         'close_protection_state'  => (string)($rt['protection_state'] ?? 'unknown'),
+                        'close_detection_result'  => $closeDetectionResult,
+                        'close_detection_source'  => 'update_active_positions',
                     ]);
                     // Apply local finalization so fields are never empty
                     if (method_exists($this, 'applyLocalCloseFinalize')) {
@@ -1891,6 +1911,8 @@ trait BotExecutorTrait
                                     'close_reason_normalized' => 'stop_loss',
                                     'close_roi'               => round($currentRoiLS * 100, 4),
                                     'runtime'                 => $runtime,
+                                    'close_detection_result'  => 'close_detected_logical_stop',
+                                    'close_detection_source'  => 'update_active_positions_logical_stop',
                                 ]);
                                 if (method_exists($this, 'applyLocalCloseFinalize')) {
                                     $closedTrade2 = $this->applyLocalCloseFinalize($closedTrade2, $closedAtTs2);

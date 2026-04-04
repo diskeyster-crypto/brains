@@ -178,6 +178,10 @@ trait BotReconcileTrait
     $trade['closed_ts'] = $closedAtTs;
     $trade['close_ts']  = $closedAtTs;
 
+    // Record how this close was detected (reconcile path = position not found on exchange)
+    $trade['close_detection_result'] = 'close_detected_position_closed_remote';
+    $trade['close_detection_source'] = 'reconcile_with_exchange';
+
     // ── Local finalization (immediate, no exchange call) ────────────────────
     // Compute local estimates from trade snapshot so closed file is never empty,
     // even if exchange enrichment is delayed or unavailable.

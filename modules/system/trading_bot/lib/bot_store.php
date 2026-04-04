@@ -656,9 +656,10 @@ public function saveClosedTrade(string $tradeId, array $trade): void
      * @param int $feedAvailableCount           Signals available in the PE demo feed this run
      * @param int $feedSelectedCount            Signals actually selected/attempted this run
      * @param int $positionsOpenedThisRun       Positions successfully opened this run
+     * @param int $closedThisRun                Trades closed during the current run (from updateActivePositions)
      * @return array<string,mixed>
      */
-    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0, int $feedAvailableCount = 0, int $feedSelectedCount = 0, int $positionsOpenedThisRun = 0): array
+    public function computeDemoTruthAudit(int $learningMaxActiveAgeMinutes = 240, int $orphanBlockingCount = 0, int $feedAvailableCount = 0, int $feedSelectedCount = 0, int $positionsOpenedThisRun = 0, int $closedThisRun = 0): array
     {
         $closedDir    = $this->storageDir . '/trades/closed';
         $activeDir    = $this->storageDir . '/trades/active';
@@ -784,6 +785,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $pctMissingHoldMinutes = $closedCount > 0 ? round($missingHoldMinutes / $closedCount * 100, 1) : 0.0;
         $pctMissingCloseReason = $closedCount > 0 ? round($missingCloseReason / $closedCount * 100, 1) : 0.0;
         $pctMissingClosePrice  = $closedCount > 0 ? round($missingClosePrice / $closedCount * 100, 1) : 0.0;
+        $pctMissingRoi         = $closedCount > 0 ? round($missingRoi / $closedCount * 100, 1) : 0.0;
         $completenessRate      = $closedCount > 0 ? round($completeClosedCount / $closedCount * 100, 1) : 0.0;
 
         // ── Bottleneck classification ────────────────────────────────────────
@@ -823,8 +825,16 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $primaryExecutionBlocker = 'feed_empty';
             }
         } elseif ($closedCount === 0 && $activeCount > 0) {
-            $primaryBottleneck       = 'close_detection_too_weak';
-            $primaryBottleneckReason = "Active trades exist ({$activeCount}) but none have closed. Exchange close detection or reconcile may not be triggering.";
+            if ($closedThisRun === 0 && $staleCount > 0) {
+                $primaryBottleneck       = 'close_detection_too_weak';
+                $primaryBottleneckReason = "Active trades exist ({$activeCount}, {$staleCount} stale ≥{$learningMaxActiveAgeMinutes}min) but none have closed. Check learning_close_timeout_minutes (force-close stale trades when exceeded) and reconcile pipeline.";
+            } elseif ($closedThisRun === 0) {
+                $primaryBottleneck       = 'close_detection_too_weak';
+                $primaryBottleneckReason = "Active trades exist ({$activeCount}) but no closures recorded in storage or this run. Positions may still be open on the exchange. Verify reconcile is running (force_reconcile_each_run_demo) and that learning_close_timeout_minutes is set low enough for demo holds.";
+            } else {
+                $primaryBottleneck       = 'healthy_loop_waiting_for_more_cycles';
+                $primaryBottleneckReason = "Active trades exist ({$activeCount}), {$closedThisRun} closed this run but not yet counted in storage snapshot. Loop is cycling.";
+            }
             $recommendedNextFixArea  = 'audit_reconcile_and_close_pipeline';
         } elseif ($pctStaleActive > 50) {
             $primaryBottleneck       = 'too_many_stale_active_trades';
@@ -855,15 +865,25 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,
             'avg_active_trade_age_minutes'             => $avgActiveAgeMin,
             'stale_active_count'                       => $staleCount,
+            'active_trades_stale_count'                => $staleCount,   // canonical alias
             'pct_active_trades_stale'                  => $pctStaleActive,
             'stale_threshold_minutes'                  => $learningMaxActiveAgeMinutes,
             'closed_trades_complete_count'             => $completeClosedCount,
             'closed_trades_completeness_rate'          => $completenessRate,
+            'closed_trades_complete_rate'              => $completenessRate,  // alias
             'pct_closed_missing_mfe'                   => $pctMissingMfe,
             'pct_closed_missing_mae'                   => $pctMissingMae,
             'pct_closed_missing_hold_minutes'          => $pctMissingHoldMinutes,
             'pct_closed_missing_close_reason'          => $pctMissingCloseReason,
             'pct_closed_missing_close_price'           => $pctMissingClosePrice,
+            'pct_closed_missing_roi'                   => $pctMissingRoi,
+            // Canonical close-pipeline field names requested by PART 7
+            'closed_trades_missing_close_price_rate'   => $pctMissingClosePrice,
+            'closed_trades_missing_roi_rate'           => $pctMissingRoi,
+            'closed_trades_missing_mfe_rate'           => $pctMissingMfe,
+            'closed_trades_missing_mae_rate'           => $pctMissingMae,
+            'closed_trades_missing_hold_minutes_rate'  => $pctMissingHoldMinutes,
+            'closed_trades_missing_close_reason_rate'  => $pctMissingCloseReason,
             'closed_trades_without_ai_dataset_count'   => $closedWithoutAiDataset,
             'ai_dataset_without_closed_trade_count'    => $aiWithoutClosedTrade,
             'closed_to_ai_dataset_match_rate'          => $matchRate,
@@ -876,6 +896,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'runtime_feed_available_count'             => $feedAvailableCount,
             'runtime_feed_selected_count'              => $feedSelectedCount,
             'runtime_positions_opened_this_run'        => $positionsOpenedThisRun,
+            'runtime_closed_this_run'                  => $closedThisRun,
             'runtime_feed_is_available'                => $feedIsAvailable,
             'primary_execution_blocker'                => $primaryExecutionBlocker,
             'primary_execution_blocker_reason'         => $primaryBottleneckReason,

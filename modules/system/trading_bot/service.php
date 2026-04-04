@@ -1246,7 +1246,8 @@ final class TradingBotService
                     $demoOrphanBlockingCount,
                     (int)($result['demo_feed_available_count'] ?? 0),
                     (int)($result['demo_feed_selected_count'] ?? 0),
-                    (int)($result['positions_opened'] ?? 0)
+                    (int)($result['positions_opened'] ?? 0),
+                    (int)($result['demo_trades_closed_this_run'] ?? 0)
                 );
                 $result['demo_truth_audit']              = $demoTruthAudit;
                 $result['primary_demo_bottleneck']       = $demoTruthAudit['primary_demo_bottleneck'];

@@ -340,6 +340,30 @@ final class SmartBrainService
                 if (isset($j['credentials']) && is_array($j['credentials'])) {
                     $cfg['module']['credentials'] = $j['credentials'];
                 }
+                // Merge full config blocks so getTradingBotData() returns a complete bot_config
+                // and the execution page can render the real saved values without reverting.
+                if (isset($j['execution']) && is_array($j['execution'])) {
+                    $cfg['execution'] = $j['execution'];
+                }
+                if (isset($j['sources']) && is_array($j['sources'])) {
+                    $cfg['sources'] = $j['sources'];
+                }
+                if (isset($j['exchange']) && is_array($j['exchange'])) {
+                    $cfg['exchange'] = $j['exchange'];
+                }
+                if (isset($j['demo_learning_mode']) && is_array($j['demo_learning_mode'])) {
+                    $cfg['demo_learning_mode'] = $j['demo_learning_mode'];
+                }
+                if (isset($j['demo_sources']) && is_array($j['demo_sources'])) {
+                    $cfg['demo_sources'] = $j['demo_sources'];
+                }
+                // Flat keys read directly by execution.php
+                if (isset($j['reconcile_before_action'])) {
+                    $cfg['reconcile_before_action'] = (bool)$j['reconcile_before_action'];
+                }
+                if (isset($j['max_positions'])) {
+                    $cfg['max_positions'] = (int)$j['max_positions'];
+                }
             }
         }
 

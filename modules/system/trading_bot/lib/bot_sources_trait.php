@@ -941,7 +941,7 @@ trait BotSourcesTrait
      *
      * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,source_mode:string,source_path:string,signals_loaded:int,signals_skipped:int}
      */
-    protected function loadPatternEngineDemoIntents(): array
+     protected function loadPatternEngineDemoIntents(): array
     {
         $result = [
             'ok'             => true,
@@ -969,6 +969,13 @@ trait BotSourcesTrait
             'demo_signal_rotation_mode'          => 'fifo',
             'demo_signals_deferred_by_rotation'  => 0,
             'demo_signals_selected_by_rotation'  => 0,
+            // PART 4 runtime proof: effective trailing settings applied to intents
+            'demo_effective_trailing_enabled'          => false,
+            'demo_effective_trailing_mode'             => '',
+            'demo_effective_trailing_activation'       => 0.0,
+            'demo_effective_trailing_drawdown_factor'  => 0.0,
+            'demo_effective_break_even_enabled'        => false,
+            'demo_effective_break_even_activation'     => 0.0,
         ];
 
         try {
@@ -1037,6 +1044,45 @@ trait BotSourcesTrait
                 ],
                 'trailing'                => ['enabled' => false],
             ], (array)($demoSrc['demo_risk_defaults'] ?? []));
+
+            // Override trailing/break-even subfields from the active execution config.
+            // demo_risk_defaults remain the base; execution settings win for trailing fields only.
+            $execCfg = (array)($this->config['execution'] ?? []);
+            if (!empty($execCfg)) {
+                if (!isset($riskDefaults['trailing']) || !is_array($riskDefaults['trailing'])) {
+                    $riskDefaults['trailing'] = [];
+                }
+                $trailingOverrides = [];
+                if (array_key_exists('trailing_enabled', $execCfg)) {
+                    $trailingOverrides['enabled'] = (bool)$execCfg['trailing_enabled'];
+                }
+                if (array_key_exists('trailing_mode', $execCfg) && (string)$execCfg['trailing_mode'] !== '') {
+                    $trailingOverrides['mode'] = (string)$execCfg['trailing_mode'];
+                }
+                if (array_key_exists('trailing_activation_roi', $execCfg)) {
+                    $trailingOverrides['activation_roi_pct'] = (float)$execCfg['trailing_activation_roi'];
+                }
+                if (array_key_exists('trailing_drawdown_factor', $execCfg)) {
+                    $trailingOverrides['drawdown_factor'] = (float)$execCfg['trailing_drawdown_factor'];
+                }
+                if (array_key_exists('break_even_enabled', $execCfg)) {
+                    $trailingOverrides['break_even_enabled'] = (bool)$execCfg['break_even_enabled'];
+                }
+                if (array_key_exists('break_even_activation_roi', $execCfg)) {
+                    $trailingOverrides['break_even_activation_roi'] = (float)$execCfg['break_even_activation_roi'];
+                }
+                if (!empty($trailingOverrides)) {
+                    $riskDefaults['trailing'] = array_merge($riskDefaults['trailing'], $trailingOverrides);
+                }
+            }
+
+            // Runtime proof: record what effective trailing settings were applied to intents.
+            $result['demo_effective_trailing_enabled']           = (bool)($riskDefaults['trailing']['enabled'] ?? false);
+            $result['demo_effective_trailing_mode']              = (string)($riskDefaults['trailing']['mode'] ?? '');
+            $result['demo_effective_trailing_activation']        = (float)($riskDefaults['trailing']['activation_roi_pct'] ?? 0);
+            $result['demo_effective_trailing_drawdown_factor']   = (float)($riskDefaults['trailing']['drawdown_factor'] ?? 0);
+            $result['demo_effective_break_even_enabled']         = (bool)($riskDefaults['trailing']['break_even_enabled'] ?? false);
+            $result['demo_effective_break_even_activation']      = (float)($riskDefaults['trailing']['break_even_activation_roi'] ?? 0);
 
             $executedIndex = $this->loadExecutedIndex();
             $intents  = [];

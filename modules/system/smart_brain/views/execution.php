@@ -23,6 +23,7 @@
  * @var string               $bot_storage_dir
  * @var array<string,mixed>  $bot_demo_creds
  * @var array<string,mixed>  $bot_diag
+ * @var array<string,mixed>  $bot_config_debug
  * @var array<string,mixed>  $bot_demo_data_sufficiency
  * @var array<string,mixed>  $bot_demo_truth_audit
  * @var array<string,mixed>  $pe_last_run
@@ -161,6 +162,28 @@ $exchCfg = $bot_config['exchange'] ?? [];
 $srcCfg  = $bot_config['sources'] ?? [];
 $valCfg  = $bot_config['validation'] ?? [];
 
+// ── DEBUG READBACK PANEL ────────────────────────────────────────────────────
+// Temporary diagnostic: shows exactly what config the page is rendering from.
+$_dbg = $bot_config_debug ?? [];
+$_boolLabel = static fn($v): string => $v ? '<span style="color:#22c55e">true</span>' : '<span style="color:#ef4444">false</span>';
+?>
+<div style="background:#0f172a;border:2px solid #f97316;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-family:monospace;font-size:12px;color:#e2e8f0">
+    <div style="color:#f97316;font-weight:700;margin-bottom:6px">⚠ DEBUG — Config Readback Proof (remove after investigation)</div>
+    <div><b>Config path:</b> <?= htmlspecialchars((string)($_dbg['config_path'] ?? '(unknown)')) ?></div>
+    <div><b>Mode:</b> <?= htmlspecialchars((string)($_dbg['mode'] ?? '(unknown)')) ?></div>
+    <div style="margin-top:6px"><b>Toggle values used to render this page:</b></div>
+    <table style="border-collapse:collapse;margin-top:4px">
+        <tr><td style="padding:1px 12px 1px 0">execution.reverse_side_enabled</td><td><?= $_boolLabel((bool)($_dbg['execution_reverse_side_enabled'] ?? false)) ?></td></tr>
+        <tr><td style="padding:1px 12px 1px 0">execution.trailing_enabled</td><td><?= $_boolLabel((bool)($_dbg['execution_trailing_enabled'] ?? false)) ?></td></tr>
+        <tr><td style="padding:1px 12px 1px 0">execution.break_even_enabled</td><td><?= $_boolLabel((bool)($_dbg['execution_break_even_enabled'] ?? false)) ?></td></tr>
+        <tr><td style="padding:1px 12px 1px 0">execution.emergency_stop_enabled</td><td><?= $_boolLabel((bool)($_dbg['execution_emergency_stop_enabled'] ?? false)) ?></td></tr>
+        <tr><td style="padding:1px 12px 1px 0">sources.brain_source_enabled</td><td><?= $_boolLabel((bool)($_dbg['sources_brain_source_enabled'] ?? false)) ?></td></tr>
+        <tr><td style="padding:1px 12px 1px 0">reconcile_before_action</td><td><?= $_boolLabel((bool)($_dbg['reconcile_before_action'] ?? false)) ?></td></tr>
+    </table>
+    <div style="margin-top:6px"><b>Raw execution block:</b> <code><?= htmlspecialchars(json_encode($_dbg['raw_execution_block'] ?? null, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) ?></code></div>
+    <div style="margin-top:4px"><b>Raw sources block:</b> <code><?= htmlspecialchars(json_encode($_dbg['raw_sources_block'] ?? null, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) ?></code></div>
+</div>
+<?php
 $modeLabel = match($bot_mode) {
     'live'  => '<span class="badge-live">LIVE</span>',
     'demo'  => '<span class="badge-demo">DEMO</span>',
@@ -1715,7 +1738,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                 <div class="form-check">
                     <input type="checkbox" class="form-check-input" name="<?= $ch['name'] ?>" id="chk_<?= $ch['name'] ?>"
                         <?= $ch['val'] ? 'checked' : '' ?>>
-                    <label class="form-check-label small" for="chk_<?= $ch['name'] ?>"><?= htmlspecialchars($ch['label']) ?></label>
+                    <label class="form-check-label small" for="chk_<?= $ch['name'] ?>"><?= htmlspecialchars($ch['label']) ?> <span style="font-family:monospace;font-size:10px;color:<?= $ch['val'] ? '#22c55e' : '#ef4444' ?>">(render=<?= $ch['val'] ? 'true' : 'false' ?>)</span></label>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -1753,7 +1776,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                     <div class="form-check">
                         <input type="checkbox" class="form-check-input" name="sources_brain_source_enabled" id="chk_brain_src"
                             <?= !empty($srcCfg['brain_source_enabled']) ? 'checked' : '' ?>>
-                        <label class="form-check-label small" for="chk_brain_src">Brain Source Enabled</label>
+                        <label class="form-check-label small" for="chk_brain_src">Brain Source Enabled <?php $_bsv = !empty($srcCfg['brain_source_enabled']); ?><span style="font-family:monospace;font-size:10px;color:<?= $_bsv ? '#22c55e' : '#ef4444' ?>">(render=<?= $_bsv ? 'true' : 'false' ?>)</span></label>
                     </div>
                 </div>
                 <div class="col-md-3">

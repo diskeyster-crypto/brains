@@ -703,10 +703,15 @@ final class TradingBotService
                 $demoTurnoverModeTriggered    = false;
                 $demoTurnoverCandidatesCount  = 0;
                 $demoTurnoverProcessedCount   = 0;
-                $demoTurnoverFreedCapacity    = false;
-                $demoTurnoverBlockReason      = 'none';
-                $demoTurnoverPriorityStats    = [];
-                $demoTurnoverAiWritten        = 0;
+                $demoTurnoverFreedCapacity           = false;
+                $demoTurnoverBlockReason             = 'none';
+                $demoTurnoverPriorityStats           = [];
+                $demoTurnoverAiWritten               = 0;
+                $demoTurnoverCandStaleCount          = 0;
+                $demoTurnoverCandTimeoutCount        = 0;
+                $demoTurnoverCandDeadShellCount      = 0;
+                $demoTurnoverCandFinalizeEligCount   = 0;
+                $demoTurnoverCandOtherCount          = 0;
 
                 // demo_learning_mode: cap max concurrent positions + override attempt budget
                 if ($mode === 'demo') {
@@ -727,32 +732,44 @@ final class TradingBotService
                         if ($demoMaxNewPerRun <= 0) { $demoMaxNewPerRun = 3; }
                         $demoOpenBudgetEffective = min($demoMaxNewPerRun, $demoCapRemaining);
 
+                        // ── Always record slot state so diagnostics are truthful even when not full ──
+                        if ($demoMaxCap > 0) {
+                            $demoCapacitySlotsTotalEff = $demoMaxCap;
+                            $demoCapacitySlotsBefore   = $demoActiveNow;
+                            $demoCapacitySlotsAfter    = $demoActiveNow;
+                        }
+                        $demoCapacityFull = ($demoMaxCap > 0 && $demoCapRemaining === 0);
+
                         // ── Capacity saturation: trigger slot-recovery pass ──────────
                         // When no capacity remains, attempt to free slots BEFORE executing
                         // new signals so that at least some new opens can proceed this run.
-                        if ($demoCapRemaining === 0 && $demoMaxCap > 0) {
-                            $demoCapacityFull          = true;
-                            $demoCapacitySlotsTotalEff = $demoMaxCap;
-                            $demoCapacitySlotsBefore   = $demoActiveNow;
-
+                        if ($demoCapacityFull) {
                             if (method_exists($this, 'performDemoTurnoverPass')) {
-                                $demoTurnoverModeTriggered = true;
-                                $turnoverPassResult        = $this->performDemoTurnoverPass($mode);
-                                $demoTurnoverCandidatesCount = (int)($turnoverPassResult['turnover_candidates_found']     ?? 0);
-                                $demoTurnoverProcessedCount  = (int)($turnoverPassResult['turnover_candidates_processed']  ?? 0);
-                                $demoTurnoverAiWritten       = (int)($turnoverPassResult['turnover_ai_records_written']    ?? 0);
-                                $demoTurnoverBlockReason     = (string)($turnoverPassResult['turnover_block_reason']       ?? 'none');
-                                $demoTurnoverPriorityStats   = (array)($turnoverPassResult['turnover_priority_stats']      ?? []);
-                                $slotsFreedByPass            = (int)($turnoverPassResult['turnover_slots_freed']           ?? 0);
+                                $demoTurnoverModeTriggered       = true;
+                                $turnoverPassResult              = $this->performDemoTurnoverPass($mode);
+                                $demoTurnoverCandidatesCount     = (int)($turnoverPassResult['turnover_candidates_found']                    ?? 0);
+                                $demoTurnoverProcessedCount      = (int)($turnoverPassResult['turnover_candidates_processed']                 ?? 0);
+                                $demoTurnoverAiWritten           = (int)($turnoverPassResult['turnover_ai_records_written']                   ?? 0);
+                                $demoTurnoverBlockReason         = (string)($turnoverPassResult['turnover_block_reason']                      ?? 'none');
+                                $demoTurnoverPriorityStats       = (array)($turnoverPassResult['turnover_priority_stats']                     ?? []);
+                                $demoTurnoverCandStaleCount      = (int)($turnoverPassResult['turnover_candidates_stale_count']               ?? 0);
+                                $demoTurnoverCandTimeoutCount    = (int)($turnoverPassResult['turnover_candidates_timeout_count']              ?? 0);
+                                $demoTurnoverCandDeadShellCount  = (int)($turnoverPassResult['turnover_candidates_dead_shell_count']           ?? 0);
+                                $demoTurnoverCandFinalizeEligCount = (int)($turnoverPassResult['turnover_candidates_finalize_eligible_count']  ?? 0);
+                                $demoTurnoverCandOtherCount      = (int)($turnoverPassResult['turnover_candidates_other_count']               ?? 0);
+                                $slotsFreedByPass                = (int)($turnoverPassResult['turnover_slots_freed']                          ?? 0);
                                 if ($slotsFreedByPass > 0) {
-                                    $demoCapacitySlotsFreed  = $slotsFreedByPass;
+                                    $demoCapacitySlotsFreed      = $slotsFreedByPass;
                                     // Re-read active count after turnover pass freed some slots
-                                    $demoActiveNow           = count($this->store->loadActiveTrades());
-                                    $demoCapRemaining        = max(0, $demoMaxCap - $demoActiveNow);
-                                    $demoOpenBudgetEffective = min($demoMaxNewPerRun, $demoCapRemaining);
-                                    $demoCapacityFull        = ($demoCapRemaining === 0);
-                                    $demoTurnoverFreedCapacity = true;
+                                    $demoActiveNow               = count($this->store->loadActiveTrades());
+                                    $demoCapRemaining            = max(0, $demoMaxCap - $demoActiveNow);
+                                    $demoOpenBudgetEffective     = min($demoMaxNewPerRun, $demoCapRemaining);
+                                    $demoCapacityFull            = ($demoCapRemaining === 0);
+                                    $demoTurnoverFreedCapacity   = true;
                                 }
+                            } else {
+                                $demoTurnoverModeTriggered = true;
+                                $demoTurnoverBlockReason   = 'turnover_pass_not_invoked';
                             }
                             $demoCapacitySlotsAfter = $demoActiveNow;
                         }
@@ -961,8 +978,14 @@ final class TradingBotService
                     $result['demo_turnover_processed_count']            = $demoTurnoverProcessedCount;
                     $result['demo_turnover_freed_capacity']             = $demoTurnoverFreedCapacity;
                     $result['demo_turnover_block_reason']               = $demoTurnoverBlockReason;
-                    $result['demo_turnover_priority_stats']             = $demoTurnoverPriorityStats;
-                    $result['demo_turnover_pass_ai_records_written']    = $demoTurnoverAiWritten;
+                    $result['demo_turnover_priority_stats']                         = $demoTurnoverPriorityStats;
+                    $result['demo_turnover_pass_ai_records_written']                = $demoTurnoverAiWritten;
+                    // Turnover candidate breakdown
+                    $result['demo_turnover_candidates_stale_count']                 = $demoTurnoverCandStaleCount;
+                    $result['demo_turnover_candidates_timeout_count']               = $demoTurnoverCandTimeoutCount;
+                    $result['demo_turnover_candidates_dead_shell_count']            = $demoTurnoverCandDeadShellCount;
+                    $result['demo_turnover_candidates_finalize_eligible_count']     = $demoTurnoverCandFinalizeEligCount;
+                    $result['demo_turnover_candidates_other_count']                 = $demoTurnoverCandOtherCount;
                 }
 
             }

@@ -516,16 +516,24 @@ $demoTurnoverModeRun     = $bot_last_run['demo_turnover_mode_triggered']        
 $demoTurnoverCandRun     = $bot_last_run['demo_turnover_candidates_count']           ?? null;
 $demoTurnoverProcRun     = $bot_last_run['demo_turnover_processed_count']            ?? null;
 $demoTurnoverFreedRun    = $bot_last_run['demo_turnover_freed_capacity']             ?? null;
-$demoTurnoverBlockRun    = (string)($bot_last_run['demo_turnover_block_reason']      ?? '');
-$demoTurnoverPriStats    = (array)($bot_last_run['demo_turnover_priority_stats']     ?? []);
-$demoTurnoverAiRun       = $bot_last_run['demo_turnover_pass_ai_records_written']    ?? null;
+$demoTurnoverBlockRun    = (string)($bot_last_run['demo_turnover_block_reason']                    ?? '');
+$demoTurnoverPriStats    = (array)($bot_last_run['demo_turnover_priority_stats']                   ?? []);
+$demoTurnoverAiRun       = $bot_last_run['demo_turnover_pass_ai_records_written']                  ?? null;
+// Turnover candidate breakdown (this run)
+$demoTurnoverCandStale   = $bot_last_run['demo_turnover_candidates_stale_count']                   ?? null;
+$demoTurnoverCandTimeout = $bot_last_run['demo_turnover_candidates_timeout_count']                 ?? null;
+$demoTurnoverCandDead    = $bot_last_run['demo_turnover_candidates_dead_shell_count']              ?? null;
+$demoTurnoverCandFinElig = $bot_last_run['demo_turnover_candidates_finalize_eligible_count']       ?? null;
+$demoTurnoverCandOther   = $bot_last_run['demo_turnover_candidates_other_count']                   ?? null;
 // Capacity fields from truth audit
-$auditCapFull            = $bot_demo_truth_audit['capacity_full']                    ?? null;
-$auditCapSlotsTotal      = $bot_demo_truth_audit['capacity_slots_total']             ?? null;
-$auditCapSlotsUsed       = $bot_demo_truth_audit['capacity_slots_used']              ?? null;
-$auditCapSlotsFreed      = $bot_demo_truth_audit['capacity_slots_freed_this_run']    ?? null;
-$auditRecoverableCount   = $bot_demo_truth_audit['recoverable_active_trades_count']  ?? null;
-$auditTurnoverCandCount  = $bot_demo_truth_audit['turnover_candidates_count']        ?? null;
+$auditCapFull            = $bot_demo_truth_audit['capacity_full']                                  ?? null;
+$auditCapSlotsTotal      = $bot_demo_truth_audit['capacity_slots_total']                           ?? null;
+$auditCapSlotsUsed       = $bot_demo_truth_audit['capacity_slots_used']                            ?? null;
+$auditCapSlotsFreed      = $bot_demo_truth_audit['capacity_slots_freed_this_run']                  ?? null;
+$auditRecoverableCount   = $bot_demo_truth_audit['recoverable_active_trades_count']                ?? null;
+$auditTurnoverCandCount  = $bot_demo_truth_audit['turnover_candidates_count']                      ?? null;
+$auditConsistencyOk      = $bot_demo_truth_audit['capacity_runtime_consistency_ok']                ?? null;
+$auditConsistencyWarning = (string)($bot_demo_truth_audit['capacity_runtime_consistency_warning']  ?? '');
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -1238,6 +1246,21 @@ $auditTurnoverCandCount  = $bot_demo_truth_audit['turnover_candidates_count']   
         <?php if ($demoTurnoverBlockRun !== '' && $demoTurnoverBlockRun !== 'none'): ?>
         <div class="alert alert-warning py-1 px-3 mt-1 mb-1" style="font-size:.8rem;">
             <strong>Turnover Block Reason:</strong> <code><?= htmlspecialchars($demoTurnoverBlockRun) ?></code>
+        </div>
+        <?php endif; ?>
+        <?php if ($auditConsistencyOk === false && $auditConsistencyWarning !== ''): ?>
+        <div class="alert alert-danger py-1 px-3 mt-1 mb-1" style="font-size:.8rem;">
+            <strong>⚠ Capacity Consistency Warning:</strong> <?= htmlspecialchars($auditConsistencyWarning) ?>
+        </div>
+        <?php endif; ?>
+        <?php if ($demoTurnoverModeRun && ($demoTurnoverCandStale !== null || $demoTurnoverCandTimeout !== null || $demoTurnoverCandDead !== null)): ?>
+        <div class="mt-1 small text-muted">
+            <strong>Candidate Breakdown:</strong>
+            <?php if (($demoTurnoverCandDead ?? 0) > 0): ?><span class="badge bg-danger me-1">Dead Shells: <?= (int)$demoTurnoverCandDead ?></span><?php endif; ?>
+            <?php if (($demoTurnoverCandTimeout ?? 0) > 0): ?><span class="badge bg-warning text-dark me-1">Timeout: <?= (int)$demoTurnoverCandTimeout ?></span><?php endif; ?>
+            <?php if (($demoTurnoverCandStale ?? 0) > 0): ?><span class="badge bg-secondary me-1">Stale: <?= (int)$demoTurnoverCandStale ?></span><?php endif; ?>
+            <?php if (($demoTurnoverCandFinElig ?? 0) > 0): ?><span class="badge bg-info text-dark me-1">Finalize-Eligible: <?= (int)$demoTurnoverCandFinElig ?></span><?php endif; ?>
+            <?php if (($demoTurnoverCandOther ?? 0) > 0): ?><span class="badge bg-secondary me-1">Other: <?= (int)$demoTurnoverCandOther ?></span><?php endif; ?>
         </div>
         <?php endif; ?>
         <?php if (!empty($demoTurnoverPriStats)): ?>

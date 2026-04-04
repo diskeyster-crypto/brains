@@ -1121,6 +1121,16 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         // Recoverable = stale + timeout-eligible + dead shells (can be freed by turnover pass)
         $recoverableCount = $staleCount + $orphanDeadShellCount + $orphanAdoptedTimeoutEligibleCount;
 
+        // ── Consistency check between runtime params and storage-derived capacity ──
+        // When last_run says capacity_full=false but storage currently shows capacity >= max,
+        // there is a timing or logic mismatch that should be surfaced explicitly.
+        $consistencyOk      = true;
+        $consistencyWarning = null;
+        if ($capacityFullDerived && !$capacityFull && $storeMaxCap > 0) {
+            $consistencyOk      = false;
+            $consistencyWarning = "last_run demo_capacity_full=false but storage-derived capacity_full=true ({$activeCount}/{$storeMaxCap} slots used). Turnover pass may not have triggered this run — verify demo_learning_mode.enabled and that capacity check conditions fired.";
+        }
+
         // ── Bottleneck classification ────────────────────────────────────────
         $primaryBottleneck       = 'unknown';
         $primaryBottleneckReason = 'Insufficient data to classify bottleneck yet.';
@@ -1331,6 +1341,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'recoverable_active_trades_count'          => $recoverableCount,
             'stale_active_trades_count'                => $staleCount,
             'turnover_candidates_count'                => $staleCount + $orphanAdoptedTimeoutEligibleCount,
+            // Consistency check
+            'capacity_runtime_consistency_ok'          => $consistencyOk,
+            'capacity_runtime_consistency_warning'     => $consistencyWarning,
             'audited_at'                               => date('c'),
         ];
     }

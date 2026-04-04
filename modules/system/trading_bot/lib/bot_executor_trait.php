@@ -4304,13 +4304,18 @@ private function computeEntryDeadline(array $intent): array
     protected function performDemoTurnoverPass(string $mode): array
     {
         $result = [
-            'turnover_candidates_found'       => 0,
-            'turnover_candidates_processed'   => 0,
-            'turnover_slots_freed'            => 0,
-            'turnover_block_reason'           => 'none',
-            'turnover_priority_stats'         => [],
-            'turnover_ai_records_written'     => 0,
-            'turnover_close_priority_scores'  => [],
+            'turnover_candidates_found'                  => 0,
+            'turnover_candidates_processed'              => 0,
+            'turnover_slots_freed'                       => 0,
+            'turnover_block_reason'                      => 'none',
+            'turnover_priority_stats'                    => [],
+            'turnover_ai_records_written'                => 0,
+            'turnover_close_priority_scores'             => [],
+            'turnover_candidates_stale_count'            => 0,
+            'turnover_candidates_timeout_count'          => 0,
+            'turnover_candidates_dead_shell_count'       => 0,
+            'turnover_candidates_finalize_eligible_count'=> 0,
+            'turnover_candidates_other_count'            => 0,
         ];
 
         if ($mode !== 'demo') {
@@ -4381,6 +4386,16 @@ private function computeEntryDeadline(array $intent): array
                     'reason'  => $reason,
                     'age_min' => $ageMin,
                 ];
+                // Candidate type breakdown
+                if ($isDeadShell) {
+                    $result['turnover_candidates_dead_shell_count']++;
+                } elseif ($isTimeout) {
+                    $result['turnover_candidates_timeout_count']++;
+                } elseif ($isStale) {
+                    $result['turnover_candidates_stale_count']++;
+                } else {
+                    $result['turnover_candidates_other_count']++;
+                }
             }
         }
 
@@ -4490,6 +4505,7 @@ private function computeEntryDeadline(array $intent): array
             }
             $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
             if ($position === null || (float)($position['size'] ?? 0) <= 0) {
+                $result['turnover_candidates_finalize_eligible_count']++;
                 $closedAtTs  = $nowTs;
                 $closeReason = 'turnover_pass_exchange_gone';
                 $closedTrade = array_merge($trade, [

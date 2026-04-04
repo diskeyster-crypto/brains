@@ -831,17 +831,34 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $healthyActiveCount   = 0;  // normal active trades (not orphan-adopted)
         $orphanResolvedCount  = 0;  // adopted orphan trades with orphan_resolved_local_ownership=true
         $adoptedOrphanStaleCount = 0;  // adopted orphans that are stale (age >= threshold)
+        // Timing health counters for adopted orphans
+        $orphanAdoptedValidTimingCount   = 0;
+        $orphanAdoptedMissingTimingCount = 0;
+        $orphanAdoptedStaleEligibleCount = 0;
+        $orphanAdoptedTimeoutEligibleCount = 0;
+        $orphanAdoptedAgeAccum = 0;
+        $orphanAdoptedAgeCount = 0;
+        $orphanAdoptedMaxAge   = 0;
+
+        // Read close-timeout from store-level config if available
+        $storeDlm      = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+        $storeTimeout  = ($storeDlm['enabled'] ?? false) && ($storeDlm['learning_close_timeout_minutes'] ?? 0) > 0
+            ? (int)$storeDlm['learning_close_timeout_minutes'] : 0;
 
         foreach ($activeFiles as $af) {
             $d = @json_decode((string)@file_get_contents($af), true);
             if (!is_array($d)) {
                 continue;
             }
-            // Determine opened_at timestamp
+            // Determine opened_at timestamp — for adopted orphans also try opened_ts / adoption_ts fallbacks
             $openTs = null;
             if (!empty($d['opened_at'])) {
-                $openTs = strtotime($d['opened_at']);
-            } elseif (!empty($d['open_ts'])) {
+                $openTs = strtotime($d['opened_at']) ?: null;
+            }
+            if (($openTs === null || $openTs <= 0) && !empty($d['opened_ts'])) {
+                $openTs = (int)$d['opened_ts'];
+            }
+            if (($openTs === null || $openTs <= 0) && !empty($d['open_ts'])) {
                 $openTs = (int)$d['open_ts'];
             }
             if ($openTs !== null && $openTs > 0) {
@@ -865,11 +882,39 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                     if (!empty($d['orphan_resolved_local_ownership'])) {
                         $orphanResolvedCount++;
                     }
-                    // Count as stale if age exceeds threshold (adopted orphan specific)
-                    if ($openTs !== null && $openTs > 0) {
-                        $ageMin = (int)round(($now - $openTs) / 60);
-                        if ($learningMaxActiveAgeMinutes > 0 && $ageMin >= $learningMaxActiveAgeMinutes) {
+                    // Timing health classification
+                    // Resolve best timing baseline: opened_ts → adoption_ts → orphan_resolution_ts
+                    $aoOpenTs = $openTs;
+                    if (($aoOpenTs === null || $aoOpenTs <= 0) && !empty($d['adoption_ts'])) {
+                        $aoOpenTs = (int)$d['adoption_ts'];
+                    }
+                    if (($aoOpenTs === null || $aoOpenTs <= 0) && !empty($d['orphan_resolution_ts'])) {
+                        $aoOpenTs = (int)$d['orphan_resolution_ts'];
+                    }
+                    $hasMissingTimingReason = !empty($d['timing_missing_reason']);
+                    if ($aoOpenTs !== null && $aoOpenTs > 0 && !$hasMissingTimingReason) {
+                        $orphanAdoptedValidTimingCount++;
+                        $aoAgeMin = (int)round(($now - $aoOpenTs) / 60);
+                        $orphanAdoptedAgeAccum += $aoAgeMin;
+                        $orphanAdoptedAgeCount++;
+                        if ($aoAgeMin > $orphanAdoptedMaxAge) {
+                            $orphanAdoptedMaxAge = $aoAgeMin;
+                        }
+                        if ($learningMaxActiveAgeMinutes > 0 && $aoAgeMin >= $learningMaxActiveAgeMinutes) {
                             $adoptedOrphanStaleCount++;
+                            $orphanAdoptedStaleEligibleCount++;
+                        }
+                        if ($storeTimeout > 0 && $aoAgeMin >= $storeTimeout) {
+                            $orphanAdoptedTimeoutEligibleCount++;
+                        }
+                    } else {
+                        $orphanAdoptedMissingTimingCount++;
+                        // Still count stale if any timing baseline found (even fallback)
+                        if ($aoOpenTs !== null && $aoOpenTs > 0) {
+                            $aoAgeMin = (int)round(($now - $aoOpenTs) / 60);
+                            if ($learningMaxActiveAgeMinutes > 0 && $aoAgeMin >= $learningMaxActiveAgeMinutes) {
+                                $adoptedOrphanStaleCount++;
+                            }
                         }
                     }
                 } else {
@@ -879,6 +924,10 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $healthyActiveCount++;
             }
         }
+
+        $orphanAdoptedAvgAge    = $orphanAdoptedAgeCount > 0
+            ? (int)round($orphanAdoptedAgeAccum / $orphanAdoptedAgeCount) : null;
+        $orphanAdoptedOldestAge = $orphanAdoptedAgeCount > 0 ? $orphanAdoptedMaxAge : null;
 
         $oldestActiveAgeMin  = count($activeAges) > 0 ? max($activeAges) : null;
         $avgActiveAgeMin     = count($activeAges) > 0 ? round(array_sum($activeAges) / count($activeAges), 1) : null;
@@ -1049,6 +1098,11 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $primaryBottleneckReason = "{$orphanDeadShellCount} active trade(s) are orphan dead shells (adopted without valid entry_price or qty). They inflate the active count but cannot close or generate AI data. They should be repaired or cleared.";
             $recommendedNextFixArea  = 'audit_orphan_adopted_dead_shells';
             $primaryExecutionBlocker = 'execution_blocked_by_orphan_positions';
+        } elseif ($orphanAdoptedMissingTimingCount > 0 && $orphanAdoptedMissingTimingCount >= $orphanAdoptedCount && $orphanAdoptedCount > 0) {
+            // All adopted orphans lack valid timing — they cannot age out and will not close
+            $primaryBottleneck       = 'adopted_orphans_missing_timing';
+            $primaryBottleneckReason = "{$orphanAdoptedMissingTimingCount} adopted orphan trade(s) have no valid timing baseline. They cannot age out or be marked stale/timeout-eligible. Check exchange position createdTime availability.";
+            $recommendedNextFixArea  = 'audit_adopted_orphan_timing_fields';
         } elseif ($reconcileBlockedThisRun > 0 && $closedCount === 0 && $activeCount === 0) {
             // Reconcile failures are the dominant blocker — orders submitted but positions not saved
             $primaryBottleneck       = 'demo_feed_available_but_execution_blocked';
@@ -1137,6 +1191,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'orphan_resolved_active_trades_count'      => $orphanResolvedCount,
             'orphan_unresolved_blocking_count'         => $orphanBlockingCount,
             'orphan_dead_shells_count'                 => $orphanDeadShellCount,
+            // Adopted orphan timing health (active trades)
+            'orphan_adopted_with_valid_timing_count'   => $orphanAdoptedValidTimingCount,
+            'orphan_adopted_with_missing_timing_count' => $orphanAdoptedMissingTimingCount,
+            'orphan_adopted_stale_eligible_count'      => $orphanAdoptedStaleEligibleCount,
+            'orphan_adopted_timeout_eligible_count'    => $orphanAdoptedTimeoutEligibleCount,
+            'orphan_adopted_average_age_minutes'       => $orphanAdoptedAvgAge,
+            'orphan_adopted_oldest_age_minutes'        => $orphanAdoptedOldestAge,
             // Adopted orphan close pipeline metrics
             'adopted_orphans_stale_count'              => $adoptedOrphanStaleCount,
             'adopted_orphans_closed_total'             => $adoptedOrphanClosedCount,

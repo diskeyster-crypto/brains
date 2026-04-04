@@ -963,6 +963,13 @@ final class TradingBotService
                 $result['adopted_orphans_closed_complete_this_run']             = $updateResult['adopted_orphans_closed_complete_this_run'] ?? 0;
                 $result['adopted_orphans_ai_dataset_written_this_run']          = $updateResult['adopted_orphans_ai_dataset_written_this_run'] ?? 0;
                 $result['adopted_orphans_closed_without_ai_dataset_this_run']   = $updateResult['adopted_orphans_closed_without_ai_dataset_this_run'] ?? 0;
+                // Timing health counters
+                $result['adopted_orphans_with_valid_timing_count']   = $updateResult['adopted_orphans_with_valid_timing_count'] ?? 0;
+                $result['adopted_orphans_with_missing_timing_count'] = $updateResult['adopted_orphans_with_missing_timing_count'] ?? 0;
+                $result['adopted_orphans_stale_eligible_count']      = $updateResult['adopted_orphans_stale_eligible_count'] ?? 0;
+                $result['adopted_orphans_timeout_eligible_count']    = $updateResult['adopted_orphans_timeout_eligible_count'] ?? 0;
+                $result['adopted_orphans_average_age_minutes']       = $updateResult['adopted_orphans_average_age_minutes'] ?? null;
+                $result['adopted_orphans_oldest_age_minutes']        = $updateResult['adopted_orphans_oldest_age_minutes'] ?? null;
 
                 // ── Adopted orphan close repair pass (demo only) ────────────
                 if (method_exists($this->store, 'repairIncompleteAdoptedOrphanClosedRecords')) {

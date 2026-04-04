@@ -227,6 +227,42 @@ trait BotExecutorTrait
                                     $adoptedNow     = date('c');
                                     $adoptedNowTs   = time();
 
+                                    // ── Timing derivation: best-available open time ──────────────────
+                                    // Priority: exchange position createdTime/updatedTime → adoption_ts.
+                                    // Bybit positions carry createdTime/updatedTime in milliseconds.
+                                    $exCreatedMs  = (int)($exPos['createdTime'] ?? $exPos['create_time'] ?? 0);
+                                    $exUpdatedMs  = (int)($exPos['updatedTime'] ?? $exPos['update_time'] ?? 0);
+                                    $exOpenMs     = $exCreatedMs > 0 ? $exCreatedMs : ($exUpdatedMs > 0 ? $exUpdatedMs : 0);
+                                    if ($exOpenMs > 0) {
+                                        // Convert ms → seconds; guard against out-of-range values
+                                        $exOpenTs       = (int)round($exOpenMs / 1000);
+                                        $timingSource   = $exCreatedMs > 0 ? 'exchange_position_createdTime' : 'exchange_position_updatedTime';
+                                    } else {
+                                        $exOpenTs     = 0;
+                                        $timingSource = null;
+                                    }
+
+                                    // Ensure derivedOpenTs is plausible (not in future, not before 2020)
+                                    $minTs = mktime(0, 0, 0, 1, 1, 2020);
+                                    if ($exOpenTs > 0 && ($exOpenTs > $adoptedNowTs || $exOpenTs < $minTs)) {
+                                        $exOpenTs     = 0;
+                                        $timingSource = null;
+                                    }
+
+                                    if ($exOpenTs > 0) {
+                                        $resolvedOpenedTs = $exOpenTs;
+                                        $resolvedOpenedAt = date('c', $exOpenTs);
+                                        $openedTsSource   = $timingSource;
+                                        $timingMissingReason = null;
+                                    } else {
+                                        // Fallback: use adoption time — age will count from adoption, not original open
+                                        $resolvedOpenedTs   = $adoptedNowTs;
+                                        $resolvedOpenedAt   = $adoptedNow;
+                                        $openedTsSource     = 'adoption_ts_fallback';
+                                        $timingSource       = 'adoption_ts_fallback';
+                                        $timingMissingReason = 'exchange_position_no_createdTime';
+                                    }
+
                                     // Minimal recovery risk block so close/reconcile logic can
                                     // compute an entry-based SL fallback if needed.
                                     $recoveryRisk = [
@@ -243,9 +279,13 @@ trait BotExecutorTrait
                                         'schema_version'              => 'trade_live_v2',
                                         'trade_id'                    => $adoptedTradeId,
                                         'signal_id'                   => $adoptedTradeId,
-                                        'opened_at'                   => $adoptedNow,
-                                        'opened_ts'                   => $adoptedNowTs,
+                                        'opened_at'                   => $resolvedOpenedAt,
+                                        'opened_ts'                   => $resolvedOpenedTs,
+                                        'opened_ts_source'            => $openedTsSource,
                                         'adoption_ts'                 => $adoptedNowTs,
+                                        'timing_source'               => $timingSource,
+                                        'age_minutes_source'          => $openedTsSource,
+                                        'last_runtime_update_ts'      => $adoptedNowTs,
                                         'symbol'                      => $exSymbol,
                                         'side'                        => $orphanSide,
                                         'mode'                        => 'demo',
@@ -295,6 +335,9 @@ trait BotExecutorTrait
                                         'orphan_resolution_ts'             => $adoptedNowTs,
                                         'orphan_resolution_reason'         => 'adopted_into_local_active_trade',
                                     ];
+                                    if ($timingMissingReason !== null) {
+                                        $adoptedTrade['timing_missing_reason'] = $timingMissingReason;
+                                    }
                                     $this->store->saveActiveTrade($adoptedTrade);
                                     // Invalidate position cache so this symbol is seen as local next check
                                     $this->exchangeOpenPositionsCache   = [];
@@ -1547,6 +1590,13 @@ trait BotExecutorTrait
             'adopted_orphans_closed_complete_this_run' => 0,
             'adopted_orphans_ai_dataset_written_this_run' => 0,
             'adopted_orphans_closed_without_ai_dataset_this_run' => 0,
+            // Timing health counters for adopted orphans (demo only)
+            'adopted_orphans_with_valid_timing_count' => 0,
+            'adopted_orphans_with_missing_timing_count' => 0,
+            'adopted_orphans_stale_eligible_count' => 0,
+            'adopted_orphans_timeout_eligible_count' => 0,
+            'adopted_orphans_average_age_minutes' => null,
+            'adopted_orphans_oldest_age_minutes' => null,
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1580,6 +1630,9 @@ trait BotExecutorTrait
             $ageAccum = 0;
             $maxAge   = 0;
             $nowTs    = time();
+            $aoAgeAccum = 0;
+            $aoAgeCount = 0;
+            $aoMaxAge   = 0;
             foreach ($trades as $t) {
                 $ots = (int)(strtotime((string)($t['opened_at'] ?? '')) ?: ($t['open_ts'] ?? 0));
                 $ageMin = $ots > 0 ? (int)round(($nowTs - $ots) / 60) : 0;
@@ -1587,9 +1640,35 @@ trait BotExecutorTrait
                 if ($ageMin > $maxAge) {
                     $maxAge = $ageMin;
                 }
+                // Track adopted orphan timing health separately
+                if (!empty($t['is_orphan_adopted']) || !empty($t['adopted_from_exchange_orphan'])) {
+                    // Valid timing: opened_ts or opened_at resolves to a real timestamp
+                    $aoOts = $ots > 0 ? $ots : (int)($t['opened_ts'] ?? $t['adoption_ts'] ?? 0);
+                    if ($aoOts > 0 && empty($t['timing_missing_reason'])) {
+                        $result['adopted_orphans_with_valid_timing_count']++;
+                        $aoAgeMin = (int)round(($nowTs - $aoOts) / 60);
+                        $aoAgeAccum += $aoAgeMin;
+                        $aoAgeCount++;
+                        if ($aoAgeMin > $aoMaxAge) {
+                            $aoMaxAge = $aoAgeMin;
+                        }
+                        if ($staleAgeMinutes > 0 && $aoAgeMin >= $staleAgeMinutes) {
+                            $result['adopted_orphans_stale_eligible_count']++;
+                        }
+                        if ($closeTimeoutMinutes > 0 && $aoAgeMin >= $closeTimeoutMinutes) {
+                            $result['adopted_orphans_timeout_eligible_count']++;
+                        }
+                    } else {
+                        $result['adopted_orphans_with_missing_timing_count']++;
+                    }
+                }
             }
             $result['avg_active_age_minutes']    = (int)round($ageAccum / count($trades));
             $result['oldest_active_trade_minutes'] = $maxAge;
+            if ($aoAgeCount > 0) {
+                $result['adopted_orphans_average_age_minutes'] = (int)round($aoAgeAccum / $aoAgeCount);
+                $result['adopted_orphans_oldest_age_minutes']  = $aoMaxAge;
+            }
         }
 
         foreach ($trades as $tradeId => $trade) {
@@ -1643,10 +1722,35 @@ trait BotExecutorTrait
 
                 // ── Trade age & staleness annotation (demo only) ────────────
                 if ($mode === 'demo') {
-                    $tradeOpenedTs = $openedAt > 0 ? $openedAt : (int)($trade['open_ts'] ?? 0);
+                    $isAdoptedTrade = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+                    // For adopted orphans, fall back through opened_ts → adoption_ts → orphan_resolution_ts
+                    // so that age is never silently zero when a better baseline exists.
+                    if ($isAdoptedTrade && $openedAt <= 0) {
+                        $tradeOpenedTs = (int)($trade['opened_ts'] ?? $trade['adoption_ts'] ?? $trade['orphan_resolution_ts'] ?? 0);
+                        // Annotate which fallback was used
+                        if ((int)($trade['opened_ts'] ?? 0) > 0) {
+                            $trade['age_minutes_source'] = 'opened_ts_field';
+                        } elseif ((int)($trade['adoption_ts'] ?? 0) > 0) {
+                            $trade['age_minutes_source'] = 'adoption_ts_fallback';
+                            if (empty($trade['timing_missing_reason'])) {
+                                $trade['timing_missing_reason'] = 'opened_at_unparseable_used_adoption_ts';
+                            }
+                        } elseif ((int)($trade['orphan_resolution_ts'] ?? 0) > 0) {
+                            $trade['age_minutes_source'] = 'orphan_resolution_ts_fallback';
+                            if (empty($trade['timing_missing_reason'])) {
+                                $trade['timing_missing_reason'] = 'opened_at_and_adoption_ts_missing';
+                            }
+                        } else {
+                            $tradeOpenedTs = 0;
+                            $trade['timing_missing_reason'] = $trade['timing_missing_reason'] ?? 'no_timing_baseline_available';
+                        }
+                    } else {
+                        $tradeOpenedTs = $openedAt > 0 ? $openedAt : (int)($trade['open_ts'] ?? 0);
+                    }
                     $ageMin = $tradeOpenedTs > 0 ? (int)round((time() - $tradeOpenedTs) / 60) : 0;
                     $trade['age_minutes'] = $ageMin;
-                    $trade['last_reconcile_ts'] = date('c');
+                    $trade['last_reconcile_ts']    = date('c');
+                    $trade['last_runtime_update_ts'] = time();
                     $isStale = $staleAgeMinutes > 0 && $ageMin >= $staleAgeMinutes;
                     if ($isStale) {
                         $staleReason = 'age_exceeded_' . $staleAgeMinutes . 'min';

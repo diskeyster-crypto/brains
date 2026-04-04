@@ -408,6 +408,13 @@ $adoptedOrphansClosedNoAiThisRun     = $bot_last_run['adopted_orphans_closed_wit
 $adoptedOrphansRepairAttempted       = $bot_last_run['adopted_orphans_close_repair_attempted_this_run']       ?? null;
 $adoptedOrphansRepairSucceeded       = $bot_last_run['adopted_orphans_close_repair_succeeded_this_run']       ?? null;
 $adoptedOrphansRepairFailed          = $bot_last_run['adopted_orphans_close_repair_failed_this_run']          ?? null;
+// Adopted orphan timing health (per-run counters)
+$adoptedOrphansValidTiming   = $bot_last_run['adopted_orphans_with_valid_timing_count']   ?? null;
+$adoptedOrphansMissingTiming = $bot_last_run['adopted_orphans_with_missing_timing_count'] ?? null;
+$adoptedOrphansStaleEligible = $bot_last_run['adopted_orphans_stale_eligible_count']      ?? null;
+$adoptedOrphansTimeoutEligible = $bot_last_run['adopted_orphans_timeout_eligible_count']  ?? null;
+$adoptedOrphansAvgAge        = $bot_last_run['adopted_orphans_average_age_minutes']       ?? null;
+$adoptedOrphansOldestAge     = $bot_last_run['adopted_orphans_oldest_age_minutes']        ?? null;
 // Adopted orphan audit fields (from truth audit)
 $auditAdoptedOrphansStale            = $bot_demo_truth_audit['adopted_orphans_stale_count']              ?? null;
 $auditAdoptedOrphansClosedTotal      = $bot_demo_truth_audit['adopted_orphans_closed_total']             ?? null;
@@ -419,6 +426,13 @@ $auditOrphanMissingRoi               = $bot_demo_truth_audit['adopted_orphans_cl
 $auditOrphanMissingMfe               = $bot_demo_truth_audit['adopted_orphans_closed_missing_mfe_count']          ?? null;
 $auditOrphanMissingMae               = $bot_demo_truth_audit['adopted_orphans_closed_missing_mae_count']          ?? null;
 $auditOrphanMissingHoldMin           = $bot_demo_truth_audit['adopted_orphans_closed_missing_hold_minutes_count'] ?? null;
+// Adopted orphan timing health (from truth audit)
+$auditOrphanValidTiming              = $bot_demo_truth_audit['orphan_adopted_with_valid_timing_count']    ?? null;
+$auditOrphanMissingTimingCount       = $bot_demo_truth_audit['orphan_adopted_with_missing_timing_count']  ?? null;
+$auditOrphanStaleEligible            = $bot_demo_truth_audit['orphan_adopted_stale_eligible_count']       ?? null;
+$auditOrphanTimeoutEligible          = $bot_demo_truth_audit['orphan_adopted_timeout_eligible_count']     ?? null;
+$auditOrphanAvgAge                   = $bot_demo_truth_audit['orphan_adopted_average_age_minutes']        ?? null;
+$auditOrphanOldestAge                = $bot_demo_truth_audit['orphan_adopted_oldest_age_minutes']         ?? null;
 $demoOrphanBlocking     = $bot_last_run['demo_orphan_positions_blocking_count']    ?? null;
 $demoPrimaryExecBlocker = (string)($bot_last_run['demo_primary_execution_blocker'] ?? '');
 // Granular execution-stage blocking counters
@@ -782,6 +796,58 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
                 <div class="stat-card">
                     <div class="stat-value <?= $mfCls ?>"><?= htmlspecialchars($mfc['value']) ?></div>
                     <div class="stat-label"><?= htmlspecialchars($mfc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php
+        // ── Adopted Orphan Timing Health sub-section ─────────────────────────
+        $hasOrphanTimingData = ($auditOrphanAdopted ?? 0) > 0
+            || ($adoptedOrphansValidTiming ?? 0) + ($adoptedOrphansMissingTiming ?? 0) > 0;
+        if ($hasOrphanTimingData):
+        ?>
+        <div class="mt-1">
+            <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Timing Health</div>
+            <?php if (($adoptedOrphansMissingTiming ?? 0) > 0 || ($auditOrphanMissingTimingCount ?? 0) > 0): ?>
+            <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+                <strong>Timing Warning:</strong> <?= (int)(max($adoptedOrphansMissingTiming ?? 0, $auditOrphanMissingTimingCount ?? 0)) ?> adopted orphan trade(s) lack a valid timing baseline. Age/stale/timeout logic may not fire for them. Check exchange <code>createdTime</code> availability.
+            </div>
+            <?php endif; ?>
+            <div class="row g-2 mb-1">
+            <?php
+            $timingCards = [
+                ['label' => 'Valid Timing (Run)',    'value' => $adoptedOrphansValidTiming !== null ? (string)$adoptedOrphansValidTiming : 'n/a',
+                    'ok' => ($adoptedOrphansValidTiming ?? 0) > 0 ? true : (($adoptedOrphansMissingTiming ?? 0) > 0 ? false : null)],
+                ['label' => 'Missing Timing (Run)',  'value' => $adoptedOrphansMissingTiming !== null ? (string)$adoptedOrphansMissingTiming : 'n/a',
+                    'ok' => ($adoptedOrphansMissingTiming ?? 0) === 0 ? true : (($adoptedOrphansMissingTiming ?? 0) > 0 ? false : null)],
+                ['label' => 'Stale Eligible (Run)',  'value' => $adoptedOrphansStaleEligible !== null ? (string)$adoptedOrphansStaleEligible : 'n/a',
+                    'ok' => null],
+                ['label' => 'TO Eligible (Run)',     'value' => $adoptedOrphansTimeoutEligible !== null ? (string)$adoptedOrphansTimeoutEligible : 'n/a',
+                    'ok' => null],
+                ['label' => 'Avg Age min (Run)',      'value' => $adoptedOrphansAvgAge !== null ? (string)$adoptedOrphansAvgAge . 'm' : 'n/a',
+                    'ok' => null],
+                ['label' => 'Oldest Age min (Run)',   'value' => $adoptedOrphansOldestAge !== null ? (string)$adoptedOrphansOldestAge . 'm' : 'n/a',
+                    'ok' => null],
+                ['label' => 'Valid Timing (Audit)',   'value' => $auditOrphanValidTiming !== null ? (string)$auditOrphanValidTiming : 'n/a',
+                    'ok' => ($auditOrphanValidTiming ?? 0) > 0 ? true : null],
+                ['label' => 'Missing Timing (Audit)','value' => $auditOrphanMissingTimingCount !== null ? (string)$auditOrphanMissingTimingCount : 'n/a',
+                    'ok' => ($auditOrphanMissingTimingCount ?? 0) === 0 ? true : (($auditOrphanMissingTimingCount ?? 0) > 0 ? false : null)],
+                ['label' => 'Avg Age min (Audit)',    'value' => $auditOrphanAvgAge !== null ? (string)$auditOrphanAvgAge . 'm' : 'n/a',
+                    'ok' => null],
+                ['label' => 'Oldest Age min (Audit)', 'value' => $auditOrphanOldestAge !== null ? (string)$auditOrphanOldestAge . 'm' : 'n/a',
+                    'ok' => null],
+            ];
+            foreach ($timingCards as $tc):
+                $tcCls = 'neutral';
+                if ($tc['ok'] === true)  $tcCls = 'positive';
+                if ($tc['ok'] === false) $tcCls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $tcCls ?>"><?= htmlspecialchars((string)$tc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($tc['label']) ?></div>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -1205,6 +1271,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         $auditAlertClass = 'alert-warning';
         if ($auditBottleneck === 'none_loop_is_cycling') $auditAlertClass = 'alert-success';
         elseif (in_array($auditBottleneck, ['orphan_positions_blocking_demo','orphan_dead_shells_blocking_truth_loop'], true)) $auditAlertClass = 'alert-danger';
+        elseif ($auditBottleneck === 'adopted_orphans_missing_timing') $auditAlertClass = 'alert-warning';
         elseif ($auditBottleneck === 'adopted_orphans_stale_not_closing') $auditAlertClass = 'alert-warning';
         elseif ($auditBottleneck === 'adopted_orphans_awaiting_close') $auditAlertClass = 'alert-info';
         ?>

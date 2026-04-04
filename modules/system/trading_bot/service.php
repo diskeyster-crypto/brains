@@ -1054,6 +1054,12 @@ final class TradingBotService
             $result['intents_terminal_executed_count'] = 0;
             $result['intents_terminal_rejected_count'] = 0;
             $result['intents_terminal_failed_count'] = 0;
+            // Orphan adoption quality counters
+            $result['orphan_adoption_attempted_count']  = 0;
+            $result['orphan_adoption_succeeded_count']  = 0;
+            $result['orphan_adoption_failed_count']     = 0;
+            $result['orphan_adoption_reusable_count']   = 0;
+            $result['orphan_adoption_dead_shell_count'] = 0;
             foreach ($result['intent_results'] as $ir) {
                 $ls = $ir['lifecycle_state'] ?? '';
                 if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
@@ -1099,6 +1105,19 @@ final class TradingBotService
                     $result['intents_terminal_rejected_count']++;
                 } elseif (strpos($ts, 'failed_') === 0) {
                     $result['intents_terminal_failed_count']++;
+                }
+
+                // Orphan adoption quality counters (from per-intent result)
+                if (!empty($ir['orphan_adoption_attempted'])) {
+                    $result['orphan_adoption_attempted_count']++;
+                    if (!empty($ir['orphan_adoption_succeeded'])) {
+                        $result['orphan_adoption_succeeded_count']++;
+                        if (!empty($ir['orphan_adoption_reusable_as_active_trade'])) {
+                            $result['orphan_adoption_reusable_count']++;
+                        }
+                    } else {
+                        $result['orphan_adoption_failed_count']++;
+                    }
                 }
 
                 if (in_array($ls, ['rejected', 'failed'], true) && !empty($ir['rejection_reason'])) {
@@ -1451,6 +1470,10 @@ final class TradingBotService
                     'orphan_exchange_position_open_local_missing',
                     'orphan_exchange_position_stale_unreconciled',
                     'orphan_adopted_then_symbol_busy',
+                    'orphan_adoption_missing_entry_price',
+                    'orphan_adoption_missing_qty',
+                    'orphan_adoption_missing_side',
+                    'orphan_adoption_insufficient_data',
                 ] as $_or) {
                     $demoBlockedByOrphan += (int)($result['rejection_reason_stats'][$_or] ?? 0);
                 }
@@ -1460,12 +1483,31 @@ final class TradingBotService
                 $demoBlockedByLateEntry  = (int)($result['intents_rejected_late_entry_count'] ?? 0);
                 $lateEntryThreshold      = (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25);
 
+                // Late entry near-miss: passes within 50% of the effective threshold
+                $lateEntryNearMiss = 0;
+                foreach ($result['intents_rejected_late_entry_distribution'] ?? [] as $_subR => $_subC) {
+                    if (strpos((string)$_subR, 'borderline') !== false) {
+                        $lateEntryNearMiss += (int)$_subC;
+                    }
+                }
+
+                // Signals failed after order attempt (order submitted but no position)
+                $demoFailedAfterOrder = (int)($result['exchange_submit_failed_count'] ?? 0);
+
                 $result['demo_signals_blocked_by_reconcile']    = $demoBlockedByReconcile;
                 $result['demo_signals_blocked_by_orphan']       = $demoBlockedByOrphan;
                 $result['demo_signals_blocked_by_late_entry']   = $demoBlockedByLateEntry;
                 $result['orphan_positions_adopted_this_run']    = $demoOrphansAdopted;
                 $result['late_entry_reject_count']              = $demoBlockedByLateEntry;
+                $result['late_entry_near_miss_count']           = $lateEntryNearMiss;
                 $result['late_entry_threshold_effective']       = $lateEntryThreshold;
+                $result['demo_signals_failed_after_order_attempt'] = $demoFailedAfterOrder;
+
+                // Orphan adoption quality counters
+                $result['orphan_positions_detected_this_run']  = (int)($result['orphan_adoption_attempted_count'] ?? 0);
+                $result['orphan_positions_blocked_this_run']   = (int)($result['orphan_adoption_failed_count'] ?? 0);
+                $result['orphan_positions_adopted_this_run']   = $demoOrphansAdopted;
+                $result['orphan_positions_cleared_this_run']   = 0; // cleared via reconcile path, not here
 
                 // ── Specific execution blocker label ─────────────────────────────
                 // Determines which stage is the dominant blocker this run.

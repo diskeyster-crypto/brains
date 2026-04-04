@@ -667,10 +667,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $now          = time();
 
         // ── Active trades ────────────────────────────────────────────────────
-        $activeFiles  = glob($activeDir . '/*.json') ?: [];
-        $activeCount  = count($activeFiles);
-        $activeAges   = [];
-        $staleCount   = 0;
+        $activeFiles          = glob($activeDir . '/*.json') ?: [];
+        $activeCount          = count($activeFiles);
+        $activeAges           = [];
+        $staleCount           = 0;
+        $orphanAdoptedCount   = 0;  // adopted orphan trades (reusable)
+        $orphanDeadShellCount = 0;  // adopted orphan trades missing critical fields (dead shells)
+        $healthyActiveCount   = 0;  // normal active trades (not orphan-adopted)
 
         foreach ($activeFiles as $af) {
             $d = @json_decode((string)@file_get_contents($af), true);
@@ -690,6 +693,21 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 if ($ageMin >= $learningMaxActiveAgeMinutes) {
                     $staleCount++;
                 }
+            }
+
+            // Classify trade as healthy, orphan-adopted-reusable, or orphan dead shell.
+            $isOrphanAdopted = !empty($d['is_orphan_adopted']) || !empty($d['adopted_from_exchange_orphan']);
+            if ($isOrphanAdopted) {
+                $hasEntryPrice = (float)($d['entry_price'] ?? 0) > 0;
+                $hasQty        = (float)($d['position_size'] ?? $d['qty'] ?? 0) > 0;
+                $hasSide       = in_array($d['side'] ?? '', ['long', 'short'], true);
+                if ($hasEntryPrice && $hasQty && $hasSide) {
+                    $orphanAdoptedCount++;
+                } else {
+                    $orphanDeadShellCount++;
+                }
+            } else {
+                $healthyActiveCount++;
             }
         }
 
@@ -802,6 +820,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $primaryBottleneckReason = "{$orphanBlockingCount} orphan exchange position(s) blocked demo trade execution this run. Reconcile or finalize orphan positions to unblock demo learning.";
             $recommendedNextFixArea  = 'audit_orphan_exchange_positions';
             $primaryExecutionBlocker = 'execution_blocked_by_orphan_positions';
+        } elseif ($orphanDeadShellCount > 0 && $orphanDeadShellCount >= $healthyActiveCount && $closedCount === 0) {
+            // Orphan dead shells (adopted with null entry_price/qty) dominate active trades
+            $primaryBottleneck       = 'orphan_dead_shells_blocking_truth_loop';
+            $primaryBottleneckReason = "{$orphanDeadShellCount} active trade(s) are orphan dead shells (adopted without valid entry_price or qty). They inflate the active count but cannot close or generate AI data. They should be repaired or cleared.";
+            $recommendedNextFixArea  = 'audit_orphan_adopted_dead_shells';
+            $primaryExecutionBlocker = 'execution_blocked_by_orphan_positions';
         } elseif ($reconcileBlockedThisRun > 0 && $closedCount === 0 && $activeCount === 0) {
             // Reconcile failures are the dominant blocker — orders submitted but positions not saved
             $primaryBottleneck       = 'demo_feed_available_but_execution_blocked';
@@ -831,17 +855,24 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $primaryExecutionBlocker = 'feed_empty';
             }
         } elseif ($closedCount === 0 && $activeCount > 0) {
-            if ($closedThisRun === 0 && $staleCount > 0) {
+            if ($orphanDeadShellCount > 0 && $orphanDeadShellCount >= $healthyActiveCount) {
+                // Most actives are dead shells — close pipeline can't run on them
+                $primaryBottleneck       = 'orphan_dead_shells_blocking_truth_loop';
+                $primaryBottleneckReason = "{$orphanDeadShellCount} orphan dead shells dominate active trades ({$activeCount} total, {$healthyActiveCount} healthy). Dead shells cannot close or generate AI data.";
+                $recommendedNextFixArea  = 'audit_orphan_adopted_dead_shells';
+            } elseif ($closedThisRun === 0 && $staleCount > 0) {
                 $primaryBottleneck       = 'close_detection_too_weak';
                 $primaryBottleneckReason = "Active trades exist ({$activeCount}, {$staleCount} stale ≥{$learningMaxActiveAgeMinutes}min) but none have closed. Check learning_close_timeout_minutes (force-close stale trades when exceeded) and reconcile pipeline.";
+                $recommendedNextFixArea  = 'audit_reconcile_and_close_pipeline';
             } elseif ($closedThisRun === 0) {
                 $primaryBottleneck       = 'close_detection_too_weak';
                 $primaryBottleneckReason = "Active trades exist ({$activeCount}) but no closures recorded in storage or this run. Positions may still be open on the exchange. Verify reconcile is running (force_reconcile_each_run_demo) and that learning_close_timeout_minutes is set low enough for demo holds.";
+                $recommendedNextFixArea  = 'audit_reconcile_and_close_pipeline';
             } else {
                 $primaryBottleneck       = 'healthy_loop_waiting_for_more_cycles';
                 $primaryBottleneckReason = "Active trades exist ({$activeCount}), {$closedThisRun} closed this run but not yet counted in storage snapshot. Loop is cycling.";
+                $recommendedNextFixArea  = 'wait_for_demo_trades_to_close';
             }
-            $recommendedNextFixArea  = 'audit_reconcile_and_close_pipeline';
         } elseif ($pctStaleActive > 50) {
             $primaryBottleneck       = 'too_many_stale_active_trades';
             $primaryBottleneckReason = "Over {$pctStaleActive}% of active trades ({$staleCount}/{$activeCount}) are older than {$learningMaxActiveAgeMinutes} min. They are blocking new slots and not closing.";
@@ -866,6 +897,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
 
         return [
             'active_trades_count'                      => $activeCount,
+            'healthy_active_trades_count'              => $healthyActiveCount,
+            'orphan_adopted_active_trades_count'       => $orphanAdoptedCount,
+            'orphan_dead_shells_count'                 => $orphanDeadShellCount,
             'closed_trades_count'                      => $closedCount,
             'ai_dataset_count'                         => $aiCount,
             'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,

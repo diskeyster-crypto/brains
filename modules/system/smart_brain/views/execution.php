@@ -402,6 +402,18 @@ $demoBlockedByLateEntry = $bot_last_run['demo_signals_blocked_by_late_entry'] ??
 $demoOrphansAdopted     = $bot_last_run['orphan_positions_adopted_this_run']  ?? null;
 $lateEntryThreshold     = $bot_last_run['late_entry_threshold_effective']     ?? null;
 $demoExecBlockerSpecific= (string)($bot_last_run['demo_primary_execution_blocker_specific'] ?? $demoPrimaryExecBlocker);
+$lateEntryNearMiss      = $bot_last_run['late_entry_near_miss_count']         ?? null;
+$demoFailedAfterOrder   = $bot_last_run['demo_signals_failed_after_order_attempt'] ?? null;
+// Orphan adoption quality counters
+$orphanAdoptionAttempted = $bot_last_run['orphan_adoption_attempted_count']  ?? null;
+$orphanAdoptionSucceeded = $bot_last_run['orphan_adoption_succeeded_count']  ?? null;
+$orphanAdoptionFailed    = $bot_last_run['orphan_adoption_failed_count']     ?? null;
+$orphanAdoptionReusable  = $bot_last_run['orphan_adoption_reusable_count']   ?? null;
+$orphanAdoptionDeadShell = $bot_last_run['orphan_adoption_dead_shell_count'] ?? null;
+// Truth audit active trade classification
+$auditHealthyActive      = $bot_demo_truth_audit['healthy_active_trades_count']        ?? null;
+$auditOrphanAdopted      = $bot_demo_truth_audit['orphan_adopted_active_trades_count'] ?? null;
+$auditOrphanDeadShells   = $bot_demo_truth_audit['orphan_dead_shells_count']           ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -491,17 +503,27 @@ $demoExecBlockerSpecific= (string)($bot_last_run['demo_primary_execution_blocker
         <div class="row g-2 mb-3">
             <?php
             $execStageCards = [
-                ['label' => 'Blocked by Reconcile', 'value' => $demoBlockedByReconcile !== null ? (string)$demoBlockedByReconcile : 'n/a',
-                    'ok' => $demoBlockedByReconcile === 0 ? true : ($demoBlockedByReconcile > 0 ? false : null)],
-                ['label' => 'Blocked by Orphan',    'value' => $demoBlockedByOrphan !== null ? (string)$demoBlockedByOrphan : 'n/a',
-                    'ok' => $demoBlockedByOrphan === 0 ? true : ($demoBlockedByOrphan > 0 ? false : null)],
-                ['label' => 'Orphans Adopted',       'value' => $demoOrphansAdopted !== null ? (string)$demoOrphansAdopted : 'n/a',
-                    'ok' => ($demoOrphansAdopted ?? 0) > 0 ? true : null],
-                ['label' => 'Blocked Late Entry',   'value' => $demoBlockedByLateEntry !== null ? (string)$demoBlockedByLateEntry : 'n/a',
-                    'ok' => $demoBlockedByLateEntry === 0 ? true : null],
-                ['label' => 'Late Entry Threshold', 'value' => $lateEntryThreshold !== null ? round($lateEntryThreshold, 2) . '%' : 'n/a',
+                ['label' => 'Feed Selected',         'value' => $demoFeedSelected !== null ? (string)$demoFeedSelected : 'n/a',
+                    'ok' => ($demoFeedSelected ?? 0) > 0 ? true : null],
+                ['label' => 'Attempted',             'value' => $demoSigAttempted !== null ? (string)$demoSigAttempted : 'n/a',
                     'ok' => null],
-                ['label' => 'Exec Blocker',         'value' => $demoExecBlockerSpecific ?: 'n/a',
+                ['label' => 'Opened',                'value' => $demoSigOpened !== null ? (string)$demoSigOpened : 'n/a',
+                    'ok' => ($demoSigOpened ?? 0) > 0 ? true : null],
+                ['label' => 'Blocked by Reconcile',  'value' => $demoBlockedByReconcile !== null ? (string)$demoBlockedByReconcile : 'n/a',
+                    'ok' => $demoBlockedByReconcile === 0 ? true : ($demoBlockedByReconcile > 0 ? false : null)],
+                ['label' => 'Blocked by Orphan',     'value' => $demoBlockedByOrphan !== null ? (string)$demoBlockedByOrphan : 'n/a',
+                    'ok' => $demoBlockedByOrphan === 0 ? true : ($demoBlockedByOrphan > 0 ? false : null)],
+                ['label' => 'Orphans Adopted',        'value' => $demoOrphansAdopted !== null ? (string)$demoOrphansAdopted : 'n/a',
+                    'ok' => ($demoOrphansAdopted ?? 0) > 0 ? true : null],
+                ['label' => 'Blocked Late Entry',    'value' => $demoBlockedByLateEntry !== null ? (string)$demoBlockedByLateEntry : 'n/a',
+                    'ok' => $demoBlockedByLateEntry === 0 ? true : null],
+                ['label' => 'Late Entry Near-Miss',  'value' => $lateEntryNearMiss !== null ? (string)$lateEntryNearMiss : 'n/a',
+                    'ok' => null],
+                ['label' => 'Late Entry Threshold',  'value' => $lateEntryThreshold !== null ? round($lateEntryThreshold, 2) . '%' : 'n/a',
+                    'ok' => null],
+                ['label' => 'Failed After Order',    'value' => $demoFailedAfterOrder !== null ? (string)$demoFailedAfterOrder : 'n/a',
+                    'ok' => $demoFailedAfterOrder === 0 ? true : ($demoFailedAfterOrder > 0 ? false : null)],
+                ['label' => 'Exec Blocker',          'value' => $demoExecBlockerSpecific ?: 'n/a',
                     'ok' => in_array($demoExecBlockerSpecific, ['none','execution_healthy_waiting_for_closure']) ? true : ($demoExecBlockerSpecific !== '' ? false : null)],
             ];
             foreach ($execStageCards as $ec):
@@ -517,6 +539,49 @@ $demoExecBlockerSpecific= (string)($bot_last_run['demo_primary_execution_blocker
             </div>
             <?php endforeach; ?>
         </div>
+        <?php
+        // ── Orphan Adoption Quality sub-section ──────────────────────────────
+        $hasAdoptionData = ($orphanAdoptionAttempted !== null || $auditOrphanDeadShells !== null);
+        if ($hasAdoptionData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Orphan Adoption Quality (This Run)</div>
+        <?php if (($auditOrphanDeadShells ?? 0) > 0): ?>
+        <div class="alert alert-danger py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Dead Shells Detected:</strong> <?= (int)$auditOrphanDeadShells ?> adopted orphan trade(s) are missing entry_price or qty and cannot participate in close/AI pipeline.
+        </div>
+        <?php endif; ?>
+        <div class="row g-2 mb-2">
+            <?php
+            $adoptCards = [
+                ['label' => 'Adoption Attempted',   'value' => $orphanAdoptionAttempted !== null ? (string)$orphanAdoptionAttempted : 'n/a',
+                    'ok' => null],
+                ['label' => 'Adoption Succeeded',   'value' => $orphanAdoptionSucceeded !== null ? (string)$orphanAdoptionSucceeded : 'n/a',
+                    'ok' => ($orphanAdoptionSucceeded ?? 0) > 0 ? true : null],
+                ['label' => 'Adoption Failed',       'value' => $orphanAdoptionFailed !== null ? (string)$orphanAdoptionFailed : 'n/a',
+                    'ok' => $orphanAdoptionFailed === 0 ? true : ($orphanAdoptionFailed > 0 ? false : null)],
+                ['label' => 'Reusable Adopted',      'value' => $orphanAdoptionReusable !== null ? (string)$orphanAdoptionReusable : 'n/a',
+                    'ok' => ($orphanAdoptionReusable ?? 0) > 0 ? true : null],
+                ['label' => 'Active: Healthy',       'value' => $auditHealthyActive !== null ? (string)$auditHealthyActive : 'n/a',
+                    'ok' => ($auditHealthyActive ?? 0) > 0 ? true : null],
+                ['label' => 'Active: Orphan OK',     'value' => $auditOrphanAdopted !== null ? (string)$auditOrphanAdopted : 'n/a',
+                    'ok' => null],
+                ['label' => 'Active: Dead Shells',   'value' => $auditOrphanDeadShells !== null ? (string)$auditOrphanDeadShells : 'n/a',
+                    'ok' => $auditOrphanDeadShells === 0 ? true : ($auditOrphanDeadShells > 0 ? false : null)],
+            ];
+            foreach ($adoptCards as $ac):
+                $cls = 'neutral';
+                if ($ac['ok'] === true)  $cls = 'positive';
+                if ($ac['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$ac['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($ac['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
         <?php if ($demoTradesActiveBefore !== null || $demoTradesClosedThisRun !== null): ?>
         <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Close Pipeline (This Run)</div>

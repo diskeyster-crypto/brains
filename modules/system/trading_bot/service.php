@@ -338,6 +338,13 @@ final class TradingBotService
                 $result['demo_effective_risk_max_open_trades']            = $peDemoResult['demo_effective_risk_max_open_trades'] ?? null;
                 $result['demo_effective_risk_max_open_trades_per_symbol'] = $peDemoResult['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
                 $result['demo_limits_source']                             = $peDemoResult['demo_limits_source'] ?? null;
+                // PART 3: prefilter / symbol diversification diagnostics
+                $result['demo_feed_prefilter_input_count']                    = $peDemoResult['demo_feed_prefilter_input_count'] ?? null;
+                $result['demo_feed_prefilter_output_count']                   = $peDemoResult['demo_feed_prefilter_output_count'] ?? null;
+                $result['demo_feed_prefilter_skipped_busy_symbol_count']      = $peDemoResult['demo_feed_prefilter_skipped_busy_symbol_count'] ?? null;
+                $result['demo_feed_prefilter_skipped_duplicate_symbol_count'] = $peDemoResult['demo_feed_prefilter_skipped_duplicate_symbol_count'] ?? null;
+                $result['demo_feed_unique_symbols_selected_count']            = $peDemoResult['demo_feed_unique_symbols_selected_count'] ?? null;
+                $result['demo_feed_prefilter_reason_stats']                   = $peDemoResult['demo_feed_prefilter_reason_stats'] ?? [];
             } elseif ($brainControlled) {
                 // Brain-controlled mode: Brain live intents are the ONLY source.
                 // NO legacy fallback is allowed — regardless of source status.
@@ -1554,6 +1561,13 @@ final class TradingBotService
                 $result['demo_signals_blocked_by_exchange']   = $demoExchangeBlocked;
                 $result['demo_signals_blocked_other']         = $demoOtherBlocked;
 
+                // Counter splits: symbol-busy and late-entry rejections (from execution results)
+                $demoSkippedSymbolBusy = 0;
+                foreach (['skipped_symbol_busy', 'symbol_busy_local_adopted_trade'] as $_sbr) {
+                    $demoSkippedSymbolBusy += (int)($result['rejection_reason_stats'][$_sbr] ?? 0);
+                }
+                $result['demo_selected_skipped_symbol_busy_count']  = $demoSkippedSymbolBusy;
+
                 // ── Granular execution-stage blocking counters ──────────────────
                 // Reconcile-failed rejections (any sub-reason prefixed with reconcile_failed)
                 $demoBlockedByReconcile = 0;
@@ -1612,6 +1626,7 @@ final class TradingBotService
                 $result['demo_signals_blocked_by_reconcile']    = $demoBlockedByReconcile;
                 $result['demo_signals_blocked_by_orphan']       = $demoBlockedByOrphan;
                 $result['demo_signals_blocked_by_late_entry']   = $demoBlockedByLateEntry;
+                $result['demo_selected_rejected_late_entry_count'] = $demoBlockedByLateEntry;
                 $result['orphan_positions_adopted_this_run']    = $demoOrphansAdopted;
                 $result['late_entry_reject_count']              = $demoBlockedByLateEntry;
                 $result['late_entry_near_miss_count']           = $lateEntryNearMiss;

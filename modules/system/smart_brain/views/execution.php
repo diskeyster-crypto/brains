@@ -419,6 +419,14 @@ $dlmMaxNewPerRun        = $bot_last_run['demo_max_new_positions_per_run_effectiv
 $demoEffRiskMaxOpen     = $bot_last_run['demo_effective_risk_max_open_trades']            ?? null;
 $demoEffRiskMaxPerSym   = $bot_last_run['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
 $demoLimitsSource       = (string)($bot_last_run['demo_limits_source']                    ?? '');
+// Prefilter / symbol diversification diagnostics
+$demoPrefiltInput    = $bot_last_run['demo_feed_prefilter_input_count']                    ?? null;
+$demoPrefiltOutput   = $bot_last_run['demo_feed_prefilter_output_count']                   ?? null;
+$demoPrefiltBusy     = $bot_last_run['demo_feed_prefilter_skipped_busy_symbol_count']      ?? null;
+$demoPrefiltDup      = $bot_last_run['demo_feed_prefilter_skipped_duplicate_symbol_count'] ?? null;
+$demoUniqueSymbols   = $bot_last_run['demo_feed_unique_symbols_selected_count']            ?? null;
+$demoSkipSymBusy     = $bot_last_run['demo_selected_skipped_symbol_busy_count']            ?? null;
+$demoSkipLateEntry   = $bot_last_run['demo_selected_rejected_late_entry_count']            ?? null;
 // PART 3: Demo attempt/open budget proof fields
 $demoAttemptBudget      = $bot_last_run['demo_attempt_budget_effective']               ?? null;
 $demoOpenBudget         = $bot_last_run['demo_open_budget_effective']                  ?? null;
@@ -658,6 +666,37 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
         </div>
         <?php endif; ?>
         <?php endif; // hasLimitData ?>
+        <?php
+        // ── Demo Feed Pre-filter / Symbol Diversity ───────────────────────
+        $hasPrefiltData = ($demoPrefiltInput !== null);
+        if ($hasPrefiltData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Feed Pre-filter / Symbol Diversity</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $prefiltCards = [
+                ['label' => 'Prefilter Input',      'value' => $demoPrefiltInput !== null ? (string)$demoPrefiltInput : 'n/a',  'ok' => null],
+                ['label' => 'Prefilter Output',     'value' => $demoPrefiltOutput !== null ? (string)$demoPrefiltOutput : 'n/a','ok' => ($demoPrefiltOutput ?? 0) > 0 ? true : null],
+                ['label' => 'Unique Symbols Sel.',  'value' => $demoUniqueSymbols !== null ? (string)$demoUniqueSymbols : 'n/a','ok' => ($demoUniqueSymbols ?? 0) > 0 ? true : null],
+                ['label' => 'Skipped Busy Symbol',  'value' => $demoPrefiltBusy !== null ? (string)$demoPrefiltBusy : 'n/a',    'ok' => $demoPrefiltBusy === 0 ? true : null],
+                ['label' => 'Skipped Dup Symbol',   'value' => $demoPrefiltDup !== null ? (string)$demoPrefiltDup : 'n/a',      'ok' => null],
+                ['label' => 'Exec: Symbol Busy',    'value' => $demoSkipSymBusy !== null ? (string)$demoSkipSymBusy : 'n/a',    'ok' => $demoSkipSymBusy === 0 ? true : null],
+                ['label' => 'Exec: Late Entry',     'value' => $demoSkipLateEntry !== null ? (string)$demoSkipLateEntry : 'n/a','ok' => $demoSkipLateEntry === 0 ? true : null],
+            ];
+            foreach ($prefiltCards as $pc):
+                $cls = 'neutral';
+                if ($pc['ok'] === true) $cls = 'positive';
+                if ($pc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$pc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($pc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; // hasPrefiltData ?>
         <?php
         // ── Demo Attempt / Open Budget Proof ─────────────────────────────
         $hasBudgetData = ($demoAttemptBudget !== null || $demoSelectedScanned !== null);

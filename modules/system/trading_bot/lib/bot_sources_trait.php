@@ -969,6 +969,13 @@ trait BotSourcesTrait
             'demo_signal_rotation_mode'          => 'fifo',
             'demo_signals_deferred_by_rotation'  => 0,
             'demo_signals_selected_by_rotation'  => 0,
+            // PART 3: symbol diversification prefilter diagnostics
+            'demo_feed_prefilter_input_count'                    => 0,
+            'demo_feed_prefilter_output_count'                   => 0,
+            'demo_feed_prefilter_skipped_busy_symbol_count'      => 0,
+            'demo_feed_prefilter_skipped_duplicate_symbol_count' => 0,
+            'demo_feed_unique_symbols_selected_count'            => 0,
+            'demo_feed_prefilter_reason_stats'                   => [],
             // PART 4 runtime proof: effective trailing settings applied to intents
             'demo_effective_trailing_enabled'          => false,
             'demo_effective_trailing_mode'             => '',
@@ -1204,6 +1211,54 @@ trait BotSourcesTrait
             }
 
             $result['demo_signal_rotation_mode'] = $rotationApplied ? 'last_attempted_asc' : 'fifo';
+
+            // ── PART 3: Symbol diversification prefilter ─────────────────────────────
+            // After rotation sort, deduplicate same-symbol candidates and exclude symbols
+            // that already have an active local trade. This prevents selected slots from
+            // being wasted on signals that will just get skipped_symbol_busy at execution.
+            $busySymbols = [];
+            try {
+                $activeTrades = $this->store->loadActiveTrades();
+                foreach ($activeTrades as $_at) {
+                    $atSym = strtoupper((string)($_at['symbol'] ?? ''));
+                    if ($atSym !== '') {
+                        $busySymbols[$atSym] = true;
+                    }
+                }
+            } catch (\Throwable $_prefiltEx) {
+                // Non-fatal: if active trades can't be loaded, skip busy filter
+            }
+
+            $prefiltInput  = count($candidateSignals);
+            $prefiltBusy   = 0;
+            $prefiltDup    = 0;
+            $prefiltStats  = [];
+            $seenSymbols   = [];
+            $diversified   = [];
+
+            foreach ($candidateSignals as $cSig) {
+                $cSym = $cSig['_symbol_resolved'];
+                if (isset($busySymbols[$cSym])) {
+                    $prefiltBusy++;
+                    $prefiltStats['busy_symbol'] = ($prefiltStats['busy_symbol'] ?? 0) + 1;
+                    continue;
+                }
+                if (isset($seenSymbols[$cSym])) {
+                    $prefiltDup++;
+                    $prefiltStats['duplicate_symbol'] = ($prefiltStats['duplicate_symbol'] ?? 0) + 1;
+                    continue;
+                }
+                $seenSymbols[$cSym] = true;
+                $diversified[] = $cSig;
+            }
+
+            $candidateSignals = $diversified;
+            $result['demo_feed_prefilter_input_count']                    = $prefiltInput;
+            $result['demo_feed_prefilter_output_count']                   = count($candidateSignals);
+            $result['demo_feed_prefilter_skipped_busy_symbol_count']      = $prefiltBusy;
+            $result['demo_feed_prefilter_skipped_duplicate_symbol_count'] = $prefiltDup;
+            $result['demo_feed_unique_symbols_selected_count']            = count($seenSymbols);
+            $result['demo_feed_prefilter_reason_stats']                   = $prefiltStats;
 
             foreach ($candidateSignals as $sig) {
                 $signalId  = $sig['_signal_id_resolved'];

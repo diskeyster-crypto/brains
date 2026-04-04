@@ -418,7 +418,9 @@ $adoptedOrphansOldestAge     = $bot_last_run['adopted_orphans_oldest_age_minutes
 // Adopted orphan audit fields (from truth audit)
 $auditAdoptedOrphansStale            = $bot_demo_truth_audit['adopted_orphans_stale_count']              ?? null;
 $auditAdoptedOrphansClosedTotal      = $bot_demo_truth_audit['adopted_orphans_closed_total']             ?? null;
-$auditAdoptedOrphansClosedCompleteRate = $bot_demo_truth_audit['adopted_orphans_closed_complete_rate']   ?? null;
+$auditAdoptedOrphansClosedCompleteRate    = $bot_demo_truth_audit['adopted_orphans_closed_complete_rate']        ?? null;
+$auditAdoptedOrphansClosedFullCompleteCount = $bot_demo_truth_audit['adopted_orphans_closed_full_complete_count'] ?? null;
+$auditAdoptedOrphansClosedFullCompleteRate  = $bot_demo_truth_audit['adopted_orphans_closed_full_complete_rate']  ?? null;
 $auditAdoptedOrphansWithoutAi        = $bot_demo_truth_audit['adopted_orphans_without_ai_dataset_count'] ?? null;
 // Adopted orphan missing-field detail counts (from audit)
 $auditOrphanMissingClosePrice        = $bot_demo_truth_audit['adopted_orphans_closed_missing_close_price_count']  ?? null;
@@ -737,6 +739,8 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
                     'ok' => ($auditAdoptedOrphansClosedTotal ?? 0) > 0 ? true : null],
                 ['label' => 'Complete Rate (Audit)',  'value' => $auditAdoptedOrphansClosedCompleteRate !== null ? $auditAdoptedOrphansClosedCompleteRate . '%' : 'n/a',
                     'ok' => ($auditAdoptedOrphansClosedCompleteRate ?? 0) >= 80 ? true : (($auditAdoptedOrphansClosedTotal ?? 0) > 0 && ($auditAdoptedOrphansClosedCompleteRate ?? 0) < 50 ? false : null)],
+                ['label' => 'Full Complete Rate',     'value' => $auditAdoptedOrphansClosedFullCompleteRate !== null ? $auditAdoptedOrphansClosedFullCompleteRate . '%' : 'n/a',
+                    'ok' => ($auditAdoptedOrphansClosedFullCompleteRate ?? 0) >= 80 ? true : (($auditAdoptedOrphansClosedTotal ?? 0) > 0 && ($auditAdoptedOrphansClosedFullCompleteRate ?? 0) < 50 ? false : null)],
                 ['label' => 'Without AI (Audit)',     'value' => $auditAdoptedOrphansWithoutAi !== null ? (string)$auditAdoptedOrphansWithoutAi : 'n/a',
                     'ok' => $auditAdoptedOrphansWithoutAi === 0 ? true : ($auditAdoptedOrphansWithoutAi > 0 ? false : null)],
                 ['label' => 'Stale This Run',         'value' => $adoptedOrphansStaleThisRun !== null ? (string)$adoptedOrphansStaleThisRun : 'n/a',
@@ -774,17 +778,27 @@ $symbolsBusyAdopted      = $bot_last_run['symbols_busy_due_to_local_adopted_trad
             && (($auditOrphanMissingClosePrice ?? 0) + ($auditOrphanMissingRoi ?? 0)
               + ($auditOrphanMissingMfe ?? 0) + ($auditOrphanMissingMae ?? 0)
               + ($auditOrphanMissingHoldMin ?? 0)) > 0;
-        if ($hasOrphanMissingData):
+        // Show mfe/mae warning whenever they inflate the operational complete rate
+        $orphanMfeMaeInflation = ($auditAdoptedOrphansClosedTotal ?? 0) > 0
+            && ($auditAdoptedOrphansClosedFullCompleteRate !== null)
+            && ($auditAdoptedOrphansClosedCompleteRate !== null)
+            && ((float)$auditAdoptedOrphansClosedFullCompleteRate < (float)$auditAdoptedOrphansClosedCompleteRate);
+        if ($hasOrphanMissingData || $orphanMfeMaeInflation):
         ?>
         <div class="mt-1">
             <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Closed — Missing Field Counts (Audit)</div>
+            <?php if ($orphanMfeMaeInflation): ?>
+            <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+                <strong>Completeness Warning:</strong> Operational complete rate (<?= htmlspecialchars((string)$auditAdoptedOrphansClosedCompleteRate) ?>%) counts records as complete even though mfe/mae are missing. Full complete rate (requiring mfe+mae) is <?= htmlspecialchars((string)$auditAdoptedOrphansClosedFullCompleteRate) ?>%. Missing mfe: <?= (int)($auditOrphanMissingMfe ?? 0) ?>, missing mae: <?= (int)($auditOrphanMissingMae ?? 0) ?>.
+            </div>
+            <?php endif; ?>
             <div class="row g-2 mb-1">
             <?php
             $mfCards = [
                 ['label' => 'Missing close_price', 'value' => (string)($auditOrphanMissingClosePrice ?? 0), 'ok' => ($auditOrphanMissingClosePrice ?? 0) === 0 ? true : false],
                 ['label' => 'Missing roi',         'value' => (string)($auditOrphanMissingRoi ?? 0),        'ok' => ($auditOrphanMissingRoi ?? 0) === 0 ? true : false],
-                ['label' => 'Missing mfe',         'value' => (string)($auditOrphanMissingMfe ?? 0),        'ok' => ($auditOrphanMissingMfe ?? 0) === 0 ? true : null],
-                ['label' => 'Missing mae',         'value' => (string)($auditOrphanMissingMae ?? 0),        'ok' => ($auditOrphanMissingMae ?? 0) === 0 ? true : null],
+                ['label' => 'Missing mfe',         'value' => (string)($auditOrphanMissingMfe ?? 0),        'ok' => ($auditOrphanMissingMfe ?? 0) === 0 ? true : false],
+                ['label' => 'Missing mae',         'value' => (string)($auditOrphanMissingMae ?? 0),        'ok' => ($auditOrphanMissingMae ?? 0) === 0 ? true : false],
                 ['label' => 'Missing hold_min',    'value' => (string)($auditOrphanMissingHoldMin ?? 0),    'ok' => ($auditOrphanMissingHoldMin ?? 0) === 0 ? true : null],
             ];
             foreach ($mfCards as $mfc):

@@ -945,8 +945,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $missingClosePrice   = 0;
         $missingRoi          = 0;
         $completeClosedCount = 0;
-        $adoptedOrphanClosedCount    = 0;
-        $adoptedOrphanClosedComplete = 0;
+        $adoptedOrphanClosedCount        = 0;
+        $adoptedOrphanClosedComplete     = 0;
+        $adoptedOrphanClosedFullComplete = 0;
         // Adopted orphan missing-field detail counts
         $adoptedOrphanMissingClosePrice  = 0;
         $adoptedOrphanMissingRoi         = 0;
@@ -990,7 +991,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $missingHoldMinutes++;
             }
 
-            $isComplete = $closePrice > 0 && $roi !== null && $closeReason !== '';
+            $isComplete     = $closePrice > 0 && $roi !== null && $closeReason !== '';
+            $isFullComplete = $isComplete && $mfe !== null && $mae !== null;
             if ($isComplete) {
                 $completeClosedCount++;
             }
@@ -1000,6 +1002,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 $adoptedOrphanClosedCount++;
                 if ($isComplete) {
                     $adoptedOrphanClosedComplete++;
+                }
+                if ($isFullComplete) {
+                    $adoptedOrphanClosedFullComplete++;
                 }
                 // Track per-field incompleteness for adopted orphans
                 if ($closePrice <= 0) {
@@ -1067,6 +1072,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $matchRate = $closedCount > 0 ? round(($closedCount - $closedWithoutAiDataset) / $closedCount * 100, 1) : 0.0;
         $adoptedOrphanClosedCompleteRate = $adoptedOrphanClosedCount > 0
             ? round($adoptedOrphanClosedComplete / $adoptedOrphanClosedCount * 100, 1)
+            : 0.0;
+        $adoptedOrphanClosedFullCompleteRate = $adoptedOrphanClosedCount > 0
+            ? round($adoptedOrphanClosedFullComplete / $adoptedOrphanClosedCount * 100, 1)
             : 0.0;
 
         // ── Field completeness rates ─────────────────────────────────────────
@@ -1199,11 +1207,14 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'orphan_adopted_average_age_minutes'       => $orphanAdoptedAvgAge,
             'orphan_adopted_oldest_age_minutes'        => $orphanAdoptedOldestAge,
             // Adopted orphan close pipeline metrics
-            'adopted_orphans_stale_count'              => $adoptedOrphanStaleCount,
-            'adopted_orphans_closed_total'             => $adoptedOrphanClosedCount,
-            'adopted_orphans_closed_complete_count'    => $adoptedOrphanClosedComplete,
-            'adopted_orphans_closed_complete_rate'     => $adoptedOrphanClosedCompleteRate,
-            'adopted_orphans_without_ai_dataset_count' => $adoptedOrphanWithoutAi,
+            'adopted_orphans_stale_count'                    => $adoptedOrphanStaleCount,
+            'adopted_orphans_closed_total'                   => $adoptedOrphanClosedCount,
+            'adopted_orphans_closed_complete_count'          => $adoptedOrphanClosedComplete,
+            'adopted_orphans_closed_complete_rate'           => $adoptedOrphanClosedCompleteRate,
+            // Full completeness requires mfe+mae in addition to basic operational fields
+            'adopted_orphans_closed_full_complete_count'     => $adoptedOrphanClosedFullComplete,
+            'adopted_orphans_closed_full_complete_rate'      => $adoptedOrphanClosedFullCompleteRate,
+            'adopted_orphans_without_ai_dataset_count'       => $adoptedOrphanWithoutAi,
             // Adopted orphan missing-field detail counts
             'adopted_orphans_closed_missing_close_price_count'  => $adoptedOrphanMissingClosePrice,
             'adopted_orphans_closed_missing_roi_count'          => $adoptedOrphanMissingRoi,

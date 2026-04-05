@@ -1107,28 +1107,37 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $pctMissingRoi         = $closedCount > 0 ? round($missingRoi / $closedCount * 100, 1) : 0.0;
         $completenessRate      = $closedCount > 0 ? round($completeClosedCount / $closedCount * 100, 1) : 0.0;
 
-        // Derive capacity full state from store config when not provided via runtime params
-        $storeMaxCap    = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['max_concurrent_demo_positions'] ?? 0) : 0;
-        $capacityFullDerived = $storeMaxCap > 0 && $activeCount >= $storeMaxCap;
-        $capacityFullEffective = $capacityFull || $capacityFullDerived;
-        // Use store-derived slot count when runtime params are absent
+        // Resolve configured max capacity
+        $storeMaxCap = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['max_concurrent_demo_positions'] ?? 0) : 0;
+
+        // Resolve capacity_slots_total (use runtime when provided, fall back to config)
         if ($capacitySlotsTotal === 0 && $storeMaxCap > 0) {
             $capacitySlotsTotal = $storeMaxCap;
         }
-        if ($capacitySlotsUsed === 0) {
-            $capacitySlotsUsed = $activeCount;
-        }
+        // capacity_slots_used always reflects the current storage-derived active count.
+        // The runtime $capacitySlotsUsed param is the pre-execution snapshot which may be
+        // stale by audit time (e.g., new trades opened during the run). Using $activeCount
+        // ensures the reported used count and capacity_full are always consistent.
+        $capacitySlotsUsed = $activeCount;
+
+        // capacity_full is derived exclusively from the resolved slot values.
+        // This enforces the invariant: capacity_full=true iff used >= total, and prevents
+        // the impossible state where full=true but used < total (or full=false but used >= total).
+        $capacityFullEffective = $capacitySlotsTotal > 0 && $capacitySlotsUsed >= $capacitySlotsTotal;
+
         // Recoverable = stale + timeout-eligible + dead shells (can be freed by turnover pass)
         $recoverableCount = $staleCount + $orphanDeadShellCount + $orphanAdoptedTimeoutEligibleCount;
 
-        // ── Consistency check between runtime params and storage-derived capacity ──
-        // When last_run says capacity_full=false but storage currently shows capacity >= max,
-        // there is a timing or logic mismatch that should be surfaced explicitly.
+        // ── Consistency check: runtime reported state vs audit-derived state ──
+        // If last_run reported a different full/not-full state vs what the current slot counts show,
+        // surface it as an explicit diagnostic warning.
         $consistencyOk      = true;
         $consistencyWarning = null;
-        if ($capacityFullDerived && !$capacityFull && $storeMaxCap > 0) {
+        if ($capacityFull !== $capacityFullEffective) {
+            $runtimeStr = $capacityFull ? 'true' : 'false';
+            $auditStr   = $capacityFullEffective ? 'true' : 'false';
             $consistencyOk      = false;
-            $consistencyWarning = "last_run demo_capacity_full=false but storage-derived capacity_full=true ({$activeCount}/{$storeMaxCap} slots used). Turnover pass may not have triggered this run — verify demo_learning_mode.enabled and that capacity check conditions fired.";
+            $consistencyWarning = "Runtime demo_capacity_full={$runtimeStr} but audit capacity_full={$auditStr} ({$capacitySlotsUsed}/{$capacitySlotsTotal} slots used). Capacity state changed between execution start and audit write.";
         }
 
         // ── Bottleneck classification ────────────────────────────────────────

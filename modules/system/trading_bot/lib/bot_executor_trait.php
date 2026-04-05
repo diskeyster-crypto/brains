@@ -1601,6 +1601,7 @@ trait BotExecutorTrait
             'healthy_active_before'                          => 0,
             'healthy_active_stale_count'                     => 0,
             'healthy_active_timeout_eligible_count'          => 0,
+            'healthy_active_processed_this_run'              => 0,
             'healthy_active_closed_this_run'                 => 0,
             'healthy_active_close_failures_this_run'         => 0,
             'healthy_active_close_failure_reasons'           => [],
@@ -1788,11 +1789,15 @@ trait BotExecutorTrait
                 }
 
                 // ── Demo learning mode: force-close trades that exceeded learning_close_timeout_minutes ──
-                // If prefer_close_stale_when_learning is true and the trade is over the hard timeout,
-                // attempt to close the position on exchange then finalize locally.
-                if ($mode === 'demo' && $preferCloseStale && $closeTimeoutMinutes > 0) {
+                // Hard timeout fires whenever demo learning mode is active and a close timeout is configured.
+                // This applies to both healthy actives and is not gated on prefer_close_stale_when_learning
+                // so that the timeout is authoritative regardless of soft-stale preference config.
+                if ($mode === 'demo' && $dlmEnabled && $closeTimeoutMinutes > 0) {
                     $tradeAgeMin = (int)($trade['age_minutes'] ?? 0);
                     if ($tradeAgeMin >= $closeTimeoutMinutes) {
+                        if (!$isAdoptedTrade) {
+                            $result['healthy_active_processed_this_run']++;
+                        }
                         $exchangeCloseResult = $this->closePositionOnExchange($trade);
                         $closeReason = 'learning_timeout_close';
                         if (!($exchangeCloseResult['success'] ?? false)) {
@@ -4482,14 +4487,19 @@ private function computeEntryDeadline(array $intent): array
             } elseif ($isOrphan && $isTimeout) {
                 $score  = 90 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
                 $reason = 'orphan_adopted_timeout_exceeded';
-            } elseif ($isTimeout && $preferCloseStale) {
+            } elseif ($isTimeout && !$isOrphan) {
+                // Healthy active that exceeded hard timeout — always eligible, not gated on prefer_close_stale
                 $score  = 80 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
-                $reason = 'timeout_exceeded_prefer_close';
+                $reason = 'healthy_trade_timeout_exceeded';
             } elseif ($isOrphan && $isStale) {
                 $score  = 70;
                 $reason = 'orphan_adopted_stale';
-            } elseif ($isStale) {
+            } elseif ($isStale && !$isOrphan) {
+                // Healthy active that exceeded the stale threshold
                 $score  = 60;
+                $reason = 'healthy_trade_stale';
+            } elseif ($isStale) {
+                $score  = 55;
                 $reason = 'trade_stale';
             } elseif ($ageMin > 0) {
                 $score  = min(50, (int)($ageMin / 30));
@@ -4574,7 +4584,8 @@ private function computeEntryDeadline(array $intent): array
             }
 
             // ── Timeout-exceeded: force close via exchange ────────────────
-            if ($isTimeout && ($isOrphan || $preferCloseStale)) {
+            // Hard timeout applies to all demo trades (orphan and healthy) without prefer_close_stale gate.
+            if ($isTimeout) {
                 $exchangeResult = $this->closePositionOnExchange($trade);
                 $closeReason    = 'turnover_pass_timeout_close';
                 if (!($exchangeResult['success'] ?? false)) {

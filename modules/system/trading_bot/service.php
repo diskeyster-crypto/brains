@@ -747,12 +747,14 @@ final class TradingBotService
                         }
                         $demoCapacityFull = ($demoMaxCap > 0 && $demoCapRemaining === 0);
 
-                        // ── Capacity saturation: trigger slot-recovery pass ──────────
-                        // When no capacity remains, attempt to free slots BEFORE executing
-                        // new signals so that at least some new opens can proceed this run.
-                        if ($demoCapacityFull) {
+                        // ── Turnover pass: run whenever there are active demo trades ──────────
+                        // Runs BEFORE the signal execution loop so freed slots benefit new opens
+                        // in the same cycle. This applies regardless of whether capacity is full —
+                        // healthy actives that exceeded learning_close_timeout_minutes are closed
+                        // proactively, not only when the slot pool is saturated.
+                        if ($demoActiveNow > 0) {
                             if (method_exists($this, 'performDemoTurnoverPass')) {
-                                $demoTurnoverModeTriggered       = true;
+                                $demoTurnoverModeTriggered       = $demoCapacityFull; // true when capacity is full (for capacity-saturation diagnostics)
                                 $turnoverPassResult              = $this->performDemoTurnoverPass($mode);
                                 $demoTurnoverCandidatesCount     = (int)($turnoverPassResult['turnover_candidates_found']                    ?? 0);
                                 $demoTurnoverProcessedCount      = (int)($turnoverPassResult['turnover_candidates_processed']                 ?? 0);
@@ -774,7 +776,7 @@ final class TradingBotService
                                     $demoCapacityFull            = ($demoCapRemaining === 0);
                                     $demoTurnoverFreedCapacity   = true;
                                 }
-                            } else {
+                            } elseif ($demoCapacityFull) {
                                 $demoTurnoverModeTriggered = true;
                                 $demoTurnoverBlockReason   = 'turnover_pass_not_invoked';
                             }
@@ -1134,6 +1136,8 @@ final class TradingBotService
                 $result['healthy_active_trades_before']                    = $updateResult['healthy_active_before'] ?? 0;
                 $result['healthy_active_trades_stale_this_run']            = $updateResult['healthy_active_stale_count'] ?? 0;
                 $result['healthy_active_trades_timeout_eligible_this_run'] = $updateResult['healthy_active_timeout_eligible_count'] ?? 0;
+                $result['healthy_active_turnover_candidates_count']        = ($updateResult['healthy_active_stale_count'] ?? 0) + ($updateResult['healthy_active_timeout_eligible_count'] ?? 0);
+                $result['healthy_active_turnover_processed_count']         = $updateResult['healthy_active_processed_this_run'] ?? 0;
                 $result['healthy_active_closed_this_run']                  = $updateResult['healthy_active_closed_this_run'] ?? 0;
                 $result['healthy_active_close_failures_this_run']          = $updateResult['healthy_active_close_failures_this_run'] ?? 0;
                 $result['healthy_active_close_failure_reasons']            = $updateResult['healthy_active_close_failure_reasons'] ?? [];
@@ -1217,6 +1221,10 @@ final class TradingBotService
                 $result['demo_closed_trades_target_per_run'] = $targetPerRun;
                 $result['demo_closed_trades_target_met']     = $closedThisRun >= $targetPerRun;
                 $result['demo_closed_trades_target_gap']     = max(0, $targetPerRun - $closedThisRun);
+                // Aliases for turnover target fields (same data, canonical names for turnover UI)
+                $result['turnover_close_target_per_run']     = $targetPerRun;
+                $result['turnover_close_target_met']         = $closedThisRun >= $targetPerRun;
+                $result['turnover_close_target_gap']         = max(0, $targetPerRun - $closedThisRun);
             }
 
             // ============================================================

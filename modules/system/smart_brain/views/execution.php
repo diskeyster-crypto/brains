@@ -579,6 +579,8 @@ $auditConsistencyWarning = (string)($bot_demo_truth_audit['capacity_runtime_cons
 $healthyActiveBefore     = $bot_last_run['healthy_active_trades_before']                          ?? null;
 $healthyActiveStaleRun   = $bot_last_run['healthy_active_trades_stale_this_run']                  ?? null;
 $healthyActiveTimeoutRun = $bot_last_run['healthy_active_trades_timeout_eligible_this_run']       ?? null;
+$healthyActiveCandRun    = $bot_last_run['healthy_active_turnover_candidates_count']              ?? null;
+$healthyActiveProcRun    = $bot_last_run['healthy_active_turnover_processed_count']               ?? null;
 $healthyActiveClosedRun  = $bot_last_run['healthy_active_closed_this_run']                        ?? null;
 $healthyActiveFailRun    = $bot_last_run['healthy_active_close_failures_this_run']                ?? null;
 $healthyActiveFailRsns   = (array)($bot_last_run['healthy_active_close_failure_reasons']          ?? []);
@@ -595,6 +597,7 @@ $targetGap               = $bot_last_run['demo_closed_trades_target_gap']       
 $auditHealthyActive      = $bot_demo_truth_audit['healthy_active_trades_count']                   ?? null;
 $auditHealthyStale       = $bot_demo_truth_audit['healthy_active_trades_stale_count']             ?? null;
 $auditHealthyTimeout     = $bot_demo_truth_audit['healthy_active_trades_timeout_eligible_count']  ?? null;
+$auditHealthyCand        = $bot_demo_truth_audit['healthy_active_turnover_candidates_count']      ?? null;
 $auditClosedHealthy      = $bot_demo_truth_audit['closed_trades_healthy_total']                   ?? null;
 $auditClosedOrphan       = $bot_demo_truth_audit['closed_trades_orphan_adopted_total']            ?? null;
 $auditClosedTotal        = $bot_demo_truth_audit['closed_trades_total']                           ?? null;
@@ -1414,6 +1417,8 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             $effHealthyActive  = $healthyActiveBefore ?? $auditHealthyActive;
             $effHealthyStale   = $healthyActiveStaleRun ?? $auditHealthyStale;
             $effHealthyTimeout = $healthyActiveTimeoutRun ?? $auditHealthyTimeout;
+            $effHealthyCand    = $healthyActiveCandRun ?? $auditHealthyCand;
+            $effHealthyProc    = $healthyActiveProcRun;
             $effClosedTotal    = $closedTotalRun ?? $auditClosedTotal;
             $effClosedHealthy  = $closedHealthyRun ?? $auditClosedHealthy;
             $effClosedOrphan   = $closedOrphanRun ?? $auditClosedOrphan;
@@ -1427,6 +1432,10 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
                  'ok' => ($effHealthyStale ?? 0) > 0 ? false : (($effHealthyActive ?? 0) > 0 ? true : null)],
                 ['label' => 'Подходит таймаут',      'value' => $effHealthyTimeout !== null ? (string)$effHealthyTimeout : 'n/a',
                  'ok' => ($effHealthyTimeout ?? 0) > 0 ? null : true],
+                ['label' => 'Кандидатов оборота',    'value' => $effHealthyCand !== null ? (string)$effHealthyCand : 'n/a',
+                 'ok' => ($effHealthyCand ?? 0) > 0 ? null : (($effHealthyActive ?? 0) > 0 ? true : null)],
+                ['label' => 'Обработано (оборот)',   'value' => $effHealthyProc !== null ? (string)$effHealthyProc : 'n/a',
+                 'ok' => ($effHealthyProc ?? 0) > 0 ? true : null],
                 ['label' => 'Закрыто (всего)',       'value' => $effClosedTotal !== null ? (string)$effClosedTotal : 'n/a',
                  'ok' => ($effClosedTotal ?? 0) > 0 ? true : null],
                 ['label' => 'Закрыто (здоровых)',    'value' => $effClosedHealthy !== null ? (string)$effClosedHealthy : 'n/a',

@@ -338,6 +338,13 @@ final class TradingBotService
                 $result['demo_effective_risk_max_open_trades']            = $peDemoResult['demo_effective_risk_max_open_trades'] ?? null;
                 $result['demo_effective_risk_max_open_trades_per_symbol'] = $peDemoResult['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
                 $result['demo_limits_source']                             = $peDemoResult['demo_limits_source'] ?? null;
+                // Effective trailing/break-even runtime proof fields
+                $result['demo_effective_trailing_enabled']          = $peDemoResult['demo_effective_trailing_enabled'] ?? false;
+                $result['demo_effective_trailing_mode']             = $peDemoResult['demo_effective_trailing_mode'] ?? '';
+                $result['demo_effective_trailing_activation']       = $peDemoResult['demo_effective_trailing_activation'] ?? 0.0;
+                $result['demo_effective_trailing_drawdown_factor']  = $peDemoResult['demo_effective_trailing_drawdown_factor'] ?? 0.0;
+                $result['demo_effective_break_even_enabled']        = $peDemoResult['demo_effective_break_even_enabled'] ?? false;
+                $result['demo_effective_break_even_activation']     = $peDemoResult['demo_effective_break_even_activation'] ?? 0.0;
                 // PART 3: prefilter / symbol diversification diagnostics
                 $result['demo_feed_prefilter_input_count']                    = $peDemoResult['demo_feed_prefilter_input_count'] ?? null;
                 $result['demo_feed_prefilter_output_count']                   = $peDemoResult['demo_feed_prefilter_output_count'] ?? null;

@@ -419,6 +419,23 @@ $dlmMaxNewPerRun        = $bot_last_run['demo_max_new_positions_per_run_effectiv
 $demoEffRiskMaxOpen     = $bot_last_run['demo_effective_risk_max_open_trades']            ?? null;
 $demoEffRiskMaxPerSym   = $bot_last_run['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
 $demoLimitsSource       = (string)($bot_last_run['demo_limits_source']                    ?? '');
+// Effective trailing/break-even proof fields
+$demoEffTrailingEnabled    = $bot_last_run['demo_effective_trailing_enabled']         ?? null;
+$demoEffTrailingMode       = (string)($bot_last_run['demo_effective_trailing_mode']   ?? '');
+$demoEffTrailingActivation = $bot_last_run['demo_effective_trailing_activation']      ?? null;
+$demoEffTrailingDrawdown   = $bot_last_run['demo_effective_trailing_drawdown_factor'] ?? null;
+$demoEffBreakEvenEnabled   = $bot_last_run['demo_effective_break_even_enabled']       ?? null;
+$demoEffBreakEvenActivation= $bot_last_run['demo_effective_break_even_activation']   ?? null;
+// Exchange orders vs local positions (from reconcile steps)
+$reconcileStep = null;
+foreach ((array)($bot_last_run['steps'] ?? []) as $_step) {
+    if (in_array($_step['step'] ?? '', ['reconcile', 'reconcile_demo_forced'], true)) {
+        $reconcileStep = $_step;
+        break;
+    }
+}
+$exchangePositionsSynced = $reconcileStep !== null ? (int)($reconcileStep['positions_synced'] ?? 0) : null;
+$exchangeOrdersSynced    = $reconcileStep !== null ? (int)($reconcileStep['orders_synced'] ?? 0)    : null;
 // Prefilter / symbol diversification diagnostics
 $demoPrefiltInput    = $bot_last_run['demo_feed_prefilter_input_count']                    ?? null;
 $demoPrefiltOutput   = $bot_last_run['demo_feed_prefilter_output_count']                   ?? null;
@@ -721,6 +738,67 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php endif; ?>
         <?php endif; // hasLimitData ?>
+        <?php
+        // ── Demo Effective Trailing / Break-even Proof ────────────────────
+        if ($demoEffTrailingEnabled !== null):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Effective Trailing / Break-even</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $trailingCards = [
+                ['label' => 'Trailing Enabled',    'value' => $demoEffTrailingEnabled  ? 'true' : 'false', 'ok' => $demoEffTrailingEnabled ? true : false],
+                ['label' => 'Trailing Mode',       'value' => $demoEffTrailingMode ?: '(default)',          'ok' => null],
+                ['label' => 'Activation ROI %',    'value' => $demoEffTrailingActivation !== null ? number_format((float)$demoEffTrailingActivation, 2) : 'n/a', 'ok' => null],
+                ['label' => 'Drawdown Factor',     'value' => $demoEffTrailingDrawdown !== null ? number_format((float)$demoEffTrailingDrawdown, 4) : 'n/a',     'ok' => null],
+                ['label' => 'Break-even Enabled',  'value' => $demoEffBreakEvenEnabled ? 'true' : 'false',  'ok' => $demoEffBreakEvenEnabled ? true : null],
+                ['label' => 'Break-even Activ. %', 'value' => $demoEffBreakEvenActivation !== null ? number_format((float)$demoEffBreakEvenActivation, 2) : 'n/a', 'ok' => null],
+            ];
+            foreach ($trailingCards as $tc):
+                $cls = 'neutral';
+                if ($tc['ok'] === true) $cls = 'positive';
+                if ($tc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-4">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$tc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($tc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; // trailing proof ?>
+        <?php
+        // ── Exchange Positions / Orders vs Local Active Positions ─────────
+        if ($exchangePositionsSynced !== null || $exchangeOrdersSynced !== null):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Exchange vs Local Positions (Reconcile)</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $localActiveCount = $bot_demo_truth_audit['capacity_slots_used'] ?? null;
+            $syncCards = [
+                ['label' => 'Exchange Positions Synced', 'value' => $exchangePositionsSynced !== null ? (string)$exchangePositionsSynced : 'n/a', 'ok' => null],
+                ['label' => 'Exchange Orders Synced',    'value' => $exchangeOrdersSynced !== null    ? (string)$exchangeOrdersSynced    : 'n/a', 'ok' => null],
+                ['label' => 'Local Active Positions',    'value' => $localActiveCount !== null        ? (string)$localActiveCount        : 'n/a', 'ok' => null],
+            ];
+            foreach ($syncCards as $sc):
+                $cls = 'neutral';
+                if ($sc['ok'] === true) $cls = 'positive';
+                if ($sc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-4">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$sc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($sc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($exchangePositionsSynced !== null && $localActiveCount !== null && (int)$exchangePositionsSynced !== (int)$localActiveCount): ?>
+        <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
+            <strong>Sync note:</strong> Exchange positions (<?= (int)$exchangePositionsSynced ?>) ≠ Local active (<?= (int)$localActiveCount ?>). Exchange orders and local positions are different concepts — orphans/pending orders may account for the difference.
+        </div>
+        <?php endif; ?>
+        <?php endif; // exchange vs local ?>
         <?php
         // ── Demo Feed Pre-filter / Symbol Diversity ───────────────────────
         $hasPrefiltData = ($demoPrefiltInput !== null);

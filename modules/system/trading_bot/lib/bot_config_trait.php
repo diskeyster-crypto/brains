@@ -199,6 +199,12 @@ trait BotConfigTrait
                             'retrace_slack_pct',
                             'close_reason_sl_tolerance_pct',
                             'dumb_trailing_activation_epsilon_pct',
+                            'trailing_activation_roi',
+                            'trailing_drawdown_factor',
+                            'break_even_activation_roi',
+                            'stop_loss_pct',
+                            'take_profit_pct',
+                            'emergency_stop_loss_pct',
                         ];
 
                         foreach ($floats as $k) {
@@ -216,6 +222,9 @@ trait BotConfigTrait
                             'dumb_trailing_enabled',
                             'enable_trailing_on_open',
                             'balance_strict_stable_coin_only',
+                            'trailing_enabled',
+                            'break_even_enabled',
+                            'emergency_stop_enabled',
                         ];
 
                         foreach ($bools as $k) {
@@ -226,6 +235,9 @@ trait BotConfigTrait
 
                         if (isset($exu['balance_coin']) && is_string($exu['balance_coin'])) {
                             $config['execution']['balance_coin'] = trim($exu['balance_coin']);
+                        }
+                        if (isset($exu['trailing_mode']) && is_string($exu['trailing_mode'])) {
+                            $config['execution']['trailing_mode'] = trim($exu['trailing_mode']);
                         }
                     }
 

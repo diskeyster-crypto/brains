@@ -720,6 +720,7 @@ final class TradingBotService
                 $demoTurnoverCandFinalizeEligCount   = 0;
                 $demoTurnoverCandOtherCount          = 0;
                 $demoTurnoverHealthyClosed            = 0;
+                $demoTurnoverTotalClosed              = 0;
 
                 // demo_learning_mode: cap max concurrent positions + override attempt budget
                 if ($mode === 'demo') {
@@ -768,7 +769,8 @@ final class TradingBotService
                                 $demoTurnoverCandFinalizeEligCount = (int)($turnoverPassResult['turnover_candidates_finalize_eligible_count']  ?? 0);
                                 $demoTurnoverCandOtherCount      = (int)($turnoverPassResult['turnover_candidates_other_count']               ?? 0);
                                 $demoTurnoverHealthyClosed       = (int)($turnoverPassResult['turnover_healthy_closed']                        ?? 0);
-                                $slotsFreedByPass                = (int)($turnoverPassResult['turnover_slots_freed']                          ?? 0);
+                                $demoTurnoverTotalClosed         = (int)($turnoverPassResult['turnover_slots_freed']                            ?? 0);
+                                $slotsFreedByPass                = $demoTurnoverTotalClosed;
                                 if ($slotsFreedByPass > 0) {
                                     $demoCapacitySlotsFreed      = $slotsFreedByPass;
                                     // Re-read active count after turnover pass freed some slots
@@ -1101,7 +1103,7 @@ final class TradingBotService
                 $demoActiveCountAfter = count($this->store->loadActiveTrades());
                 $result['demo_trades_active_before']               = $demoActiveCountBefore;
                 $result['demo_trades_opened_this_run']             = $result['positions_opened'] ?? 0;
-                $result['demo_trades_closed_this_run']             = $updateResult['closed'] ?? 0;
+                $result['demo_trades_closed_this_run']             = ($updateResult['closed'] ?? 0) + $demoTurnoverTotalClosed;
                 $result['demo_trades_still_active_after']          = $demoActiveCountAfter;
                 $result['demo_trades_stale_this_run']              = $updateResult['stale_trades_found'] ?? 0;
                 $result['demo_trades_reconciled_this_run']         = $updateResult['updated'] ?? 0;
@@ -1109,14 +1111,14 @@ final class TradingBotService
                 $result['demo_trades_finalized_locally_this_run']  = $updateResult['finalized_locally_this_run'] ?? 0;
                 $result['demo_average_active_age_minutes']         = $updateResult['avg_active_age_minutes'] ?? null;
                 $result['demo_oldest_active_trade_minutes']        = $updateResult['oldest_active_trade_minutes'] ?? null;
-                $result['demo_ai_dataset_records_written_this_run']= $updateResult['ai_dataset_records_written'] ?? 0;
+                $result['demo_ai_dataset_records_written_this_run']= ($updateResult['ai_dataset_records_written'] ?? 0) + $demoTurnoverAiWritten;
                 $result['demo_close_failures_this_run']            = $updateResult['close_failures'] ?? 0;
                 $result['demo_close_failure_reasons']              = $updateResult['close_failure_reasons'] ?? [];
                 $result['top_stale_trade_reasons']                 = $updateResult['stale_trade_reasons'] ?? [];
 
                 // ── Adopted orphan turnover counters ────────────────────────
                 $result['adopted_orphans_active_before']                   = $updateResult['adopted_orphans_active_before'] ?? 0;
-                $result['adopted_orphans_closed_this_run']                 = $updateResult['adopted_orphans_closed_this_run'] ?? 0;
+                $result['adopted_orphans_closed_this_run']                 = ($updateResult['adopted_orphans_closed_this_run'] ?? 0) + max(0, $demoTurnoverTotalClosed - $demoTurnoverHealthyClosed);
                 $result['adopted_orphans_stale_this_run']                  = $updateResult['adopted_orphans_stale_this_run'] ?? 0;
                 $result['adopted_orphans_finalized_locally_this_run']      = $updateResult['adopted_orphans_finalized_locally_this_run'] ?? 0;
                 $result['adopted_orphans_finalized_from_exchange_this_run']= $updateResult['adopted_orphans_finalized_from_exchange_this_run'] ?? 0;

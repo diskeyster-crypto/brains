@@ -956,7 +956,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $missingCloseReason  = 0;
         $missingClosePrice   = 0;
         $missingRoi          = 0;
-        $completeClosedCount = 0;
+        $completeClosedCount     = 0;
+        $fullCompleteClosedCount = 0;
         $adoptedOrphanClosedCount        = 0;
         $adoptedOrphanClosedComplete     = 0;
         $adoptedOrphanClosedFullComplete = 0;
@@ -1012,6 +1013,11 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $maeMissing = ($mae === null) || !empty($d['mae_missing_reason']);
             if ($isComplete) {
                 $completeClosedCount++;
+            }
+            // Full completeness: basic fields + mfe + mae both present and valid
+            $isFullComplete = $isComplete && !$mfeMissing && !$maeMissing;
+            if ($isFullComplete) {
+                $fullCompleteClosedCount++;
             }
 
             // Count adopted orphan closed trades separately
@@ -1120,6 +1126,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $pctMissingClosePrice  = $closedCount > 0 ? round($missingClosePrice / $closedCount * 100, 1) : 0.0;
         $pctMissingRoi         = $closedCount > 0 ? round($missingRoi / $closedCount * 100, 1) : 0.0;
         $completenessRate      = $closedCount > 0 ? round($completeClosedCount / $closedCount * 100, 1) : 0.0;
+        $fullCompletenessRate  = $closedCount > 0 ? round($fullCompleteClosedCount / $closedCount * 100, 1) : 0.0;
 
         // Resolve configured max capacity
         $storeMaxCap = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['max_concurrent_demo_positions'] ?? 0) : 0;
@@ -1332,6 +1339,14 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'closed_trades_complete_count'             => $completeClosedCount,
             'closed_trades_completeness_rate'          => $completenessRate,
             'closed_trades_complete_rate'              => $completenessRate,  // alias
+            // Full completeness: basic fields + mfe + mae
+            'closed_trades_full_complete_count'        => $fullCompleteClosedCount,
+            'closed_trades_full_complete_rate'         => $fullCompletenessRate,
+            // Count-based missing-field metrics for all closed trades
+            'closed_trades_missing_close_price_count'  => $missingClosePrice,
+            'closed_trades_missing_hold_minutes_count' => $missingHoldMinutes,
+            'closed_trades_missing_mfe_count'          => $missingMfe,
+            'closed_trades_missing_mae_count'          => $missingMae,
             'pct_closed_missing_mfe'                   => $pctMissingMfe,
             'pct_closed_missing_mae'                   => $pctMissingMae,
             'pct_closed_missing_hold_minutes'          => $pctMissingHoldMinutes,

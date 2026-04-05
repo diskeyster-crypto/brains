@@ -1604,6 +1604,12 @@ trait BotExecutorTrait
             'healthy_active_closed_this_run'                 => 0,
             'healthy_active_close_failures_this_run'         => 0,
             'healthy_active_close_failure_reasons'           => [],
+            // Per-run closed trade data-quality counters (demo only)
+            'closed_trades_this_run_full_complete'           => 0,
+            'closed_trades_this_run_missing_mfe'             => 0,
+            'closed_trades_this_run_missing_mae'             => 0,
+            'closed_trades_this_run_missing_close_price'     => 0,
+            'closed_trades_this_run_missing_hold_minutes'    => 0,
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1841,6 +1847,17 @@ trait BotExecutorTrait
                         } else {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
                         }
+                        // Per-run data-quality counters (demo only)
+                        if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                        if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                        if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                        if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                        if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                            && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                            && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                            && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                            $result['closed_trades_this_run_full_complete']++;
+                        }
                         $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                         $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                         continue;
@@ -1917,6 +1934,15 @@ trait BotExecutorTrait
                             && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
                         if ($isComplete) {
                             $result['adopted_orphans_closed_complete_this_run']++;
+                        }
+                        // Per-run data-quality counters (demo only)
+                        if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                        if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                        if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                        if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                        if ($isComplete && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                            && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                            $result['closed_trades_this_run_full_complete']++;
                         }
                         $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                         $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
@@ -1998,6 +2024,17 @@ trait BotExecutorTrait
                             if ($isComplete) {
                                 $result['adopted_orphans_closed_complete_this_run']++;
                             }
+                        }
+                        // Per-run data-quality counters (demo only)
+                        if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                        if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                        if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                        if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                        if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                            && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                            && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                            && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                            $result['closed_trades_this_run_full_complete']++;
                         }
                     }
                     $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
@@ -2246,6 +2283,36 @@ trait BotExecutorTrait
                     && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
                 );
 
+                // ── Demo MFE/MAE tracking for healthy active trades (Part 1) ─────────────
+                // Update best/worst ROI seen in runtime so applyLocalCloseFinalize can
+                // persist real MFE/MAE into the closed record.
+                // Only for demo mode, healthy (non-orphan) trades with a valid entry price.
+                if ($mode === 'demo' && !$isAdoptedTrade) {
+                    $entryPxMfe = (float)($trade['entry_price'] ?? 0);
+                    $currentPxMfe = (float)($position['markPrice'] ?? $position['mark_price'] ?? $position['lastPrice'] ?? $position['last_price'] ?? 0);
+                    if ($entryPxMfe > 0 && $currentPxMfe > 0) {
+                        $mfeSide = strtolower($trade['side'] ?? 'long');
+                        if ($mfeSide === 'long') {
+                            $currentRoiPct = (($currentPxMfe - $entryPxMfe) / $entryPxMfe) * 100;
+                        } else {
+                            $currentRoiPct = (($entryPxMfe - $currentPxMfe) / $entryPxMfe) * 100;
+                        }
+                        $currentRoiPct = round($currentRoiPct, 4);
+                        // Update best_roi_seen (MFE) monotonically
+                        if (!isset($runtime['best_roi_seen']) || $runtime['best_roi_seen'] === null
+                            || $currentRoiPct > (float)$runtime['best_roi_seen']) {
+                            $runtime['best_roi_seen'] = $currentRoiPct;
+                        }
+                        // Update worst_roi_seen (MAE) monotonically
+                        if (!isset($runtime['worst_roi_seen']) || $runtime['worst_roi_seen'] === null
+                            || $currentRoiPct < (float)$runtime['worst_roi_seen']) {
+                            $runtime['worst_roi_seen'] = $currentRoiPct;
+                        }
+                        // Keep last_price up to date for close_price estimation
+                        $runtime['last_price'] = $currentPxMfe;
+                    }
+                }
+
                 $trade['runtime'] = $runtime;
 
                 // Mirror runtime truth into top-level fields (Option A: no conflicting nulls)
@@ -2385,6 +2452,16 @@ trait BotExecutorTrait
                                         $result['ai_dataset_records_written']++;
                                     } else {
                                         $closedTrade2['ai_dataset_write_fail_reason'] = 'write_failed';
+                                    }
+                                    // Per-run data-quality counters
+                                    if ((float)($closedTrade2['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                                    if (($closedTrade2['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                                    if (($closedTrade2['mfe'] ?? null) === null || !empty($closedTrade2['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                                    if (($closedTrade2['mae'] ?? null) === null || !empty($closedTrade2['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                                    if ((float)($closedTrade2['close_price'] ?? 0) > 0 && ($closedTrade2['roi'] ?? null) !== null
+                                        && ($closedTrade2['mfe'] ?? null) !== null && empty($closedTrade2['mfe_missing_reason'])
+                                        && ($closedTrade2['mae'] ?? null) !== null && empty($closedTrade2['mae_missing_reason'])) {
+                                        $result['closed_trades_this_run_full_complete']++;
                                     }
                                 }
                                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);

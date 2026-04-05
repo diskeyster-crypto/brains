@@ -324,13 +324,18 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
 
     $trade['close_result_source'] = 'local_finalize';
 
-    // Copy mfe/mae from runtime if available and not already set on closed trade
+    // Copy mfe/mae from runtime if available and not already set on closed trade.
+    // MFE requires best_roi_seen > 0 (trade actually moved in our favour).
+    // MAE requires worst_roi_seen < 0 (trade actually moved against us).
     $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
     if (!isset($trade['mfe']) || $trade['mfe'] === null) {
         $bestRoi = $rt['best_roi_seen'] ?? null;
-        if ($bestRoi !== null) {
+        if ($bestRoi !== null && (float)$bestRoi > 0) {
             $trade['mfe'] = (float)$bestRoi;
             unset($trade['mfe_missing_reason']);
+        } elseif ($bestRoi !== null) {
+            // Runtime tracked it but price never went positive — no valid MFE evidence
+            $trade['mfe_missing_reason'] = 'no_runtime_evidence';
         } else {
             $trade['mfe_missing_reason'] = $isAdoptedOrphan
                 ? 'adopted_orphan_runtime_no_best_roi_seen'
@@ -339,9 +344,12 @@ private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
     }
     if (!isset($trade['mae']) || $trade['mae'] === null) {
         $worstRoi = $rt['worst_roi_seen'] ?? null;
-        if ($worstRoi !== null) {
+        if ($worstRoi !== null && (float)$worstRoi < 0) {
             $trade['mae'] = (float)$worstRoi;
             unset($trade['mae_missing_reason']);
+        } elseif ($worstRoi !== null) {
+            // Runtime tracked it but price never went negative — no valid MAE evidence
+            $trade['mae_missing_reason'] = 'no_runtime_evidence';
         } else {
             $trade['mae_missing_reason'] = $isAdoptedOrphan
                 ? 'adopted_orphan_runtime_no_worst_roi_seen'

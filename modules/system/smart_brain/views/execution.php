@@ -1585,6 +1585,10 @@ $auditAvgAge           = $demoTruthAudit['avg_active_trade_age_minutes']      ??
 $auditStaleCount       = $demoTruthAudit['stale_active_count']                ?? null;
 $auditPctStale         = $demoTruthAudit['pct_active_trades_stale']           ?? null;
 $auditCompleteRate     = $demoTruthAudit['closed_trades_completeness_rate']   ?? null;
+$auditFullCompleteRate = $demoTruthAudit['closed_trades_full_complete_rate']  ?? null;
+$auditFullCompleteCount= $demoTruthAudit['closed_trades_full_complete_count'] ?? null;
+$auditMissingMfeCount  = $demoTruthAudit['closed_trades_missing_mfe_count']   ?? null;
+$auditMissingMaeCount  = $demoTruthAudit['closed_trades_missing_mae_count']   ?? null;
 $auditMatchRate        = $demoTruthAudit['closed_to_ai_dataset_match_rate']   ?? null;
 $auditMissingMfe       = $demoTruthAudit['pct_closed_missing_mfe']            ?? null;
 $auditMissingMae       = $demoTruthAudit['pct_closed_missing_mae']            ?? null;
@@ -1611,7 +1615,8 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                 ['label' => 'AI Dataset Records',     'value' => $auditAiDataset !== null ? (string)$auditAiDataset : 'n/a',    'ok' => null],
                 ['label' => 'Oldest Active (min)',    'value' => $auditOldestAge !== null ? (string)$auditOldestAge : 'n/a',    'ok' => null],
                 ['label' => 'Stale Active',           'value' => $auditStaleCount !== null ? $auditStaleCount . ' (' . $auditPctStale . '%)' : 'n/a', 'ok' => ($auditPctStale ?? 0) < 30 ? true : (($auditPctStale ?? 0) > 60 ? false : null)],
-                ['label' => 'Closed Completeness',   'value' => $auditCompleteRate !== null ? $auditCompleteRate . '%' : 'n/a', 'ok' => ($auditCompleteRate ?? 0) >= 80 ? true : ($auditCompleteRate !== null && $auditClosed > 3 ? false : null)],
+                ['label' => 'Basic Complete Rate',    'value' => $auditCompleteRate !== null ? $auditCompleteRate . '%' : 'n/a', 'ok' => ($auditCompleteRate ?? 0) >= 80 ? true : ($auditCompleteRate !== null && $auditClosed > 3 ? false : null)],
+                ['label' => 'Full Complete Rate',     'value' => $auditFullCompleteRate !== null ? $auditFullCompleteRate . '%' : 'n/a', 'ok' => ($auditFullCompleteRate ?? 0) >= 60 ? true : ($auditFullCompleteRate !== null && $auditClosed > 3 ? false : null)],
                 ['label' => 'AI Dataset Match',      'value' => $auditMatchRate !== null ? $auditMatchRate . '%' : 'n/a',       'ok' => ($auditMatchRate ?? 0) >= 90 ? true : ($auditMatchRate !== null && $auditClosed > 0 ? false : null)],
                 ['label' => 'Closed w/o AI Record',  'value' => $auditClosedNoAi !== null ? (string)$auditClosedNoAi : 'n/a',  'ok' => $auditClosedNoAi === 0 ? true : ($auditClosedNoAi > 0 ? false : null)],
             ];
@@ -1632,17 +1637,19 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         <div class="row g-2 mb-2">
             <?php
             $fieldCards = [
-                ['label' => 'Missing MFE %',   'value' => $auditMissingMfe !== null ? $auditMissingMfe . '%' : 'n/a',    'ok' => $auditMissingMfe === 0.0 ? true : ($auditMissingMfe !== null && $auditMissingMfe > 20 ? false : null)],
-                ['label' => 'Missing MAE %',   'value' => $auditMissingMae !== null ? $auditMissingMae . '%' : 'n/a',    'ok' => $auditMissingMae === 0.0 ? true : ($auditMissingMae !== null && $auditMissingMae > 20 ? false : null)],
-                ['label' => 'Missing Hold %',  'value' => $auditMissingHold !== null ? $auditMissingHold . '%' : 'n/a',  'ok' => $auditMissingHold === 0.0 ? true : ($auditMissingHold !== null && $auditMissingHold > 20 ? false : null)],
-                ['label' => 'Missing Reason %','value' => $auditMissingReason !== null ? $auditMissingReason . '%' : 'n/a', 'ok' => $auditMissingReason === 0.0 ? true : ($auditMissingReason !== null && $auditMissingReason > 10 ? false : null)],
+                ['label' => 'Missing MFE %',       'value' => $auditMissingMfe !== null ? $auditMissingMfe . '%' : 'n/a',    'ok' => $auditMissingMfe === 0.0 ? true : ($auditMissingMfe !== null && $auditMissingMfe > 20 ? false : null)],
+                ['label' => 'Missing MAE %',       'value' => $auditMissingMae !== null ? $auditMissingMae . '%' : 'n/a',    'ok' => $auditMissingMae === 0.0 ? true : ($auditMissingMae !== null && $auditMissingMae > 20 ? false : null)],
+                ['label' => 'Missing MFE (count)', 'value' => $auditMissingMfeCount !== null ? (string)$auditMissingMfeCount : 'n/a', 'ok' => $auditMissingMfeCount === 0 ? true : ($auditMissingMfeCount > 0 ? false : null)],
+                ['label' => 'Missing MAE (count)', 'value' => $auditMissingMaeCount !== null ? (string)$auditMissingMaeCount : 'n/a', 'ok' => $auditMissingMaeCount === 0 ? true : ($auditMissingMaeCount > 0 ? false : null)],
+                ['label' => 'Missing Hold %',      'value' => $auditMissingHold !== null ? $auditMissingHold . '%' : 'n/a',  'ok' => $auditMissingHold === 0.0 ? true : ($auditMissingHold !== null && $auditMissingHold > 20 ? false : null)],
+                ['label' => 'Missing Reason %',    'value' => $auditMissingReason !== null ? $auditMissingReason . '%' : 'n/a', 'ok' => $auditMissingReason === 0.0 ? true : ($auditMissingReason !== null && $auditMissingReason > 10 ? false : null)],
             ];
             foreach ($fieldCards as $fc):
                 $cls = 'neutral';
                 if ($fc['ok'] === true)  $cls = 'positive';
                 if ($fc['ok'] === false) $cls = 'negative';
             ?>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <div class="stat-card">
                     <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$fc['value']) ?></div>
                     <div class="stat-label"><?= htmlspecialchars($fc['label']) ?></div>
@@ -1650,7 +1657,20 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             </div>
             <?php endforeach; ?>
         </div>
+        <?php
+        // Alert: basic completeness looks good but full completeness (MFE+MAE) is low
+        $showMfeMaeAlert = $auditClosed > 3
+            && ($auditCompleteRate ?? 0) > 50
+            && ($auditFullCompleteRate ?? 100) < 20;
+        ?>
+        <?php if ($showMfeMaeAlert): ?>
+        <div class="alert alert-warning py-2 mb-2 small">
+            <strong>MFE/MAE Gap:</strong> Basic complete rate is <?= $auditCompleteRate ?>% but full complete rate (with MFE+MAE) is only <?= $auditFullCompleteRate ?>%.
+            <?= $auditMissingMfeCount ?> trades missing MFE, <?= $auditMissingMaeCount ?> missing MAE.
+            Active demo trades are not yet accumulating MFE/MAE runtime evidence — trades may be closing too quickly, or price tracking started too recently.
+        </div>
         <?php endif; ?>
+        <?php endif; // auditMissingMfe block ?>
         <?php if ($auditBottleneck !== ''): ?>
         <?php
         $auditAlertClass = 'alert-warning';

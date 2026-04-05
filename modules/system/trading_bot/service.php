@@ -1193,10 +1193,16 @@ final class TradingBotService
                 // ── PART 6: Closed trade breakdown this run ────────────────
                 $adoptedOrphansClosedThisRun = (int)($result['adopted_orphans_closed_this_run'] ?? 0);
                 $healthyClosedThisRun        = max(0, $closedThisRun - $adoptedOrphansClosedThisRun);
-                $result['closed_trades_this_run_total']          = $closedThisRun;
-                $result['closed_trades_this_run_healthy']        = $healthyClosedThisRun;
-                $result['closed_trades_this_run_orphan_adopted'] = $adoptedOrphansClosedThisRun;
-                $result['ai_dataset_written_this_run_total']     = $aiWrittenThisRun;
+                $result['closed_trades_this_run_total']                  = $closedThisRun;
+                $result['closed_trades_this_run_healthy']                = $healthyClosedThisRun;
+                $result['closed_trades_this_run_orphan_adopted']         = $adoptedOrphansClosedThisRun;
+                $result['ai_dataset_written_this_run_total']             = $aiWrittenThisRun;
+                // Per-run data-quality counters (from updateActivePositions tracking)
+                $result['closed_trades_this_run_full_complete']          = $updateResult['closed_trades_this_run_full_complete'] ?? 0;
+                $result['closed_trades_this_run_missing_mfe']            = $updateResult['closed_trades_this_run_missing_mfe'] ?? 0;
+                $result['closed_trades_this_run_missing_mae']            = $updateResult['closed_trades_this_run_missing_mae'] ?? 0;
+                $result['closed_trades_this_run_missing_close_price']    = $updateResult['closed_trades_this_run_missing_close_price'] ?? 0;
+                $result['closed_trades_this_run_missing_hold_minutes']   = $updateResult['closed_trades_this_run_missing_hold_minutes'] ?? 0;
 
                 // ── PART 7: Velocity target diagnostics ────────────────────
                 $dlmCfgVel   = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];

@@ -722,6 +722,14 @@ final class TradingBotService
                 $demoTurnoverHealthyClosed            = 0;
                 $demoTurnoverOrphanClosed             = 0;
                 $demoTurnoverTotalClosed              = 0;
+                $turnoverPassResult                   = [];
+                // Composition tracking variables (demo mode only, PARTS 1-4)
+                $demoActiveHealthyCount  = 0;
+                $demoActiveOrphanCount   = 0;
+                $compOrphanMax           = 0;
+                $compHealthyMin          = 0;
+                $compShareTarget         = 0.0;
+                $compOrphanCapReached    = false;
 
                 // demo_learning_mode: cap max concurrent positions + override attempt budget
                 if ($mode === 'demo') {
@@ -788,6 +796,41 @@ final class TradingBotService
                             }
                             $demoCapacitySlotsAfter = $demoActiveNow;
                         }
+
+                        // ── PARTS 1-4: Demo composition awareness ─────────────────────────
+                        // Compute active healthy/orphan split AFTER turnover so the counts
+                        // reflect what is actually in storage when the signal loop begins.
+                        $demoActiveHealthyCount = 0;
+                        $demoActiveOrphanCount  = 0;
+                        foreach ($this->store->loadActiveTrades() as $_compTrade) {
+                            if (!empty($_compTrade['is_orphan_adopted']) || !empty($_compTrade['adopted_from_exchange_orphan'])) {
+                                $demoActiveOrphanCount++;
+                            } else {
+                                $demoActiveHealthyCount++;
+                            }
+                        }
+                        $dlmCompCfg      = $dlmCfg; // same array, alias for clarity
+                        $compOrphanMax   = (int)($dlmCompCfg['orphan_max_active_slots'] ?? 0);
+                        $compHealthyMin  = (int)($dlmCompCfg['healthy_min_active_slots'] ?? 0);
+                        $compShareTarget = (float)($dlmCompCfg['healthy_share_target_pct'] ?? 0);
+                        $compOrphanCapReached = $compOrphanMax > 0 && $demoActiveOrphanCount >= $compOrphanMax;
+                        // Inject composition state into config so executor trait can read it
+                        // when evaluating orphan adoption in the signal loop below.
+                        $this->config['demo_composition'] = [
+                            'orphan_cap_reached'       => $compOrphanCapReached,
+                            'orphan_max_active_slots'  => $compOrphanMax,
+                            'healthy_min_active_slots' => $compHealthyMin,
+                            'healthy_share_target_pct' => $compShareTarget,
+                            'active_healthy_count'     => $demoActiveHealthyCount,
+                            'active_orphan_count'      => $demoActiveOrphanCount,
+                        ];
+                    } else {
+                        $demoActiveHealthyCount = 0;
+                        $demoActiveOrphanCount  = 0;
+                        $compOrphanMax   = 0;
+                        $compHealthyMin  = 0;
+                        $compShareTarget = 0.0;
+                        $compOrphanCapReached = false;
                     }
                 }
 
@@ -1251,6 +1294,27 @@ final class TradingBotService
                 $result['turnover_close_target_per_run']     = $targetPerRun;
                 $result['turnover_close_target_met']         = $closedThisRun >= $targetPerRun;
                 $result['turnover_close_target_gap']         = max(0, $targetPerRun - $closedThisRun);
+
+                // ── PART 4: Demo composition counters (last_run.json) ────────
+                $compTotalActiveNow = $demoActiveHealthyCount + $demoActiveOrphanCount;
+                $result['demo_active_healthy_count']          = $demoActiveHealthyCount;
+                $result['demo_active_orphan_adopted_count']   = $demoActiveOrphanCount;
+                $result['demo_closed_this_run_healthy']       = $healthyClosedThisRun;
+                $result['demo_closed_this_run_orphan_adopted']= $adoptedOrphansClosedThisRun;
+                $result['demo_healthy_share_active_pct']      = $compTotalActiveNow > 0
+                    ? round($demoActiveHealthyCount / $compTotalActiveNow * 100, 1) : 0.0;
+                $result['demo_orphan_slot_cap']               = $compOrphanMax;
+                $result['demo_orphan_slot_cap_reached']       = $compOrphanCapReached;
+                $result['demo_orphan_slot_pressure']          = $compOrphanMax > 0
+                    ? round($demoActiveOrphanCount / $compOrphanMax * 100, 1) : 0.0;
+                $result['demo_healthy_slot_reserve_total']    = $compHealthyMin;
+                $result['demo_healthy_slot_reserve_available']= $compHealthyMin > 0
+                    ? max(0, $compHealthyMin - $demoActiveHealthyCount) : 0;
+                // Turnover pass composition state
+                $result['demo_turnover_active_healthy_count']  = (int)($turnoverPassResult['turnover_active_healthy_count'] ?? 0);
+                $result['demo_turnover_active_orphan_count']   = (int)($turnoverPassResult['turnover_active_orphan_count']  ?? 0);
+                $result['demo_turnover_orphan_pressure_active']= (bool)($turnoverPassResult['turnover_orphan_pressure_active'] ?? false);
+                $result['demo_orphan_cap_blocked_adoptions']   = (int)($result['orphan_adoption_deferred_cap_count'] ?? 0);
             }
 
             // ============================================================
@@ -1314,6 +1378,7 @@ final class TradingBotService
             $result['orphan_adoption_failed_count']     = 0;
             $result['orphan_adoption_reusable_count']   = 0;
             $result['orphan_adoption_dead_shell_count'] = 0;
+            $result['orphan_adoption_deferred_cap_count'] = 0;
             foreach ($result['intent_results'] as $ir) {
                 $ls = $ir['lifecycle_state'] ?? '';
                 if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
@@ -1371,6 +1436,9 @@ final class TradingBotService
                         }
                     } else {
                         $result['orphan_adoption_failed_count']++;
+                    }
+                    if (!empty($ir['orphan_adoption_deferred_cap'])) {
+                        $result['orphan_adoption_deferred_cap_count']++;
                     }
                 }
 
@@ -1543,6 +1611,14 @@ final class TradingBotService
                 $result['primary_demo_closure_bottleneck']        = $demoTruthAudit['primary_demo_bottleneck'];
                 $result['primary_demo_closure_bottleneck_reason'] = $demoTruthAudit['primary_demo_bottleneck_reason'];
                 $result['recommended_turnover_fix_area']          = $demoTruthAudit['recommended_next_fix_area'];
+
+                // ── PART 4: Merge closed totals + composition from truth audit ─
+                $result['demo_closed_healthy_total']          = $demoTruthAudit['closed_trades_healthy_total']       ?? 0;
+                $result['demo_closed_orphan_adopted_total']   = $demoTruthAudit['closed_trades_orphan_adopted_total'] ?? 0;
+                $result['demo_healthy_share_closed_pct']      = $demoTruthAudit['healthy_share_closed_pct']          ?? 0.0;
+                // PART 5: Composition bottleneck label from audit
+                $result['demo_composition_bottleneck']        = $demoTruthAudit['primary_composition_bottleneck']   ?? '';
+                $result['demo_composition_bottleneck_reason'] = $demoTruthAudit['primary_composition_bottleneck_reason'] ?? '';
 
                 // Merge consistency fields into sufficiency for downstream reads
                 $demoSufficiency['closed_trades_without_ai_dataset_count'] = $demoTruthAudit['closed_trades_without_ai_dataset_count'];

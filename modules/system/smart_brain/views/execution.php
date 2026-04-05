@@ -607,6 +607,24 @@ $auditAiTotal            = $bot_demo_truth_audit['ai_dataset_total']            
 $auditTargetPerRun       = $bot_demo_truth_audit['demo_closed_trades_target_per_run']             ?? null;
 $auditTargetMet          = $bot_demo_truth_audit['demo_closed_trades_target_met']                 ?? null;
 $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap']                 ?? null;
+// PART 4-5: Demo composition fields (from last_run + truth audit)
+$compActiveHealthy       = $bot_last_run['demo_active_healthy_count']           ?? null;
+$compActiveOrphan        = $bot_last_run['demo_active_orphan_adopted_count']    ?? null;
+$compClosedHealthyTotal  = $bot_last_run['demo_closed_healthy_total']           ?? $auditClosedHealthy;
+$compClosedOrphanTotal   = $bot_last_run['demo_closed_orphan_adopted_total']    ?? $auditClosedOrphan;
+$compClosedHealthyRun    = $bot_last_run['demo_closed_this_run_healthy']        ?? null;
+$compClosedOrphanRun     = $bot_last_run['demo_closed_this_run_orphan_adopted'] ?? null;
+$compHealthyShareActive  = $bot_last_run['demo_healthy_share_active_pct']       ?? $bot_demo_truth_audit['healthy_share_active_pct'] ?? null;
+$compHealthyShareClosed  = $bot_last_run['demo_healthy_share_closed_pct']       ?? $bot_demo_truth_audit['healthy_share_closed_pct'] ?? null;
+$compOrphanSlotPressure  = $bot_last_run['demo_orphan_slot_pressure']           ?? $bot_demo_truth_audit['orphan_slot_pressure'] ?? null;
+$compHealthyReserveTotal = $bot_last_run['demo_healthy_slot_reserve_total']     ?? $bot_demo_truth_audit['healthy_slot_reserve_total'] ?? null;
+$compHealthyReserveAvail = $bot_last_run['demo_healthy_slot_reserve_available'] ?? $bot_demo_truth_audit['healthy_slot_reserve_available'] ?? null;
+$compOrphanSlotCap       = $bot_last_run['demo_orphan_slot_cap']                ?? $bot_demo_truth_audit['orphan_slot_cap'] ?? null;
+$compOrphanCapReached    = $bot_last_run['demo_orphan_slot_cap_reached']        ?? $bot_demo_truth_audit['orphan_slot_cap_reached'] ?? null;
+$compBottleneck          = (string)($bot_last_run['demo_composition_bottleneck'] ?? $bot_demo_truth_audit['primary_composition_bottleneck'] ?? '');
+$compBottleneckReason    = (string)($bot_last_run['demo_composition_bottleneck_reason'] ?? $bot_demo_truth_audit['primary_composition_bottleneck_reason'] ?? '');
+$compShareTarget         = $bot_demo_truth_audit['healthy_share_target_pct']   ?? null;
+$compOrphanCapBlocked    = $bot_last_run['demo_orphan_cap_blocked_adoptions']   ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -1479,6 +1497,83 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php endif; ?>
         <?php endif; // $hasHealthyTurnoverData ?>
+
+        <?php
+        // ── Demo Composition sub-section (PART 8) ─────────────────────────
+        $hasCompData = $compActiveHealthy !== null || $compActiveOrphan !== null
+            || $compClosedHealthyTotal !== null || $compOrphanSlotCap !== null;
+        if ($hasCompData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Состав demo-петли (здоровые vs. orphan)</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $compActiveTotal = ($compActiveHealthy ?? 0) + ($compActiveOrphan ?? 0);
+            $compClosedTotal = ($compClosedHealthyTotal ?? 0) + ($compClosedOrphanTotal ?? 0);
+            $compShareActive = $compHealthyShareActive ?? ($compActiveTotal > 0 ? round(($compActiveHealthy ?? 0) / $compActiveTotal * 100, 1) : 0.0);
+            $compShareClosed = $compHealthyShareClosed ?? ($compClosedTotal > 0 ? round(($compClosedHealthyTotal ?? 0) / $compClosedTotal * 100, 1) : 0.0);
+            $compShareTgt    = $compShareTarget !== null ? (float)$compShareTarget : 40.0;
+            $compCards = [
+                ['label' => 'Активных здоровых',     'value' => $compActiveHealthy !== null ? (string)$compActiveHealthy : 'n/a',
+                 'ok' => ($compActiveHealthy ?? 0) > 0 ? true : null],
+                ['label' => 'Активных orphan/adopted','value' => $compActiveOrphan !== null ? (string)$compActiveOrphan : 'n/a',
+                 'ok' => ($compOrphanCapReached === true) ? false : null],
+                ['label' => 'Здоровая доля (актив.)', 'value' => $compShareActive !== null ? $compShareActive . '%' : 'n/a',
+                 'ok' => $compShareActive >= $compShareTgt ? true : ($compShareActive < $compShareTgt * 0.5 ? false : null)],
+                ['label' => 'Закрыто здор. (всего)', 'value' => $compClosedHealthyTotal !== null ? (string)$compClosedHealthyTotal : 'n/a',
+                 'ok' => ($compClosedHealthyTotal ?? 0) > 0 ? true : null],
+                ['label' => 'Закрыто orphan (всего)', 'value' => $compClosedOrphanTotal !== null ? (string)$compClosedOrphanTotal : 'n/a',
+                 'ok' => null],
+                ['label' => 'Здоровая доля (закрыт.)','value' => $compShareClosed !== null ? $compShareClosed . '%' : 'n/a',
+                 'ok' => $compShareClosed >= $compShareTgt ? true : ($compShareClosed < $compShareTgt * 0.5 ? false : null)],
+                ['label' => 'Orphan-давление (слоты)','value' => $compOrphanSlotPressure !== null ? $compOrphanSlotPressure . '%' : 'n/a',
+                 'ok' => ($compOrphanSlotPressure ?? 0) >= 100 ? false : (($compOrphanSlotPressure ?? 0) >= 80 ? null : true)],
+                ['label' => 'Резерв здор. (всего)',   'value' => $compHealthyReserveTotal !== null ? (string)$compHealthyReserveTotal : 'n/a',
+                 'ok' => null],
+                ['label' => 'Резерв здор. (своб.)',   'value' => $compHealthyReserveAvail !== null ? (string)$compHealthyReserveAvail : 'n/a',
+                 'ok' => ($compHealthyReserveAvail ?? 0) === 0 ? true : null],
+                ['label' => 'Orphan cap (лимит)',     'value' => $compOrphanSlotCap !== null && $compOrphanSlotCap > 0 ? (string)$compOrphanSlotCap : 'н/д',
+                 'ok' => null],
+                ['label' => 'Orphan cap достигнут',   'value' => $compOrphanCapReached !== null ? ($compOrphanCapReached ? 'ДА' : 'НЕТ') : 'n/a',
+                 'ok' => $compOrphanCapReached !== null ? !$compOrphanCapReached : null],
+                ['label' => 'Adoptions отложено',     'value' => $compOrphanCapBlocked !== null ? (string)$compOrphanCapBlocked : 'n/a',
+                 'ok' => ($compOrphanCapBlocked ?? 0) > 0 ? null : true],
+            ];
+            foreach ($compCards as $ccc):
+                $ccc_cls = 'neutral';
+                if ($ccc['ok'] === true)  $ccc_cls = 'positive';
+                if ($ccc['ok'] === false) $ccc_cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $ccc_cls ?>"><?= htmlspecialchars((string)$ccc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($ccc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php
+        // Composition bottleneck label map (Russian translations)
+        $compBottleneckLabels = [
+            'orphan_positions_dominating_capacity'    => 'Orphan позиции доминируют в ёмкости',
+            'healthy_share_too_low'                   => 'Доля здоровых сделок слишком мала',
+            'healthy_slots_reserved_waiting_for_feed' => 'Резервные слоты ждут сигналов',
+            'orphan_recovery_overweight'              => 'Перекос в сторону orphan-recovery',
+            'balanced_demo_mix'                       => 'Состав demo-петли сбалансирован',
+        ];
+        $compBottleneckLabel = $compBottleneckLabels[$compBottleneck] ?? $compBottleneck;
+        $compBottleneckIsGood = $compBottleneck === 'balanced_demo_mix';
+        $compBottleneckIsWarn = in_array($compBottleneck, ['orphan_positions_dominating_capacity', 'healthy_share_too_low', 'orphan_recovery_overweight'], true);
+        ?>
+        <?php if ($compBottleneck !== ''): ?>
+        <div class="alert <?= $compBottleneckIsGood ? 'alert-success' : ($compBottleneckIsWarn ? 'alert-warning' : 'alert-secondary') ?> py-1 px-3 mt-2 mb-0" style="font-size:.8rem;">
+            <strong>Состав петли:</strong> <code><?= htmlspecialchars($compBottleneck) ?></code>
+            — <?= htmlspecialchars($compBottleneckLabel) ?>
+            <?php if ($compBottleneckReason !== ''): ?>
+            <br><?= htmlspecialchars($compBottleneckReason) ?>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php endif; // $hasCompData ?>
     </div>
 </div>
 <?php endif; ?>

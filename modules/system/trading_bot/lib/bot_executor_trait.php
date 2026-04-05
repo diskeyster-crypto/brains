@@ -213,11 +213,18 @@ trait BotExecutorTrait
                                 // usable local trade (close pipeline needs entry_price to compute
                                 // PnL and ROI). In that case, skip adoption but do NOT hard-fail.
                                 $adoptionFailReason = null;
-                                if ($orphanAvgPrice <= 0) {
+                                // PART 2 (demo composition): enforce orphan slot cap before admitting new adoption.
+                                // Reads cap state injected by service.php before the signal loop.
+                                $demoCompCfg = is_array($this->config['demo_composition'] ?? null) ? $this->config['demo_composition'] : [];
+                                if (!empty($demoCompCfg['orphan_cap_reached'])) {
+                                    $adoptionFailReason = 'orphan_cap_reached_demo';
+                                    $result['orphan_adoption_deferred_cap'] = true;
+                                }
+                                if ($adoptionFailReason === null && $orphanAvgPrice <= 0) {
                                     $adoptionFailReason = 'orphan_adoption_missing_entry_price';
-                                } elseif (!in_array($orphanSide, ['long', 'short'], true)) {
+                                } elseif ($adoptionFailReason === null && !in_array($orphanSide, ['long', 'short'], true)) {
                                     $adoptionFailReason = 'orphan_adoption_missing_side';
-                                } elseif ($exSize <= 0) {
+                                } elseif ($adoptionFailReason === null && $exSize <= 0) {
                                     $adoptionFailReason = 'orphan_adoption_missing_qty';
                                 }
 
@@ -4451,6 +4458,11 @@ private function computeEntryDeadline(array $intent): array
             'turnover_candidates_healthy_count'          => 0,
             'turnover_healthy_closed'                    => 0,
             'turnover_orphan_closed'                     => 0,
+            // Composition state at turnover time (PART 7)
+            'turnover_active_healthy_count'              => 0,
+            'turnover_active_orphan_count'               => 0,
+            'turnover_orphan_pressure_active'            => false,
+            'turnover_healthy_share_low'                 => false,
         ];
 
         if ($mode !== 'demo') {
@@ -4472,6 +4484,30 @@ private function computeEntryDeadline(array $intent): array
         $preferCloseStale  = $dlmEnabled && !empty($dlmCfg['prefer_close_stale_when_learning']);
         $maxPerRun         = max(1, (int)($dlmCfg['max_turnover_per_run'] ?? 5));
         $nowTs             = time();
+
+        // ── PART 7: Composition-aware config ───────────────────────────────
+        $compOrphanMaxSlots  = $dlmEnabled ? (int)($dlmCfg['orphan_max_active_slots'] ?? 0) : 0;
+        $compHealthyMinSlots = $dlmEnabled ? (int)($dlmCfg['healthy_min_active_slots'] ?? 0) : 0;
+        $compShareTarget     = $dlmEnabled ? (float)($dlmCfg['healthy_share_target_pct'] ?? 0) : 0.0;
+
+        // Compute active composition before scoring so boost can be applied
+        $compActiveOrphan  = 0;
+        $compActiveHealthy = 0;
+        foreach ($trades as $_compT) {
+            if (!empty($_compT['is_orphan_adopted']) || !empty($_compT['adopted_from_exchange_orphan'])) {
+                $compActiveOrphan++;
+            } else {
+                $compActiveHealthy++;
+            }
+        }
+        $compActiveTotal       = $compActiveOrphan + $compActiveHealthy;
+        $compOrphanPressureHigh = $compOrphanMaxSlots > 0 && $compActiveOrphan >= $compOrphanMaxSlots;
+        $compHealthyShareLow    = $compShareTarget > 0 && $compActiveTotal > 0
+            && ($compActiveHealthy / $compActiveTotal * 100) < $compShareTarget;
+        $result['turnover_active_healthy_count']  = $compActiveHealthy;
+        $result['turnover_active_orphan_count']   = $compActiveOrphan;
+        $result['turnover_orphan_pressure_active'] = $compOrphanPressureHigh;
+        $result['turnover_healthy_share_low']      = $compHealthyShareLow;
 
         // ── Score every active trade ────────────────────────────────────────
         $scored = [];
@@ -4517,6 +4553,14 @@ private function computeEntryDeadline(array $intent): array
             } elseif ($ageMin > 0) {
                 $score  = min(50, (int)($ageMin / 30));
                 $reason = 'age_based';
+            }
+
+            // PART 7: Composition-aware score boost.
+            // When orphan occupancy is above the configured cap, boost all orphan
+            // candidate scores by +15 so they are freed before healthy trades.
+            // This ensures recovered slots become available for new healthy opens.
+            if ($compOrphanPressureHigh && $isOrphan && !$isDeadShell && $score > 0) {
+                $score += 15;
             }
 
             if ($score > 0 || $isDeadShell || $isTimeout) {

@@ -100,7 +100,10 @@
         "learning_close_timeout_minutes": 30,
         "learning_max_active_age_minutes": 45,
         "max_turnover_per_run": 8,
-        "demo_closed_per_run_target": 3
+        "demo_closed_per_run_target": 3,
+        "healthy_min_active_slots": 3,
+        "orphan_max_active_slots": 10,
+        "healthy_share_target_pct": 40
     },
     "validation": {
         "signal_schema_version": "clean_signal_v1"

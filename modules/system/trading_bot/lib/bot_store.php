@@ -1133,6 +1133,22 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         // Resolve configured max capacity
         $storeMaxCap = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['max_concurrent_demo_positions'] ?? 0) : 0;
 
+        // ── Composition config (PART 6) ──────────────────────────────────────
+        $compOrphanMaxSlots  = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['orphan_max_active_slots'] ?? 0) : 0;
+        $compHealthyMinSlots = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['healthy_min_active_slots'] ?? 0) : 0;
+        $compShareTargetPct  = ($storeDlm['enabled'] ?? false) ? (float)($storeDlm['healthy_share_target_pct'] ?? 0) : 0.0;
+
+        // ── Composition metrics (PART 4) ─────────────────────────────────────
+        $healthyShareActivePct = $activeCount > 0
+            ? round($healthyActiveCount / $activeCount * 100, 1) : 0.0;
+        $healthyShareClosedPct = $closedCount > 0
+            ? round($healthyClosedCount / $closedCount * 100, 1) : 0.0;
+        $orphanSlotCapReached  = $compOrphanMaxSlots > 0 && $orphanAdoptedCount >= $compOrphanMaxSlots;
+        $orphanSlotPressure    = $compOrphanMaxSlots > 0
+            ? round($orphanAdoptedCount / $compOrphanMaxSlots * 100, 1) : 0.0;
+        $healthySlotReserveAvailable = $compHealthyMinSlots > 0
+            ? max(0, $compHealthyMinSlots - $healthyActiveCount) : 0;
+
         // Resolve capacity_slots_total (use runtime when provided, fall back to config)
         if ($capacitySlotsTotal === 0 && $storeMaxCap > 0) {
             $capacitySlotsTotal = $storeMaxCap;
@@ -1277,6 +1293,33 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $primaryBottleneck       = 'incomplete_closed_trade_fields';
             $primaryBottleneckReason = "Only {$completenessRate}% of closed trades have all required fields (close_price, roi, close_reason). Close finalization may be incomplete.";
             $recommendedNextFixArea  = 'audit_close_finalization';
+        } elseif ($orphanSlotCapReached && $closedCount > 0 && $activeCount > 0) {
+            // PART 5: Orphan cap reached — orphans are dominating the active slots
+            $primaryBottleneck       = 'orphan_positions_dominating_capacity';
+            $primaryBottleneckReason = "Orphan slot cap reached ({$orphanAdoptedCount}/{$compOrphanMaxSlots} orphan/adopted actives). "
+                . "{$healthyActiveCount} healthy active trade(s). Orphan-adopted positions are occupying most demo capacity. "
+                . "Healthy trades have limited room to enter the loop.";
+            $recommendedNextFixArea  = 'reduce_orphan_occupancy_free_healthy_slots';
+        } elseif ($compShareTargetPct > 0 && $healthyShareActivePct < ($compShareTargetPct * 0.5) && $activeCount > 0 && $closedCount > 0) {
+            // Healthy share is critically below target
+            $primaryBottleneck       = 'healthy_share_too_low';
+            $primaryBottleneckReason = "Healthy active share is {$healthyShareActivePct}% (target ≥{$compShareTargetPct}%). "
+                . "{$healthyActiveCount} healthy vs {$orphanAdoptedCount} orphan/adopted actives ({$activeCount} total). "
+                . "Loop composition is too recovery-heavy. Need more healthy signal-born trades.";
+            $recommendedNextFixArea  = 'improve_healthy_demo_signal_throughput';
+        } elseif ($compHealthyMinSlots > 0 && $healthyActiveCount < $compHealthyMinSlots && $feedIsAvailable && $closedCount > 0) {
+            // Healthy slot reserve is not satisfied but feed exists
+            $primaryBottleneck       = 'healthy_slots_reserved_waiting_for_feed';
+            $primaryBottleneckReason = "Healthy slot reserve not satisfied ({$healthyActiveCount}/{$compHealthyMinSlots} healthy minimum). "
+                . "Feed is available but healthy trades are not filling reserved slots. Check signal quality and late-entry guards.";
+            $recommendedNextFixArea  = 'check_healthy_demo_feed_quality_and_guards';
+        } elseif ($compShareTargetPct > 0 && $healthyShareClosedPct < ($compShareTargetPct * 0.5) && $closedCount >= 5) {
+            // Closed composition is too orphan-heavy
+            $primaryBottleneck       = 'orphan_recovery_overweight';
+            $primaryBottleneckReason = "Healthy share of closed trades is {$healthyShareClosedPct}% (target ≥{$compShareTargetPct}%). "
+                . "{$healthyClosedCount} healthy vs {$adoptedOrphanClosedCount} orphan/adopted closed trades. "
+                . "AI training dataset is dominated by orphan recovery trades rather than fresh signal-born trades.";
+            $recommendedNextFixArea  = 'increase_healthy_signal_opens_reduce_orphan_dominance';
         } elseif ($closedCount > 0 && $closedCount < 10) {
             $primaryBottleneck       = 'turnover_too_low';
             $primaryBottleneckReason = "Only {$closedCount} closed demo trades. Loop is functioning but accumulation is too slow. "
@@ -1284,9 +1327,20 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 . "Reduce learning_close_timeout_minutes or learning_max_active_age_minutes to accelerate turnover.";
             $recommendedNextFixArea  = 'increase_demo_signal_throughput';
         } elseif ($closedCount >= 10) {
-            $primaryBottleneck       = 'none_loop_is_cycling';
-            $primaryBottleneckReason = "{$closedCount} closed trades with {$completenessRate}% completeness and {$matchRate}% AI dataset match rate. Loop is cycling.";
-            $recommendedNextFixArea  = 'maintain_current_config';
+            // Check if composition is balanced at this point
+            $isBalancedMix = $compShareTargetPct <= 0
+                || ($healthyShareActivePct >= $compShareTargetPct * 0.75 && !$orphanSlotCapReached);
+            if ($isBalancedMix) {
+                $primaryBottleneck       = 'balanced_demo_mix';
+                $primaryBottleneckReason = "{$closedCount} closed trades: {$healthyClosedCount} healthy ({$healthyShareClosedPct}%), {$adoptedOrphanClosedCount} orphan/adopted. "
+                    . "Active: {$healthyActiveCount} healthy, {$orphanAdoptedCount} orphan/adopted. "
+                    . "Completeness {$completenessRate}%, AI match {$matchRate}%. Loop composition is balanced.";
+                $recommendedNextFixArea  = 'maintain_current_config';
+            } else {
+                $primaryBottleneck       = 'none_loop_is_cycling';
+                $primaryBottleneckReason = "{$closedCount} closed trades with {$completenessRate}% completeness and {$matchRate}% AI dataset match rate. Loop is cycling.";
+                $recommendedNextFixArea  = 'maintain_current_config';
+            }
         }
 
         // ── Velocity target diagnostics ──────────────────────────────────────
@@ -1332,6 +1386,18 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'closed_trades_orphan_adopted_total'       => $adoptedOrphanClosedCount,
             'ai_dataset_count'                         => $aiCount,
             'ai_dataset_total'                         => $aiCount,
+            // ── PART 4: Demo composition metrics ─────────────────────────────
+            'healthy_share_active_pct'                 => $healthyShareActivePct,
+            'healthy_share_closed_pct'                 => $healthyShareClosedPct,
+            'orphan_slot_cap'                          => $compOrphanMaxSlots,
+            'orphan_slot_cap_reached'                  => $orphanSlotCapReached,
+            'orphan_slot_pressure'                     => $orphanSlotPressure,
+            'healthy_slot_reserve_total'               => $compHealthyMinSlots,
+            'healthy_slot_reserve_available'           => $healthySlotReserveAvailable,
+            'healthy_share_target_pct'                 => $compShareTargetPct,
+            // ── PART 5: Composition bottleneck labels ────────────────────────
+            'primary_composition_bottleneck'           => $primaryBottleneck,
+            'primary_composition_bottleneck_reason'    => $primaryBottleneckReason,
             'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,
             'avg_active_trade_age_minutes'             => $avgActiveAgeMin,
             'stale_active_count'                       => $staleCount,

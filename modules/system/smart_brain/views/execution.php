@@ -584,6 +584,8 @@ $healthyActiveProcRun    = $bot_last_run['healthy_active_turnover_processed_coun
 $healthyActiveClosedRun  = $bot_last_run['healthy_active_closed_this_run']                        ?? null;
 $healthyActiveFailRun    = $bot_last_run['healthy_active_close_failures_this_run']                ?? null;
 $healthyActiveFailRsns   = (array)($bot_last_run['healthy_active_close_failure_reasons']          ?? []);
+$healthyTurnoverTriggered   = $bot_last_run['healthy_turnover_triggered']   ?? null;
+$healthyTurnoverBlockReason = (string)($bot_last_run['healthy_turnover_block_reason'] ?? '');
 // Closed trade breakdown (this run)
 $closedTotalRun          = $bot_last_run['closed_trades_this_run_total']                          ?? null;
 $closedHealthyRun        = $bot_last_run['closed_trades_this_run_healthy']                        ?? null;
@@ -1450,6 +1452,10 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
                  'ok' => $effTargetMet !== null ? (bool)$effTargetMet : null],
                 ['label' => 'Разрыв до цели',        'value' => $effTargetGap !== null ? (string)$effTargetGap : 'n/a',
                  'ok' => ($effTargetGap ?? 0) === 0 ? true : (($effTargetGap ?? 0) > 0 ? false : null)],
+                ['label' => 'Оборот сработал',       'value' => $healthyTurnoverTriggered !== null ? ($healthyTurnoverTriggered ? 'ДА' : 'НЕТ') : 'n/a',
+                 'ok' => $healthyTurnoverTriggered !== null ? (bool)$healthyTurnoverTriggered : null],
+                ['label' => 'Причина блокировки',    'value' => ($healthyTurnoverBlockReason !== '' && $healthyTurnoverBlockReason !== 'none') ? $healthyTurnoverBlockReason : 'нет',
+                 'ok' => ($healthyTurnoverBlockReason === '' || $healthyTurnoverBlockReason === 'none') ? true : null],
             ];
             foreach ($htCards as $hc):
                 $cls = 'neutral';

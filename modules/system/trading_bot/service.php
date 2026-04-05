@@ -719,6 +719,7 @@ final class TradingBotService
                 $demoTurnoverCandDeadShellCount      = 0;
                 $demoTurnoverCandFinalizeEligCount   = 0;
                 $demoTurnoverCandOtherCount          = 0;
+                $demoTurnoverHealthyClosed            = 0;
 
                 // demo_learning_mode: cap max concurrent positions + override attempt budget
                 if ($mode === 'demo') {
@@ -766,6 +767,7 @@ final class TradingBotService
                                 $demoTurnoverCandDeadShellCount  = (int)($turnoverPassResult['turnover_candidates_dead_shell_count']           ?? 0);
                                 $demoTurnoverCandFinalizeEligCount = (int)($turnoverPassResult['turnover_candidates_finalize_eligible_count']  ?? 0);
                                 $demoTurnoverCandOtherCount      = (int)($turnoverPassResult['turnover_candidates_other_count']               ?? 0);
+                                $demoTurnoverHealthyClosed       = (int)($turnoverPassResult['turnover_healthy_closed']                        ?? 0);
                                 $slotsFreedByPass                = (int)($turnoverPassResult['turnover_slots_freed']                          ?? 0);
                                 if ($slotsFreedByPass > 0) {
                                     $demoCapacitySlotsFreed      = $slotsFreedByPass;
@@ -1134,13 +1136,29 @@ final class TradingBotService
 
                 // ── Healthy active turnover counters ─────────────────────────
                 $result['healthy_active_trades_before']                    = $updateResult['healthy_active_before'] ?? 0;
+                // Canonical alias used by runtime consumers and UI
+                $result['healthy_active_trades_count']                     = $updateResult['healthy_active_before'] ?? 0;
                 $result['healthy_active_trades_stale_this_run']            = $updateResult['healthy_active_stale_count'] ?? 0;
                 $result['healthy_active_trades_timeout_eligible_this_run'] = $updateResult['healthy_active_timeout_eligible_count'] ?? 0;
                 $result['healthy_active_turnover_candidates_count']        = ($updateResult['healthy_active_stale_count'] ?? 0) + ($updateResult['healthy_active_timeout_eligible_count'] ?? 0);
-                $result['healthy_active_turnover_processed_count']         = $updateResult['healthy_active_processed_this_run'] ?? 0;
-                $result['healthy_active_closed_this_run']                  = $updateResult['healthy_active_closed_this_run'] ?? 0;
+                // processed = closures from updateActivePositions + closures from performDemoTurnoverPass
+                $result['healthy_active_turnover_processed_count']         = ($updateResult['healthy_active_processed_this_run'] ?? 0) + $demoTurnoverHealthyClosed;
+                // closed = both paths combined so the counter is always truthful
+                $result['healthy_active_closed_this_run']                  = ($updateResult['healthy_active_closed_this_run'] ?? 0) + $demoTurnoverHealthyClosed;
                 $result['healthy_active_close_failures_this_run']          = $updateResult['healthy_active_close_failures_this_run'] ?? 0;
                 $result['healthy_active_close_failure_reasons']            = $updateResult['healthy_active_close_failure_reasons'] ?? [];
+                // Healthy turnover triggered proof fields
+                $healthyTurnoverFired = ($result['healthy_active_closed_this_run'] > 0)
+                    || ($result['healthy_active_turnover_processed_count'] > 0);
+                $result['healthy_turnover_triggered']  = $healthyTurnoverFired;
+                $result['healthy_turnover_block_reason'] = $healthyTurnoverFired
+                    ? 'none'
+                    : (($result['healthy_active_trades_count'] ?? 0) === 0
+                        ? 'no_healthy_active_trades'
+                        : (($result['healthy_active_turnover_candidates_count'] ?? 0) === 0
+                            ? 'no_candidates_below_thresholds'
+                            : (string)($demoTurnoverBlockReason !== 'none' ? $demoTurnoverBlockReason : 'healthy_trades_not_yet_at_threshold')));
+
 
                 // ── Adopted orphan close repair pass (demo only) ────────────
                 if (method_exists($this->store, 'repairIncompleteAdoptedOrphanClosedRecords')) {

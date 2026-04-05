@@ -1769,7 +1769,10 @@ trait BotExecutorTrait
                             $trade['timing_missing_reason'] = $trade['timing_missing_reason'] ?? 'no_timing_baseline_available';
                         }
                     } else {
-                        $tradeOpenedTs = $openedAt > 0 ? $openedAt : (int)($trade['open_ts'] ?? 0);
+                        // For healthy trades, fall back to opened_ts then open_ts if opened_at is unparseable
+                        $tradeOpenedTs = $openedAt > 0
+                            ? $openedAt
+                            : (int)($trade['opened_ts'] ?? $trade['open_ts'] ?? 0);
                     }
                     $ageMin = $tradeOpenedTs > 0 ? (int)round((time() - $tradeOpenedTs) / 60) : 0;
                     $trade['age_minutes'] = $ageMin;
@@ -4438,6 +4441,7 @@ private function computeEntryDeadline(array $intent): array
             'turnover_candidates_finalize_eligible_count'=> 0,
             'turnover_candidates_other_count'            => 0,
             'turnover_candidates_healthy_count'          => 0,
+            'turnover_healthy_closed'                    => 0,
         ];
 
         if ($mode !== 'demo') {
@@ -4626,6 +4630,9 @@ private function computeEntryDeadline(array $intent): array
                 }
                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                if (!$isOrphan) {
+                    $result['turnover_healthy_closed']++;
+                }
                 $freed++;
                 continue;
             }
@@ -4666,6 +4673,9 @@ private function computeEntryDeadline(array $intent): array
                 }
                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                if (!$isOrphan) {
+                    $result['turnover_healthy_closed']++;
+                }
                 $freed++;
             } else {
                 if ($result['turnover_block_reason'] === 'none') {

@@ -286,10 +286,23 @@ trait BotConfigTrait
                             'stale_trade_review_minutes',
                             'learning_close_timeout_minutes',
                             'learning_max_active_age_minutes',
+                            'max_turnover_per_run',
+                            'demo_closed_per_run_target',
+                            'healthy_min_active_slots',
+                            'orphan_max_active_slots',
                         ];
                         foreach ($dlmInts as $k) {
                             if (array_key_exists($k, $dlm)) {
                                 $config['demo_learning_mode'][$k] = max(0, (int)$dlm[$k]);
+                            }
+                        }
+
+                        $dlmFloats = [
+                            'healthy_share_target_pct',
+                        ];
+                        foreach ($dlmFloats as $k) {
+                            if (array_key_exists($k, $dlm)) {
+                                $config['demo_learning_mode'][$k] = max(0.0, (float)$dlm[$k]);
                             }
                         }
                     }

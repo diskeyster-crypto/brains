@@ -626,8 +626,115 @@ final class SmartBrainService
      * @param array<string,mixed> $values
      * @return array{ok:bool,error?:string}
      */
+    /**
+     * Validate numeric execution fields before saving.
+     * Returns null on success or a Russian error string on failure.
+     */
+    private function validateBotConfigValues(array $values): ?string
+    {
+        // trailing_drawdown_factor: working corridor 0.25–0.50
+        if (array_key_exists('trailing_drawdown_factor', $values)) {
+            $v = $values['trailing_drawdown_factor'];
+            if (!is_numeric($v) || $v === '') {
+                return 'Trailing Drawdown Factor должен быть числом в диапазоне от 0.25 до 0.50';
+            }
+            $f = (float)$v;
+            if ($f < 0.25 || $f > 0.50) {
+                return 'Trailing Drawdown Factor должен быть в диапазоне от 0.25 до 0.50 (введено: ' . $v . ')';
+            }
+        }
+
+        // max_positions: integer >= 1
+        if (array_key_exists('max_positions', $values)) {
+            $v = $values['max_positions'];
+            if (!is_numeric($v) || (int)$v < 1) {
+                return 'Максимальное количество позиций должно быть целым числом >= 1';
+            }
+        }
+
+        // leverage_default: > 0
+        if (array_key_exists('leverage_default', $values) || array_key_exists('exchange_leverage', $values)) {
+            $lev = $values['leverage_default'] ?? $values['exchange_leverage'] ?? null;
+            if ($lev !== null && (!is_numeric($lev) || (float)$lev <= 0)) {
+                return 'Плечо (Leverage) должно быть числом > 0';
+            }
+        }
+
+        // stop_loss_pct: > 0
+        if (array_key_exists('stop_loss_pct', $values)) {
+            $v = $values['stop_loss_pct'];
+            if (!is_numeric($v) || (float)$v <= 0) {
+                return 'Stop Loss % должен быть числом > 0';
+            }
+        }
+
+        // take_profit_pct: > 0
+        if (array_key_exists('take_profit_pct', $values)) {
+            $v = $values['take_profit_pct'];
+            if (!is_numeric($v) || (float)$v <= 0) {
+                return 'Take Profit % должен быть числом > 0';
+            }
+        }
+
+        // emergency_stop_loss_pct: > 0
+        if (array_key_exists('emergency_stop_loss_pct', $values)) {
+            $v = $values['emergency_stop_loss_pct'];
+            if (!is_numeric($v) || (float)$v <= 0) {
+                return 'Emergency Stop Loss % должен быть числом > 0';
+            }
+        }
+
+        // trailing_activation_roi: >= 0
+        if (array_key_exists('trailing_activation_roi', $values)) {
+            $v = $values['trailing_activation_roi'];
+            if (!is_numeric($v) || (float)$v < 0) {
+                return 'Trailing Activation ROI должен быть числом >= 0';
+            }
+        }
+
+        // break_even_activation_roi: >= 0
+        if (array_key_exists('break_even_activation_roi', $values)) {
+            $v = $values['break_even_activation_roi'];
+            if (!is_numeric($v) || (float)$v < 0) {
+                return 'Break Even Activation ROI должен быть числом >= 0';
+            }
+        }
+
+        // exchange_position_idx: integer >= 0
+        if (array_key_exists('exchange_position_idx', $values)) {
+            $v = $values['exchange_position_idx'];
+            if (!is_numeric($v) || (int)$v < 0) {
+                return 'Position IDX должен быть целым числом >= 0';
+            }
+        }
+
+        // demo_learning_mode max_concurrent_demo_positions: integer >= 1
+        if (array_key_exists('demo_learning_mode_max_concurrent_demo_positions', $values)) {
+            $v = $values['demo_learning_mode_max_concurrent_demo_positions'];
+            if (!is_numeric($v) || (int)$v < 1) {
+                return 'Максимальное количество одновременных demo-позиций должно быть >= 1';
+            }
+        }
+
+        // demo_learning_mode max_demo_signals_per_run: integer >= 1
+        if (array_key_exists('demo_learning_mode_max_demo_signals_per_run', $values)) {
+            $v = $values['demo_learning_mode_max_demo_signals_per_run'];
+            if (!is_numeric($v) || (int)$v < 1) {
+                return 'Максимальное количество demo-сигналов за запуск должно быть >= 1';
+            }
+        }
+
+        return null;
+    }
+
     public function saveTradingBotConfig(array $values): array
     {
+        // Authoritative server-side validation — reject before touching disk
+        $validationError = $this->validateBotConfigValues($values);
+        if ($validationError !== null) {
+            return ['ok' => false, 'error' => $validationError];
+        }
+
         $res = $this->resolveBotStorageDir();
         $base = $res['base'];
         if ($base === null) {

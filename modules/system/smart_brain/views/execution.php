@@ -65,35 +65,35 @@ function showFlash(msg, type) {
 
 function runBot() {
     const btn = document.getElementById('btn-run');
-    btn.disabled = true; btn.textContent = 'Running…';
-    showFlash('Starting bot execution cycle…', 'info');
+    btn.disabled = true; btn.textContent = 'Запуск…';
+    showFlash('Запуск цикла бота…', 'info');
     fetch(EXEC_URL + '/run', { method: 'POST' })
         .then(r => r.json())
         .then(d => {
-            btn.disabled = false; btn.textContent = 'Run Now';
+            btn.disabled = false; btn.textContent = 'Запустить';
             if (d.ok) {
                 const s = d.summary ?? {};
-                showFlash('Run OK — opened:' + (s.intents_opened ?? 0) + ' closed:' + (s.intents_closed ?? 0), 'success');
+                showFlash('Запуск OK — открыто:' + (s.intents_opened ?? 0) + ' закрыто:' + (s.intents_closed ?? 0), 'success');
             } else {
-                showFlash('Run error: ' + (d.error ?? JSON.stringify(d)), 'danger');
+                showFlash('Ошибка запуска: ' + (d.error ?? JSON.stringify(d)), 'danger');
             }
             setTimeout(() => location.reload(), 2200);
         })
-        .catch(() => { btn.disabled = false; btn.textContent = 'Run Now'; showFlash('Network error.', 'danger'); });
+        .catch(() => { btn.disabled = false; btn.textContent = 'Запустить'; showFlash('Ошибка сети.', 'danger'); });
 }
 
 function reconcileBot() {
     const btn = document.getElementById('btn-reconcile');
-    btn.disabled = true; btn.textContent = 'Reconciling…';
-    showFlash('Forcing reconcile…', 'info');
+    btn.disabled = true; btn.textContent = 'Синхронизация…';
+    showFlash('Принудительная синхронизация…', 'info');
     fetch(EXEC_URL + '/reconcile', { method: 'POST' })
         .then(r => r.json())
         .then(d => {
-            btn.disabled = false; btn.textContent = 'Reconcile Now';
-            showFlash(d.ok ? 'Reconcile complete.' : 'Reconcile error: ' + (d.error ?? ''), d.ok ? 'success' : 'danger');
+            btn.disabled = false; btn.textContent = 'Синхронизировать';
+            showFlash(d.ok ? 'Синхронизация завершена.' : 'Ошибка синхронизации: ' + (d.error ?? ''), d.ok ? 'success' : 'danger');
             if (d.ok) { setTimeout(() => location.reload(), 1800); }
         })
-        .catch(() => { btn.disabled = false; btn.textContent = 'Reconcile Now'; showFlash('Network error.', 'danger'); });
+        .catch(() => { btn.disabled = false; btn.textContent = 'Синхронизировать'; showFlash('Ошибка сети.', 'danger'); });
 }
 
 function refreshStatus() {
@@ -105,9 +105,9 @@ function refreshStatus() {
                 el.textContent = d.ok ? (d.enabled ? 'ENABLED' : 'DISABLED') : 'ERROR';
                 el.className = 'badge ' + (d.ok && d.enabled ? 'bg-success' : 'bg-secondary') + ' ms-1';
             }
-            showFlash('Status refreshed.', 'success');
+            showFlash('Статус обновлён.', 'success');
         })
-        .catch(() => showFlash('Status refresh failed.', 'warning'));
+        .catch(() => showFlash('Не удалось обновить статус.', 'warning'));
 }
 
 function saveSettings() {
@@ -121,6 +121,30 @@ function saveSettings() {
         data[k] = !!(form.querySelector('[name="'+k+'"]')?.checked);
     });
 
+    // Frontend validation before sending
+    const tdf = parseFloat(data['trailing_drawdown_factor']);
+    if (data['trailing_drawdown_factor'] !== undefined && data['trailing_drawdown_factor'] !== '') {
+        if (isNaN(tdf) || tdf < 0.25 || tdf > 0.50) {
+            showFlash('Trailing Drawdown Factor должен быть в диапазоне от 0.25 до 0.50', 'danger');
+            return;
+        }
+    }
+    const maxPos = parseInt(data['max_positions']);
+    if (data['max_positions'] !== undefined && data['max_positions'] !== '' && (isNaN(maxPos) || maxPos < 1)) {
+        showFlash('Максимальное количество позиций должно быть >= 1', 'danger');
+        return;
+    }
+    const slPct = parseFloat(data['stop_loss_pct']);
+    if (data['stop_loss_pct'] !== undefined && data['stop_loss_pct'] !== '' && (isNaN(slPct) || slPct <= 0)) {
+        showFlash('Stop Loss % должен быть > 0', 'danger');
+        return;
+    }
+    const tpPct = parseFloat(data['take_profit_pct']);
+    if (data['take_profit_pct'] !== undefined && data['take_profit_pct'] !== '' && (isNaN(tpPct) || tpPct <= 0)) {
+        showFlash('Take Profit % должен быть > 0', 'danger');
+        return;
+    }
+
     fetch(EXEC_URL + '/save_config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,10 +152,10 @@ function saveSettings() {
     })
     .then(r => r.json())
     .then(d => {
-        showFlash(d.ok ? 'Settings saved.' : 'Save failed: ' + (d.error ?? ''), d.ok ? 'success' : 'danger');
+        showFlash(d.ok ? 'Настройки сохранены.' : 'Ошибка сохранения: ' + (d.error ?? ''), d.ok ? 'success' : 'danger');
         if (d.ok) { setTimeout(() => location.reload(), 1600); }
     })
-    .catch(() => showFlash('Network error saving settings.', 'danger'));
+    .catch(() => showFlash('Ошибка сети при сохранении настроек.', 'danger'));
 }
 
 // Toggle demo section visibility based on mode selector
@@ -168,7 +192,7 @@ $_dbg = $bot_config_debug ?? [];
 $_boolLabel = static fn($v): string => $v ? '<span style="color:#22c55e">true</span>' : '<span style="color:#ef4444">false</span>';
 ?>
 <div style="background:#0f172a;border:2px solid #f97316;border-radius:6px;padding:12px 16px;margin-bottom:16px;font-family:monospace;font-size:12px;color:#e2e8f0">
-    <div style="color:#f97316;font-weight:700;margin-bottom:6px">⚠ DEBUG — Config Readback Proof (remove after investigation)</div>
+    <div style="color:#f97316;font-weight:700;margin-bottom:6px">⚠ DEBUG — Readback конфига (убрать после расследования)</div>
     <div><b>Config path:</b> <?= htmlspecialchars((string)($_dbg['config_path'] ?? '(unknown)')) ?></div>
     <div><b>Mode:</b> <?= htmlspecialchars((string)($_dbg['mode'] ?? '(unknown)')) ?></div>
     <div style="margin-top:6px"><b>Toggle values used to render this page:</b></div>
@@ -205,62 +229,62 @@ $demoSecretSet  = (bool)($demoCreds['api_secret_set'] ?? false);
 $demoBaseUrl    = (string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit.com');
 ?>
 
-<!-- ===== Mode Banner ===== -->
+<!-- ===== Баннер режима ===== -->
 <?php if ($bot_mode === 'live'): ?>
 <div class="alert alert-danger py-2 mb-3 d-flex align-items-center gap-2">
     <i class="bi bi-exclamation-octagon-fill fs-5"></i>
-    <strong>LIVE MODE — Real exchange, real funds. All actions have real financial consequences.</strong>
+    <strong>LIVE РЕЖИМ — Реальная биржа, реальные средства. Все действия имеют финансовые последствия.</strong>
 </div>
 <?php elseif ($bot_mode === 'demo'): ?>
 <div class="alert alert-warning py-2 mb-3 d-flex align-items-center gap-2" style="border-color:#ea580c; background:#431407; color:#fdba74;">
     <i class="bi bi-info-circle-fill fs-5"></i>
-    <strong>DEMO MODE — Bybit Demo API sandbox. No real funds involved.</strong>
+    <strong>DEMO РЕЖИМ — Bybit Demo API sandbox. Реальные средства не задействованы.</strong>
 </div>
 <?php else: ?>
 <div class="alert alert-secondary py-2 mb-3 d-flex align-items-center gap-2">
     <i class="bi bi-archive-fill fs-5"></i>
-    <strong>PAPER MODE — Local simulation only. No exchange connection.</strong>
+    <strong>PAPER РЕЖИМ — Локальная симуляция. Подключение к бирже отсутствует.</strong>
 </div>
 <?php endif; ?>
 
-<!-- ===== Overview ===== -->
+<!-- ===== Обзор ===== -->
 <div class="card mb-4">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
             <div>
                 <h5 class="mb-1">
-                    <i class="bi bi-cpu me-1"></i> Trading Bot
+                    <i class="bi bi-cpu me-1"></i> Торговый бот
                     <?= $modeLabel ?>
                     <?= $enabledBadge ?>
                 </h5>
-                <small class="text-muted">Storage namespace: <strong id="storage-ns-display"><?= htmlspecialchars($storageNs) ?></strong></small>
+                <small class="text-muted">Пространство хранилища: <strong id="storage-ns-display"><?= htmlspecialchars($storageNs) ?></strong></small>
             </div>
             <div class="d-flex gap-2 flex-wrap">
                 <?php if (!$bot_available): ?>
-                    <span class="text-danger small">Module unavailable</span>
+                    <span class="text-danger small">Модуль недоступен</span>
                 <?php else: ?>
-                <button id="btn-run"       class="btn btn-success btn-sm" onclick="runBot()"><i class="bi bi-play-fill me-1"></i>Run Now</button>
-                <button id="btn-reconcile" class="btn btn-outline-warning btn-sm" onclick="reconcileBot()"><i class="bi bi-arrow-repeat me-1"></i>Reconcile</button>
-                <button class="btn btn-outline-secondary btn-sm" onclick="refreshStatus()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh Status</button>
-                <a href="/admin/trading_bot" class="btn btn-outline-light btn-sm" target="_blank"><i class="bi bi-box-arrow-up-right me-1"></i>Bot Dashboard</a>
+                <button id="btn-run"       class="btn btn-success btn-sm" onclick="runBot()"><i class="bi bi-play-fill me-1"></i>Запустить</button>
+                <button id="btn-reconcile" class="btn btn-outline-warning btn-sm" onclick="reconcileBot()"><i class="bi bi-arrow-repeat me-1"></i>Синхронизировать</button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshStatus()"><i class="bi bi-arrow-clockwise me-1"></i>Обновить статус</button>
+                <a href="/admin/trading_bot" class="btn btn-outline-light btn-sm" target="_blank"><i class="bi bi-box-arrow-up-right me-1"></i>Панель бота</a>
                 <?php endif; ?>
             </div>
         </div>
 
         <?php if (!$bot_available): ?>
-            <div class="alert alert-danger mb-0">Bot module unavailable: <?= htmlspecialchars((string)($bot_error ?? 'unknown')) ?></div>
+            <div class="alert alert-danger mb-0">Модуль бота недоступен: <?= htmlspecialchars((string)($bot_error ?? 'unknown')) ?></div>
         <?php else: ?>
         <div class="row g-2">
             <?php
             $cards = [
-                ['label' => 'Mode',             'value' => strtoupper($bot_mode)],
-                ['label' => 'API Base URL',      'value' => $bot_api_base_url],
-                ['label' => 'Storage Namespace', 'value' => $storageNs],
-                ['label' => 'Exchange Mode',     'value' => $bot_is_real_exchange ? 'Real Exchange' : 'Paper (no exchange)'],
-                ['label' => 'Last Run',          'value' => $lastRunTs ? date('Y-m-d H:i:s', (int)$lastRunTs) : 'Never'],
-                ['label' => 'Last Run Status',   'value' => $lastRunOk === null ? 'n/a' : ($lastRunOk ? 'OK' : 'FAIL')],
-                ['label' => 'Active Positions',  'value' => (string)$activeCount],
-                ['label' => 'Closed Trades',     'value' => (string)$closedCount . ' (last 50)'],
+                ['label' => 'Режим',               'value' => strtoupper($bot_mode)],
+                ['label' => 'API Base URL',         'value' => $bot_api_base_url],
+                ['label' => 'Хранилище',            'value' => $storageNs],
+                ['label' => 'Режим биржи',          'value' => $bot_is_real_exchange ? 'Реальная биржа' : 'Paper (без биржи)'],
+                ['label' => 'Последний запуск',     'value' => $lastRunTs ? date('Y-m-d H:i:s', (int)$lastRunTs) : 'Нет'],
+                ['label' => 'Статус запуска',       'value' => $lastRunOk === null ? 'н/д' : ($lastRunOk ? 'OK' : 'ОШИБКА')],
+                ['label' => 'Активные позиции',     'value' => (string)$activeCount],
+                ['label' => 'Закрытые сделки',      'value' => (string)$closedCount . ' (посл. 50)'],
             ];
             foreach ($cards as $c): ?>
             <div class="col-6 col-md-3">
@@ -274,15 +298,15 @@ $demoBaseUrl    = (string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit
 
         <?php if (!empty($bot_balance)): ?>
         <div class="mt-3">
-            <div class="section-heading">Balance Snapshot</div>
+            <div class="section-heading">Баланс (снимок)</div>
             <div class="row g-2">
             <?php
             $bal = $bot_balance;
             $balItems = [
-                'wallet_balance'     => 'Wallet Balance',
-                'available_balance'  => 'Available Balance',
-                'unrealised_pnl'     => 'Unrealised PnL',
-                'margin_balance'     => 'Margin Balance',
+                'wallet_balance'     => 'Баланс кошелька',
+                'available_balance'  => 'Доступный баланс',
+                'unrealised_pnl'     => 'Нереализованный PnL',
+                'margin_balance'     => 'Маржинальный баланс',
             ];
             foreach ($balItems as $bKey => $bLabel):
                 if (!array_key_exists($bKey, $bal)) continue;
@@ -318,16 +342,16 @@ $credBad = $bot_mode === 'demo' && (!$diagKeyPresent || !$diagSecretPresent);
 <?php if ($bot_mode === 'demo' || $credBad): ?>
 <div class="card mb-4" style="border-color:<?= $credBad ? '#dc2626' : '#334155' ?>;">
     <div class="card-body">
-        <div class="section-heading">Demo Credential Diagnostics</div>
+        <div class="section-heading">Диагностика demo-учётных данных</div>
         <div class="row g-2">
             <?php
             $diagCards = [
-                ['label' => 'Mode',               'value' => strtoupper($bot_mode),         'ok' => null],
-                ['label' => 'Storage Namespace',  'value' => $diagNs,                        'ok' => null],
-                ['label' => 'API Key Present',    'value' => $diagKeyPresent ? 'YES' : 'NO', 'ok' => $diagKeyPresent],
-                ['label' => 'API Secret Present', 'value' => $diagSecretPresent ? 'YES' : 'NO', 'ok' => $diagSecretPresent],
-                ['label' => 'Demo Base URL',      'value' => $diagBaseUrl ?: 'default',       'ok' => null],
-                ['label' => 'Real Exchange Mode', 'value' => $diagRealExchange ? 'YES' : 'NO', 'ok' => $diagRealExchange],
+                ['label' => 'Режим',               'value' => strtoupper($bot_mode),         'ok' => null],
+                ['label' => 'Хранилище',           'value' => $diagNs,                        'ok' => null],
+                ['label' => 'API Key задан',        'value' => $diagKeyPresent ? 'ДА' : 'НЕТ', 'ok' => $diagKeyPresent],
+                ['label' => 'API Secret задан',     'value' => $diagSecretPresent ? 'ДА' : 'НЕТ', 'ok' => $diagSecretPresent],
+                ['label' => 'Demo Base URL',        'value' => $diagBaseUrl ?: 'default',       'ok' => null],
+                ['label' => 'Реальная биржа',       'value' => $diagRealExchange ? 'ДА' : 'НЕТ', 'ok' => $diagRealExchange],
             ];
             foreach ($diagCards as $dc):
                 $cls = 'neutral';
@@ -344,9 +368,9 @@ $credBad = $bot_mode === 'demo' && (!$diagKeyPresent || !$diagSecretPresent);
         </div>
         <?php if ($credBad): ?>
         <div class="alert alert-danger mt-3 mb-0 py-2 small">
-            <strong>Demo credentials are missing.</strong>
-            Enter your Bybit Demo API Key and Secret in the Settings section below and save.
-            Config path: <code><?= htmlspecialchars($diagCfgPath) ?></code>
+            <strong>Demo-учётные данные не настроены.</strong>
+            Введите Bybit Demo API Key и Secret в разделе «Настройки» ниже и сохраните.
+            Путь к конфигу: <code><?= htmlspecialchars($diagCfgPath) ?></code>
         </div>
         <?php endif; ?>
     </div>
@@ -582,14 +606,14 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
     <div class="card-body">
-        <div class="section-heading">Demo Pipeline Health</div>
+        <div class="section-heading">Состояние demo-контура</div>
         <?php if ($dlmEnabled !== null): ?>
         <div class="row g-2 mb-3">
             <?php
             $dlmCards = [
-                ['label' => 'DLM Enabled',        'value' => $dlmEnabled ? 'YES' : 'NO',                                              'ok' => $dlmEnabled],
-                ['label' => 'Max Signals/Run',     'value' => $dlmMaxSignals !== null ? (string)$dlmMaxSignals : 'n/a',               'ok' => ($dlmMaxSignals ?? 0) > 0 ? true : null],
-                ['label' => 'Max Concurrent Pos',  'value' => $dlmMaxConcurrent !== null ? (string)$dlmMaxConcurrent : 'n/a',         'ok' => ($dlmMaxConcurrent ?? 0) > 0 ? true : null],
+                ['label' => 'DLM Активен',          'value' => $dlmEnabled ? 'ДА' : 'НЕТ',                                              'ok' => $dlmEnabled],
+                ['label' => 'Сигналов/запуск',      'value' => $dlmMaxSignals !== null ? (string)$dlmMaxSignals : 'н/д',               'ok' => ($dlmMaxSignals ?? 0) > 0 ? true : null],
+                ['label' => 'Макс. позиций',        'value' => $dlmMaxConcurrent !== null ? (string)$dlmMaxConcurrent : 'н/д',         'ok' => ($dlmMaxConcurrent ?? 0) > 0 ? true : null],
             ];
             foreach ($dlmCards as $dc):
                 $cls = 'neutral';
@@ -606,25 +630,25 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if (!$dlmEnabled): ?>
         <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Demo Learning Mode is disabled.</strong> Enable it in bot.json or via Settings to activate signal cap and stale-trade closure.
+            <strong>Demo Learning Mode отключён.</strong> Включите в bot.json или через Настройки для активации лимитов сигналов и закрытия устаревших сделок.
         </div>
         <?php endif; ?>
         <?php endif; ?>
         <div class="row g-2 mb-2">
             <?php
             $srcCards = [
-                ['label' => 'Source Mode',          'value' => htmlspecialchars($demoSrcMode),                       'ok' => null],
-                ['label' => 'Storage Namespace',    'value' => $demoStorageNs,                                       'ok' => null],
-                ['label' => 'Signals Loaded (PE)',  'value' => $demoSigLoaded >= 0 ? (string)$demoSigLoaded : 'n/a', 'ok' => null],
-                ['label' => 'Signals Skipped (TTL/dup)', 'value' => $demoSigSkipped >= 0 ? (string)$demoSigSkipped : 'n/a', 'ok' => null],
-                ['label' => 'Signals Attempted',   'value' => $demoSigAttempted !== null ? (string)$demoSigAttempted : 'n/a', 'ok' => null],
-                ['label' => 'Signals Opened',      'value' => $demoSigOpened !== null ? (string)$demoSigOpened : 'n/a',       'ok' => $demoSigOpened > 0 ?: null],
-                ['label' => 'Active Demo Positions','value' => (string)$demoActivePos,                                'ok' => null],
-                ['label' => 'Blocked by Limits',   'value' => $demoSigBlockLimits !== null ? (string)$demoSigBlockLimits : 'n/a',   'ok' => $demoSigBlockLimits === 0 ? true : null],
-                ['label' => 'Blocked Validation',  'value' => $demoSigBlockValid !== null ? (string)$demoSigBlockValid : 'n/a',     'ok' => null],
-                ['label' => 'Blocked Exchange',    'value' => $demoSigBlockExchange !== null ? (string)$demoSigBlockExchange : 'n/a','ok' => $demoSigBlockExchange === 0 ? true : null],
-                ['label' => 'Blocked Other',       'value' => $demoSigBlockOther !== null ? (string)$demoSigBlockOther : 'n/a',     'ok' => null],
-                ['label' => 'Intents to Execute',  'value' => (string)$demoIntents,                                  'ok' => $demoIntents > 0],
+                ['label' => 'Источник (mode)',      'value' => htmlspecialchars($demoSrcMode),                       'ok' => null],
+                ['label' => 'Хранилище',            'value' => $demoStorageNs,                                       'ok' => null],
+                ['label' => 'Сигналов загружено',   'value' => $demoSigLoaded >= 0 ? (string)$demoSigLoaded : 'н/д', 'ok' => null],
+                ['label' => 'Пропущено (TTL/dup)',  'value' => $demoSigSkipped >= 0 ? (string)$demoSigSkipped : 'н/д', 'ok' => null],
+                ['label' => 'Попыток',              'value' => $demoSigAttempted !== null ? (string)$demoSigAttempted : 'н/д', 'ok' => null],
+                ['label' => 'Открыто',              'value' => $demoSigOpened !== null ? (string)$demoSigOpened : 'н/д',       'ok' => $demoSigOpened > 0 ?: null],
+                ['label' => 'Активных позиций',     'value' => (string)$demoActivePos,                                'ok' => null],
+                ['label' => 'Блок: лимиты',         'value' => $demoSigBlockLimits !== null ? (string)$demoSigBlockLimits : 'н/д',   'ok' => $demoSigBlockLimits === 0 ? true : null],
+                ['label' => 'Блок: валидация',      'value' => $demoSigBlockValid !== null ? (string)$demoSigBlockValid : 'н/д',     'ok' => null],
+                ['label' => 'Блок: биржа',          'value' => $demoSigBlockExchange !== null ? (string)$demoSigBlockExchange : 'н/д','ok' => $demoSigBlockExchange === 0 ? true : null],
+                ['label' => 'Блок: прочее',         'value' => $demoSigBlockOther !== null ? (string)$demoSigBlockOther : 'н/д',     'ok' => null],
+                ['label' => 'Интентов на исполн.',  'value' => (string)$demoIntents,                                  'ok' => $demoIntents > 0],
             ];
             foreach ($srcCards as $sc):
                 $cls = 'neutral';
@@ -654,14 +678,14 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         $hasExecData = ($demoBlockedByReconcile !== null || $demoBlockedByOrphan !== null);
         if ($hasExecData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Execution Stage Diagnostics</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Диагностика стадий исполнения demo</div>
         <?php if ($demoExecBlockerSpecific !== '' && $demoExecBlockerSpecific !== 'none' && $demoExecBlockerSpecific !== 'execution_healthy_waiting_for_closure'): ?>
         <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Primary Execution Blocker:</strong> <?= htmlspecialchars($execBlockerText) ?>
+            <strong>Основной блокировщик исполнения:</strong> <?= htmlspecialchars($execBlockerText) ?>
         </div>
         <?php elseif ($demoExecBlockerSpecific === 'execution_healthy_waiting_for_closure'): ?>
         <div class="alert alert-success py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Execution healthy</strong> — positions opened, waiting for closures.
+            <strong>Исполнение в норме</strong> — позиции открыты, ожидаем закрытий.
         </div>
         <?php endif; ?>
         <div class="row g-2 mb-3">
@@ -708,7 +732,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         $hasLimitData = ($demoEffRiskMaxOpen !== null);
         if ($hasLimitData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Intent Risk Limits</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Лимиты рисков demo-интентов</div>
         <div class="row g-2 mb-2">
             <?php
             $limitCards = [
@@ -734,7 +758,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if ($demoEffRiskMaxOpen !== null && $dlmMaxConcurrent !== null && $demoEffRiskMaxOpen < $dlmMaxConcurrent): ?>
         <div class="alert alert-danger py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Limit mismatch:</strong> intent max_open_trades (<?= (int)$demoEffRiskMaxOpen ?>) &lt; max_concurrent_demo_positions (<?= (int)$dlmMaxConcurrent ?>). Signals will be blocked by rejected_limits.
+            <strong>Несоответствие лимита:</strong> intent max_open_trades (<?= (int)$demoEffRiskMaxOpen ?>) &lt; max_concurrent_demo_positions (<?= (int)$dlmMaxConcurrent ?>). Сигналы будут блокироваться по rejected_limits.
         </div>
         <?php endif; ?>
         <?php endif; // hasLimitData ?>
@@ -742,7 +766,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         // ── Demo Effective Trailing / Break-even Proof ────────────────────
         if ($demoEffTrailingEnabled !== null):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Effective Trailing / Break-even</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Трейлинг / Безубыток (эффективные настройки demo)</div>
         <div class="row g-2 mb-2">
             <?php
             $trailingCards = [
@@ -771,14 +795,14 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         // ── Exchange Positions / Orders vs Local Active Positions ─────────
         if ($exchangePositionsSynced !== null || $exchangeOrdersSynced !== null):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Exchange vs Local Positions (Reconcile)</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Биржа vs Локальные позиции (сверка)</div>
         <div class="row g-2 mb-2">
             <?php
             $localActiveCount = $bot_demo_truth_audit['capacity_slots_used'] ?? null;
             $syncCards = [
-                ['label' => 'Exchange Positions Synced', 'value' => $exchangePositionsSynced !== null ? (string)$exchangePositionsSynced : 'n/a', 'ok' => null],
-                ['label' => 'Exchange Orders Synced',    'value' => $exchangeOrdersSynced !== null    ? (string)$exchangeOrdersSynced    : 'n/a', 'ok' => null],
-                ['label' => 'Local Active Positions',    'value' => $localActiveCount !== null        ? (string)$localActiveCount        : 'n/a', 'ok' => null],
+                ['label' => 'Позиций на бирже',      'value' => $exchangePositionsSynced !== null ? (string)$exchangePositionsSynced : 'н/д', 'ok' => null],
+                ['label' => 'Ордеров на бирже',      'value' => $exchangeOrdersSynced !== null    ? (string)$exchangeOrdersSynced    : 'н/д', 'ok' => null],
+                ['label' => 'Локальных позиций',     'value' => $localActiveCount !== null        ? (string)$localActiveCount        : 'н/д', 'ok' => null],
             ];
             foreach ($syncCards as $sc):
                 $cls = 'neutral';
@@ -795,7 +819,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if ($exchangePositionsSynced !== null && $localActiveCount !== null && (int)$exchangePositionsSynced !== (int)$localActiveCount): ?>
         <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Sync note:</strong> Exchange positions (<?= (int)$exchangePositionsSynced ?>) ≠ Local active (<?= (int)$localActiveCount ?>). Exchange orders and local positions are different concepts — orphans/pending orders may account for the difference.
+            <strong>Замечание по синхронизации:</strong> Позиций на бирже (<?= (int)$exchangePositionsSynced ?>) ≠ Локальных активных (<?= (int)$localActiveCount ?>). Ордера биржи и локальные позиции — разные понятия: разница может объясняться orphan-позициями или ожидающими ордерами.
         </div>
         <?php endif; ?>
         <?php endif; // exchange vs local ?>
@@ -804,7 +828,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         $hasPrefiltData = ($demoPrefiltInput !== null);
         if ($hasPrefiltData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Feed Pre-filter / Symbol Diversity</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Фильтр сигналов / Диверсификация символов</div>
         <div class="row g-2 mb-2">
             <?php
             $prefiltCards = [
@@ -835,7 +859,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         $hasBudgetData = ($demoAttemptBudget !== null || $demoSelectedScanned !== null);
         if ($hasBudgetData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Attempt / Open Budget (This Run)</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Бюджет попыток / открытий (этот запуск)</div>
         <?php
         $stopReasonLabels = [
             'selected_feed_exhausted'      => 'All selected signals scanned (healthy)',
@@ -904,7 +928,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         $hasAdoptionData = ($orphanAdoptionAttempted !== null || $auditOrphanDeadShells !== null);
         if ($hasAdoptionData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Orphan Adoption Quality (This Run)</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Качество принятых orphan-позиций (этот запуск)</div>
         <?php if (($auditOrphanDeadShells ?? 0) > 0): ?>
         <div class="alert alert-danger py-1 px-3 mb-2" style="font-size:.8rem;">
             <strong>Dead Shells Detected:</strong> <?= (int)$auditOrphanDeadShells ?> adopted orphan trade(s) are missing entry_price or qty and cannot participate in close/AI pipeline.
@@ -956,7 +980,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <?php endif; ?>
         <?php endif; ?>
         <?php if ($demoTradesActiveBefore !== null || $demoTradesClosedThisRun !== null): ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Demo Close Pipeline (This Run)</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Конвейер закрытий demo (этот запуск)</div>
         <div class="row g-2 mb-2">
             <?php
             $closeCards = [
@@ -990,7 +1014,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-3 mt-1">
             <?php if (!empty($demoCloseFailureReasons)): ?>
             <div class="col-md-4">
-                <div class="section-heading" style="font-size:.75rem;">Close Failure Reasons (This Run)</div>
+                <div class="section-heading" style="font-size:.75rem;">Причины сбоев закрытия (этот запуск)</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Reason</th><th>Count</th></tr></thead>
                     <tbody>
@@ -1003,7 +1027,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             <?php endif; ?>
             <?php if (!empty($topStaleTradeReasons)): ?>
             <div class="col-md-4">
-                <div class="section-heading" style="font-size:.75rem;">Stale Trade Reasons (This Run)</div>
+                <div class="section-heading" style="font-size:.75rem;">Причины устаревших сделок (этот запуск)</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Reason</th><th>Count</th></tr></thead>
                     <tbody>
@@ -1022,7 +1046,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         $hasAdoptedOrphanData = ($adoptedOrphansActiveBefore !== null || $auditAdoptedOrphansClosedTotal !== null);
         if ($hasAdoptedOrphanData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Adopted Orphan Turnover</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Оборот принятых orphan-позиций</div>
         <?php if (($auditAdoptedOrphansStale ?? 0) > 0 && ($auditAdoptedOrphansClosedTotal ?? 0) === 0): ?>
         <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
             <strong>Stale Adopted Orphans:</strong> <?= (int)$auditAdoptedOrphansStale ?> adopted orphan trade(s) are stale but no closures yet. Verify <code>learning_close_timeout_minutes</code> is set and demo runs are cycling.
@@ -1098,7 +1122,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         if ($hasOrphanMissingData || $orphanMfeMaeInflation):
         ?>
         <div class="mt-1">
-            <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Closed — Missing Field Counts (Audit)</div>
+            <div class="section-heading" style="font-size:.75rem;">Принятые orphan — отсутствующие поля (аудит хранилища)</div>
             <?php if ($orphanMfeMaeInflation): ?>
             <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
                 <strong>Completeness Warning:</strong> Operational complete rate (<?= htmlspecialchars((string)$auditAdoptedOrphansClosedCompleteRate) ?>%) counts records as complete even though mfe/mae are missing. Full complete rate (requiring mfe+mae) is <?= htmlspecialchars((string)$auditAdoptedOrphansClosedFullCompleteRate) ?>%. Missing mfe: <?= (int)($auditOrphanMissingMfe ?? 0) ?>, missing mae: <?= (int)($auditOrphanMissingMae ?? 0) ?>.
@@ -1135,7 +1159,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         if ($hasOrphanTimingData):
         ?>
         <div class="mt-1">
-            <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Timing Health</div>
+            <div class="section-heading" style="font-size:.75rem;">Состояние таймингов принятых orphan</div>
             <?php if (($adoptedOrphansMissingTiming ?? 0) > 0 || ($auditOrphanMissingTimingCount ?? 0) > 0): ?>
             <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
                 <strong>Timing Warning:</strong> <?= (int)(max($adoptedOrphansMissingTiming ?? 0, $auditOrphanMissingTimingCount ?? 0)) ?> adopted orphan trade(s) lack a valid timing baseline. Age/stale/timeout logic may not fire for them. Check exchange <code>createdTime</code> availability.
@@ -1182,7 +1206,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <?php endif; ?>
         <?php if (!empty($adoptedOrphanCloseFailureReasons)): ?>
         <div class="mt-1">
-            <div class="section-heading" style="font-size:.75rem;">Adopted Orphan Close Failure Reasons (This Run)</div>
+            <div class="section-heading" style="font-size:.75rem;">Причины сбоев закрытия orphan (этот запуск)</div>
             <table class="table table-sm exec-table mb-0" style="max-width:420px;">
                 <thead><tr><th>Reason</th><th>Count</th></tr></thead>
                 <tbody>
@@ -1196,7 +1220,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <?php endif; ?>
         <?php if (!empty($demoRejStats)): ?>
         <div class="mt-2">
-            <div class="section-heading" style="font-size:.75rem;">Top Failure Reasons (This Run)</div>
+            <div class="section-heading" style="font-size:.75rem;">Топ причин сбоев (этот запуск)</div>
             <table class="table table-sm exec-table mb-0" style="max-width:420px;">
                 <thead><tr><th>Reason</th><th>Count</th></tr></thead>
                 <tbody>
@@ -1223,7 +1247,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             || $demoClosureBottleneck !== '';
         ?>
         <?php if ($hasTurnoverData): ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Demo Turnover Diagnostics (This Run)</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Диагностика оборота demo (этот запуск)</div>
         <div class="row g-2 mb-2">
             <?php
             $twCards = [
@@ -1273,7 +1297,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php endif; ?>
         <?php if ($demoOrphanDetected !== null || $demoOrphanBlocking !== null): ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Orphan Exchange Position Diagnostics</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Диагностика orphan-позиций биржи</div>
         <div class="row g-2 mb-2">
             <?php
             $orphanCards = [
@@ -1310,7 +1334,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             || $auditCapFull !== null || $demoCapSlotsTotalRun !== null;
         if ($hasCapTurnoverData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Capacity / Turnover</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Ёмкость / Оборот</div>
         <div class="row g-2 mb-2">
             <?php
             $capSlotsSat = ($demoCapacityFullRun === true) ? false : ($demoCapacityFullRun === false ? true : null);
@@ -1384,7 +1408,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             || $healthyActiveClosedRun !== null || $targetPerRun !== null || $auditTargetPerRun !== null;
         if ($hasHealthyTurnoverData):
         ?>
-        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Healthy Active Turnover</div>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Оборот активных позиций</div>
         <div class="row g-2 mb-2">
             <?php
             $effHealthyActive  = $healthyActiveBefore ?? $auditHealthyActive;
@@ -1467,29 +1491,29 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
 <div class="card mb-4" style="border-color:<?= $aiReady ? '#16a34a' : '#334155' ?>;">
     <div class="card-body">
         <div class="section-heading">
-            Demo Data Readiness
+            Готовность demo-данных
             <?php if ($aiReady): ?>
-            <span class="badge bg-success ms-2" style="font-size:.65rem;">READY</span>
+            <span class="badge bg-success ms-2" style="font-size:.65rem;">ГОТОВО</span>
             <?php else: ?>
-            <span class="badge bg-secondary ms-2" style="font-size:.65rem;">BUILDING</span>
+            <span class="badge bg-secondary ms-2" style="font-size:.65rem;">НАБИРАЕТСЯ</span>
             <?php endif; ?>
         </div>
         <div class="row g-2 mb-2">
             <?php
-            $nextMs = $nextMilestone !== null ? $demoClosedTotal . '/' . $nextMilestone : ($demoClosedTotal . ' (done)');
+            $nextMs = $nextMilestone !== null ? $demoClosedTotal . '/' . $nextMilestone : ($demoClosedTotal . ' (готово)');
             $readCards = [
-                ['label' => 'Closed Trades',        'value' => (string)$demoClosedTotal,
+                ['label' => 'Закрытых сделок',      'value' => (string)$demoClosedTotal,
                  'ok' => $demoClosedTotal >= $aiMinSamples ? true : null],
-                ['label' => 'Complete Records',     'value' => (string)$demoClosedComplete,
+                ['label' => 'Полных записей',        'value' => (string)$demoClosedComplete,
                  'ok' => null],
-                ['label' => 'Completeness Rate',    'value' => $demoClosedTotal > 0 ? $demoCompleteRate . '%' : 'n/a',
+                ['label' => 'Полнота',               'value' => $demoClosedTotal > 0 ? $demoCompleteRate . '%' : 'н/д',
                  'ok' => $demoCompleteRate >= 80 ? true : ($demoClosedTotal > 0 ? false : null)],
-                ['label' => 'Active Trades',        'value' => (string)$demoActiveCount2, 'ok' => null],
-                ['label' => 'AI Dataset Records',   'value' => (string)$aiDatasetRecords, 'ok' => null],
-                ['label' => 'AI Records Complete',  'value' => (string)$aiDatasetComplete, 'ok' => null],
-                ['label' => 'AI Ready',              'value' => $aiReady ? 'YES' : 'NO (' . $demoClosedTotal . '/' . $aiMinSamples . ')',
+                ['label' => 'Активных сделок',       'value' => (string)$demoActiveCount2, 'ok' => null],
+                ['label' => 'Записей AI Dataset',    'value' => (string)$aiDatasetRecords, 'ok' => null],
+                ['label' => 'Полных AI-записей',     'value' => (string)$aiDatasetComplete, 'ok' => null],
+                ['label' => 'AI готов',              'value' => $aiReady ? 'ДА' : 'НЕТ (' . $demoClosedTotal . '/' . $aiMinSamples . ')',
                  'ok' => $aiReady],
-                ['label' => 'Next Milestone',       'value' => $nextMs, 'ok' => null],
+                ['label' => 'Следующий рубеж',       'value' => $nextMs, 'ok' => null],
             ];
             foreach ($readCards as $rc):
                 $cls = 'neutral';
@@ -1513,7 +1537,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
         <div class="row g-3">
             <?php if (!empty($perPatternCounts)): ?>
             <div class="col-md-3">
-                <div class="section-heading" style="font-size:.75rem;">Closed by Pattern</div>
+                <div class="section-heading" style="font-size:.75rem;">Закрытия по паттерну</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Pattern</th><th>Trades</th></tr></thead>
                     <tbody>
@@ -1526,7 +1550,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <?php endif; ?>
             <?php if (!empty($perSideCounts)): ?>
             <div class="col-md-2">
-                <div class="section-heading" style="font-size:.75rem;">Closed by Side</div>
+                <div class="section-heading" style="font-size:.75rem;">Закрытия по направлению</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Side</th><th>Trades</th></tr></thead>
                     <tbody>
@@ -1539,7 +1563,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <?php endif; ?>
             <?php if (!empty($perCloseReason)): ?>
             <div class="col-md-3">
-                <div class="section-heading" style="font-size:.75rem;">Close Reason Distribution</div>
+                <div class="section-heading" style="font-size:.75rem;">Распределение причин закрытия</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Reason</th><th>Count</th></tr></thead>
                     <tbody>
@@ -1552,7 +1576,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <?php endif; ?>
             <?php if (!empty($topSymbols)): ?>
             <div class="col-md-4">
-                <div class="section-heading" style="font-size:.75rem;">Top Symbols by Demo Evidence</div>
+                <div class="section-heading" style="font-size:.75rem;">Топ символов по demo-данным</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>
                     <tbody>
@@ -1587,7 +1611,7 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
 <?php if ($bot_mode === 'demo' && ($demoTradesClosedThisRun !== null || !empty($topPatternsByClosed))): ?>
 <div class="card mb-4" style="border-color:#1e3a5f;">
     <div class="card-body">
-        <div class="section-heading">Demo Velocity &amp; Dataset Growth</div>
+        <div class="section-heading">Скорость demo / рост датасета</div>
         <div class="row g-2 mb-2">
             <?php
             $velCards = [
@@ -1615,7 +1639,7 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
         <div class="row g-3">
             <?php if (!empty($topPatternsByClosed)): ?>
             <div class="col-md-4">
-                <div class="section-heading" style="font-size:.75rem;">Top Patterns by Closed Trades</div>
+                <div class="section-heading" style="font-size:.75rem;">Топ паттернов по закрытым сделкам</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Pattern</th><th>Closed</th></tr></thead>
                     <tbody>
@@ -1628,7 +1652,7 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
             <?php endif; ?>
             <?php if (!empty($topSymbolsByClosed)): ?>
             <div class="col-md-4">
-                <div class="section-heading" style="font-size:.75rem;">Top Symbols by Closed Trades</div>
+                <div class="section-heading" style="font-size:.75rem;">Топ символов по закрытым сделкам</div>
                 <table class="table table-sm exec-table mb-0">
                     <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>
                     <tbody>
@@ -1684,7 +1708,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 <?php if ($bot_mode === 'demo' && !empty($demoTruthAudit)): ?>
 <div class="card mb-4" style="border-color:#7c3aed;">
     <div class="card-body">
-        <div class="section-heading">Demo Truth Audit <span class="badge bg-secondary ms-2" style="font-size:.6rem;">FROM STORAGE</span></div>
+        <div class="section-heading">Аудит данных demo <span class="badge bg-secondary ms-2" style="font-size:.6rem;">ИЗ ХРАНИЛИЩА</span></div>
         <div class="row g-2 mb-2">
             <?php
             $auditCards = [
@@ -1866,7 +1890,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 <?php if (!empty($bot_stats)): ?>
 <div class="card mb-4">
     <div class="card-body">
-        <div class="section-heading">Stats</div>
+        <div class="section-heading">Статистика</div>
         <div class="row g-2">
         <?php
         $statMap = [
@@ -1901,7 +1925,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         if (!empty($bySymbol) && is_array($bySymbol)):
         ?>
         <div class="mt-3">
-            <div class="section-heading" style="margin-top:.5rem;">Per-Symbol Stats</div>
+            <div class="section-heading" style="margin-top:.5rem;">Статистика по символам</div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm exec-table mb-0">
                     <thead><tr><th>Symbol</th><th>Trades</th><th>Win Rate</th><th>Avg ROI</th><th>Total PnL</th></tr></thead>
@@ -1927,7 +1951,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         if (!empty($byPattern) && is_array($byPattern)):
         ?>
         <div class="mt-3">
-            <div class="section-heading">Per-Pattern Stats</div>
+            <div class="section-heading">Статистика по паттернам</div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm exec-table mb-0">
                     <thead><tr><th>Pattern</th><th>Trades</th><th>Win Rate</th><th>Avg ROI</th></tr></thead>
@@ -1952,14 +1976,14 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 <!-- ===== Active Positions ===== -->
 <div class="card mb-4">
     <div class="card-body">
-        <div class="section-heading">Active Positions (<?= $activeCount ?>)</div>
+        <div class="section-heading">Активные позиции (<?= $activeCount ?>)</div>
         <?php if (empty($bot_active_trades)): ?>
-            <p class="text-muted mb-0">No active positions.</p>
+            <p class="text-muted mb-0">Нет активных позиций.</p>
         <?php else: ?>
         <div class="table-responsive">
             <table class="table table-dark table-sm exec-table mb-0">
                 <thead>
-                    <tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Mark</th><th>ROI%</th><th>PnL</th><th>SL</th><th>MFE%</th><th>Since</th></tr>
+                    <tr><th>Символ</th><th>Направл.</th><th>Вход</th><th>Цена</th><th>ROI%</th><th>PnL</th><th>SL</th><th>MFE%</th><th>Открыта</th></tr>
                 </thead>
                 <tbody>
                 <?php foreach ($bot_active_trades as $t): ?>
@@ -1993,14 +2017,14 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 <!-- ===== Closed Trades ===== -->
 <div class="card mb-4">
     <div class="card-body">
-        <div class="section-heading">Recent Closed Trades (last <?= count($bot_closed_trades) ?>)</div>
+        <div class="section-heading">Последние закрытые сделки (последние <?= count($bot_closed_trades) ?>)</div>
         <?php if (empty($bot_closed_trades)): ?>
-            <p class="text-muted mb-0">No closed trades found.</p>
+            <p class="text-muted mb-0">Закрытые сделки не найдены.</p>
         <?php else: ?>
         <div class="table-responsive">
             <table class="table table-dark table-sm exec-table mb-0">
                 <thead>
-                    <tr><th>Symbol</th><th>Side</th><th>Pattern</th><th>Entry</th><th>Exit</th><th>ROI%</th><th>PnL</th><th>Reason</th><th>Hold</th><th>MFE%</th></tr>
+                    <tr><th>Символ</th><th>Направл.</th><th>Паттерн</th><th>Вход</th><th>Выход</th><th>ROI%</th><th>PnL</th><th>Причина</th><th>Время</th><th>MFE%</th></tr>
                 </thead>
                 <tbody>
                 <?php foreach ($bot_closed_trades as $t): ?>
@@ -2046,61 +2070,61 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 <!-- ===== Full Settings ===== -->
 <div class="card mb-4">
     <div class="card-body">
-        <div class="section-heading">Bot Settings <small class="text-muted fw-normal text-lowercase">(saved to config/bot.json)</small></div>
+        <div class="section-heading">Настройки бота <small class="text-muted fw-normal text-lowercase">(сохраняются в config/bot.json)</small></div>
         <form id="settings-form">
 
-        <!-- 1. MODE -->
+        <!-- 1. РЕЖИМ -->
         <div class="settings-block">
-            <h6><i class="bi bi-toggles me-1"></i> Mode</h6>
+            <h6><i class="bi bi-toggles me-1"></i> Режим</h6>
             <div class="row g-3 align-items-end">
                 <div class="col-md-3">
-                    <label class="form-label form-label-sm">Mode</label>
+                    <label class="form-label form-label-sm">Режим</label>
                     <select name="mode" class="form-select form-select-sm bg-dark text-light border-secondary"
                             onchange="onModeChange(this)">
                         <option value="demo"  <?= $bot_mode === 'demo'  ? 'selected' : '' ?>>Demo (Bybit Sandbox)</option>
-                        <option value="live"  <?= $bot_mode === 'live'  ? 'selected' : '' ?>>Live (Real Exchange — DANGEROUS)</option>
-                        <option value="paper" <?= ($bot_mode === 'paper' || $bot_mode === 'dry') ? 'selected' : '' ?>>Paper (local simulation)</option>
+                        <option value="live"  <?= $bot_mode === 'live'  ? 'selected' : '' ?>>Live (Реальная биржа — ОПАСНО)</option>
+                        <option value="paper" <?= ($bot_mode === 'paper' || $bot_mode === 'dry') ? 'selected' : '' ?>>Paper (локальная симуляция)</option>
                     </select>
                 </div>
                 <div class="col-md-3">
                     <div class="form-check mt-4">
                         <input type="checkbox" class="form-check-input" name="enabled" id="chk_enabled"
                             <?= $bot_enabled ? 'checked' : '' ?>>
-                        <label class="form-check-label small" for="chk_enabled">Bot Enabled</label>
+                        <label class="form-check-label small" for="chk_enabled">Бот включён</label>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label form-label-sm">Account ID (live)</label>
                     <input type="text" name="account_id" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($modeCfg['account_id'] ?? $bot_config['account_id'] ?? 'trading_bot')) ?>">
-                    <small class="text-muted">KeyCenter account for LIVE mode.</small>
+                    <small class="text-muted">Аккаунт KeyCenter для LIVE-режима.</small>
                 </div>
             </div>
         </div>
 
         <!-- 2. DEMO CREDENTIALS -->
         <div class="settings-block" id="section-demo-creds" style="<?= $bot_mode !== 'demo' ? 'display:none' : '' ?>">
-            <h6><i class="bi bi-key me-1"></i> Demo Credentials <span class="text-muted fw-normal text-lowercase">(stored locally in bot config; not KeyCenter)</span></h6>
+            <h6><i class="bi bi-key me-1"></i> Demo-учётные данные <span class="text-muted fw-normal text-lowercase">(хранятся локально в bot config; не KeyCenter)</span></h6>
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label form-label-sm">Demo API Key</label>
                     <input type="text" name="demo_api_key" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($demoCreds['api_key'] ?? '')) ?>"
-                           placeholder="Enter Bybit Demo API Key">
+                           placeholder="Введите Bybit Demo API Key">
                     <?php if ($demoKeySet): ?>
-                        <small class="text-success"><i class="bi bi-check-circle me-1"></i>Key configured.</small>
+                        <small class="text-success"><i class="bi bi-check-circle me-1"></i>Ключ настроен.</small>
                     <?php else: ?>
-                        <small class="text-warning">Not configured.</small>
+                        <small class="text-warning">Не настроен.</small>
                     <?php endif; ?>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label form-label-sm">Demo API Secret</label>
                     <input type="password" name="demo_api_secret" class="form-control form-control-sm bg-dark text-light border-secondary"
-                           placeholder="<?= $demoSecretSet ? '(secret set — leave blank to keep)' : 'Enter Bybit Demo API Secret' ?>">
+                           placeholder="<?= $demoSecretSet ? '(секрет задан — оставьте пустым для сохранения)' : 'Введите Bybit Demo API Secret' ?>">
                     <?php if ($demoSecretSet): ?>
-                        <small class="text-success"><i class="bi bi-check-circle me-1"></i>Secret configured. Leave blank to preserve.</small>
+                        <small class="text-success"><i class="bi bi-check-circle me-1"></i>Секрет задан. Оставьте пустым для сохранения.</small>
                     <?php else: ?>
-                        <small class="text-warning">Not configured.</small>
+                        <small class="text-warning">Не настроен.</small>
                     <?php endif; ?>
                 </div>
                 <div class="col-md-4">
@@ -2114,14 +2138,14 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 
         <!-- 3. LIVE CONFIG -->
         <div class="settings-block" id="section-live-info" style="<?= $bot_mode !== 'live' ? 'display:none' : '' ?>">
-            <h6><i class="bi bi-lightning-charge me-1"></i> Live Config <span class="text-muted fw-normal text-lowercase">(credentials from KeyCenter)</span></h6>
+            <h6><i class="bi bi-lightning-charge me-1"></i> Live-конфигурация <span class="text-muted fw-normal text-lowercase">(учётные данные из KeyCenter)</span></h6>
             <div class="row g-3">
                 <div class="col-12">
                     <div class="alert alert-danger py-2 mb-0 small">
-                        <strong>LIVE mode is active.</strong> Credentials for live trading are managed in
-                        <a href="/admin/keys" class="alert-link">KeyCenter</a> under account ID
+                        <strong>Активен LIVE-режим.</strong> Учётные данные для реальной торговли управляются в
+                        <a href="/admin/keys" class="alert-link">KeyCenter</a> под аккаунтом
                         <strong><?= htmlspecialchars((string)($modeCfg['account_id'] ?? 'trading_bot')) ?></strong>.
-                        Do not enter raw API keys here for live mode.
+                        Не вводите API-ключи здесь для live-режима.
                     </div>
                 </div>
                 <div class="col-md-4">
@@ -2139,36 +2163,56 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 
         <!-- 3b. PAPER INFO -->
         <div class="settings-block" id="section-paper-info" style="<?= !in_array($bot_mode, ['paper','dry']) ? 'display:none' : '' ?>">
-            <h6><i class="bi bi-archive me-1"></i> Paper Mode <span class="text-muted fw-normal text-lowercase">(local simulation, no exchange)</span></h6>
-            <p class="text-muted small mb-0">Paper/dry mode runs a local simulation. No exchange connection is made. Storage namespace: <strong>storage_paper</strong>.</p>
+            <h6><i class="bi bi-archive me-1"></i> Paper-режим <span class="text-muted fw-normal text-lowercase">(локальная симуляция, без биржи)</span></h6>
+            <p class="text-muted small mb-0">Paper/dry-режим работает как локальная симуляция. Подключение к бирже не выполняется. Хранилище: <strong>storage_paper</strong>.</p>
         </div>
 
-        <!-- 4. EXECUTION SETTINGS -->
+        <!-- 4. НАСТРОЙКИ ИСПОЛНЕНИЯ -->
         <div class="settings-block">
-            <h6><i class="bi bi-sliders me-1"></i> Execution Settings</h6>
+            <h6><i class="bi bi-sliders me-1"></i> Настройки исполнения</h6>
             <div class="row g-3">
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Max Positions</label>
-                    <input type="number" name="max_positions" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Макс. позиций
+                        <i class="bi bi-info-circle text-secondary ms-1" title="Максимум одновременно открытых позиций."></i>
+                    </label>
+                    <input type="number" name="max_positions" min="1" step="1"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= (int)($bot_config['max_positions'] ?? $modeCfg['max_concurrent_positions'] ?? 3) ?>">
+                    <small class="text-muted">Максимум одновременно открытых позиций.</small>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Leverage Default</label>
-                    <input type="number" name="leverage_default" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Плечо (Leverage)
+                        <i class="bi bi-info-circle text-secondary ms-1" title="Плечо по умолчанию для новых сделок."></i>
+                    </label>
+                    <input type="number" name="leverage_default" min="1" step="1"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= (int)($exchCfg['leverage'] ?? $bot_config['leverage_default'] ?? 5) ?>">
+                    <small class="text-muted">Плечо по умолчанию для новых сделок.</small>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Stop Loss %</label>
-                    <input type="number" step="0.01" name="stop_loss_pct" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Stop Loss %
+                        <i class="bi bi-info-circle text-secondary ms-1" title="Базовый размер стоп-лосса в процентах."></i>
+                    </label>
+                    <input type="number" step="0.01" min="0.01" name="stop_loss_pct"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['stop_loss_pct'] ?? $bot_config['stop_loss_pct'] ?? 2.0), 2) ?>">
+                    <small class="text-muted">Базовый размер стоп-лосса в процентах.</small>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Take Profit %</label>
-                    <input type="number" step="0.01" name="take_profit_pct" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Take Profit %
+                        <i class="bi bi-info-circle text-secondary ms-1" title="Базовая цель по прибыли в процентах."></i>
+                    </label>
+                    <input type="number" step="0.01" min="0.01" name="take_profit_pct"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['take_profit_pct'] ?? $bot_config['take_profit_pct'] ?? 5.0), 2) ?>">
+                    <small class="text-muted">Базовая цель по прибыли в процентах.</small>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Order Type</label>
+                    <label class="form-label form-label-sm">Тип ордера</label>
                     <select name="order_type" class="form-select form-select-sm bg-dark text-light border-secondary">
                         <?php foreach (['Market', 'Limit'] as $ot): ?>
                         <option value="<?= $ot ?>" <?= ($exCfg['order_type'] ?? 'Market') === $ot ? 'selected' : '' ?>><?= $ot ?></option>
@@ -2176,22 +2220,26 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">EM. Stop Loss %</label>
-                    <input type="number" step="0.01" name="emergency_stop_loss_pct" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Аварийный Stop Loss %
+                        <i class="bi bi-info-circle text-secondary ms-1" title="Аварийный стоп-лосс в процентах."></i>
+                    </label>
+                    <input type="number" step="0.01" min="0.01" name="emergency_stop_loss_pct"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['emergency_stop_loss_pct'] ?? $bot_config['emergency_stop_loss_pct'] ?? 5.0), 2) ?>">
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-4 mt-3">
                 <?php
                 $execChecks = [
-                    ['name' => 'reconcile_before_action',   'label' => 'Reconcile Before Run',  'val' => (bool)($bot_config['reconcile_before_action'] ?? false)],
-                    ['name' => 'execution_reverse_side_enabled', 'label' => 'Reverse Side',     'val' => (bool)($exCfg['reverse_side_enabled'] ?? false)],
-                    ['name' => 'execution_trailing_enabled','label' => 'Trailing',               'val' => (bool)($exCfg['trailing_enabled'] ?? false)],
-                    ['name' => 'execution_break_even_enabled','label' => 'Break Even',           'val' => (bool)($exCfg['break_even_enabled'] ?? false)],
-                    ['name' => 'execution_emergency_stop_enabled','label' => 'Emergency Stop',   'val' => (bool)($exCfg['emergency_stop_enabled'] ?? false)],
+                    ['name' => 'reconcile_before_action',   'label' => 'Синхронизация перед запуском', 'hint' => 'Перед запуском сверять локальное состояние с биржей.',  'val' => (bool)($bot_config['reconcile_before_action'] ?? false)],
+                    ['name' => 'execution_reverse_side_enabled', 'label' => 'Инверсия направления',    'hint' => 'Инвертировать направление сигнала: long ↔ short.',      'val' => (bool)($exCfg['reverse_side_enabled'] ?? false)],
+                    ['name' => 'execution_trailing_enabled','label' => 'Трейлинг',                      'hint' => 'Включить трейлинг-стоп.',                                'val' => (bool)($exCfg['trailing_enabled'] ?? false)],
+                    ['name' => 'execution_break_even_enabled','label' => 'Безубыток',                   'hint' => 'Включить перенос стопа в безубыток.',                    'val' => (bool)($exCfg['break_even_enabled'] ?? false)],
+                    ['name' => 'execution_emergency_stop_enabled','label' => 'Аварийный стоп',           'hint' => 'Включить аварийный стоп-лосс.',                          'val' => (bool)($exCfg['emergency_stop_enabled'] ?? false)],
                 ];
                 foreach ($execChecks as $ch): ?>
-                <div class="form-check">
+                <div class="form-check" title="<?= htmlspecialchars($ch['hint']) ?>">
                     <input type="checkbox" class="form-check-input" name="<?= $ch['name'] ?>" id="chk_<?= $ch['name'] ?>"
                         <?= $ch['val'] ? 'checked' : '' ?>>
                     <label class="form-check-label small" for="chk_<?= $ch['name'] ?>"><?= htmlspecialchars($ch['label']) ?> <span style="font-family:monospace;font-size:10px;color:<?= $ch['val'] ? '#22c55e' : '#ef4444' ?>">(render=<?= $ch['val'] ? 'true' : 'false' ?>)</span></label>
@@ -2207,45 +2255,61 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                            placeholder="e.g. step_roi">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Trailing Activation ROI</label>
-                    <input type="number" step="0.1" name="trailing_activation_roi" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Trailing Activation ROI
+                        <i class="bi bi-info-circle text-secondary ms-1" title="ROI, начиная с которого включается трейлинг."></i>
+                    </label>
+                    <input type="number" step="0.1" min="0" name="trailing_activation_roi"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['trailing_activation_roi'] ?? 0), 2) ?>">
+                    <small class="text-muted">ROI, начиная с которого включается трейлинг.</small>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Trailing Drawdown Factor</label>
-                    <input type="number" step="0.01" name="trailing_drawdown_factor" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Trailing Drawdown Factor
+                        <i class="bi bi-info-circle text-warning ms-1" title="Насколько глубоко цена может откатиться от лучшего ROI до закрытия по трейлингу. Рабочий диапазон: 0.25–0.50."></i>
+                    </label>
+                    <input type="number" step="0.01" min="0.25" max="0.50" name="trailing_drawdown_factor"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['trailing_drawdown_factor'] ?? 0), 3) ?>">
+                    <small class="text-warning">Рабочий диапазон: 0.25–0.50. Значения вне диапазона отклоняются.</small>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Break Even Activation ROI</label>
-                    <input type="number" step="0.1" name="break_even_activation_roi" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <label class="form-label form-label-sm">
+                        Break Even Activation ROI
+                        <i class="bi bi-info-circle text-secondary ms-1" title="ROI, начиная с которого стоп можно подтянуть в безубыток."></i>
+                    </label>
+                    <input type="number" step="0.1" min="0" name="break_even_activation_roi"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['break_even_activation_roi'] ?? 0), 2) ?>">
+                    <small class="text-muted">ROI, начиная с которого стоп подтягивается в безубыток.</small>
                 </div>
             </div>
         </div>
 
-        <!-- 5. SOURCE SETTINGS -->
+        <!-- 5. НАСТРОЙКИ ИСТОЧНИКОВ -->
         <div class="settings-block">
-            <h6><i class="bi bi-broadcast me-1"></i> Source Settings</h6>
+            <h6><i class="bi bi-broadcast me-1"></i> Настройки источников</h6>
             <div class="row g-3 align-items-end">
                 <div class="col-md-3">
-                    <div class="form-check">
+                    <div class="form-check" title="Разрешить брать сигналы из Smart Brain.">
                         <input type="checkbox" class="form-check-input" name="sources_brain_source_enabled" id="chk_brain_src"
                             <?= !empty($srcCfg['brain_source_enabled']) ? 'checked' : '' ?>>
-                        <label class="form-check-label small" for="chk_brain_src">Brain Source Enabled <?php $_bsv = !empty($srcCfg['brain_source_enabled']); ?><span style="font-family:monospace;font-size:10px;color:<?= $_bsv ? '#22c55e' : '#ef4444' ?>">(render=<?= $_bsv ? 'true' : 'false' ?>)</span></label>
+                        <label class="form-check-label small" for="chk_brain_src">Brain Source включён <?php $_bsv = !empty($srcCfg['brain_source_enabled']); ?><span style="font-family:monospace;font-size:10px;color:<?= $_bsv ? '#22c55e' : '#ef4444' ?>">(render=<?= $_bsv ? 'true' : 'false' ?>)</span></label>
                     </div>
+                    <small class="text-muted">Разрешить брать сигналы из Smart Brain.</small>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label form-label-sm">Signals File</label>
+                    <label class="form-label form-label-sm">Файл сигналов</label>
                     <input type="text" name="sources_signals_file" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($srcCfg['signals_file'] ?? 'signals.json')) ?>">
                 </div>
             </div>
         </div>
 
-        <!-- 6. EXCHANGE / RUNTIME SETTINGS -->
+        <!-- 6. БИРЖА / RUNTIME -->
         <div class="settings-block">
-            <h6><i class="bi bi-hdd-stack me-1"></i> Exchange / Runtime Settings</h6>
+            <h6><i class="bi bi-hdd-stack me-1"></i> Биржа / Runtime</h6>
             <div class="row g-3">
                 <div class="col-md-2">
                     <label class="form-label form-label-sm">Category</label>
@@ -2274,7 +2338,8 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                 </div>
                 <div class="col-md-2">
                     <label class="form-label form-label-sm">Position IDX</label>
-                    <input type="number" name="exchange_position_idx" class="form-control form-control-sm bg-dark text-light border-secondary"
+                    <input type="number" name="exchange_position_idx" min="0" step="1"
+                           class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= (int)($exchCfg['position_idx'] ?? 0) ?>">
                 </div>
             </div>
@@ -2282,9 +2347,9 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
 
         <div class="mt-2">
             <button type="button" class="btn btn-primary btn-sm" onclick="saveSettings()">
-                <i class="bi bi-floppy me-1"></i> Save Settings
+                <i class="bi bi-floppy me-1"></i> Сохранить настройки
             </button>
-            <small class="text-muted ms-2">Saves to bot <code>config/bot.json</code>. Execution logic is not affected — only config is written.</small>
+            <small class="text-muted ms-2">Сохраняет в <code>config/bot.json</code>. Логика исполнения не затрагивается.</small>
         </div>
 
         </form>

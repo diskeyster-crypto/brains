@@ -1834,20 +1834,13 @@ trait BotExecutorTrait
                             $closedTrade['close_reason']            = $closeReason;
                             $closedTrade['close_reason_normalized'] = $closeReason;
                         }
-                        $result['closed']++;
-                        $result['closed_by_logical_stop']++;
-                        $result['finalized_locally_this_run']++;
-                        if (!$isAdoptedTrade) {
-                            $result['healthy_active_closed_this_run']++;
-                        }
+                        // Write AI dataset record before persistence so the flag is part of the closed file.
                         $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if ($aiWritten) {
-                            $result['ai_dataset_records_written']++;
-                        } else {
+                        if (!$aiWritten) {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
                         }
-                        // Per-run data-quality counters (demo only)
+                        // Per-run data-quality counters — based on record content, computed before persistence.
                         if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
                         if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
                         if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
@@ -1858,7 +1851,17 @@ trait BotExecutorTrait
                             && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
                             $result['closed_trades_this_run_full_complete']++;
                         }
+                        // Persist the closed record first; increment close counters only after persistence.
                         $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                        $result['closed']++;
+                        $result['closed_by_logical_stop']++;
+                        $result['finalized_locally_this_run']++;
+                        if (!$isAdoptedTrade) {
+                            $result['healthy_active_closed_this_run']++;
+                        }
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                        }
                         $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                         continue;
                     }
@@ -1914,28 +1917,17 @@ trait BotExecutorTrait
                             $closedTrade['close_reason']            = $adoptedCloseReason;
                             $closedTrade['close_reason_normalized'] = $adoptedCloseReason;
                         }
-                        $result['closed']++;
-                        $result['closed_by_logical_stop']++;
-                        $result['finalized_locally_this_run']++;
-                        $result['adopted_orphans_closed_this_run']++;
-                        $result['adopted_orphans_finalized_locally_this_run']++;
+                        // Write AI dataset record before persistence so the flag is part of the closed file.
                         $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if ($aiWritten) {
-                            $result['ai_dataset_records_written']++;
-                            $result['adopted_orphans_ai_dataset_written_this_run']++;
-                        } else {
+                        if (!$aiWritten) {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
-                            $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
                         }
                         // Count complete close (close_price + roi + close_reason all present)
                         $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
                             && ($closedTrade['roi'] ?? null) !== null
                             && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
-                        if ($isComplete) {
-                            $result['adopted_orphans_closed_complete_this_run']++;
-                        }
-                        // Per-run data-quality counters (demo only)
+                        // Per-run data-quality counters — based on record content, computed before persistence.
                         if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
                         if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
                         if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
@@ -1944,7 +1936,22 @@ trait BotExecutorTrait
                             && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
                             $result['closed_trades_this_run_full_complete']++;
                         }
+                        // Persist the closed record first; increment close counters only after persistence.
                         $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                        $result['closed']++;
+                        $result['closed_by_logical_stop']++;
+                        $result['finalized_locally_this_run']++;
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['adopted_orphans_finalized_locally_this_run']++;
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                            $result['adopted_orphans_ai_dataset_written_this_run']++;
+                        } else {
+                            $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                        }
+                        if ($isComplete) {
+                            $result['adopted_orphans_closed_complete_this_run']++;
+                        }
                         $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                         continue;
                     }
@@ -1978,13 +1985,6 @@ trait BotExecutorTrait
                     } elseif (!empty($rt['close_trigger']) && $rt['close_trigger'] === 'logical_stop') {
                         $closeReason = 'stop_loss';
                     }
-                    $result['closed']++;
-                    $result['closed_by_exchange']++;
-                    $result['finalized_from_exchange_this_run']++;
-                    if ($isAdoptedOrphanTrade) {
-                        $result['adopted_orphans_closed_this_run']++;
-                        $result['adopted_orphans_finalized_from_exchange_this_run']++;
-                    }
                     $closedAtTs = time();
                     $closedTrade = array_merge($trade, [
                         'closed_at'               => date('c', $closedAtTs),
@@ -2006,26 +2006,15 @@ trait BotExecutorTrait
                     if (($this->config['module']['mode'] ?? '') === 'demo') {
                         $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if ($aiWritten) {
-                            $result['ai_dataset_records_written']++;
-                            if ($isAdoptedOrphanTrade) {
-                                $result['adopted_orphans_ai_dataset_written_this_run']++;
-                            }
-                        } else {
+                        if (!$aiWritten) {
                             $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
-                            if ($isAdoptedOrphanTrade) {
-                                $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
-                            }
                         }
                         if ($isAdoptedOrphanTrade) {
                             $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
                                 && ($closedTrade['roi'] ?? null) !== null
                                 && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
-                            if ($isComplete) {
-                                $result['adopted_orphans_closed_complete_this_run']++;
-                            }
                         }
-                        // Per-run data-quality counters (demo only)
+                        // Per-run data-quality counters — based on record content, computed before persistence.
                         if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
                         if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
                         if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
@@ -2037,7 +2026,33 @@ trait BotExecutorTrait
                             $result['closed_trades_this_run_full_complete']++;
                         }
                     }
+                    // Persist the closed record first; increment close counters only after persistence.
                     $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                    $result['closed']++;
+                    $result['closed_by_exchange']++;
+                    $result['finalized_from_exchange_this_run']++;
+                    if ($isAdoptedOrphanTrade) {
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['adopted_orphans_finalized_from_exchange_this_run']++;
+                    } else {
+                        // Healthy (non-orphan) exchange-detected close — count for healthy turnover tracking.
+                        $result['healthy_active_closed_this_run']++;
+                    }
+                    if (($this->config['module']['mode'] ?? '') === 'demo') {
+                        if (isset($aiWritten) && $aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                            if ($isAdoptedOrphanTrade) {
+                                $result['adopted_orphans_ai_dataset_written_this_run']++;
+                            }
+                        } elseif (isset($aiWritten)) {
+                            if ($isAdoptedOrphanTrade) {
+                                $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                            }
+                        }
+                        if ($isAdoptedOrphanTrade && isset($isComplete) && $isComplete) {
+                            $result['adopted_orphans_closed_complete_this_run']++;
+                        }
+                    }
                     $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                     continue;
                 }

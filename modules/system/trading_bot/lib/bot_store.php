@@ -995,10 +995,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             if ($closeReason === '') {
                 $missingCloseReason++;
             }
-            if ($mfe === null) {
+            // A record is missing MFE if mfe is null OR an explicit mfe_missing_reason is set.
+            // This mirrors the $mfeMissing/$maeMissing contract used for full-completeness below.
+            if ($mfe === null || !empty($d['mfe_missing_reason'])) {
                 $missingMfe++;
             }
-            if ($mae === null) {
+            if ($mae === null || !empty($d['mae_missing_reason'])) {
                 $missingMae++;
             }
             if ($holdMin === null || (int)$holdMin < 0) {

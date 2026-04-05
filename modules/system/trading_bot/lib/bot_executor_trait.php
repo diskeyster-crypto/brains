@@ -4593,6 +4593,13 @@ private function computeEntryDeadline(array $intent): array
                 ]);
                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                 $freed++;
+                // Classify from final closed record — dead shells are always orphan-adopted.
+                $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
+                if (!$closedIsOrphan) {
+                    $result['turnover_healthy_closed']++;
+                } else {
+                    $result['turnover_orphan_closed']++;
+                }
                 continue;
             }
 

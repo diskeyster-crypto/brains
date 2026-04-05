@@ -1224,8 +1224,12 @@ final class TradingBotService
                 $result['demo_closed_to_ai_match_rate_this_run']    = $aiMatchRateRun;
 
                 // ── PART 6: Closed trade breakdown this run ────────────────
+                // Use explicit per-classification counters (not derived subtraction which can lie
+                // when any close path fails to increment the orphan counter).
                 $adoptedOrphansClosedThisRun = (int)($result['adopted_orphans_closed_this_run'] ?? 0);
-                $healthyClosedThisRun        = max(0, $closedThisRun - $adoptedOrphansClosedThisRun);
+                // healthy_active_closed_this_run already includes both updateActivePositions healthy closes
+                // and performDemoTurnoverPass healthy closes (added at line above).
+                $healthyClosedThisRun        = (int)($result['healthy_active_closed_this_run'] ?? 0);
                 $result['closed_trades_this_run_total']                  = $closedThisRun;
                 $result['closed_trades_this_run_healthy']                = $healthyClosedThisRun;
                 $result['closed_trades_this_run_orphan_adopted']         = $adoptedOrphansClosedThisRun;

@@ -1866,9 +1866,17 @@ trait BotExecutorTrait
                         $result['finalized_locally_this_run']++;
                         if (!$isAdoptedTrade) {
                             $result['healthy_active_closed_this_run']++;
+                        } else {
+                            $result['adopted_orphans_closed_this_run']++;
+                            $result['adopted_orphans_finalized_locally_this_run']++;
                         }
                         if ($aiWritten) {
                             $result['ai_dataset_records_written']++;
+                            if ($isAdoptedTrade) {
+                                $result['adopted_orphans_ai_dataset_written_this_run']++;
+                            }
+                        } elseif ($isAdoptedTrade) {
+                            $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
                         }
                         $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                         continue;
@@ -4442,6 +4450,7 @@ private function computeEntryDeadline(array $intent): array
             'turnover_candidates_other_count'            => 0,
             'turnover_candidates_healthy_count'          => 0,
             'turnover_healthy_closed'                    => 0,
+            'turnover_orphan_closed'                     => 0,
         ];
 
         if ($mode !== 'demo') {
@@ -4630,8 +4639,12 @@ private function computeEntryDeadline(array $intent): array
                 }
                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
-                if (!$isOrphan) {
+                // Classify from final closed record (post-finalization), not pre-scored active trade assumption.
+                $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
+                if (!$closedIsOrphan) {
                     $result['turnover_healthy_closed']++;
+                } else {
+                    $result['turnover_orphan_closed']++;
                 }
                 $freed++;
                 continue;
@@ -4673,8 +4686,12 @@ private function computeEntryDeadline(array $intent): array
                 }
                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
                 $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
-                if (!$isOrphan) {
+                // Classify from final closed record (post-finalization), not pre-scored active trade assumption.
+                $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
+                if (!$closedIsOrphan) {
                     $result['turnover_healthy_closed']++;
+                } else {
+                    $result['turnover_orphan_closed']++;
                 }
                 $freed++;
             } else {

@@ -666,13 +666,13 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <?php
         // ── Execution-Stage Diagnostics (shows WHERE selected signals are blocked) ──
         $execBlockerLabel = [
-            'execution_blocked_by_reconcile'       => 'Reconcile Failure (post-open position not found)',
-            'execution_blocked_by_orphan_positions'=> 'Orphan Positions (no local trade for exchange position)',
-            'execution_blocked_by_late_entry'      => 'Late Entry (price moved beyond threshold)',
-            'execution_blocked_by_capacity'        => 'Capacity (max concurrent positions reached)',
-            'execution_blocked_by_validation'      => 'Validation (intent field missing/invalid)',
-            'execution_healthy_waiting_for_closure'=> 'Healthy — waiting for open positions to close',
-            'none'                                 => 'None detected this run',
+            'execution_blocked_by_reconcile'       => 'Сбой сверки (позиция после открытия не найдена)',
+            'execution_blocked_by_orphan_positions'=> 'Orphan-позиции (нет локальной записи для биржевой позиции)',
+            'execution_blocked_by_late_entry'      => 'Поздний вход (цена вышла за допустимый порог)',
+            'execution_blocked_by_capacity'        => 'Ёмкость (достигнут лимит одновременных позиций)',
+            'execution_blocked_by_validation'      => 'Валидация (поле интента отсутствует или недопустимо)',
+            'execution_healthy_waiting_for_closure'=> 'Норма — ожидаем закрытия открытых позиций',
+            'none'                                 => 'Ничего не обнаружено за этот запуск',
         ];
         $execBlockerText = $execBlockerLabel[$demoExecBlockerSpecific] ?? $demoExecBlockerSpecific;
         $hasExecData = ($demoBlockedByReconcile !== null || $demoBlockedByOrphan !== null);
@@ -691,27 +691,27 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-3">
             <?php
             $execStageCards = [
-                ['label' => 'Feed Selected',         'value' => $demoFeedSelected !== null ? (string)$demoFeedSelected : 'n/a',
+                ['label' => 'Сигналов выбрано',      'value' => $demoFeedSelected !== null ? (string)$demoFeedSelected : 'n/a',
                     'ok' => ($demoFeedSelected ?? 0) > 0 ? true : null],
-                ['label' => 'Attempted',             'value' => $demoSigAttempted !== null ? (string)$demoSigAttempted : 'n/a',
+                ['label' => 'Попыток',               'value' => $demoSigAttempted !== null ? (string)$demoSigAttempted : 'n/a',
                     'ok' => null],
-                ['label' => 'Opened',                'value' => $demoSigOpened !== null ? (string)$demoSigOpened : 'n/a',
+                ['label' => 'Открыто',               'value' => $demoSigOpened !== null ? (string)$demoSigOpened : 'n/a',
                     'ok' => ($demoSigOpened ?? 0) > 0 ? true : null],
-                ['label' => 'Blocked by Reconcile',  'value' => $demoBlockedByReconcile !== null ? (string)$demoBlockedByReconcile : 'n/a',
+                ['label' => 'Блок: Сверка',          'value' => $demoBlockedByReconcile !== null ? (string)$demoBlockedByReconcile : 'n/a',
                     'ok' => $demoBlockedByReconcile === 0 ? true : ($demoBlockedByReconcile > 0 ? false : null)],
-                ['label' => 'Blocked by Orphan',     'value' => $demoBlockedByOrphan !== null ? (string)$demoBlockedByOrphan : 'n/a',
+                ['label' => 'Блок: Orphan',          'value' => $demoBlockedByOrphan !== null ? (string)$demoBlockedByOrphan : 'n/a',
                     'ok' => $demoBlockedByOrphan === 0 ? true : ($demoBlockedByOrphan > 0 ? false : null)],
-                ['label' => 'Orphans Adopted',        'value' => $demoOrphansAdopted !== null ? (string)$demoOrphansAdopted : 'n/a',
+                ['label' => 'Принято orphan',         'value' => $demoOrphansAdopted !== null ? (string)$demoOrphansAdopted : 'n/a',
                     'ok' => ($demoOrphansAdopted ?? 0) > 0 ? true : null],
-                ['label' => 'Blocked Late Entry',    'value' => $demoBlockedByLateEntry !== null ? (string)$demoBlockedByLateEntry : 'n/a',
+                ['label' => 'Блок: Поздний вход',    'value' => $demoBlockedByLateEntry !== null ? (string)$demoBlockedByLateEntry : 'n/a',
                     'ok' => $demoBlockedByLateEntry === 0 ? true : null],
-                ['label' => 'Late Entry Near-Miss',  'value' => $lateEntryNearMiss !== null ? (string)$lateEntryNearMiss : 'n/a',
+                ['label' => 'Почти поздний вход',    'value' => $lateEntryNearMiss !== null ? (string)$lateEntryNearMiss : 'n/a',
                     'ok' => null],
-                ['label' => 'Late Entry Threshold',  'value' => $lateEntryThreshold !== null ? round($lateEntryThreshold, 2) . '%' : 'n/a',
+                ['label' => 'Порог позд. входа',     'value' => $lateEntryThreshold !== null ? round($lateEntryThreshold, 2) . '%' : 'n/a',
                     'ok' => null],
-                ['label' => 'Failed After Order',    'value' => $demoFailedAfterOrder !== null ? (string)$demoFailedAfterOrder : 'n/a',
+                ['label' => 'Ошибок после ордера',   'value' => $demoFailedAfterOrder !== null ? (string)$demoFailedAfterOrder : 'n/a',
                     'ok' => $demoFailedAfterOrder === 0 ? true : ($demoFailedAfterOrder > 0 ? false : null)],
-                ['label' => 'Exec Blocker',          'value' => $demoExecBlockerSpecific ?: 'n/a',
+                ['label' => 'Блокировщик исполнения','value' => $demoExecBlockerSpecific ?: 'n/a',
                     'ok' => in_array($demoExecBlockerSpecific, ['none','execution_healthy_waiting_for_closure']) ? true : ($demoExecBlockerSpecific !== '' ? false : null)],
             ];
             foreach ($execStageCards as $ec):
@@ -736,11 +736,11 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $limitCards = [
-                ['label' => 'Max Open Trades (intent)', 'value' => $demoEffRiskMaxOpen !== null ? (string)$demoEffRiskMaxOpen : 'n/a',
+                ['label' => 'Макс. сделок (интент)',  'value' => $demoEffRiskMaxOpen !== null ? (string)$demoEffRiskMaxOpen : 'n/a',
                     'ok' => ($demoEffRiskMaxOpen ?? 0) >= ($dlmMaxConcurrent ?? 0) ? true : ($demoEffRiskMaxOpen !== null ? false : null)],
-                ['label' => 'Max/Symbol (intent)',      'value' => $demoEffRiskMaxPerSym !== null ? (string)$demoEffRiskMaxPerSym : 'n/a',
+                ['label' => 'Макс./символ (интент)', 'value' => $demoEffRiskMaxPerSym !== null ? (string)$demoEffRiskMaxPerSym : 'n/a',
                     'ok' => null],
-                ['label' => 'Limits Source',            'value' => $demoLimitsSource ?: 'n/a',
+                ['label' => 'Источник лимитов',      'value' => $demoLimitsSource ?: 'n/a',
                     'ok' => ($demoLimitsSource === 'demo_learning_mode.max_concurrent_demo_positions') ? true : null],
             ];
             foreach ($limitCards as $lc):
@@ -770,12 +770,12 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $trailingCards = [
-                ['label' => 'Trailing Enabled',    'value' => $demoEffTrailingEnabled  ? 'true' : 'false', 'ok' => $demoEffTrailingEnabled ? true : false],
-                ['label' => 'Trailing Mode',       'value' => $demoEffTrailingMode ?: '(default)',          'ok' => null],
-                ['label' => 'Activation ROI %',    'value' => $demoEffTrailingActivation !== null ? number_format((float)$demoEffTrailingActivation, 2) : 'n/a', 'ok' => null],
-                ['label' => 'Drawdown Factor',     'value' => $demoEffTrailingDrawdown !== null ? number_format((float)$demoEffTrailingDrawdown, 4) : 'n/a',     'ok' => null],
-                ['label' => 'Break-even Enabled',  'value' => $demoEffBreakEvenEnabled ? 'true' : 'false',  'ok' => $demoEffBreakEvenEnabled ? true : null],
-                ['label' => 'Break-even Activ. %', 'value' => $demoEffBreakEvenActivation !== null ? number_format((float)$demoEffBreakEvenActivation, 2) : 'n/a', 'ok' => null],
+                ['label' => 'Трейлинг вкл.',        'value' => $demoEffTrailingEnabled  ? 'true' : 'false', 'ok' => $demoEffTrailingEnabled ? true : false],
+                ['label' => 'Режим трейлинга',      'value' => $demoEffTrailingMode ?: '(по умолч.)',       'ok' => null],
+                ['label' => 'Активац. ROI %',       'value' => $demoEffTrailingActivation !== null ? number_format((float)$demoEffTrailingActivation, 2) : 'n/a', 'ok' => null],
+                ['label' => 'Фактор отката',        'value' => $demoEffTrailingDrawdown !== null ? number_format((float)$demoEffTrailingDrawdown, 4) : 'n/a',     'ok' => null],
+                ['label' => 'Безубыток вкл.',       'value' => $demoEffBreakEvenEnabled ? 'true' : 'false',  'ok' => $demoEffBreakEvenEnabled ? true : null],
+                ['label' => 'Активац. безуб. %',    'value' => $demoEffBreakEvenActivation !== null ? number_format((float)$demoEffBreakEvenActivation, 2) : 'n/a', 'ok' => null],
             ];
             foreach ($trailingCards as $tc):
                 $cls = 'neutral';
@@ -832,13 +832,13 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $prefiltCards = [
-                ['label' => 'Prefilter Input',      'value' => $demoPrefiltInput !== null ? (string)$demoPrefiltInput : 'n/a',  'ok' => null],
-                ['label' => 'Prefilter Output',     'value' => $demoPrefiltOutput !== null ? (string)$demoPrefiltOutput : 'n/a','ok' => ($demoPrefiltOutput ?? 0) > 0 ? true : null],
-                ['label' => 'Unique Symbols Sel.',  'value' => $demoUniqueSymbols !== null ? (string)$demoUniqueSymbols : 'n/a','ok' => ($demoUniqueSymbols ?? 0) > 0 ? true : null],
-                ['label' => 'Skipped Busy Symbol',  'value' => $demoPrefiltBusy !== null ? (string)$demoPrefiltBusy : 'n/a',    'ok' => $demoPrefiltBusy === 0 ? true : null],
-                ['label' => 'Skipped Dup Symbol',   'value' => $demoPrefiltDup !== null ? (string)$demoPrefiltDup : 'n/a',      'ok' => null],
-                ['label' => 'Exec: Symbol Busy',    'value' => $demoSkipSymBusy !== null ? (string)$demoSkipSymBusy : 'n/a',    'ok' => $demoSkipSymBusy === 0 ? true : null],
-                ['label' => 'Exec: Late Entry',     'value' => $demoSkipLateEntry !== null ? (string)$demoSkipLateEntry : 'n/a','ok' => $demoSkipLateEntry === 0 ? true : null],
+                ['label' => 'Вход в префильтр',    'value' => $demoPrefiltInput !== null ? (string)$demoPrefiltInput : 'n/a',  'ok' => null],
+                ['label' => 'Выход из префильтра', 'value' => $demoPrefiltOutput !== null ? (string)$demoPrefiltOutput : 'n/a','ok' => ($demoPrefiltOutput ?? 0) > 0 ? true : null],
+                ['label' => 'Уникальных символов',  'value' => $demoUniqueSymbols !== null ? (string)$demoUniqueSymbols : 'n/a','ok' => ($demoUniqueSymbols ?? 0) > 0 ? true : null],
+                ['label' => 'Пропущ.: символ занят','value' => $demoPrefiltBusy !== null ? (string)$demoPrefiltBusy : 'n/a',    'ok' => $demoPrefiltBusy === 0 ? true : null],
+                ['label' => 'Пропущ.: дубль символа','value' => $demoPrefiltDup !== null ? (string)$demoPrefiltDup : 'n/a',      'ok' => null],
+                ['label' => 'Исп.: занятый символ', 'value' => $demoSkipSymBusy !== null ? (string)$demoSkipSymBusy : 'n/a',    'ok' => $demoSkipSymBusy === 0 ? true : null],
+                ['label' => 'Исп.: поздний вход',   'value' => $demoSkipLateEntry !== null ? (string)$demoSkipLateEntry : 'n/a','ok' => $demoSkipLateEntry === 0 ? true : null],
             ];
             foreach ($prefiltCards as $pc):
                 $cls = 'neutral';
@@ -862,11 +862,11 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Бюджет попыток / открытий (этот запуск)</div>
         <?php
         $stopReasonLabels = [
-            'selected_feed_exhausted'      => 'All selected signals scanned (healthy)',
-            'demo_open_budget_exhausted'   => 'Open budget exhausted (max_new_positions_per_run reached)',
-            'demo_attempt_budget_exhausted'=> 'Attempt budget exhausted (max_demo_signals_per_run reached)',
-            'fatal_exchange_blocker'       => 'Fatal exchange error / safety stop',
-            'global_break_unexpected'      => 'Unexpected global break (deferred limit hit)',
+            'selected_feed_exhausted'      => 'Все выбранные сигналы просмотрены (норма)',
+            'demo_open_budget_exhausted'   => 'Бюджет открытий исчерпан (max_new_positions_per_run)',
+            'demo_attempt_budget_exhausted'=> 'Бюджет попыток исчерпан (max_demo_signals_per_run)',
+            'fatal_exchange_blocker'       => 'Фатальная ошибка биржи / защитная остановка',
+            'global_break_unexpected'      => 'Неожиданный глобальный выход (deferred limit)',
         ];
         $stopLabel = $stopReasonLabels[$demoLoopStopReason] ?? ($demoLoopStopReason ?: 'n/a');
         $stopOk = ($demoLoopStopReason === 'selected_feed_exhausted' || $demoLoopStopReason === 'demo_open_budget_exhausted');
@@ -875,21 +875,21 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $budgetCards = [
-                ['label' => 'Attempt Budget',       'value' => $demoAttemptBudget !== null ? (string)$demoAttemptBudget : 'n/a',
+                ['label' => 'Бюджет попыток',       'value' => $demoAttemptBudget !== null ? (string)$demoAttemptBudget : 'n/a',
                     'ok' => ($demoAttemptBudget ?? 0) > 1 ? true : null],
-                ['label' => 'Open Budget',          'value' => $demoOpenBudget !== null ? (string)$demoOpenBudget : 'n/a',
+                ['label' => 'Бюджет открытий',      'value' => $demoOpenBudget !== null ? (string)$demoOpenBudget : 'n/a',
                     'ok' => ($demoOpenBudget ?? 0) > 0 ? true : null],
-                ['label' => 'Max New/Run (cfg)',    'value' => $dlmMaxNewPerRun !== null ? (string)$dlmMaxNewPerRun : 'n/a',
+                ['label' => 'Макс. новых/запуск',   'value' => $dlmMaxNewPerRun !== null ? (string)$dlmMaxNewPerRun : 'n/a',
                     'ok' => null],
-                ['label' => 'Selected Scanned',     'value' => $demoSelectedScanned !== null ? (string)$demoSelectedScanned : 'n/a',
+                ['label' => 'Просмотрено сигналов', 'value' => $demoSelectedScanned !== null ? (string)$demoSelectedScanned : 'n/a',
                     'ok' => ($demoSelectedScanned ?? 0) > 0 ? true : null],
-                ['label' => 'Skipped (non-fatal)',  'value' => $demoSkippedBefore !== null ? (string)$demoSkippedBefore : 'n/a',
+                ['label' => 'Пропущено (не фатал)', 'value' => $demoSkippedBefore !== null ? (string)$demoSkippedBefore : 'n/a',
                     'ok' => $demoSkippedBefore === 0 ? true : null],
-                ['label' => 'Attempted',            'value' => $demoLoopAttempted !== null ? (string)$demoLoopAttempted : 'n/a',
+                ['label' => 'Попыток',              'value' => $demoLoopAttempted !== null ? (string)$demoLoopAttempted : 'n/a',
                     'ok' => null],
-                ['label' => 'Opened This Run',      'value' => $demoLoopOpened !== null ? (string)$demoLoopOpened : 'n/a',
+                ['label' => 'Открыто за запуск',    'value' => $demoLoopOpened !== null ? (string)$demoLoopOpened : 'n/a',
                     'ok' => ($demoLoopOpened ?? 0) > 0 ? true : ($demoLoopOpened === 0 ? null : null)],
-                ['label' => 'Loop Stop Reason',     'value' => $demoLoopStopReason ?: 'n/a',
+                ['label' => 'Причина остановки',    'value' => $demoLoopStopReason ?: 'n/a',
                     'ok' => $stopOk ? true : ($stopBad ? false : null)],
             ];
             foreach ($budgetCards as $bc):
@@ -907,7 +907,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if ($demoLoopStopReason !== '' && $demoLoopStopReason !== 'selected_feed_exhausted'): ?>
         <div class="alert alert-<?= $stopBad ? 'danger' : 'info' ?> py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Loop stopped:</strong> <?= htmlspecialchars($stopLabel) ?>
+            <strong>Петля остановлена:</strong> <?= htmlspecialchars($stopLabel) ?>
         </div>
         <?php endif; ?>
         <?php
@@ -918,8 +918,8 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         if ($selectedCount > 0 && $skippedCount > 0):
         ?>
         <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Selected (<?= $selectedCount ?>) &gt; Attempted (<?= $attemptedCount ?>):</strong>
-            <?= $skippedCount ?> signal(s) were skipped (non-fatal) — symbol busy, idempotency, late entry, or validation rejects. Loop continued scanning through them.
+            <strong>Выбрано (<?= $selectedCount ?>) &gt; Попыток (<?= $attemptedCount ?>):</strong>
+            <?= $skippedCount ?> сигнал(ов) пропущено (не фатально) — символ занят, идемпотентность, поздний вход или валидация. Петля продолжала сканирование.
         </div>
         <?php endif; ?>
         <?php endif; // hasBudgetData ?>
@@ -931,37 +931,37 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Качество принятых orphan-позиций (этот запуск)</div>
         <?php if (($auditOrphanDeadShells ?? 0) > 0): ?>
         <div class="alert alert-danger py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Dead Shells Detected:</strong> <?= (int)$auditOrphanDeadShells ?> adopted orphan trade(s) are missing entry_price or qty and cannot participate in close/AI pipeline.
+            <strong>Обнаружены мёртвые оболочки:</strong> <?= (int)$auditOrphanDeadShells ?> принятых orphan-сделок не имеют entry_price или qty и не могут участвовать в pipeline закрытий/AI.
         </div>
         <?php endif; ?>
         <div class="row g-2 mb-2">
             <?php
             $adoptCards = [
-                ['label' => 'Adoption Attempted',   'value' => $orphanAdoptionAttempted !== null ? (string)$orphanAdoptionAttempted : 'n/a',
+                ['label' => 'Попыток принятия',      'value' => $orphanAdoptionAttempted !== null ? (string)$orphanAdoptionAttempted : 'n/a',
                     'ok' => null],
-                ['label' => 'Adoption Succeeded',   'value' => $orphanAdoptionSucceeded !== null ? (string)$orphanAdoptionSucceeded : 'n/a',
+                ['label' => 'Принято успешно',       'value' => $orphanAdoptionSucceeded !== null ? (string)$orphanAdoptionSucceeded : 'n/a',
                     'ok' => ($orphanAdoptionSucceeded ?? 0) > 0 ? true : null],
-                ['label' => 'Adoption Failed',       'value' => $orphanAdoptionFailed !== null ? (string)$orphanAdoptionFailed : 'n/a',
+                ['label' => 'Ошибок принятия',       'value' => $orphanAdoptionFailed !== null ? (string)$orphanAdoptionFailed : 'n/a',
                     'ok' => $orphanAdoptionFailed === 0 ? true : ($orphanAdoptionFailed > 0 ? false : null)],
-                ['label' => 'Reusable Adopted',      'value' => $orphanAdoptionReusable !== null ? (string)$orphanAdoptionReusable : 'n/a',
+                ['label' => 'Повторно используемых', 'value' => $orphanAdoptionReusable !== null ? (string)$orphanAdoptionReusable : 'n/a',
                     'ok' => ($orphanAdoptionReusable ?? 0) > 0 ? true : null],
-                ['label' => 'Active: Healthy',       'value' => $auditHealthyActive !== null ? (string)$auditHealthyActive : 'n/a',
+                ['label' => 'Активных: здоровых',    'value' => $auditHealthyActive !== null ? (string)$auditHealthyActive : 'n/a',
                     'ok' => ($auditHealthyActive ?? 0) > 0 ? true : null],
-                ['label' => 'Active: Orphan OK',     'value' => $auditOrphanAdopted !== null ? (string)$auditOrphanAdopted : 'n/a',
+                ['label' => 'Активных: orphan OK',   'value' => $auditOrphanAdopted !== null ? (string)$auditOrphanAdopted : 'n/a',
                     'ok' => null],
-                ['label' => 'Active: Dead Shells',   'value' => $auditOrphanDeadShells !== null ? (string)$auditOrphanDeadShells : 'n/a',
+                ['label' => 'Мёртвых оболочек',      'value' => $auditOrphanDeadShells !== null ? (string)$auditOrphanDeadShells : 'n/a',
                     'ok' => $auditOrphanDeadShells === 0 ? true : ($auditOrphanDeadShells > 0 ? false : null)],
                 // Ownership resolution
-                ['label' => 'Orphan→Local Owned',    'value' => $auditOrphanResolved !== null ? (string)$auditOrphanResolved : 'n/a',
+                ['label' => 'Orphan→Локал. владение','value' => $auditOrphanResolved !== null ? (string)$auditOrphanResolved : 'n/a',
                     'ok' => ($auditOrphanResolved ?? 0) > 0 ? true : null],
-                ['label' => 'Orphan Unresolved',     'value' => $auditOrphanUnresolved !== null ? (string)$auditOrphanUnresolved : 'n/a',
+                ['label' => 'Orphan нерешённых',     'value' => $auditOrphanUnresolved !== null ? (string)$auditOrphanUnresolved : 'n/a',
                     'ok' => $auditOrphanUnresolved === 0 ? true : ($auditOrphanUnresolved > 0 ? false : null)],
                 // This-run ownership resolution
-                ['label' => 'Run: Resolved Local',   'value' => $orphanResolvedAsLocal !== null ? (string)$orphanResolvedAsLocal : 'n/a',
+                ['label' => 'Запуск: решено локально','value' => $orphanResolvedAsLocal !== null ? (string)$orphanResolvedAsLocal : 'n/a',
                     'ok' => ($orphanResolvedAsLocal ?? 0) > 0 ? true : null],
-                ['label' => 'Run: Still Blocking',   'value' => $orphanStillBlocking !== null ? (string)$orphanStillBlocking : 'n/a',
+                ['label' => 'Запуск: блокирует',     'value' => $orphanStillBlocking !== null ? (string)$orphanStillBlocking : 'n/a',
                     'ok' => $orphanStillBlocking === 0 ? true : ($orphanStillBlocking > 0 ? false : null)],
-                ['label' => 'Busy via Adopted',      'value' => $symbolsBusyAdopted !== null ? (string)$symbolsBusyAdopted : 'n/a',
+                ['label' => 'Занято orphan-адопт.',  'value' => $symbolsBusyAdopted !== null ? (string)$symbolsBusyAdopted : 'n/a',
                     'ok' => ($symbolsBusyAdopted ?? 0) > 0 ? true : null],
             ];
             foreach ($adoptCards as $ac):
@@ -984,18 +984,18 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $closeCards = [
-                ['label' => 'Active Before Run',    'value' => $demoTradesActiveBefore !== null ? (string)$demoTradesActiveBefore : 'n/a',  'ok' => null],
-                ['label' => 'Opened This Run',      'value' => $demoTradesOpenedThisRun !== null ? (string)$demoTradesOpenedThisRun : 'n/a', 'ok' => $demoTradesOpenedThisRun > 0 ? true : null],
-                ['label' => 'Closed This Run',      'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a', 'ok' => $demoTradesClosedThisRun > 0 ? true : null],
-                ['label' => 'Still Active After',   'value' => $demoTradesStillActive !== null ? (string)$demoTradesStillActive : 'n/a',     'ok' => null],
-                ['label' => 'Stale Trades',         'value' => $demoTradesStaleThisRun !== null ? (string)$demoTradesStaleThisRun : 'n/a',   'ok' => $demoTradesStaleThisRun === 0 ? true : ($demoTradesStaleThisRun > 0 ? false : null)],
-                ['label' => 'Reconciled',           'value' => $demoTradesReconciledThisRun !== null ? (string)$demoTradesReconciledThisRun : 'n/a', 'ok' => null],
-                ['label' => 'Closed by Exchange',   'value' => $demoFinalizedExchange !== null ? (string)$demoFinalizedExchange : 'n/a',     'ok' => $demoFinalizedExchange > 0 ? true : null],
-                ['label' => 'Closed Locally (SL)',  'value' => $demoFinalizedLocally !== null ? (string)$demoFinalizedLocally : 'n/a',       'ok' => $demoFinalizedLocally > 0 ? true : null],
-                ['label' => 'Avg Active Age (min)', 'value' => $demoAvgAgeMinutes !== null ? (string)$demoAvgAgeMinutes : 'n/a',             'ok' => null],
-                ['label' => 'Oldest Active (min)',  'value' => $demoOldestAgeMinutes !== null ? (string)$demoOldestAgeMinutes : 'n/a',       'ok' => null],
-                ['label' => 'AI Records Written',   'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',       'ok' => $demoAiWrittenThisRun > 0 ? true : null],
-                ['label' => 'Close Failures',       'value' => $demoCloseFailures !== null ? (string)$demoCloseFailures : 'n/a',             'ok' => $demoCloseFailures === 0 ? true : ($demoCloseFailures > 0 ? false : null)],
+                ['label' => 'Активных до запуска',  'value' => $demoTradesActiveBefore !== null ? (string)$demoTradesActiveBefore : 'n/a',  'ok' => null],
+                ['label' => 'Открыто за запуск',    'value' => $demoTradesOpenedThisRun !== null ? (string)$demoTradesOpenedThisRun : 'n/a', 'ok' => $demoTradesOpenedThisRun > 0 ? true : null],
+                ['label' => 'Закрыто за запуск',    'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a', 'ok' => $demoTradesClosedThisRun > 0 ? true : null],
+                ['label' => 'Активных после',       'value' => $demoTradesStillActive !== null ? (string)$demoTradesStillActive : 'n/a',     'ok' => null],
+                ['label' => 'Устаревших сделок',    'value' => $demoTradesStaleThisRun !== null ? (string)$demoTradesStaleThisRun : 'n/a',   'ok' => $demoTradesStaleThisRun === 0 ? true : ($demoTradesStaleThisRun > 0 ? false : null)],
+                ['label' => 'Сверено',              'value' => $demoTradesReconciledThisRun !== null ? (string)$demoTradesReconciledThisRun : 'n/a', 'ok' => null],
+                ['label' => 'Закрыто биржей',       'value' => $demoFinalizedExchange !== null ? (string)$demoFinalizedExchange : 'n/a',     'ok' => $demoFinalizedExchange > 0 ? true : null],
+                ['label' => 'Закрыто локально (SL)','value' => $demoFinalizedLocally !== null ? (string)$demoFinalizedLocally : 'n/a',       'ok' => $demoFinalizedLocally > 0 ? true : null],
+                ['label' => 'Ср. возраст (мин)',    'value' => $demoAvgAgeMinutes !== null ? (string)$demoAvgAgeMinutes : 'n/a',             'ok' => null],
+                ['label' => 'Старейшее (мин)',      'value' => $demoOldestAgeMinutes !== null ? (string)$demoOldestAgeMinutes : 'n/a',       'ok' => null],
+                ['label' => 'AI-записей создано',   'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',       'ok' => $demoAiWrittenThisRun > 0 ? true : null],
+                ['label' => 'Ошибок закрытия',      'value' => $demoCloseFailures !== null ? (string)$demoCloseFailures : 'n/a',             'ok' => $demoCloseFailures === 0 ? true : ($demoCloseFailures > 0 ? false : null)],
             ];
             foreach ($closeCards as $cc):
                 $cls = 'neutral';
@@ -1016,7 +1016,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             <div class="col-md-4">
                 <div class="section-heading" style="font-size:.75rem;">Причины сбоев закрытия (этот запуск)</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                    <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
                     <tbody>
                     <?php foreach ($demoCloseFailureReasons as $cfr => $cfc): ?>
                     <tr><td><?= htmlspecialchars($cfr) ?></td><td><?= (int)$cfc ?></td></tr>
@@ -1029,7 +1029,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             <div class="col-md-4">
                 <div class="section-heading" style="font-size:.75rem;">Причины устаревших сделок (этот запуск)</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                    <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
                     <tbody>
                     <?php foreach ($topStaleTradeReasons as $str => $stc): ?>
                     <tr><td><?= htmlspecialchars($str) ?></td><td><?= (int)$stc ?></td></tr>
@@ -1049,50 +1049,50 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="section-heading" style="font-size:.8rem;margin-top:.75rem;">Оборот принятых orphan-позиций</div>
         <?php if (($auditAdoptedOrphansStale ?? 0) > 0 && ($auditAdoptedOrphansClosedTotal ?? 0) === 0): ?>
         <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Stale Adopted Orphans:</strong> <?= (int)$auditAdoptedOrphansStale ?> adopted orphan trade(s) are stale but no closures yet. Verify <code>learning_close_timeout_minutes</code> is set and demo runs are cycling.
+            <strong>Устаревшие принятые orphan:</strong> <?= (int)$auditAdoptedOrphansStale ?> принятых orphan-сделок устарели, но закрытий ещё не было. Проверьте <code>learning_close_timeout_minutes</code> и цикличность запусков.
         </div>
         <?php elseif (($adoptedOrphansClosedThisRun ?? 0) > 0): ?>
         <div class="alert alert-success py-1 px-3 mb-2" style="font-size:.8rem;">
-            <strong>Adopted Orphans Progressing:</strong> <?= (int)$adoptedOrphansClosedThisRun ?> adopted orphan trade(s) closed this run.
+            <strong>Принятые orphan прогрессируют:</strong> <?= (int)$adoptedOrphansClosedThisRun ?> принятых orphan-сделок закрыто за этот запуск.
         </div>
         <?php endif; ?>
         <div class="row g-2 mb-2">
             <?php
             $aoCards = [
-                ['label' => 'Active Before Run',     'value' => $adoptedOrphansActiveBefore !== null ? (string)$adoptedOrphansActiveBefore : 'n/a',
+                ['label' => 'Активных до запуска',   'value' => $adoptedOrphansActiveBefore !== null ? (string)$adoptedOrphansActiveBefore : 'n/a',
                     'ok' => null],
-                ['label' => 'Stale (Audit)',          'value' => $auditAdoptedOrphansStale !== null ? (string)$auditAdoptedOrphansStale : 'n/a',
+                ['label' => 'Устаревших (аудит)',     'value' => $auditAdoptedOrphansStale !== null ? (string)$auditAdoptedOrphansStale : 'n/a',
                     'ok' => $auditAdoptedOrphansStale === 0 ? true : ($auditAdoptedOrphansStale > 0 ? false : null)],
-                ['label' => 'Closed This Run',        'value' => $adoptedOrphansClosedThisRun !== null ? (string)$adoptedOrphansClosedThisRun : 'n/a',
+                ['label' => 'Закрыто за запуск',     'value' => $adoptedOrphansClosedThisRun !== null ? (string)$adoptedOrphansClosedThisRun : 'n/a',
                     'ok' => ($adoptedOrphansClosedThisRun ?? 0) > 0 ? true : null],
-                ['label' => 'Fin. via Exchange',      'value' => $adoptedOrphansFinalizedExchange !== null ? (string)$adoptedOrphansFinalizedExchange : 'n/a',
+                ['label' => 'Фин. через биржу',      'value' => $adoptedOrphansFinalizedExchange !== null ? (string)$adoptedOrphansFinalizedExchange : 'n/a',
                     'ok' => ($adoptedOrphansFinalizedExchange ?? 0) > 0 ? true : null],
-                ['label' => 'Fin. Locally (TO)',      'value' => $adoptedOrphansFinalizedLocally !== null ? (string)$adoptedOrphansFinalizedLocally : 'n/a',
+                ['label' => 'Фин. локально (ТО)',    'value' => $adoptedOrphansFinalizedLocally !== null ? (string)$adoptedOrphansFinalizedLocally : 'n/a',
                     'ok' => ($adoptedOrphansFinalizedLocally ?? 0) > 0 ? true : null],
-                ['label' => 'Close Failures',         'value' => $adoptedOrphansCloseFailures !== null ? (string)$adoptedOrphansCloseFailures : 'n/a',
+                ['label' => 'Ошибок закрытия',       'value' => $adoptedOrphansCloseFailures !== null ? (string)$adoptedOrphansCloseFailures : 'n/a',
                     'ok' => $adoptedOrphansCloseFailures === 0 ? true : ($adoptedOrphansCloseFailures > 0 ? false : null)],
-                ['label' => 'Closed Total (Audit)',   'value' => $auditAdoptedOrphansClosedTotal !== null ? (string)$auditAdoptedOrphansClosedTotal : 'n/a',
+                ['label' => 'Закрыто всего (аудит)', 'value' => $auditAdoptedOrphansClosedTotal !== null ? (string)$auditAdoptedOrphansClosedTotal : 'n/a',
                     'ok' => ($auditAdoptedOrphansClosedTotal ?? 0) > 0 ? true : null],
-                ['label' => 'Complete Rate (Audit)',  'value' => $auditAdoptedOrphansClosedCompleteRate !== null ? $auditAdoptedOrphansClosedCompleteRate . '%' : 'n/a',
+                ['label' => 'Полнота (аудит)',        'value' => $auditAdoptedOrphansClosedCompleteRate !== null ? $auditAdoptedOrphansClosedCompleteRate . '%' : 'n/a',
                     'ok' => ($auditAdoptedOrphansClosedCompleteRate ?? 0) >= 80 ? true : (($auditAdoptedOrphansClosedTotal ?? 0) > 0 && ($auditAdoptedOrphansClosedCompleteRate ?? 0) < 50 ? false : null)],
-                ['label' => 'Full Complete Rate',     'value' => $auditAdoptedOrphansClosedFullCompleteRate !== null ? $auditAdoptedOrphansClosedFullCompleteRate . '%' : 'n/a',
+                ['label' => 'Полная полнота',         'value' => $auditAdoptedOrphansClosedFullCompleteRate !== null ? $auditAdoptedOrphansClosedFullCompleteRate . '%' : 'n/a',
                     'ok' => ($auditAdoptedOrphansClosedFullCompleteRate ?? 0) >= 80 ? true : (($auditAdoptedOrphansClosedTotal ?? 0) > 0 && ($auditAdoptedOrphansClosedFullCompleteRate ?? 0) < 50 ? false : null)],
-                ['label' => 'Without AI (Audit)',     'value' => $auditAdoptedOrphansWithoutAi !== null ? (string)$auditAdoptedOrphansWithoutAi : 'n/a',
+                ['label' => 'Без AI (аудит)',         'value' => $auditAdoptedOrphansWithoutAi !== null ? (string)$auditAdoptedOrphansWithoutAi : 'n/a',
                     'ok' => $auditAdoptedOrphansWithoutAi === 0 ? true : ($auditAdoptedOrphansWithoutAi > 0 ? false : null)],
-                ['label' => 'Stale This Run',         'value' => $adoptedOrphansStaleThisRun !== null ? (string)$adoptedOrphansStaleThisRun : 'n/a',
+                ['label' => 'Устаревших за запуск',  'value' => $adoptedOrphansStaleThisRun !== null ? (string)$adoptedOrphansStaleThisRun : 'n/a',
                     'ok' => null],
                 // Close quality counters (this run)
-                ['label' => 'Complete (This Run)',    'value' => $adoptedOrphansClosedCompleteThisRun !== null ? (string)$adoptedOrphansClosedCompleteThisRun : 'n/a',
+                ['label' => 'Полных (за запуск)',     'value' => $adoptedOrphansClosedCompleteThisRun !== null ? (string)$adoptedOrphansClosedCompleteThisRun : 'n/a',
                     'ok' => ($adoptedOrphansClosedCompleteThisRun ?? 0) > 0 ? true : (($adoptedOrphansClosedThisRun ?? 0) > 0 && ($adoptedOrphansClosedCompleteThisRun ?? 0) === 0 ? false : null)],
-                ['label' => 'AI Written (This Run)',  'value' => $adoptedOrphansAiWrittenThisRun !== null ? (string)$adoptedOrphansAiWrittenThisRun : 'n/a',
+                ['label' => 'AI записано (запуск)',   'value' => $adoptedOrphansAiWrittenThisRun !== null ? (string)$adoptedOrphansAiWrittenThisRun : 'n/a',
                     'ok' => ($adoptedOrphansAiWrittenThisRun ?? 0) > 0 ? true : (($adoptedOrphansClosedThisRun ?? 0) > 0 && ($adoptedOrphansAiWrittenThisRun ?? 0) === 0 ? false : null)],
-                ['label' => 'Closed w/o AI (Run)',    'value' => $adoptedOrphansClosedNoAiThisRun !== null ? (string)$adoptedOrphansClosedNoAiThisRun : 'n/a',
+                ['label' => 'Без AI (за запуск)',     'value' => $adoptedOrphansClosedNoAiThisRun !== null ? (string)$adoptedOrphansClosedNoAiThisRun : 'n/a',
                     'ok' => ($adoptedOrphansClosedNoAiThisRun ?? 0) === 0 ? true : (($adoptedOrphansClosedNoAiThisRun ?? 0) > 0 ? false : null)],
-                ['label' => 'Repair Attempted',       'value' => $adoptedOrphansRepairAttempted !== null ? (string)$adoptedOrphansRepairAttempted : 'n/a',
+                ['label' => 'Восст. попыток',         'value' => $adoptedOrphansRepairAttempted !== null ? (string)$adoptedOrphansRepairAttempted : 'n/a',
                     'ok' => null],
-                ['label' => 'Repair Succeeded',       'value' => $adoptedOrphansRepairSucceeded !== null ? (string)$adoptedOrphansRepairSucceeded : 'n/a',
+                ['label' => 'Восст. успешно',         'value' => $adoptedOrphansRepairSucceeded !== null ? (string)$adoptedOrphansRepairSucceeded : 'n/a',
                     'ok' => ($adoptedOrphansRepairAttempted ?? 0) > 0 ? (($adoptedOrphansRepairSucceeded ?? 0) === ($adoptedOrphansRepairAttempted ?? 0) ? true : null) : null],
-                ['label' => 'Repair Failed',          'value' => $adoptedOrphansRepairFailed !== null ? (string)$adoptedOrphansRepairFailed : 'n/a',
+                ['label' => 'Восст. ошибок',          'value' => $adoptedOrphansRepairFailed !== null ? (string)$adoptedOrphansRepairFailed : 'n/a',
                     'ok' => ($adoptedOrphansRepairFailed ?? 0) === 0 ? true : (($adoptedOrphansRepairFailed ?? 0) > 0 ? false : null)],
             ];
             foreach ($aoCards as $aoc):
@@ -1125,7 +1125,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             <div class="section-heading" style="font-size:.75rem;">Принятые orphan — отсутствующие поля (аудит хранилища)</div>
             <?php if ($orphanMfeMaeInflation): ?>
             <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-                <strong>Completeness Warning:</strong> Operational complete rate (<?= htmlspecialchars((string)$auditAdoptedOrphansClosedCompleteRate) ?>%) counts records as complete even though mfe/mae are missing. Full complete rate (requiring mfe+mae) is <?= htmlspecialchars((string)$auditAdoptedOrphansClosedFullCompleteRate) ?>%. Missing mfe: <?= (int)($auditOrphanMissingMfe ?? 0) ?>, missing mae: <?= (int)($auditOrphanMissingMae ?? 0) ?>.
+                <strong>Предупреждение о полноте:</strong> Операционная полнота (<?= htmlspecialchars((string)$auditAdoptedOrphansClosedCompleteRate) ?>%) считает записи полными, хотя mfe/mae отсутствуют. Полная полнота (с mfe+mae): <?= htmlspecialchars((string)$auditAdoptedOrphansClosedFullCompleteRate) ?>%. Нет mfe: <?= (int)($auditOrphanMissingMfe ?? 0) ?>, нет mae: <?= (int)($auditOrphanMissingMae ?? 0) ?>.
             </div>
             <?php endif; ?>
             <div class="row g-2 mb-1">
@@ -1162,31 +1162,31 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             <div class="section-heading" style="font-size:.75rem;">Состояние таймингов принятых orphan</div>
             <?php if (($adoptedOrphansMissingTiming ?? 0) > 0 || ($auditOrphanMissingTimingCount ?? 0) > 0): ?>
             <div class="alert alert-warning py-1 px-3 mb-2" style="font-size:.8rem;">
-                <strong>Timing Warning:</strong> <?= (int)(max($adoptedOrphansMissingTiming ?? 0, $auditOrphanMissingTimingCount ?? 0)) ?> adopted orphan trade(s) lack a valid timing baseline. Age/stale/timeout logic may not fire for them. Check exchange <code>createdTime</code> availability.
+                <strong>Предупреждение о таймингах:</strong> <?= (int)(max($adoptedOrphansMissingTiming ?? 0, $auditOrphanMissingTimingCount ?? 0)) ?> принятых orphan-сделок не имеют базы для таймингов. Логика возраста/устаревания/таймаута может не срабатывать. Проверьте доступность <code>createdTime</code> на бирже.
             </div>
             <?php endif; ?>
             <div class="row g-2 mb-1">
             <?php
             $timingCards = [
-                ['label' => 'Valid Timing (Run)',    'value' => $adoptedOrphansValidTiming !== null ? (string)$adoptedOrphansValidTiming : 'n/a',
+                ['label' => 'Тайминг есть (запуск)', 'value' => $adoptedOrphansValidTiming !== null ? (string)$adoptedOrphansValidTiming : 'n/a',
                     'ok' => ($adoptedOrphansValidTiming ?? 0) > 0 ? true : (($adoptedOrphansMissingTiming ?? 0) > 0 ? false : null)],
-                ['label' => 'Missing Timing (Run)',  'value' => $adoptedOrphansMissingTiming !== null ? (string)$adoptedOrphansMissingTiming : 'n/a',
+                ['label' => 'Нет таймингов (запуск)','value' => $adoptedOrphansMissingTiming !== null ? (string)$adoptedOrphansMissingTiming : 'n/a',
                     'ok' => ($adoptedOrphansMissingTiming ?? 0) === 0 ? true : (($adoptedOrphansMissingTiming ?? 0) > 0 ? false : null)],
-                ['label' => 'Stale Eligible (Run)',  'value' => $adoptedOrphansStaleEligible !== null ? (string)$adoptedOrphansStaleEligible : 'n/a',
+                ['label' => 'Устарев. подходящих',   'value' => $adoptedOrphansStaleEligible !== null ? (string)$adoptedOrphansStaleEligible : 'n/a',
                     'ok' => null],
-                ['label' => 'TO Eligible (Run)',     'value' => $adoptedOrphansTimeoutEligible !== null ? (string)$adoptedOrphansTimeoutEligible : 'n/a',
+                ['label' => 'Таймаут подходящих',    'value' => $adoptedOrphansTimeoutEligible !== null ? (string)$adoptedOrphansTimeoutEligible : 'n/a',
                     'ok' => null],
-                ['label' => 'Avg Age min (Run)',      'value' => $adoptedOrphansAvgAge !== null ? (string)$adoptedOrphansAvgAge . 'm' : 'n/a',
+                ['label' => 'Ср. возраст (запуск)',  'value' => $adoptedOrphansAvgAge !== null ? (string)$adoptedOrphansAvgAge . 'м' : 'n/a',
                     'ok' => null],
-                ['label' => 'Oldest Age min (Run)',   'value' => $adoptedOrphansOldestAge !== null ? (string)$adoptedOrphansOldestAge . 'm' : 'n/a',
+                ['label' => 'Старейшее (запуск)',    'value' => $adoptedOrphansOldestAge !== null ? (string)$adoptedOrphansOldestAge . 'м' : 'n/a',
                     'ok' => null],
-                ['label' => 'Valid Timing (Audit)',   'value' => $auditOrphanValidTiming !== null ? (string)$auditOrphanValidTiming : 'n/a',
+                ['label' => 'Тайминг есть (аудит)',  'value' => $auditOrphanValidTiming !== null ? (string)$auditOrphanValidTiming : 'n/a',
                     'ok' => ($auditOrphanValidTiming ?? 0) > 0 ? true : null],
-                ['label' => 'Missing Timing (Audit)','value' => $auditOrphanMissingTimingCount !== null ? (string)$auditOrphanMissingTimingCount : 'n/a',
+                ['label' => 'Нет таймингов (аудит)', 'value' => $auditOrphanMissingTimingCount !== null ? (string)$auditOrphanMissingTimingCount : 'n/a',
                     'ok' => ($auditOrphanMissingTimingCount ?? 0) === 0 ? true : (($auditOrphanMissingTimingCount ?? 0) > 0 ? false : null)],
-                ['label' => 'Avg Age min (Audit)',    'value' => $auditOrphanAvgAge !== null ? (string)$auditOrphanAvgAge . 'm' : 'n/a',
+                ['label' => 'Ср. возраст (аудит)',   'value' => $auditOrphanAvgAge !== null ? (string)$auditOrphanAvgAge . 'м' : 'n/a',
                     'ok' => null],
-                ['label' => 'Oldest Age min (Audit)', 'value' => $auditOrphanOldestAge !== null ? (string)$auditOrphanOldestAge . 'm' : 'n/a',
+                ['label' => 'Старейшее (аудит)',     'value' => $auditOrphanOldestAge !== null ? (string)$auditOrphanOldestAge . 'м' : 'n/a',
                     'ok' => null],
             ];
             foreach ($timingCards as $tc):
@@ -1208,7 +1208,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="mt-1">
             <div class="section-heading" style="font-size:.75rem;">Причины сбоев закрытия orphan (этот запуск)</div>
             <table class="table table-sm exec-table mb-0" style="max-width:420px;">
-                <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
                 <tbody>
                 <?php foreach ($adoptedOrphanCloseFailureReasons as $aofr => $aofc): ?>
                 <tr><td><?= htmlspecialchars($aofr) ?></td><td><?= (int)$aofc ?></td></tr>
@@ -1222,7 +1222,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="mt-2">
             <div class="section-heading" style="font-size:.75rem;">Топ причин сбоев (этот запуск)</div>
             <table class="table table-sm exec-table mb-0" style="max-width:420px;">
-                <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
                 <tbody>
                 <?php
                 arsort($demoRejStats);
@@ -1236,7 +1236,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <?php endif; ?>
         <?php if ($demoSrcPath !== ''): ?>
         <div class="mt-2 small text-muted">
-            Source file: <code><?= htmlspecialchars($demoSrcPath) ?></code>
+            Файл источника: <code><?= htmlspecialchars($demoSrcPath) ?></code>
         </div>
         <?php endif; ?>
 
@@ -1251,22 +1251,22 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $twCards = [
-                ['label' => 'Feed Available',       'value' => $demoFeedAvailable !== null ? (string)$demoFeedAvailable : 'n/a', 'ok' => null],
-                ['label' => 'Feed Selected',        'value' => $demoFeedSelected !== null ? (string)$demoFeedSelected : 'n/a',   'ok' => ($demoFeedSelected ?? 0) > 0 ? true : null],
-                ['label' => 'Deferred by Cap',      'value' => $demoFeedCapSkip !== null ? (string)$demoFeedCapSkip : 'n/a',     'ok' => ($demoFeedCapSkip ?? 0) === 0 ? true : null],
-                ['label' => 'Skipped Idempotency',  'value' => $demoFeedIdempSkip !== null ? (string)$demoFeedIdempSkip : 'n/a', 'ok' => null],
-                ['label' => 'Rotation Mode',        'value' => $demoFeedRotMode !== '' ? htmlspecialchars($demoFeedRotMode) : 'n/a', 'ok' => null],
-                ['label' => 'Deferred by Rotation', 'value' => $demoFeedDeferred !== null ? (string)$demoFeedDeferred : 'n/a',   'ok' => null],
-                ['label' => 'Cap Available',        'value' => $demoCapAvail !== null ? ($demoCapAvail === -1 ? 'unlimited' : (string)$demoCapAvail) : 'n/a', 'ok' => null],
-                ['label' => 'Cap Used',             'value' => $demoCapUsed !== null ? (string)$demoCapUsed : 'n/a',             'ok' => null],
-                ['label' => 'Blocked by Cap',       'value' => $demoCapBlocked !== null ? (string)$demoCapBlocked : 'n/a',       'ok' => ($demoCapBlocked ?? 0) === 0 ? true : null],
-                ['label' => 'Stale Prioritized',    'value' => $demoStalePrioritized !== null ? (string)$demoStalePrioritized : 'n/a', 'ok' => null],
-                ['label' => 'Stale Finalized',      'value' => $demoStaleFinalized !== null ? (string)$demoStaleFinalized : 'n/a',     'ok' => ($demoStaleFinalized ?? 0) > 0 ? true : null],
-                ['label' => 'Stale Remaining',      'value' => $demoStaleRemaining !== null ? (string)$demoStaleRemaining : 'n/a',     'ok' => ($demoStaleRemaining ?? 0) === 0 ? true : ($demoStaleRemaining > 3 ? false : null)],
-                ['label' => 'Closed This Run',      'value' => $demoClosedThisRun !== null ? (string)$demoClosedThisRun : 'n/a', 'ok' => ($demoClosedThisRun ?? 0) > 0 ? true : null],
-                ['label' => 'AI Written This Run',  'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a', 'ok' => ($demoAiWrittenThisRun ?? 0) > 0 ? true : null],
-                ['label' => 'Closed w/o AI (run)',  'value' => $demoClosedNoAiRun !== null ? (string)$demoClosedNoAiRun : 'n/a', 'ok' => ($demoClosedNoAiRun ?? 0) === 0 ? true : ($demoClosedNoAiRun > 0 ? false : null)],
-                ['label' => 'AI Match Rate (run)',   'value' => $demoAiMatchRateRun !== null ? $demoAiMatchRateRun . '%' : 'n/a', 'ok' => ($demoAiMatchRateRun ?? 0) >= 100 ? true : (($demoAiMatchRateRun ?? 0) < 80 ? false : null)],
+                ['label' => 'Доступно в фиде',      'value' => $demoFeedAvailable !== null ? (string)$demoFeedAvailable : 'n/a', 'ok' => null],
+                ['label' => 'Выбрано из фида',      'value' => $demoFeedSelected !== null ? (string)$demoFeedSelected : 'n/a',   'ok' => ($demoFeedSelected ?? 0) > 0 ? true : null],
+                ['label' => 'Отложено по ёмкости',  'value' => $demoFeedCapSkip !== null ? (string)$demoFeedCapSkip : 'n/a',     'ok' => ($demoFeedCapSkip ?? 0) === 0 ? true : null],
+                ['label' => 'Пропущ. идемпотент.',  'value' => $demoFeedIdempSkip !== null ? (string)$demoFeedIdempSkip : 'n/a', 'ok' => null],
+                ['label' => 'Режим ротации',        'value' => $demoFeedRotMode !== '' ? htmlspecialchars($demoFeedRotMode) : 'n/a', 'ok' => null],
+                ['label' => 'Отложено ротацией',    'value' => $demoFeedDeferred !== null ? (string)$demoFeedDeferred : 'n/a',   'ok' => null],
+                ['label' => 'Ёмкость (своб.)',      'value' => $demoCapAvail !== null ? ($demoCapAvail === -1 ? 'не ограничено' : (string)$demoCapAvail) : 'n/a', 'ok' => null],
+                ['label' => 'Ёмкость (занято)',     'value' => $demoCapUsed !== null ? (string)$demoCapUsed : 'n/a',             'ok' => null],
+                ['label' => 'Блок по ёмкости',      'value' => $demoCapBlocked !== null ? (string)$demoCapBlocked : 'n/a',       'ok' => ($demoCapBlocked ?? 0) === 0 ? true : null],
+                ['label' => 'Приоритетно устар.',   'value' => $demoStalePrioritized !== null ? (string)$demoStalePrioritized : 'n/a', 'ok' => null],
+                ['label' => 'Завершено устар.',     'value' => $demoStaleFinalized !== null ? (string)$demoStaleFinalized : 'n/a',     'ok' => ($demoStaleFinalized ?? 0) > 0 ? true : null],
+                ['label' => 'Осталось устар.',      'value' => $demoStaleRemaining !== null ? (string)$demoStaleRemaining : 'n/a',     'ok' => ($demoStaleRemaining ?? 0) === 0 ? true : ($demoStaleRemaining > 3 ? false : null)],
+                ['label' => 'Закрыто за запуск',    'value' => $demoClosedThisRun !== null ? (string)$demoClosedThisRun : 'n/a', 'ok' => ($demoClosedThisRun ?? 0) > 0 ? true : null],
+                ['label' => 'AI записей за запуск', 'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a', 'ok' => ($demoAiWrittenThisRun ?? 0) > 0 ? true : null],
+                ['label' => 'Без AI (запуск)',      'value' => $demoClosedNoAiRun !== null ? (string)$demoClosedNoAiRun : 'n/a', 'ok' => ($demoClosedNoAiRun ?? 0) === 0 ? true : ($demoClosedNoAiRun > 0 ? false : null)],
+                ['label' => 'AI совпадение (запуск)','value' => $demoAiMatchRateRun !== null ? $demoAiMatchRateRun . '%' : 'n/a', 'ok' => ($demoAiMatchRateRun ?? 0) >= 100 ? true : (($demoAiMatchRateRun ?? 0) < 80 ? false : null)],
             ];
             foreach ($twCards as $twc):
                 $cls = 'neutral';
@@ -1283,17 +1283,17 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if ($demoClosureBottleneck !== '' && $demoClosureBottleneck !== 'none_loop_is_cycling'): ?>
         <div class="alert alert-warning py-1 px-3 mt-2 mb-0" style="font-size:.8rem;">
-            <strong>Closure Bottleneck:</strong> <code><?= htmlspecialchars($demoClosureBottleneck) ?></code>
+            <strong>Узкое место закрытий:</strong> <code><?= htmlspecialchars($demoClosureBottleneck) ?></code>
             <?php if ($demoClosureReason !== ''): ?>
             — <?= htmlspecialchars($demoClosureReason) ?>
             <?php endif; ?>
             <?php if ($demoTurnoverFix !== ''): ?>
-            <br><strong>Fix Area:</strong> <code><?= htmlspecialchars($demoTurnoverFix) ?></code>
+            <br><strong>Область исправления:</strong> <code><?= htmlspecialchars($demoTurnoverFix) ?></code>
             <?php endif; ?>
         </div>
         <?php elseif ($demoClosureBottleneck === 'none_loop_is_cycling'): ?>
         <div class="alert alert-success py-1 px-3 mt-2 mb-0" style="font-size:.8rem;">
-            <strong>Loop is cycling.</strong> <?= htmlspecialchars($demoClosureReason) ?>
+            <strong>Петля работает нормально.</strong> <?= htmlspecialchars($demoClosureReason) ?>
         </div>
         <?php endif; ?>
         <?php if ($demoOrphanDetected !== null || $demoOrphanBlocking !== null): ?>
@@ -1301,9 +1301,9 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <div class="row g-2 mb-2">
             <?php
             $orphanCards = [
-                ['label' => 'Orphans Detected',    'value' => $demoOrphanDetected !== null ? (string)$demoOrphanDetected : 'n/a',  'ok' => ($demoOrphanDetected ?? 0) === 0 ? true : false],
-                ['label' => 'Orphans Blocking',    'value' => $demoOrphanBlocking !== null ? (string)$demoOrphanBlocking : 'n/a',  'ok' => ($demoOrphanBlocking ?? 0) === 0 ? true : false],
-                ['label' => 'Primary Exec Blocker','value' => $demoPrimaryExecBlocker !== '' ? htmlspecialchars($demoPrimaryExecBlocker) : 'none', 'ok' => ($demoPrimaryExecBlocker === '' || $demoPrimaryExecBlocker === 'none') ? true : false],
+                ['label' => 'Orphan обнаружено',     'value' => $demoOrphanDetected !== null ? (string)$demoOrphanDetected : 'n/a',  'ok' => ($demoOrphanDetected ?? 0) === 0 ? true : false],
+                ['label' => 'Orphan блокирует',      'value' => $demoOrphanBlocking !== null ? (string)$demoOrphanBlocking : 'n/a',  'ok' => ($demoOrphanBlocking ?? 0) === 0 ? true : false],
+                ['label' => 'Осн. блокировщик',      'value' => $demoPrimaryExecBlocker !== '' ? htmlspecialchars($demoPrimaryExecBlocker) : 'нет', 'ok' => ($demoPrimaryExecBlocker === '' || $demoPrimaryExecBlocker === 'none') ? true : false],
             ];
             foreach ($orphanCards as $oc):
                 $cls = 'neutral';
@@ -1320,9 +1320,9 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if (($demoOrphanBlocking ?? 0) > 0): ?>
         <div class="alert alert-danger py-1 px-3 mt-1 mb-0" style="font-size:.8rem;">
-            <strong>Orphan Blocking:</strong> <?= (int)$demoOrphanBlocking ?> exchange position(s) are blocking new demo trades.
-            These positions exist on the exchange but have no matching local trade record.
-            Reconcile or finalize these orphan positions to unblock demo learning.
+            <strong>Orphan блокирует:</strong> <?= (int)$demoOrphanBlocking ?> позиции(й) на бирже блокируют новые demo-сделки.
+            Позиции существуют на бирже, но не имеют соответствующей локальной записи.
+            Выполните сверку или завершите эти orphan-позиции для разблокировки demo-обучения.
         </div>
         <?php endif; ?>
         <?php endif; ?>
@@ -1339,25 +1339,25 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             <?php
             $capSlotsSat = ($demoCapacityFullRun === true) ? false : ($demoCapacityFullRun === false ? true : null);
             $capCards = [
-                ['label' => 'Capacity Full',         'value' => $demoCapacityFullRun !== null ? ($demoCapacityFullRun ? 'YES' : 'NO') : (($auditCapFull !== null) ? ($auditCapFull ? 'YES' : 'NO') : 'n/a'),
+                ['label' => 'Ёмкость заполнена',     'value' => $demoCapacityFullRun !== null ? ($demoCapacityFullRun ? 'ДА' : 'НЕТ') : (($auditCapFull !== null) ? ($auditCapFull ? 'ДА' : 'НЕТ') : 'n/a'),
                  'ok' => $demoCapacityFullRun !== null ? !$demoCapacityFullRun : ($auditCapFull !== null ? !$auditCapFull : null)],
-                ['label' => 'Slots Total',           'value' => ($demoCapSlotsTotalRun ?? $auditCapSlotsTotal) !== null ? (string)($demoCapSlotsTotalRun ?? $auditCapSlotsTotal) : 'n/a', 'ok' => null],
-                ['label' => 'Slots Used (before)',   'value' => ($demoCapSlotsBeforeRun ?? $auditCapSlotsUsed) !== null ? (string)($demoCapSlotsBeforeRun ?? $auditCapSlotsUsed) : 'n/a', 'ok' => null],
-                ['label' => 'Slots Freed This Run',  'value' => ($demoCapSlotsFreedRun ?? $auditCapSlotsFreed) !== null ? (string)($demoCapSlotsFreedRun ?? $auditCapSlotsFreed) : 'n/a',
+                ['label' => 'Слотов всего',           'value' => ($demoCapSlotsTotalRun ?? $auditCapSlotsTotal) !== null ? (string)($demoCapSlotsTotalRun ?? $auditCapSlotsTotal) : 'n/a', 'ok' => null],
+                ['label' => 'Слотов занято (до)',     'value' => ($demoCapSlotsBeforeRun ?? $auditCapSlotsUsed) !== null ? (string)($demoCapSlotsBeforeRun ?? $auditCapSlotsUsed) : 'n/a', 'ok' => null],
+                ['label' => 'Освобождено за запуск', 'value' => ($demoCapSlotsFreedRun ?? $auditCapSlotsFreed) !== null ? (string)($demoCapSlotsFreedRun ?? $auditCapSlotsFreed) : 'n/a',
                  'ok' => ($demoCapSlotsFreedRun ?? 0) > 0 ? true : (($demoCapacityFullRun === true && ($demoCapSlotsFreedRun ?? 0) === 0) ? false : null)],
-                ['label' => 'Turnover Mode',         'value' => $demoTurnoverModeRun !== null ? ($demoTurnoverModeRun ? 'YES' : 'NO') : 'n/a',
+                ['label' => 'Режим оборота',         'value' => $demoTurnoverModeRun !== null ? ($demoTurnoverModeRun ? 'ДА' : 'НЕТ') : 'n/a',
                  'ok' => $demoTurnoverModeRun !== null ? $demoTurnoverModeRun : null],
-                ['label' => 'Turnover Candidates',   'value' => ($demoTurnoverCandRun ?? $auditTurnoverCandCount) !== null ? (string)($demoTurnoverCandRun ?? $auditTurnoverCandCount) : 'n/a', 'ok' => null],
-                ['label' => 'Turnover Processed',    'value' => $demoTurnoverProcRun !== null ? (string)$demoTurnoverProcRun : 'n/a', 'ok' => null],
-                ['label' => 'Slots Freed by Pass',   'value' => $demoCapSlotsFreedRun !== null ? (string)$demoCapSlotsFreedRun : 'n/a',
+                ['label' => 'Кандидатов оборота',    'value' => ($demoTurnoverCandRun ?? $auditTurnoverCandCount) !== null ? (string)($demoTurnoverCandRun ?? $auditTurnoverCandCount) : 'n/a', 'ok' => null],
+                ['label' => 'Обработано оборотом',   'value' => $demoTurnoverProcRun !== null ? (string)$demoTurnoverProcRun : 'n/a', 'ok' => null],
+                ['label' => 'Слотов освобожд. pass', 'value' => $demoCapSlotsFreedRun !== null ? (string)$demoCapSlotsFreedRun : 'n/a',
                  'ok' => ($demoCapSlotsFreedRun ?? 0) > 0 ? true : (($demoTurnoverModeRun && ($demoCapSlotsFreedRun ?? 0) === 0) ? false : null)],
-                ['label' => 'Recoverable Active',    'value' => $auditRecoverableCount !== null ? (string)$auditRecoverableCount : 'n/a',
+                ['label' => 'Восст. активных',       'value' => $auditRecoverableCount !== null ? (string)$auditRecoverableCount : 'n/a',
                  'ok' => ($auditRecoverableCount ?? 0) > 0 ? null : true],
-                ['label' => 'Turnover AI Written',   'value' => $demoTurnoverAiRun !== null ? (string)$demoTurnoverAiRun : 'n/a',
+                ['label' => 'AI записей оборота',    'value' => $demoTurnoverAiRun !== null ? (string)$demoTurnoverAiRun : 'n/a',
                  'ok' => ($demoTurnoverAiRun ?? 0) > 0 ? true : null],
-                ['label' => 'Freed Cap This Run',    'value' => $demoTurnoverFreedRun !== null ? ($demoTurnoverFreedRun ? 'YES' : 'NO') : 'n/a',
+                ['label' => 'Ёмкость освобождена',   'value' => $demoTurnoverFreedRun !== null ? ($demoTurnoverFreedRun ? 'ДА' : 'НЕТ') : 'n/a',
                  'ok' => $demoTurnoverFreedRun !== null ? (bool)$demoTurnoverFreedRun : null],
-                ['label' => 'Slots Used (after)',    'value' => $demoCapSlotsAfterRun !== null ? (string)$demoCapSlotsAfterRun : 'n/a', 'ok' => null],
+                ['label' => 'Слотов занято (после)', 'value' => $demoCapSlotsAfterRun !== null ? (string)$demoCapSlotsAfterRun : 'n/a', 'ok' => null],
             ];
             foreach ($capCards as $cc):
                 $cls = 'neutral';
@@ -1374,17 +1374,17 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if ($demoTurnoverBlockRun !== '' && $demoTurnoverBlockRun !== 'none'): ?>
         <div class="alert alert-warning py-1 px-3 mt-1 mb-1" style="font-size:.8rem;">
-            <strong>Turnover Block Reason:</strong> <code><?= htmlspecialchars($demoTurnoverBlockRun) ?></code>
+            <strong>Причина блокировки оборота:</strong> <code><?= htmlspecialchars($demoTurnoverBlockRun) ?></code>
         </div>
         <?php endif; ?>
         <?php if ($auditConsistencyOk === false && $auditConsistencyWarning !== ''): ?>
         <div class="alert alert-danger py-1 px-3 mt-1 mb-1" style="font-size:.8rem;">
-            <strong>⚠ Capacity Consistency Warning:</strong> <?= htmlspecialchars($auditConsistencyWarning) ?>
+            <strong>⚠ Предупреждение о согласованности ёмкости:</strong> <?= htmlspecialchars($auditConsistencyWarning) ?>
         </div>
         <?php endif; ?>
         <?php if ($demoTurnoverModeRun && ($demoTurnoverCandStale !== null || $demoTurnoverCandTimeout !== null || $demoTurnoverCandDead !== null)): ?>
         <div class="mt-1 small text-muted">
-            <strong>Candidate Breakdown:</strong>
+            <strong>Разбивка кандидатов:</strong>
             <?php if (($demoTurnoverCandDead ?? 0) > 0): ?><span class="badge bg-danger me-1">Dead Shells: <?= (int)$demoTurnoverCandDead ?></span><?php endif; ?>
             <?php if (($demoTurnoverCandTimeout ?? 0) > 0): ?><span class="badge bg-warning text-dark me-1">Timeout: <?= (int)$demoTurnoverCandTimeout ?></span><?php endif; ?>
             <?php if (($demoTurnoverCandStale ?? 0) > 0): ?><span class="badge bg-secondary me-1">Stale: <?= (int)$demoTurnoverCandStale ?></span><?php endif; ?>
@@ -1394,7 +1394,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         <?php endif; ?>
         <?php if (!empty($demoTurnoverPriStats)): ?>
         <div class="mt-1 small text-muted">
-            <strong>Priority Reasons:</strong>
+            <strong>Причины приоритета:</strong>
             <?php foreach ($demoTurnoverPriStats as $priReason => $priCount): ?>
             <span class="badge bg-secondary me-1"><?= htmlspecialchars($priReason) ?>: <?= (int)$priCount ?></span>
             <?php endforeach; ?>
@@ -1422,24 +1422,24 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
             $effTargetMet      = $targetMet ?? $auditTargetMet;
             $effTargetGap      = $targetGap ?? $auditTargetGap;
             $htCards = [
-                ['label' => 'Healthy Active',         'value' => $effHealthyActive !== null ? (string)$effHealthyActive : 'n/a', 'ok' => null],
-                ['label' => 'Healthy Stale',          'value' => $effHealthyStale !== null ? (string)$effHealthyStale : 'n/a',
+                ['label' => 'Активных здоровых',     'value' => $effHealthyActive !== null ? (string)$effHealthyActive : 'n/a', 'ok' => null],
+                ['label' => 'Устаревших здоровых',   'value' => $effHealthyStale !== null ? (string)$effHealthyStale : 'n/a',
                  'ok' => ($effHealthyStale ?? 0) > 0 ? false : (($effHealthyActive ?? 0) > 0 ? true : null)],
-                ['label' => 'Timeout Eligible',       'value' => $effHealthyTimeout !== null ? (string)$effHealthyTimeout : 'n/a',
+                ['label' => 'Подходит таймаут',      'value' => $effHealthyTimeout !== null ? (string)$effHealthyTimeout : 'n/a',
                  'ok' => ($effHealthyTimeout ?? 0) > 0 ? null : true],
-                ['label' => 'Closed (Total)',         'value' => $effClosedTotal !== null ? (string)$effClosedTotal : 'n/a',
+                ['label' => 'Закрыто (всего)',       'value' => $effClosedTotal !== null ? (string)$effClosedTotal : 'n/a',
                  'ok' => ($effClosedTotal ?? 0) > 0 ? true : null],
-                ['label' => 'Closed (Healthy)',       'value' => $effClosedHealthy !== null ? (string)$effClosedHealthy : 'n/a',
+                ['label' => 'Закрыто (здоровых)',    'value' => $effClosedHealthy !== null ? (string)$effClosedHealthy : 'n/a',
                  'ok' => ($effClosedHealthy ?? 0) > 0 ? true : null],
-                ['label' => 'Closed (Orphan)',        'value' => $effClosedOrphan !== null ? (string)$effClosedOrphan : 'n/a', 'ok' => null],
-                ['label' => 'AI Dataset Written',     'value' => $effAiWritten !== null ? (string)$effAiWritten : 'n/a',
+                ['label' => 'Закрыто (orphan)',      'value' => $effClosedOrphan !== null ? (string)$effClosedOrphan : 'n/a', 'ok' => null],
+                ['label' => 'AI-записей создано',    'value' => $effAiWritten !== null ? (string)$effAiWritten : 'n/a',
                  'ok' => ($effAiWritten ?? 0) > 0 ? true : null],
-                ['label' => 'Healthy Fail',           'value' => $healthyActiveFailRun !== null ? (string)$healthyActiveFailRun : 'n/a',
+                ['label' => 'Сбоев закрытия',        'value' => $healthyActiveFailRun !== null ? (string)$healthyActiveFailRun : 'n/a',
                  'ok' => ($healthyActiveFailRun ?? 0) > 0 ? false : ($healthyActiveClosedRun !== null ? true : null)],
-                ['label' => 'Target / Run',           'value' => $effTargetPerRun !== null ? (string)$effTargetPerRun : 'n/a', 'ok' => null],
-                ['label' => 'Target Met',             'value' => $effTargetMet !== null ? ($effTargetMet ? 'YES' : 'NO') : 'n/a',
+                ['label' => 'Цель / запуск',         'value' => $effTargetPerRun !== null ? (string)$effTargetPerRun : 'n/a', 'ok' => null],
+                ['label' => 'Цель достигнута',       'value' => $effTargetMet !== null ? ($effTargetMet ? 'ДА' : 'НЕТ') : 'n/a',
                  'ok' => $effTargetMet !== null ? (bool)$effTargetMet : null],
-                ['label' => 'Target Gap',             'value' => $effTargetGap !== null ? (string)$effTargetGap : 'n/a',
+                ['label' => 'Разрыв до цели',        'value' => $effTargetGap !== null ? (string)$effTargetGap : 'n/a',
                  'ok' => ($effTargetGap ?? 0) === 0 ? true : (($effTargetGap ?? 0) > 0 ? false : null)],
             ];
             foreach ($htCards as $hc):
@@ -1457,7 +1457,7 @@ $auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap'
         </div>
         <?php if (!empty($healthyActiveFailRsns)): ?>
         <div class="mt-1 small text-muted">
-            <strong>Healthy Close Failures:</strong>
+            <strong>Сбои закрытия здоровых:</strong>
             <?php foreach ($healthyActiveFailRsns as $fr => $fc): ?>
             <span class="badge bg-warning text-dark me-1"><?= htmlspecialchars($fr) ?>: <?= (int)$fc ?></span>
             <?php endforeach; ?>
@@ -1539,7 +1539,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <div class="col-md-3">
                 <div class="section-heading" style="font-size:.75rem;">Закрытия по паттерну</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Pattern</th><th>Trades</th></tr></thead>
+                    <thead><tr><th>Паттерн</th><th>Сделок</th></tr></thead>
                     <tbody>
                     <?php foreach ($perPatternCounts as $pat => $cnt): ?>
                     <tr><td><?= htmlspecialchars($pat) ?></td><td><?= (int)$cnt ?></td></tr>
@@ -1552,7 +1552,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <div class="col-md-2">
                 <div class="section-heading" style="font-size:.75rem;">Закрытия по направлению</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Side</th><th>Trades</th></tr></thead>
+                    <thead><tr><th>Направление</th><th>Сделок</th></tr></thead>
                     <tbody>
                     <?php foreach ($perSideCounts as $side => $cnt): ?>
                     <tr><td><?= htmlspecialchars($side) ?></td><td><?= (int)$cnt ?></td></tr>
@@ -1565,7 +1565,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <div class="col-md-3">
                 <div class="section-heading" style="font-size:.75rem;">Распределение причин закрытия</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+                    <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
                     <tbody>
                     <?php foreach ($perCloseReason as $cr => $crc): ?>
                     <tr><td><?= htmlspecialchars($cr) ?></td><td><?= (int)$crc ?></td></tr>
@@ -1578,7 +1578,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
             <div class="col-md-4">
                 <div class="section-heading" style="font-size:.75rem;">Топ символов по demo-данным</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>
+                    <thead><tr><th>Символ</th><th>Всего</th><th>Полных</th></tr></thead>
                     <tbody>
                     <?php foreach ($topSymbols as $sym => $sc):
                         $sTotal    = (int)($sc['total']    ?? 0);
@@ -1597,7 +1597,7 @@ $nextMilestone        = $demoSufficiency['next_readiness_milestone']            
         </div>
         <?php endif; ?>
         <?php if ($demoSuffAt !== ''): ?>
-        <div class="mt-2 small text-muted">Last computed: <?= htmlspecialchars($demoSuffAt) ?></div>
+        <div class="mt-2 small text-muted">Последний расчёт: <?= htmlspecialchars($demoSuffAt) ?></div>
         <?php endif; ?>
     </div>
 </div>
@@ -1615,12 +1615,12 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
         <div class="row g-2 mb-2">
             <?php
             $velCards = [
-                ['label' => 'Opened This Run',       'value' => $demoTradesOpenedThisRun !== null ? (string)$demoTradesOpenedThisRun : 'n/a',  'ok' => null],
-                ['label' => 'Closed This Run',        'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a',  'ok' => $demoTradesClosedThisRun > 0 ? true : null],
-                ['label' => 'AI Records This Run',    'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',         'ok' => $demoAiWrittenThisRun > 0 ? true : null],
-                ['label' => 'Total Closed (All Time)','value' => (string)$demoClosedTotal,                                                       'ok' => $demoClosedTotal >= 50 ? true : null],
-                ['label' => 'AI Dataset Total',       'value' => (string)$aiDatasetRecords,                                                      'ok' => null],
-                ['label' => 'Next Milestone',         'value' => $nextMilestone !== null ? $demoClosedTotal . '/' . $nextMilestone : $demoClosedTotal . ' ✓', 'ok' => $nextMilestone === null ? true : null],
+                ['label' => 'Открыто за запуск',     'value' => $demoTradesOpenedThisRun !== null ? (string)$demoTradesOpenedThisRun : 'n/a',  'ok' => null],
+                ['label' => 'Закрыто за запуск',     'value' => $demoTradesClosedThisRun !== null ? (string)$demoTradesClosedThisRun : 'n/a',  'ok' => $demoTradesClosedThisRun > 0 ? true : null],
+                ['label' => 'AI за запуск',          'value' => $demoAiWrittenThisRun !== null ? (string)$demoAiWrittenThisRun : 'n/a',         'ok' => $demoAiWrittenThisRun > 0 ? true : null],
+                ['label' => 'Закрыто всего (всё вр.)','value' => (string)$demoClosedTotal,                                                      'ok' => $demoClosedTotal >= 50 ? true : null],
+                ['label' => 'AI Dataset всего',       'value' => (string)$aiDatasetRecords,                                                     'ok' => null],
+                ['label' => 'Следующий рубеж',        'value' => $nextMilestone !== null ? $demoClosedTotal . '/' . $nextMilestone : $demoClosedTotal . ' ✓', 'ok' => $nextMilestone === null ? true : null],
             ];
             foreach ($velCards as $vc):
                 $cls = 'neutral';
@@ -1641,7 +1641,7 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
             <div class="col-md-4">
                 <div class="section-heading" style="font-size:.75rem;">Топ паттернов по закрытым сделкам</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Pattern</th><th>Closed</th></tr></thead>
+                    <thead><tr><th>Паттерн</th><th>Закрыто</th></tr></thead>
                     <tbody>
                     <?php foreach (array_slice($topPatternsByClosed, 0, 8, true) as $pat => $cnt): ?>
                     <tr><td><?= htmlspecialchars($pat) ?></td><td><?= (int)$cnt ?></td></tr>
@@ -1654,7 +1654,7 @@ $topSymbolsByClosed   = (array)($demoSufficiency['top_symbols_by_closed_count'] 
             <div class="col-md-4">
                 <div class="section-heading" style="font-size:.75rem;">Топ символов по закрытым сделкам</div>
                 <table class="table table-sm exec-table mb-0">
-                    <thead><tr><th>Symbol</th><th>Total</th><th>Complete</th></tr></thead>
+                    <thead><tr><th>Символ</th><th>Всего</th><th>Полных</th></tr></thead>
                     <tbody>
                     <?php foreach (array_slice($topSymbolsByClosed, 0, 8, true) as $sym => $sc):
                         $sTotal    = is_array($sc) ? (int)($sc['total']    ?? 0) : (int)$sc;
@@ -1712,15 +1712,15 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         <div class="row g-2 mb-2">
             <?php
             $auditCards = [
-                ['label' => 'Active Trades',         'value' => $auditActive !== null ? (string)$auditActive : 'n/a',          'ok' => null],
-                ['label' => 'Closed Trades',          'value' => $auditClosed !== null ? (string)$auditClosed : 'n/a',          'ok' => $auditClosed > 0 ? true : null],
-                ['label' => 'AI Dataset Records',     'value' => $auditAiDataset !== null ? (string)$auditAiDataset : 'n/a',    'ok' => null],
-                ['label' => 'Oldest Active (min)',    'value' => $auditOldestAge !== null ? (string)$auditOldestAge : 'n/a',    'ok' => null],
-                ['label' => 'Stale Active',           'value' => $auditStaleCount !== null ? $auditStaleCount . ' (' . $auditPctStale . '%)' : 'n/a', 'ok' => ($auditPctStale ?? 0) < 30 ? true : (($auditPctStale ?? 0) > 60 ? false : null)],
-                ['label' => 'Basic Complete Rate',    'value' => $auditCompleteRate !== null ? $auditCompleteRate . '%' : 'n/a', 'ok' => ($auditCompleteRate ?? 0) >= 80 ? true : ($auditCompleteRate !== null && $auditClosed > 3 ? false : null)],
-                ['label' => 'Full Complete Rate',     'value' => $auditFullCompleteRate !== null ? $auditFullCompleteRate . '%' : 'n/a', 'ok' => ($auditFullCompleteRate ?? 0) >= 60 ? true : ($auditFullCompleteRate !== null && $auditClosed > 3 ? false : null)],
-                ['label' => 'AI Dataset Match',      'value' => $auditMatchRate !== null ? $auditMatchRate . '%' : 'n/a',       'ok' => ($auditMatchRate ?? 0) >= 90 ? true : ($auditMatchRate !== null && $auditClosed > 0 ? false : null)],
-                ['label' => 'Closed w/o AI Record',  'value' => $auditClosedNoAi !== null ? (string)$auditClosedNoAi : 'n/a',  'ok' => $auditClosedNoAi === 0 ? true : ($auditClosedNoAi > 0 ? false : null)],
+                ['label' => 'Активных сделок',       'value' => $auditActive !== null ? (string)$auditActive : 'n/a',          'ok' => null],
+                ['label' => 'Закрытых сделок',       'value' => $auditClosed !== null ? (string)$auditClosed : 'n/a',          'ok' => $auditClosed > 0 ? true : null],
+                ['label' => 'Записей AI Dataset',    'value' => $auditAiDataset !== null ? (string)$auditAiDataset : 'n/a',    'ok' => null],
+                ['label' => 'Старейшее акт. (мин)',  'value' => $auditOldestAge !== null ? (string)$auditOldestAge : 'n/a',    'ok' => null],
+                ['label' => 'Устаревших акт.',       'value' => $auditStaleCount !== null ? $auditStaleCount . ' (' . $auditPctStale . '%)' : 'n/a', 'ok' => ($auditPctStale ?? 0) < 30 ? true : (($auditPctStale ?? 0) > 60 ? false : null)],
+                ['label' => 'Осн. полнота',          'value' => $auditCompleteRate !== null ? $auditCompleteRate . '%' : 'n/a', 'ok' => ($auditCompleteRate ?? 0) >= 80 ? true : ($auditCompleteRate !== null && $auditClosed > 3 ? false : null)],
+                ['label' => 'Полная полнота',        'value' => $auditFullCompleteRate !== null ? $auditFullCompleteRate . '%' : 'n/a', 'ok' => ($auditFullCompleteRate ?? 0) >= 60 ? true : ($auditFullCompleteRate !== null && $auditClosed > 3 ? false : null)],
+                ['label' => 'AI Dataset совпадение', 'value' => $auditMatchRate !== null ? $auditMatchRate . '%' : 'n/a',       'ok' => ($auditMatchRate ?? 0) >= 90 ? true : ($auditMatchRate !== null && $auditClosed > 0 ? false : null)],
+                ['label' => 'Без AI-записи',         'value' => $auditClosedNoAi !== null ? (string)$auditClosedNoAi : 'n/a',  'ok' => $auditClosedNoAi === 0 ? true : ($auditClosedNoAi > 0 ? false : null)],
             ];
             foreach ($auditCards as $ac):
                 $cls = 'neutral';
@@ -1739,12 +1739,12 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         <div class="row g-2 mb-2">
             <?php
             $fieldCards = [
-                ['label' => 'Missing MFE %',       'value' => $auditMissingMfe !== null ? $auditMissingMfe . '%' : 'n/a',    'ok' => $auditMissingMfe === 0.0 ? true : ($auditMissingMfe !== null && $auditMissingMfe > 20 ? false : null)],
-                ['label' => 'Missing MAE %',       'value' => $auditMissingMae !== null ? $auditMissingMae . '%' : 'n/a',    'ok' => $auditMissingMae === 0.0 ? true : ($auditMissingMae !== null && $auditMissingMae > 20 ? false : null)],
-                ['label' => 'Missing MFE (count)', 'value' => $auditMissingMfeCount !== null ? (string)$auditMissingMfeCount : 'n/a', 'ok' => $auditMissingMfeCount === 0 ? true : ($auditMissingMfeCount > 0 ? false : null)],
-                ['label' => 'Missing MAE (count)', 'value' => $auditMissingMaeCount !== null ? (string)$auditMissingMaeCount : 'n/a', 'ok' => $auditMissingMaeCount === 0 ? true : ($auditMissingMaeCount > 0 ? false : null)],
-                ['label' => 'Missing Hold %',      'value' => $auditMissingHold !== null ? $auditMissingHold . '%' : 'n/a',  'ok' => $auditMissingHold === 0.0 ? true : ($auditMissingHold !== null && $auditMissingHold > 20 ? false : null)],
-                ['label' => 'Missing Reason %',    'value' => $auditMissingReason !== null ? $auditMissingReason . '%' : 'n/a', 'ok' => $auditMissingReason === 0.0 ? true : ($auditMissingReason !== null && $auditMissingReason > 10 ? false : null)],
+                ['label' => 'Нет MFE %',         'value' => $auditMissingMfe !== null ? $auditMissingMfe . '%' : 'n/a',    'ok' => $auditMissingMfe === 0.0 ? true : ($auditMissingMfe !== null && $auditMissingMfe > 20 ? false : null)],
+                ['label' => 'Нет MAE %',         'value' => $auditMissingMae !== null ? $auditMissingMae . '%' : 'n/a',    'ok' => $auditMissingMae === 0.0 ? true : ($auditMissingMae !== null && $auditMissingMae > 20 ? false : null)],
+                ['label' => 'Нет MFE (кол-во)', 'value' => $auditMissingMfeCount !== null ? (string)$auditMissingMfeCount : 'n/a', 'ok' => $auditMissingMfeCount === 0 ? true : ($auditMissingMfeCount > 0 ? false : null)],
+                ['label' => 'Нет MAE (кол-во)', 'value' => $auditMissingMaeCount !== null ? (string)$auditMissingMaeCount : 'n/a', 'ok' => $auditMissingMaeCount === 0 ? true : ($auditMissingMaeCount > 0 ? false : null)],
+                ['label' => 'Нет Hold %',        'value' => $auditMissingHold !== null ? $auditMissingHold . '%' : 'n/a',  'ok' => $auditMissingHold === 0.0 ? true : ($auditMissingHold !== null && $auditMissingHold > 20 ? false : null)],
+                ['label' => 'Нет Reason %',      'value' => $auditMissingReason !== null ? $auditMissingReason . '%' : 'n/a', 'ok' => $auditMissingReason === 0.0 ? true : ($auditMissingReason !== null && $auditMissingReason > 10 ? false : null)],
             ];
             foreach ($fieldCards as $fc):
                 $cls = 'neutral';
@@ -1767,9 +1767,9 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         ?>
         <?php if ($showMfeMaeAlert): ?>
         <div class="alert alert-warning py-2 mb-2 small">
-            <strong>MFE/MAE Gap:</strong> Basic complete rate is <?= $auditCompleteRate ?>% but full complete rate (with MFE+MAE) is only <?= $auditFullCompleteRate ?>%.
-            <?= $auditMissingMfeCount ?> trades missing MFE, <?= $auditMissingMaeCount ?> missing MAE.
-            Active demo trades are not yet accumulating MFE/MAE runtime evidence — trades may be closing too quickly, or price tracking started too recently.
+            <strong>Разрыв MFE/MAE:</strong> Основная полнота: <?= $auditCompleteRate ?>%, но полная полнота (с MFE+MAE) только <?= $auditFullCompleteRate ?>%.
+            <?= $auditMissingMfeCount ?> сделок без MFE, <?= $auditMissingMaeCount ?> без MAE.
+            Активные demo-сделки ещё не накапливают данные MFE/MAE — сделки могут закрываться слишком быстро, или отслеживание цен началось слишком недавно.
         </div>
         <?php endif; ?>
         <?php endif; // auditMissingMfe block ?>
@@ -1783,10 +1783,10 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         elseif ($auditBottleneck === 'adopted_orphans_awaiting_close') $auditAlertClass = 'alert-info';
         ?>
         <div class="alert <?= $auditAlertClass ?> py-2 mb-2 small">
-            <strong>Bottleneck:</strong> <code><?= htmlspecialchars($auditBottleneck) ?></code><br>
+            <strong>Узкое место:</strong> <code><?= htmlspecialchars($auditBottleneck) ?></code><br>
             <?= htmlspecialchars($auditBottleneckReason) ?>
             <?php if ($auditNextFix !== '' && $auditBottleneck !== 'none_loop_is_cycling'): ?>
-            <br><strong>Next Fix:</strong> <code><?= htmlspecialchars($auditNextFix) ?></code>
+            <br><strong>Следующее исправление:</strong> <code><?= htmlspecialchars($auditNextFix) ?></code>
             <?php endif; ?>
         </div>
         <?php endif; ?>
@@ -1794,10 +1794,10 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         <div class="row g-2 mb-2">
             <?php
             $orphanAuditCards = [
-                ['label' => 'Orphans Blocking (run)', 'value' => (string)($auditOrphanDetected ?? 0), 'ok' => ($auditOrphanDetected ?? 0) === 0 ? true : false],
-                ['label' => 'Orphan→Local Resolved',  'value' => $auditOrphanResolved !== null ? (string)$auditOrphanResolved : 'n/a', 'ok' => ($auditOrphanResolved ?? 0) > 0 ? true : null],
-                ['label' => 'Orphan Unresolved',      'value' => $auditOrphanUnresolved !== null ? (string)$auditOrphanUnresolved : 'n/a', 'ok' => $auditOrphanUnresolved === 0 ? true : ($auditOrphanUnresolved > 0 ? false : null)],
-                ['label' => 'Primary Exec Blocker',   'value' => $auditExecBlocker !== '' ? htmlspecialchars($auditExecBlocker) : 'none', 'ok' => ($auditExecBlocker === '' || $auditExecBlocker === 'none') ? true : false],
+                ['label' => 'Orphan блокирует (зап.)', 'value' => (string)($auditOrphanDetected ?? 0), 'ok' => ($auditOrphanDetected ?? 0) === 0 ? true : false],
+                ['label' => 'Orphan→Локал. решено',    'value' => $auditOrphanResolved !== null ? (string)$auditOrphanResolved : 'n/a', 'ok' => ($auditOrphanResolved ?? 0) > 0 ? true : null],
+                ['label' => 'Orphan нерешённых',       'value' => $auditOrphanUnresolved !== null ? (string)$auditOrphanUnresolved : 'n/a', 'ok' => $auditOrphanUnresolved === 0 ? true : ($auditOrphanUnresolved > 0 ? false : null)],
+                ['label' => 'Осн. блокировщик исп.',   'value' => $auditExecBlocker !== '' ? htmlspecialchars($auditExecBlocker) : 'нет', 'ok' => ($auditExecBlocker === '' || $auditExecBlocker === 'none') ? true : false],
             ];
             foreach ($orphanAuditCards as $oac):
                 $cls = 'neutral';
@@ -1814,7 +1814,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         </div>
         <?php endif; ?>
         <?php if ($auditAt !== ''): ?>
-        <div class="mt-1 small text-muted">Audited from storage: <?= htmlspecialchars($auditAt) ?></div>
+        <div class="mt-1 small text-muted">Аудит из хранилища: <?= htmlspecialchars($auditAt) ?></div>
         <?php endif; ?>
         <?php
         // ── Pattern Engine feed contribution (shown when feed is the bottleneck) ──
@@ -1833,39 +1833,39 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             <div class="small mb-1 fw-bold" style="color:<?= $peFeedMet ? '#22c55e' : '#f87171' ?>;">
                 <i class="bi bi-broadcast me-1"></i>Pattern Engine Demo Feed
                 <?php if ($peFeedMet): ?>
-                    <span class="badge ms-1" style="background:#166534; font-size:0.65rem;">target met</span>
+                    <span class="badge ms-1" style="background:#166534; font-size:0.65rem;">цель достигнута</span>
                 <?php else: ?>
-                    <span class="badge ms-1" style="background:#7f1d1d; font-size:0.65rem;">starved — <?= $peFeedBelow ?> below min</span>
+                    <span class="badge ms-1" style="background:#7f1d1d; font-size:0.65rem;">нехватка — <?= $peFeedBelow ?> ниже мин.</span>
                 <?php endif; ?>
             </div>
             <div class="row g-1 mb-1">
                 <div class="col-4 col-md-2">
                     <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
-                        <span class="text-secondary">Exported:</span>
+                        <span class="text-secondary">Экспортировано:</span>
                         <span class="<?= $peFeedMet ? 'text-success' : 'text-danger' ?> ms-1 fw-bold"><?= $peFeedExport ?></span>
                     </div>
                 </div>
                 <div class="col-4 col-md-2">
                     <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
-                        <span class="text-secondary">Target min:</span>
+                        <span class="text-secondary">Мин. цель:</span>
                         <span class="text-info ms-1"><?= $peFeedTarget ?></span>
                     </div>
                 </div>
                 <div class="col-4 col-md-2">
                     <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
-                        <span class="text-secondary">Soft max:</span>
+                        <span class="text-secondary">Мягкий макс.:</span>
                         <span class="text-secondary ms-1"><?= $peFeedMax ?></span>
                     </div>
                 </div>
                 <div class="col-4 col-md-2">
                     <div class="small" style="background:#1e293b; padding:0.2rem 0.4rem; border-radius:4px;">
-                        <span class="text-secondary">Candidates:</span>
+                        <span class="text-secondary">Кандидатов:</span>
                         <span class="text-secondary ms-1"><?= $peCandTotal ?></span>
                     </div>
                 </div>
             </div>
             <?php if (!$peFeedMet && $peFeedBlock !== ''): ?>
-            <div class="small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Top block: <code><?= htmlspecialchars($peFeedBlock) ?></code></div>
+            <div class="small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Главный блок: <code><?= htmlspecialchars($peFeedBlock) ?></code></div>
             <?php endif; ?>
             <?php if (!empty($peTopBlocks)): ?>
             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -1878,7 +1878,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             </div>
             <?php endif; ?>
             <?php if ($peRunAt !== ''): ?>
-            <div class="mt-1 small text-muted">PE last run: <?= htmlspecialchars(date('d M H:i', strtotime($peRunAt))) ?></div>
+            <div class="mt-1 small text-muted">PE последний запуск: <?= htmlspecialchars(date('d M H:i', strtotime($peRunAt))) ?></div>
             <?php endif; ?>
         </div>
         <?php endif; ?>
@@ -1894,16 +1894,16 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
         <div class="row g-2">
         <?php
         $statMap = [
-            'total_trades'        => 'Total Trades',
-            'win_rate'            => 'Win Rate',
-            'avg_roi'             => 'Avg ROI',
-            'expectancy'          => 'Expectancy',
-            'stop_hit_rate'       => 'Stop Hit Rate',
-            'tp_hit_rate'         => 'TP Hit Rate',
-            'trailing_close_rate' => 'Trailing Close',
-            'total_pnl'           => 'Total PnL',
-            'wins'                => 'Wins',
-            'losses'              => 'Losses',
+            'total_trades'        => 'Сделок всего',
+            'win_rate'            => 'Прибыльных %',
+            'avg_roi'             => 'Ср. ROI',
+            'expectancy'          => 'Матожидание',
+            'stop_hit_rate'       => 'Стоп-лосс %',
+            'tp_hit_rate'         => 'Тейк-профит %',
+            'trailing_close_rate' => 'Закрытий по трейлингу',
+            'total_pnl'           => 'Итого PnL',
+            'wins'                => 'Прибыльных',
+            'losses'              => 'Убыточных',
         ];
         foreach ($statMap as $sKey => $sLabel):
             if (!array_key_exists($sKey, $bot_stats)) continue;
@@ -1928,7 +1928,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             <div class="section-heading" style="margin-top:.5rem;">Статистика по символам</div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm exec-table mb-0">
-                    <thead><tr><th>Symbol</th><th>Trades</th><th>Win Rate</th><th>Avg ROI</th><th>Total PnL</th></tr></thead>
+                    <thead><tr><th>Символ</th><th>Сделок</th><th>Прибыльных %</th><th>Ср. ROI</th><th>Итого PnL</th></tr></thead>
                     <tbody>
                     <?php foreach ($bySymbol as $sym => $ss): ?>
                         <tr>
@@ -1954,7 +1954,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             <div class="section-heading">Статистика по паттернам</div>
             <div class="table-responsive">
                 <table class="table table-dark table-sm exec-table mb-0">
-                    <thead><tr><th>Pattern</th><th>Trades</th><th>Win Rate</th><th>Avg ROI</th></tr></thead>
+                    <thead><tr><th>Паттерн</th><th>Сделок</th><th>Прибыльных %</th><th>Ср. ROI</th></tr></thead>
                     <tbody>
                     <?php foreach ($byPattern as $pat => $ps): ?>
                         <tr>
@@ -2249,14 +2249,14 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             <!-- Trailing sub-fields -->
             <div class="row g-3 mt-1">
                 <div class="col-md-3">
-                    <label class="form-label form-label-sm">Trailing Mode</label>
+                    <label class="form-label form-label-sm">Режим трейлинга</label>
                     <input type="text" name="trailing_mode" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($exCfg['trailing_mode'] ?? '')) ?>"
                            placeholder="e.g. step_roi">
                 </div>
                 <div class="col-md-2">
                     <label class="form-label form-label-sm">
-                        Trailing Activation ROI
+                        Активационный ROI трейлинга
                         <i class="bi bi-info-circle text-secondary ms-1" title="ROI, начиная с которого включается трейлинг."></i>
                     </label>
                     <input type="number" step="0.1" min="0" name="trailing_activation_roi"
@@ -2266,7 +2266,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                 </div>
                 <div class="col-md-2">
                     <label class="form-label form-label-sm">
-                        Trailing Drawdown Factor
+                        Фактор отката трейлинга
                         <i class="bi bi-info-circle text-warning ms-1" title="Насколько глубоко цена может откатиться от лучшего ROI до закрытия по трейлингу. Рабочий диапазон: 0.25–0.50."></i>
                     </label>
                     <input type="number" step="0.01" min="0.25" max="0.50" name="trailing_drawdown_factor"
@@ -2276,7 +2276,7 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
                 </div>
                 <div class="col-md-2">
                     <label class="form-label form-label-sm">
-                        Break Even Activation ROI
+                        Активационный ROI безубытка
                         <i class="bi bi-info-circle text-secondary ms-1" title="ROI, начиная с которого стоп можно подтянуть в безубыток."></i>
                     </label>
                     <input type="number" step="0.1" min="0" name="break_even_activation_roi"
@@ -2312,32 +2312,32 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
             <h6><i class="bi bi-hdd-stack me-1"></i> Биржа / Runtime</h6>
             <div class="row g-3">
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Category</label>
+                    <label class="form-label form-label-sm">Категория</label>
                     <input type="text" name="exchange_category" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($exchCfg['category'] ?? 'linear')) ?>">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Account Type</label>
+                    <label class="form-label form-label-sm">Тип аккаунта</label>
                     <input type="text" name="exchange_account_type" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($exchCfg['account_type'] ?? 'UNIFIED')) ?>">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Settle Coin</label>
+                    <label class="form-label form-label-sm">Расчётная монета</label>
                     <input type="text" name="exchange_settle_coin" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($exchCfg['settle_coin'] ?? 'USDT')) ?>">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">TPSL Mode</label>
+                    <label class="form-label form-label-sm">Режим TPSL</label>
                     <input type="text" name="exchange_tpsl_mode" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($exchCfg['tpsl_mode'] ?? 'Full')) ?>">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">SL Trigger By</label>
+                    <label class="form-label form-label-sm">Триггер SL</label>
                     <input type="text" name="exchange_sl_trigger_by" class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= htmlspecialchars((string)($exchCfg['sl_trigger_by'] ?? 'IndexPrice')) ?>">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm">Position IDX</label>
+                    <label class="form-label form-label-sm">Индекс позиции</label>
                     <input type="number" name="exchange_position_idx" min="0" step="1"
                            class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= (int)($exchCfg['position_idx'] ?? 0) ?>">

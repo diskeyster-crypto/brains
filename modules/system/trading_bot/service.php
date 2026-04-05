@@ -1123,6 +1123,14 @@ final class TradingBotService
                 $result['adopted_orphans_average_age_minutes']       = $updateResult['adopted_orphans_average_age_minutes'] ?? null;
                 $result['adopted_orphans_oldest_age_minutes']        = $updateResult['adopted_orphans_oldest_age_minutes'] ?? null;
 
+                // ── Healthy active turnover counters ─────────────────────────
+                $result['healthy_active_trades_before']                    = $updateResult['healthy_active_before'] ?? 0;
+                $result['healthy_active_trades_stale_this_run']            = $updateResult['healthy_active_stale_count'] ?? 0;
+                $result['healthy_active_trades_timeout_eligible_this_run'] = $updateResult['healthy_active_timeout_eligible_count'] ?? 0;
+                $result['healthy_active_closed_this_run']                  = $updateResult['healthy_active_closed_this_run'] ?? 0;
+                $result['healthy_active_close_failures_this_run']          = $updateResult['healthy_active_close_failures_this_run'] ?? 0;
+                $result['healthy_active_close_failure_reasons']            = $updateResult['healthy_active_close_failure_reasons'] ?? [];
+
                 // ── Adopted orphan close repair pass (demo only) ────────────
                 if (method_exists($this->store, 'repairIncompleteAdoptedOrphanClosedRecords')) {
                     $repairStats = $this->store->repairIncompleteAdoptedOrphanClosedRecords();
@@ -1181,6 +1189,21 @@ final class TradingBotService
                 $result['demo_closed_trades_this_run']              = $closedThisRun;
                 $result['demo_closed_without_ai_dataset_this_run']  = $closedWithoutAi;
                 $result['demo_closed_to_ai_match_rate_this_run']    = $aiMatchRateRun;
+
+                // ── PART 6: Closed trade breakdown this run ────────────────
+                $adoptedOrphansClosedThisRun = (int)($result['adopted_orphans_closed_this_run'] ?? 0);
+                $healthyClosedThisRun        = max(0, $closedThisRun - $adoptedOrphansClosedThisRun);
+                $result['closed_trades_this_run_total']          = $closedThisRun;
+                $result['closed_trades_this_run_healthy']        = $healthyClosedThisRun;
+                $result['closed_trades_this_run_orphan_adopted'] = $adoptedOrphansClosedThisRun;
+                $result['ai_dataset_written_this_run_total']     = $aiWrittenThisRun;
+
+                // ── PART 7: Velocity target diagnostics ────────────────────
+                $dlmCfgVel   = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+                $targetPerRun = max(1, (int)($dlmCfgVel['demo_closed_per_run_target'] ?? 1));
+                $result['demo_closed_trades_target_per_run'] = $targetPerRun;
+                $result['demo_closed_trades_target_met']     = $closedThisRun >= $targetPerRun;
+                $result['demo_closed_trades_target_gap']     = max(0, $targetPerRun - $closedThisRun);
             }
 
             // ============================================================

@@ -1597,6 +1597,13 @@ trait BotExecutorTrait
             'adopted_orphans_timeout_eligible_count' => 0,
             'adopted_orphans_average_age_minutes' => null,
             'adopted_orphans_oldest_age_minutes' => null,
+            // Healthy active turnover counters (demo only)
+            'healthy_active_before'                          => 0,
+            'healthy_active_stale_count'                     => 0,
+            'healthy_active_timeout_eligible_count'          => 0,
+            'healthy_active_closed_this_run'                 => 0,
+            'healthy_active_close_failures_this_run'         => 0,
+            'healthy_active_close_failure_reasons'           => [],
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1605,11 +1612,13 @@ trait BotExecutorTrait
         
         $trades = $this->store->loadActiveTrades();
 
-        // Count adopted orphans before processing for per-run turnover diagnostics (demo only)
+        // Count adopted orphans and healthy actives before processing for per-run turnover diagnostics (demo only)
         if ($mode === 'demo') {
             foreach ($trades as $_t) {
                 if (!empty($_t['is_orphan_adopted']) || !empty($_t['adopted_from_exchange_orphan'])) {
                     $result['adopted_orphans_active_before']++;
+                } else {
+                    $result['healthy_active_before']++;
                 }
             }
         }
@@ -1660,6 +1669,14 @@ trait BotExecutorTrait
                         }
                     } else {
                         $result['adopted_orphans_with_missing_timing_count']++;
+                    }
+                } else {
+                    // Healthy active trade — track stale and timeout eligibility
+                    if ($staleAgeMinutes > 0 && $ageMin >= $staleAgeMinutes) {
+                        $result['healthy_active_stale_count']++;
+                    }
+                    if ($closeTimeoutMinutes > 0 && $ageMin >= $closeTimeoutMinutes) {
+                        $result['healthy_active_timeout_eligible_count']++;
                     }
                 }
             }
@@ -1780,6 +1797,10 @@ trait BotExecutorTrait
                                 $result['close_failures']++;
                                 $cfKey = 'close_detection_exchange_state_uncertain';
                                 $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                if (!$isAdoptedTrade) {
+                                    $result['healthy_active_close_failures_this_run']++;
+                                    $result['healthy_active_close_failure_reasons'][$cfKey] = ($result['healthy_active_close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                }
                                 $result['updated']++;
                                 continue;
                             }
@@ -1810,6 +1831,9 @@ trait BotExecutorTrait
                         $result['closed']++;
                         $result['closed_by_logical_stop']++;
                         $result['finalized_locally_this_run']++;
+                        if (!$isAdoptedTrade) {
+                            $result['healthy_active_closed_this_run']++;
+                        }
                         $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
                         $closedTrade['ai_dataset_record_written'] = $aiWritten;
                         if ($aiWritten) {
@@ -4316,6 +4340,7 @@ private function computeEntryDeadline(array $intent): array
             'turnover_candidates_dead_shell_count'       => 0,
             'turnover_candidates_finalize_eligible_count'=> 0,
             'turnover_candidates_other_count'            => 0,
+            'turnover_candidates_healthy_count'          => 0,
         ];
 
         if ($mode !== 'demo') {
@@ -4391,8 +4416,14 @@ private function computeEntryDeadline(array $intent): array
                     $result['turnover_candidates_dead_shell_count']++;
                 } elseif ($isTimeout) {
                     $result['turnover_candidates_timeout_count']++;
+                    if (!$isOrphan) {
+                        $result['turnover_candidates_healthy_count']++;
+                    }
                 } elseif ($isStale) {
                     $result['turnover_candidates_stale_count']++;
+                    if (!$isOrphan) {
+                        $result['turnover_candidates_healthy_count']++;
+                    }
                 } else {
                     $result['turnover_candidates_other_count']++;
                 }

@@ -839,6 +839,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $orphanAdoptedAgeAccum = 0;
         $orphanAdoptedAgeCount = 0;
         $orphanAdoptedMaxAge   = 0;
+        $healthyActiveStaleCount          = 0;
+        $healthyActiveTimeoutEligibleCount= 0;
 
         // Read close-timeout from store-level config if available
         $storeDlm      = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
@@ -922,6 +924,16 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 }
             } else {
                 $healthyActiveCount++;
+                // Track stale and timeout eligibility for healthy trades
+                if ($openTs !== null && $openTs > 0) {
+                    $healthyAgeMin = (int)round(($now - $openTs) / 60);
+                    if ($learningMaxActiveAgeMinutes > 0 && $healthyAgeMin >= $learningMaxActiveAgeMinutes) {
+                        $healthyActiveStaleCount++;
+                    }
+                    if ($storeTimeout > 0 && $healthyAgeMin >= $storeTimeout) {
+                        $healthyActiveTimeoutEligibleCount++;
+                    }
+                }
             }
         }
 
@@ -954,6 +966,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $adoptedOrphanMissingMfe         = 0;
         $adoptedOrphanMissingMae         = 0;
         $adoptedOrphanMissingHoldMinutes = 0;
+        $healthyClosedCount = 0;
 
         foreach ($closedFiles as $cf) {
             $d = @json_decode((string)@file_get_contents($cf), true);
@@ -1004,7 +1017,6 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             // Count adopted orphan closed trades separately
             if (!empty($d['adopted_from_exchange_orphan']) || !empty($d['is_orphan_adopted'])) {
                 $adoptedOrphanClosedCount++;
-
                 // Adopted-orphan operational completeness: requires the core close fields
                 // plus entry_price, hold_minutes, and ai_dataset_record_written (Part 1 contract).
                 $aoEntryPrice  = (float)($d['entry_price'] ?? 0);
@@ -1043,6 +1055,8 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 if ($holdMin === null || (int)$holdMin < 0) {
                     $adoptedOrphanMissingHoldMinutes++;
                 }
+            } else {
+                $healthyClosedCount++;
             }
         }
 
@@ -1256,7 +1270,9 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $recommendedNextFixArea  = 'audit_close_finalization';
         } elseif ($closedCount > 0 && $closedCount < 10) {
             $primaryBottleneck       = 'turnover_too_low';
-            $primaryBottleneckReason = "Only {$closedCount} closed demo trades. Loop is functioning but accumulation is too slow. Increase signal throughput or reduce hold times.";
+            $primaryBottleneckReason = "Only {$closedCount} closed demo trades. Loop is functioning but accumulation is too slow. "
+                . "{$healthyActiveCount} healthy actives ({$healthyActiveStaleCount} stale, {$healthyActiveTimeoutEligibleCount} timeout-eligible). "
+                . "Reduce learning_close_timeout_minutes or learning_max_active_age_minutes to accelerate turnover.";
             $recommendedNextFixArea  = 'increase_demo_signal_throughput';
         } elseif ($closedCount >= 10) {
             $primaryBottleneck       = 'none_loop_is_cycling';
@@ -1264,9 +1280,17 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             $recommendedNextFixArea  = 'maintain_current_config';
         }
 
+        // ── Velocity target diagnostics ──────────────────────────────────────
+        $targetPerRun  = max(1, (int)($storeDlm['demo_closed_per_run_target'] ?? 1));
+        $targetMet     = $closedThisRun >= $targetPerRun;
+        $targetGap     = max(0, $targetPerRun - $closedThisRun);
+
         return [
             'active_trades_count'                      => $activeCount,
             'healthy_active_trades_count'              => $healthyActiveCount,
+            'healthy_active_trades_stale_count'        => $healthyActiveStaleCount,
+            'healthy_active_trades_timeout_eligible_count' => $healthyActiveTimeoutEligibleCount,
+            'healthy_active_turnover_candidates_count' => $healthyActiveStaleCount + $healthyActiveTimeoutEligibleCount,
             'orphan_adopted_active_trades_count'       => $orphanAdoptedCount,
             'orphan_resolved_active_trades_count'      => $orphanResolvedCount,
             'orphan_unresolved_blocking_count'         => $orphanBlockingCount,
@@ -1294,7 +1318,11 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'adopted_orphans_closed_missing_mae_count'          => $adoptedOrphanMissingMae,
             'adopted_orphans_closed_missing_hold_minutes_count' => $adoptedOrphanMissingHoldMinutes,
             'closed_trades_count'                      => $closedCount,
+            'closed_trades_total'                      => $closedCount,
+            'closed_trades_healthy_total'              => $healthyClosedCount,
+            'closed_trades_orphan_adopted_total'       => $adoptedOrphanClosedCount,
             'ai_dataset_count'                         => $aiCount,
+            'ai_dataset_total'                         => $aiCount,
             'oldest_active_trade_age_minutes'          => $oldestActiveAgeMin,
             'avg_active_trade_age_minutes'             => $avgActiveAgeMin,
             'stale_active_count'                       => $staleCount,
@@ -1349,7 +1377,11 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'capacity_slots_freed_this_run'            => $capacitySlotsFreed,
             'recoverable_active_trades_count'          => $recoverableCount,
             'stale_active_trades_count'                => $staleCount,
-            'turnover_candidates_count'                => $staleCount + $orphanAdoptedTimeoutEligibleCount,
+            'turnover_candidates_count'                => $staleCount + $orphanAdoptedTimeoutEligibleCount + $healthyActiveTimeoutEligibleCount,
+            // Velocity target diagnostics (per-run)
+            'demo_closed_trades_target_per_run'        => $targetPerRun,
+            'demo_closed_trades_target_met'            => $targetMet,
+            'demo_closed_trades_target_gap'            => $targetGap,
             // Consistency check
             'capacity_runtime_consistency_ok'          => $consistencyOk,
             'capacity_runtime_consistency_warning'     => $consistencyWarning,

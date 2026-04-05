@@ -534,6 +534,33 @@ $auditRecoverableCount   = $bot_demo_truth_audit['recoverable_active_trades_coun
 $auditTurnoverCandCount  = $bot_demo_truth_audit['turnover_candidates_count']                      ?? null;
 $auditConsistencyOk      = $bot_demo_truth_audit['capacity_runtime_consistency_ok']                ?? null;
 $auditConsistencyWarning = (string)($bot_demo_truth_audit['capacity_runtime_consistency_warning']  ?? '');
+// Healthy active turnover (this run)
+$healthyActiveBefore     = $bot_last_run['healthy_active_trades_before']                          ?? null;
+$healthyActiveStaleRun   = $bot_last_run['healthy_active_trades_stale_this_run']                  ?? null;
+$healthyActiveTimeoutRun = $bot_last_run['healthy_active_trades_timeout_eligible_this_run']       ?? null;
+$healthyActiveClosedRun  = $bot_last_run['healthy_active_closed_this_run']                        ?? null;
+$healthyActiveFailRun    = $bot_last_run['healthy_active_close_failures_this_run']                ?? null;
+$healthyActiveFailRsns   = (array)($bot_last_run['healthy_active_close_failure_reasons']          ?? []);
+// Closed trade breakdown (this run)
+$closedTotalRun          = $bot_last_run['closed_trades_this_run_total']                          ?? null;
+$closedHealthyRun        = $bot_last_run['closed_trades_this_run_healthy']                        ?? null;
+$closedOrphanRun         = $bot_last_run['closed_trades_this_run_orphan_adopted']                 ?? null;
+$aiDatasetWrittenRun     = $bot_last_run['ai_dataset_written_this_run_total']                     ?? null;
+// Velocity target (this run)
+$targetPerRun            = $bot_last_run['demo_closed_trades_target_per_run']                     ?? null;
+$targetMet               = $bot_last_run['demo_closed_trades_target_met']                         ?? null;
+$targetGap               = $bot_last_run['demo_closed_trades_target_gap']                         ?? null;
+// Healthy active counts from audit
+$auditHealthyActive      = $bot_demo_truth_audit['healthy_active_trades_count']                   ?? null;
+$auditHealthyStale       = $bot_demo_truth_audit['healthy_active_trades_stale_count']             ?? null;
+$auditHealthyTimeout     = $bot_demo_truth_audit['healthy_active_trades_timeout_eligible_count']  ?? null;
+$auditClosedHealthy      = $bot_demo_truth_audit['closed_trades_healthy_total']                   ?? null;
+$auditClosedOrphan       = $bot_demo_truth_audit['closed_trades_orphan_adopted_total']            ?? null;
+$auditClosedTotal        = $bot_demo_truth_audit['closed_trades_total']                           ?? null;
+$auditAiTotal            = $bot_demo_truth_audit['ai_dataset_total']                              ?? null;
+$auditTargetPerRun       = $bot_demo_truth_audit['demo_closed_trades_target_per_run']             ?? null;
+$auditTargetMet          = $bot_demo_truth_audit['demo_closed_trades_target_met']                 ?? null;
+$auditTargetGap          = $bot_demo_truth_audit['demo_closed_trades_target_gap']                 ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -1272,6 +1299,69 @@ $auditConsistencyWarning = (string)($bot_demo_truth_audit['capacity_runtime_cons
         </div>
         <?php endif; ?>
         <?php endif; // $hasCapTurnoverData ?>
+
+        <?php
+        // ── Healthy Active Turnover sub-section ───────────────────────────────
+        $hasHealthyTurnoverData = $healthyActiveBefore !== null || $auditHealthyActive !== null
+            || $healthyActiveClosedRun !== null || $targetPerRun !== null || $auditTargetPerRun !== null;
+        if ($hasHealthyTurnoverData):
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Healthy Active Turnover</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $effHealthyActive  = $healthyActiveBefore ?? $auditHealthyActive;
+            $effHealthyStale   = $healthyActiveStaleRun ?? $auditHealthyStale;
+            $effHealthyTimeout = $healthyActiveTimeoutRun ?? $auditHealthyTimeout;
+            $effClosedTotal    = $closedTotalRun ?? $auditClosedTotal;
+            $effClosedHealthy  = $closedHealthyRun ?? $auditClosedHealthy;
+            $effClosedOrphan   = $closedOrphanRun ?? $auditClosedOrphan;
+            $effAiWritten      = $aiDatasetWrittenRun ?? $auditAiTotal;
+            $effTargetPerRun   = $targetPerRun ?? $auditTargetPerRun;
+            $effTargetMet      = $targetMet ?? $auditTargetMet;
+            $effTargetGap      = $targetGap ?? $auditTargetGap;
+            $htCards = [
+                ['label' => 'Healthy Active',         'value' => $effHealthyActive !== null ? (string)$effHealthyActive : 'n/a', 'ok' => null],
+                ['label' => 'Healthy Stale',          'value' => $effHealthyStale !== null ? (string)$effHealthyStale : 'n/a',
+                 'ok' => ($effHealthyStale ?? 0) > 0 ? false : (($effHealthyActive ?? 0) > 0 ? true : null)],
+                ['label' => 'Timeout Eligible',       'value' => $effHealthyTimeout !== null ? (string)$effHealthyTimeout : 'n/a',
+                 'ok' => ($effHealthyTimeout ?? 0) > 0 ? null : true],
+                ['label' => 'Closed (Total)',         'value' => $effClosedTotal !== null ? (string)$effClosedTotal : 'n/a',
+                 'ok' => ($effClosedTotal ?? 0) > 0 ? true : null],
+                ['label' => 'Closed (Healthy)',       'value' => $effClosedHealthy !== null ? (string)$effClosedHealthy : 'n/a',
+                 'ok' => ($effClosedHealthy ?? 0) > 0 ? true : null],
+                ['label' => 'Closed (Orphan)',        'value' => $effClosedOrphan !== null ? (string)$effClosedOrphan : 'n/a', 'ok' => null],
+                ['label' => 'AI Dataset Written',     'value' => $effAiWritten !== null ? (string)$effAiWritten : 'n/a',
+                 'ok' => ($effAiWritten ?? 0) > 0 ? true : null],
+                ['label' => 'Healthy Fail',           'value' => $healthyActiveFailRun !== null ? (string)$healthyActiveFailRun : 'n/a',
+                 'ok' => ($healthyActiveFailRun ?? 0) > 0 ? false : ($healthyActiveClosedRun !== null ? true : null)],
+                ['label' => 'Target / Run',           'value' => $effTargetPerRun !== null ? (string)$effTargetPerRun : 'n/a', 'ok' => null],
+                ['label' => 'Target Met',             'value' => $effTargetMet !== null ? ($effTargetMet ? 'YES' : 'NO') : 'n/a',
+                 'ok' => $effTargetMet !== null ? (bool)$effTargetMet : null],
+                ['label' => 'Target Gap',             'value' => $effTargetGap !== null ? (string)$effTargetGap : 'n/a',
+                 'ok' => ($effTargetGap ?? 0) === 0 ? true : (($effTargetGap ?? 0) > 0 ? false : null)],
+            ];
+            foreach ($htCards as $hc):
+                $cls = 'neutral';
+                if ($hc['ok'] === true)  $cls = 'positive';
+                if ($hc['ok'] === false) $cls = 'negative';
+            ?>
+            <div class="col-6 col-md-2">
+                <div class="stat-card">
+                    <div class="stat-value <?= $cls ?>"><?= htmlspecialchars((string)$hc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($hc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!empty($healthyActiveFailRsns)): ?>
+        <div class="mt-1 small text-muted">
+            <strong>Healthy Close Failures:</strong>
+            <?php foreach ($healthyActiveFailRsns as $fr => $fc): ?>
+            <span class="badge bg-warning text-dark me-1"><?= htmlspecialchars($fr) ?>: <?= (int)$fc ?></span>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        <?php endif; // $hasHealthyTurnoverData ?>
     </div>
 </div>
 <?php endif; ?>

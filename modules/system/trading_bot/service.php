@@ -722,6 +722,11 @@ final class TradingBotService
                 $demoTurnoverHealthyClosed            = 0;
                 $demoTurnoverOrphanClosed             = 0;
                 $demoTurnoverTotalClosed              = 0;
+                $demoTurnoverHealthyFullComplete      = 0;
+                $demoTurnoverHealthyMissingMfe        = 0;
+                $demoTurnoverHealthyMissingMae        = 0;
+                $demoTurnoverHealthyMissingClosePrice = 0;
+                $demoTurnoverHealthyAiWritten         = 0;
                 $turnoverPassResult                   = [];
                 // Composition tracking variables (demo mode only, PARTS 1-4)
                 $demoActiveHealthyCount  = 0;
@@ -780,6 +785,11 @@ final class TradingBotService
                                 $demoTurnoverHealthyClosed       = (int)($turnoverPassResult['turnover_healthy_closed']                        ?? 0);
                                 $demoTurnoverOrphanClosed        = (int)($turnoverPassResult['turnover_orphan_closed']                          ?? 0);
                                 $demoTurnoverTotalClosed         = (int)($turnoverPassResult['turnover_slots_freed']                            ?? 0);
+                                $demoTurnoverHealthyFullComplete = (int)($turnoverPassResult['turnover_healthy_closed_full_complete']            ?? 0);
+                                $demoTurnoverHealthyMissingMfe   = (int)($turnoverPassResult['turnover_healthy_closed_missing_mfe']              ?? 0);
+                                $demoTurnoverHealthyMissingMae   = (int)($turnoverPassResult['turnover_healthy_closed_missing_mae']              ?? 0);
+                                $demoTurnoverHealthyMissingClosePrice = (int)($turnoverPassResult['turnover_healthy_closed_missing_close_price'] ?? 0);
+                                $demoTurnoverHealthyAiWritten    = (int)($turnoverPassResult['turnover_healthy_ai_written']                      ?? 0);
                                 $slotsFreedByPass                = $demoTurnoverTotalClosed;
                                 if ($slotsFreedByPass > 0) {
                                     $demoCapacitySlotsFreed      = $slotsFreedByPass;
@@ -1283,6 +1293,14 @@ final class TradingBotService
                 $result['closed_trades_this_run_missing_mae']            = $updateResult['closed_trades_this_run_missing_mae'] ?? 0;
                 $result['closed_trades_this_run_missing_close_price']    = $updateResult['closed_trades_this_run_missing_close_price'] ?? 0;
                 $result['closed_trades_this_run_missing_hold_minutes']   = $updateResult['closed_trades_this_run_missing_hold_minutes'] ?? 0;
+                // Healthy-specific quality counters (updateActivePositions + turnover pass combined)
+                $result['healthy_closed_this_run_total']               = ($updateResult['healthy_closed_this_run_total'] ?? 0) + $demoTurnoverHealthyClosed;
+                $result['healthy_closed_this_run_full_complete']       = ($updateResult['healthy_closed_this_run_full_complete'] ?? 0) + $demoTurnoverHealthyFullComplete;
+                $result['healthy_closed_this_run_missing_mfe']         = ($updateResult['healthy_closed_this_run_missing_mfe'] ?? 0) + $demoTurnoverHealthyMissingMfe;
+                $result['healthy_closed_this_run_missing_mae']         = ($updateResult['healthy_closed_this_run_missing_mae'] ?? 0) + $demoTurnoverHealthyMissingMae;
+                $result['healthy_closed_this_run_missing_close_price'] = ($updateResult['healthy_closed_this_run_missing_close_price'] ?? 0) + $demoTurnoverHealthyMissingClosePrice;
+                $result['healthy_closed_this_run_missing_hold_minutes']= ($updateResult['healthy_closed_this_run_missing_hold_minutes'] ?? 0);
+                $result['healthy_ai_dataset_written_this_run']         = ($updateResult['healthy_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverHealthyAiWritten;
 
                 // ── PART 7: Velocity target diagnostics ────────────────────
                 $dlmCfgVel   = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];

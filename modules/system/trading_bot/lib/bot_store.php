@@ -968,6 +968,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $adoptedOrphanMissingMae         = 0;
         $adoptedOrphanMissingHoldMinutes = 0;
         $healthyClosedCount = 0;
+        // Healthy-specific quality counters
+        $healthyClosedCompleteCount     = 0;
+        $healthyClosedFullCompleteCount = 0;
+        $healthyClosedMissingMfe        = 0;
+        $healthyClosedMissingMae        = 0;
+        $healthyClosedMissingClosePrice = 0;
+        $healthyClosedMissingHoldMinutes= 0;
 
         foreach ($closedFiles as $cf) {
             $d = @json_decode((string)@file_get_contents($cf), true);
@@ -1065,6 +1072,14 @@ public function saveClosedTrade(string $tradeId, array $trade): void
                 }
             } else {
                 $healthyClosedCount++;
+                // Healthy-specific quality tracking
+                $healthyIsComplete = $closePrice > 0 && $roi !== null && $closeReason !== '';
+                if ($healthyIsComplete) { $healthyClosedCompleteCount++; }
+                if ($healthyIsComplete && !$mfeMissing && !$maeMissing) { $healthyClosedFullCompleteCount++; }
+                if ($mfeMissing)         { $healthyClosedMissingMfe++; }
+                if ($maeMissing)         { $healthyClosedMissingMae++; }
+                if ($closePrice <= 0)    { $healthyClosedMissingClosePrice++; }
+                if ($holdMin === null || (int)$holdMin < 0) { $healthyClosedMissingHoldMinutes++; }
             }
         }
 
@@ -1384,6 +1399,15 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'closed_trades_total'                      => $closedCount,
             'closed_trades_healthy_total'              => $healthyClosedCount,
             'closed_trades_orphan_adopted_total'       => $adoptedOrphanClosedCount,
+            // Healthy closed quality metrics
+            'closed_trades_healthy_complete_count'     => $healthyClosedCompleteCount,
+            'closed_trades_healthy_complete_rate'      => $healthyClosedCount > 0 ? round($healthyClosedCompleteCount / $healthyClosedCount * 100, 1) : 0.0,
+            'closed_trades_healthy_full_complete_count'=> $healthyClosedFullCompleteCount,
+            'closed_trades_healthy_full_complete_rate' => $healthyClosedCount > 0 ? round($healthyClosedFullCompleteCount / $healthyClosedCount * 100, 1) : 0.0,
+            'closed_trades_healthy_missing_mfe_count'  => $healthyClosedMissingMfe,
+            'closed_trades_healthy_missing_mae_count'  => $healthyClosedMissingMae,
+            'closed_trades_healthy_missing_close_price_count'   => $healthyClosedMissingClosePrice,
+            'closed_trades_healthy_missing_hold_minutes_count'  => $healthyClosedMissingHoldMinutes,
             'ai_dataset_count'                         => $aiCount,
             'ai_dataset_total'                         => $aiCount,
             // ── PART 4: Demo composition metrics ─────────────────────────────

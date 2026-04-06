@@ -1618,6 +1618,14 @@ trait BotExecutorTrait
             'closed_trades_this_run_missing_mae'             => 0,
             'closed_trades_this_run_missing_close_price'     => 0,
             'closed_trades_this_run_missing_hold_minutes'    => 0,
+            // Healthy-specific closed trade data-quality counters (demo only)
+            'healthy_closed_this_run_total'                  => 0,
+            'healthy_closed_this_run_full_complete'          => 0,
+            'healthy_closed_this_run_missing_mfe'            => 0,
+            'healthy_closed_this_run_missing_mae'            => 0,
+            'healthy_closed_this_run_missing_close_price'    => 0,
+            'healthy_closed_this_run_missing_hold_minutes'   => 0,
+            'healthy_ai_dataset_written_this_run'            => 0,
         ];
         
         if (!in_array($mode, ['live', 'demo'], true)) {
@@ -1873,6 +1881,19 @@ trait BotExecutorTrait
                         $result['finalized_locally_this_run']++;
                         if (!$isAdoptedTrade) {
                             $result['healthy_active_closed_this_run']++;
+                            // Healthy-specific quality counters
+                            $result['healthy_closed_this_run_total']++;
+                            if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['healthy_closed_this_run_missing_close_price']++; }
+                            if (($closedTrade['hold_minutes'] ?? null) === null) { $result['healthy_closed_this_run_missing_hold_minutes']++; }
+                            if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['healthy_closed_this_run_missing_mfe']++; }
+                            if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['healthy_closed_this_run_missing_mae']++; }
+                            if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                                && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                                && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                                && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                                $result['healthy_closed_this_run_full_complete']++;
+                            }
+                            if ($aiWritten) { $result['healthy_ai_dataset_written_this_run']++; }
                         } else {
                             $result['adopted_orphans_closed_this_run']++;
                             $result['adopted_orphans_finalized_locally_this_run']++;
@@ -2074,6 +2095,21 @@ trait BotExecutorTrait
                         }
                         if ($isAdoptedOrphanTrade && isset($isComplete) && $isComplete) {
                             $result['adopted_orphans_closed_complete_this_run']++;
+                        }
+                        // Healthy-specific quality counters (exchange-detected close)
+                        if (!$isAdoptedOrphanTrade) {
+                            $result['healthy_closed_this_run_total']++;
+                            if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['healthy_closed_this_run_missing_close_price']++; }
+                            if (($closedTrade['hold_minutes'] ?? null) === null) { $result['healthy_closed_this_run_missing_hold_minutes']++; }
+                            if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['healthy_closed_this_run_missing_mfe']++; }
+                            if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['healthy_closed_this_run_missing_mae']++; }
+                            if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                                && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                                && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                                && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                                $result['healthy_closed_this_run_full_complete']++;
+                            }
+                            if (isset($aiWritten) && $aiWritten) { $result['healthy_ai_dataset_written_this_run']++; }
                         }
                     }
                     $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
@@ -4458,6 +4494,12 @@ private function computeEntryDeadline(array $intent): array
             'turnover_candidates_healthy_count'          => 0,
             'turnover_healthy_closed'                    => 0,
             'turnover_orphan_closed'                     => 0,
+            // Healthy-specific quality counters for turnover-pass closes
+            'turnover_healthy_closed_full_complete'      => 0,
+            'turnover_healthy_closed_missing_mfe'        => 0,
+            'turnover_healthy_closed_missing_mae'        => 0,
+            'turnover_healthy_closed_missing_close_price'=> 0,
+            'turnover_healthy_ai_written'                => 0,
             // Composition state at turnover time (PART 7)
             'turnover_active_healthy_count'              => 0,
             'turnover_active_orphan_count'               => 0,
@@ -4694,6 +4736,16 @@ private function computeEntryDeadline(array $intent): array
                 $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
                 if (!$closedIsOrphan) {
                     $result['turnover_healthy_closed']++;
+                    if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['turnover_healthy_closed_missing_close_price']++; }
+                    if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['turnover_healthy_closed_missing_mfe']++; }
+                    if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['turnover_healthy_closed_missing_mae']++; }
+                    if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                        && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                        && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                        && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                        $result['turnover_healthy_closed_full_complete']++;
+                    }
+                    if ($aiWritten) { $result['turnover_healthy_ai_written']++; }
                 } else {
                     $result['turnover_orphan_closed']++;
                 }
@@ -4741,6 +4793,16 @@ private function computeEntryDeadline(array $intent): array
                 $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
                 if (!$closedIsOrphan) {
                     $result['turnover_healthy_closed']++;
+                    if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['turnover_healthy_closed_missing_close_price']++; }
+                    if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['turnover_healthy_closed_missing_mfe']++; }
+                    if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['turnover_healthy_closed_missing_mae']++; }
+                    if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                        && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                        && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                        && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                        $result['turnover_healthy_closed_full_complete']++;
+                    }
+                    if ($aiWritten) { $result['turnover_healthy_ai_written']++; }
                 } else {
                     $result['turnover_orphan_closed']++;
                 }

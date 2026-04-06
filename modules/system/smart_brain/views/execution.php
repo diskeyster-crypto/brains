@@ -586,6 +586,22 @@ $healthyActiveFailRun    = $bot_last_run['healthy_active_close_failures_this_run
 $healthyActiveFailRsns   = (array)($bot_last_run['healthy_active_close_failure_reasons']          ?? []);
 $healthyTurnoverTriggered   = $bot_last_run['healthy_turnover_triggered']   ?? null;
 $healthyTurnoverBlockReason = (string)($bot_last_run['healthy_turnover_block_reason'] ?? '');
+// Healthy close quality counters (this run)
+$healthyClosedTotal      = $bot_last_run['healthy_closed_this_run_total']               ?? null;
+$healthyClosedFullCompl  = $bot_last_run['healthy_closed_this_run_full_complete']       ?? null;
+$healthyClosedMissMfe    = $bot_last_run['healthy_closed_this_run_missing_mfe']         ?? null;
+$healthyClosedMissMae    = $bot_last_run['healthy_closed_this_run_missing_mae']         ?? null;
+$healthyClosedMissCp     = $bot_last_run['healthy_closed_this_run_missing_close_price'] ?? null;
+$healthyClosedMissHold   = $bot_last_run['healthy_closed_this_run_missing_hold_minutes']?? null;
+$healthyAiWrittenRun     = $bot_last_run['healthy_ai_dataset_written_this_run']         ?? null;
+// Healthy close quality from audit (all-time)
+$auditHealthyClosedTotal     = $bot_demo_truth_audit['closed_trades_healthy_total']                ?? null;
+$auditHealthyClosedFC        = $bot_demo_truth_audit['closed_trades_healthy_full_complete_count']  ?? null;
+$auditHealthyClosedFCRate    = $bot_demo_truth_audit['closed_trades_healthy_full_complete_rate']   ?? null;
+$auditHealthyMissMfe         = $bot_demo_truth_audit['closed_trades_healthy_missing_mfe_count']   ?? null;
+$auditHealthyMissMae         = $bot_demo_truth_audit['closed_trades_healthy_missing_mae_count']   ?? null;
+$auditHealthyMissCp          = $bot_demo_truth_audit['closed_trades_healthy_missing_close_price_count'] ?? null;
+$auditHealthyMissHold        = $bot_demo_truth_audit['closed_trades_healthy_missing_hold_minutes_count'] ?? null;
 // Closed trade breakdown (this run)
 $closedTotalRun          = $bot_last_run['closed_trades_this_run_total']                          ?? null;
 $closedHealthyRun        = $bot_last_run['closed_trades_this_run_healthy']                        ?? null;
@@ -1497,6 +1513,65 @@ $compOrphanCapBlocked    = $bot_last_run['demo_orphan_cap_blocked_adoptions']   
         </div>
         <?php endif; ?>
         <?php endif; // $hasHealthyTurnoverData ?>
+
+        <?php
+        // ── Healthy Close Quality sub-section ─────────────────────────────
+        $hasHealthyQualityData = $healthyClosedTotal !== null || $auditHealthyClosedTotal !== null;
+        if ($hasHealthyQualityData):
+            $hcTotal   = $healthyClosedTotal ?? 0;
+            $hcFC      = $healthyClosedFullCompl ?? 0;
+            $hcFCRate  = $hcTotal > 0 ? round($hcFC / $hcTotal * 100, 1) : 0.0;
+            $hcMissMfe = $healthyClosedMissMfe ?? 0;
+            $hcMissMae = $healthyClosedMissMae ?? 0;
+            $hcMissCp  = $healthyClosedMissCp  ?? 0;
+            $hcMissHold= $healthyClosedMissHold ?? 0;
+            $hcAi      = $healthyAiWrittenRun   ?? 0;
+            $allTimeFC     = $auditHealthyClosedFCRate !== null ? $auditHealthyClosedFCRate . '%' : 'n/a';
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Качество закрытых здоровых (этот запуск)</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $hqCards = [
+                ['label' => 'Закрыто здор. (запуск)',  'value' => (string)$hcTotal,
+                 'ok' => $hcTotal > 0 ? true : null],
+                ['label' => 'Полных записей',           'value' => "{$hcFC} / {$hcTotal} ({$hcFCRate}%)",
+                 'ok' => $hcFCRate >= 80 ? true : ($hcFCRate < 30 ? false : null)],
+                ['label' => 'Без MFE',                  'value' => (string)$hcMissMfe,
+                 'ok' => $hcMissMfe === 0 ? true : ($hcMissMfe > ($hcTotal / 2) ? false : null)],
+                ['label' => 'Без MAE',                  'value' => (string)$hcMissMae,
+                 'ok' => $hcMissMae === 0 ? true : ($hcMissMae > ($hcTotal / 2) ? false : null)],
+                ['label' => 'Без close_price',          'value' => (string)$hcMissCp,
+                 'ok' => $hcMissCp === 0 ? true : ($hcMissCp > 0 ? false : null)],
+                ['label' => 'Без hold_minutes',         'value' => (string)$hcMissHold,
+                 'ok' => $hcMissHold === 0 ? true : ($hcMissHold > 0 ? false : null)],
+                ['label' => 'AI dataset записано',      'value' => (string)$hcAi,
+                 'ok' => $hcAi === $hcTotal && $hcTotal > 0 ? true : ($hcAi < $hcTotal && $hcTotal > 0 ? false : null)],
+                ['label' => 'Полных (всё время)',        'value' => $allTimeFC,
+                 'ok' => ($auditHealthyClosedFCRate ?? 0) >= 80 ? true : (($auditHealthyClosedFCRate ?? 0) < 30 ? false : null)],
+            ];
+            foreach ($hqCards as $card): ?>
+            <div class="col-6 col-md-3">
+                <div class="stat-card <?= isset($card['ok']) ? ($card['ok'] ? 'ok' : 'warn') : '' ?>">
+                    <div class="stat-label"><?= htmlspecialchars($card['label']) ?></div>
+                    <div class="stat-value"><?= htmlspecialchars((string)$card['value']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php
+        if (($auditHealthyMissMfe ?? 0) > 0 || ($auditHealthyMissMae ?? 0) > 0
+            || ($auditHealthyMissCp ?? 0) > 0 || ($auditHealthyMissHold ?? 0) > 0): ?>
+        <div class="alert alert-warning py-1 px-2 small mb-2">
+            Всего здор. закрытых: <b><?= (int)($auditHealthyClosedTotal ?? 0) ?></b> |
+            Полных: <b><?= htmlspecialchars($allTimeFC) ?></b> |
+            Без MFE: <b><?= (int)($auditHealthyMissMfe ?? 0) ?></b> |
+            Без MAE: <b><?= (int)($auditHealthyMissMae ?? 0) ?></b> |
+            Без close_price: <b><?= (int)($auditHealthyMissCp ?? 0) ?></b> |
+            Без hold_min: <b><?= (int)($auditHealthyMissHold ?? 0) ?>
+            </b>
+        </div>
+        <?php endif; ?>
+        <?php endif; // $hasHealthyQualityData ?>
 
         <?php
         // ── Demo Composition sub-section (PART 8) ─────────────────────────

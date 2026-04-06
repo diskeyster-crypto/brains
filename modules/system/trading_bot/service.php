@@ -189,10 +189,17 @@ final class TradingBotService
         
         try {
             // Step 1: Reconcile with exchange
+            // Per-run reconcile close stats (folded into demo per-run totals later)
+            $reconcileHealthyClosed = 0;
+            $reconcileOrphanClosed  = 0;
+            $reconcileAiWritten     = 0;
             $reconciledThisRun = false;
             if ($this->config['module']['reconcile_before_action'] ?? true) {
                 $reconcileResult = $this->reconcileWithExchange();
                 $reconciledThisRun = true;
+                $reconcileHealthyClosed += (int)($reconcileResult['reconcile_healthy_closed'] ?? 0);
+                $reconcileOrphanClosed  += (int)($reconcileResult['reconcile_orphan_closed']  ?? 0);
+                $reconcileAiWritten     += (int)($reconcileResult['reconcile_ai_written']     ?? 0);
                 $result['steps'][] = [
                     'step' => 'reconcile',
                     'status' => $reconcileResult['ok'] ? 'ok' : 'error',
@@ -219,6 +226,9 @@ final class TradingBotService
                 $dlmCfgRec = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
                 if (($dlmCfgRec['enabled'] ?? false) && ($dlmCfgRec['force_reconcile_each_run_demo'] ?? false)) {
                     $demoRecResult = $this->reconcileWithExchange();
+                    $reconcileHealthyClosed += (int)($demoRecResult['reconcile_healthy_closed'] ?? 0);
+                    $reconcileOrphanClosed  += (int)($demoRecResult['reconcile_orphan_closed']  ?? 0);
+                    $reconcileAiWritten     += (int)($demoRecResult['reconcile_ai_written']     ?? 0);
                     $result['steps'][] = [
                         'step'             => 'reconcile_demo_forced',
                         'status'           => $demoRecResult['ok'] ? 'ok' : 'error',
@@ -1158,7 +1168,8 @@ final class TradingBotService
                 $demoActiveCountAfter = count($this->store->loadActiveTrades());
                 $result['demo_trades_active_before']               = $demoActiveCountBefore;
                 $result['demo_trades_opened_this_run']             = $result['positions_opened'] ?? 0;
-                $result['demo_trades_closed_this_run']             = ($updateResult['closed'] ?? 0) + $demoTurnoverTotalClosed;
+                // Include reconcile-path closes (positions gone from exchange detected before signal loop)
+                $result['demo_trades_closed_this_run']             = ($updateResult['closed'] ?? 0) + $demoTurnoverTotalClosed + $reconcileHealthyClosed + $reconcileOrphanClosed;
                 $result['demo_trades_still_active_after']          = $demoActiveCountAfter;
                 $result['demo_trades_stale_this_run']              = $updateResult['stale_trades_found'] ?? 0;
                 $result['demo_trades_reconciled_this_run']         = $updateResult['updated'] ?? 0;
@@ -1166,14 +1177,16 @@ final class TradingBotService
                 $result['demo_trades_finalized_locally_this_run']  = $updateResult['finalized_locally_this_run'] ?? 0;
                 $result['demo_average_active_age_minutes']         = $updateResult['avg_active_age_minutes'] ?? null;
                 $result['demo_oldest_active_trade_minutes']        = $updateResult['oldest_active_trade_minutes'] ?? null;
-                $result['demo_ai_dataset_records_written_this_run']= ($updateResult['ai_dataset_records_written'] ?? 0) + $demoTurnoverAiWritten;
+                // Include reconcile-path AI writes
+                $result['demo_ai_dataset_records_written_this_run']= ($updateResult['ai_dataset_records_written'] ?? 0) + $demoTurnoverAiWritten + $reconcileAiWritten;
                 $result['demo_close_failures_this_run']            = $updateResult['close_failures'] ?? 0;
                 $result['demo_close_failure_reasons']              = $updateResult['close_failure_reasons'] ?? [];
                 $result['top_stale_trade_reasons']                 = $updateResult['stale_trade_reasons'] ?? [];
 
                 // ── Adopted orphan turnover counters ────────────────────────
                 $result['adopted_orphans_active_before']                   = $updateResult['adopted_orphans_active_before'] ?? 0;
-                $result['adopted_orphans_closed_this_run']                 = ($updateResult['adopted_orphans_closed_this_run'] ?? 0) + $demoTurnoverOrphanClosed;
+                // Include reconcile-path orphan closes
+                $result['adopted_orphans_closed_this_run']                 = ($updateResult['adopted_orphans_closed_this_run'] ?? 0) + $demoTurnoverOrphanClosed + $reconcileOrphanClosed;
                 $result['adopted_orphans_stale_this_run']                  = $updateResult['adopted_orphans_stale_this_run'] ?? 0;
                 $result['adopted_orphans_finalized_locally_this_run']      = $updateResult['adopted_orphans_finalized_locally_this_run'] ?? 0;
                 $result['adopted_orphans_finalized_from_exchange_this_run']= $updateResult['adopted_orphans_finalized_from_exchange_this_run'] ?? 0;
@@ -1200,8 +1213,8 @@ final class TradingBotService
                 $result['healthy_active_turnover_candidates_count']        = ($updateResult['healthy_active_stale_count'] ?? 0) + ($updateResult['healthy_active_timeout_eligible_count'] ?? 0);
                 // processed = closures from updateActivePositions + closures from performDemoTurnoverPass
                 $result['healthy_active_turnover_processed_count']         = ($updateResult['healthy_active_processed_this_run'] ?? 0) + $demoTurnoverHealthyClosed;
-                // closed = both paths combined so the counter is always truthful
-                $result['healthy_active_closed_this_run']                  = ($updateResult['healthy_active_closed_this_run'] ?? 0) + $demoTurnoverHealthyClosed;
+                // closed = all paths combined: updateActivePositions + turnover pass + reconcile path
+                $result['healthy_active_closed_this_run']                  = ($updateResult['healthy_active_closed_this_run'] ?? 0) + $demoTurnoverHealthyClosed + $reconcileHealthyClosed;
                 $result['healthy_active_close_failures_this_run']          = $updateResult['healthy_active_close_failures_this_run'] ?? 0;
                 $result['healthy_active_close_failure_reasons']            = $updateResult['healthy_active_close_failure_reasons'] ?? [];
                 // Healthy turnover triggered proof fields
@@ -1280,8 +1293,7 @@ final class TradingBotService
                 // Use explicit per-classification counters (not derived subtraction which can lie
                 // when any close path fails to increment the orphan counter).
                 $adoptedOrphansClosedThisRun = (int)($result['adopted_orphans_closed_this_run'] ?? 0);
-                // healthy_active_closed_this_run already includes both updateActivePositions healthy closes
-                // and performDemoTurnoverPass healthy closes (added at line above).
+                // healthy_active_closed_this_run includes updateActivePositions + turnover pass + reconcile path
                 $healthyClosedThisRun        = (int)($result['healthy_active_closed_this_run'] ?? 0);
                 $result['closed_trades_this_run_total']                  = $closedThisRun;
                 $result['closed_trades_this_run_healthy']                = $healthyClosedThisRun;
@@ -1293,14 +1305,17 @@ final class TradingBotService
                 $result['closed_trades_this_run_missing_mae']            = $updateResult['closed_trades_this_run_missing_mae'] ?? 0;
                 $result['closed_trades_this_run_missing_close_price']    = $updateResult['closed_trades_this_run_missing_close_price'] ?? 0;
                 $result['closed_trades_this_run_missing_hold_minutes']   = $updateResult['closed_trades_this_run_missing_hold_minutes'] ?? 0;
-                // Healthy-specific quality counters (updateActivePositions + turnover pass combined)
-                $result['healthy_closed_this_run_total']               = ($updateResult['healthy_closed_this_run_total'] ?? 0) + $demoTurnoverHealthyClosed;
+                // Healthy-specific quality counters (updateActivePositions + turnover pass + reconcile combined)
+                // Note: reconcile-path closes go through applyLocalCloseFinalize which sets MFE/MAE/close_price/hold,
+                // so we only add the reconcile_healthy_closed count to the total (missing field info not available from
+                // reconcile path without re-reading the closed file). This keeps the per-run total accurate.
+                $result['healthy_closed_this_run_total']               = ($updateResult['healthy_closed_this_run_total'] ?? 0) + $demoTurnoverHealthyClosed + $reconcileHealthyClosed;
                 $result['healthy_closed_this_run_full_complete']       = ($updateResult['healthy_closed_this_run_full_complete'] ?? 0) + $demoTurnoverHealthyFullComplete;
                 $result['healthy_closed_this_run_missing_mfe']         = ($updateResult['healthy_closed_this_run_missing_mfe'] ?? 0) + $demoTurnoverHealthyMissingMfe;
                 $result['healthy_closed_this_run_missing_mae']         = ($updateResult['healthy_closed_this_run_missing_mae'] ?? 0) + $demoTurnoverHealthyMissingMae;
                 $result['healthy_closed_this_run_missing_close_price'] = ($updateResult['healthy_closed_this_run_missing_close_price'] ?? 0) + $demoTurnoverHealthyMissingClosePrice;
                 $result['healthy_closed_this_run_missing_hold_minutes']= ($updateResult['healthy_closed_this_run_missing_hold_minutes'] ?? 0);
-                $result['healthy_ai_dataset_written_this_run']         = ($updateResult['healthy_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverHealthyAiWritten;
+                $result['healthy_ai_dataset_written_this_run']         = ($updateResult['healthy_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverHealthyAiWritten + $reconcileAiWritten;
 
                 // ── PART 7: Velocity target diagnostics ────────────────────
                 $dlmCfgVel   = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];

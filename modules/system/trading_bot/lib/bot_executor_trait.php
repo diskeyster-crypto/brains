@@ -2382,6 +2382,15 @@ trait BotExecutorTrait
                             || $currentRoiPct < (float)$runtime['worst_roi_seen']) {
                             $runtime['worst_roi_seen'] = $currentRoiPct;
                         }
+                        // Track best/worst price seen (useful for close_price estimation and MFE/MAE cross-check)
+                        if (!isset($runtime['best_price_seen']) || $runtime['best_price_seen'] === null
+                            || $currentPxMfe > (float)$runtime['best_price_seen']) {
+                            $runtime['best_price_seen'] = $currentPxMfe;
+                        }
+                        if (!isset($runtime['worst_price_seen']) || $runtime['worst_price_seen'] === null
+                            || $currentPxMfe < (float)$runtime['worst_price_seen']) {
+                            $runtime['worst_price_seen'] = $currentPxMfe;
+                        }
                         // Keep last_price up to date for close_price estimation
                         $runtime['last_price'] = $currentPxMfe;
                     }
@@ -2536,6 +2545,28 @@ trait BotExecutorTrait
                                         && ($closedTrade2['mfe'] ?? null) !== null && empty($closedTrade2['mfe_missing_reason'])
                                         && ($closedTrade2['mae'] ?? null) !== null && empty($closedTrade2['mae_missing_reason'])) {
                                         $result['closed_trades_this_run_full_complete']++;
+                                    }
+                                    // Classify healthy vs adopted orphan — must happen every close path
+                                    $lsIsAdoptedOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+                                    if ($lsIsAdoptedOrphan) {
+                                        $result['adopted_orphans_closed_this_run']++;
+                                        $result['adopted_orphans_finalized_locally_this_run']++;
+                                        if (isset($aiWritten) && $aiWritten) { $result['adopted_orphans_ai_dataset_written_this_run']++; }
+                                        else { $result['adopted_orphans_closed_without_ai_dataset_this_run']++; }
+                                    } else {
+                                        $result['healthy_active_closed_this_run']++;
+                                        $result['healthy_closed_this_run_total']++;
+                                        if ((float)($closedTrade2['close_price'] ?? 0) <= 0) { $result['healthy_closed_this_run_missing_close_price']++; }
+                                        if (($closedTrade2['hold_minutes'] ?? null) === null) { $result['healthy_closed_this_run_missing_hold_minutes']++; }
+                                        if (($closedTrade2['mfe'] ?? null) === null || !empty($closedTrade2['mfe_missing_reason'])) { $result['healthy_closed_this_run_missing_mfe']++; }
+                                        if (($closedTrade2['mae'] ?? null) === null || !empty($closedTrade2['mae_missing_reason'])) { $result['healthy_closed_this_run_missing_mae']++; }
+                                        if ((float)($closedTrade2['close_price'] ?? 0) > 0 && ($closedTrade2['roi'] ?? null) !== null
+                                            && (string)($closedTrade2['close_reason_normalized'] ?? '') !== ''
+                                            && ($closedTrade2['mfe'] ?? null) !== null && empty($closedTrade2['mfe_missing_reason'])
+                                            && ($closedTrade2['mae'] ?? null) !== null && empty($closedTrade2['mae_missing_reason'])) {
+                                            $result['healthy_closed_this_run_full_complete']++;
+                                        }
+                                        if (isset($aiWritten) && $aiWritten) { $result['healthy_ai_dataset_written_this_run']++; }
                                     }
                                 }
                                 $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);

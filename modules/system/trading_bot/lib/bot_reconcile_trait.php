@@ -29,6 +29,10 @@ trait BotReconcileTrait
             'positions_orphan' => 0,
             'orphan_positions_count' => 0, // P3
             'orphan_positions' => [],      // P3
+            // Per-run close stats (for demo per-run counter aggregation)
+            'reconcile_healthy_closed' => 0,
+            'reconcile_orphan_closed'  => 0,
+            'reconcile_ai_written'     => 0,
             'error' => null,
         ];
         
@@ -93,7 +97,10 @@ trait BotReconcileTrait
                 if (!$found) {
                     // Local trade not found on exchange - might be closed
                     $result['positions_closed']++;
-                    $this->handleClosedPosition($tradeId, $trade);
+                    $closeStats = $this->handleClosedPosition($tradeId, $trade);
+                    $result['reconcile_healthy_closed'] += $closeStats['healthy_closed'] ? 1 : 0;
+                    $result['reconcile_orphan_closed']  += $closeStats['orphan_closed']  ? 1 : 0;
+                    $result['reconcile_ai_written']     += $closeStats['ai_written']     ? 1 : 0;
                 }
             }
             
@@ -164,11 +171,15 @@ trait BotReconcileTrait
     
     /**
      * Handle position that was closed on exchange
-     * 
+     *
+     * Returns a result array so the caller can aggregate per-run close counters:
+     *   ['healthy_closed' => bool, 'orphan_closed' => bool, 'ai_written' => bool]
+     *
      * @param string $tradeId Trade ID
      * @param array $trade Trade data
+     * @return array Close result with classification flags
      */
-    private function handleClosedPosition(string $tradeId, array $trade): void
+    private function handleClosedPosition(string $tradeId, array $trade): array
 {
     $closedAtTs = time();
 
@@ -216,6 +227,7 @@ trait BotReconcileTrait
 
     // Demo mode: write AI-ready dataset record BEFORE moving to closed dir,
     // so the closed trade file can carry the ai_dataset_record_written flag.
+    $aiWritten = false;
     if (($this->config['module']['mode'] ?? '') === 'demo') {
         $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $trade);
         $trade['ai_dataset_record_written'] = $aiWritten;
@@ -229,6 +241,14 @@ trait BotReconcileTrait
     // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
     $symbol = (string)($trade['symbol'] ?? '');
     $this->triggerCoinPassportRebuildForSymbol($symbol);
+
+    // Return per-run classification so the caller can aggregate counters.
+    $isOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+    return [
+        'healthy_closed' => !$isOrphan,
+        'orphan_closed'  => $isOrphan,
+        'ai_written'     => $aiWritten,
+    ];
 }
 
 /**

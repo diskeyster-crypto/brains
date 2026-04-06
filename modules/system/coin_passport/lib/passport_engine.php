@@ -805,6 +805,17 @@ final class CoinPassportEngine
             'recommended_live_eligibility'  => $liveEligibility,
             'live_block_reason'             => $liveBlockReason,
 
+            // ── Decision Engine trust state (green / yellow / red / insufficient_data) ──
+            // Consumed by BotDecisionEngine to compute confidence_band without re-running
+            // the full eligibility gate on every tick.
+            'trust_state'                   => $this->computeTrustState(
+                $liveEligibility,
+                $dataConfidence,
+                $noiseScore,
+                $sampleSizeTotal,
+                $insufficientFlag
+            ),
+
             // ── Recommendations ────────────────────────────────────────────────
             'recommended_live_floor_roi'          => round($recLiveFloor, 2),
             'recommended_stage1_start_roi'        => round($recStage1, 2),
@@ -2030,5 +2041,49 @@ final class CoinPassportEngine
         }
         $data = json_decode($raw, true);
         return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Compute the trust_state field for the Decision Engine.
+     *
+     * States (roadmap Phase 4):
+     *   green            – live-eligible with solid evidence; system can act confidently
+     *   yellow           – some evidence; proceed with caution
+     *   red              – poor performance or high noise; avoid live, prefer demo learning
+     *   insufficient_data – not enough evidence to make a judgment
+     */
+    private function computeTrustState(
+        string $liveEligibility,
+        string $dataConfidence,
+        float  $noiseScore,
+        int    $sampleSizeTotal,
+        bool   $insufficientFlag
+    ): string {
+        if ($insufficientFlag || $dataConfidence === 'none' || $sampleSizeTotal < self::MIN_TOTAL_SAMPLES) {
+            return 'insufficient_data';
+        }
+
+        if ($liveEligibility === 'live_eligible'
+            && in_array($dataConfidence, ['medium', 'high'], true)
+            && $noiseScore <= 0.55) {
+            return 'green';
+        }
+
+        if ($noiseScore > 0.72) {
+            // High noise: red regardless of eligibility
+            return 'red';
+        }
+
+        if ($liveEligibility === 'live_eligible') {
+            // Eligible but not fully green (e.g., low data confidence or moderate noise)
+            return 'yellow';
+        }
+
+        // sim_only or shadow_only
+        if ($dataConfidence === 'low') {
+            return 'yellow';
+        }
+
+        return 'red';
     }
 }

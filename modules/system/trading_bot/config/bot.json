@@ -58,7 +58,8 @@
         "trailing_activation_roi": "0",
         "trailing_drawdown_factor": "0",
         "break_even_activation_roi": "0",
-        "emergency_stop_loss_pct": "5"
+        "emergency_stop_loss_pct": "5",
+        "auto_mode": false
     },
     "demo_sources": {
         "source_mode": "pattern_engine_demo",

@@ -45,6 +45,12 @@ final class TradingBotService
     
     /** @var Lib\BotStore */
     private $store;
+
+    /** @var Lib\BotDecisionEngine */
+    private $decisionEngine;
+
+    /** @var Lib\BotVerdictEngine */
+    private $verdictEngine;
     
     public function __construct()
     {
@@ -74,6 +80,25 @@ final class TradingBotService
         $this->trailingEngine = new Lib\BotTrailingEngine($this->config);
         $this->validator     = new Lib\BotValidator($this->config);
         $this->store         = new Lib\BotStore($this->storageDir, $this->config);
+
+        // Decision Engine + Verdict Engine (Phase 1 + Phase 3 of roadmap)
+        // Passport dir: coin_passport module lives as a sibling of trading_bot under modules/system/
+        $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
+        $this->decisionEngine = new Lib\BotDecisionEngine($this->storageDir, $passportsDir);
+        $this->verdictEngine  = new Lib\BotVerdictEngine($this->storageDir);
+
+        // Wire verdict engine into BotStore so verdicts are generated for EVERY close path
+        // automatically — no need to add calls inside each close branch in bot_executor_trait.
+        $verdictEngine  = $this->verdictEngine;
+        $decisionEngine = $this->decisionEngine;
+        $this->store->setOnTradeClosedHook(
+            function (string $tradeId, array $trade) use ($verdictEngine, $decisionEngine): void {
+                $decisionId = (string)($trade['decision_id'] ?? '');
+                $dp         = $decisionId !== '' ? $decisionEngine->loadDecisionPacket($decisionId) : null;
+                $verdict    = $verdictEngine->generateVerdict($tradeId, $trade, $dp);
+                $verdictEngine->saveVerdict($tradeId, $verdict);
+            }
+        );
 
         // Initialize gateway for real-exchange modes (live and demo)
         if ($mode === 'live' || $mode === 'demo') {
@@ -1031,6 +1056,36 @@ final class TradingBotService
                         break;
                     }
                     
+                    // ── Decision Engine: generate canonical decision packet ────────────
+                    // Phase 1 (roadmap): every intent gets a decision packet with confidence_band,
+                    // decision (enter_live/enter_demo/skip), passport snapshot, and lineage IDs.
+                    // In auto_mode, red-confidence intents are skipped here (Phase 6: low-confidence
+                    // policy). In manual_mode, the packet is recorded but never blocks execution.
+                    $decisionPacket = $this->decisionEngine->makeDecision($intent, $mode, $this->config);
+                    $this->decisionEngine->saveDecisionPacket($decisionPacket);
+                    // Stamp lineage fields onto intent so they propagate into the opened trade record
+                    $intent['decision_id']     = $decisionPacket['decision_id'];
+                    $intent['confidence_band'] = $decisionPacket['confidence_band'];
+                    // Auto mode: skip red-confidence signals (Phase 6 low-confidence policy)
+                    $autoMode = (bool)($this->config['execution']['auto_mode'] ?? false);
+                    if ($autoMode && $decisionPacket['decision'] === 'skip') {
+                        $this->store->saveRejectedIntent($intent, [
+                            'reason'  => 'auto_mode_confidence_red',
+                            'context' => [
+                                'confidence_band' => $decisionPacket['confidence_band'],
+                                'decision_id'     => $decisionPacket['decision_id'],
+                                'reason_codes'    => $decisionPacket['reason_codes'],
+                            ],
+                        ]);
+                        if ($isDemoLearning) {
+                            $demoSkippedBeforeAttemptCount++;
+                        } else {
+                            $executedThisRun++;
+                        }
+                        continue;
+                    }
+                    // ─────────────────────────────────────────────────────────────────
+
                     $execResult = $this->executeIntent($intent, $mode);
 
                     // Observability: build per-intent result record

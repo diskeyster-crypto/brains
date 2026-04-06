@@ -1468,6 +1468,9 @@ trait BotExecutorTrait
             'symbol' => $intent['symbol'],
             'side' => $intent['side'],
             'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
+            // Decision engine lineage fields (populated when BotDecisionEngine is active)
+            'decision_id'     => (string)($intent['decision_id'] ?? ''),
+            'confidence_band' => (string)($intent['confidence_band'] ?? ''),
             'mode' => $this->getMode(),
             'risk' => $intent['risk'],
             'exchange' => [
@@ -4644,6 +4647,9 @@ private function computeEntryDeadline(array $intent): array
             'low_watermark' => $intent['entry_price'],
             'last_price' => $intent['entry_price'],
             'last_update' => date('c'),
+            // Decision engine lineage fields (populated when BotDecisionEngine is active)
+            'decision_id'     => (string)($intent['decision_id'] ?? ''),
+            'confidence_band' => (string)($intent['confidence_band'] ?? ''),
         ];
     }
     

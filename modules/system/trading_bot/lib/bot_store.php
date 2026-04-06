@@ -13,12 +13,30 @@ class BotStore
 {
     private string $storageDir;
     private array $config;
+
+    /**
+     * Optional callback invoked after every trade is moved to the closed directory.
+     * Signature: function(string $tradeId, array $closedTrade): void
+     * Used by the verdict engine to generate and persist verdicts without coupling
+     * the close paths in bot_executor_trait to a specific verdict implementation.
+     */
+    private $onTradeClosedHook = null;
     
     public function __construct(string $storageDir, array $config)
     {
         $this->storageDir = $storageDir;
         $this->config = $config;
         $this->ensureDirectories();
+    }
+
+    /**
+     * Register a callback that fires after moveTradeToClosedDir persists the record.
+     * Non-fatal: exceptions inside the hook are silently swallowed so close operations
+     * are never blocked by verdict-write failures.
+     */
+    public function setOnTradeClosedHook(callable $hook): void
+    {
+        $this->onTradeClosedHook = $hook;
     }
     
     /**
@@ -229,6 +247,15 @@ class BotStore
         $activePath = $this->storageDir . '/trades/active/' . $tradeId . '.json';
         if (is_file($activePath)) {
             @unlink($activePath);
+        }
+
+        // Fire post-close hook (verdict engine registration point)
+        if ($this->onTradeClosedHook !== null) {
+            try {
+                ($this->onTradeClosedHook)($tradeId, $trade);
+            } catch (\Throwable $e) {
+                // Non-fatal: verdict write errors must never block a close operation
+            }
         }
     }
     

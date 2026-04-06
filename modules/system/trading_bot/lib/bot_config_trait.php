@@ -225,6 +225,7 @@ trait BotConfigTrait
                             'trailing_enabled',
                             'break_even_enabled',
                             'emergency_stop_enabled',
+                            'auto_mode',
                         ];
 
                         foreach ($bools as $k) {

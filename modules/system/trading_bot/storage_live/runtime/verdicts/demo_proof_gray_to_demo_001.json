@@ -1,0 +1,32 @@
+{
+    "verdict_id": "v_demo_proof_gray_to_demo_001",
+    "trade_id": "demo_proof_gray_to_demo_001",
+    "decision_id": "dp_proof_gray_to_demo_001",
+    "signal_id": "sig_proof_001",
+    "execution_mode": "demo",
+    "symbol": "PIXELUSDT",
+    "side": "long",
+    "pattern_algorithm": "bullish_flag",
+    "confidence_band": "gray",
+    "entry_time": "2026-04-06T19:50:16+00:00",
+    "close_time": "2026-04-06T20:20:16+00:00",
+    "hold_minutes": 30,
+    "pnl": -0.04,
+    "roi": -0.0042,
+    "peak_roi": 0.0121,
+    "max_drawdown": -0.0091,
+    "close_reason": "learning_timeout",
+    "stop_behavior": {
+        "stop_hit": false
+    },
+    "trailing_behavior": {
+        "trailing_active": false
+    },
+    "decision_correctness": false,
+    "learning_verdict": "loss",
+    "is_parallel_demo_shadow": false,
+    "live_trade_id": null,
+    "created_at": "2026-04-06T20:20:16+00:00",
+    "ts": 1775506816,
+    "_verification_note": "PROOF P1: verdict for gray-routed demo trade. Links back to decision_id in live storage/runtime/decisions/."
+}

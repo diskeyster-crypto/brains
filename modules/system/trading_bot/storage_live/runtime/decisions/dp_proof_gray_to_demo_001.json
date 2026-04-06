@@ -1,0 +1,27 @@
+{
+    "decision_id": "dp_proof_gray_to_demo_001",
+    "signal_id": "sig_proof_001",
+    "intent_id": "intent_proof_001",
+    "symbol": "PIXELUSDT",
+    "side": "long",
+    "pattern_algorithm": "bullish_flag",
+    "confidence_score": 0.52,
+    "confidence_band": "gray",
+    "decision": "enter_demo",
+    "execution_mode": "demo",
+    "auto_mode": true,
+    "bot_mode": "live",
+    "reason_codes": [
+        "insufficient_passport_data",
+        "gray_band_routed_to_demo"
+    ],
+    "parallel_demo_suggested": false,
+    "passport_snapshot": {
+        "symbol": "PIXELUSDT",
+        "trust_state": "insufficient_data"
+    },
+    "proposed_budget": 10,
+    "created_at": "2026-04-06T19:50:16+00:00",
+    "ts": 1775505016,
+    "_verification_note": "PROOF P1: live bot + auto_mode=true + gray confidence → enter_demo. Trade stored in demo storage via store-swap (parallelDemoStore). No real order placed (demoExecutionContext=true)."
+}

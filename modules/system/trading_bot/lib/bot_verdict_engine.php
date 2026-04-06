@@ -107,6 +107,12 @@ final class BotVerdictEngine
             'decision_correctness' => $decisionCorrectness,
             'learning_verdict'     => $learningVerdict,
 
+            // Parallel demo shadow linkage (preserves traceability for shadow trade verdicts)
+            'is_parallel_demo_shadow' => (bool)($closedTrade['is_parallel_demo_shadow'] ?? false),
+            'live_trade_id'           => ($closedTrade['is_parallel_demo_shadow'] ?? false)
+                ? ($closedTrade['live_trade_id'] ?? null)
+                : null,
+
             // Metadata
             'created_at'           => date('c'),
             'ts'                   => time(),

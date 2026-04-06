@@ -1282,6 +1282,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         $compHealthyMinSlots = ($storeDlm['enabled'] ?? false) ? (int)($storeDlm['healthy_min_active_slots'] ?? 0) : 0;
         $compShareTargetPct  = ($storeDlm['enabled'] ?? false) ? (float)($storeDlm['healthy_share_target_pct'] ?? 0) : 0.0;
 
+        // ── Bootstrap config (healthy-close accelerator) ─────────────────────
+        $bootstrapEnabled      = ($storeDlm['enabled'] ?? false) && !empty($storeDlm['healthy_close_bootstrap_enabled']);
+        $bootstrapShareTarget  = $bootstrapEnabled ? (float)($storeDlm['healthy_closed_share_target_pct'] ?? 0) : 0.0;
+        $bootstrapTimeoutMin   = $bootstrapEnabled ? (int)($storeDlm['healthy_close_timeout_minutes_bootstrap'] ?? 0) : 0;
+        $bootstrapStaleMin     = $bootstrapEnabled ? (int)($storeDlm['healthy_stale_age_minutes_bootstrap']   ?? 0) : 0;
+
         // ── Composition metrics (PART 4) ─────────────────────────────────────
         $healthyShareActivePct = $activeCount > 0
             ? round($healthyActiveCount / $activeCount * 100, 1) : 0.0;
@@ -1292,6 +1298,12 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             ? round($orphanAdoptedCount / $compOrphanMaxSlots * 100, 1) : 0.0;
         $healthySlotReserveAvailable = $compHealthyMinSlots > 0
             ? max(0, $compHealthyMinSlots - $healthyActiveCount) : 0;
+
+        // ── Bootstrap metrics (healthy-close accelerator) ────────────────────
+        $bootstrapActive      = $bootstrapEnabled && $bootstrapShareTarget > 0
+            && $healthyShareClosedPct < $bootstrapShareTarget;
+        $bootstrapShareGap    = $bootstrapShareTarget > 0
+            ? round(max(0.0, $bootstrapShareTarget - $healthyShareClosedPct), 1) : 0.0;
 
         // Resolve capacity_slots_total (use runtime when provided, fall back to config)
         if ($capacitySlotsTotal === 0 && $storeMaxCap > 0) {
@@ -1621,6 +1633,13 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             // Consistency check
             'capacity_runtime_consistency_ok'          => $consistencyOk,
             'capacity_runtime_consistency_warning'     => $consistencyWarning,
+            // Bootstrap healthy-close accelerator diagnostics
+            'healthy_close_bootstrap_enabled'          => $bootstrapEnabled,
+            'healthy_close_bootstrap_active'           => $bootstrapActive,
+            'healthy_closed_share_target_pct'          => $bootstrapShareTarget,
+            'healthy_closed_share_gap_pct'             => $bootstrapShareGap,
+            'healthy_bootstrap_timeout_minutes_effective' => $bootstrapActive ? $bootstrapTimeoutMin : 0,
+            'healthy_bootstrap_stale_minutes_effective'   => $bootstrapActive ? $bootstrapStaleMin   : 0,
             'audited_at'                               => date('c'),
         ];
     }
@@ -1634,6 +1653,20 @@ public function saveClosedTrade(string $tradeId, array $trade): void
     {
         $path = $this->storageDir . '/runtime/demo_truth_audit.json';
         $this->writeJson($path, $audit);
+    }
+
+    /**
+     * Load healthy_share_closed_pct from the previously saved audit (lightweight, no file scanning).
+     * Returns 0.0 if no previous audit exists.
+     */
+    public function getPreviousHealthyShareClosedPct(): float
+    {
+        $path = $this->storageDir . '/runtime/demo_truth_audit.json';
+        if (!file_exists($path)) {
+            return 0.0;
+        }
+        $data = @json_decode((string)file_get_contents($path), true);
+        return is_array($data) ? (float)($data['healthy_share_closed_pct'] ?? 0.0) : 0.0;
     }
 
     // =========================================================================

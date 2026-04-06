@@ -878,6 +878,20 @@ final class TradingBotService
                         }
                         $demoCapacityFull = ($demoMaxCap > 0 && $demoCapRemaining === 0);
 
+                        // ── Bootstrap mode: healthy-close accelerator ──────────────────────────
+                        // Load bootstrap config from demo_learning_mode.
+                        // The previous run's healthy_share_closed_pct comes from the saved audit
+                        // file so bootstrap can self-activate without scanning closed trade files.
+                        $bootstrapEnabled     = !empty($dlmCfg['healthy_close_bootstrap_enabled']);
+                        $bootstrapShareTarget = $bootstrapEnabled ? (float)($dlmCfg['healthy_closed_share_target_pct'] ?? 0) : 0.0;
+                        $bootstrapTimeoutMin  = $bootstrapEnabled ? (int)($dlmCfg['healthy_close_timeout_minutes_bootstrap'] ?? 0) : 0;
+                        $bootstrapStaleMin    = $bootstrapEnabled ? (int)($dlmCfg['healthy_stale_age_minutes_bootstrap']   ?? 0) : 0;
+                        $prevHealthyShareClosed = $bootstrapEnabled ? $this->store->getPreviousHealthyShareClosedPct() : 0.0;
+                        $bootstrapActive      = $bootstrapEnabled && $bootstrapShareTarget > 0
+                            && $prevHealthyShareClosed < $bootstrapShareTarget;
+                        $bootstrapShareGap    = $bootstrapShareTarget > 0
+                            ? round(max(0.0, $bootstrapShareTarget - $prevHealthyShareClosed), 1) : 0.0;
+
                         // ── Turnover pass: run whenever there are active demo trades ──────────
                         // Runs BEFORE the signal execution loop so freed slots benefit new opens
                         // in the same cycle. This applies regardless of whether capacity is full —
@@ -957,12 +971,18 @@ final class TradingBotService
                         // Inject composition state into config so executor trait can read it
                         // when evaluating orphan adoption in the signal loop below.
                         $this->config['demo_composition'] = [
-                            'orphan_cap_reached'       => $compOrphanCapReached,
-                            'orphan_max_active_slots'  => $compOrphanMax,
-                            'healthy_min_active_slots' => $compHealthyMin,
-                            'healthy_share_target_pct' => $compShareTarget,
-                            'active_healthy_count'     => $demoActiveHealthyCount,
-                            'active_orphan_count'      => $demoActiveOrphanCount,
+                            'orphan_cap_reached'                      => $compOrphanCapReached,
+                            'orphan_max_active_slots'                 => $compOrphanMax,
+                            'healthy_min_active_slots'                => $compHealthyMin,
+                            'healthy_share_target_pct'                => $compShareTarget,
+                            'active_healthy_count'                    => $demoActiveHealthyCount,
+                            'active_orphan_count'                     => $demoActiveOrphanCount,
+                            'healthy_close_bootstrap_active'          => $bootstrapActive,
+                            'healthy_close_bootstrap_enabled'         => $bootstrapEnabled,
+                            'healthy_closed_share_target_pct'         => $bootstrapShareTarget,
+                            'healthy_close_timeout_minutes_bootstrap' => $bootstrapTimeoutMin,
+                            'healthy_stale_age_minutes_bootstrap'     => $bootstrapStaleMin,
+                            'prev_healthy_share_closed_pct'           => $prevHealthyShareClosed,
                         ];
                     } else {
                         $demoActiveHealthyCount = 0;
@@ -1494,6 +1514,15 @@ final class TradingBotService
                 $result['healthy_closed_this_run_missing_hold_minutes']= ($updateResult['healthy_closed_this_run_missing_hold_minutes'] ?? 0);
                 $result['healthy_ai_dataset_written_this_run']         = ($updateResult['healthy_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverHealthyAiWritten + $reconcileAiWritten;
 
+                // ── Bootstrap healthy-close accelerator diagnostics ──────────
+                $result['healthy_close_bootstrap_enabled']             = $bootstrapEnabled;
+                $result['healthy_close_bootstrap_active']              = $bootstrapActive;
+                $result['healthy_closed_share_target_pct']             = $bootstrapShareTarget;
+                $result['healthy_share_closed_pct_prev_run']           = $prevHealthyShareClosed;
+                $result['healthy_closed_share_gap_pct']                = $bootstrapShareGap;
+                $result['healthy_bootstrap_timeout_minutes_effective'] = $bootstrapActive ? $bootstrapTimeoutMin : 0;
+                $result['healthy_bootstrap_stale_minutes_effective']   = $bootstrapActive ? $bootstrapStaleMin   : 0;
+
                 // ── PART 7: Velocity target diagnostics ────────────────────
                 $dlmCfgVel   = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
                 $targetPerRun = max(1, (int)($dlmCfgVel['demo_closed_per_run_target'] ?? 1));
@@ -1829,6 +1858,9 @@ final class TradingBotService
                 // PART 5: Composition bottleneck label from audit
                 $result['demo_composition_bottleneck']        = $demoTruthAudit['primary_composition_bottleneck']   ?? '';
                 $result['demo_composition_bottleneck_reason'] = $demoTruthAudit['primary_composition_bottleneck_reason'] ?? '';
+                // Bootstrap diagnostics from current-run audit (post-run values, refresh for UI)
+                $result['healthy_close_bootstrap_active_post_run'] = $demoTruthAudit['healthy_close_bootstrap_active'] ?? false;
+                $result['healthy_share_closed_pct_post_run']       = $demoTruthAudit['healthy_share_closed_pct']       ?? 0.0;
 
                 // Merge consistency fields into sufficiency for downstream reads
                 $demoSufficiency['closed_trades_without_ai_dataset_count'] = $demoTruthAudit['closed_trades_without_ai_dataset_count'];

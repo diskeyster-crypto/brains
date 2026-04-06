@@ -641,6 +641,14 @@ $compBottleneck          = (string)($bot_last_run['demo_composition_bottleneck']
 $compBottleneckReason    = (string)($bot_last_run['demo_composition_bottleneck_reason'] ?? $bot_demo_truth_audit['primary_composition_bottleneck_reason'] ?? '');
 $compShareTarget         = $bot_demo_truth_audit['healthy_share_target_pct']   ?? null;
 $compOrphanCapBlocked    = $bot_last_run['demo_orphan_cap_blocked_adoptions']   ?? null;
+// Bootstrap healthy-close accelerator fields
+$bootstrapEnabled        = $bot_last_run['healthy_close_bootstrap_enabled']              ?? $bot_demo_truth_audit['healthy_close_bootstrap_enabled'] ?? null;
+$bootstrapActive         = $bot_last_run['healthy_close_bootstrap_active']               ?? $bot_demo_truth_audit['healthy_close_bootstrap_active'] ?? null;
+$bootstrapShareTarget    = $bot_last_run['healthy_closed_share_target_pct']              ?? $bot_demo_truth_audit['healthy_closed_share_target_pct'] ?? null;
+$bootstrapShareGap       = $bot_last_run['healthy_closed_share_gap_pct']                 ?? $bot_demo_truth_audit['healthy_closed_share_gap_pct'] ?? null;
+$bootstrapShareClosed    = $bot_last_run['healthy_share_closed_pct_prev_run']            ?? $bot_last_run['demo_healthy_share_closed_pct'] ?? $bot_demo_truth_audit['healthy_share_closed_pct'] ?? null;
+$bootstrapTimeoutEff     = $bot_last_run['healthy_bootstrap_timeout_minutes_effective']  ?? $bot_demo_truth_audit['healthy_bootstrap_timeout_minutes_effective'] ?? null;
+$bootstrapStaleEff       = $bot_last_run['healthy_bootstrap_stale_minutes_effective']    ?? $bot_demo_truth_audit['healthy_bootstrap_stale_minutes_effective'] ?? null;
 ?>
 <?php if ($bot_mode === 'demo' && $demoSrcMode !== ''): ?>
 <div class="card mb-4" style="border-color:#1e40af;">
@@ -1649,6 +1657,67 @@ $compOrphanCapBlocked    = $bot_last_run['demo_orphan_cap_blocked_adoptions']   
         </div>
         <?php endif; ?>
         <?php endif; // $hasCompData ?>
+
+        <?php
+        // ── Bootstrap healthy-close accelerator sub-section ───────────────
+        $hasBootstrapData = $bootstrapEnabled !== null || $bootstrapActive !== null;
+        if ($hasBootstrapData):
+            $bsActive  = (bool)$bootstrapActive;
+            $bsEnabled = (bool)$bootstrapEnabled;
+            $bsTgt     = $bootstrapShareTarget !== null ? (float)$bootstrapShareTarget : 0.0;
+            $bsGap     = $bootstrapShareGap    !== null ? (float)$bootstrapShareGap    : 0.0;
+            $bsShare   = $bootstrapShareClosed !== null ? (float)$bootstrapShareClosed : 0.0;
+            $bsTO      = $bootstrapTimeoutEff  !== null ? (int)$bootstrapTimeoutEff    : 0;
+            $bsSt      = $bootstrapStaleEff    !== null ? (int)$bootstrapStaleEff      : 0;
+        ?>
+        <div class="section-heading" style="font-size:.8rem;margin-top:.85rem;">Бустрап здоровых закрытий (bootstrap)</div>
+        <div class="row g-2 mb-2">
+            <?php
+            $bsCards = [
+                ['label' => 'Bootstrap включён',         'value' => $bsEnabled ? 'ДА' : 'НЕТ',
+                 'ok' => $bsEnabled ? null : null],
+                ['label' => 'Bootstrap активен',         'value' => $bsActive ? 'ДА' : 'НЕТ',
+                 'ok' => $bsActive ? true : false],
+                ['label' => 'Здор. доля закрыт. (пред.)', 'value' => $bsShare . '%',
+                 'ok' => $bsTgt > 0 && $bsShare >= $bsTgt ? true : ($bsShare < $bsTgt * 0.5 ? false : null)],
+                ['label' => 'Цель здор. доли (%)',        'value' => $bsTgt > 0 ? $bsTgt . '%' : 'н/д',
+                 'ok' => null],
+                ['label' => 'Разрыв до цели (%)',         'value' => $bsTgt > 0 ? $bsGap . '%' : 'н/д',
+                 'ok' => $bsGap === 0.0 ? true : ($bsGap > 30 ? false : null)],
+                ['label' => 'Таймаут (bootstrap, мин)',   'value' => $bsActive && $bsTO > 0 ? $bsTO . ' мин' : '—',
+                 'ok' => null],
+                ['label' => 'Устар. порог (bootstrap, мин)', 'value' => $bsActive && $bsSt > 0 ? $bsSt . ' мин' : '—',
+                 'ok' => null],
+                ['label' => 'Здор. закрыто (запуск)',     'value' => $healthyClosedTotal !== null ? (string)$healthyClosedTotal : 'n/a',
+                 'ok' => ($healthyClosedTotal ?? 0) > 0 ? true : null],
+                ['label' => 'AI записей здор. (запуск)',  'value' => $healthyAiWrittenRun !== null ? (string)$healthyAiWrittenRun : 'n/a',
+                 'ok' => ($healthyAiWrittenRun ?? 0) > 0 ? true : null],
+            ];
+            foreach ($bsCards as $bsc):
+                $bsCls = 'neutral';
+                if ($bsc['ok'] === true)  $bsCls = 'positive';
+                if ($bsc['ok'] === false) $bsCls = 'negative';
+            ?>
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value <?= $bsCls ?>"><?= htmlspecialchars((string)$bsc['value']) ?></div>
+                    <div class="stat-label"><?= htmlspecialchars($bsc['label']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($bsActive): ?>
+        <div class="alert alert-info py-1 px-2 small mb-2">
+            <strong>Bootstrap активен:</strong> здоровая доля закрытий <?= htmlspecialchars((string)$bsShare) ?>% (цель <?= htmlspecialchars((string)$bsTgt) ?>%, разрыв <?= htmlspecialchars((string)$bsGap) ?>%).
+            Таймаут: <?= $bsTO > 0 ? $bsTO . ' мин' : 'н/д' ?>, устар. порог: <?= $bsSt > 0 ? $bsSt . ' мин' : 'н/д' ?>.
+            Здоровые сделки закрываются быстрее до достижения цели.
+        </div>
+        <?php elseif ($bsEnabled && !$bsActive): ?>
+        <div class="alert alert-success py-1 px-2 small mb-2">
+            <strong>Bootstrap неактивен:</strong> здоровая доля закрытий <?= htmlspecialchars((string)$bsShare) ?>% ≥ цели <?= htmlspecialchars((string)$bsTgt) ?>%. Нормальные пороги действуют.
+        </div>
+        <?php endif; ?>
+        <?php endif; // $hasBootstrapData ?>
     </div>
 </div>
 <?php endif; ?>

@@ -1689,6 +1689,15 @@ trait BotExecutorTrait
             : 0;
         $preferCloseStale = $dlmEnabled && !empty($dlmCfg['prefer_close_stale_when_learning']);
 
+        // ── Bootstrap mode: healthy-close accelerator thresholds ────────────
+        // Read from demo_composition config injected by service.php before this call.
+        $demoComp = is_array($this->config['demo_composition'] ?? null) ? $this->config['demo_composition'] : [];
+        $bootstrapActive       = $mode === 'demo' && !empty($demoComp['healthy_close_bootstrap_active']);
+        $bootstrapTimeoutMin   = $bootstrapActive && ($demoComp['healthy_close_timeout_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoComp['healthy_close_timeout_minutes_bootstrap'] : 0;
+        $bootstrapStaleMin     = $bootstrapActive && ($demoComp['healthy_stale_age_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoComp['healthy_stale_age_minutes_bootstrap'] : 0;
+
         // Compute active-age stats across all trades (demo mode only)
         if ($mode === 'demo' && count($trades) > 0) {
             $ageAccum = 0;
@@ -1877,9 +1886,17 @@ trait BotExecutorTrait
                 // Hard timeout fires whenever demo learning mode is active and a close timeout is configured.
                 // This applies to both healthy actives and is not gated on prefer_close_stale_when_learning
                 // so that the timeout is authoritative regardless of soft-stale preference config.
-                if ($mode === 'demo' && $dlmEnabled && $closeTimeoutMinutes > 0) {
+                // When bootstrap mode is active, healthy (non-orphan) trades use the shorter bootstrap timeout.
+                $effectiveCloseTimeout = $closeTimeoutMinutes;
+                $closeBootstrapTriggered = false;
+                if (!$isAdoptedTrade && $bootstrapActive && $bootstrapTimeoutMin > 0
+                    && ($closeTimeoutMinutes <= 0 || $bootstrapTimeoutMin < $closeTimeoutMinutes)) {
+                    $effectiveCloseTimeout   = $bootstrapTimeoutMin;
+                    $closeBootstrapTriggered = true;
+                }
+                if ($mode === 'demo' && $dlmEnabled && $effectiveCloseTimeout > 0) {
                     $tradeAgeMin = (int)($trade['age_minutes'] ?? 0);
-                    if ($tradeAgeMin >= $closeTimeoutMinutes) {
+                    if ($tradeAgeMin >= $effectiveCloseTimeout) {
                         if (!$isAdoptedTrade) {
                             $result['healthy_active_processed_this_run']++;
                         }
@@ -1918,6 +1935,7 @@ trait BotExecutorTrait
                             'learning_timeout_force_close' => true,
                             'close_detection_result'       => $closeDetectionResultTimeout,
                             'close_detection_source'       => 'learning_timeout_force_close',
+                            'bootstrap_close_triggered'    => $closeBootstrapTriggered,
                         ]);
                         if (method_exists($this, 'applyLocalCloseFinalize')) {
                             $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
@@ -4860,6 +4878,14 @@ private function computeEntryDeadline(array $intent): array
         $maxPerRun         = max(1, (int)($dlmCfg['max_turnover_per_run'] ?? 5));
         $nowTs             = time();
 
+        // ── Bootstrap mode: healthy-close accelerator ────────────────────────
+        $demoCompTov = is_array($this->config['demo_composition'] ?? null) ? $this->config['demo_composition'] : [];
+        $bootstrapActiveTov     = !empty($demoCompTov['healthy_close_bootstrap_active']);
+        $bootstrapTimeoutMinTov = $bootstrapActiveTov && ($demoCompTov['healthy_close_timeout_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoCompTov['healthy_close_timeout_minutes_bootstrap'] : 0;
+        $bootstrapStaleMinTov   = $bootstrapActiveTov && ($demoCompTov['healthy_stale_age_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoCompTov['healthy_stale_age_minutes_bootstrap'] : 0;
+
         // ── PART 7: Composition-aware config ───────────────────────────────
         $compOrphanMaxSlots  = $dlmEnabled ? (int)($dlmCfg['orphan_max_active_slots'] ?? 0) : 0;
         $compHealthyMinSlots = $dlmEnabled ? (int)($dlmCfg['healthy_min_active_slots'] ?? 0) : 0;
@@ -4899,8 +4925,19 @@ private function computeEntryDeadline(array $intent): array
             $hasSide     = in_array($trade['side'] ?? '', ['long', 'short'], true);
             $isDeadShell = $isOrphan && (!$hasEntry || !$hasQty || !$hasSide);
 
-            $isTimeout   = $closeTimeoutMin > 0 && $ageMin >= $closeTimeoutMin;
-            $isStale     = $staleAgeMin > 0 && $ageMin >= $staleAgeMin;
+            // Determine effective timeout/stale thresholds — bootstrap uses shorter thresholds for healthy trades
+            $effectiveTimeoutMin = $closeTimeoutMin;
+            $effectiveStaleMin   = $staleAgeMin;
+            if ($bootstrapActiveTov && !$isOrphan && !$isDeadShell) {
+                if ($bootstrapTimeoutMinTov > 0 && ($closeTimeoutMin <= 0 || $bootstrapTimeoutMinTov < $closeTimeoutMin)) {
+                    $effectiveTimeoutMin = $bootstrapTimeoutMinTov;
+                }
+                if ($bootstrapStaleMinTov > 0 && ($staleAgeMin <= 0 || $bootstrapStaleMinTov < $staleAgeMin)) {
+                    $effectiveStaleMin = $bootstrapStaleMinTov;
+                }
+            }
+            $isTimeout   = $effectiveTimeoutMin > 0 && $ageMin >= $effectiveTimeoutMin;
+            $isStale     = $effectiveStaleMin   > 0 && $ageMin >= $effectiveStaleMin;
 
             $score  = 0;
             $reason = 'age_based';
@@ -4912,16 +4949,20 @@ private function computeEntryDeadline(array $intent): array
                 $score  = 90 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
                 $reason = 'orphan_adopted_timeout_exceeded';
             } elseif ($isTimeout && !$isOrphan) {
-                // Healthy active that exceeded hard timeout — always eligible, not gated on prefer_close_stale
-                $score  = 80 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
-                $reason = 'healthy_trade_timeout_exceeded';
+                // Healthy active that exceeded timeout (normal or bootstrap-shortened)
+                $score  = 80 + min(9, $effectiveTimeoutMin > 0 ? (int)($ageMin / $effectiveTimeoutMin * 9) : 0);
+                $reason = ($bootstrapActiveTov && $effectiveTimeoutMin === $bootstrapTimeoutMinTov)
+                    ? 'healthy_bootstrap_timeout_exceeded'
+                    : 'healthy_trade_timeout_exceeded';
             } elseif ($isOrphan && $isStale) {
                 $score  = 70;
                 $reason = 'orphan_adopted_stale';
             } elseif ($isStale && !$isOrphan) {
-                // Healthy active that exceeded the stale threshold
+                // Healthy active that exceeded the stale threshold (normal or bootstrap-shortened)
                 $score  = 60;
-                $reason = 'healthy_trade_stale';
+                $reason = ($bootstrapActiveTov && $effectiveStaleMin === $bootstrapStaleMinTov)
+                    ? 'healthy_bootstrap_stale'
+                    : 'healthy_trade_stale';
             } elseif ($isStale) {
                 $score  = 55;
                 $reason = 'trade_stale';
@@ -4936,6 +4977,15 @@ private function computeEntryDeadline(array $intent): array
             // This ensures recovered slots become available for new healthy opens.
             if ($compOrphanPressureHigh && $isOrphan && !$isDeadShell && $score > 0) {
                 $score += 15;
+            }
+
+            // Bootstrap boost: when healthy closed share is below target, boost eligible healthy
+            // trade scores by +10 so they are prioritised over lower-scoring orphan holds.
+            if ($bootstrapActiveTov && !$isOrphan && !$isDeadShell && ($isTimeout || $isStale) && $score > 0) {
+                $score  += 10;
+                $reason  = ($reason === 'healthy_bootstrap_timeout_exceeded' || $reason === 'healthy_bootstrap_stale')
+                    ? $reason
+                    : 'healthy_bootstrap_turnover_priority';
             }
 
             if ($score > 0 || $isDeadShell || $isTimeout) {
@@ -5083,6 +5133,12 @@ private function computeEntryDeadline(array $intent): array
                     'turnover_priority_reason'      => $reason,
                     'close_priority_score'          => $info['score'],
                     'learning_timeout_force_close'  => true,
+                    'bootstrap_close_triggered'     => $bootstrapActiveTov && in_array($reason, [
+                        'healthy_bootstrap_timeout_exceeded',
+                        'healthy_bootstrap_stale',
+                        'healthy_bootstrap_turnover_priority',
+                        'healthy_bootstrap_share_gap',
+                    ], true),
                 ]);
                 if (method_exists($this, 'applyLocalCloseFinalize')) {
                     $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);

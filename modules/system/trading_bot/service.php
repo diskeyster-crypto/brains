@@ -115,6 +115,22 @@ final class TradingBotService
                 $dp         = $decisionId !== '' ? $decisionEngine->loadDecisionPacket($decisionId) : null;
                 $verdict    = $verdictEngine->generateVerdict($tradeId, $trade, $dp);
                 $verdictEngine->saveVerdict($tradeId, $verdict);
+                // ── Journal: verdict_written ──────────────────────────────────────────
+                $this->journalEvent(
+                    'verdict_written', 'verdict',
+                    true,
+                    'Verdict written for trade: ' . $tradeId,
+                    [
+                        'decision_id'             => $decisionId ?: null,
+                        'signal_id'               => $trade['signal_id'] ?? null,
+                        'symbol'                  => $trade['symbol'] ?? null,
+                        'execution_mode'          => $trade['execution_mode'] ?? null,
+                        'confidence_band'         => $trade['confidence_band'] ?? null,
+                        'is_parallel_demo_shadow' => (bool)($trade['is_parallel_demo_shadow'] ?? false),
+                        'live_trade_id'           => null,
+                    ]
+                );
+                // ─────────────────────────────────────────────────────────────────────
             }
         );
 
@@ -127,6 +143,38 @@ final class TradingBotService
                     $dp         = $decisionId !== '' ? $decisionEngine->loadDecisionPacket($decisionId) : null;
                     $verdict    = $verdictEngine->generateVerdict($tradeId, $trade, $dp);
                     $verdictEngine->saveVerdict($tradeId, $verdict);
+                    // ── Journal: parallel_demo_shadow_closed + verdict_written ────────────
+                    if (!empty($trade['is_parallel_demo_shadow'])) {
+                        $this->journalEvent(
+                            'parallel_demo_shadow_closed', 'verdict',
+                            true,
+                            'Shadow demo trade closed: ' . $tradeId,
+                            [
+                                'decision_id'             => $decisionId ?: null,
+                                'signal_id'               => $trade['signal_id'] ?? null,
+                                'symbol'                  => $trade['symbol'] ?? null,
+                                'execution_mode'          => 'demo',
+                                'confidence_band'         => $trade['confidence_band'] ?? null,
+                                'is_parallel_demo_shadow' => true,
+                                'live_trade_id'           => $trade['live_trade_id'] ?? null,
+                            ]
+                        );
+                    }
+                    $this->journalEvent(
+                        'verdict_written', 'verdict',
+                        true,
+                        'Verdict written for shadow trade: ' . $tradeId,
+                        [
+                            'decision_id'             => $decisionId ?: null,
+                            'signal_id'               => $trade['signal_id'] ?? null,
+                            'symbol'                  => $trade['symbol'] ?? null,
+                            'execution_mode'          => 'demo',
+                            'confidence_band'         => $trade['confidence_band'] ?? null,
+                            'is_parallel_demo_shadow' => (bool)($trade['is_parallel_demo_shadow'] ?? false),
+                            'live_trade_id'           => $trade['live_trade_id'] ?? null,
+                        ]
+                    );
+                    // ─────────────────────────────────────────────────────────────────────
                 }
             );
         }
@@ -1131,6 +1179,24 @@ final class TradingBotService
                         // 'skip' is already handled above via continue.
                     }
 
+                    // ── Journal: decision_routed ──────────────────────────────────────────
+                    $this->journalEvent(
+                        'decision_routed', 'open_loop',
+                        true,
+                        'Intent routed to ' . $intentExecMode . ' (' . ($decisionPacket['decision'] ?? 'n/a') . '): ' . ($intent['symbol'] ?? ''),
+                        [
+                            'decision_id'             => $decisionPacket['decision_id'] ?? null,
+                            'signal_id'               => $intent['signal_id'] ?? null,
+                            'symbol'                  => $intent['symbol'] ?? null,
+                            'execution_mode'          => $intentExecMode,
+                            'confidence_band'         => $decisionPacket['confidence_band'] ?? null,
+                            'decision'                => $decisionPacket['decision'] ?? null,
+                            'is_parallel_demo_shadow' => false,
+                            'auto_mode'               => $autoMode,
+                        ]
+                    );
+                    // ─────────────────────────────────────────────────────────────────
+
                     // True per-intent execution context separation:
                     // When the bot is live but this intent is demo-routed, we must:
                     //   1. Use demo storage (parallelDemoStore) — not the live store.
@@ -1183,6 +1249,23 @@ final class TradingBotService
                             'live_trade_id'          => $execResult['trade_id'] ?? null,
                         ];
                         $this->parallelDemoStore->saveActiveTrade($shadowTrade);
+                        // ── Journal: parallel_demo_shadow_opened ──────────────────────────────
+                        $this->journalEvent(
+                            'parallel_demo_shadow_opened', 'open_loop',
+                            true,
+                            'Shadow demo trade opened for live trade: ' . ($shadowTrade['live_trade_id'] ?? ''),
+                            [
+                                'decision_id'             => $shadowTrade['decision_id'],
+                                'signal_id'               => $shadowTrade['signal_id'],
+                                'symbol'                  => $shadowTrade['symbol'],
+                                'execution_mode'          => 'demo',
+                                'confidence_band'         => $shadowTrade['confidence_band'],
+                                'is_parallel_demo_shadow' => true,
+                                'live_trade_id'           => $shadowTrade['live_trade_id'],
+                                'shadow_trade_id'         => $shadowTradeId,
+                            ]
+                        );
+                        // ─────────────────────────────────────────────────────────────────────
                     }
 
                     // Observability: build per-intent result record

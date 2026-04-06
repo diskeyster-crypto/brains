@@ -1,6 +1,6 @@
 {
     "enabled": true,
-    "mode": "demo",
+    "mode": "live",
     "account_id": "trading_bot",
     "max_positions": 50,
     "safety_stop_errors": 5,

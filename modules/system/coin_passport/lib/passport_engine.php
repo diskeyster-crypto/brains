@@ -171,6 +171,31 @@ final class CoinPassportEngine
 
         $result['passport_demo_samples_added'] = $result['demo_samples_count'];
 
+        // Migrate existing passport files that were not covered by trade-based rebuild
+        // (e.g. symbols with no trades in the current storage scan). Every stored passport
+        // must contain trust_state. Rebuild those that are missing it.
+        $result['trust_state_migrated'] = 0;
+        foreach (glob($this->passportsDir . '/*.json') ?: [] as $file) {
+            $sym = basename($file, '.json');
+            if (in_array($sym, $result['symbols'], true)) {
+                continue; // already rebuilt above
+            }
+            $existing = $this->readJson($file);
+            if (!is_array($existing) || array_key_exists('trust_state', $existing)) {
+                continue; // nothing to fix
+            }
+            try {
+                $trades   = $tradesBySymbol[$sym] ?? [];
+                $passport = $this->buildPassport($sym, $trades);
+                $this->save($sym, $passport);
+                $result['updated']++;
+                $result['symbols'][] = $sym;
+                $result['trust_state_migrated']++;
+            } catch (\Throwable $e) {
+                $result['errors'][] = $sym . ' (migrate): ' . $e->getMessage();
+            }
+        }
+
         return $result;
     }
 

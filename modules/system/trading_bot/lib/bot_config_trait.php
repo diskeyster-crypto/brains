@@ -307,6 +307,27 @@ trait BotConfigTrait
                         }
                     }
 
+                    // Demo validation mode block
+                    if (isset($overrides['demo_validation_mode']) && is_array($overrides['demo_validation_mode'])) {
+                        if (!isset($config['demo_validation_mode']) || !is_array($config['demo_validation_mode'])) {
+                            $config['demo_validation_mode'] = [];
+                        }
+                        $dvm = $overrides['demo_validation_mode'];
+                        if (array_key_exists('enabled', $dvm)) {
+                            $config['demo_validation_mode']['enabled'] = (bool)$dvm['enabled'];
+                        }
+                        $dvmInts = [
+                            'learning_close_timeout_minutes_override',
+                            'learning_max_active_age_minutes_override',
+                            'max_new_positions_per_run_override',
+                        ];
+                        foreach ($dvmInts as $k) {
+                            if (array_key_exists($k, $dvm)) {
+                                $config['demo_validation_mode'][$k] = max(1, (int)$dvm[$k]);
+                            }
+                        }
+                    }
+
                     // Demo sources block (Pattern Engine demo feed wiring)
                     if (isset($overrides['demo_sources']) && is_array($overrides['demo_sources'])) {
                         if (!isset($config['demo_sources']) || !is_array($config['demo_sources'])) {

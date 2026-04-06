@@ -188,6 +188,31 @@ final class TradingBotService
         ];
         
         try {
+            // ── Demo validation mode: apply fast-close threshold overrides (demo-only) ─────
+            // When demo_validation_mode.enabled is true and mode is demo, temporarily override
+            // learning timeouts so healthy/orphan close paths can be verified quickly without
+            // waiting for natural market timing. Live mode is never touched.
+            $demoValidationCfg           = is_array($this->config['demo_validation_mode'] ?? null) ? $this->config['demo_validation_mode'] : [];
+            $demoValidationEnabled        = $mode === 'demo' && !empty($demoValidationCfg['enabled']);
+            $demoValidationThresholdsActive = false;
+            if ($demoValidationEnabled) {
+                $dlmRef = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+                $dlmEnabled = (bool)($dlmRef['enabled'] ?? false);
+                if ($dlmEnabled) {
+                    $timeoutOverride = (int)($demoValidationCfg['learning_close_timeout_minutes_override'] ?? 1);
+                    $staleOverride   = (int)($demoValidationCfg['learning_max_active_age_minutes_override'] ?? 1);
+                    if (!isset($this->config['demo_learning_mode']) || !is_array($this->config['demo_learning_mode'])) {
+                        $this->config['demo_learning_mode'] = $dlmRef;
+                    }
+                    $this->config['demo_learning_mode']['learning_close_timeout_minutes'] = max(1, $timeoutOverride);
+                    $this->config['demo_learning_mode']['learning_max_active_age_minutes'] = max(1, $staleOverride);
+                    if (($demoValidationCfg['max_new_positions_per_run_override'] ?? 0) > 0) {
+                        $this->config['demo_learning_mode']['max_new_positions_per_run'] = (int)$demoValidationCfg['max_new_positions_per_run_override'];
+                    }
+                    $demoValidationThresholdsActive = true;
+                }
+            }
+
             // Step 1: Reconcile with exchange
             // Per-run reconcile close stats (folded into demo per-run totals later)
             $reconcileHealthyClosed = 0;
@@ -344,6 +369,10 @@ final class TradingBotService
                 $result['demo_max_signals_per_run_effective']      = (int)($dlmCfg['max_demo_signals_per_run'] ?? 0);
                 $result['demo_max_concurrent_positions_effective'] = (int)($dlmCfg['max_concurrent_demo_positions'] ?? 0);
                 $result['demo_max_new_positions_per_run_effective']= (int)($dlmCfg['max_new_positions_per_run'] ?? 3);
+                // Demo validation mode flags (for close-counter pipeline verification)
+                $result['demo_validation_mode_enabled']         = $demoValidationEnabled;
+                $result['demo_validation_thresholds_active']    = $demoValidationThresholdsActive;
+                $result['demo_validation_expected_fast_close']  = $demoValidationThresholdsActive;
                 // PART 4: effective demo intent risk limits (populated by loadPatternEngineDemoIntents)
                 $result['demo_effective_risk_max_open_trades']            = $peDemoResult['demo_effective_risk_max_open_trades'] ?? null;
                 $result['demo_effective_risk_max_open_trades_per_symbol'] = $peDemoResult['demo_effective_risk_max_open_trades_per_symbol'] ?? null;
@@ -1171,6 +1200,12 @@ final class TradingBotService
                 // Include reconcile-path closes (positions gone from exchange detected before signal loop)
                 $result['demo_trades_closed_this_run']             = ($updateResult['closed'] ?? 0) + $demoTurnoverTotalClosed + $reconcileHealthyClosed + $reconcileOrphanClosed;
                 $result['demo_trades_still_active_after']          = $demoActiveCountAfter;
+                // Validation mode flags (always present in demo close section for last_run visibility)
+                if (!isset($result['demo_validation_mode_enabled'])) {
+                    $result['demo_validation_mode_enabled']        = $demoValidationEnabled;
+                    $result['demo_validation_thresholds_active']   = $demoValidationThresholdsActive;
+                    $result['demo_validation_expected_fast_close'] = $demoValidationThresholdsActive;
+                }
                 $result['demo_trades_stale_this_run']              = $updateResult['stale_trades_found'] ?? 0;
                 $result['demo_trades_reconciled_this_run']         = $updateResult['updated'] ?? 0;
                 $result['demo_trades_finalized_from_exchange_this_run'] = $updateResult['finalized_from_exchange_this_run'] ?? 0;

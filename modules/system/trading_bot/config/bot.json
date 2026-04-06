@@ -105,6 +105,12 @@
         "orphan_max_active_slots": 10,
         "healthy_share_target_pct": 40
     },
+    "demo_validation_mode": {
+        "enabled": false,
+        "learning_close_timeout_minutes_override": 1,
+        "learning_max_active_age_minutes_override": 1,
+        "max_new_positions_per_run_override": 2
+    },
     "validation": {
         "signal_schema_version": "clean_signal_v1"
     },

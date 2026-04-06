@@ -1753,6 +1753,8 @@ trait BotExecutorTrait
                         ]);
                         $this->store->moveTradeToClosedDir($tradeId, $deadShellTrade);
                         $result['closed']++;
+                        // Dead shells are always orphan-adopted trades; classify so total = healthy + orphan holds.
+                        $result['adopted_orphans_closed_this_run']++;
                         $result['close_failure_reasons']['orphan_dead_shell_quarantined'] =
                             ($result['close_failure_reasons']['orphan_dead_shell_quarantined'] ?? 0) + 1;
                         continue;

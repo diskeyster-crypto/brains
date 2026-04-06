@@ -31,6 +31,8 @@ final class TradingBotService
     private ?string $configError = null;
     private array $errors = [];
     private array $warnings = [];
+    /** Unique ID for the current execution tick; set at the top of execute(). */
+    private string $runId = '';
     
     /** @var Lib\BotRiskEngine */
     private $riskEngine;
@@ -98,6 +100,9 @@ final class TradingBotService
         $startTime = microtime(true);
         $ts = date('c');
         $lockFp = null;
+
+        // Assign a unique run_id for this tick — shared across all journal events.
+        $this->runId = $this->generateRunId();
         
         // Check for config error
         if ($this->configError !== null) {
@@ -134,6 +139,7 @@ final class TradingBotService
         $mode = $this->config['module']['mode'] ?? 'dry';
         $result = [
             'ts' => $ts,
+            'run_id' => $this->runId,
             'ok' => true,
             'status' => 'ok',
             'mode' => $mode,
@@ -213,12 +219,48 @@ final class TradingBotService
                 }
             }
 
+            // ── Journal: run_start ───────────────────────────────────────────────
+            $execCfg = is_array($this->config['execution'] ?? null) ? $this->config['execution'] : [];
+            $dlmCfgJournal = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+            $prevLastRun = $this->store->loadLastRun();
+            $this->journalEvent('run_start', 'run_start', true, 'Execution tick started', [
+                'mode'               => $mode,
+                'storage_namespace'  => basename($this->storageDir ?? ''),
+                'active_count_before'=> count($this->store->loadActiveTrades()),
+                'prev_run_ts'        => $prevLastRun['ts'] ?? null,
+            ]);
+
+            // ── Journal: config_snapshot ─────────────────────────────────────────
+            $demoValCfgSnap = is_array($this->config['demo_validation_mode'] ?? null) ? $this->config['demo_validation_mode'] : [];
+            $this->journalEvent('config_snapshot', 'config_snapshot', true, 'Effective config for this tick', [
+                'trailing_enabled'               => $execCfg['trailing_enabled'] ?? null,
+                'trailing_mode'                  => $execCfg['trailing_mode'] ?? null,
+                'trailing_activation_roi'        => $execCfg['trailing_activation_roi'] ?? null,
+                'trailing_drawdown_factor'       => $execCfg['trailing_drawdown_factor'] ?? null,
+                'break_even_enabled'             => $execCfg['break_even_enabled'] ?? null,
+                'break_even_activation_roi'      => $execCfg['break_even_activation_roi'] ?? null,
+                'max_concurrent_positions'       => $this->config['module']['max_concurrent_positions'] ?? null,
+                'demo_max_concurrent_positions'  => $dlmCfgJournal['max_concurrent_demo_positions'] ?? null,
+                'max_new_positions_per_run'      => $dlmCfgJournal['max_new_positions_per_run'] ?? null,
+                'max_turnover_per_run'           => $dlmCfgJournal['max_turnover_per_run'] ?? null,
+                'healthy_min_active_slots'       => $dlmCfgJournal['healthy_min_active_slots'] ?? null,
+                'orphan_max_active_slots'        => $dlmCfgJournal['orphan_max_active_slots'] ?? null,
+                'healthy_share_target_pct'       => $dlmCfgJournal['healthy_share_target_pct'] ?? null,
+                'learning_close_timeout_minutes' => $dlmCfgJournal['learning_close_timeout_minutes'] ?? null,
+                'learning_max_active_age_minutes'=> $dlmCfgJournal['learning_max_active_age_minutes'] ?? null,
+                'demo_validation_mode_enabled'   => $demoValidationEnabled ?? false,
+                'demo_validation_thresholds_active' => $demoValidationThresholdsActive,
+                'demo_learning_mode_enabled'     => (bool)($dlmCfgJournal['enabled'] ?? false),
+                'reconcile_before_action'        => $this->config['module']['reconcile_before_action'] ?? null,
+            ]);
+
             // Step 1: Reconcile with exchange
             // Per-run reconcile close stats (folded into demo per-run totals later)
             $reconcileHealthyClosed = 0;
             $reconcileOrphanClosed  = 0;
             $reconcileAiWritten     = 0;
             $reconciledThisRun = false;
+            $this->journalEvent('reconcile_start', 'reconcile', true, 'Reconcile with exchange starting', []);
             if ($this->config['module']['reconcile_before_action'] ?? true) {
                 $reconcileResult = $this->reconcileWithExchange();
                 $reconciledThisRun = true;
@@ -234,6 +276,18 @@ final class TradingBotService
                     'orphan_positions_count' => $reconcileResult['orphan_positions_count'] ?? 0,
                     'orphan_positions' => $reconcileResult['orphan_positions'] ?? [],
                 ];
+                $this->journalEvent('reconcile_end', 'reconcile', (bool)($reconcileResult['ok'] ?? false),
+                    ($reconcileResult['ok'] ?? false) ? 'Reconcile ok' : ('Reconcile failed: ' . ($reconcileResult['error'] ?? 'unknown')),
+                    [
+                        'positions_synced' => $reconcileResult['positions_synced'] ?? 0,
+                        'orders_synced'    => $reconcileResult['orders_synced']    ?? 0,
+                        'orphan_count'     => $reconcileResult['orphan_positions_count'] ?? 0,
+                        'healthy_closed'   => $reconcileResult['reconcile_healthy_closed'] ?? 0,
+                        'orphan_closed'    => $reconcileResult['reconcile_orphan_closed']  ?? 0,
+                        'ai_written'       => $reconcileResult['reconcile_ai_written']     ?? 0,
+                        'error'            => $reconcileResult['error'] ?? null,
+                    ]
+                );
                 
                 // P3: Warn if orphan positions exist
                 if (($reconcileResult['orphan_positions_count'] ?? 0) > 0) {
@@ -260,6 +314,15 @@ final class TradingBotService
                         'positions_synced' => $demoRecResult['positions_synced'] ?? 0,
                         'orders_synced'    => $demoRecResult['orders_synced'] ?? 0,
                     ];
+                    $this->journalEvent('reconcile_end', 'reconcile_demo_forced', (bool)($demoRecResult['ok'] ?? false),
+                        'Demo forced reconcile ' . (($demoRecResult['ok'] ?? false) ? 'ok' : 'failed'),
+                        [
+                            'positions_synced' => $demoRecResult['positions_synced'] ?? 0,
+                            'orders_synced'    => $demoRecResult['orders_synced']    ?? 0,
+                            'healthy_closed'   => $demoRecResult['reconcile_healthy_closed'] ?? 0,
+                            'orphan_closed'    => $demoRecResult['reconcile_orphan_closed']  ?? 0,
+                        ]
+                    );
                     if (!$demoRecResult['ok']) {
                         $this->errors[] = 'Demo force reconcile failed: ' . ($demoRecResult['error'] ?? 'unknown');
                     }
@@ -495,6 +558,19 @@ final class TradingBotService
                 'source' => $inputSource,
                 'brain_controlled' => $brainControlled,
             ];
+            $this->journalEvent('source_load_end', 'load_intents', (bool)($intentsResult['ok'] ?? false),
+                'Intents source loaded via ' . $inputSource,
+                [
+                    'source'            => $inputSource,
+                    'loaded_count'      => $intentsResult['count'] ?? 0,
+                    'duplicate_skipped' => $intentsResult['duplicate_skipped'] ?? 0,
+                    'source_status'     => $sourceStatus,
+                    'source_error'      => $sourceError ?: null,
+                    'demo_feed_available'  => $result['demo_feed_available_count'] ?? null,
+                    'demo_feed_selected'   => $result['demo_feed_selected_count']  ?? null,
+                    'unique_symbols'       => $result['demo_feed_unique_symbols_selected_count'] ?? null,
+                ]
+            );
 
             // Brain-owned execution limits visibility
             if ($brainControlled) {
@@ -846,6 +922,21 @@ final class TradingBotService
                             $demoCapacitySlotsAfter = $demoActiveNow;
                         }
 
+                        // ── Journal: turnover_end ─────────────────────────────────────────
+                        $this->journalEvent('turnover_end', 'turnover', true, 'Demo turnover pass complete', [
+                            'candidates_found'    => $demoTurnoverCandidatesCount,
+                            'candidates_processed'=> $demoTurnoverProcessedCount,
+                            'slots_freed'         => $demoTurnoverTotalClosed,
+                            'healthy_closed'      => $demoTurnoverHealthyClosed,
+                            'orphan_closed'       => $demoTurnoverOrphanClosed,
+                            'ai_written'          => $demoTurnoverAiWritten,
+                            'block_reason'        => $demoTurnoverBlockReason,
+                            'capacity_full_before'=> $demoCapacityFull,
+                            'cand_stale'          => $demoTurnoverCandStaleCount,
+                            'cand_timeout'        => $demoTurnoverCandTimeoutCount,
+                            'cand_dead_shell'     => $demoTurnoverCandDeadShellCount,
+                        ]);
+
                         // ── PARTS 1-4: Demo composition awareness ─────────────────────────
                         // Compute active healthy/orphan split AFTER turnover so the counts
                         // reflect what is actually in storage when the signal loop begins.
@@ -1107,6 +1198,14 @@ final class TradingBotService
                 'max_execute_per_run' => $maxExecutePerRun,
                 'max_deferred_per_run' => $maxDeferredPerRun,
             ];
+            $this->journalEvent('open_loop_end', 'execute_intents', true, 'Open-loop complete', [
+                'intents_processed'  => $executedThisRun,
+                'positions_opened'   => $result['positions_opened'] ?? 0,
+                'orders_failed'      => $result['orders_failed'] ?? 0,
+                'deferred_checked'   => $deferredChecked,
+                'demo_opened'        => $demoOpenedCount ?? 0,
+                'demo_loop_stopped'  => $demoLoopStoppedReason ?? '',
+            ]);
             
             // Step 5: Update active positions
             // Capture active count before update for demo closure tracking
@@ -1189,6 +1288,18 @@ final class TradingBotService
                 'best_price_missing_while_trailing_active_count' => $updateResult['best_price_missing_while_trailing_active_count'] ?? 0,
                 'top_level_runtime_mismatch_count' => $updateResult['top_level_runtime_mismatch_count'] ?? 0,
             ];
+            $this->journalEvent('update_positions_end', 'update_positions', true, 'Position update cycle complete', [
+                'updated'                => $updateResult['updated'] ?? 0,
+                'closed'                 => $updateResult['closed'] ?? 0,
+                'closed_by_logical_stop' => $updateResult['closed_by_logical_stop'] ?? 0,
+                'closed_by_exchange'     => $updateResult['closed_by_exchange'] ?? 0,
+                'trailing_applied'       => $updateResult['trailing_applied'] ?? 0,
+                'break_even_applied'     => $updateResult['break_even_applied'] ?? 0,
+                'healthy_closed'         => $updateResult['healthy_active_closed_this_run'] ?? 0,
+                'orphan_closed'          => $updateResult['adopted_orphans_closed_this_run'] ?? 0,
+                'ai_written'             => $updateResult['ai_dataset_records_written'] ?? 0,
+                'close_failures'         => $updateResult['close_failures'] ?? 0,
+            ]);
 
             // ============================================================
             // Demo close pipeline per-run counters
@@ -1702,6 +1813,21 @@ final class TradingBotService
                 $demoSufficiency['demo_closed_to_ai_match_rate_this_run']   = $result['demo_closed_to_ai_match_rate_this_run'] ?? null;
                 $this->store->saveDemoSufficiency($demoSufficiency);
                 $this->store->saveDemoTruthAudit($demoTruthAudit);
+
+                // ── Journal: audit_summary (demo mode only) ───────────────────────
+                $this->journalEvent('audit_summary', 'demo_truth_audit', true, 'Demo truth audit complete', [
+                    'primary_bottleneck'      => $demoTruthAudit['primary_demo_bottleneck']        ?? 'unknown',
+                    'bottleneck_reason'       => $demoTruthAudit['primary_demo_bottleneck_reason'] ?? '',
+                    'recommended_fix'         => $demoTruthAudit['recommended_next_fix_area']      ?? '',
+                    'closed_healthy_total'    => $demoTruthAudit['closed_trades_healthy_total']    ?? 0,
+                    'closed_orphan_total'     => $demoTruthAudit['closed_trades_orphan_adopted_total'] ?? 0,
+                    'ai_dataset_records'      => $demoTruthAudit['ai_dataset_records']             ?? 0,
+                    'ai_match_rate'           => $demoTruthAudit['closed_to_ai_dataset_match_rate'] ?? null,
+                    'closed_this_run'         => $result['demo_trades_closed_this_run'] ?? 0,
+                    'healthy_closed_this_run' => $result['healthy_active_closed_this_run'] ?? 0,
+                    'ai_written_this_run'     => $result['demo_ai_dataset_records_written_this_run'] ?? 0,
+                    'validation_mode'         => $result['demo_validation_mode_enabled'] ?? false,
+                ]);
             }
 
             // ============================================================
@@ -2184,6 +2310,11 @@ final class TradingBotService
             $result['status'] = 'error';
             $this->errors[] = 'Exception: ' . $e->getMessage();
             $this->logError('execute', $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            $this->journalEvent('run_error', 'exception', false, 'Fatal exception: ' . $e->getMessage(), [
+                'exception_class' => get_class($e),
+                'file'            => $e->getFile(),
+                'line'            => $e->getLine(),
+            ]);
         } finally {
             // Release run-lock
             if ($lockFp !== null) {
@@ -2225,10 +2356,70 @@ final class TradingBotService
         // Write aggregate UI snapshots so Brain Execution page stays in sync
         $this->store->writeRuntimeSnapshot();
 
+        // ── Journal: run_end ─────────────────────────────────────────────────────
+        $this->journalEvent('run_end', 'run_end', (bool)($result['ok'] ?? false),
+            'Run completed — status: ' . ($result['status'] ?? 'unknown'),
+            [
+                'status'             => $result['status'] ?? 'unknown',
+                'duration_ms'        => $result['duration_ms'] ?? 0,
+                'errors_count'       => $result['errors_count'] ?? 0,
+                'warnings_count'     => count($this->warnings),
+                'positions_opened'   => $result['positions_opened'] ?? 0,
+                'positions_closed'   => $result['positions_closed'] ?? 0,
+                'healthy_closed'     => $result['healthy_active_closed_this_run'] ?? 0,
+                'orphan_closed'      => $result['adopted_orphans_closed_this_run'] ?? 0,
+                'ai_written'         => $result['demo_ai_dataset_records_written_this_run'] ?? ($result['ai_dataset_written_this_run_total'] ?? 0),
+                'active_after'       => $result['demo_trades_still_active_after'] ?? null,
+                'errors'             => array_slice($this->errors, 0, 5),
+            ]
+        );
+
         // Save last run
         $this->store->saveLastRun($result);
         
         return $result;
+    }
+
+    /**
+     * Generate a unique run ID for this execution tick.
+     * Format: <unix_ts>_<random_hex> — sortable and collision-resistant.
+     */
+    private function generateRunId(): string
+    {
+        return date('Ymd_His') . '_' . bin2hex(random_bytes(4));
+    }
+
+    /**
+     * Emit one event to the append-only run journal via BotStore.
+     * All events from the current tick share $this->runId.
+     *
+     * @param string $eventType  Identifies the phase (e.g. 'run_start', 'reconcile_end').
+     * @param string $step       Short human label for the step.
+     * @param bool   $ok         Whether this step succeeded.
+     * @param string $message    Short free-form message.
+     * @param array  $data       Structured debug payload (keep bounded — no raw exchange payloads).
+     */
+    private function journalEvent(
+        string $eventType,
+        string $step,
+        bool $ok,
+        string $message,
+        array $data = []
+    ): void {
+        if (!isset($this->store) || $this->runId === '') {
+            return;
+        }
+        $this->store->appendRunJournalEvent([
+            'ts'                => date('c'),
+            'run_id'            => $this->runId,
+            'mode'              => $this->config['module']['mode'] ?? 'unknown',
+            'storage_namespace' => basename($this->storageDir ?? ''),
+            'event_type'        => $eventType,
+            'step'              => $step,
+            'ok'                => $ok,
+            'message'           => $message,
+            'data'              => $data,
+        ]);
     }
 
     /**

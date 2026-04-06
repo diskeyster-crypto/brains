@@ -2252,13 +2252,113 @@ $auditExecBlocker      = (string)($demoTruthAudit['primary_execution_blocker']  
     </div>
 </div>
 
+<!-- ===== Run Journal ===== -->
+<?php
+$journalRunId    = $bot_last_run['run_id'] ?? null;
+$journalStorDir  = $bot_storage_dir ?? '';
+$journalPath     = $journalStorDir !== '' ? ($journalStorDir . '/runtime/run_journal.ndjson') : '';
+$journalExists   = $journalPath !== '' && is_file($journalPath);
+$journalSizeBytes= $journalExists ? (int)filesize($journalPath) : 0;
+$journalSizeKb   = $journalSizeBytes > 0 ? round($journalSizeBytes / 1024, 1) : 0;
+// Read last 5 events from journal tail
+$journalTailEvents = [];
+if ($journalExists && $journalSizeBytes > 0) {
+    $chunkSize = max(8192, 5 * 500);
+    $fp = @fopen($journalPath, 'r');
+    if ($fp !== false) {
+        $fileSize = $journalSizeBytes;
+        $offset = max(0, $fileSize - $chunkSize);
+        fseek($fp, $offset);
+        $chunk = fread($fp, $chunkSize);
+        fclose($fp);
+        if ($chunk !== false && $chunk !== '') {
+            $lines = explode("\n", trim($chunk));
+            if ($offset > 0 && count($lines) > 1) array_shift($lines);
+            $lines = array_reverse($lines);
+            foreach ($lines as $_jLine) {
+                $_jLine = trim($_jLine);
+                if ($_jLine === '') continue;
+                $_jEvent = @json_decode($_jLine, true);
+                if (is_array($_jEvent)) {
+                    $journalTailEvents[] = $_jEvent;
+                }
+                if (count($journalTailEvents) >= 5) break;
+            }
+        }
+    }
+}
+?>
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="section-heading">Журнал запусков <small class="text-muted fw-normal">(run_journal.ndjson — append-only)</small></div>
+        <div class="row g-2 mb-2">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value <?= $journalExists ? 'positive' : 'neutral' ?>"><?= $journalExists ? 'Да' : 'Нет' ?></div>
+                    <div class="stat-label">Журнал существует</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value"><?= $journalSizeKb ?> KB</div>
+                    <div class="stat-label">Размер файла</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value neutral" style="font-size:.95rem;word-break:break-all;">
+                        <?= $journalRunId ? htmlspecialchars(substr($journalRunId, 0, 24)) : '—' ?>
+                    </div>
+                    <div class="stat-label">run_id последнего запуска</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value neutral" style="font-size:.85rem;word-break:break-all;">
+                        <?= $journalTailEvents ? htmlspecialchars($journalTailEvents[0]['event_type'] ?? '—') : '—' ?>
+                    </div>
+                    <div class="stat-label">Последнее событие</div>
+                </div>
+            </div>
+        </div>
+        <?php if ($journalPath !== ''): ?>
+        <div class="mb-1" style="font-size:.72rem;color:#475569;">
+            <code><?= htmlspecialchars($journalPath) ?></code>
+            <span class="text-muted ms-2">— только дозапись, никогда не перезаписывается</span>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($journalTailEvents)): ?>
+        <div class="section-heading" style="font-size:.78rem;margin-top:.85rem;">Последние 5 событий журнала</div>
+        <div style="overflow-x:auto;">
+        <table class="table table-dark table-sm exec-table mb-0">
+            <thead><tr>
+                <th>ts</th><th>run_id</th><th>event_type</th><th>step</th><th>ok</th><th>message</th>
+            </tr></thead>
+            <tbody>
+            <?php foreach ($journalTailEvents as $_je): ?>
+            <tr>
+                <td style="white-space:nowrap;"><?= htmlspecialchars(substr($_je['ts'] ?? '', 0, 19)) ?></td>
+                <td style="font-size:.68rem;color:#64748b;"><?= htmlspecialchars(substr($_je['run_id'] ?? '', 0, 20)) ?></td>
+                <td><span class="badge bg-secondary"><?= htmlspecialchars($_je['event_type'] ?? '') ?></span></td>
+                <td><?= htmlspecialchars($_je['step'] ?? '') ?></td>
+                <td><?= ($_je['ok'] ?? false) ? '<span class="positive">✓</span>' : '<span class="negative">✗</span>' ?></td>
+                <td style="font-size:.72rem;color:#94a3b8;"><?= htmlspecialchars(substr($_je['message'] ?? '', 0, 80)) ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+        <?php else: ?>
+        <div class="text-muted" style="font-size:.8rem;">Журнал пуст или не существует — появится после первого запуска бота.</div>
+        <?php endif; ?>
+    </div>
+</div>
+
 <!-- ===== Full Settings ===== -->
 <div class="card mb-4">
     <div class="card-body">
         <div class="section-heading">Настройки бота <small class="text-muted fw-normal text-lowercase">(сохраняются в config/bot.json)</small></div>
         <form id="settings-form">
-
-        <!-- 1. РЕЖИМ -->
         <div class="settings-block">
             <h6><i class="bi bi-toggles me-1"></i> Режим</h6>
             <div class="row g-3 align-items-end">

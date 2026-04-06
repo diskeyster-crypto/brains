@@ -431,6 +431,135 @@ public function saveClosedTrade(string $tradeId, array $trade): void
         ]);
     }
     
+    // =========================================================================
+    // Run Journal (append-only NDJSON per storage namespace)
+    // =========================================================================
+
+    /**
+     * Return the path to the append-only run journal for this storage namespace.
+     */
+    public function getRunJournalPath(): string
+    {
+        return $this->storageDir . '/runtime/run_journal.ndjson';
+    }
+
+    /**
+     * Return basic info about the journal file (path, size, line count estimate).
+     *
+     * @return array{path:string,exists:bool,size_bytes:int,approx_events:int}
+     */
+    public function getRunJournalInfo(): array
+    {
+        $path = $this->getRunJournalPath();
+        $exists = is_file($path);
+        $sizeBytes = $exists ? (int)filesize($path) : 0;
+        // Approximate event count: divide total bytes by an estimated line length (≈200 bytes each)
+        $approxEvents = $sizeBytes > 0 ? max(1, (int)round($sizeBytes / 200)) : 0;
+        return [
+            'path'          => $path,
+            'exists'        => $exists,
+            'size_bytes'    => $sizeBytes,
+            'approx_events' => $approxEvents,
+        ];
+    }
+
+    /**
+     * Read the last N lines from the run journal without loading the whole file.
+     *
+     * @param int $n Maximum lines to return (most recent first)
+     * @return array<int,array<string,mixed>>
+     */
+    public function readRunJournalTail(int $n = 10): array
+    {
+        $path = $this->getRunJournalPath();
+        if (!is_file($path) || filesize($path) === 0) {
+            return [];
+        }
+
+        // Read last chunk — journals can be large; read only the tail
+        $chunkSize = max(8192, $n * 400);
+        $fp = @fopen($path, 'r');
+        if ($fp === false) {
+            return [];
+        }
+
+        $fileSize = filesize($path);
+        $offset = max(0, $fileSize - $chunkSize);
+        fseek($fp, $offset);
+        $chunk = fread($fp, $chunkSize);
+        fclose($fp);
+
+        if ($chunk === false || $chunk === '') {
+            return [];
+        }
+
+        $lines = explode("\n", trim($chunk));
+        // If we seeked past the start, the first line may be partial — drop it
+        if ($offset > 0 && count($lines) > 1) {
+            array_shift($lines);
+        }
+
+        $lines = array_reverse($lines);
+        $events = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $decoded = @json_decode($line, true);
+            if (is_array($decoded)) {
+                $events[] = $decoded;
+            }
+            if (count($events) >= $n) {
+                break;
+            }
+        }
+        return $events;
+    }
+
+    /**
+     * Append one structured event to the append-only run journal.
+     *
+     * The journal file grows monotonically. It is NEVER truncated during normal execution.
+     * Each event is one JSON line (NDJSON format).
+     *
+     * Required keys in $event:
+     *   - ts               (ISO 8601 timestamp)
+     *   - run_id           (shared across all events in one tick)
+     *   - mode             (live/demo/paper/dry)
+     *   - storage_namespace (e.g. storage_demo)
+     *   - event_type       (run_start, config_snapshot, reconcile_end, …)
+     *   - step             (human label)
+     *   - ok               (bool)
+     *   - message          (string)
+     *   - data             (array)
+     */
+    public function appendRunJournalEvent(array $event): void
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        if (!is_dir($runtimeDir)) {
+            @mkdir($runtimeDir, 0755, true);
+        }
+
+        $path = $this->getRunJournalPath();
+
+        // Ensure mandatory fields have defaults so the line is always valid JSON
+        $event['ts']                ??= date('c');
+        $event['run_id']            ??= 'unknown';
+        $event['mode']              ??= 'unknown';
+        $event['storage_namespace'] ??= basename($this->storageDir);
+        $event['event_type']        ??= 'unknown';
+        $event['step']              ??= '';
+        $event['ok']                = (bool)($event['ok'] ?? true);
+        $event['message']           ??= '';
+        if (!array_key_exists('data', $event) || !is_array($event['data'])) {
+            $event['data'] = [];
+        }
+
+        $line = json_encode($event, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+        @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+    }
+
     /**
      * Append to error log
      * P7 fix: logs in storage/logs per manifest

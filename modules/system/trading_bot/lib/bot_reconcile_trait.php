@@ -256,8 +256,11 @@ trait BotReconcileTrait
             'close_price'             => $trade['close_price'] ?? null,
             'roi'                     => $trade['roi'] ?? null,
             'pnl'                     => $trade['pnl'] ?? null,
+            'hold_minutes'            => $trade['hold_minutes'] ?? null,
             'mfe'                     => $trade['mfe'] ?? null,
             'mae'                     => $trade['mae'] ?? null,
+            'mfe_missing_reason'      => $trade['mfe_missing_reason'] ?? null,
+            'mae_missing_reason'      => $trade['mae_missing_reason'] ?? null,
             'ai_dataset_written'      => $aiWritten,
             'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
         ]

@@ -25,6 +25,8 @@ require_once $moduleDir . '/lib/bot_reversal_signal_helper.php';
 require_once $moduleDir . '/lib/bot_trailing_engine.php';
 require_once $moduleDir . '/lib/bot_validator.php';
 require_once $moduleDir . '/lib/bot_store.php';
+require_once $moduleDir . '/lib/bot_decision_engine.php';
+require_once $moduleDir . '/lib/bot_verdict_engine.php';
 
 // Load gateway
 require_once $moduleDir . '/gateway.php';

@@ -19,7 +19,6 @@ namespace Modules\System\TradingBot\Lib;
  *  correct
  *  incorrect
  *  partially_correct
- *  missed_opportunity
  *  entry_right_management_wrong
  *  entry_wrong_skip_would_be_better
  */

@@ -51,6 +51,9 @@ final class TradingBotService
 
     /** @var Lib\BotVerdictEngine */
     private $verdictEngine;
+
+    /** @var Lib\BotStore|null — separate store for parallel demo shadows (live mode only) */
+    private $parallelDemoStore = null;
     
     public function __construct()
     {
@@ -80,6 +83,12 @@ final class TradingBotService
         $this->trailingEngine = new Lib\BotTrailingEngine($this->config);
         $this->validator     = new Lib\BotValidator($this->config);
         $this->store         = new Lib\BotStore($this->storageDir, $this->config);
+
+        // Phase 2: parallel demo shadow store (live mode only) — separate truth bucket
+        if ($mode === 'live') {
+            $demoStorageDir = $this->moduleBase . '/storage_demo';
+            $this->parallelDemoStore = new Lib\BotStore($demoStorageDir, $this->config);
+        }
 
         // Decision Engine + Verdict Engine (Phase 1 + Phase 3 of roadmap)
         // Passport dir: coin_passport module lives as a sibling of trading_bot under modules/system/
@@ -1086,7 +1095,55 @@ final class TradingBotService
                     }
                     // ─────────────────────────────────────────────────────────────────
 
-                    $execResult = $this->executeIntent($intent, $mode);
+                    // FIX: Route per-intent using decisionPacket execution_mode, not global bot mode.
+                    // In auto mode: gray→demo, enter_live→live, enter_demo→demo.
+                    // In manual mode: decisionPacket is advisory only; global $mode is used.
+                    $intentExecMode = $mode;
+                    if ($autoMode) {
+                        $dpDecision = $decisionPacket['decision'] ?? '';
+                        if ($dpDecision === 'enter_demo') {
+                            $intentExecMode = 'demo';
+                        } elseif ($dpDecision === 'enter_live') {
+                            $intentExecMode = ($mode === 'live') ? 'live' : $mode;
+                        }
+                        // 'skip' is already handled above via continue; falls through only if
+                        // manual mode or non-auto logic. intentExecMode stays $mode otherwise.
+                    }
+
+                    $execResult = $this->executeIntent($intent, $intentExecMode);
+
+                    // Phase 2: Parallel demo mirror for live intents (FIX: real execution, not just a flag)
+                    // When a signal goes live AND parallel_demo_suggested=true, create a demo shadow trade
+                    // in the demo storage, linked by the same decision_id.
+                    // Live truth → storage_live, demo truth → storage_demo (never merged).
+                    if (
+                        $autoMode
+                        && ($decisionPacket['parallel_demo_suggested'] ?? false)
+                        && $intentExecMode === 'live'
+                        && ($execResult['opened'] ?? false)
+                        && $this->parallelDemoStore !== null
+                    ) {
+                        $shadowTradeId = 'shadow_' . ($decisionPacket['decision_id'] ?? uniqid('s_'));
+                        $shadowTrade = [
+                            'trade_id'               => $shadowTradeId,
+                            'signal_id'              => $intent['signal_id'] ?? ($intent['id'] ?? ''),
+                            'decision_id'            => $decisionPacket['decision_id'],
+                            'confidence_band'        => $decisionPacket['confidence_band'] ?? '',
+                            'confidence_score'       => $decisionPacket['confidence_score'] ?? 0,
+                            'symbol'                 => $intent['symbol'] ?? '',
+                            'side'                   => $intent['side'] ?? '',
+                            'pattern_algorithm'      => (string)($intent['pattern_algorithm'] ?? ''),
+                            'entry_price'            => $intent['entry_price'] ?? 0,
+                            'risk'                   => $intent['risk'] ?? [],
+                            'status'                 => 'active',
+                            'opened_at'              => date('c'),
+                            'opened_ts'              => time(),
+                            'execution_mode'         => 'demo',
+                            'is_parallel_demo_shadow'=> true,
+                            'live_trade_id'          => $execResult['trade_id'] ?? null,
+                        ];
+                        $this->parallelDemoStore->saveActiveTrade($shadowTrade);
+                    }
 
                     // Observability: build per-intent result record
                     // NOTE: summary counts are derived from finalized intent_results after

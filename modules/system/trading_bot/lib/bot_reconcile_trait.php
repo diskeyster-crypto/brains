@@ -262,6 +262,18 @@ trait BotReconcileTrait
             'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
         ]
     );
+    $this->journalEvent('file_write', 'reconcile', true,
+        'closed trade file written (reconcile): ' . ($symbol ?: $tradeId),
+        [
+            'path'                    => 'trades/closed/' . $tradeId . '.json',
+            'write_type'              => 'create',
+            'classification'          => $isOrphan ? 'orphan_close' : 'healthy_close',
+            'symbol'                  => $trade['symbol'] ?? null,
+            'trade_id'                => $tradeId,
+            'close_reason_normalized' => $trade['close_reason_normalized'] ?? null,
+            'ai_dataset_written'      => $aiWritten,
+        ]
+    );
     if ($aiWritten) {
         $this->journalEvent('ai_dataset_written', 'reconcile', true,
             'AI record written: ' . ($symbol ?: $tradeId),
@@ -270,6 +282,16 @@ trait BotReconcileTrait
                 'symbol'         => $trade['symbol'] ?? null,
                 'classification' => $isOrphan ? 'orphan_adopted' : 'healthy',
                 'path'           => 'ai_dataset/' . $tradeId . '.json',
+            ]
+        );
+        $this->journalEvent('file_write', 'reconcile', true,
+            'ai_dataset file written (reconcile): ' . ($symbol ?: $tradeId),
+            [
+                'path'           => 'ai_dataset/' . $tradeId . '.json',
+                'write_type'     => 'create',
+                'classification' => 'ai_dataset',
+                'symbol'         => $trade['symbol'] ?? null,
+                'trade_id'       => $tradeId,
             ]
         );
     }

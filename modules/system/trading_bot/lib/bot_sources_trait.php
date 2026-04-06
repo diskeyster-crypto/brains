@@ -1609,6 +1609,16 @@ trait BotSourcesTrait
             $index = $this->loadExecutedIndex();
             $index[$signalId] = $this->buildExecutedEntry($result, $signalId, $dedupeBasis);
             @file_put_contents($path, json_encode($index, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $this->journalEvent('file_write', 'execute_intent', true,
+                'executed_index.json updated (fallback): ' . $signalId,
+                [
+                    'path'           => 'executed_index.json',
+                    'write_type'     => 'update',
+                    'classification' => 'executed_index',
+                    'trade_id'       => $result['trade_id'] ?? null,
+                    'reason'         => $result['status'] ?? null,
+                ]
+            );
             return;
         }
         
@@ -1643,6 +1653,17 @@ trait BotSourcesTrait
             flock($fp, LOCK_UN);
             fclose($fp);
         }
+
+        $this->journalEvent('file_write', 'execute_intent', true,
+            'executed_index.json updated: ' . $signalId,
+            [
+                'path'           => 'executed_index.json',
+                'write_type'     => 'update',
+                'classification' => 'executed_index',
+                'trade_id'       => $result['trade_id'] ?? null,
+                'reason'         => $result['status'] ?? null,
+            ]
+        );
     }
     
     /**

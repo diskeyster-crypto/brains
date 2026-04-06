@@ -346,6 +346,17 @@ trait BotExecutorTrait
                                         $adoptedTrade['timing_missing_reason'] = $timingMissingReason;
                                     }
                                     $this->store->saveActiveTrade($adoptedTrade);
+                                    $this->journalEvent('file_write', 'execute_intent', true,
+                                        'active trade created (orphan_adopted): ' . ($exSymbol ?? $adoptedTradeId),
+                                        [
+                                            'path'           => 'trades/active/' . $adoptedTradeId . '.json',
+                                            'write_type'     => 'create',
+                                            'classification' => 'active_trade',
+                                            'symbol'         => $exSymbol ?? null,
+                                            'trade_id'       => $adoptedTradeId,
+                                            'reason'         => 'orphan_adoption',
+                                        ]
+                                    );
                                     // Invalidate position cache so this symbol is seen as local next check
                                     $this->exchangeOpenPositionsCache   = [];
                                     $this->exchangeOpenPositionsCacheTs = 0;
@@ -951,6 +962,17 @@ trait BotExecutorTrait
                 }
 
                 $this->store->saveActiveTrade($trade);
+                $this->journalEvent('file_write', 'execute_intent', true,
+                    'active trade created (opened_protected): ' . ($trade['symbol'] ?? ($trade['trade_id'] ?? '')),
+                    [
+                        'path'           => 'trades/active/' . ($trade['trade_id'] ?? '') . '.json',
+                        'write_type'     => 'create',
+                        'classification' => 'active_trade',
+                        'symbol'         => $trade['symbol'] ?? null,
+                        'trade_id'       => $trade['trade_id'] ?? null,
+                        'reason'         => 'opened_protected',
+                    ]
+                );
 
                 // P-PERSIST-DIAG: Verify the active trade file was actually persisted.
                 // A silent write failure here means the Brain Execution page stays empty
@@ -975,6 +997,17 @@ trait BotExecutorTrait
                 // Dry/test mode - simpler flow
                 $trade = $this->buildTrade($intent, $order, $orderResult);
                 $this->store->saveActiveTrade($trade);
+                $this->journalEvent('file_write', 'execute_intent', true,
+                    'active trade created (opened_dry): ' . ($trade['symbol'] ?? ($trade['trade_id'] ?? '')),
+                    [
+                        'path'           => 'trades/active/' . ($trade['trade_id'] ?? '') . '.json',
+                        'write_type'     => 'create',
+                        'classification' => 'active_trade',
+                        'symbol'         => $trade['symbol'] ?? null,
+                        'trade_id'       => $trade['trade_id'] ?? null,
+                        'reason'         => 'opened_dry',
+                    ]
+                );
                 
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_dry';
@@ -1769,6 +1802,18 @@ trait BotExecutorTrait
                                 'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                             ]
                         );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'closed trade file written (orphan_dead_shell): ' . ($trade['symbol'] ?? $tradeId),
+                            [
+                                'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                'write_type'              => 'create',
+                                'classification'          => 'orphan_close',
+                                'symbol'                  => $trade['symbol'] ?? null,
+                                'trade_id'                => $tradeId,
+                                'close_reason_normalized' => 'orphan_dead_shell_quarantined',
+                                'ai_dataset_written'      => false,
+                            ]
+                        );
                         $result['closed']++;
                         // Dead shells are always orphan-adopted trades; classify so total = healthy + orphan holds.
                         $result['adopted_orphans_closed_this_run']++;
@@ -1912,6 +1957,18 @@ trait BotExecutorTrait
                                 'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                             ]
                         );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'closed trade file written (learning_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                            [
+                                'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                'write_type'              => 'create',
+                                'classification'          => $isAdoptedTrade ? 'orphan_close' : 'healthy_close',
+                                'symbol'                  => $closedTrade['symbol'] ?? null,
+                                'trade_id'                => $tradeId,
+                                'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                                'ai_dataset_written'      => $aiWritten,
+                            ]
+                        );
                         if ($aiWritten) {
                             $this->journalEvent('ai_dataset_written', 'update_positions', true,
                                 'AI record written: ' . ($trade['symbol'] ?? $tradeId),
@@ -1920,6 +1977,16 @@ trait BotExecutorTrait
                                     'symbol'         => $closedTrade['symbol'] ?? null,
                                     'classification' => $isAdoptedTrade ? 'orphan_adopted' : 'healthy',
                                     'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                ]
+                            );
+                            $this->journalEvent('file_write', 'update_positions', true,
+                                'ai_dataset file written (learning_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                                [
+                                    'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                    'write_type'     => 'create',
+                                    'classification' => 'ai_dataset',
+                                    'symbol'         => $closedTrade['symbol'] ?? null,
+                                    'trade_id'       => $tradeId,
                                 ]
                             );
                         }
@@ -2046,6 +2113,18 @@ trait BotExecutorTrait
                                 'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                             ]
                         );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'closed trade file written (adopted_orphan_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                            [
+                                'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                'write_type'              => 'create',
+                                'classification'          => 'orphan_close',
+                                'symbol'                  => $closedTrade['symbol'] ?? null,
+                                'trade_id'                => $tradeId,
+                                'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                                'ai_dataset_written'      => $aiWritten,
+                            ]
+                        );
                         if ($aiWritten) {
                             $this->journalEvent('ai_dataset_written', 'update_positions', true,
                                 'AI record written: ' . ($trade['symbol'] ?? $tradeId),
@@ -2054,6 +2133,16 @@ trait BotExecutorTrait
                                     'symbol'         => $closedTrade['symbol'] ?? null,
                                     'classification' => 'orphan_adopted',
                                     'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                ]
+                            );
+                            $this->journalEvent('file_write', 'update_positions', true,
+                                'ai_dataset file written (adopted_orphan_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                                [
+                                    'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                    'write_type'     => 'create',
+                                    'classification' => 'ai_dataset',
+                                    'symbol'         => $closedTrade['symbol'] ?? null,
+                                    'trade_id'       => $tradeId,
                                 ]
                             );
                         }
@@ -2164,6 +2253,18 @@ trait BotExecutorTrait
                             'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                         ]
                     );
+                    $this->journalEvent('file_write', 'update_positions', true,
+                        'closed trade file written (exchange_detected): ' . ($closedTrade['symbol'] ?? $tradeId),
+                        [
+                            'path'                    => 'trades/closed/' . $tradeId . '.json',
+                            'write_type'              => 'create',
+                            'classification'          => $isAdoptedOrphanTrade ? 'orphan_close' : 'healthy_close',
+                            'symbol'                  => $closedTrade['symbol'] ?? null,
+                            'trade_id'                => $tradeId,
+                            'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                            'ai_dataset_written'      => isset($aiWritten) ? (bool)$aiWritten : false,
+                        ]
+                    );
                     if (isset($aiWritten) && $aiWritten) {
                         $this->journalEvent('ai_dataset_written', 'update_positions', true,
                             'AI record written: ' . ($trade['symbol'] ?? $tradeId),
@@ -2172,6 +2273,16 @@ trait BotExecutorTrait
                                 'symbol'         => $closedTrade['symbol'] ?? null,
                                 'classification' => $isAdoptedOrphanTrade ? 'orphan_adopted' : 'healthy',
                                 'path'           => 'ai_dataset/' . $tradeId . '.json',
+                            ]
+                        );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'ai_dataset file written (exchange_detected): ' . ($closedTrade['symbol'] ?? $tradeId),
+                            [
+                                'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                'write_type'     => 'create',
+                                'classification' => 'ai_dataset',
+                                'symbol'         => $closedTrade['symbol'] ?? null,
+                                'trade_id'       => $tradeId,
                             ]
                         );
                     }
@@ -2691,6 +2802,18 @@ trait BotExecutorTrait
                                         'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                                     ]
                                 );
+                                $this->journalEvent('file_write', 'update_positions', true,
+                                    'closed trade file written (logical_stop): ' . ($closedTrade2['symbol'] ?? $tradeId),
+                                    [
+                                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                        'write_type'              => 'create',
+                                        'classification'          => $lsIsAdoptedOrphan2 ? 'orphan_close' : 'healthy_close',
+                                        'symbol'                  => $closedTrade2['symbol'] ?? null,
+                                        'trade_id'                => $tradeId,
+                                        'close_reason_normalized' => $closedTrade2['close_reason_normalized'] ?? null,
+                                        'ai_dataset_written'      => isset($aiWritten) ? (bool)$aiWritten : false,
+                                    ]
+                                );
                                 if (isset($aiWritten) && $aiWritten) {
                                     $this->journalEvent('ai_dataset_written', 'update_positions', true,
                                         'AI record written: ' . ($trade['symbol'] ?? $tradeId),
@@ -2699,6 +2822,16 @@ trait BotExecutorTrait
                                             'symbol'         => $closedTrade2['symbol'] ?? null,
                                             'classification' => $lsIsAdoptedOrphan2 ? 'orphan_adopted' : 'healthy',
                                             'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                        ]
+                                    );
+                                    $this->journalEvent('file_write', 'update_positions', true,
+                                        'ai_dataset file written (logical_stop): ' . ($closedTrade2['symbol'] ?? $tradeId),
+                                        [
+                                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                            'write_type'     => 'create',
+                                            'classification' => 'ai_dataset',
+                                            'symbol'         => $closedTrade2['symbol'] ?? null,
+                                            'trade_id'       => $tradeId,
                                         ]
                                     );
                                 }
@@ -2743,6 +2876,17 @@ trait BotExecutorTrait
                             
                             // Save updated trade with attempt flag
                             $this->store->updateActiveTrade($tradeId, $trade);
+                            $this->journalEvent('file_write', 'update_positions', true,
+                                'active trade updated (sl_repair): ' . ($trade['symbol'] ?? $tradeId),
+                                [
+                                    'path'           => 'trades/active/' . $tradeId . '.json',
+                                    'write_type'     => 'update',
+                                    'classification' => 'active_trade',
+                                    'symbol'         => $trade['symbol'] ?? null,
+                                    'trade_id'       => $tradeId,
+                                    'reason'         => 'sl_repair_attempted',
+                                ]
+                            );
                             
                             if (!$slResult['success']) {
                                 // Failed to set SL - WARNING ONLY, do NOT close position
@@ -3957,6 +4101,17 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 $trade['last_runtime_update_ts'] = date('c');
                 $trade['last_price'] = (float)($position['markPrice'] ?? $position['lastPrice'] ?? $trade['last_price']);
                 $this->store->updateActiveTrade($tradeId, $trade);
+                $this->journalEvent('file_write', 'update_positions', true,
+                    'active trade updated (runtime_cycle): ' . ($trade['symbol'] ?? $tradeId),
+                    [
+                        'path'           => 'trades/active/' . $tradeId . '.json',
+                        'write_type'     => 'update',
+                        'classification' => 'active_trade',
+                        'symbol'         => $trade['symbol'] ?? null,
+                        'trade_id'       => $tradeId,
+                        'reason'         => 'runtime_update',
+                    ]
+                );
                 $result['updated']++;
                 
             } catch (\Throwable $e) {
@@ -4866,6 +5021,18 @@ private function computeEntryDeadline(array $intent): array
                         'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                     ]
                 );
+                $this->journalEvent('file_write', 'turnover', true,
+                    'closed trade file written (turnover_dead_shell): ' . ($closedTrade['symbol'] ?? $tradeId),
+                    [
+                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                        'write_type'              => 'create',
+                        'classification'          => $closedIsOrphan ? 'orphan_close' : 'healthy_close',
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'trade_id'                => $tradeId,
+                        'close_reason_normalized' => 'orphan_dead_shell_quarantined',
+                        'ai_dataset_written'      => false,
+                    ]
+                );
                 continue;
             }
 
@@ -4945,6 +5112,18 @@ private function computeEntryDeadline(array $intent): array
                         'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                     ]
                 );
+                $this->journalEvent('file_write', 'turnover', true,
+                    'closed trade file written (turnover_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                    [
+                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                        'write_type'              => 'create',
+                        'classification'          => $closedIsOrphan ? 'orphan_close' : 'healthy_close',
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'trade_id'                => $tradeId,
+                        'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                        'ai_dataset_written'      => $aiWritten,
+                    ]
+                );
                 if ($aiWritten) {
                     $this->journalEvent('ai_dataset_written', 'turnover', true,
                         'AI record written: ' . ($trade['symbol'] ?? $tradeId),
@@ -4953,6 +5132,16 @@ private function computeEntryDeadline(array $intent): array
                             'symbol'         => $closedTrade['symbol'] ?? null,
                             'classification' => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
                             'path'           => 'ai_dataset/' . $tradeId . '.json',
+                        ]
+                    );
+                    $this->journalEvent('file_write', 'turnover', true,
+                        'ai_dataset file written (turnover_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                        [
+                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                            'write_type'     => 'create',
+                            'classification' => 'ai_dataset',
+                            'symbol'         => $closedTrade['symbol'] ?? null,
+                            'trade_id'       => $tradeId,
                         ]
                     );
                 }
@@ -5030,6 +5219,18 @@ private function computeEntryDeadline(array $intent): array
                         'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
                     ]
                 );
+                $this->journalEvent('file_write', 'turnover', true,
+                    'closed trade file written (turnover_exchange_gone): ' . ($closedTrade['symbol'] ?? $tradeId),
+                    [
+                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                        'write_type'              => 'create',
+                        'classification'          => $closedIsOrphan ? 'orphan_close' : 'healthy_close',
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'trade_id'                => $tradeId,
+                        'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                        'ai_dataset_written'      => $aiWritten,
+                    ]
+                );
                 if ($aiWritten) {
                     $this->journalEvent('ai_dataset_written', 'turnover', true,
                         'AI record written: ' . ($trade['symbol'] ?? $tradeId),
@@ -5038,6 +5239,16 @@ private function computeEntryDeadline(array $intent): array
                             'symbol'         => $closedTrade['symbol'] ?? null,
                             'classification' => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
                             'path'           => 'ai_dataset/' . $tradeId . '.json',
+                        ]
+                    );
+                    $this->journalEvent('file_write', 'turnover', true,
+                        'ai_dataset file written (turnover_exchange_gone): ' . ($closedTrade['symbol'] ?? $tradeId),
+                        [
+                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                            'write_type'     => 'create',
+                            'classification' => 'ai_dataset',
+                            'symbol'         => $closedTrade['symbol'] ?? null,
+                            'trade_id'       => $tradeId,
                         ]
                     );
                 }

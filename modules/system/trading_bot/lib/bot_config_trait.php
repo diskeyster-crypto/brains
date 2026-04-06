@@ -270,6 +270,7 @@ trait BotConfigTrait
                             'allow_low_confidence_demo',
                             'force_reconcile_each_run_demo',
                             'prefer_close_stale_when_learning',
+                            'healthy_close_bootstrap_enabled',
                         ];
                         foreach ($dlmBools as $k) {
                             if (array_key_exists($k, $dlm)) {
@@ -297,8 +298,19 @@ trait BotConfigTrait
                             }
                         }
 
+                        $dlmIntsMin1 = [
+                            'healthy_close_timeout_minutes_bootstrap',
+                            'healthy_stale_age_minutes_bootstrap',
+                        ];
+                        foreach ($dlmIntsMin1 as $k) {
+                            if (array_key_exists($k, $dlm)) {
+                                $config['demo_learning_mode'][$k] = max(1, (int)$dlm[$k]);
+                            }
+                        }
+
                         $dlmFloats = [
                             'healthy_share_target_pct',
+                            'healthy_closed_share_target_pct',
                         ];
                         foreach ($dlmFloats as $k) {
                             if (array_key_exists($k, $dlm)) {

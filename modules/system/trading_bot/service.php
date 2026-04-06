@@ -1019,6 +1019,37 @@ final class TradingBotService
                     $intentResultRecord = $this->buildIntentResultRecord($intent, $execResult);
                     $result['intent_results'][] = $intentResultRecord;
 
+                    // ── Journal: signal_processed (one event per intent) ──────────────────
+                    $spRisk     = is_array($intent['risk'] ?? null) ? $intent['risk'] : [];
+                    $spTrailing = is_array($spRisk['trailing'] ?? null) ? $spRisk['trailing'] : [];
+                    $spLimits   = is_array($spRisk['limits']   ?? null) ? $spRisk['limits']   : [];
+                    $this->journalEvent(
+                        'signal_processed', 'open_loop',
+                        (bool)($execResult['opened'] ?? false),
+                        ($execResult['opened'] ?? false)
+                            ? 'Opened: ' . ($intent['symbol'] ?? '')
+                            : 'Not opened (' . ($execResult['status'] ?? 'unknown') . '): ' . ($intent['symbol'] ?? ''),
+                        [
+                            'signal_id'                    => $intent['signal_id'] ?? null,
+                            'symbol'                       => $intent['symbol'] ?? null,
+                            'side'                         => $intent['side'] ?? null,
+                            'action'                       => $intentResultRecord['lifecycle_state'] ?? ($execResult['status'] ?? 'unknown'),
+                            'reason'                       => $execResult['error'] ?? null,
+                            'validation_result'            => $intentResultRecord['execution_stage'] ?? null,
+                            'open_attempted'               => (bool)($execResult['exchange_submit_attempted'] ?? false),
+                            'order_sent'                   => (bool)($execResult['opened'] ?? false),
+                            'order_filled'                 => (bool)($execResult['filled'] ?? false),
+                            'trailing_enabled_effective'   => (bool)($spTrailing['enabled'] ?? false),
+                            'break_even_enabled_effective' => (bool)($spRisk['break_even_enabled'] ?? false),
+                            'risk_limits_summary'          => [
+                                'max_open_trades'            => $spLimits['max_open_trades'] ?? null,
+                                'max_open_trades_per_symbol' => $spLimits['max_open_trades_per_symbol'] ?? null,
+                            ],
+                            'signal_strength'              => $intent['signal_strength'] ?? null,
+                            'quality_score'                => $intent['quality_score'] ?? null,
+                        ]
+                    );
+
                     // ── Lifecycle: Update intent status in live_intents.json ──
                     // Every claimed intent MUST reach a terminal state (executed/rejected)
                     // in the same run. Only deferred (wait_retrace) intents may remain
@@ -1812,7 +1843,17 @@ final class TradingBotService
                 $demoSufficiency['demo_closed_without_ai_dataset_this_run'] = $result['demo_closed_without_ai_dataset_this_run'] ?? 0;
                 $demoSufficiency['demo_closed_to_ai_match_rate_this_run']   = $result['demo_closed_to_ai_match_rate_this_run'] ?? null;
                 $this->store->saveDemoSufficiency($demoSufficiency);
+                $this->journalEvent('file_write', 'demo_audit', true, 'demo_sufficiency.json written', [
+                    'path'           => 'runtime/demo_sufficiency.json',
+                    'write_type'     => 'update',
+                    'classification' => 'audit',
+                ]);
                 $this->store->saveDemoTruthAudit($demoTruthAudit);
+                $this->journalEvent('file_write', 'demo_audit', true, 'demo_truth_audit.json written', [
+                    'path'           => 'runtime/demo_truth_audit.json',
+                    'write_type'     => 'update',
+                    'classification' => 'audit',
+                ]);
 
                 // ── Journal: audit_summary (demo mode only) ───────────────────────
                 $this->journalEvent('audit_summary', 'demo_truth_audit', true, 'Demo truth audit complete', [
@@ -2376,6 +2417,11 @@ final class TradingBotService
 
         // Save last run
         $this->store->saveLastRun($result);
+        $this->journalEvent('file_write', 'run_end', true, 'last_run.json written', [
+            'path'           => 'last_run.json',
+            'write_type'     => 'update',
+            'classification' => 'runtime',
+        ]);
         
         return $result;
     }

@@ -244,6 +244,36 @@ trait BotReconcileTrait
 
     // Return per-run classification so the caller can aggregate counters.
     $isOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+
+    $this->journalEvent('trade_closed', 'reconcile', true,
+        'Trade closed (reconcile): ' . ($symbol ?: $tradeId),
+        [
+            'trade_id'                => $tradeId,
+            'symbol'                  => $trade['symbol'] ?? null,
+            'classification'          => $isOrphan ? 'orphan_adopted' : 'healthy',
+            'close_reason_normalized' => $trade['close_reason_normalized'] ?? null,
+            'close_result_source'     => $trade['close_result_source'] ?? null,
+            'close_price'             => $trade['close_price'] ?? null,
+            'roi'                     => $trade['roi'] ?? null,
+            'pnl'                     => $trade['pnl'] ?? null,
+            'mfe'                     => $trade['mfe'] ?? null,
+            'mae'                     => $trade['mae'] ?? null,
+            'ai_dataset_written'      => $aiWritten,
+            'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+        ]
+    );
+    if ($aiWritten) {
+        $this->journalEvent('ai_dataset_written', 'reconcile', true,
+            'AI record written: ' . ($symbol ?: $tradeId),
+            [
+                'trade_id'       => $tradeId,
+                'symbol'         => $trade['symbol'] ?? null,
+                'classification' => $isOrphan ? 'orphan_adopted' : 'healthy',
+                'path'           => 'ai_dataset/' . $tradeId . '.json',
+            ]
+        );
+    }
+
     return [
         'healthy_closed' => !$isOrphan,
         'orphan_closed'  => $isOrphan,

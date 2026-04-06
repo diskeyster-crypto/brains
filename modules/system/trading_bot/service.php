@@ -54,6 +54,14 @@ final class TradingBotService
 
     /** @var Lib\BotStore|null — separate store for parallel demo shadows (live mode only) */
     private $parallelDemoStore = null;
+
+    /**
+     * Per-intent demo execution context flag.
+     * When true, isRealExchangeMode() returns false so demo-routed intents
+     * in a live bot run do not submit real orders to the exchange.
+     * Reset to false immediately after each demo-context executeIntent call.
+     */
+    private bool $demoExecutionContext = false;
     
     public function __construct()
     {
@@ -85,6 +93,7 @@ final class TradingBotService
         $this->store         = new Lib\BotStore($this->storageDir, $this->config);
 
         // Phase 2: parallel demo shadow store (live mode only) — separate truth bucket
+        // NOTE: verdict hook wired below, after decisionEngine + verdictEngine are initialized.
         if ($mode === 'live') {
             $demoStorageDir = $this->moduleBase . '/storage_demo';
             $this->parallelDemoStore = new Lib\BotStore($demoStorageDir, $this->config);
@@ -108,6 +117,19 @@ final class TradingBotService
                 $verdictEngine->saveVerdict($tradeId, $verdict);
             }
         );
+
+        // Wire verdict engine into the parallel demo store (live mode only) so shadow trade
+        // closes also generate verdict artifacts, linked by the same decision_id.
+        if ($this->parallelDemoStore !== null) {
+            $this->parallelDemoStore->setOnTradeClosedHook(
+                function (string $tradeId, array $trade) use ($verdictEngine, $decisionEngine): void {
+                    $decisionId = (string)($trade['decision_id'] ?? '');
+                    $dp         = $decisionId !== '' ? $decisionEngine->loadDecisionPacket($decisionId) : null;
+                    $verdict    = $verdictEngine->generateVerdict($tradeId, $trade, $dp);
+                    $verdictEngine->saveVerdict($tradeId, $verdict);
+                }
+            );
+        }
 
         // Initialize gateway for real-exchange modes (live and demo)
         if ($mode === 'live' || $mode === 'demo') {
@@ -1095,8 +1117,8 @@ final class TradingBotService
                     }
                     // ─────────────────────────────────────────────────────────────────
 
-                    // FIX: Route per-intent using decisionPacket execution_mode, not global bot mode.
-                    // In auto mode: gray→demo, enter_live→live, enter_demo→demo.
+                    // Route per-intent using decisionPacket decision, not only the global bot mode.
+                    // In auto mode: gray/enter_demo→demo, enter_live→live.
                     // In manual mode: decisionPacket is advisory only; global $mode is used.
                     $intentExecMode = $mode;
                     if ($autoMode) {
@@ -1106,15 +1128,33 @@ final class TradingBotService
                         } elseif ($dpDecision === 'enter_live') {
                             $intentExecMode = ($mode === 'live') ? 'live' : $mode;
                         }
-                        // 'skip' is already handled above via continue; falls through only if
-                        // manual mode or non-auto logic. intentExecMode stays $mode otherwise.
+                        // 'skip' is already handled above via continue.
                     }
 
-                    $execResult = $this->executeIntent($intent, $intentExecMode);
+                    // True per-intent execution context separation:
+                    // When the bot is live but this intent is demo-routed, we must:
+                    //   1. Use demo storage (parallelDemoStore) — not the live store.
+                    //   2. Not submit a real order to the live exchange (demoExecutionContext=true).
+                    // This ensures gray intents never touch live money or live storage.
+                    if ($mode === 'live' && $intentExecMode === 'demo' && $this->parallelDemoStore !== null) {
+                        $liveStore = $this->store;
+                        $this->store = $this->parallelDemoStore;
+                        $this->demoExecutionContext = true;
+                        try {
+                            $execResult = $this->executeIntent($intent, 'demo');
+                        } finally {
+                            $this->store = $liveStore;
+                            $this->demoExecutionContext = false;
+                        }
+                    } else {
+                        $execResult = $this->executeIntent($intent, $intentExecMode);
+                    }
 
-                    // Phase 2: Parallel demo mirror for live intents (FIX: real execution, not just a flag)
-                    // When a signal goes live AND parallel_demo_suggested=true, create a demo shadow trade
-                    // in the demo storage, linked by the same decision_id.
+                    // Phase 2: Parallel demo mirror for live intents.
+                    // When a live-eligible signal also has parallel_demo_suggested=true,
+                    // create a synthetic shadow trade in demo storage linked by the same
+                    // decision_id. The shadow gets its own full update/close/verdict lifecycle
+                    // via the parallelDemoStore update pass below (after updateActivePositions).
                     // Live truth → storage_live, demo truth → storage_demo (never merged).
                     if (
                         $autoMode
@@ -1463,6 +1503,33 @@ final class TradingBotService
                 'ai_written'             => $updateResult['ai_dataset_records_written'] ?? 0,
                 'close_failures'         => $updateResult['close_failures'] ?? 0,
             ]);
+
+            // ============================================================
+            // Parallel demo shadow lifecycle pass (live bot only)
+            // Run update + turnover for shadow trades stored in storage_demo.
+            // Uses demoExecutionContext=true so no real exchange calls are made.
+            // Verdicts are generated automatically via parallelDemoStore's hook.
+            // ============================================================
+            if ($mode === 'live' && $this->parallelDemoStore !== null) {
+                $liveStoreRef = $this->store;
+                $this->store = $this->parallelDemoStore;
+                $this->demoExecutionContext = true;
+                try {
+                    $shadowUpdateResult = $this->updateActivePositions('demo');
+                    $result['shadow_demo_updated']       = $shadowUpdateResult['updated'] ?? 0;
+                    $result['shadow_demo_closed']        = $shadowUpdateResult['closed'] ?? 0;
+                    $result['shadow_demo_ai_written']    = $shadowUpdateResult['ai_dataset_records_written'] ?? 0;
+                    if (method_exists($this, 'performDemoTurnoverPass')) {
+                        $shadowTurnover = $this->performDemoTurnoverPass('demo');
+                        $result['shadow_demo_turnover_closed'] = $shadowTurnover['turnover_slots_freed'] ?? 0;
+                    }
+                } catch (\Throwable $shadowEx) {
+                    $this->errors[] = 'shadow_demo_lifecycle_error: ' . $shadowEx->getMessage();
+                } finally {
+                    $this->store = $liveStoreRef;
+                    $this->demoExecutionContext = false;
+                }
+            }
 
             // ============================================================
             // Demo close pipeline per-run counters

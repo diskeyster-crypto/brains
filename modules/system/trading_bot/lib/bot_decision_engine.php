@@ -394,6 +394,8 @@ final class BotDecisionEngine
 
     /**
      * Load passport JSON for a symbol. Returns null if not found or not valid.
+     * If the stored passport exists but does not contain trust_state, triggers
+     * an inline rebuild via CoinPassportEngine so future reads include trust_state.
      */
     private function loadPassport(string $symbol): ?array
     {
@@ -409,7 +411,53 @@ final class BotDecisionEngine
             return null;
         }
         $data = json_decode($raw, true);
-        return is_array($data) ? $data : null;
+        if (!is_array($data)) {
+            return null;
+        }
+
+        // If trust_state is absent, attempt an inline rebuild so stored passport gains it.
+        if (!array_key_exists('trust_state', $data)) {
+            $data = $this->rebuildPassportInline($symbol, $path, $data);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Rebuild a single passport file inline using CoinPassportEngine.
+     * Returns the refreshed passport (with trust_state) on success, or the original
+     * array as a fallback if the engine cannot be loaded.
+     *
+     * @param array<string,mixed> $existing Existing passport data (used as fallback)
+     * @return array<string,mixed>
+     */
+    private function rebuildPassportInline(string $symbol, string $path, array $existing): array
+    {
+        // Resolve CoinPassportEngine path: it lives alongside this module under modules/system/
+        $passportEngineFile = dirname(__DIR__, 2) . '/coin_passport/lib/passport_engine.php';
+        if (!is_file($passportEngineFile)) {
+            return $existing;
+        }
+        if (!class_exists('CoinPassportEngine', false)) {
+            require_once $passportEngineFile;
+        }
+        if (!class_exists('CoinPassportEngine', false)) {
+            return $existing;
+        }
+        try {
+            // CoinPassportEngine constructor: passportsDir, tradingBotStorage, aiShadowStorage
+            $moduleBase        = dirname(__DIR__);
+            $tradingBotStorage = $moduleBase . '/storage';
+            $aiShadowStorage   = dirname($moduleBase) . '/ai_shadow/storage';
+            $engine = new \CoinPassportEngine($this->passportsDir, $tradingBotStorage, $aiShadowStorage);
+            $rebuilt = $engine->rebuildSymbol($symbol);
+            if (is_array($rebuilt) && array_key_exists('trust_state', $rebuilt)) {
+                return $rebuilt;
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal: fall back to existing data
+        }
+        return $existing;
     }
 
     /**

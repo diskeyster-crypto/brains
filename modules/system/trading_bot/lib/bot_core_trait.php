@@ -111,10 +111,16 @@ trait BotCoreTrait
     }
 
     /**
-     * Check if bot uses a real exchange (live or demo — actual API calls are made)
+     * Check if bot uses a real exchange (live or demo — actual API calls are made).
+     * Returns false when $demoExecutionContext is true, which allows per-intent demo
+     * execution (no real orders) even when the bot mode is 'live'.
      */
     protected function isRealExchangeMode(): bool
     {
+        // Per-intent demo context: no real exchange calls regardless of bot mode
+        if (!empty($this->demoExecutionContext)) {
+            return false;
+        }
         $mode = $this->config['module']['mode'] ?? 'paper';
         return $mode === 'live' || $mode === 'demo';
     }

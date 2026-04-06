@@ -1,0 +1,18 @@
+{
+    "symbol": "MERLUSDT",
+    "updated_at": "2026-04-06 19:43:54",
+    "items": [
+        {
+            "ts": 1775036109,
+            "symbol": "MERLUSDT",
+            "type": "shadow_outcome",
+            "source": "shadow_closed",
+            "pattern_algorithm": "double_top_contextual_v2",
+            "side": "short",
+            "final_roi": 2.2,
+            "peak_roi": 2.2,
+            "close_reason": "take_profit",
+            "notes": null
+        }
+    ]
+}

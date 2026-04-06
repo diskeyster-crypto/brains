@@ -1,0 +1,18 @@
+{
+    "symbol": "NXPCUSDT",
+    "updated_at": "2026-04-06 19:43:54",
+    "items": [
+        {
+            "ts": 2026,
+            "symbol": "NXPCUSDT",
+            "type": "trade_closed",
+            "source": "live_legacy",
+            "pattern_algorithm": "",
+            "side": "long",
+            "final_roi": null,
+            "peak_roi": null,
+            "close_reason": null,
+            "notes": null
+        }
+    ]
+}

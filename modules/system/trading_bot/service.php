@@ -1160,6 +1160,7 @@ final class TradingBotService
                     // Stamp lineage fields onto intent so they propagate into the opened trade record
                     $intent['decision_id']     = $decisionPacket['decision_id'];
                     $intent['confidence_band'] = $decisionPacket['confidence_band'];
+                    $intent['route_state']     = $decisionPacket['route_state'];
                     // Auto mode: skip red-confidence signals (Phase 6 low-confidence policy)
                     $autoMode = (bool)($this->config['execution']['auto_mode'] ?? false);
                     if ($autoMode && $decisionPacket['decision'] === 'skip') {
@@ -1168,6 +1169,7 @@ final class TradingBotService
                             'reason'  => 'auto_mode_confidence_red',
                             'context' => [
                                 'confidence_band' => $decisionPacket['confidence_band'],
+                                'route_state'     => $decisionPacket['route_state'],
                                 'decision_id'     => $decisionPacket['decision_id'],
                                 'reason_codes'    => $decisionPacket['reason_codes'],
                             ],
@@ -1185,20 +1187,23 @@ final class TradingBotService
                     // In auto mode: gray/enter_demo→demo, enter_live→live.
                     // In manual mode: decisionPacket is advisory only; global $mode is used.
                     $intentExecMode = $mode;
+                    // Derive routing counters from route_state (mode-independent routing class).
+                    // route_state = green_live_worthy → routed_green (regardless of demo execution)
+                    // route_state = demo_learn        → routed_demo
+                    // route_state = skip              → already counted above via continue
+                    $dpRouteState = $decisionPacket['route_state'] ?? 'demo_learn';
                     if ($autoMode) {
                         $dpDecision = $decisionPacket['decision'] ?? '';
                         if ($dpDecision === 'enter_demo') {
                             $intentExecMode = 'demo';
-                            // Green-confidence demo executions count as green-routed (high-confidence,
-                            // demo-executed because bot is in demo mode — live-worthy if mode were live).
-                            if (($decisionPacket['confidence_band'] ?? '') === 'green') {
-                                $routedGreenTotal++;
-                            } else {
-                                $routedDemoTotal++;
-                            }
                         } elseif ($dpDecision === 'enter_live') {
                             $intentExecMode = ($mode === 'live') ? 'live' : $mode;
+                        }
+                        // Count by route_state, not by confidence_band+decision combo
+                        if ($dpRouteState === 'green_live_worthy') {
                             $routedGreenTotal++;
+                        } else {
+                            $routedDemoTotal++;
                         }
                         // 'skip' is already handled above via continue.
                     }
@@ -1214,6 +1219,7 @@ final class TradingBotService
                             'symbol'                  => $intent['symbol'] ?? null,
                             'execution_mode'          => $intentExecMode,
                             'confidence_band'         => $decisionPacket['confidence_band'] ?? null,
+                            'route_state'             => $decisionPacket['route_state'] ?? null,
                             'decision'                => $decisionPacket['decision'] ?? null,
                             'is_parallel_demo_shadow' => false,
                             'auto_mode'               => $autoMode,
@@ -1327,6 +1333,8 @@ final class TradingBotService
                             ],
                             'signal_strength'              => $intent['signal_strength'] ?? null,
                             'quality_score'                => $intent['quality_score'] ?? null,
+                            'confidence_band'              => $intent['confidence_band'] ?? null,
+                            'route_state'                  => $intent['route_state'] ?? null,
                             'late_entry_diagnostics'       => $execResult['late_entry_diagnostics']
                                                               ?? ($execResult['context']['late_entry_diagnostics'] ?? null),
                             'deadline_context'             => $execResult['deadline_context'] ?? null,

@@ -1306,6 +1306,7 @@ trait BotExecutorTrait
             // Decision engine lineage fields (populated when BotDecisionEngine is active)
             'decision_id'     => (string)($intent['decision_id'] ?? ''),
             'confidence_band' => (string)($intent['confidence_band'] ?? ''),
+            'route_state'     => (string)($intent['route_state'] ?? ''),
             'mode' => $this->getMode(),
             'risk' => $intent['risk'],
             'exchange' => [
@@ -4516,6 +4517,7 @@ private function computeEntryDeadline(array $intent, string $mode = 'live'): arr
             // Decision engine lineage fields (populated when BotDecisionEngine is active)
             'decision_id'     => (string)($intent['decision_id'] ?? ''),
             'confidence_band' => (string)($intent['confidence_band'] ?? ''),
+            'route_state'     => (string)($intent['route_state'] ?? ''),
         ];
     }
     

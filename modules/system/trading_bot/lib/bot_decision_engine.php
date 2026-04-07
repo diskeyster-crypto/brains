@@ -66,6 +66,7 @@ final class BotDecisionEngine
         $signalStrength = (float)($intent['signal_strength'] ?? 0.0);
         $qualityScore   = (float)($intent['quality_score'] ?? 0.0);
         $confidenceBand = $this->computeConfidenceBand($confidenceScore, $passport, $signalStrength, $qualityScore);
+        $routeState     = $this->computeRouteState($confidenceBand);
         $decision       = $this->computeDecision($confidenceBand, $botMode, $autoMode);
         $executionMode  = $this->resolveExecutionMode($decision, $botMode);
         $reasonCodes    = $this->computeReasonCodes($confidenceBand, $passport, $botMode, $autoMode, $intent);
@@ -99,6 +100,7 @@ final class BotDecisionEngine
             'confidence_band'           => $confidenceBand,
 
             // Routing
+            'route_state'               => $routeState,
             'decision'                  => $decision,
             'execution_mode'            => $executionMode,
             'auto_mode'                 => $autoMode,
@@ -246,6 +248,29 @@ final class BotDecisionEngine
     // =========================================================================
     // Routing
     // =========================================================================
+
+    /**
+     * Compute explicit route state from confidence band.
+     *
+     * route_state is mode-independent: it reflects the real routing meaning
+     * of the signal, regardless of how it executes under the current bot mode.
+     *
+     *   green_live_worthy – strong evidence; live-worthy even if executed as demo
+     *   demo_learn        – moderate/uncertain; send to demo to learn
+     *   skip              – clearly weak; do not execute
+     */
+    private function computeRouteState(string $confidenceBand): string
+    {
+        switch ($confidenceBand) {
+            case 'green':
+                return 'green_live_worthy';
+            case 'red':
+                return 'skip';
+            default:
+                // yellow, gray, or unknown → demo learning
+                return 'demo_learn';
+        }
+    }
 
     /**
      * Compute the routing decision.

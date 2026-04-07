@@ -1,13 +1,13 @@
 {
     "enabled": true,
-    "mode": "live",
+    "mode": "demo",
     "account_id": "trading_bot",
     "max_positions": 50,
     "safety_stop_errors": 5,
-    "last_modified": "2026-04-03T10:36:12+01:00",
+    "last_modified": "2026-04-07T12:03:48+01:00",
     "modified_by": null,
     "notes": "Trading Bot v1 runtime settings. Edit via UI or this file.",
-    "reconcile_before_action": false,
+    "reconcile_before_action": true,
     "exchange": {
         "category": "linear",
         "account_type": "UNIFIED",
@@ -24,7 +24,7 @@
         "risk_active_file": "runtime/risk_active.json",
         "commands_key": "system.brain.storage",
         "commands_file": "runtime/trading_commands.json",
-        "brain_source_enabled": false
+        "brain_source_enabled": true
     },
     "execution": {
         "max_scan_intents_per_run": 200,
@@ -32,7 +32,7 @@
         "max_deferred_intents_per_run": 10,
         "default_entry_timeout_minutes": 8,
         "default_late_threshold_pct": 1.25,
-        "retrace_slack_pct": 0.05,
+        "retrace_slack_pct": 0.050000000000000003,
         "demo_late_entry_tolerance_extra_pct": 1.5,
         "demo_entry_timeout_extra_minutes": 5,
         "exchange_positions_cache_ttl_sec": 2,
@@ -51,15 +51,15 @@
         "balance_cache_ttl_sec": 8,
         "balance_strict_stable_coin_only": true,
         "order_type": "Market",
-        "trailing_enabled": false,
-        "break_even_enabled": false,
+        "trailing_enabled": true,
+        "break_even_enabled": true,
         "emergency_stop_enabled": false,
         "stop_loss_pct": "2",
-        "take_profit_pct": "5",
+        "take_profit_pct": "11",
         "trailing_mode": "",
-        "trailing_activation_roi": "0",
-        "trailing_drawdown_factor": "0",
-        "break_even_activation_roi": "0",
+        "trailing_activation_roi": "3.5",
+        "trailing_drawdown_factor": "0.49",
+        "break_even_activation_roi": "2.4",
         "emergency_stop_loss_pct": "5",
         "auto_mode": true
     },
@@ -70,13 +70,13 @@
             "profile_id": "pattern_engine_demo_default",
             "budget_usdt_per_trade": 10,
             "leverage": 5,
-            "stop_from_liq_range_pct": 0.2,
+            "stop_from_liq_range_pct": 0.20000000000000001,
             "slippage_bps": 20,
             "fees_bps": 10,
             "order_type": "market",
             "stop_control": {
                 "stop_control_mode": "auto",
-                "stop_loss_from_entry_roi": 0.03
+                "stop_loss_from_entry_roi": 0.029999999999999999
             },
             "limits": {
                 "max_open_trades": 15,

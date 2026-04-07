@@ -193,20 +193,22 @@ final class BotDecisionEngine
             switch ($trustState) {
                 case 'green':
                     // Green passport: decent signal → green confidence; weak signal → yellow
-                    return $bestSignal >= 0.50 ? 'green' : 'yellow';
+                    return $bestSignal >= 0.40 ? 'green' : 'yellow';
                 case 'yellow':
-                    // Yellow passport: very strong signal → green (live-worthy); moderate → yellow;
-                    // very weak → red (clearly bad evidence → skip-eligible); else gray to keep learning
-                    if ($bestSignal >= 0.80) return 'green';
-                    if ($bestSignal >= 0.55) return 'yellow';
-                    if ($bestSignal < 0.20) return 'red';
+                    // Yellow passport: strong signal → green (live-worthy); moderate → yellow;
+                    // weak signal → red (clearly bad evidence → skip-eligible); else gray to keep learning
+                    if ($bestSignal >= 0.65) return 'green';
+                    if ($bestSignal >= 0.45) return 'yellow';
+                    if ($bestSignal < 0.30) return 'red';
                     return 'gray';
                 case 'red':
-                    // Red passport: only very strong signal can override; otherwise red → skip
-                    return $bestSignal >= 0.80 ? 'yellow' : 'red';
+                    // Red passport: only strong signal can yield yellow; otherwise red → skip
+                    return $bestSignal >= 0.75 ? 'yellow' : 'red';
                 case 'insufficient_data':
-                    // Insufficient data: very strong signal can still yield yellow; otherwise gray
-                    return $bestSignal >= 0.80 ? 'yellow' : 'gray';
+                    // Insufficient data: strong signal can yield yellow; very weak → red; otherwise gray
+                    if ($bestSignal >= 0.70) return 'yellow';
+                    if ($bestSignal < 0.25) return 'red';
+                    return 'gray';
             }
         }
 

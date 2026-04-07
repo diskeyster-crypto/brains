@@ -1470,6 +1470,11 @@ trait BotExecutorTrait
             'side_original' => (string)($intent['side_original'] ?? $intent['side']),
             'source' => (string)($intent['source'] ?? ''),
             'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
+            'pattern_version'   => (string)($intent['pattern_version'] ?? ''),
+            'signal_strength'   => (float)($intent['signal_strength'] ?? 0),
+            'quality_score'     => (float)($intent['quality_score'] ?? 0),
+            'scenario_id'       => (string)($intent['scenario_id'] ?? ''),
+            'scenario_score'    => (float)($intent['scenario_score'] ?? 0),
             // Decision engine lineage fields (populated when BotDecisionEngine is active)
             'decision_id'     => (string)($intent['decision_id'] ?? ''),
             'confidence_band' => (string)($intent['confidence_band'] ?? ''),

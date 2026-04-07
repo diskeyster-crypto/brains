@@ -86,6 +86,11 @@ final class BotDecisionEngine
             'side_original'             => (string)($intent['side_original'] ?? $side),
             'source'                    => (string)($intent['source'] ?? ''),
             'pattern_algorithm'         => $patternAlgorithm,
+            'pattern_version'           => (string)($intent['pattern_version'] ?? ''),
+            'signal_strength'           => (float)($intent['signal_strength'] ?? 0),
+            'quality_score'             => (float)($intent['quality_score'] ?? 0),
+            'scenario_id'               => (string)($intent['scenario_id'] ?? ''),
+            'scenario_score'            => (float)($intent['scenario_score'] ?? 0),
 
             // Confidence
             'confidence_score'          => round($confidenceScore, 4),

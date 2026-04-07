@@ -1576,6 +1576,7 @@ public function saveClosedTrade(string $tradeId, array $trade): void
             'closed_trades_healthy_missing_mae_count'  => $healthyClosedMissingMae,
             'closed_trades_healthy_missing_close_price_count'   => $healthyClosedMissingClosePrice,
             'closed_trades_healthy_missing_hold_minutes_count'  => $healthyClosedMissingHoldMinutes,
+            'ai_dataset_records'                       => $aiCount,
             'ai_dataset_count'                         => $aiCount,
             'ai_dataset_total'                         => $aiCount,
             // ── PART 4: Demo composition metrics ─────────────────────────────

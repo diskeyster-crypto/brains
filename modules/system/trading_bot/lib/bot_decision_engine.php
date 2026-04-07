@@ -197,9 +197,9 @@ final class BotDecisionEngine
                 case 'yellow':
                     // Yellow passport: strong signal → green (live-worthy); moderate → yellow;
                     // weak signal → red (clearly bad evidence → skip-eligible); else gray to keep learning
-                    if ($bestSignal >= 0.65) return 'green';
+                    if ($bestSignal >= 0.55) return 'green';
                     if ($bestSignal >= 0.45) return 'yellow';
-                    if ($bestSignal < 0.30) return 'red';
+                    if ($bestSignal < 0.38) return 'red';
                     return 'gray';
                 case 'red':
                     // Red passport: only strong signal can yield yellow; otherwise red → skip
@@ -207,7 +207,7 @@ final class BotDecisionEngine
                 case 'insufficient_data':
                     // Insufficient data: strong signal can yield yellow; very weak → red; otherwise gray
                     if ($bestSignal >= 0.70) return 'yellow';
-                    if ($bestSignal < 0.25) return 'red';
+                    if ($bestSignal < 0.35) return 'red';
                     return 'gray';
             }
         }

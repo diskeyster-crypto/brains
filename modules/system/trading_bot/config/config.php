@@ -161,7 +161,7 @@ return [
 
         // Experimental: invert direction from Brain signals (LONG↔SHORT)
         // Useful for contrarian tests; intent will include side_original.
-        'reverse_side_enabled' => true,
+        'reverse_side_enabled' => false,
 
         // Reconcile / exchange cache
         'exchange_positions_cache_ttl_sec' => 2,

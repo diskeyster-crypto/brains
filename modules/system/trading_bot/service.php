@@ -2209,6 +2209,15 @@ final class TradingBotService
                     'orphan_ai_dataset_written_total'     => $result['orphan_ai_dataset_written_total']         ?? 0,
                     'primary_learning_dataset_healthy_total'  => $result['primary_learning_dataset_healthy_total']   ?? 0,
                     'secondary_learning_dataset_orphan_total' => $result['secondary_learning_dataset_orphan_total']  ?? 0,
+                    // Close-path observability counters
+                    'reconcile_closed_detected_total'     => ($reconcileHealthyClosed ?? 0) + ($reconcileOrphanClosed ?? 0),
+                    'reconcile_healthy_closed_total'      => $reconcileHealthyClosed ?? 0,
+                    'turnover_closed_detected_total'      => $demoTurnoverTotalClosed ?? 0,
+                    'turnover_healthy_closed_total'       => $demoTurnoverHealthyClosed ?? 0,
+                    'healthy_closed_persisted_total'      => $result['healthy_closed_total'] ?? 0,
+                    'healthy_ai_dataset_written_this_run' => $result['healthy_ai_dataset_written_this_run'] ?? 0,
+                    'active_trade_count_before'           => $result['demo_trades_active_before'] ?? 0,
+                    'active_trade_count_after'            => $result['demo_trades_still_active_after'] ?? 0,
                 ]);
             }
 

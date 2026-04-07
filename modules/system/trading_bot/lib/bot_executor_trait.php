@@ -1780,11 +1780,18 @@ trait BotExecutorTrait
                             $closedTrade['close_reason']            = $closeReason;
                             $closedTrade['close_reason_normalized'] = $closeReason;
                         }
-                        // Write AI dataset record before persistence so the flag is part of the closed file.
-                        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
-                        $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if (!$aiWritten) {
-                            $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                        // Orphan recovery trades must not enter the primary AI learning dataset.
+                        // The healthy timeout path runs for all trades; guard the AI write here.
+                        if ($isAdoptedTrade) {
+                            $aiWritten = false;
+                            $closedTrade['ai_dataset_record_written'] = false;
+                            $closedTrade['ai_dataset_partition']      = 'orphan_recovery_secondary';
+                        } else {
+                            $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                            $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                            if (!$aiWritten) {
+                                $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                            }
                         }
                         // Per-run data-quality counters — based on record content, computed before persistence.
                         if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
@@ -2075,10 +2082,17 @@ trait BotExecutorTrait
                     }
                     // Demo mode: write AI-ready dataset record BEFORE moving to closed dir.
                     if (($this->config['module']['mode'] ?? '') === 'demo') {
-                        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
-                        $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if (!$aiWritten) {
-                            $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                        // Orphan recovery trades must not enter the primary AI learning dataset.
+                        if ($isAdoptedOrphanTrade) {
+                            $aiWritten = false;
+                            $closedTrade['ai_dataset_record_written'] = false;
+                            $closedTrade['ai_dataset_partition']      = 'orphan_recovery_secondary';
+                        } else {
+                            $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                            $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                            if (!$aiWritten) {
+                                $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                            }
                         }
                         if ($isAdoptedOrphanTrade) {
                             $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
@@ -5003,8 +5017,15 @@ private function computeEntryDeadline(array $intent, string $mode = 'live'): arr
                     $closedTrade['close_reason']            = $closeReason;
                     $closedTrade['close_reason_normalized'] = $closeReason;
                 }
-                $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
-                $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                // Orphan recovery trades must not enter the primary AI learning dataset.
+                if ($isOrphan) {
+                    $aiWritten = false;
+                    $closedTrade['ai_dataset_record_written'] = false;
+                    $closedTrade['ai_dataset_partition']      = 'orphan_recovery_secondary';
+                } else {
+                    $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                    $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                }
                 if ($aiWritten) {
                     $result['turnover_ai_records_written']++;
                 }

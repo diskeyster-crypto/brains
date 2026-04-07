@@ -172,6 +172,7 @@ trait BotConfigTrait
                             'max_intents_per_run',
                             'max_deferred_intents_per_run',
                             'default_entry_timeout_minutes',
+                            'demo_entry_timeout_extra_minutes',
                             'exchange_positions_cache_ttl_sec',
                             'reconcile_closed_pnl_lookup_minutes',
                             'reconcile_closed_pnl_limit',
@@ -196,6 +197,7 @@ trait BotConfigTrait
 
                         $floats = [
                             'default_late_threshold_pct',
+                            'demo_late_entry_tolerance_extra_pct',
                             'retrace_slack_pct',
                             'close_reason_sl_tolerance_pct',
                             'dumb_trailing_activation_epsilon_pct',

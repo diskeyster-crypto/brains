@@ -100,8 +100,8 @@
         "stale_trade_review_minutes": 30,
         "force_reconcile_each_run_demo": true,
         "prefer_close_stale_when_learning": true,
-        "learning_close_timeout_minutes": 30,
-        "learning_max_active_age_minutes": 45,
+        "learning_close_timeout_minutes": 15,
+        "learning_max_active_age_minutes": 20,
         "max_turnover_per_run": 8,
         "demo_closed_per_run_target": 3,
         "healthy_min_active_slots": 3,
@@ -109,8 +109,8 @@
         "healthy_share_target_pct": 40,
         "healthy_close_bootstrap_enabled": true,
         "healthy_closed_share_target_pct": 45,
-        "healthy_close_timeout_minutes_bootstrap": 20,
-        "healthy_stale_age_minutes_bootstrap": 30
+        "healthy_close_timeout_minutes_bootstrap": 5,
+        "healthy_stale_age_minutes_bootstrap": 8
     },
     "demo_validation_mode": {
         "enabled": false,

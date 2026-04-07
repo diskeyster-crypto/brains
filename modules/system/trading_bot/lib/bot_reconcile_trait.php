@@ -30,9 +30,11 @@ trait BotReconcileTrait
             'orphan_positions_count' => 0, // P3
             'orphan_positions' => [],      // P3
             // Per-run close stats (for demo per-run counter aggregation)
-            'reconcile_healthy_closed' => 0,
-            'reconcile_orphan_closed'  => 0,
-            'reconcile_ai_written'     => 0,
+            'reconcile_healthy_closed'    => 0,
+            'reconcile_orphan_closed'     => 0,
+            'reconcile_ai_written'        => 0,
+            'reconcile_healthy_ai_written'=> 0,
+            'reconcile_orphan_ai_written' => 0,
             'error' => null,
         ];
         
@@ -98,9 +100,11 @@ trait BotReconcileTrait
                     // Local trade not found on exchange - might be closed
                     $result['positions_closed']++;
                     $closeStats = $this->handleClosedPosition($tradeId, $trade);
-                    $result['reconcile_healthy_closed'] += $closeStats['healthy_closed'] ? 1 : 0;
-                    $result['reconcile_orphan_closed']  += $closeStats['orphan_closed']  ? 1 : 0;
-                    $result['reconcile_ai_written']     += $closeStats['ai_written']     ? 1 : 0;
+                    $result['reconcile_healthy_closed']     += $closeStats['healthy_closed']     ? 1 : 0;
+                    $result['reconcile_orphan_closed']      += $closeStats['orphan_closed']      ? 1 : 0;
+                    $result['reconcile_ai_written']         += $closeStats['ai_written']         ? 1 : 0;
+                    $result['reconcile_healthy_ai_written'] += $closeStats['healthy_ai_written'] ? 1 : 0;
+                    $result['reconcile_orphan_ai_written']  += $closeStats['orphan_ai_written']  ? 1 : 0;
                 }
             }
             
@@ -227,12 +231,22 @@ trait BotReconcileTrait
 
     // Demo mode: write AI-ready dataset record BEFORE moving to closed dir,
     // so the closed trade file can carry the ai_dataset_record_written flag.
+    // Orphan/adopted trades must NOT write into the primary AI learning dataset.
+    $isOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
     $aiWritten = false;
+    $orphanAiWritten = false;
     if (($this->config['module']['mode'] ?? '') === 'demo') {
-        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $trade);
-        $trade['ai_dataset_record_written'] = $aiWritten;
-        if (!$aiWritten) {
-            $trade['ai_dataset_write_fail_reason'] = 'write_failed';
+        if ($isOrphan) {
+            // Orphan recovery closes go to secondary partition only — skip primary ai_dataset
+            $trade['ai_dataset_partition']       = 'orphan_recovery_secondary';
+            $trade['ai_dataset_record_written']  = false;
+            $trade['ai_dataset_skip_reason']     = 'orphan_recovery_excluded_from_primary';
+        } else {
+            $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $trade);
+            $trade['ai_dataset_record_written'] = $aiWritten;
+            if (!$aiWritten) {
+                $trade['ai_dataset_write_fail_reason'] = 'write_failed';
+            }
         }
     }
 
@@ -241,9 +255,6 @@ trait BotReconcileTrait
     // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
     $symbol = (string)($trade['symbol'] ?? '');
     $this->triggerCoinPassportRebuildForSymbol($symbol);
-
-    // Return per-run classification so the caller can aggregate counters.
-    $isOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
 
     $this->journalEvent('trade_closed', 'reconcile', true,
         'Trade closed (reconcile): ' . ($symbol ?: $tradeId),
@@ -261,7 +272,8 @@ trait BotReconcileTrait
             'mae'                     => $trade['mae'] ?? null,
             'mfe_missing_reason'      => $trade['mfe_missing_reason'] ?? null,
             'mae_missing_reason'      => $trade['mae_missing_reason'] ?? null,
-            'ai_dataset_written'      => $aiWritten,
+            'ai_dataset_written'      => $isOrphan ? false : $aiWritten,
+            'ai_dataset_partition'    => $isOrphan ? 'orphan_recovery_secondary' : 'primary',
             'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
         ]
     );
@@ -274,35 +286,39 @@ trait BotReconcileTrait
             'symbol'                  => $trade['symbol'] ?? null,
             'trade_id'                => $tradeId,
             'close_reason_normalized' => $trade['close_reason_normalized'] ?? null,
-            'ai_dataset_written'      => $aiWritten,
+            'ai_dataset_written'      => $isOrphan ? false : $aiWritten,
         ]
     );
-    if ($aiWritten) {
+    if ($aiWritten && !$isOrphan) {
         $this->journalEvent('ai_dataset_written', 'reconcile', true,
-            'AI record written: ' . ($symbol ?: $tradeId),
+            'AI record written (primary, healthy): ' . ($symbol ?: $tradeId),
             [
-                'trade_id'       => $tradeId,
-                'symbol'         => $trade['symbol'] ?? null,
-                'classification' => $isOrphan ? 'orphan_adopted' : 'healthy',
-                'path'           => 'ai_dataset/' . $tradeId . '.json',
+                'trade_id'         => $tradeId,
+                'symbol'           => $trade['symbol'] ?? null,
+                'classification'   => 'healthy',
+                'ai_dataset_partition' => 'primary',
+                'path'             => 'ai_dataset/' . $tradeId . '.json',
             ]
         );
         $this->journalEvent('file_write', 'reconcile', true,
             'ai_dataset file written (reconcile): ' . ($symbol ?: $tradeId),
             [
-                'path'           => 'ai_dataset/' . $tradeId . '.json',
-                'write_type'     => 'create',
-                'classification' => 'ai_dataset',
-                'symbol'         => $trade['symbol'] ?? null,
-                'trade_id'       => $tradeId,
+                'path'             => 'ai_dataset/' . $tradeId . '.json',
+                'write_type'       => 'create',
+                'classification'   => 'ai_dataset',
+                'ai_dataset_partition' => 'primary',
+                'symbol'           => $trade['symbol'] ?? null,
+                'trade_id'         => $tradeId,
             ]
         );
     }
 
     return [
-        'healthy_closed' => !$isOrphan,
-        'orphan_closed'  => $isOrphan,
-        'ai_written'     => $aiWritten,
+        'healthy_closed'     => !$isOrphan,
+        'orphan_closed'      => $isOrphan,
+        'ai_written'         => $aiWritten,
+        'healthy_ai_written' => !$isOrphan && $aiWritten,
+        'orphan_ai_written'  => false,
     ];
 }
 

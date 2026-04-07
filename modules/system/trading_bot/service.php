@@ -360,17 +360,21 @@ final class TradingBotService
 
             // Step 1: Reconcile with exchange
             // Per-run reconcile close stats (folded into demo per-run totals later)
-            $reconcileHealthyClosed = 0;
-            $reconcileOrphanClosed  = 0;
-            $reconcileAiWritten     = 0;
+            $reconcileHealthyClosed    = 0;
+            $reconcileOrphanClosed     = 0;
+            $reconcileAiWritten        = 0;
+            $reconcileHealthyAiWritten = 0;
+            $reconcileOrphanAiWritten  = 0;
             $reconciledThisRun = false;
             $this->journalEvent('reconcile_start', 'reconcile', true, 'Reconcile with exchange starting', []);
             if ($this->config['module']['reconcile_before_action'] ?? true) {
                 $reconcileResult = $this->reconcileWithExchange();
                 $reconciledThisRun = true;
-                $reconcileHealthyClosed += (int)($reconcileResult['reconcile_healthy_closed'] ?? 0);
-                $reconcileOrphanClosed  += (int)($reconcileResult['reconcile_orphan_closed']  ?? 0);
-                $reconcileAiWritten     += (int)($reconcileResult['reconcile_ai_written']     ?? 0);
+                $reconcileHealthyClosed    += (int)($reconcileResult['reconcile_healthy_closed']     ?? 0);
+                $reconcileOrphanClosed     += (int)($reconcileResult['reconcile_orphan_closed']      ?? 0);
+                $reconcileAiWritten        += (int)($reconcileResult['reconcile_ai_written']         ?? 0);
+                $reconcileHealthyAiWritten += (int)($reconcileResult['reconcile_healthy_ai_written'] ?? 0);
+                $reconcileOrphanAiWritten  += (int)($reconcileResult['reconcile_orphan_ai_written']  ?? 0);
                 $result['steps'][] = [
                     'step' => 'reconcile',
                     'status' => $reconcileResult['ok'] ? 'ok' : 'error',
@@ -386,9 +390,11 @@ final class TradingBotService
                         'positions_synced' => $reconcileResult['positions_synced'] ?? 0,
                         'orders_synced'    => $reconcileResult['orders_synced']    ?? 0,
                         'orphan_count'     => $reconcileResult['orphan_positions_count'] ?? 0,
-                        'healthy_closed'   => $reconcileResult['reconcile_healthy_closed'] ?? 0,
-                        'orphan_closed'    => $reconcileResult['reconcile_orphan_closed']  ?? 0,
-                        'ai_written'       => $reconcileResult['reconcile_ai_written']     ?? 0,
+                        'healthy_closed'             => $reconcileResult['reconcile_healthy_closed']     ?? 0,
+                        'orphan_closed'              => $reconcileResult['reconcile_orphan_closed']      ?? 0,
+                        'ai_written'                 => $reconcileResult['reconcile_ai_written']         ?? 0,
+                        'healthy_ai_written'         => $reconcileResult['reconcile_healthy_ai_written'] ?? 0,
+                        'orphan_ai_written'          => $reconcileResult['reconcile_orphan_ai_written']  ?? 0,
                         'error'            => $reconcileResult['error'] ?? null,
                     ]
                 );
@@ -409,9 +415,11 @@ final class TradingBotService
                 $dlmCfgRec = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
                 if (($dlmCfgRec['enabled'] ?? false) && ($dlmCfgRec['force_reconcile_each_run_demo'] ?? false)) {
                     $demoRecResult = $this->reconcileWithExchange();
-                    $reconcileHealthyClosed += (int)($demoRecResult['reconcile_healthy_closed'] ?? 0);
-                    $reconcileOrphanClosed  += (int)($demoRecResult['reconcile_orphan_closed']  ?? 0);
-                    $reconcileAiWritten     += (int)($demoRecResult['reconcile_ai_written']     ?? 0);
+                    $reconcileHealthyClosed    += (int)($demoRecResult['reconcile_healthy_closed']     ?? 0);
+                    $reconcileOrphanClosed     += (int)($demoRecResult['reconcile_orphan_closed']      ?? 0);
+                    $reconcileAiWritten        += (int)($demoRecResult['reconcile_ai_written']         ?? 0);
+                    $reconcileHealthyAiWritten += (int)($demoRecResult['reconcile_healthy_ai_written'] ?? 0);
+                    $reconcileOrphanAiWritten  += (int)($demoRecResult['reconcile_orphan_ai_written']  ?? 0);
                     $result['steps'][] = [
                         'step'             => 'reconcile_demo_forced',
                         'status'           => $demoRecResult['ok'] ? 'ok' : 'error',
@@ -946,6 +954,7 @@ final class TradingBotService
                 $demoTurnoverHealthyMissingMae        = 0;
                 $demoTurnoverHealthyMissingClosePrice = 0;
                 $demoTurnoverHealthyAiWritten         = 0;
+                $demoTurnoverOrphanAiWritten          = 0;
                 $turnoverPassResult                   = [];
                 // Composition tracking variables (demo mode only, PARTS 1-4)
                 $demoActiveHealthyCount  = 0;
@@ -1023,6 +1032,7 @@ final class TradingBotService
                                 $demoTurnoverHealthyMissingMae   = (int)($turnoverPassResult['turnover_healthy_closed_missing_mae']              ?? 0);
                                 $demoTurnoverHealthyMissingClosePrice = (int)($turnoverPassResult['turnover_healthy_closed_missing_close_price'] ?? 0);
                                 $demoTurnoverHealthyAiWritten    = (int)($turnoverPassResult['turnover_healthy_ai_written']                      ?? 0);
+                                $demoTurnoverOrphanAiWritten     = (int)($turnoverPassResult['turnover_orphan_ai_written']                       ?? 0);
                                 $slotsFreedByPass                = $demoTurnoverTotalClosed;
                                 if ($slotsFreedByPass > 0) {
                                     $demoCapacitySlotsFreed      = $slotsFreedByPass;
@@ -1778,7 +1788,8 @@ final class TradingBotService
                 $result['healthy_closed_this_run_missing_mae']         = ($updateResult['healthy_closed_this_run_missing_mae'] ?? 0) + $demoTurnoverHealthyMissingMae;
                 $result['healthy_closed_this_run_missing_close_price'] = ($updateResult['healthy_closed_this_run_missing_close_price'] ?? 0) + $demoTurnoverHealthyMissingClosePrice;
                 $result['healthy_closed_this_run_missing_hold_minutes']= ($updateResult['healthy_closed_this_run_missing_hold_minutes'] ?? 0);
-                $result['healthy_ai_dataset_written_this_run']         = ($updateResult['healthy_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverHealthyAiWritten + $reconcileAiWritten;
+                $result['healthy_ai_dataset_written_this_run']         = ($updateResult['healthy_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverHealthyAiWritten + $reconcileHealthyAiWritten;
+                $result['orphan_ai_dataset_written_this_run']          = ($updateResult['orphan_ai_dataset_written_this_run'] ?? 0) + $demoTurnoverOrphanAiWritten + $reconcileOrphanAiWritten;
 
                 // ── Bootstrap healthy-close accelerator diagnostics ──────────
                 $result['healthy_close_bootstrap_enabled']             = $bootstrapEnabled;
@@ -1820,6 +1831,22 @@ final class TradingBotService
                 $result['demo_turnover_active_orphan_count']   = (int)($turnoverPassResult['turnover_active_orphan_count']  ?? 0);
                 $result['demo_turnover_orphan_pressure_active']= (bool)($turnoverPassResult['turnover_orphan_pressure_active'] ?? false);
                 $result['demo_orphan_cap_blocked_adoptions']   = (int)($result['orphan_adoption_deferred_cap_count'] ?? 0);
+
+                // ── Learning dataset separation counters ─────────────────────
+                $freshDemoOpened      = (int)($result['demo_trades_opened_this_run'] ?? 0);
+                $freshDemoDeferred    = (int)($result['fresh_demo_deferred_orphan_total'] ?? 0);
+                $orphanRecovered      = (int)($result['orphan_adoption_succeeded_count'] ?? 0) + $reconcileOrphanClosed + $demoTurnoverOrphanClosed;
+                $orphanClosedTotal    = (int)($result['adopted_orphans_closed_this_run'] ?? 0);
+                $healthyAiWritten     = (int)($result['healthy_ai_dataset_written_this_run'] ?? 0);
+                $orphanAiWritten      = (int)($result['orphan_ai_dataset_written_this_run'] ?? 0);
+                $result['fresh_demo_opened_total']                = $freshDemoOpened;
+                $result['orphan_recovered_total']                 = $orphanRecovered;
+                $result['orphan_closed_total']                    = $orphanClosedTotal;
+                $result['healthy_closed_total']                   = (int)($result['healthy_closed_this_run_total'] ?? 0);
+                $result['healthy_ai_dataset_written_total']       = $healthyAiWritten;
+                $result['orphan_ai_dataset_written_total']        = $orphanAiWritten;
+                $result['primary_learning_dataset_healthy_total'] = $healthyAiWritten;
+                $result['secondary_learning_dataset_orphan_total']= $orphanAiWritten;
             }
 
             // ============================================================
@@ -1878,12 +1905,13 @@ final class TradingBotService
             $result['intents_terminal_rejected_count'] = 0;
             $result['intents_terminal_failed_count'] = 0;
             // Orphan adoption quality counters
-            $result['orphan_adoption_attempted_count']  = 0;
-            $result['orphan_adoption_succeeded_count']  = 0;
-            $result['orphan_adoption_failed_count']     = 0;
-            $result['orphan_adoption_reusable_count']   = 0;
-            $result['orphan_adoption_dead_shell_count'] = 0;
-            $result['orphan_adoption_deferred_cap_count'] = 0;
+            $result['orphan_adoption_attempted_count']      = 0;
+            $result['orphan_adoption_succeeded_count']      = 0;
+            $result['orphan_adoption_failed_count']         = 0;
+            $result['orphan_adoption_reusable_count']       = 0;
+            $result['orphan_adoption_dead_shell_count']     = 0;
+            $result['orphan_adoption_deferred_cap_count']   = 0;
+            $result['fresh_demo_deferred_orphan_total']     = 0;
             foreach ($result['intent_results'] as $ir) {
                 $ls = $ir['lifecycle_state'] ?? '';
                 if (in_array($ls, ['opened', 'protected', 'trailing_active'], true)) {
@@ -1950,6 +1978,11 @@ final class TradingBotService
                 if (in_array($ls, ['rejected', 'failed'], true) && !empty($ir['rejection_reason'])) {
                     $rr = $ir['rejection_reason'];
                     $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
+
+                    // Track fresh demo deferred orphan separately
+                    if ($rr === 'orphan_exchange_detected_defer_reconcile' && !empty($ir['deferred_to_reconcile'])) {
+                        $result['fresh_demo_deferred_orphan_total']++;
+                    }
 
                     // Track late_entry rejections separately with sub-reasons and preview
                     if ($rr === 'rejected_late_entry') {
@@ -2155,17 +2188,27 @@ final class TradingBotService
 
                 // ── Journal: audit_summary (demo mode only) ───────────────────────
                 $this->journalEvent('audit_summary', 'demo_truth_audit', true, 'Demo truth audit complete', [
-                    'primary_bottleneck'      => $demoTruthAudit['primary_demo_bottleneck']        ?? 'unknown',
-                    'bottleneck_reason'       => $demoTruthAudit['primary_demo_bottleneck_reason'] ?? '',
-                    'recommended_fix'         => $demoTruthAudit['recommended_next_fix_area']      ?? '',
-                    'closed_healthy_total'    => $demoTruthAudit['closed_trades_healthy_total']    ?? 0,
-                    'closed_orphan_total'     => $demoTruthAudit['closed_trades_orphan_adopted_total'] ?? 0,
-                    'ai_dataset_records'      => $demoTruthAudit['ai_dataset_records']             ?? 0,
-                    'ai_match_rate'           => $demoTruthAudit['closed_to_ai_dataset_match_rate'] ?? null,
-                    'closed_this_run'         => $result['demo_trades_closed_this_run'] ?? 0,
-                    'healthy_closed_this_run' => $result['healthy_active_closed_this_run'] ?? 0,
-                    'ai_written_this_run'     => $result['demo_ai_dataset_records_written_this_run'] ?? 0,
-                    'validation_mode'         => $result['demo_validation_mode_enabled'] ?? false,
+                    'primary_bottleneck'                  => $demoTruthAudit['primary_demo_bottleneck']        ?? 'unknown',
+                    'bottleneck_reason'                   => $demoTruthAudit['primary_demo_bottleneck_reason'] ?? '',
+                    'recommended_fix'                     => $demoTruthAudit['recommended_next_fix_area']      ?? '',
+                    'closed_healthy_total'                => $demoTruthAudit['closed_trades_healthy_total']    ?? 0,
+                    'closed_orphan_total'                 => $demoTruthAudit['closed_trades_orphan_adopted_total'] ?? 0,
+                    'ai_dataset_records'                  => $demoTruthAudit['ai_dataset_records']             ?? 0,
+                    'ai_match_rate'                       => $demoTruthAudit['closed_to_ai_dataset_match_rate'] ?? null,
+                    'closed_this_run'                     => $result['demo_trades_closed_this_run'] ?? 0,
+                    'healthy_closed_this_run'             => $result['healthy_active_closed_this_run'] ?? 0,
+                    'ai_written_this_run'                 => $result['demo_ai_dataset_records_written_this_run'] ?? 0,
+                    'validation_mode'                     => $result['demo_validation_mode_enabled'] ?? false,
+                    // Learning dataset separation counters
+                    'fresh_demo_opened_total'             => $result['fresh_demo_opened_total']                 ?? 0,
+                    'fresh_demo_deferred_orphan_total'    => $result['fresh_demo_deferred_orphan_total']        ?? 0,
+                    'orphan_recovered_total'              => $result['orphan_recovered_total']                  ?? 0,
+                    'orphan_closed_total'                 => $result['orphan_closed_total']                     ?? 0,
+                    'healthy_closed_total'                => $result['healthy_closed_total']                    ?? 0,
+                    'healthy_ai_dataset_written_total'    => $result['healthy_ai_dataset_written_total']        ?? 0,
+                    'orphan_ai_dataset_written_total'     => $result['orphan_ai_dataset_written_total']         ?? 0,
+                    'primary_learning_dataset_healthy_total'  => $result['primary_learning_dataset_healthy_total']   ?? 0,
+                    'secondary_learning_dataset_orphan_total' => $result['secondary_learning_dataset_orphan_total']  ?? 0,
                 ]);
             }
 

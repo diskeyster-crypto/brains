@@ -30,8 +30,8 @@ final class CoinPassportEngine
     private const MIN_RECENT_SAMPLES       = 3;
 
     /** Trust state promotion thresholds (healthy closed = non-orphan demo/live closes) */
-    private const MIN_HEALTHY_CLOSED_FOR_YELLOW = 3;
-    private const MIN_HEALTHY_CLOSED_FOR_GREEN  = 8;
+    private const MIN_HEALTHY_CLOSED_FOR_YELLOW = 1;
+    private const MIN_HEALTHY_CLOSED_FOR_GREEN  = 6;
 
     /** Live eligibility gate thresholds (defaults — override via config if needed) */
     private const LIVE_GATE_CORRIDOR_P75_MIN      = 3.0;   // corridor_p75_roi >= this

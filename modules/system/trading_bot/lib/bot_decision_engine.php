@@ -435,8 +435,22 @@ final class BotDecisionEngine
             return null;
         }
 
-        // If trust_state is absent, attempt an inline rebuild so stored passport gains it.
-        if (!array_key_exists('trust_state', $data)) {
+        // Determine if an inline rebuild is needed:
+        // 1. trust_state absent: always rebuild (existing migration path).
+        // 2. healthy_closed_samples absent: old format passport needs one-time migration.
+        // 3. trust_state = 'insufficient_data' and passport is stale (>2 h): refresh so accumulated
+        //    healthy closes from demo learning are reflected in the trust state.
+        $needsRebuild = !array_key_exists('trust_state', $data);
+        if (!$needsRebuild && !array_key_exists('healthy_closed_samples', $data)) {
+            $needsRebuild = true;
+        }
+        if (!$needsRebuild
+            && ($data['trust_state'] ?? '') === 'insufficient_data'
+            && isset($data['updated_at'])
+            && (time() - (int)strtotime($data['updated_at'])) > 7200) {
+            $needsRebuild = true;
+        }
+        if ($needsRebuild) {
             $data = $this->rebuildPassportInline($symbol, $path, $data);
         }
 

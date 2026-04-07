@@ -1189,7 +1189,13 @@ final class TradingBotService
                         $dpDecision = $decisionPacket['decision'] ?? '';
                         if ($dpDecision === 'enter_demo') {
                             $intentExecMode = 'demo';
-                            $routedDemoTotal++;
+                            // Green-confidence demo executions count as green-routed (high-confidence,
+                            // demo-executed because bot is in demo mode — live-worthy if mode were live).
+                            if (($decisionPacket['confidence_band'] ?? '') === 'green') {
+                                $routedGreenTotal++;
+                            } else {
+                                $routedDemoTotal++;
+                            }
                         } elseif ($dpDecision === 'enter_live') {
                             $intentExecMode = ($mode === 'live') ? 'live' : $mode;
                             $routedGreenTotal++;

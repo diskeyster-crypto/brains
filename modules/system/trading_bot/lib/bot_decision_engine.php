@@ -195,8 +195,12 @@ final class BotDecisionEngine
                     // Green passport: decent signal → green confidence; weak signal → yellow
                     return $bestSignal >= 0.50 ? 'green' : 'yellow';
                 case 'yellow':
-                    // Yellow passport: moderate signal → yellow; weak signal → gray (not red — keep learning)
-                    return $bestSignal >= 0.55 ? 'yellow' : 'gray';
+                    // Yellow passport: very strong signal → green (live-worthy); moderate → yellow;
+                    // very weak → red (clearly bad evidence → skip-eligible); else gray to keep learning
+                    if ($bestSignal >= 0.80) return 'green';
+                    if ($bestSignal >= 0.55) return 'yellow';
+                    if ($bestSignal < 0.20) return 'red';
+                    return 'gray';
                 case 'red':
                     // Red passport: only very strong signal can override; otherwise red → skip
                     return $bestSignal >= 0.80 ? 'yellow' : 'red';

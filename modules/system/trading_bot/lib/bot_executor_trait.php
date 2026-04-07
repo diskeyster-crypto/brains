@@ -528,7 +528,7 @@ trait BotExecutorTrait
             // - execution.enter_now_timeout_minutes fallback for enter_now
             // - execution.default_entry_timeout_minutes fallback for legacy
             // ============================================================
-            $deadlineInfo = $this->computeEntryDeadline($intent);
+            $deadlineInfo = $this->computeEntryDeadline($intent, $mode);
             if (($deadlineInfo['exceeded'] ?? false) === true) {
                 // P5.13: Late enter_now policy
                 // If enter_now timed out, we can switch to wait_retrace instead of hard reject.
@@ -542,7 +542,7 @@ trait BotExecutorTrait
                     $intent['entry_action_switched_reason'] = 'enter_now_timeout_exceeded';
                     $intent['entry_action_switched_at'] = date('c');
 
-                    $deadlineInfo2 = $this->computeEntryDeadline($intent);
+                    $deadlineInfo2 = $this->computeEntryDeadline($intent, $mode);
                     if (($deadlineInfo2['exceeded'] ?? false) === true) {
                         // Still exceeded (e.g., expires_at passed) → hard reject
                         $ctx = $deadlineInfo2['context'] ?? [];
@@ -573,7 +573,7 @@ trait BotExecutorTrait
             // ============================================================
             if (in_array($mode, ['live', 'demo'], true) && ($this->config['execution']['require_price_check_live'] ?? true)) {
                 if ($intent['entry_action'] === 'enter_now') {
-                    $lateCheck = $this->checkLateEntry($intent);
+                    $lateCheck = $this->checkLateEntry($intent, $mode);
                     if (!$lateCheck['ok']) {
                         $subreason = $lateCheck['subreason'] ?? 'rejected_late_entry_price_moved_too_far';
                         return $this->rejectIntent($intent, 'rejected_late_entry', $lateCheck['reason'], $result, [
@@ -4283,7 +4283,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
         return max($mark, $last);
     }
-private function checkLateEntry(array $intent): array
+private function checkLateEntry(array $intent, string $mode = 'live'): array
     {
         $result = ['ok' => true, 'diagnostics' => []];
 
@@ -4335,7 +4335,14 @@ private function checkLateEntry(array $intent): array
             $shortEnterNowBonus = (float)($this->config['execution']['late_entry_short_enter_now_bonus_pct'] ?? 0.25);
         }
 
-        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus + $shortEnterNowBonus;
+        // Demo learning mode: apply extra tolerance so fresh signal-born demo trades have
+        // a better chance to open. Live safety is not affected.
+        $demoExtraBonus = 0.0;
+        if ($mode === 'demo') {
+            $demoExtraBonus = (float)($this->config['execution']['demo_late_entry_tolerance_extra_pct'] ?? 0.0);
+        }
+
+        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus + $shortEnterNowBonus + $demoExtraBonus;
 
         $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
         $priceDiffRound = round($priceDiff, 4);
@@ -4355,6 +4362,7 @@ private function checkLateEntry(array $intent): array
             'buffer_pct' => round($bufferPct, 4),
             'freshness_bonus_pct' => round($freshnessBonus, 4),
             'short_enter_now_bonus_pct' => round($shortEnterNowBonus, 4),
+            'demo_extra_tolerance_pct' => round($demoExtraBonus, 4),
             'effective_threshold_pct' => $effectiveThresholdRound,
             'intent_age_seconds' => $intentAgeSec,
             'created_ts' => $createdTs,
@@ -4389,14 +4397,15 @@ private function checkLateEntry(array $intent): array
             $result['ok'] = false;
             $result['subreason'] = $subreason;
             $result['reason'] = sprintf(
-                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%% + short_enter_now=%.2f%%)",
+                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%% + short_enter_now=%.2f%% + demo_extra=%.2f%%)",
                 $moveDirection,
                 $priceDiffRound,
                 $effectiveThresholdRound,
                 $baseThreshold,
                 $bufferPct,
                 $freshnessBonus,
-                $shortEnterNowBonus
+                $shortEnterNowBonus,
+                $demoExtraBonus
             );
         }
 
@@ -4429,7 +4438,7 @@ private function checkLateEntry(array $intent): array
      * @param array<string,mixed> $intent
      * @return array<string,mixed>
      */
-private function computeEntryDeadline(array $intent): array
+private function computeEntryDeadline(array $intent, string $mode = 'live'): array
 {
     $now = time();
 
@@ -4465,6 +4474,16 @@ private function computeEntryDeadline(array $intent): array
         } else {
             $timeoutMinutes = (int)($this->config['execution']['default_entry_timeout_minutes'] ?? 10);
             $timeoutSource = 'config.execution.default_entry_timeout_minutes';
+        }
+
+        // Demo learning mode: extend entry timeout so fresh demo intents have more
+        // time to execute without being dropped by timeout. Live timeout is unchanged.
+        if ($mode === 'demo' && $timeoutMinutes > 0) {
+            $demoExtraMinutes = (int)($this->config['execution']['demo_entry_timeout_extra_minutes'] ?? 0);
+            if ($demoExtraMinutes > 0) {
+                $timeoutMinutes += $demoExtraMinutes;
+                $timeoutSource .= '+demo_extra';
+            }
         }
     }
 
@@ -4531,7 +4550,7 @@ private function computeEntryDeadline(array $intent): array
         $entryPrice = (float)($intent['entry_price'] ?? 0);
 
         // Effective deadline (min(expires_at, created_ts + timeout_minutes))
-        $deadlineInfo = $this->computeEntryDeadline($intent);
+        $deadlineInfo = $this->computeEntryDeadline($intent, $mode);
         $deadline = (int)($deadlineInfo['deadline'] ?? 0);
 
         // Check if deadline exceeded

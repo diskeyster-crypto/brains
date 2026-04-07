@@ -33,6 +33,8 @@
         "default_entry_timeout_minutes": 8,
         "default_late_threshold_pct": 1.25,
         "retrace_slack_pct": 0.05,
+        "demo_late_entry_tolerance_extra_pct": 1.5,
+        "demo_entry_timeout_extra_minutes": 5,
         "exchange_positions_cache_ttl_sec": 2,
         "require_price_check_live": true,
         "reverse_side_enabled": false,

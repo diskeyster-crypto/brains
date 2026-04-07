@@ -35,7 +35,7 @@
         "retrace_slack_pct": 0.05,
         "exchange_positions_cache_ttl_sec": 2,
         "require_price_check_live": true,
-        "reverse_side_enabled": true,
+        "reverse_side_enabled": false,
         "commands_enabled": false,
         "commands_apply_before_intents": false,
         "commands_allow_close": false,

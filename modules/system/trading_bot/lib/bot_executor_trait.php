@@ -1467,6 +1467,8 @@ trait BotExecutorTrait
             'opened_at' => date('c'),
             'symbol' => $intent['symbol'],
             'side' => $intent['side'],
+            'side_original' => (string)($intent['side_original'] ?? $intent['side']),
+            'source' => (string)($intent['source'] ?? ''),
             'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
             // Decision engine lineage fields (populated when BotDecisionEngine is active)
             'decision_id'     => (string)($intent['decision_id'] ?? ''),

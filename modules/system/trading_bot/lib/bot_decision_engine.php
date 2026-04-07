@@ -83,6 +83,8 @@ final class BotDecisionEngine
             // Signal context
             'symbol'                    => $symbol,
             'side'                      => $side,
+            'side_original'             => (string)($intent['side_original'] ?? $side),
+            'source'                    => (string)($intent['source'] ?? ''),
             'pattern_algorithm'         => $patternAlgorithm,
 
             // Confidence

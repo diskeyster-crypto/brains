@@ -1275,6 +1275,7 @@ trait BotSourcesTrait
                     'schema_version'           => 'intent_live_v1',
                     'symbol'                   => $symbol,
                     'side'                     => $side,
+                    'side_original'            => $side,
                     'entry_price'              => $entryHint,
                     'entry_action'             => 'enter_now',
                     'entry_timeout_minutes'    => null,
@@ -1285,6 +1286,13 @@ trait BotSourcesTrait
                     'brain'                    => [],
                     'source'                   => 'pattern_engine_demo',
                     'brain_controlled'         => false,
+                    // Top-level signal metadata — mirrors pattern_engine_meta for engine/executor access
+                    'pattern_algorithm'        => (string)($sig['pattern_algorithm'] ?? ''),
+                    'pattern_version'          => (string)($sig['pattern_version']   ?? ''),
+                    'signal_strength'          => (float)($sig['signal_strength']    ?? 0),
+                    'quality_score'            => (float)($sig['quality_score']      ?? 0),
+                    'scenario_id'              => (string)($sig['scenario_id']       ?? ''),
+                    'scenario_score'           => (float)($sig['scenario_score']     ?? 0),
                     'pattern_engine_meta'      => [
                         'signal_id'            => $signalId,
                         'pattern_algorithm'    => (string)($sig['pattern_algorithm'] ?? ''),

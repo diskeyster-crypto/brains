@@ -571,9 +571,14 @@ trait BotExecutorTrait
 // ============================================================
             // Step 4: Price check (late entry) - real exchange modes only
             // ============================================================
+            // Store deadline context for observability (accessible in signal_processed journal).
+            $result['deadline_context'] = $deadlineInfo['context'] ?? null;
+
             if (in_array($mode, ['live', 'demo'], true) && ($this->config['execution']['require_price_check_live'] ?? true)) {
                 if ($intent['entry_action'] === 'enter_now') {
                     $lateCheck = $this->checkLateEntry($intent, $mode);
+                    // Always persist diagnostics (pass AND reject) for runtime observability.
+                    $result['late_entry_diagnostics'] = $lateCheck['diagnostics'] ?? [];
                     if (!$lateCheck['ok']) {
                         $subreason = $lateCheck['subreason'] ?? 'rejected_late_entry_price_moved_too_far';
                         return $this->rejectIntent($intent, 'rejected_late_entry', $lateCheck['reason'], $result, [

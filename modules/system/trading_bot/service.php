@@ -1288,6 +1288,7 @@ final class TradingBotService
                             'signal_id'                    => $intent['signal_id'] ?? null,
                             'symbol'                       => $intent['symbol'] ?? null,
                             'side'                         => $intent['side'] ?? null,
+                            'mode'                         => $mode ?? null,
                             'action'                       => $intentResultRecord['lifecycle_state'] ?? ($execResult['status'] ?? 'unknown'),
                             'reason'                       => $execResult['error'] ?? null,
                             'validation_result'            => $intentResultRecord['execution_stage'] ?? null,
@@ -1302,6 +1303,9 @@ final class TradingBotService
                             ],
                             'signal_strength'              => $intent['signal_strength'] ?? null,
                             'quality_score'                => $intent['quality_score'] ?? null,
+                            'late_entry_diagnostics'       => $execResult['late_entry_diagnostics']
+                                                              ?? ($execResult['context']['late_entry_diagnostics'] ?? null),
+                            'deadline_context'             => $execResult['deadline_context'] ?? null,
                         ]
                     );
 

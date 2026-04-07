@@ -187,215 +187,38 @@ trait BotExecutorTrait
                     if ($exSymbol === $symbol) {
                         // Position exists on exchange for this symbol
                         if (!in_array($symbol, $localSymbols, true)) {
-                            // Not in local trades - this is an ORPHAN position
+                            // Not in local trades - this is an ORPHAN position.
+                            // In demo mode, do NOT adopt inline. Defer adoption to reconcile phase
+                            // so fresh signals are never blocked by inline orphan adoption side-effects.
                             $result['execution_stage'] = 'execution_guard_blocked';
                             $exSize = (float)($exPos['size'] ?? 0);
-                            // In demo mode emit a precise orphan reason so diagnostics can classify
-                            // the blocking cause. In live mode keep the existing generic reason code.
-                            $orphanReason = ($mode === 'demo')
-                                ? ($exSize > 0
-                                    ? 'orphan_exchange_position_open_local_missing'
-                                    : 'orphan_exchange_position_stale_unreconciled')
-                                : 'skipped_exchange_position_exists';
-
-                            // Demo mode: attempt to adopt the orphan into local state so it no
-                            // longer blocks future runs.  Only adopt when the exchange position
-                            // has enough data (size > 0, avgPrice > 0).  Live mode unchanged.
-                            $result['orphan_adoption_attempted'] = true;
-                            if ($mode === 'demo' && $exSize > 0) {
-                                $orphanAvgPrice = (float)($exPos['avgPrice'] ?? 0);
-                                $orphanSide     = strtolower($exPos['side'] ?? 'unknown');
-                                if ($orphanSide === 'buy')  $orphanSide = 'long';
-                                if ($orphanSide === 'sell') $orphanSide = 'short';
-
-                                // Validate adoption data quality before creating local record.
-                                // A missing entry price or unknown side means we cannot build a
-                                // usable local trade (close pipeline needs entry_price to compute
-                                // PnL and ROI). In that case, skip adoption but do NOT hard-fail.
-                                $adoptionFailReason = null;
-                                // PART 2 (demo composition): enforce orphan slot cap before admitting new adoption.
-                                // Reads cap state injected by service.php before the signal loop.
-                                $demoCompCfg = is_array($this->config['demo_composition'] ?? null) ? $this->config['demo_composition'] : [];
-                                if (!empty($demoCompCfg['orphan_cap_reached'])) {
-                                    $adoptionFailReason = 'orphan_cap_reached_demo';
-                                    $result['orphan_adoption_deferred_cap'] = true;
-                                }
-                                if ($adoptionFailReason === null && $orphanAvgPrice <= 0) {
-                                    $adoptionFailReason = 'orphan_adoption_missing_entry_price';
-                                } elseif ($adoptionFailReason === null && !in_array($orphanSide, ['long', 'short'], true)) {
-                                    $adoptionFailReason = 'orphan_adoption_missing_side';
-                                } elseif ($adoptionFailReason === null && $exSize <= 0) {
-                                    $adoptionFailReason = 'orphan_adoption_missing_qty';
-                                }
-
-                                if ($adoptionFailReason === null) {
-                                    // Sufficient data — build a valid local active trade contract.
-                                    $adoptedTradeId = 'orphan_adopted_' . strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $exSymbol)) . '_' . time();
-                                    $adoptedNow     = date('c');
-                                    $adoptedNowTs   = time();
-
-                                    // ── Timing derivation: best-available open time ──────────────────
-                                    // Priority: exchange position createdTime/updatedTime → adoption_ts.
-                                    // Bybit positions carry createdTime/updatedTime in milliseconds.
-                                    $exCreatedMs  = (int)($exPos['createdTime'] ?? $exPos['create_time'] ?? 0);
-                                    $exUpdatedMs  = (int)($exPos['updatedTime'] ?? $exPos['update_time'] ?? 0);
-                                    $exOpenMs     = $exCreatedMs > 0 ? $exCreatedMs : ($exUpdatedMs > 0 ? $exUpdatedMs : 0);
-                                    if ($exOpenMs > 0) {
-                                        // Convert ms → seconds; guard against out-of-range values
-                                        $exOpenTs       = (int)round($exOpenMs / 1000);
-                                        $timingSource   = $exCreatedMs > 0 ? 'exchange_position_createdTime' : 'exchange_position_updatedTime';
-                                    } else {
-                                        $exOpenTs     = 0;
-                                        $timingSource = null;
-                                    }
-
-                                    // Ensure derivedOpenTs is plausible (not in future, not before 2020)
-                                    $minTs = mktime(0, 0, 0, 1, 1, 2020);
-                                    if ($exOpenTs > 0 && ($exOpenTs > $adoptedNowTs || $exOpenTs < $minTs)) {
-                                        $exOpenTs     = 0;
-                                        $timingSource = null;
-                                    }
-
-                                    if ($exOpenTs > 0) {
-                                        $resolvedOpenedTs = $exOpenTs;
-                                        $resolvedOpenedAt = date('c', $exOpenTs);
-                                        $openedTsSource   = $timingSource;
-                                        $timingMissingReason = null;
-                                    } else {
-                                        // Fallback: use adoption time — age will count from adoption, not original open
-                                        $resolvedOpenedTs   = $adoptedNowTs;
-                                        $resolvedOpenedAt   = $adoptedNow;
-                                        $openedTsSource     = 'adoption_ts_fallback';
-                                        $timingSource       = 'adoption_ts_fallback';
-                                        $timingMissingReason = 'exchange_position_no_createdTime';
-                                    }
-
-                                    // Minimal recovery risk block so close/reconcile logic can
-                                    // compute an entry-based SL fallback if needed.
-                                    $recoveryRisk = [
-                                        'profile_id'         => 'orphan_recovery_demo',
-                                        'leverage'           => 1,
-                                        'stop_control'       => [
-                                            'stop_control_mode'       => 'entry_roi',
-                                            'stop_loss_from_entry_roi'=> 0.03,
-                                        ],
-                                        'trailing'           => ['enabled' => false],
-                                    ];
-
-                                    $adoptedTrade = [
-                                        'schema_version'              => 'trade_live_v2',
-                                        'trade_id'                    => $adoptedTradeId,
-                                        'signal_id'                   => $adoptedTradeId,
-                                        'opened_at'                   => $resolvedOpenedAt,
-                                        'opened_ts'                   => $resolvedOpenedTs,
-                                        'opened_ts_source'            => $openedTsSource,
-                                        'adoption_ts'                 => $adoptedNowTs,
-                                        'timing_source'               => $timingSource,
-                                        'age_minutes_source'          => $openedTsSource,
-                                        'last_runtime_update_ts'      => $adoptedNowTs,
-                                        'symbol'                      => $exSymbol,
-                                        'side'                        => $orphanSide,
-                                        'mode'                        => 'demo',
-                                        'status'                      => 'active',
-                                        'source'                      => 'orphan_exchange_recovery',
-                                        'reconcile_status'            => 'orphan_adopted_demo',
-                                        'orphan_adopted_at'           => $adoptedNow,
-                                        'orphan_adoption_reason'      => $orphanReason,
-                                        'is_orphan_adopted'           => true,
-                                        'adopted_from_exchange_orphan'=> true,
-                                        // Top-level fields required by close pipeline
-                                        'entry_price'                 => $orphanAvgPrice,
-                                        'entry_price_source'          => 'exchange_orphan_avgPrice',
-                                        'position_size'               => $exSize,
-                                        'qty'                         => $exSize,
-                                        'leverage'                    => 1,
-                                        'high_watermark'              => $orphanAvgPrice,
-                                        'low_watermark'               => $orphanAvgPrice,
-                                        'last_price'                  => $orphanAvgPrice,
-                                        'last_update'                 => $adoptedNow,
-                                        // Minimal risk block for close/SL fallback logic
-                                        'risk'                        => $recoveryRisk,
-                                        'exchange'                    => [
-                                            'qty'             => $exSize,
-                                            'entry_avg_price' => $orphanAvgPrice,
-                                            'liq_price'       => (float)($exPos['liqPrice'] ?? 0),
-                                            'position_idx'    => (int)($exPos['positionIdx'] ?? 0),
-                                        ],
-                                        'protection'                  => [
-                                            'stop_loss_price'         => null,
-                                            'trailing_enabled'        => false,
-                                        ],
-                                        'protection_state'            => 'orphan_adopted_unprotected',
-                                        'runtime'                     => [
-                                            'last_price'              => $orphanAvgPrice,
-                                            'last_mark_price'         => $orphanAvgPrice,
-                                        ],
-                                        // Adoption quality diagnostics
-                                        'orphan_adoption_attempted'        => true,
-                                        'orphan_adoption_succeeded'        => true,
-                                        'orphan_adoption_data_quality'     => 'sufficient',
-                                        'orphan_adoption_reusable_as_active_trade' => true,
-                                        // Resolved-ownership markers — future execution checks will find this
-                                        // trade in local active storage and treat the symbol as owned locally,
-                                        // NOT as an unresolved orphan.
-                                        'orphan_resolved_local_ownership'  => true,
-                                        'orphan_resolution_ts'             => $adoptedNowTs,
-                                        'orphan_resolution_reason'         => 'adopted_into_local_active_trade',
-                                    ];
-                                    if ($timingMissingReason !== null) {
-                                        $adoptedTrade['timing_missing_reason'] = $timingMissingReason;
-                                    }
-                                    $this->store->saveActiveTrade($adoptedTrade);
-                                    $this->journalEvent('file_write', 'execute_intent', true,
-                                        'active trade created (orphan_adopted): ' . ($exSymbol ?? $adoptedTradeId),
-                                        [
-                                            'path'           => 'trades/active/' . $adoptedTradeId . '.json',
-                                            'write_type'     => 'create',
-                                            'classification' => 'active_trade',
-                                            'symbol'         => $exSymbol ?? null,
-                                            'trade_id'       => $adoptedTradeId,
-                                            'reason'         => 'orphan_adoption',
-                                        ]
-                                    );
-                                    // Invalidate position cache so this symbol is seen as local next check
-                                    $this->exchangeOpenPositionsCache   = [];
-                                    $this->exchangeOpenPositionsCacheTs = 0;
-                                    // Use a dedicated reason so it is counted separately
-                                    $orphanReason = 'orphan_adopted_then_symbol_busy';
-                                    $result['orphan_adopted']                       = true;
-                                    $result['orphan_adopted_trade_id']              = $adoptedTradeId;
-                                    $result['orphan_adoption_succeeded']            = true;
-                                    $result['orphan_adoption_data_quality']         = 'sufficient';
-                                    $result['orphan_adoption_reusable_as_active_trade'] = true;
-                                    $result['orphan_resolved_local_ownership']      = true;
-                                    $result['orphan_resolution_reason']             = 'adopted_into_local_active_trade';
-                                } else {
-                                    // Insufficient data — do not create a dead shell.
-                                    // The symbol will be blocked for this run with a precise reason.
-                                    $orphanReason = $adoptionFailReason;
-                                    $result['orphan_adoption_succeeded']        = false;
-                                    $result['orphan_adoption_failure_reason']   = $adoptionFailReason;
-                                    $result['orphan_adoption_data_quality']     = 'insufficient';
-                                    $result['orphan_adoption_reusable_as_active_trade'] = false;
-                                }
+                            if ($mode === 'demo') {
+                                $orphanReason = 'orphan_exchange_detected_defer_reconcile';
+                                $result['orphan_detected']       = true;
+                                $result['orphan_symbol']         = $exSymbol;
+                                $result['orphan_side']           = strtolower($exPos['side'] ?? 'unknown');
+                                $result['orphan_size']           = $exSize;
+                                $result['deferred_to_reconcile'] = true;
+                            } else {
+                                $orphanReason = 'skipped_exchange_position_exists';
                             }
-
-                            // Use a message that reflects actual state: after adoption the orphan is
-                            // locally owned so the message must not say "Orphan position on exchange".
-                            $orphanRejectMsg = ($orphanReason === 'orphan_adopted_then_symbol_busy')
-                                ? "Orphan adopted as local trade for {$symbol} — symbol now busy (this signal deferred)"
-                                : "Orphan position on exchange for {$symbol} (size={$exSize})";
                             return $this->rejectIntent($intent, $orphanReason,
-                                $orphanRejectMsg, $result, [
-                                    'blocked_symbol'    => $symbol,
-                                    'orphan_reason'     => $orphanReason,
-                                    'exchange_position' => [
-                                        'symbol'       => $exSymbol,
-                                        'side'         => $exPos['side'] ?? 'unknown',
-                                        'size'         => $exSize,
-                                        'avgPrice'     => (float)($exPos['avgPrice'] ?? 0),
-                                        'liqPrice'     => (float)($exPos['liqPrice'] ?? 0),
-                                        'positionIdx'  => (int)($exPos['positionIdx'] ?? 0),
+                                ($mode === 'demo')
+                                    ? "Exchange orphan detected for {$symbol} (size={$exSize}) — deferred to reconcile"
+                                    : "Orphan position on exchange for {$symbol} (size={$exSize})",
+                                $result, [
+                                    'blocked_symbol'        => $symbol,
+                                    'orphan_reason'         => $orphanReason,
+                                    'orphan_detected'       => $mode === 'demo',
+                                    'orphan_symbol'         => $exSymbol,
+                                    'orphan_side'           => $exPos['side'] ?? 'unknown',
+                                    'orphan_size'           => $exSize,
+                                    'deferred_to_reconcile' => $mode === 'demo',
+                                    'exchange_position'     => [
+                                        'symbol'   => $exSymbol,
+                                        'side'     => $exPos['side'] ?? 'unknown',
+                                        'size'     => $exSize,
+                                        'avgPrice' => (float)($exPos['avgPrice'] ?? 0),
                                     ],
                                     'intent_side' => $side,
                                 ]);
@@ -2114,12 +1937,10 @@ trait BotExecutorTrait
                             $closedTrade['close_reason']            = $adoptedCloseReason;
                             $closedTrade['close_reason_normalized'] = $adoptedCloseReason;
                         }
-                        // Write AI dataset record before persistence so the flag is part of the closed file.
-                        $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
-                        $closedTrade['ai_dataset_record_written'] = $aiWritten;
-                        if (!$aiWritten) {
-                            $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
-                        }
+                        // Orphan recovery trades are excluded from the primary AI learning dataset.
+                        $aiWritten = false;
+                        $closedTrade['ai_dataset_record_written'] = false;
+                        $closedTrade['ai_dataset_partition'] = 'orphan_recovery_secondary';
                         // Count complete close (close_price + roi + close_reason all present)
                         $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
                             && ($closedTrade['roi'] ?? null) !== null

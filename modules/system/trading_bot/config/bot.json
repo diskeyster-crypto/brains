@@ -140,7 +140,7 @@
     },
     "module": {
         "enabled": true,
-        "mode": "live",
+        "mode": "demo",
         "account_id": "trading_bot"
     },
     "credentials": {

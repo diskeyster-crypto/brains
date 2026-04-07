@@ -13,7 +13,7 @@ class GitHubGateway implements GatewayInterface
 
     private string $token = '';
     private string $username = '';
-    private int $timeout = 30;
+    private int $timeout = 10;
 
     private static ?self $instance = null;
 
@@ -66,6 +66,7 @@ class GitHubGateway implements GatewayInterface
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_SSL_VERIFYPEER => true,
@@ -81,6 +82,28 @@ class GitHubGateway implements GatewayInterface
         curl_close($ch);
 
         $requestTime = microtime(true) - $startTime;
+
+        if ($response === false) {
+            System::log('gateway', 'GitHub API request failed (curl)', [
+                'endpoint'   => $endpoint,
+                'curl_errno' => $curlErrno,
+                'curl_error' => $curlError,
+                'time'       => round($requestTime, 3) . 's',
+            ]);
+            return [
+                'success'          => false,
+                'http_code'        => $httpCode,
+                'ret_code'         => null,
+                'ret_msg'          => null,
+                'endpoint'         => $endpoint,
+                'result'           => [],
+                'raw_text'         => '',
+                'curl_errno'       => $curlErrno,
+                'curl_error'       => $curlError,
+                'response_headers' => [],
+                'request_time'     => $requestTime,
+            ];
+        }
 
         $responseHeaders = substr($response, 0, $headerSize);
         $body = substr($response, $headerSize);

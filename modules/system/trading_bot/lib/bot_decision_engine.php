@@ -63,7 +63,9 @@ final class BotDecisionEngine
             ?? 0.0);
 
         $passport       = $this->loadPassport($symbol);
-        $confidenceBand = $this->computeConfidenceBand($confidenceScore, $passport);
+        $signalStrength = (float)($intent['signal_strength'] ?? 0.0);
+        $qualityScore   = (float)($intent['quality_score'] ?? 0.0);
+        $confidenceBand = $this->computeConfidenceBand($confidenceScore, $passport, $signalStrength, $qualityScore);
         $decision       = $this->computeDecision($confidenceBand, $botMode, $autoMode);
         $executionMode  = $this->resolveExecutionMode($decision, $botMode);
         $reasonCodes    = $this->computeReasonCodes($confidenceBand, $passport, $botMode, $autoMode, $intent);
@@ -171,11 +173,18 @@ final class BotDecisionEngine
      * red    – poor confidence (bad passport performance + weak signal)
      * gray   – insufficient data to classify; send to demo to learn
      */
-    private function computeConfidenceBand(float $confidenceScore, ?array $passport): string
-    {
+    private function computeConfidenceBand(
+        float  $confidenceScore,
+        ?array $passport,
+        float  $signalStrength = 0.0,
+        float  $qualityScore   = 0.0
+    ): string {
+        // Use best available signal quality indicator
+        $bestSignal = max($confidenceScore, $signalStrength, $qualityScore);
+
         if ($passport === null) {
-            // No passport yet: gray unless signal is very strong
-            return $confidenceScore >= 0.80 ? 'yellow' : 'gray';
+            // No passport yet: yellow only on strong signal, otherwise gray → demo
+            return $bestSignal >= 0.75 ? 'yellow' : 'gray';
         }
 
         // Use precomputed trust_state if present (populated by passport rebuild)
@@ -183,13 +192,17 @@ final class BotDecisionEngine
         if ($trustState !== '') {
             switch ($trustState) {
                 case 'green':
-                    return $confidenceScore >= 0.55 ? 'green' : 'yellow';
+                    // Green passport: decent signal → green confidence; weak signal → yellow
+                    return $bestSignal >= 0.50 ? 'green' : 'yellow';
                 case 'yellow':
-                    return $confidenceScore >= 0.70 ? 'yellow' : 'red';
+                    // Yellow passport: moderate signal → yellow; weak signal → gray (not red — keep learning)
+                    return $bestSignal >= 0.55 ? 'yellow' : 'gray';
                 case 'red':
-                    return 'red';
+                    // Red passport: only very strong signal can override; otherwise red → skip
+                    return $bestSignal >= 0.80 ? 'yellow' : 'red';
                 case 'insufficient_data':
-                    return 'gray';
+                    // Insufficient data: very strong signal can still yield yellow; otherwise gray
+                    return $bestSignal >= 0.80 ? 'yellow' : 'gray';
             }
         }
 
@@ -205,11 +218,11 @@ final class BotDecisionEngine
         if ($liveEligibility === 'live_eligible'
             && in_array($dataConfidence, ['medium', 'high'], true)
             && $noiseScore <= 0.55
-            && $confidenceScore >= 0.55) {
+            && $bestSignal >= 0.50) {
             return 'green';
         }
 
-        if ($liveEligibility === 'live_eligible' && $confidenceScore >= 0.40) {
+        if ($liveEligibility === 'live_eligible' && $bestSignal >= 0.40) {
             return 'yellow';
         }
 
@@ -217,7 +230,7 @@ final class BotDecisionEngine
             return 'gray';
         }
 
-        if ($noiseScore > 0.70 || $confidenceScore < 0.30) {
+        if ($noiseScore > 0.70 || $bestSignal < 0.30) {
             return 'red';
         }
 

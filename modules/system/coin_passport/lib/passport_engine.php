@@ -29,6 +29,10 @@ final class CoinPassportEngine
     private const MIN_PATTERN_V3_SAMPLES   = 5;
     private const MIN_RECENT_SAMPLES       = 3;
 
+    /** Trust state promotion thresholds (healthy closed = non-orphan demo/live closes) */
+    private const MIN_HEALTHY_CLOSED_FOR_YELLOW = 3;
+    private const MIN_HEALTHY_CLOSED_FOR_GREEN  = 8;
+
     /** Live eligibility gate thresholds (defaults — override via config if needed) */
     private const LIVE_GATE_CORRIDOR_P75_MIN      = 3.0;   // corridor_p75_roi >= this
     private const LIVE_GATE_RUNNER_PROB_MIN        = 0.05;  // runner_probability >= this
@@ -139,6 +143,16 @@ final class CoinPassportEngine
             'passport_symbols_updated_from_demo'  => 0,
             'passport_demo_samples_added'         => 0,
             'passport_confidence_upgrades_count'  => 0,
+            // Trust state distribution after rebuild
+            'trust_state_green'            => 0,
+            'trust_state_yellow'           => 0,
+            'trust_state_red'              => 0,
+            'trust_state_insufficient_data' => 0,
+            // Promotion / demotion counters
+            'promoted_to_yellow_total'     => 0,
+            'promoted_to_green_total'      => 0,
+            'demoted_to_yellow_total'      => 0,
+            'demoted_to_red_total'         => 0,
         ];
 
         foreach ($tradesBySymbol as $symbol => $trades) {
@@ -155,6 +169,8 @@ final class CoinPassportEngine
                 }
             }
             try {
+                $oldPassport  = $this->readJson($this->passportPath($symbol));
+                $oldTrustState = is_array($oldPassport) ? (string)($oldPassport['trust_state'] ?? '') : '';
                 $passport = $this->buildPassport($symbol, $trades);
                 $this->save($symbol, $passport);
                 $this->rebuildEvidenceTimeline($symbol, $trades);
@@ -163,6 +179,23 @@ final class CoinPassportEngine
                 if ($symbolDemoCount > 0) {
                     $result['passport_symbols_updated_from_demo']++;
                     $result['passport_confidence_upgrades_count']++;
+                }
+                // Track trust state distribution and transitions
+                $newTrustState = (string)($passport['trust_state'] ?? 'insufficient_data');
+                $distKey = 'trust_state_' . str_replace('_', '_', $newTrustState);
+                if (array_key_exists($distKey, $result)) {
+                    $result[$distKey]++;
+                }
+                if ($oldTrustState !== '' && $oldTrustState !== $newTrustState) {
+                    if ($newTrustState === 'yellow' && in_array($oldTrustState, ['insufficient_data', 'red'], true)) {
+                        $result['promoted_to_yellow_total']++;
+                    } elseif ($newTrustState === 'green' && $oldTrustState !== 'green') {
+                        $result['promoted_to_green_total']++;
+                    } elseif ($newTrustState === 'yellow' && $oldTrustState === 'green') {
+                        $result['demoted_to_yellow_total']++;
+                    } elseif ($newTrustState === 'red' && in_array($oldTrustState, ['green', 'yellow'], true)) {
+                        $result['demoted_to_red_total']++;
+                    }
                 }
             } catch (\Throwable $e) {
                 $result['errors'][] = $symbol . ': ' . $e->getMessage();
@@ -407,13 +440,14 @@ final class CoinPassportEngine
         $reach10  = 0;
         $reach15  = 0;
         $failBefore3 = 0;
-        $shadowSamples       = 0;  // from AI shadow source (closed + active)
-        $shadowClosedSamples = 0;  // shadow_closed only
-        $shadowActiveSamples = 0;  // shadow_active only
-        $liveClosedSamples   = 0;  // live_closed only
-        $liveActiveSamples   = 0;  // live_active + live_legacy
-        $demoClosedSamples   = 0;  // demo_closed only
-        $demoActiveSamples   = 0;  // demo_active only
+        $shadowSamples         = 0;  // from AI shadow source (closed + active)
+        $shadowClosedSamples   = 0;  // shadow_closed only
+        $shadowActiveSamples   = 0;  // shadow_active only
+        $liveClosedSamples     = 0;  // live_closed only
+        $liveActiveSamples     = 0;  // live_active + live_legacy
+        $demoClosedSamples     = 0;  // demo_closed only
+        $demoActiveSamples     = 0;  // demo_active only
+        $healthyClosedSamples  = 0;  // non-orphan demo_closed + live_closed (used for trust promotion)
 
         // Initial burst: hit 2 ROI within the first half of hold time
         $burstCount = 0;
@@ -444,6 +478,13 @@ final class CoinPassportEngine
                 $liveClosedSamples++;
             } elseif ($source === 'live_active' || $source === 'live_legacy') {
                 $liveActiveSamples++;
+            }
+
+            // Non-orphan healthy closed samples (protect against orphan-only promotion)
+            if (($source === 'demo_closed' || $source === 'live_closed')
+                && empty($trade['is_orphan_adopted'])
+                && empty($trade['adopted_from_exchange_orphan'])) {
+                $healthyClosedSamples++;
             }
 
             $finalRoi   = $this->extractFinalRoi($trade);
@@ -735,6 +776,7 @@ final class CoinPassportEngine
             'sample_size_shadow_active'     => $shadowActiveSamples,
             'sample_size_demo_closed'       => $demoClosedSamples,
             'sample_size_demo_active'       => $demoActiveSamples,
+            'healthy_closed_samples'        => $healthyClosedSamples,
 
             // ── Data confidence / sufficiency ──────────────────────────────────
             'data_confidence'               => $dataConfidence,
@@ -838,7 +880,8 @@ final class CoinPassportEngine
                 $dataConfidence,
                 $noiseScore,
                 $sampleSizeTotal,
-                $insufficientFlag
+                $insufficientFlag,
+                $healthyClosedSamples
             ),
 
             // ── Recommendations ────────────────────────────────────────────────
@@ -2076,21 +2119,36 @@ final class CoinPassportEngine
      *   yellow           – some evidence; proceed with caution
      *   red              – poor performance or high noise; avoid live, prefer demo learning
      *   insufficient_data – not enough evidence to make a judgment
+     *
+     * Promotion rules:
+     *   insufficient_data → yellow: requires at least MIN_HEALTHY_CLOSED_FOR_YELLOW non-orphan healthy closes
+     *   yellow → green:             requires at least MIN_HEALTHY_CLOSED_FOR_GREEN non-orphan healthy closes
+     *                               + live_eligible + medium/high data_confidence + noise <= 0.55
+     *   Orphan protection: if healthy_closed_samples < MIN_HEALTHY_CLOSED_FOR_YELLOW, always insufficient_data
      */
     private function computeTrustState(
         string $liveEligibility,
         string $dataConfidence,
         float  $noiseScore,
         int    $sampleSizeTotal,
-        bool   $insufficientFlag
+        bool   $insufficientFlag,
+        int    $healthyClosedSamples = 0
     ): string {
-        if ($insufficientFlag || $dataConfidence === 'none' || $sampleSizeTotal < self::MIN_TOTAL_SAMPLES) {
+        // Orphan protection: orphan-only or no healthy closes → insufficient_data
+        if ($healthyClosedSamples < self::MIN_HEALTHY_CLOSED_FOR_YELLOW) {
             return 'insufficient_data';
+        }
+
+        // Have enough healthy closes to begin promoting.
+        // If raw data sufficiency still not met, promote to yellow (not green) as long as data exists.
+        if ($insufficientFlag || $dataConfidence === 'none' || $sampleSizeTotal < self::MIN_TOTAL_SAMPLES) {
+            return $dataConfidence !== 'none' ? 'yellow' : 'insufficient_data';
         }
 
         if ($liveEligibility === 'live_eligible'
             && in_array($dataConfidence, ['medium', 'high'], true)
-            && $noiseScore <= 0.55) {
+            && $noiseScore <= 0.55
+            && $healthyClosedSamples >= self::MIN_HEALTHY_CLOSED_FOR_GREEN) {
             return 'green';
         }
 

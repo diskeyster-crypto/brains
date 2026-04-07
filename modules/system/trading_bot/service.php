@@ -919,6 +919,11 @@ final class TradingBotService
                     $maxDeferredPerRun = 10;
                 }
 
+                // Routing counters (decision engine)
+                $routedGreenTotal = 0;
+                $routedDemoTotal  = 0;
+                $routedSkipTotal  = 0;
+
                 // Demo budget tracking variables (populated below for demo mode)
                 $isDemoLearning               = false;
                 $demoAttemptBudgetEffective   = $maxExecutePerRun;
@@ -1158,6 +1163,7 @@ final class TradingBotService
                     // Auto mode: skip red-confidence signals (Phase 6 low-confidence policy)
                     $autoMode = (bool)($this->config['execution']['auto_mode'] ?? false);
                     if ($autoMode && $decisionPacket['decision'] === 'skip') {
+                        $routedSkipTotal++;
                         $this->store->saveRejectedIntent($intent, [
                             'reason'  => 'auto_mode_confidence_red',
                             'context' => [
@@ -1183,8 +1189,10 @@ final class TradingBotService
                         $dpDecision = $decisionPacket['decision'] ?? '';
                         if ($dpDecision === 'enter_demo') {
                             $intentExecMode = 'demo';
+                            $routedDemoTotal++;
                         } elseif ($dpDecision === 'enter_live') {
                             $intentExecMode = ($mode === 'live') ? 'live' : $mode;
+                            $routedGreenTotal++;
                         }
                         // 'skip' is already handled above via continue.
                     }
@@ -1485,6 +1493,11 @@ final class TradingBotService
                     $result['demo_turnover_candidates_finalize_eligible_count']     = $demoTurnoverCandFinalizeEligCount;
                     $result['demo_turnover_candidates_other_count']                 = $demoTurnoverCandOtherCount;
                 }
+
+                // Routing counters (decision engine, all modes)
+                $result['routed_green_total'] = $routedGreenTotal;
+                $result['routed_demo_total']  = $routedDemoTotal;
+                $result['routed_skip_total']  = $routedSkipTotal;
 
             }
             
@@ -2187,6 +2200,18 @@ final class TradingBotService
                 ]);
 
                 // ── Journal: audit_summary (demo mode only) ───────────────────────
+                // Compute passport trust_state distribution for observability
+                $passportTrustDist = ['green' => 0, 'yellow' => 0, 'red' => 0, 'insufficient_data' => 0];
+                $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
+                foreach (glob($passportsDir . '/*.json') ?: [] as $pFile) {
+                    $pData = @json_decode((string)@file_get_contents($pFile), true);
+                    if (is_array($pData)) {
+                        $ts = (string)($pData['trust_state'] ?? 'insufficient_data');
+                        if (array_key_exists($ts, $passportTrustDist)) {
+                            $passportTrustDist[$ts]++;
+                        }
+                    }
+                }
                 $this->journalEvent('audit_summary', 'demo_truth_audit', true, 'Demo truth audit complete', [
                     'primary_bottleneck'                  => $demoTruthAudit['primary_demo_bottleneck']        ?? 'unknown',
                     'bottleneck_reason'                   => $demoTruthAudit['primary_demo_bottleneck_reason'] ?? '',
@@ -2218,6 +2243,16 @@ final class TradingBotService
                     'healthy_ai_dataset_written_this_run' => $result['healthy_ai_dataset_written_this_run'] ?? 0,
                     'active_trade_count_before'           => $result['demo_trades_active_before'] ?? 0,
                     'active_trade_count_after'            => $result['demo_trades_still_active_after'] ?? 0,
+                    // Passport trust state distribution
+                    'passport_green_count'                => $passportTrustDist['green'],
+                    'passport_yellow_count'               => $passportTrustDist['yellow'],
+                    'passport_red_count'                  => $passportTrustDist['red'],
+                    'passport_insufficient_data_count'    => $passportTrustDist['insufficient_data'],
+                    'passport_total_count'                => array_sum($passportTrustDist),
+                    // Routing observability (from decision engine activity this run)
+                    'routed_green_total'                  => $result['routed_green_total']  ?? 0,
+                    'routed_demo_total'                   => $result['routed_demo_total']   ?? 0,
+                    'routed_skip_total'                   => $result['routed_skip_total']   ?? 0,
                 ]);
             }
 

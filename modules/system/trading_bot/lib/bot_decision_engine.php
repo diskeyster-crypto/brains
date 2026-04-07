@@ -438,17 +438,23 @@ final class BotDecisionEngine
         // Determine if an inline rebuild is needed:
         // 1. trust_state absent: always rebuild (existing migration path).
         // 2. healthy_closed_samples absent: old format passport needs one-time migration.
-        // 3. trust_state = 'insufficient_data' and passport is stale (>2 h): refresh so accumulated
-        //    healthy closes from demo learning are reflected in the trust state.
+        // 3. trust_state = 'insufficient_data' with accumulated healthy closes: rebuild immediately so
+        //    passports stuck under old stricter thresholds are re-evaluated.
+        // 4. trust_state = 'insufficient_data' and passport is stale (>2 h) but no healthy closes yet:
+        //    periodic refresh to pick up any new evidence.
         $needsRebuild = !array_key_exists('trust_state', $data);
         if (!$needsRebuild && !array_key_exists('healthy_closed_samples', $data)) {
             $needsRebuild = true;
         }
-        if (!$needsRebuild
-            && ($data['trust_state'] ?? '') === 'insufficient_data'
-            && isset($data['updated_at'])
-            && (time() - (int)strtotime($data['updated_at'])) > 7200) {
-            $needsRebuild = true;
+        if (!$needsRebuild && ($data['trust_state'] ?? '') === 'insufficient_data') {
+            // Force rebuild immediately if healthy closes have accumulated since last evaluation —
+            // these passports may have been evaluated under stricter thresholds and are now stuck.
+            if ((int)($data['healthy_closed_samples'] ?? 0) > 0) {
+                $needsRebuild = true;
+            } elseif (isset($data['updated_at'])
+                && (time() - (int)strtotime($data['updated_at'])) > 7200) {
+                $needsRebuild = true;
+            }
         }
         if ($needsRebuild) {
             $data = $this->rebuildPassportInline($symbol, $path, $data);

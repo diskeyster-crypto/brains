@@ -2229,10 +2229,10 @@ final class TradingBotService
                     'fresh_demo_deferred_orphan_total'    => $result['fresh_demo_deferred_orphan_total']        ?? 0,
                     'orphan_recovered_total'              => $result['orphan_recovered_total']                  ?? 0,
                     'orphan_closed_total'                 => $result['orphan_closed_total']                     ?? 0,
-                    'healthy_closed_total'                => $result['healthy_closed_total']                    ?? 0,
+                    'healthy_closed_total'                => $demoTruthAudit['closed_trades_healthy_total']    ?? 0,
                     'healthy_ai_dataset_written_total'    => $result['healthy_ai_dataset_written_total']        ?? 0,
                     'orphan_ai_dataset_written_total'     => $result['orphan_ai_dataset_written_total']         ?? 0,
-                    'primary_learning_dataset_healthy_total'  => $result['primary_learning_dataset_healthy_total']   ?? 0,
+                    'primary_learning_dataset_healthy_total'  => $demoTruthAudit['ai_dataset_records']              ?? 0,
                     'secondary_learning_dataset_orphan_total' => $result['secondary_learning_dataset_orphan_total']  ?? 0,
                     // Close-path observability counters
                     'reconcile_closed_detected_total'     => ($reconcileHealthyClosed ?? 0) + ($reconcileOrphanClosed ?? 0),

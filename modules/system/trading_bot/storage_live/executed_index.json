@@ -1,0 +1,11 @@
+{
+    "li_sig_ca10f33b53eac2a7_e33a034b": {
+        "executed_at": "2026-04-07T10:01:12+01:00",
+        "result": "rejected_balance_unavailable",
+        "order_id": null,
+        "trade_id": null,
+        "error": "balance_fetch_failed",
+        "execution_identity_key": "li_sig_ca10f33b53eac2a7_e33a034b",
+        "dedupe_basis": "intent_id"
+    }
+}

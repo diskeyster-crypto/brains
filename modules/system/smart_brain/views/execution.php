@@ -2660,9 +2660,9 @@ if ($journalExists && $journalSizeBytes > 0) {
             <?php
             $liveRoutingPolicy = (string)($exCfg['live_routing_policy'] ?? 'green_only');
             $yellowMaxPositions = (int)($exCfg['yellow_live_max_positions'] ?? 1);
-            $yellowMaxLeverage  = (int)($exCfg['yellow_live_max_leverage'] ?? 2);
-            $yellowBudgetMult   = (float)($exCfg['yellow_live_budget_multiplier'] ?? 0.30);
-            $yellowMinSamples   = (int)($exCfg['yellow_live_require_min_healthy_samples'] ?? 3);
+            $yellowMaxLeverage  = (int)($exCfg['yellow_live_max_leverage'] ?? 5);
+            $yellowBudgetMult   = (float)($exCfg['yellow_live_budget_multiplier'] ?? 0.40);
+            $yellowMinSamples   = (int)($exCfg['yellow_live_require_min_healthy_samples'] ?? 0);
             $isYellowCapped     = $liveRoutingPolicy === 'green_plus_yellow_capped';
             ?>
             <div class="row g-3 align-items-end mb-3">

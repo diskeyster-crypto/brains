@@ -187,6 +187,9 @@ trait BotConfigTrait
                             'post_open_reconcile_retries',
                             'balance_required_buffer_pct',
                             'balance_reject_below_usdt',
+                            'yellow_live_max_positions',
+                            'yellow_live_max_leverage',
+                            'yellow_live_require_min_healthy_samples',
                         ];
 
                         foreach ($ints as $k) {
@@ -207,6 +210,7 @@ trait BotConfigTrait
                             'stop_loss_pct',
                             'take_profit_pct',
                             'emergency_stop_loss_pct',
+                            'yellow_live_budget_multiplier',
                         ];
 
                         foreach ($floats as $k) {
@@ -241,6 +245,12 @@ trait BotConfigTrait
                         }
                         if (isset($exu['trailing_mode']) && is_string($exu['trailing_mode'])) {
                             $config['execution']['trailing_mode'] = trim($exu['trailing_mode']);
+                        }
+                        if (isset($exu['live_routing_policy']) && is_string($exu['live_routing_policy'])) {
+                            $policy = trim($exu['live_routing_policy']);
+                            if (in_array($policy, ['green_only', 'green_plus_yellow_capped'], true)) {
+                                $config['execution']['live_routing_policy'] = $policy;
+                            }
                         }
                     }
 

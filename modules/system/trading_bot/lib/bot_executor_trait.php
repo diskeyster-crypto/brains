@@ -479,62 +479,61 @@ trait BotExecutorTrait
             $result['execution_stage'] = 'exchange_prepare_started';
             if (in_array($mode, ['live', 'demo'], true)) {
                 $leverage = (int)($risk['leverage'] ?? 1);
-                $leverageResult = $this->setLeverageOnExchange($symbol, $leverage);
-                if (!$leverageResult['success']) {
-                    $result['execution_stage'] = 'exchange_prepare_failed';
-                    // Provide full context for UI explainability (no SSH needed)
-                    $ctx = [
-                        'leverage_requested' => $leverage,
-                        'leverage_error' => $leverageResult['error'] ?? 'unknown',
-                    ];
-                    if (isset($leverageResult['ret_code'])) {
-                        $ctx['leverage_ret_code'] = $leverageResult['ret_code'];
-                        $result['exchange_response_code'] = $leverageResult['ret_code'];
-                    }
-                    if (isset($leverageResult['ret_msg'])) {
-                        $ctx['leverage_ret_msg'] = $leverageResult['ret_msg'];
-                        $result['exchange_response_message'] = $leverageResult['ret_msg'];
-                    }
-                    if (isset($leverageResult['response'])) {
-                        $ctx['leverage_response'] = $leverageResult['response'];
-                    }
-
-                    return $this->rejectIntent($intent, 'rejected_leverage_failed', $leverageResult['error'] ?? 'unknown', $result, $ctx);
-                }
-
-                // If gateway clamped leverage (instrument max / risk limit), use effective leverage for sizing.
-                $effectiveLeverage = (int)($leverageResult['effective'] ?? $leverage);
-                if ($effectiveLeverage < 1) {
-                    $effectiveLeverage = 1;
-                }
-
-                if ($effectiveLeverage !== $leverage) {
-                    $requestedLeverage = (int)($leverageResult['requested'] ?? $leverage);
-
-                    $risk['leverage'] = $effectiveLeverage;
-                    $intent['risk']['leverage'] = $effectiveLeverage;
-                    $leverage = $effectiveLeverage;
-
-                    // Surface as warning for observability in last_run.json
-                    if (property_exists($this, 'warnings') && is_array($this->warnings)) {
-                        $metaMax = $leverageResult['meta_max'] ?? null;
-                        $note = (string)($leverageResult['note'] ?? 'leverage_clamped');
-
-                        $msg = "Leverage clamped for {$symbol}: requested {$requestedLeverage}x -> effective {$effectiveLeverage}x ({$note})";
-                        if ($metaMax !== null) {
-                            $msg .= " meta_max={$metaMax}";
+                if ($this->isRealExchangeMode()) {
+                    // Real exchange: set leverage and use clamped effective value for sizing.
+                    $leverageResult = $this->setLeverageOnExchange($symbol, $leverage);
+                    if (!$leverageResult['success']) {
+                        $result['execution_stage'] = 'exchange_prepare_failed';
+                        $ctx = [
+                            'leverage_requested' => $leverage,
+                            'leverage_error' => $leverageResult['error'] ?? 'unknown',
+                        ];
+                        if (isset($leverageResult['ret_code'])) {
+                            $ctx['leverage_ret_code'] = $leverageResult['ret_code'];
+                            $result['exchange_response_code'] = $leverageResult['ret_code'];
                         }
-                        $this->warnings[] = $msg;
+                        if (isset($leverageResult['ret_msg'])) {
+                            $ctx['leverage_ret_msg'] = $leverageResult['ret_msg'];
+                            $result['exchange_response_message'] = $leverageResult['ret_msg'];
+                        }
+                        if (isset($leverageResult['response'])) {
+                            $ctx['leverage_response'] = $leverageResult['response'];
+                        }
+                        return $this->rejectIntent($intent, 'rejected_leverage_failed', $leverageResult['error'] ?? 'unknown', $result, $ctx);
                     }
-                }            // ============================================================
-            // Step 4c: Calculate position size (AFTER leverage is resolved)
-            // ============================================================
-            $positionSize = $this->riskEngine->calculatePositionSize($risk, $intent['entry_price'], $symbol);
-            if ($positionSize <= 0) {
-                return $this->rejectIntent($intent, 'rejected_validation', 'position_size_zero', $result);
-            }
 
+                    // If gateway clamped leverage (instrument max / risk limit), use effective leverage for sizing.
+                    $effectiveLeverage = (int)($leverageResult['effective'] ?? $leverage);
+                    if ($effectiveLeverage < 1) {
+                        $effectiveLeverage = 1;
+                    }
 
+                    if ($effectiveLeverage !== $leverage) {
+                        $requestedLeverage = (int)($leverageResult['requested'] ?? $leverage);
+                        $risk['leverage'] = $effectiveLeverage;
+                        $intent['risk']['leverage'] = $effectiveLeverage;
+                        $leverage = $effectiveLeverage;
+
+                        if (property_exists($this, 'warnings') && is_array($this->warnings)) {
+                            $metaMax = $leverageResult['meta_max'] ?? null;
+                            $note = (string)($leverageResult['note'] ?? 'leverage_clamped');
+                            $msg = "Leverage clamped for {$symbol}: requested {$requestedLeverage}x -> effective {$effectiveLeverage}x ({$note})";
+                            if ($metaMax !== null) {
+                                $msg .= " meta_max={$metaMax}";
+                            }
+                            $this->warnings[] = $msg;
+                        }
+                    }
+                }
+                // else: demo simulation context — leverage already set in risk block from Brain intent, no exchange call needed.
+
+                // ============================================================
+                // Step 4c: Calculate position size (AFTER leverage is resolved)
+                // ============================================================
+                $positionSize = $this->riskEngine->calculatePositionSize($risk, $intent['entry_price'], $symbol);
+                if ($positionSize <= 0) {
+                    return $this->rejectIntent($intent, 'rejected_validation', 'position_size_zero', $result);
+                }
             }
             
             // ============================================================
@@ -571,7 +570,25 @@ trait BotExecutorTrait
             if (in_array($mode, ['live', 'demo'], true)) {
                 $isDemoMode = ($mode === 'demo');
                 $result['execution_stage'] = 'position_open_confirmed';
-                $positionData = $this->fetchOpenPosition($symbol, $side);
+
+                if (!$this->isRealExchangeMode()) {
+                    // Demo simulation context: order was simulated, no real exchange position exists.
+                    // Build synthetic position directly from fill data — no exchange query.
+                    $fillPrice = (float)($orderResult['fill_price'] ?? $intent['entry_price'] ?? 0);
+                    $fillQty   = (float)($orderResult['fill_qty'] ?? $positionSize);
+                    $positionData = ($fillPrice > 0 && $fillQty > 0) ? [
+                        'avgPrice'    => $fillPrice,
+                        'size'        => $fillQty,
+                        'liqPrice'    => 0,
+                        'positionIdx' => (int)($this->config['exchange']['position_idx'] ?? 0),
+                    ] : null;
+                    $result['demo_reconcile_fallback_used'] = true;
+                    $result['demo_reconcile_note']          = 'demo_execution_context_synthetic';
+                    $result['exchange_position_incomplete'] = true;
+                    $result['liq_price_unavailable']        = true;
+                } else {
+                    $positionData = $this->fetchOpenPosition($symbol, $side);
+                }
 
                 // Minimum required fields: size > 0 and avgPrice > 0 (always fatal if missing)
                 $positionHasMinFields = $this->isValidPositionData($positionData, false);
@@ -761,7 +778,12 @@ trait BotExecutorTrait
                 }
                 
                 // P4: Pass side for proper price normalization
-                $tradingStopResult = $this->gateway->setTradingStop($symbol, $side, $tradingStopOptions);
+                if ($this->isRealExchangeMode()) {
+                    $tradingStopResult = $this->gateway->setTradingStop($symbol, $side, $tradingStopOptions);
+                } else {
+                    // Demo simulation: SL placement skipped; trade saved with computed SL price only.
+                    $tradingStopResult = ['success' => true, 'simulated' => true];
+                }
                 
                 if (!$tradingStopResult['success']) {
                     // P6: SL failed to set - fail-safe close
@@ -908,8 +930,8 @@ trait BotExecutorTrait
         // V2 FIX: Use unified execution identity key for all paths (Brain intent_id or legacy signal_id)
         $intentId = $this->getExecutionIdentityKey($intent);
         
-        // Attempt to close position
-        if ($this->gateway && $this->gateway->isInitialized() && $qty > 0) {
+        // Attempt to close position (real exchange modes only — skip for demo simulation context)
+        if ($this->gateway && $this->gateway->isInitialized() && $qty > 0 && $this->isRealExchangeMode()) {
             $closeResult = $this->gateway->closePosition($symbol, $side, $qty);
             $closeOk = $closeResult['success'] ?? false;
             

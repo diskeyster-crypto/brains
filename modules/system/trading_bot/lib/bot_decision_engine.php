@@ -185,8 +185,11 @@ final class BotDecisionEngine
         $bestSignal = max($confidenceScore, $signalStrength, $qualityScore);
 
         if ($passport === null) {
-            // No passport yet: yellow only on strong signal, otherwise gray → demo
-            return $bestSignal >= 0.75 ? 'yellow' : 'gray';
+            // No passport yet — very strong signal can still be green (live-worthy),
+            // moderate signal gets yellow (demo-learn), weak signal stays gray.
+            if ($bestSignal >= 0.85) return 'green';
+            if ($bestSignal >= 0.75) return 'yellow';
+            return 'gray';
         }
 
         // Use precomputed trust_state if present (populated by passport rebuild)
@@ -207,7 +210,9 @@ final class BotDecisionEngine
                     // Red passport: only strong signal can yield yellow; otherwise red → skip
                     return $bestSignal >= 0.75 ? 'yellow' : 'red';
                 case 'insufficient_data':
-                    // Insufficient data: strong signal can yield yellow; very weak → red; otherwise gray
+                    // Insufficient data — very strong signal overrides to green (live-worthy);
+                    // strong signal yields yellow; very weak → red; else gray to keep learning.
+                    if ($bestSignal >= 0.85) return 'green';
                     if ($bestSignal >= 0.70) return 'yellow';
                     if ($bestSignal < 0.35) return 'red';
                     return 'gray';

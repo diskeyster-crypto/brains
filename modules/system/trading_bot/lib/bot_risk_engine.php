@@ -521,10 +521,19 @@ class BotRiskEngine
         if ($drawdownFactor <= 0) {
             return ['enabled' => false];
         }
-        
+
         $trailDistPct = $priceMovePct * $drawdownFactor;
         $trailingStop = $entryAvg * $trailDistPct;
-        
+
+        // Enforce minimum Bybit callback distance using min_step from trailing config.
+        // min_step is a price ratio (0.01 = 1% of entry). At high leverage, activation_roi
+        // maps to a very small price move, making the drawdown-derived callback too tight
+        // for normal candle noise. min_step provides a noise-tolerant floor.
+        $minStepRatio = (float)($trailing['min_step'] ?? 0.0);
+        if ($minStepRatio > 0.0 && $entryAvg > 0.0) {
+            $trailingStop = max($trailingStop, $entryAvg * $minStepRatio);
+        }
+
         return [
             'enabled' => true,
             'trailing_mode' => 'roi_giveback',

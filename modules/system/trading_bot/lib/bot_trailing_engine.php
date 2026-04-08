@@ -972,9 +972,22 @@ class BotTrailingEngine
     }
 
     /**
-     * ROI-giveback trailing mode (original behavior).
+     * ROI-giveback trailing mode — peak-based buffered runner protection.
      *
-     * Trailing distance = max_profit * drawdown_factor.
+     * Converted from noise-sensitive immediate lock to a buffered peak-based model:
+     *
+     *   1. Activation only ARMS trailing; stop is not placed near current price.
+     *   2. Stop is computed from PEAK ROI (monotonic watermark), not current noisy ROI.
+     *   3. First-lock floor (min_lock_roi ratio) ensures stop is never trivially low.
+     *   4. Minimum gap buffer (min_step ratio) keeps stop at least min_step away from
+     *      current price, preventing normal noise from instantly closing the trade.
+     *      If applying the gap would push the stop below entry, it is floored at entry.
+     *   5. Monotonic: stop can only tighten (up for long, down for short).
+     *
+     * Parameters consumed from risk.trailing:
+     *   drawdown_factor  — giveback ratio (0.5 = 50% of peak profit locked)
+     *   min_lock_roi     — price ratio for first-lock floor above/below entry (0.012 = 1.2%)
+     *   min_step         — price ratio for minimum gap from current price (0.01 = 1%)
      */
     private function checkRoiGivebackTrailing(
         array $trade,
@@ -984,65 +997,131 @@ class BotTrailingEngine
         string $side,
         float $entryPrice
     ): array {
-        // Documented engine default: 0.5 (normal mode) — used only if upstream
-        // normalization did not provide an explicit drawdown_factor.
+        // Documented engine default: 0.5 (normal mode)
         $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0.5);
 
-        // Update trailing stop level
-        $trailingHighWatermark = $trade['trailing_high_watermark'] ?? $currentPrice;
-        $trailingLowWatermark = $trade['trailing_low_watermark'] ?? $currentPrice;
-        
+        // First-lock floor: minimum stop above/below entry once trailing is armed.
+        // min_lock_roi is a price ratio (0.012 = 1.2% of entry). Default 0 = at entry.
+        $minLockRoi = max(0.0, (float)($trailing['min_lock_roi'] ?? 0.0));
+
+        // Minimum gap from current price: stop must be at least min_step away.
+        // min_step is a price ratio (0.01 = 1%). Prevents noise-triggered closes.
+        $minStep = max(0.0, (float)($trailing['min_step'] ?? 0.0));
+
+        // Retrieve previous trailing state for monotonic protection.
+        $prevTrailingStop = (float)($trade['trailing_stop_price'] ?? 0.0);
+        $prevPeakRoi      = (float)($trade['trailing_peak_roi'] ?? 0.0);
+
         if ($side === 'long') {
-            // For long: track high watermark, trigger on pullback
-            if ($currentPrice > $trailingHighWatermark) {
+            // Track peak high watermark (monotonic — only moves up).
+            $hwm = (float)($trade['trailing_high_watermark'] ?? $currentPrice);
+            if ($currentPrice > $hwm) {
+                $hwm = $currentPrice;
                 $result['updated'] = true;
-                $result['changes']['trailing_high_watermark'] = $currentPrice;
-                $trailingHighWatermark = $currentPrice;
+                $result['changes']['trailing_high_watermark'] = $hwm;
             }
-            
-            // Calculate trailing stop level
-            $maxProfit = ($trailingHighWatermark - $entryPrice) / $entryPrice * 100;
-            $trailingStopRoi = $maxProfit * (1 - $drawdownFactor);
-            $trailingStopPrice = $entryPrice * (1 + $trailingStopRoi / 100);
-            
-            $result['changes']['trailing_stop_price'] = $trailingStopPrice;
-            $result['changes']['trailing_mode'] = 'roi_giveback';
-            $result['changes']['best_roi_seen'] = round($maxProfit, 4);
-            
-            // Check if triggered
+
+            // Compute peak ROI from watermark (raw price %).
+            $peakRoi = ($entryPrice > 0) ? (($hwm - $entryPrice) / $entryPrice * 100) : 0.0;
+
+            // Monotonic peak: never decreases.
+            $peakRoi = max($peakRoi, $prevPeakRoi);
+            if ($peakRoi > $prevPeakRoi) {
+                $result['updated'] = true;
+                $result['changes']['trailing_peak_roi'] = round($peakRoi, 4);
+            }
+
+            // Stop from peak with drawdown giveback (never negative).
+            $stopRoiFromPeak  = max(0.0, $peakRoi * (1.0 - $drawdownFactor));
+            $candidateStop    = $entryPrice * (1.0 + $stopRoiFromPeak / 100.0);
+
+            // Apply first-lock floor: stop must be at least minLockRoi above entry.
+            if ($minLockRoi > 0.0) {
+                $firstLockPrice = $entryPrice * (1.0 + $minLockRoi);
+                $candidateStop  = max($candidateStop, $firstLockPrice);
+            }
+
+            // Apply minimum gap buffer: stop must be at least minStep below current price.
+            // If the safe ceiling would fall below entry, floor at entry (break-even protection).
+            if ($minStep > 0.0 && $currentPrice > 0.0) {
+                $maxSafeStop = $currentPrice * (1.0 - $minStep);
+                $gapFloor    = ($maxSafeStop >= $entryPrice) ? $maxSafeStop : $entryPrice;
+                $candidateStop = min($candidateStop, $gapFloor);
+            }
+
+            // Monotonic: stop can only move up for long.
+            $trailingStopPrice = max($candidateStop, $prevTrailingStop);
+
+            $result['changes']['trailing_stop_price']    = round($trailingStopPrice, 8);
+            $result['changes']['trailing_mode']           = 'roi_giveback';
+            $result['changes']['best_roi_seen']           = round($peakRoi, 4);
+            $result['changes']['trailing_peak_roi']       = round($peakRoi, 4);
+            $result['changes']['trailing_active']         = true;
+            $result['changes']['stop_moved_from_initial'] = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
+
             if ($currentPrice <= $trailingStopPrice) {
-                $result['triggered'] = true;
+                $result['triggered']  = true;
                 $result['close_reason'] = 'closed_by_trailing';
-                $result['changes']['trailing_triggered_at'] = date('c');
+                $result['changes']['trailing_triggered_at']    = date('c');
                 $result['changes']['trailing_triggered_price'] = $currentPrice;
             }
-            
+
         } else {
-            // For short: track low watermark, trigger on rally
-            if ($currentPrice < $trailingLowWatermark) {
+            // SHORT side.
+            $lwm = (float)($trade['trailing_low_watermark'] ?? $currentPrice);
+            if ($currentPrice < $lwm) {
+                $lwm = $currentPrice;
                 $result['updated'] = true;
-                $result['changes']['trailing_low_watermark'] = $currentPrice;
-                $trailingLowWatermark = $currentPrice;
+                $result['changes']['trailing_low_watermark'] = $lwm;
             }
-            
-            // Calculate trailing stop level
-            $maxProfit = ($entryPrice - $trailingLowWatermark) / $entryPrice * 100;
-            $trailingStopRoi = $maxProfit * (1 - $drawdownFactor);
-            $trailingStopPrice = $entryPrice * (1 - $trailingStopRoi / 100);
-            
-            $result['changes']['trailing_stop_price'] = $trailingStopPrice;
-            $result['changes']['trailing_mode'] = 'roi_giveback';
-            $result['changes']['best_roi_seen'] = round($maxProfit, 4);
-            
-            // Check if triggered
+
+            // Compute peak ROI for short (monotonic).
+            $peakRoi = ($entryPrice > 0) ? (($entryPrice - $lwm) / $entryPrice * 100) : 0.0;
+            $peakRoi = max($peakRoi, $prevPeakRoi);
+            if ($peakRoi > $prevPeakRoi) {
+                $result['updated'] = true;
+                $result['changes']['trailing_peak_roi'] = round($peakRoi, 4);
+            }
+
+            // Stop from peak with drawdown giveback.
+            $stopRoiFromPeak  = max(0.0, $peakRoi * (1.0 - $drawdownFactor));
+            $candidateStop    = $entryPrice * (1.0 - $stopRoiFromPeak / 100.0);
+
+            // Apply first-lock floor (short: stop must be at least minLockRoi below entry).
+            if ($minLockRoi > 0.0) {
+                $firstLockPrice = $entryPrice * (1.0 - $minLockRoi);
+                $candidateStop  = min($candidateStop, $firstLockPrice);
+            }
+
+            // Apply minimum gap buffer (short: stop must be at least minStep above current).
+            if ($minStep > 0.0 && $currentPrice > 0.0) {
+                $minSafeStop = $currentPrice * (1.0 + $minStep);
+                $gapCeil     = ($minSafeStop <= $entryPrice) ? $minSafeStop : $entryPrice;
+                $candidateStop = max($candidateStop, $gapCeil);
+            }
+
+            // Monotonic: stop can only move down for short.
+            if ($prevTrailingStop > 0.0) {
+                $trailingStopPrice = min($candidateStop, $prevTrailingStop);
+            } else {
+                $trailingStopPrice = $candidateStop;
+            }
+
+            $result['changes']['trailing_stop_price']    = round($trailingStopPrice, 8);
+            $result['changes']['trailing_mode']           = 'roi_giveback';
+            $result['changes']['best_roi_seen']           = round($peakRoi, 4);
+            $result['changes']['trailing_peak_roi']       = round($peakRoi, 4);
+            $result['changes']['trailing_active']         = true;
+            $result['changes']['stop_moved_from_initial'] = $prevTrailingStop > 0.0 && $trailingStopPrice !== $prevTrailingStop;
+
             if ($currentPrice >= $trailingStopPrice) {
-                $result['triggered'] = true;
+                $result['triggered']  = true;
                 $result['close_reason'] = 'closed_by_trailing';
-                $result['changes']['trailing_triggered_at'] = date('c');
+                $result['changes']['trailing_triggered_at']    = date('c');
                 $result['changes']['trailing_triggered_price'] = $currentPrice;
             }
         }
-        
+
         return $result;
     }
     
@@ -1142,6 +1221,14 @@ class BotTrailingEngine
 - Three trailing modes: roi_giveback (default), price_distance (fixed % from current price),
   price_distance_floor (activation floor + locked ROI + price distance follow + step corridor)
 - Step modes for price_distance_floor: fixed, auto_strength, fixed_roi_ladder, trend_reversal_soft_ladder_short
+- roi_giveback mode — peak-based buffered runner protection:
+  activation only ARMS trailing; stop is derived from PEAK ROI (monotonic watermark).
+  Parameters: drawdown_factor (giveback ratio), min_lock_roi (first-lock floor ratio, e.g. 0.012=1.2%),
+  min_step (minimum gap from current price ratio, e.g. 0.01=1%).
+  Formula: candidateStop = entry * (1 + peakRoi * (1 - drawdownFactor) / 100), then:
+    floor at entry * (1 + min_lock_roi), cap at currentPrice * (1 - min_step) [floored at entry],
+    monotonic: stop = max(candidateStop, prevTrailingStop).
+  The min_step gap prevents noise from instantly triggering the stop at activation.
 - fixed_roi_ladder: locked ROI grows in discrete ROI steps using peak ROI (monotonic);
   formula: locked = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi;
   peak_roi is tracked separately and never decreases; protection only strengthens.
@@ -1160,7 +1247,8 @@ class BotTrailingEngine
 - Unit system: activation_pct = percent (4.0 = 4%), drawdown_factor = ratio (0.5),
   trailing_price_distance_pct = ratio (0.02 = 2% from current price),
   trailing_activation_floor_roi = percent (4.0 = 4%), trailing_floor_lock_roi = percent (3.0 = 3%),
-  trailing_step_roi = percent (1.5 = 1.5 ROI units)
+  trailing_step_roi = percent (1.5 = 1.5 ROI units),
+  min_lock_roi = price ratio (0.012 = 1.2%), min_step = price ratio (0.01 = 1%)
 - Monotonic rule: stop never moves backward (down for long, up for short) in any mode
 - Floor mode: floor_stop_price guarantees minimum locked profit, step corridor controls update frequency
 - ROI ladder mode: ladder stop derived from locked_roi, always >= floor_stop_price

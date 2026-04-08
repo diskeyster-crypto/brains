@@ -69,11 +69,14 @@
         "step_trailing_lock_floor_roi_pct": 0.0,
         "step_trailing_min_distance_to_price_pct": 1.0,
         "step_trailing_cooldown_sec": 30,
-        "live_routing_policy": "green_only",
+        "live_routing_policy": "green_plus_yellow_capped",
         "yellow_live_max_positions": 1,
         "yellow_live_max_leverage": 2,
         "yellow_live_budget_multiplier": 0.30,
-        "yellow_live_require_min_healthy_samples": 3
+        "yellow_live_require_min_healthy_samples": 3,
+        "no_passport_green_threshold": 0.85,
+        "no_passport_yellow_threshold": 0.70,
+        "no_passport_red_threshold": 0.35
     },
     "demo_sources": {
         "source_mode": "pattern_engine_demo",

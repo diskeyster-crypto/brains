@@ -211,6 +211,9 @@ trait BotConfigTrait
                             'take_profit_pct',
                             'emergency_stop_loss_pct',
                             'yellow_live_budget_multiplier',
+                            'no_passport_green_threshold',
+                            'no_passport_yellow_threshold',
+                            'no_passport_red_threshold',
                         ];
 
                         foreach ($floats as $k) {

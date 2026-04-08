@@ -64,10 +64,18 @@ final class BotDecisionEngine
 
         $liveRoutingPolicy = (string)($config['execution']['live_routing_policy'] ?? 'green_only');
 
+        $npGreenThreshold  = (float)($config['execution']['no_passport_green_threshold']  ?? 0.85);
+        $npYellowThreshold = (float)($config['execution']['no_passport_yellow_threshold'] ?? 0.70);
+        $npRedThreshold    = (float)($config['execution']['no_passport_red_threshold']    ?? 0.35);
+
         $passport       = $this->loadPassport($symbol);
         $signalStrength = (float)($intent['signal_strength'] ?? 0.0);
         $qualityScore   = (float)($intent['quality_score'] ?? 0.0);
-        $confidenceBand = $this->computeConfidenceBand($confidenceScore, $passport, $signalStrength, $qualityScore);
+        $bestSignal     = (float)max($confidenceScore, $signalStrength, $qualityScore);
+        $confidenceBand = $this->computeConfidenceBand(
+            $confidenceScore, $passport, $signalStrength, $qualityScore,
+            $npGreenThreshold, $npYellowThreshold, $npRedThreshold
+        );
 
         // Compute route_state with live routing policy awareness (yellow promotion).
         // route_state is the single source of truth for final routing.
@@ -129,6 +137,13 @@ final class BotDecisionEngine
             'yellow_live_max_positions'      => (int)($config['execution']['yellow_live_max_positions'] ?? 1),
             'yellow_live_max_leverage'       => (int)($config['execution']['yellow_live_max_leverage'] ?? 2),
             'yellow_live_min_samples_required' => (int)($config['execution']['yellow_live_require_min_healthy_samples'] ?? 3),
+
+            // No-passport diagnostics
+            'best_signal_value'              => round($bestSignal, 4),
+            'passport_available'             => ($passport !== null),
+            'no_passport_green_threshold'    => $npGreenThreshold,
+            'no_passport_yellow_threshold'   => $npYellowThreshold,
+            'no_passport_red_threshold'      => $npRedThreshold,
 
             // Phase 2: parallel demo tracking
             'parallel_demo_suggested'   => $parallelDemoSuggested,
@@ -201,17 +216,22 @@ final class BotDecisionEngine
     private function computeConfidenceBand(
         float  $confidenceScore,
         ?array $passport,
-        float  $signalStrength = 0.0,
-        float  $qualityScore   = 0.0
+        float  $signalStrength      = 0.0,
+        float  $qualityScore        = 0.0,
+        float  $npGreenThreshold    = 0.85,
+        float  $npYellowThreshold   = 0.70,
+        float  $npRedThreshold      = 0.35
     ): string {
         // Use best available signal quality indicator
         $bestSignal = max($confidenceScore, $signalStrength, $qualityScore);
 
         if ($passport === null) {
-            // No passport yet — very strong signal can still be green (live-worthy),
-            // moderate signal gets yellow (demo-learn), weak signal stays gray.
-            if ($bestSignal >= 0.85) return 'green';
-            if ($bestSignal >= 0.75) return 'yellow';
+            // No passport yet — thresholds are config-driven (no_passport_*_threshold).
+            // Very strong signal can be green (live-worthy), moderate gets yellow,
+            // very weak gets red (skip), otherwise gray to keep learning.
+            if ($bestSignal >= $npGreenThreshold)  return 'green';
+            if ($bestSignal >= $npYellowThreshold) return 'yellow';
+            if ($bestSignal <  $npRedThreshold)    return 'red';
             return 'gray';
         }
 

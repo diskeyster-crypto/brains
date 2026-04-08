@@ -337,6 +337,7 @@ final class TradingBotService
             // ── Journal: config_snapshot ─────────────────────────────────────────
             $demoValCfgSnap = is_array($this->config['demo_validation_mode'] ?? null) ? $this->config['demo_validation_mode'] : [];
             $this->journalEvent('config_snapshot', 'config_snapshot', true, 'Effective config for this tick', [
+                'trailing_owner'                 => $execCfg['trailing_owner'] ?? 'bot',
                 'trailing_enabled'               => $execCfg['trailing_enabled'] ?? null,
                 'trailing_mode'                  => $execCfg['trailing_mode'] ?? null,
                 'trailing_activation_roi'        => $execCfg['trailing_activation_roi'] ?? null,
@@ -1615,6 +1616,7 @@ final class TradingBotService
                 'top_level_runtime_mismatch_count' => $updateResult['top_level_runtime_mismatch_count'] ?? 0,
             ];
             $this->journalEvent('update_positions_end', 'update_positions', true, 'Position update cycle complete', [
+                'trailing_owner'         => $execCfg['trailing_owner'] ?? 'bot',
                 'updated'                => $updateResult['updated'] ?? 0,
                 'closed'                 => $updateResult['closed'] ?? 0,
                 'closed_by_logical_stop' => $updateResult['closed_by_logical_stop'] ?? 0,

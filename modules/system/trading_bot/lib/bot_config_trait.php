@@ -255,6 +255,15 @@ trait BotConfigTrait
                                 $config['execution']['live_routing_policy'] = $policy;
                             }
                         }
+
+                        // trailing_owner: which module owns post-entry dynamic trailing updates
+                        if (isset($exu['trailing_owner']) && is_string($exu['trailing_owner'])) {
+                            $owner = strtolower(trim($exu['trailing_owner']));
+                            $validOwners = ['bot', 'profit_manager_shadow', 'profit_manager'];
+                            $config['execution']['trailing_owner'] = in_array($owner, $validOwners, true)
+                                ? $owner
+                                : 'bot';
+                        }
                     }
 
                     if (isset($overrides['validation']) && is_array($overrides['validation'])) {

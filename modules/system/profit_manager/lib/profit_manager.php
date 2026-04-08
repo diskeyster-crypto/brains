@@ -483,6 +483,142 @@ class ProfitManager
 
         $this->store->updateSymbolStatus($symbol, $status);
     }
+
+    // =========================================================================
+    // Shadow Trailing Mode (trailing_owner = profit_manager_shadow)
+    // =========================================================================
+
+    /**
+     * Run shadow trailing pass for all open positions.
+     * Does NOT call any exchange API — computes diagnostics only.
+     *
+     * @param array $positions     Raw exchange positions
+     * @param array $botConfig     Bot config (for trailing parameters)
+     * @return array Shadow result with per-position diagnostics
+     */
+    public function runShadow(array $positions, array $botConfig): array
+    {
+        $items = [];
+        $ts = date('c');
+
+        foreach ($positions as $position) {
+            $symbol = (string)($position['symbol'] ?? '');
+            if ($symbol === '') {
+                continue;
+            }
+
+            $side = strtolower((string)($position['side'] ?? ''));
+            if (!in_array($side, ['buy', 'sell', 'long', 'short'], true)) {
+                continue;
+            }
+            // Normalize side
+            if ($side === 'buy') $side = 'long';
+            if ($side === 'sell') $side = 'short';
+
+            // Position metrics
+            $positionIM   = (float)($position['positionIM'] ?? 0);
+            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+            $markPrice    = (float)($position['markPrice'] ?? 0);
+            $avgPrice     = (float)($position['avgPrice'] ?? 0);
+            $leverage     = (float)($position['leverage'] ?? 1);
+
+            $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+            $roiBybit = round($roiBybit, 4);
+
+            // Determine trade_id / position key
+            $tradeKey = $symbol . '_' . $side;
+            if (!empty($position['orderId'])) {
+                $tradeKey = (string)$position['orderId'];
+            } elseif (!empty($position['trade_id'])) {
+                $tradeKey = (string)$position['trade_id'];
+            }
+
+            // Load persisted shadow state for continuity between ticks
+            $prevState = $this->store->loadShadowState($tradeKey);
+
+            // Trailing config from bot config
+            $execCfg          = is_array($botConfig['execution'] ?? null) ? $botConfig['execution'] : [];
+            $activationRoiPct = (float)($execCfg['trailing_activation_roi'] ?? 3.5);
+            $drawdownFactor   = (float)($execCfg['trailing_drawdown_factor'] ?? 0.5);
+            $stepRoi          = (float)($execCfg['step_trailing_step_roi_pct'] ?? 2.0);
+            $bufferRoi        = (float)($execCfg['step_trailing_lock_buffer_roi_pct'] ?? 0.5);
+
+            // Peak ROI — monotonic: only increases
+            $prevPeakRoi   = (float)($prevState['peak_roi'] ?? 0.0);
+            $peakRoi       = max($prevPeakRoi, $roiBybit);
+            $trailingArmed = (bool)($prevState['trailing_armed'] ?? false);
+            $lastLockRoi   = (float)($prevState['last_lock_roi'] ?? 0.0);
+
+            // Arm when activation threshold crossed
+            if (!$trailingArmed && $activationRoiPct > 0 && $peakRoi >= $activationRoiPct) {
+                $trailingArmed = true;
+            }
+
+            // Compute proposed stop (step trailing logic in shadow)
+            $proposedStopPrice = (float)($prevState['proposed_stop_price'] ?? 0.0);
+            $proposedLockRoi   = $lastLockRoi;
+            $proposedAction    = 'hold';
+
+            if ($trailingArmed && $stepRoi > 0 && $avgPrice > 0) {
+                $steps = (int)floor(($peakRoi - $activationRoiPct) / $stepRoi);
+                if ($steps > 0) {
+                    $targetLockRoi = $activationRoiPct + ($steps * $stepRoi) - $bufferRoi;
+                    $targetLockRoi = max(0.0, $targetLockRoi);
+
+                    if ($targetLockRoi > $lastLockRoi) {
+                        // Compute new SL price from locked ROI
+                        $roiPerUnit = ($leverage > 0) ? ($targetLockRoi / 100.0 / $leverage) : 0.0;
+                        if ($side === 'long') {
+                            $newStop = $avgPrice * (1.0 + $roiPerUnit);
+                        } else {
+                            $newStop = $avgPrice * (1.0 - $roiPerUnit);
+                        }
+                        $proposedStopPrice = round($newStop, 8);
+                        $proposedLockRoi   = $targetLockRoi;
+                        $proposedAction    = 'move_stop';
+                    }
+                }
+            } elseif ($trailingArmed) {
+                $proposedAction = 'armed_watching';
+            }
+
+            $nowTs = time();
+
+            // Build shadow state to persist
+            $shadowState = [
+                'trade_id'           => $tradeKey,
+                'symbol'             => $symbol,
+                'side'               => $side,
+                'owner_mode'         => 'profit_manager_shadow',
+                'peak_roi'           => round($peakRoi, 4),
+                'trailing_armed'     => $trailingArmed,
+                'last_lock_roi'      => $proposedAction === 'move_stop' ? $proposedLockRoi : $lastLockRoi,
+                'last_move_ts'       => $proposedAction === 'move_stop' ? $nowTs : (int)($prevState['last_move_ts'] ?? 0),
+                'proposed_stop_price'=> $proposedStopPrice,
+                'proposed_lock_roi'  => $proposedLockRoi,
+                'proposed_action'    => $proposedAction,
+                'current_roi'        => $roiBybit,
+                'updated_at'         => $ts,
+            ];
+
+            $this->store->saveShadowState($tradeKey, $shadowState);
+
+            $items[] = $shadowState;
+        }
+
+        $journal = [
+            'ts'              => $ts,
+            'trailing_owner'  => 'profit_manager_shadow',
+            'pm_shadow_active'=> true,
+            'positions_seen'  => count($positions),
+            'positions_processed' => count($items),
+            'items'           => $items,
+        ];
+
+        $this->store->saveShadowJournal($journal);
+
+        return $journal;
+    }
 }
 
 /* RULES

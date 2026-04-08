@@ -75,6 +75,28 @@ return (static function (): array {
             if (isset($runtime['mode']) && is_string($runtime['mode']) && in_array($runtime['mode'], ['live', 'dry'], true)) {
                 $pm['module']['mode'] = $runtime['mode'];
             }
+
+            // Expose trailing_owner from execution block so PM can read it without re-loading bot.json
+            $execRuntime = $runtime['execution'] ?? [];
+            if (is_array($execRuntime)) {
+                if (!isset($pm['execution']) || !is_array($pm['execution'])) {
+                    $pm['execution'] = [];
+                }
+                $trailingOwner = $execRuntime['trailing_owner'] ?? 'bot';
+                $validOwners   = ['bot', 'profit_manager_shadow', 'profit_manager'];
+                $pm['execution']['trailing_owner'] = in_array($trailingOwner, $validOwners, true)
+                    ? $trailingOwner
+                    : 'bot';
+                // Expose trailing params for shadow compute
+                foreach ([
+                    'trailing_activation_roi', 'trailing_drawdown_factor',
+                    'step_trailing_step_roi_pct', 'step_trailing_lock_buffer_roi_pct',
+                ] as $k) {
+                    if (isset($execRuntime[$k])) {
+                        $pm['execution'][$k] = $execRuntime[$k];
+                    }
+                }
+            }
         }
     }
 

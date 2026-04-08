@@ -86,6 +86,17 @@ final class ProfitManagerService
                 $this->validator,
                 $this->gateway
             );
+        } elseif ($this->gateway !== null) {
+            // Shadow mode: PM can operate without stop applier (read-only)
+            $this->profitManager = new Lib\ProfitManager(
+                $this->config,
+                $this->store,
+                $this->riskMath,
+                $this->selector,
+                new Lib\StopApplier($this->config, $this->store, $this->riskMath, $this->gateway),
+                $this->validator,
+                $this->gateway
+            );
         }
     }
     
@@ -108,6 +119,14 @@ final class ProfitManagerService
         // Check if module is enabled
         if (!($this->config['module']['enabled'] ?? false)) {
             return $this->buildDisabledResult($ts, $startTime);
+        }
+
+        // Read trailing_owner from config (exposed via config.php proxy from bot.json)
+        $trailingOwner = (string)($this->config['execution']['trailing_owner'] ?? 'bot');
+
+        // Shadow mode: PM computes diagnostics only — no exchange stop updates
+        if ($trailingOwner === 'profit_manager_shadow') {
+            return $this->executeShadow($ts, $startTime);
         }
         
         // Check if profit manager is initialized
@@ -132,6 +151,7 @@ final class ProfitManagerService
                 'status' => empty($runResult['errors']) ? 'ok' : 'with_errors',
                 'duration_ms' => (int) ((microtime(true) - $startTime) * 1000),
                 'mode' => $this->config['module']['mode'] ?? 'dry',
+                'trailing_owner' => $trailingOwner,
                 'selected_mode' => $this->selector->getMode(),
                 'positions_total' => $runResult['positions_total'] ?? 0,
                 'positions_managed' => $runResult['positions_managed'] ?? 0,
@@ -155,6 +175,83 @@ final class ProfitManagerService
             return $this->buildErrorResult($ts, $startTime, 'exception: ' . $e->getMessage());
         } finally {
             // Release run lock
+            $this->store->releaseRunLock($lockFp);
+        }
+    }
+
+    /**
+     * Execute shadow trailing pass (trailing_owner = profit_manager_shadow).
+     * PM reads open positions, computes shadow state, writes diagnostics only.
+     * No exchange stop updates are made.
+     *
+     * @param string $ts        ISO timestamp
+     * @param float  $startTime microtime start
+     * @return array
+     */
+    private function executeShadow(string $ts, float $startTime): array
+    {
+        $lockFp = $this->store->acquireRunLock();
+        if ($lockFp === false) {
+            return $this->buildErrorResult($ts, $startTime, 'run_lock_failed');
+        }
+
+        try {
+            // Fetch open positions (read-only)
+            if ($this->gateway === null) {
+                return $this->buildErrorResult($ts, $startTime, 'gateway_not_available');
+            }
+
+            if ($this->profitManager === null) {
+                return $this->buildErrorResult($ts, $startTime, 'profit_manager_not_initialized');
+            }
+
+            $positionsResult = $this->gateway->getPositions();
+            if (!($positionsResult['ok'] ?? false)) {
+                return $this->buildErrorResult($ts, $startTime, 'fetch_positions_failed');
+            }
+
+            $positions = $positionsResult['positions'] ?? [];
+
+            // Run shadow trailing compute (no exchange writes)
+            $shadowResult = $this->profitManager->runShadow($positions, $this->config);
+
+            // Build runtime observability fields
+            $shadowItems = $shadowResult['items'] ?? [];
+            $shadowActive = count($shadowItems) > 0;
+
+            // Pick first active item for flat observability fields (multi-position: all in items[])
+            $firstItem = $shadowItems[0] ?? [];
+
+            $result = [
+                'ts'                        => $ts,
+                'ok'                        => true,
+                'status'                    => 'shadow_ok',
+                'duration_ms'               => (int)((microtime(true) - $startTime) * 1000),
+                'mode'                      => $this->config['module']['mode'] ?? 'dry',
+                'trailing_owner'            => 'profit_manager_shadow',
+                'pm_shadow_active'          => $shadowActive,
+                'pm_shadow_trade_id'        => $firstItem['trade_id'] ?? null,
+                'pm_shadow_proposed_stop'   => $firstItem['proposed_stop_price'] ?? null,
+                'pm_shadow_proposed_lock_roi' => $firstItem['proposed_lock_roi'] ?? null,
+                'pm_shadow_proposed_action' => $firstItem['proposed_action'] ?? null,
+                'pm_shadow_peak_roi'        => $firstItem['peak_roi'] ?? null,
+                'positions_seen'            => $shadowResult['positions_seen'] ?? count($positions),
+                'positions_processed'       => $shadowResult['positions_processed'] ?? count($shadowItems),
+                'items'                     => array_slice($shadowItems, 0, 50),
+                'errors'                    => [],
+                'warnings'                  => [],
+            ];
+
+            $this->store->saveLastRun($result);
+
+            return $result;
+        } catch (\Throwable $e) {
+            $this->store->logError('shadow execute exception', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return $this->buildErrorResult($ts, $startTime, 'shadow_exception: ' . $e->getMessage());
+        } finally {
             $this->store->releaseRunLock($lockFp);
         }
     }

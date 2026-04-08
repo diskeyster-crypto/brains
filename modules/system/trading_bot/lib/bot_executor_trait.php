@@ -2844,6 +2844,12 @@ trait BotExecutorTrait
                     ? true  // Brain-controlled: trailing gated by risk.trailing.enabled only
                     : (($this->config['execution']['dumb_trailing_enabled'] ?? false) === true);
 
+                // trailing_owner guard: when PM owns trailing, bot skips post-entry dynamic trailing
+                $trailingOwner = (string)($this->config['execution']['trailing_owner'] ?? 'bot');
+                if ($trailingOwner === 'profit_manager') {
+                    $dumbTrailingGateOpen = false;
+                }
+
                 if ($dumbTrailingGateOpen) {
                     $risk = $trade['risk'] ?? [];
                     $trailingCfg = $risk['trailing'] ?? [];
@@ -3010,7 +3016,8 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 // This does NOT replace exchange trailingStop; it complements it by moving SL.
                 // ============================================================
 
-                if (($this->config['execution']['step_trailing_enabled'] ?? false) === true) {
+                if (($this->config['execution']['step_trailing_enabled'] ?? false) === true
+                    && $trailingOwner !== 'profit_manager') {
                     $risk = $trade['risk'] ?? [];
                     $trailingCfg = $risk['trailing'] ?? [];
 

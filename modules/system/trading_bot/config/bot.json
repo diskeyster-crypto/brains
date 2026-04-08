@@ -51,6 +51,7 @@
         "balance_cache_ttl_sec": 8,
         "balance_strict_stable_coin_only": true,
         "order_type": "Market",
+        "trailing_owner": "bot",
         "trailing_enabled": true,
         "break_even_enabled": true,
         "emergency_stop_enabled": false,

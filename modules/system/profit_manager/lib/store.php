@@ -358,6 +358,58 @@ class Store
         $data = json_decode($content, true);
         return is_array($data) ? $data : [];
     }
+
+    // =========================================================================
+    // Shadow trailing runtime state (PM shadow mode)
+    // =========================================================================
+
+    /**
+     * Load shadow state for a trade key (trade_id or position key).
+     *
+     * @param string $tradeKey
+     * @return array
+     */
+    public function loadShadowState(string $tradeKey): array
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/shadow_' . $safe . '.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save shadow state for a trade key.
+     *
+     * @param string $tradeKey
+     * @param array  $state
+     */
+    public function saveShadowState(string $tradeKey, array $state): void
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/shadow_' . $safe . '.json';
+        $this->writeJson($path, $state);
+    }
+
+    /**
+     * Save shadow journal (last run shadow diagnostics).
+     *
+     * @param array $journal
+     */
+    public function saveShadowJournal(array $journal): void
+    {
+        $path = $this->storageDir . '/runtime/shadow_journal.json';
+        $this->writeJson($path, $journal);
+    }
+
+    /**
+     * Load shadow journal.
+     *
+     * @return array
+     */
+    public function loadShadowJournal(): array
+    {
+        $path = $this->storageDir . '/runtime/shadow_journal.json';
+        return $this->readJson($path);
+    }
 }
 
 /* RULES

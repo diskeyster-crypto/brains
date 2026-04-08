@@ -732,6 +732,14 @@ final class SmartBrainService
             }
         }
 
+        // trailing_owner: allowed values
+        if (array_key_exists('trailing_owner', $values)) {
+            $v = strtolower(trim((string)$values['trailing_owner']));
+            if (!in_array($v, ['bot', 'profit_manager_shadow', 'profit_manager'], true)) {
+                return 'trailing_owner must be bot, profit_manager_shadow, or profit_manager';
+            }
+        }
+
         // yellow_live_budget_multiplier: 0 < v <= 1
         if (array_key_exists('yellow_live_budget_multiplier', $values)) {
             $v = (float)$values['yellow_live_budget_multiplier'];
@@ -858,6 +866,13 @@ final class SmartBrainService
             $policy = strtolower(trim((string)$values['live_routing_policy']));
             if (in_array($policy, ['green_only', 'green_plus_yellow_capped'], true)) {
                 $current['execution']['live_routing_policy'] = $policy;
+            }
+        }
+        // ---- trailing ownership ----
+        if (array_key_exists('trailing_owner', $values)) {
+            $owner = strtolower(trim((string)$values['trailing_owner']));
+            if (in_array($owner, ['bot', 'profit_manager_shadow', 'profit_manager'], true)) {
+                $current['execution']['trailing_owner'] = $owner;
             }
         }
         if (array_key_exists('yellow_live_max_positions', $values)) {

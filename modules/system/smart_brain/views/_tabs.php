@@ -66,6 +66,11 @@ $activeTab = $activeTab ?? 'dashboard';
         </a>
     </li>
     <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'profit_manager' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/profit_manager">
+            <i class="bi bi-cash-coin me-1"></i> Profit Manager
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link <?= $activeTab === 'execution' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/execution">
             <i class="bi bi-play-circle me-1"></i> Execution
         </a>

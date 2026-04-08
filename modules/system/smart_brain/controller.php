@@ -649,4 +649,45 @@ final class SmartBrainController
         extract($data, EXTR_SKIP);
         include __DIR__ . '/views/module_configs.php';
     }
+
+    // =========================================================================
+    // Profit Manager control-plane
+    // =========================================================================
+
+    /**
+     * GET /admin/smart_brain/profit_manager
+     */
+    public function profitManager(): void
+    {
+        $data = $this->service->getTradingBotData();
+        $data['smartBrainUrl'] = $this->smartBrainUrl;
+
+        extract($data, EXTR_SKIP);
+        include __DIR__ . '/views/profit_manager.php';
+    }
+
+    /**
+     * POST /admin/smart_brain/profit_manager/save_config
+     */
+    public function profitManagerSaveConfig(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'method_not_allowed']);
+            return;
+        }
+
+        $rawInput = (string)file_get_contents('php://input');
+        $body     = json_decode($rawInput, true);
+
+        if (!is_array($body)) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'invalid_json']);
+            return;
+        }
+
+        $result = $this->service->saveTradingBotConfig($body);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
 }

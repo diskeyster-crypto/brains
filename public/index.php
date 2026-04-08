@@ -1187,6 +1187,16 @@ Router::get('/admin/smart_brain/module_configs', function () {
     $controller->moduleConfigs();
 });
 
+Router::get('/admin/smart_brain/profit_manager', function () {
+    $controller = new SmartBrainController();
+    $controller->profitManager();
+});
+
+Router::post('/admin/smart_brain/profit_manager/save_config', function () {
+    $controller = new SmartBrainController();
+    $controller->profitManagerSaveConfig();
+});
+
 Router::get('/admin/smart_brain/ai_shadow/journal', function () {
     $controller = new SmartBrainController();
     $controller->aiShadowJournal();

@@ -135,7 +135,7 @@ final class BotDecisionEngine
             'yellow_live_current_samples'    => $yellowCaps !== null ? (int)($yellowCaps['healthy_samples'] ?? 0) : null,
             'yellow_live_budget_multiplier'  => (float)($config['execution']['yellow_live_budget_multiplier'] ?? 0.30),
             'yellow_live_max_positions'      => (int)($config['execution']['yellow_live_max_positions'] ?? 1),
-            'yellow_live_max_leverage'       => (int)($config['execution']['yellow_live_max_leverage'] ?? 2),
+            'yellow_live_max_leverage'       => (int)($config['execution']['yellow_live_max_leverage'] ?? 5),
             'yellow_live_min_samples_required' => (int)($config['execution']['yellow_live_require_min_healthy_samples'] ?? 3),
 
             // No-passport diagnostics
@@ -365,7 +365,7 @@ final class BotDecisionEngine
         array  $context
     ): array {
         $maxPositions = (int)($config['execution']['yellow_live_max_positions'] ?? 1);
-        $maxLeverage  = (int)($config['execution']['yellow_live_max_leverage'] ?? 2);
+        $maxLeverage  = (int)($config['execution']['yellow_live_max_leverage'] ?? 5);
         $budgetMult   = (float)($config['execution']['yellow_live_budget_multiplier'] ?? 0.30);
         $minSamples   = (int)($config['execution']['yellow_live_require_min_healthy_samples'] ?? 3);
 

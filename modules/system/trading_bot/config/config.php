@@ -397,6 +397,35 @@ return [
             ],
 
             /* ======================================================
+               SHADOW TRAILING (PM shadow-only, no exchange writes)
+               ====================================================== */
+            'shadow_trailing' => [
+                // Activation threshold: arm trailing once peak_roi >= this (%)
+                'activation_roi_pct' => 3.5,
+
+                // First lock ROI after arming (soft lock — break-even or small positive %)
+                // Set 0.0 for break-even, or a small positive value for initial profit lock
+                'first_lock_roi_pct' => 0.0,
+
+                // Step size: tighten lock every +N% ROI above activation (%)
+                'step_roi_pct' => 2.0,
+
+                // Buffer subtracted from step lock to avoid setting stop too tight (%)
+                'lock_buffer_roi_pct' => 0.5,
+
+                // Cooldown between proposed lock updates (seconds)
+                // Prevents rapid repeated moves on noisy candles
+                'cooldown_sec' => 30,
+
+                // Minimum distance from current price (% of mark price)
+                // Proposed stop must be at least this far from mark price
+                'min_distance_to_price_pct' => 1.0,
+
+                // Use peak_roi as main driver (monotonic — never decreases)
+                'peak_based_mode' => true,
+            ],
+
+            /* ======================================================
                ANTI-SPAM / RATE LIMITS
                ====================================================== */
             'limits' => [

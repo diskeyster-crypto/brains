@@ -87,10 +87,12 @@ return (static function (): array {
                 $pm['execution']['trailing_owner'] = in_array($trailingOwner, $validOwners, true)
                     ? $trailingOwner
                     : 'bot';
-                // Expose trailing params for shadow compute
+                // Expose trailing params for shadow compute (bot.json runtime overrides)
                 foreach ([
                     'trailing_activation_roi', 'trailing_drawdown_factor',
                     'step_trailing_step_roi_pct', 'step_trailing_lock_buffer_roi_pct',
+                    'step_trailing_cooldown_sec', 'step_trailing_min_distance_to_price_pct',
+                    'step_trailing_lock_floor_roi_pct',
                 ] as $k) {
                     if (isset($execRuntime[$k])) {
                         $pm['execution'][$k] = $execRuntime[$k];

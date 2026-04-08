@@ -1718,8 +1718,8 @@ trait BotExecutorTrait
                 }
 
                 // ── Trade age & staleness annotation (demo only) ────────────
+                $isAdoptedTrade = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
                 if ($mode === 'demo') {
-                    $isAdoptedTrade = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
                     // For adopted orphans, fall back through opened_ts → adoption_ts → orphan_resolution_ts
                     // so that age is never silently zero when a better baseline exists.
                     if ($isAdoptedTrade && $openedAt <= 0) {

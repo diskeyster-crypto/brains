@@ -2910,6 +2910,16 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             }
 
                             if ($activationRoiPct > 0 && $roiBybit >= $activationRoiPct) {
+                                // Peak-based mode: arm only — actual stop moves handled by peak-based P9.
+                                if ((bool)($this->config['execution']['trailing_peak_based_mode'] ?? false)) {
+                                    if (empty($runtime['trailing_armed'])) {
+                                        $runtime['trailing_armed'] = true;
+                                        $runtime['trailing_armed_at'] = date('c');
+                                        $runtime['trailing_armed_roi'] = round($roiBybit, 2);
+                                        $trade['runtime'] = $runtime;
+                                    }
+                                    $result['trailing_skipped']++;
+                                } else {
                                 $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
 
                                 // Calculate trailing distance (trailingStop)
@@ -2975,6 +2985,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 } else {
                                     $result['trailing_skipped']++;
                                 }
+                                } // close else: peak_based_mode not active
                             } else {
                                 $result['trailing_skipped']++;
                             }
@@ -3021,22 +3032,46 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                         $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
                         $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
 
-                        if ($activationRoiPct > 0 && $stepRoi > 0 && $roiBybit >= $activationRoiPct) {
+                        // Peak ROI tracking: monotonic — never decreases.
+                        // Use peak for all step decisions so normal noise cannot retrace the lock.
+                        $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                        $prevPeakRoi = (float)($runtime['step_trailing_peak_roi'] ?? 0.0);
+                        $peakRoi = max($prevPeakRoi, $roiBybit);
+                        if ($peakRoi > $prevPeakRoi) {
+                            $runtime['step_trailing_peak_roi'] = round($peakRoi, 4);
+                            $trade['runtime'] = $runtime;
+                        }
 
-                            // We start moving SL only AFTER the first full step beyond activation.
-                            $stepIndex = (int)floor(($roiBybit - $activationRoiPct) / $stepRoi);
-                            if ($stepIndex > 0) {
-                                $lockedRoi = ($stepIndex * $stepRoi) - $bufferRoi;
+                        if ($activationRoiPct > 0 && $stepRoi > 0 && $peakRoi >= $activationRoiPct) {
 
-                                if ($lockedRoi < $lockFloorRoi) {
-                                    $lockedRoi = $lockFloorRoi;
+                            // Peak-based step index — only advances when a new ROI peak is set.
+                            $stepIndex = (int)floor(($peakRoi - $activationRoiPct) / $stepRoi);
+
+                            // Ladder locked ROI: first lock at floor (step 0), then steps forward.
+                            // Formula: lockFloorRoi + stepIndex * stepRoi - bufferRoi, min lockFloorRoi.
+                            $lockedRoi = $lockFloorRoi + ($stepIndex * $stepRoi) - $bufferRoi;
+                            if ($lockedRoi < $lockFloorRoi) {
+                                $lockedRoi = $lockFloorRoi;
+                            }
+
+                            // Ratchet: locked ROI never decreases.
+                            // Sentinel -1e9 = never applied (allows first lock at 0.0 to pass through).
+                            $lastLockedRoi = isset($runtime['step_trailing_locked_roi_pct'])
+                                ? (float)$runtime['step_trailing_locked_roi_pct']
+                                : -1e9;
+
+                            // Hysteresis: optional cooldown between stop moves.
+                            $cooldownSec = (int)($this->config['execution']['step_trailing_cooldown_sec'] ?? 0);
+                            $cooldownOk = true;
+                            if ($cooldownSec > 0 && !empty($runtime['step_trailing_last_update_at'])) {
+                                $elapsed = time() - strtotime($runtime['step_trailing_last_update_at']);
+                                if ($elapsed < $cooldownSec) {
+                                    $cooldownOk = false;
                                 }
+                            }
 
-                                $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
-                                $lastLockedRoi = (float)($runtime['step_trailing_locked_roi_pct'] ?? 0);
-
-                                // Only update when locked ROI increases
-                                if ($lockedRoi > 0 && $lockedRoi > ($lastLockedRoi + 0.0001)) {
+                            // Apply when locked ROI has genuinely increased (covers first lock at 0.0).
+                            if ($lockedRoi > ($lastLockedRoi + 0.0001) && $cooldownOk) {
 
                                     $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
                                     $leverage = (float)($risk['leverage'] ?? ($trade['leverage'] ?? 1));
@@ -3095,8 +3130,9 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                                     $runtime['step_trailing_last_update_at'] = date('c');
                                                     $trade['runtime'] = $runtime;
 
+                                                    $runtime['step_trailing_peak_roi'] = round($peakRoi, 4);
                                                     $result['step_trailing_applied']++;
-                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, lock " . round($lockedRoi, 2) . "%)";
+                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (peakROI " . round($peakRoi, 2) . "%, lock " . round($lockedRoi, 2) . "%, SL " . round($desiredSL, 8) . ")";
                                                 } else {
                                                     $runtime['step_trailing_last_error'] = $slRes;
                                                     $trade['runtime'] = $runtime;
@@ -3141,8 +3177,9 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                                     $runtime['step_trailing_last_update_at'] = date('c');
                                                     $trade['runtime'] = $runtime;
 
+                                                    $runtime['step_trailing_peak_roi'] = round($peakRoi, 4);
                                                     $result['step_trailing_applied']++;
-                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, lock " . round($lockedRoi, 2) . "%)";
+                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (peakROI " . round($peakRoi, 2) . "%, lock " . round($lockedRoi, 2) . "%, SL " . round($desiredSL, 8) . ")";
                                                 } else {
                                                     $runtime['step_trailing_last_error'] = $slRes;
                                                     $trade['runtime'] = $runtime;
@@ -3160,9 +3197,6 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 } else {
                                     $result['step_trailing_skipped']++;
                                 }
-                            } else {
-                                $result['step_trailing_skipped']++;
-                            }
                         } else {
                             $result['step_trailing_skipped']++;
                         }

@@ -296,11 +296,15 @@ final class BotDecisionEngine
             return in_array($botMode, ['live'], true) ? 'enter_live' : 'enter_demo';
         }
 
-        // Auto mode: route by confidence
+        // Auto mode: route by confidence.
+        // IMPORTANT: only green is live-worthy; yellow/gray map to route_state=demo_learn
+        // and must never become enter_live regardless of bot mode.
         switch ($confidenceBand) {
             case 'green':
-            case 'yellow':
                 return $botMode === 'live' ? 'enter_live' : 'enter_demo';
+            case 'yellow':
+                // route_state=demo_learn — must enter demo only, never live
+                return 'enter_demo';
             case 'gray':
                 // Uncertain → demo regardless of bot mode
                 return 'enter_demo';

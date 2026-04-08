@@ -278,6 +278,12 @@ trait BotSourcesTrait
                     // Pass-through for late-entry diagnostics
                     'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
                     'source_schema_version' => (string)($intent['source_schema_version'] ?? ''),
+                    // Signal quality fields — forwarded from Brain live intent to decision engine.
+                    'signal_strength'  => (float)($intent['signal_strength']  ?? 0.0),
+                    'quality_score'    => (float)($intent['quality_score']    ?? 0.0),
+                    'scenario_id'      => (string)($intent['scenario_id']     ?? ''),
+                    'scenario_score'   => (float)($intent['scenario_score']   ?? 0.0),
+                    'pattern_version'  => (string)($intent['pattern_version'] ?? ''),
                 ];
 
                 if (isset($intent['side_original'])) {

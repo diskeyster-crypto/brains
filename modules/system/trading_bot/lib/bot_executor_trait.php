@@ -438,8 +438,10 @@ trait BotExecutorTrait
             
             // ============================================================
             // Step 4a: P6.6 Balance preflight check - real exchange modes only
+            // Skip when demoExecutionContext=true (demo-routed intent on live bot)
+            // because the real exchange is not used in that path.
             // ============================================================
-            if (in_array($mode, ['live', 'demo'], true)) {
+            if (in_array($mode, ['live', 'demo'], true) && $this->isRealExchangeMode()) {
                 $balanceCheck = $this->checkBalancePreflight($risk);
                 if (!$balanceCheck['ok']) {
                     // P8: Differentiate "insufficient balance" from "balance unavailable".
@@ -463,6 +465,7 @@ trait BotExecutorTrait
                             'balance_snapshot' => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
                             'coin' => $balanceCheck['coin'] ?? 'USDT',
                             'shortfall' => $balanceCheck['shortfall'] ?? null,
+                            'balance_diagnostics' => $balanceCheck['balance_diagnostics'] ?? null,
                         ],
                         'balance_check' => $balanceCheck, // Keep full result for backward compat
                     ];
@@ -1097,6 +1100,10 @@ trait BotExecutorTrait
         $budget = (float)($risk['budget_usdt_per_trade'] ?? 0.0);
         $bufferPct = (float)($this->config['execution']['balance_required_buffer_pct'] ?? 5.0);
         $rejectBelow = (float)($this->config['execution']['balance_reject_below_usdt'] ?? 0.0);
+        $coin = $this->config['exchange']['balance_coin'] ?? 'USDT';
+        $accountType = $this->config['exchange']['account_type'] ?? 'UNIFIED';
+        $accountId = $this->config['module']['account_id'] ?? 'trading_bot';
+        $mode = $this->config['module']['mode'] ?? 'paper';
         
         // Required margin = budget * (1 + buffer%)
         $required = $budget * (1.0 + $bufferPct / 100.0);
@@ -1105,7 +1112,17 @@ trait BotExecutorTrait
         
         // P6.6: Include balance_snapshot in all responses
         $balanceSnapshot = $this->balanceCache ?? null;
-        
+        $balanceDiag = [
+            'balance_account_id'    => $accountId,
+            'balance_mode'          => $mode,
+            'balance_fetch_ok'      => ($available !== null),
+            'balance_available_usdt'=> ($available !== null) ? (float)$available : null,
+            'balance_parse_source'  => is_array($balanceSnapshot) ? ($balanceSnapshot['source'] ?? null) : null,
+            'balance_http_code'     => is_array($balanceSnapshot) ? ($balanceSnapshot['http_code'] ?? null) : null,
+            'balance_error_code'    => is_array($balanceSnapshot) ? ($balanceSnapshot['error'] ?? null) : null,
+            'balance_error_message' => is_array($balanceSnapshot) ? ($balanceSnapshot['ret_msg'] ?? null) : null,
+        ];
+
                 // If we couldn't get balance, reject for safety
         if ($available === null) {
             // Prefer a specific error code (if gateway returned one) for UI visibility.
@@ -1121,8 +1138,9 @@ trait BotExecutorTrait
                 'required' => $required,
                 'budget' => $budget,
                 'buffer_pct' => $bufferPct,
-                'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+                'coin' => $coin,
                 'balance_snapshot' => $balanceSnapshot,
+                'balance_diagnostics' => $balanceDiag,
             ];
         }// Check minimum threshold
         if ($rejectBelow > 0.0 && $available < $rejectBelow) {
@@ -1134,8 +1152,9 @@ trait BotExecutorTrait
                 'budget' => $budget,
                 'buffer_pct' => $bufferPct,
                 'reject_below_usdt' => $rejectBelow,
-                'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+                'coin' => $coin,
                 'balance_snapshot' => $balanceSnapshot,
+                'balance_diagnostics' => $balanceDiag,
             ];
         }
         
@@ -1149,8 +1168,9 @@ trait BotExecutorTrait
                 'budget' => $budget,
                 'buffer_pct' => $bufferPct,
                 'shortfall' => $required - $available,
-                'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+                'coin' => $coin,
                 'balance_snapshot' => $balanceSnapshot,
+                'balance_diagnostics' => $balanceDiag,
             ];
         }
         
@@ -1161,8 +1181,9 @@ trait BotExecutorTrait
             'required' => $required,
             'budget' => $budget,
             'buffer_pct' => $bufferPct,
-            'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+            'coin' => $coin,
             'balance_snapshot' => $balanceSnapshot,
+            'balance_diagnostics' => $balanceDiag,
         ];
     }
     

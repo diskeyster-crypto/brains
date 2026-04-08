@@ -1632,6 +1632,13 @@ final class SmartBrainCore
                 'entry_action' => $entryPolicy,
                 'entry_timeout_minutes' => (int)($signal['entry_timeout_minutes'] ?? 8),
                 'entry_price_reference' => $entryPriceRef,
+                // Signal quality fields — used by decision engine to compute confidence band and route_state.
+                // pattern_confidence → signal_strength, entry_quality_score → quality_score, v2_priority_score → scenario_score.
+                'signal_strength'   => (float)($signal['pattern_confidence']    ?? $signal['confirmation_score'] ?? 0.0),
+                'quality_score'     => (float)($signal['entry_quality_score']   ?? $signal['hold_quality_score'] ?? 0.0),
+                'scenario_id'       => '',
+                'scenario_score'    => (float)($signal['v2_priority_score']     ?? $signal['analyzer_score']    ?? 0.0),
+                'pattern_version'   => (string)($signal['schema_version']       ?? ''),
                 // ── CANONICAL SOURCES OF TRUTH ──────────────────────────────
                 // risk       → bot-ready execution contract (budget, stop, trailing, logical/emergency stop)
                 //               Built by buildBotReadyRiskBlock(). Bot consumes risk.trailing, risk.stop_control,

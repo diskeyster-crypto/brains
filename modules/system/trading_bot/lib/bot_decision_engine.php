@@ -48,7 +48,7 @@ final class BotDecisionEngine
      * @param array  $config   Bot runtime config (used for auto_mode flag)
      * @return array           Complete decision packet
      */
-    public function makeDecision(array $intent, string $botMode, array $config): array
+    public function makeDecision(array $intent, string $botMode, array $config, array $context = []): array
     {
         $autoMode = (bool)($config['execution']['auto_mode'] ?? false);
 
@@ -62,14 +62,26 @@ final class BotDecisionEngine
             ?? $intent['signal_strength']
             ?? 0.0);
 
+        $liveRoutingPolicy = (string)($config['execution']['live_routing_policy'] ?? 'green_only');
+
         $passport       = $this->loadPassport($symbol);
         $signalStrength = (float)($intent['signal_strength'] ?? 0.0);
         $qualityScore   = (float)($intent['quality_score'] ?? 0.0);
         $confidenceBand = $this->computeConfidenceBand($confidenceScore, $passport, $signalStrength, $qualityScore);
-        $routeState     = $this->computeRouteState($confidenceBand);
-        $decision       = $this->computeDecision($confidenceBand, $botMode, $autoMode);
-        $executionMode  = $this->resolveExecutionMode($decision, $botMode);
-        $reasonCodes    = $this->computeReasonCodes($confidenceBand, $passport, $botMode, $autoMode, $intent);
+
+        // Compute route_state with live routing policy awareness (yellow promotion).
+        // route_state is the single source of truth for final routing.
+        $yellowCaps  = null;
+        $routeState  = $this->computeRouteStateWithPolicy(
+            $confidenceBand, $liveRoutingPolicy, $passport, $intent, $config, $context, $yellowCaps
+        );
+
+        // Decision and execution_mode are derived ONLY from route_state — never from a
+        // parallel confidence-band path. This ensures route_state = demo_learn cannot
+        // produce decision = enter_live regardless of autoMode or botMode.
+        $decision      = $this->computeDecisionFromRouteState($routeState, $botMode);
+        $executionMode = $this->resolveExecutionMode($decision, $botMode);
+        $reasonCodes   = $this->computeReasonCodes($confidenceBand, $passport, $botMode, $autoMode, $intent);
 
         // Phase 2: flag parallel demo suggestion when live mode + non-red confidence
         $parallelDemoSuggested = ($botMode === 'live')
@@ -100,12 +112,23 @@ final class BotDecisionEngine
             'confidence_band'           => $confidenceBand,
 
             // Routing
-            'route_state'               => $routeState,
-            'decision'                  => $decision,
-            'execution_mode'            => $executionMode,
-            'auto_mode'                 => $autoMode,
-            'bot_mode'                  => $botMode,
-            'reason_codes'              => $reasonCodes,
+            'route_state'                    => $routeState,
+            'decision'                       => $decision,
+            'execution_mode'                 => $executionMode,
+            'auto_mode'                      => $autoMode,
+            'bot_mode'                       => $botMode,
+            'live_routing_policy'            => $liveRoutingPolicy,
+            'reason_codes'                   => $reasonCodes,
+
+            // Yellow live admission observability (only set when confidence_band=yellow)
+            'yellow_live_eligible'           => $yellowCaps !== null ? (bool)$yellowCaps['eligible'] : null,
+            'yellow_live_block_reason'       => $yellowCaps !== null ? $yellowCaps['block_reason'] : null,
+            'yellow_live_current_positions'  => $yellowCaps !== null ? (int)($yellowCaps['open_count'] ?? 0) : null,
+            'yellow_live_current_samples'    => $yellowCaps !== null ? (int)($yellowCaps['healthy_samples'] ?? 0) : null,
+            'yellow_live_budget_multiplier'  => (float)($config['execution']['yellow_live_budget_multiplier'] ?? 0.30),
+            'yellow_live_max_positions'      => (int)($config['execution']['yellow_live_max_positions'] ?? 1),
+            'yellow_live_max_leverage'       => (int)($config['execution']['yellow_live_max_leverage'] ?? 2),
+            'yellow_live_min_samples_required' => (int)($config['execution']['yellow_live_require_min_healthy_samples'] ?? 3),
 
             // Phase 2: parallel demo tracking
             'parallel_demo_suggested'   => $parallelDemoSuggested,
@@ -255,14 +278,136 @@ final class BotDecisionEngine
     // =========================================================================
 
     /**
-     * Compute explicit route state from confidence band.
+     * Compute route_state with live routing policy awareness.
      *
-     * route_state is mode-independent: it reflects the real routing meaning
-     * of the signal, regardless of how it executes under the current bot mode.
+     * route_state is the SINGLE SOURCE OF TRUTH for final routing.
+     * decision and execution_mode are derived ONLY from route_state.
      *
-     *   green_live_worthy – strong evidence; live-worthy even if executed as demo
-     *   demo_learn        – moderate/uncertain; send to demo to learn
-     *   skip              – clearly weak; do not execute
+     * Under green_only (default):
+     *   green  → green_live_worthy
+     *   red    → skip
+     *   yellow/gray → demo_learn
+     *
+     * Under green_plus_yellow_capped:
+     *   green  → green_live_worthy
+     *   red    → skip
+     *   yellow → green_live_worthy IF all caps pass; otherwise demo_learn
+     *   gray   → demo_learn (always)
+     *
+     * @param  string $confidenceBand
+     * @param  string $liveRoutingPolicy  'green_only' | 'green_plus_yellow_capped'
+     * @param  ?array $passport
+     * @param  array  $intent
+     * @param  array  $config
+     * @param  array  $context           e.g. ['open_yellow_live_count' => N]
+     * @param  array|null &$yellowCaps   OUT — cap check result when band=yellow; null otherwise
+     * @return string  route_state value
+     */
+    private function computeRouteStateWithPolicy(
+        string  $confidenceBand,
+        string  $liveRoutingPolicy,
+        ?array  $passport,
+        array   $intent,
+        array   $config,
+        array   $context,
+        ?array  &$yellowCaps
+    ): string {
+        $yellowCaps = null;
+
+        switch ($confidenceBand) {
+            case 'green':
+                return 'green_live_worthy';
+            case 'red':
+                return 'skip';
+            case 'yellow':
+                if ($liveRoutingPolicy === 'green_plus_yellow_capped') {
+                    $yellowCaps = $this->checkYellowLiveCaps($passport, $intent, $config, $context);
+                    if ($yellowCaps['eligible']) {
+                        return 'green_live_worthy'; // yellow promoted under capped policy
+                    }
+                }
+                return 'demo_learn';
+            default:
+                // gray or unknown → demo_learn
+                return 'demo_learn';
+        }
+    }
+
+    /**
+     * Check whether a yellow-confidence intent passes all yellow live caps.
+     *
+     * Returns ['eligible' => bool, 'block_reason' => string|null, ...diagnostics...]
+     */
+    private function checkYellowLiveCaps(
+        ?array $passport,
+        array  $intent,
+        array  $config,
+        array  $context
+    ): array {
+        $maxPositions = (int)($config['execution']['yellow_live_max_positions'] ?? 1);
+        $maxLeverage  = (int)($config['execution']['yellow_live_max_leverage'] ?? 2);
+        $budgetMult   = (float)($config['execution']['yellow_live_budget_multiplier'] ?? 0.30);
+        $minSamples   = (int)($config['execution']['yellow_live_require_min_healthy_samples'] ?? 3);
+
+        $openCount      = (int)($context['open_yellow_live_count'] ?? 0);
+        $leverage       = (float)($intent['risk']['leverage'] ?? $intent['leverage'] ?? $config['exchange']['leverage'] ?? 5);
+        $proposedBudget = (float)($intent['risk']['budget'] ?? $intent['budget'] ?? 0.0);
+        $baseBudget     = (float)($config['execution']['budget_per_order']
+                            ?? $config['demo_sources']['demo_risk_defaults']['budget_usdt_per_trade']
+                            ?? 0.0);
+        $healthySamples = (int)($passport['healthy_closed_samples'] ?? 0);
+
+        $blockReasons = [];
+        if ($openCount >= $maxPositions) {
+            $blockReasons[] = 'max_yellow_positions_reached:' . $openCount . '>=' . $maxPositions;
+        }
+        if ($leverage > $maxLeverage) {
+            $blockReasons[] = 'leverage_exceeds_cap:' . $leverage . '>' . $maxLeverage;
+        }
+        if ($proposedBudget > 0 && $baseBudget > 0 && $proposedBudget > $baseBudget * $budgetMult) {
+            $blockReasons[] = 'budget_exceeds_cap:' . round($proposedBudget, 2) . '>' . round($baseBudget * $budgetMult, 2);
+        }
+        if ($healthySamples < $minSamples) {
+            $blockReasons[] = 'insufficient_healthy_samples:' . $healthySamples . '<' . $minSamples;
+        }
+
+        return [
+            'eligible'        => empty($blockReasons),
+            'block_reason'    => empty($blockReasons) ? null : implode('; ', $blockReasons),
+            'open_count'      => $openCount,
+            'leverage'        => $leverage,
+            'proposed_budget' => $proposedBudget,
+            'healthy_samples' => $healthySamples,
+        ];
+    }
+
+    /**
+     * Compute the routing decision from route_state.
+     *
+     * route_state is the single authoritative source. This is the ONLY place
+     * where decision is derived — there is no parallel path.
+     *
+     *   green_live_worthy → enter_live (live bot) or enter_demo (demo/paper bot)
+     *   demo_learn        → enter_demo (ALWAYS, regardless of bot mode)
+     *   skip              → skip
+     */
+    private function computeDecisionFromRouteState(string $routeState, string $botMode): string
+    {
+        switch ($routeState) {
+            case 'green_live_worthy':
+                return $botMode === 'live' ? 'enter_live' : 'enter_demo';
+            case 'demo_learn':
+                return 'enter_demo';
+            case 'skip':
+                return 'skip';
+            default:
+                return 'enter_demo';
+        }
+    }
+
+    /**
+     * @deprecated Use computeRouteStateWithPolicy() and computeDecisionFromRouteState() instead.
+     * Kept only for reference; no longer called from makeDecision().
      */
     private function computeRouteState(string $confidenceBand): string
     {
@@ -272,44 +417,27 @@ final class BotDecisionEngine
             case 'red':
                 return 'skip';
             default:
-                // yellow, gray, or unknown → demo learning
                 return 'demo_learn';
         }
     }
 
     /**
-     * Compute the routing decision.
-     *
-     * Manual mode: always enter using the current bot mode (user decides).
-     * Auto mode: apply confidence-based routing.
-     *
-     * Routing rules (roadmap):
-     *   green  → enter_live (when live), enter_demo (when demo)
-     *   yellow → enter_live (live can handle it), enter_demo (demo mode)
-     *   gray   → enter_demo (uncertain: learn, never skip)
-     *   red    → skip (clearly bad)
+     * @deprecated Replaced by computeDecisionFromRouteState(). No longer called from makeDecision().
+     * Kept for reference only.
      */
     private function computeDecision(string $confidenceBand, string $botMode, bool $autoMode): string
     {
         if (!$autoMode) {
-            // Manual mode: honor bot mode unconditionally
             return in_array($botMode, ['live'], true) ? 'enter_live' : 'enter_demo';
         }
-
-        // Auto mode: route by confidence.
-        // IMPORTANT: only green is live-worthy; yellow/gray map to route_state=demo_learn
-        // and must never become enter_live regardless of bot mode.
         switch ($confidenceBand) {
             case 'green':
                 return $botMode === 'live' ? 'enter_live' : 'enter_demo';
             case 'yellow':
-                // route_state=demo_learn — must enter demo only, never live
                 return 'enter_demo';
             case 'gray':
-                // Uncertain → demo regardless of bot mode
                 return 'enter_demo';
             case 'red':
-                // Clearly bad → skip (Phase 6: record observation, don't execute)
                 return 'skip';
             default:
                 return 'enter_demo';

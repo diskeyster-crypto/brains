@@ -144,6 +144,13 @@ function saveSettings() {
         showFlash('Take Profit % должен быть > 0', 'danger');
         return;
     }
+    const ybm = parseFloat(data['yellow_live_budget_multiplier']);
+    if (data['yellow_live_budget_multiplier'] !== undefined && data['yellow_live_budget_multiplier'] !== '') {
+        if (isNaN(ybm) || ybm <= 0 || ybm > 1) {
+            showFlash('Yellow budget multiplier must be between 0 and 1 (e.g. 0.30)', 'danger');
+            return;
+        }
+    }
 
     fetch(EXEC_URL + '/save_config', {
         method: 'POST',
@@ -167,6 +174,12 @@ function onModeChange(sel) {
     const storageMap = { live: 'storage_live', demo: 'storage_demo', paper: 'storage_paper', dry: 'storage_paper' };
     const el = document.getElementById('storage-ns-display');
     if (el) { el.textContent = storageMap[mode] || 'storage_paper'; }
+}
+
+// Toggle yellow cap fields visibility based on routing policy selector
+function onRoutingPolicyChange(policy) {
+    const sec = document.getElementById('yellow-caps-section');
+    if (sec) { sec.style.display = (policy === 'green_plus_yellow_capped') ? '' : 'none'; }
 }
 </script>
 JS;
@@ -2637,6 +2650,89 @@ if ($journalExists && $journalSizeBytes > 0) {
                            class="form-control form-control-sm bg-dark text-light border-secondary"
                            value="<?= round((float)($exCfg['break_even_activation_roi'] ?? 0), 2) ?>">
                     <small class="text-muted">ROI, начиная с которого стоп подтягивается в безубыток.</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4b. LIVE ROUTING POLICY -->
+        <div class="settings-block">
+            <h6><i class="bi bi-signpost-split me-1"></i> Live Routing Policy</h6>
+            <?php
+            $liveRoutingPolicy = (string)($exCfg['live_routing_policy'] ?? 'green_only');
+            $yellowMaxPositions = (int)($exCfg['yellow_live_max_positions'] ?? 1);
+            $yellowMaxLeverage  = (int)($exCfg['yellow_live_max_leverage'] ?? 2);
+            $yellowBudgetMult   = (float)($exCfg['yellow_live_budget_multiplier'] ?? 0.30);
+            $yellowMinSamples   = (int)($exCfg['yellow_live_require_min_healthy_samples'] ?? 3);
+            $isYellowCapped     = $liveRoutingPolicy === 'green_plus_yellow_capped';
+            ?>
+            <div class="row g-3 align-items-end mb-3">
+                <div class="col-md-4">
+                    <label class="form-label form-label-sm">Routing Mode</label>
+                    <select name="live_routing_policy" id="live_routing_policy"
+                            class="form-select form-select-sm bg-dark text-light border-secondary"
+                            onchange="onRoutingPolicyChange(this.value)">
+                        <option value="green_only" <?= $liveRoutingPolicy === 'green_only' ? 'selected' : '' ?>>Green only</option>
+                        <option value="green_plus_yellow_capped" <?= $isYellowCapped ? 'selected' : '' ?>>Green + Yellow (capped)</option>
+                    </select>
+                    <small class="text-muted">
+                        <strong>Green only</strong>: only green-confidence signals go live.<br>
+                        <strong>Green + Yellow (capped)</strong>: yellow may go live if all caps pass.
+                    </small>
+                </div>
+                <div class="col-md-8">
+                    <?php if ($liveRoutingPolicy === 'green_only'): ?>
+                    <div class="alert alert-secondary py-2 mb-0 small">
+                        <i class="bi bi-shield-check me-1 text-success"></i>
+                        <strong>Green only</strong> — yellow signals are always demo-routed. Safe default.
+                    </div>
+                    <?php else: ?>
+                    <div class="alert alert-warning py-2 mb-0 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Green + Yellow (capped)</strong> — yellow signals may go live when all caps pass.
+                        Yellow that fails any cap is automatically demo-routed.
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div id="yellow-caps-section" style="<?= $isYellowCapped ? '' : 'display:none' ?>">
+                <div class="row g-3">
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">
+                            Max yellow live positions
+                            <i class="bi bi-info-circle text-secondary ms-1" title="Max concurrent open live positions from yellow-confidence signals."></i>
+                        </label>
+                        <input type="number" name="yellow_live_max_positions" min="0" step="1"
+                               class="form-control form-control-sm bg-dark text-light border-secondary"
+                               value="<?= $yellowMaxPositions ?>">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">
+                            Max yellow leverage
+                            <i class="bi bi-info-circle text-secondary ms-1" title="Yellow live positions are rejected if proposed leverage exceeds this."></i>
+                        </label>
+                        <input type="number" name="yellow_live_max_leverage" min="1" step="1"
+                               class="form-control form-control-sm bg-dark text-light border-secondary"
+                               value="<?= $yellowMaxLeverage ?>">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">
+                            Yellow budget multiplier
+                            <i class="bi bi-info-circle text-secondary ms-1" title="Yellow live budget cap = base_budget × this value. E.g. 0.30 = 30% of normal budget."></i>
+                        </label>
+                        <input type="number" name="yellow_live_budget_multiplier" min="0.01" max="1.00" step="0.01"
+                               class="form-control form-control-sm bg-dark text-light border-secondary"
+                               value="<?= $yellowBudgetMult ?>">
+                        <small class="text-muted">0.01–1.00 (e.g. 0.30 = 30% of base budget)</small>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label form-label-sm">
+                            Min healthy samples
+                            <i class="bi bi-info-circle text-secondary ms-1" title="Coin passport must have at least this many healthy closed samples for yellow live admission."></i>
+                        </label>
+                        <input type="number" name="yellow_live_require_min_healthy_samples" min="0" step="1"
+                               class="form-control form-control-sm bg-dark text-light border-secondary"
+                               value="<?= $yellowMinSamples ?>">
+                    </div>
                 </div>
             </div>
         </div>

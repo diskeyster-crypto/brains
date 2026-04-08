@@ -1153,9 +1153,13 @@ final class TradingBotService
                     // ── Decision Engine: generate canonical decision packet ────────────
                     // Phase 1 (roadmap): every intent gets a decision packet with confidence_band,
                     // decision (enter_live/enter_demo/skip), passport snapshot, and lineage IDs.
-                    // In auto_mode, red-confidence intents are skipped here (Phase 6: low-confidence
-                    // policy). In manual_mode, the packet is recorded but never blocks execution.
-                    $decisionPacket = $this->decisionEngine->makeDecision($intent, $mode, $this->config);
+                    // route_state is the single source of truth. decision and execution_mode are
+                    // derived only from route_state — never from a parallel confidence-band path.
+                    $openYellowLiveCount = $this->countOpenYellowLivePositions();
+                    $decisionPacket = $this->decisionEngine->makeDecision(
+                        $intent, $mode, $this->config,
+                        ['open_yellow_live_count' => $openYellowLiveCount]
+                    );
                     $this->decisionEngine->saveDecisionPacket($decisionPacket);
                     // Stamp lineage fields onto intent so they propagate into the opened trade record
                     $intent['decision_id']     = $decisionPacket['decision_id'];
@@ -1183,29 +1187,24 @@ final class TradingBotService
                     }
                     // ─────────────────────────────────────────────────────────────────
 
-                    // Route per-intent using decisionPacket decision, not only the global bot mode.
-                    // In auto mode: gray/enter_demo→demo, enter_live→live.
-                    // In manual mode: decisionPacket is advisory only; global $mode is used.
-                    $intentExecMode = $mode;
-                    // Derive routing counters from route_state (mode-independent routing class).
-                    // route_state = green_live_worthy → routed_green (regardless of demo execution)
-                    // route_state = demo_learn        → routed_demo
-                    // route_state = skip              → already counted above via continue
+                    // Route per-intent using decisionPacket decision only.
+                    // route_state is authoritative — decision is derived from it in the engine.
+                    // We never reinterpret confidence_band here; trust the decision packet as final.
+                    $dpDecision   = $decisionPacket['decision'] ?? 'enter_demo';
                     $dpRouteState = $decisionPacket['route_state'] ?? 'demo_learn';
-                    if ($autoMode) {
-                        $dpDecision = $decisionPacket['decision'] ?? '';
-                        if ($dpDecision === 'enter_demo') {
-                            $intentExecMode = 'demo';
-                        } elseif ($dpDecision === 'enter_live') {
-                            $intentExecMode = ($mode === 'live') ? 'live' : $mode;
-                        }
-                        // Count by route_state, not by confidence_band+decision combo
-                        if ($dpRouteState === 'green_live_worthy') {
-                            $routedGreenTotal++;
-                        } else {
-                            $routedDemoTotal++;
-                        }
-                        // 'skip' is already handled above via continue.
+                    if ($dpDecision === 'enter_demo') {
+                        $intentExecMode = 'demo';
+                    } elseif ($dpDecision === 'enter_live') {
+                        $intentExecMode = ($mode === 'live') ? 'live' : $mode;
+                    } else {
+                        // skip is already handled above; fallback
+                        $intentExecMode = $mode;
+                    }
+                    // Count by route_state (mode-independent routing class).
+                    if ($dpRouteState === 'green_live_worthy') {
+                        $routedGreenTotal++;
+                    } else {
+                        $routedDemoTotal++;
                     }
 
                     // ── Journal: decision_routed ──────────────────────────────────────────
@@ -2865,6 +2864,27 @@ final class TradingBotService
             'message'           => $message,
             'data'              => $data,
         ]);
+    }
+
+    /**
+    /**
+     * Count current open live positions where confidence_band=yellow.
+     * Used for yellow live cap enforcement under green_plus_yellow_capped policy.
+     */
+    private function countOpenYellowLivePositions(): int
+    {
+        try {
+            $trades = $this->store->loadActiveTrades();
+            $count  = 0;
+            foreach ($trades as $t) {
+                if (($t['confidence_band'] ?? '') === 'yellow') {
+                    $count++;
+                }
+            }
+            return $count;
+        } catch (\Throwable $e) {
+            return 0;
+        }
     }
 
     /**

@@ -724,6 +724,22 @@ final class SmartBrainService
             }
         }
 
+        // live_routing_policy: allowed values
+        if (array_key_exists('live_routing_policy', $values)) {
+            $v = strtolower(trim((string)$values['live_routing_policy']));
+            if (!in_array($v, ['green_only', 'green_plus_yellow_capped'], true)) {
+                return 'live_routing_policy must be green_only or green_plus_yellow_capped';
+            }
+        }
+
+        // yellow_live_budget_multiplier: 0 < v <= 1
+        if (array_key_exists('yellow_live_budget_multiplier', $values)) {
+            $v = (float)$values['yellow_live_budget_multiplier'];
+            if ($v <= 0.0 || $v > 1.0) {
+                return 'yellow_live_budget_multiplier must be between 0 and 1 (e.g. 0.30)';
+            }
+        }
+
         return null;
     }
 
@@ -836,6 +852,28 @@ final class SmartBrainService
             if (array_key_exists($prefixed, $values)) {
                 $current['execution'][$k] = (bool)$values[$prefixed];
             }
+        }
+        // ---- live routing policy fields ----
+        if (array_key_exists('live_routing_policy', $values)) {
+            $policy = strtolower(trim((string)$values['live_routing_policy']));
+            if (in_array($policy, ['green_only', 'green_plus_yellow_capped'], true)) {
+                $current['execution']['live_routing_policy'] = $policy;
+            }
+        }
+        if (array_key_exists('yellow_live_max_positions', $values)) {
+            $current['execution']['yellow_live_max_positions'] = max(0, (int)$values['yellow_live_max_positions']);
+        }
+        if (array_key_exists('yellow_live_max_leverage', $values)) {
+            $current['execution']['yellow_live_max_leverage'] = max(1, (int)$values['yellow_live_max_leverage']);
+        }
+        if (array_key_exists('yellow_live_budget_multiplier', $values)) {
+            $v = (float)$values['yellow_live_budget_multiplier'];
+            if ($v > 0.0 && $v <= 1.0) {
+                $current['execution']['yellow_live_budget_multiplier'] = $v;
+            }
+        }
+        if (array_key_exists('yellow_live_require_min_healthy_samples', $values)) {
+            $current['execution']['yellow_live_require_min_healthy_samples'] = max(0, (int)$values['yellow_live_require_min_healthy_samples']);
         }
 
         // ---- sources block ----

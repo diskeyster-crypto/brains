@@ -1781,6 +1781,7 @@ final class SmartBrainCore
             'preserved_pending' => 0,
             'expired_by_brain' => 0,
             'cleaned_terminal' => 0,
+            'superseded_terminal_by_new_pending' => 0,
             'new_pending' => count($intents),
         ];
 
@@ -1794,12 +1795,17 @@ final class SmartBrainCore
 
             // Skip if new Brain run produced a replacement for this intent
             if ($eid !== '' && isset($newIntentIds[$eid])) {
-                // New intent supersedes — only if existing is still pending
                 if ($status === SmartBrainConfig::INTENT_STATUS_PENDING) {
                     continue; // will be replaced by the new version
                 }
-                // Non-pending (claimed/executed/rejected) — keep existing, skip new
-                // (remove from new set so we don't duplicate)
+                if (SmartBrainConfig::isTerminalIntentStatus($status)) {
+                    // Terminal intent (executed/rejected/expired) with same deterministic ID:
+                    // the new Brain run produced a fresh pending for the same signal lineage.
+                    // Drop the old terminal so the new pending can be inserted without ID collision.
+                    $lifecycleCounters['superseded_terminal_by_new_pending']++;
+                    continue;
+                }
+                // Claimed: bot is actively working on it — keep existing, block new via mergedIds check.
                 unset($newIntentIds[$eid]);
             }
 
@@ -1896,7 +1902,7 @@ final class SmartBrainCore
         $result['lifecycle_summary'] = $payload['lifecycle_summary'];
 
         if (count($intents) > 0) {
-            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ', terminal_retained=' . $result['terminal_retained_count'] . ')');
+            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', superseded_terminal=' . $lifecycleCounters['superseded_terminal_by_new_pending'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ', terminal_retained=' . $result['terminal_retained_count'] . ')');
         } elseif ($result['signals_seen'] > 0) {
             $lateCount = $result['late_entry_rejected_count'] ?? 0;
             $this->logger->log('info', 'Live Intents: 0 new intents from ' . $result['signals_seen'] . ' signals, merged total ' . count($mergedIntents) . ' (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', late_entry_rejected=' . $lateCount . ', terminal_retained=' . $result['terminal_retained_count'] . ', reasons=' . json_encode($reasonStats) . ')');

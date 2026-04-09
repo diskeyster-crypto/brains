@@ -242,6 +242,10 @@ final class ProfitManagerService
                 }
             }
 
+            // PM-7: Passive passport write-back from active-mode observations (best-effort, non-fatal)
+            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($items);
+            $passportDiag    = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
+
             $result = [
                 'ts'                             => $ts,
                 'ok'                             => empty($runResult['errors']),
@@ -267,6 +271,12 @@ final class ProfitManagerService
                 'bot_active_trades_matchable_total' => $this->botTradeLoadDiag['matchable'] ?? 0,
                 'bot_active_trades_storage_dir'   => $this->botTradeLoadDiag['storage_dir'] ?? null,
                 'bot_active_trades_load_error'    => $this->botTradeLoadDiag['error'] ?? null,
+                // PM-7 passport write-back observability
+                'passport_write_attempted_total' => $passportDiag['passport_write_attempted_total'] ?? 0,
+                'passport_write_success_total'   => $passportDiag['passport_write_success_total'] ?? 0,
+                'passport_write_skipped_total'   => $passportDiag['passport_write_skipped_total'] ?? 0,
+                'passport_write_error_total'     => $passportDiag['passport_write_error_total'] ?? 0,
+                'passport_symbols_updated'       => $passportDiag['passport_symbols_updated'] ?? [],
                 'items'                          => array_slice($items, 0, 50),
                 'errors'                         => $runResult['errors'] ?? [],
                 'warnings'                       => $runResult['warnings'] ?? [],
@@ -338,6 +348,10 @@ final class ProfitManagerService
             $shadowItems = $shadowResult['items'] ?? [];
             $shadowActive = count($shadowItems) > 0;
 
+            // PM-7: Passive passport write-back from shadow observations (best-effort, non-fatal)
+            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($shadowItems);
+            $passportDiag    = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
+
             // Pick first active item for flat observability fields (multi-position: all in items[])
             $firstItem = $shadowItems[0] ?? [];
 
@@ -383,6 +397,12 @@ final class ProfitManagerService
                 'max_post_lock_extension_roi'                 => $comparisonThisRun['max_post_lock_extension_roi'] ?? null,
                 // Comparison aggregate (across all runs)
                 'comparison_aggregate'                        => $comparisonAgg,
+                // PM-7 passport write-back observability
+                'passport_write_attempted_total'              => $passportDiag['passport_write_attempted_total'] ?? 0,
+                'passport_write_success_total'                => $passportDiag['passport_write_success_total'] ?? 0,
+                'passport_write_skipped_total'                => $passportDiag['passport_write_skipped_total'] ?? 0,
+                'passport_write_error_total'                  => $passportDiag['passport_write_error_total'] ?? 0,
+                'passport_symbols_updated'                    => $passportDiag['passport_symbols_updated'] ?? [],
                 'items'                       => array_slice($shadowItems, 0, 50),
                 'errors'                      => [],
                 'warnings'                    => [],
@@ -841,7 +861,286 @@ final class ProfitManagerService
     // =========================================================================
     // Private Methods
     // =========================================================================
-    
+
+    // =========================================================================
+    // PM-7: Passive passport write-back helpers
+    // =========================================================================
+
+    /**
+     * Aggregate PM item observations per symbol into compact summary stats.
+     *
+     * Works on both shadow items (proposed_action, bot_comparison) and active items
+     * (applied_action, active_context_unavailable_reason). No exchange writes.
+     *
+     * @param array[] $items  Items from runShadow() or runActive()
+     * @return array<string,array>  Keyed by upper-case symbol
+     */
+    private function aggregatePmStatsBySymbol(array $items): array
+    {
+        $bySymbol = [];
+        foreach ($items as $item) {
+            $sym = strtoupper((string)($item['symbol'] ?? ''));
+            if ($sym === '') {
+                continue;
+            }
+            if (!isset($bySymbol[$sym])) {
+                $bySymbol[$sym] = [
+                    '_current_roi_sum'       => 0.0,
+                    '_peak_roi_sum'          => 0.0,
+                    '_lock_roi_sum'          => 0.0,
+                    '_lock_roi_count'        => 0,
+                    '_stop_gap_sum'          => 0.0,
+                    '_stop_gap_count'        => 0,
+                    '_lock_diff_sum'         => 0.0,
+                    '_lock_diff_count'       => 0,
+                    '_post_lock_ext_sum'     => 0.0,
+                    '_post_lock_ext_count'   => 0,
+                    'samples_total'                  => 0,
+                    'samples_profitable'             => 0,
+                    'samples_armed'                  => 0,
+                    'samples_tightened'              => 0,
+                    'samples_exit_ready'             => 0,
+                    'avg_peak_roi'                   => null,
+                    'avg_current_roi'                => null,
+                    'avg_proposed_lock_roi'          => null,
+                    'avg_post_lock_extension_roi'    => null,
+                    'max_post_lock_extension_roi'    => null,
+                    'avg_stop_gap_difference_pct'    => null,
+                    'avg_lock_difference_roi'        => null,
+                    'early_close_risk_score'         => null,
+                    'comparison_samples_total'       => 0,
+                    'comparison_matches_found_total' => 0,
+                    'comparison_unavailable_total'   => 0,
+                ];
+            }
+
+            $s = &$bySymbol[$sym];
+            $s['samples_total']++;
+
+            $currentRoi = (float)($item['current_roi'] ?? 0.0);
+            $peakRoi    = (float)($item['peak_roi'] ?? 0.0);
+            $lockRoi    = $item['proposed_lock_roi'] ?? $item['applied_lock_roi'] ?? null;
+
+            $s['_current_roi_sum'] += $currentRoi;
+            $s['_peak_roi_sum']    += $peakRoi;
+            if ($lockRoi !== null) {
+                $s['_lock_roi_sum']   += (float)$lockRoi;
+                $s['_lock_roi_count'] += 1;
+            }
+            if ($currentRoi > 0.0) {
+                $s['samples_profitable']++;
+            }
+            if (!empty($item['trailing_armed'])) {
+                $s['samples_armed']++;
+            }
+
+            $action = (string)($item['proposed_action'] ?? $item['applied_action'] ?? '');
+            if (in_array($action, ['tighten_soft', 'tighten_step', 'step_sl_update', 'dumb_trailing_set'], true)) {
+                $s['samples_tightened']++;
+            }
+            if ($action === 'exit_ready') {
+                $s['samples_exit_ready']++;
+            }
+
+            // Comparison data (shadow mode: bot_comparison block)
+            if (isset($item['bot_comparison']) && is_array($item['bot_comparison'])) {
+                $s['comparison_samples_total']++;
+                $s['comparison_matches_found_total']++;
+                $bc = $item['bot_comparison'];
+
+                $stopGap    = isset($bc['stop_gap_difference_pct']) ? (float)$bc['stop_gap_difference_pct'] : null;
+                $lockDiff   = isset($bc['lock_difference_roi'])     ? (float)$bc['lock_difference_roi']     : null;
+                $postLockExt = isset($bc['post_lock_extension_roi']) ? (float)$bc['post_lock_extension_roi'] : null;
+
+                if ($stopGap !== null) {
+                    $s['_stop_gap_sum']   += $stopGap;
+                    $s['_stop_gap_count'] += 1;
+                }
+                if ($lockDiff !== null) {
+                    $s['_lock_diff_sum']   += $lockDiff;
+                    $s['_lock_diff_count'] += 1;
+                }
+                if ($postLockExt !== null) {
+                    $s['_post_lock_ext_sum']   += $postLockExt;
+                    $s['_post_lock_ext_count'] += 1;
+                    if ($s['max_post_lock_extension_roi'] === null || $postLockExt > $s['max_post_lock_extension_roi']) {
+                        $s['max_post_lock_extension_roi'] = $postLockExt;
+                    }
+                }
+            } elseif (
+                isset($item['comparison_unavailable_reason']) ||
+                isset($item['active_context_unavailable_reason'])
+            ) {
+                $s['comparison_samples_total']++;
+                $s['comparison_unavailable_total']++;
+            }
+        }
+        unset($s);
+
+        // Compute averages and derived scores from accumulators
+        foreach ($bySymbol as $sym => &$s) {
+            $total = $s['samples_total'];
+            if ($total > 0) {
+                $s['avg_current_roi']       = round($s['_current_roi_sum'] / $total, 4);
+                $s['avg_peak_roi']          = round($s['_peak_roi_sum'] / $total, 4);
+                $s['avg_proposed_lock_roi'] = $s['_lock_roi_count'] > 0
+                    ? round($s['_lock_roi_sum'] / $s['_lock_roi_count'], 4)
+                    : null;
+            }
+            if ($s['_stop_gap_count'] > 0) {
+                $s['avg_stop_gap_difference_pct'] = round($s['_stop_gap_sum'] / $s['_stop_gap_count'], 4);
+            }
+            if ($s['_lock_diff_count'] > 0) {
+                $s['avg_lock_difference_roi'] = round($s['_lock_diff_sum'] / $s['_lock_diff_count'], 4);
+            }
+            if ($s['_post_lock_ext_count'] > 0) {
+                $s['avg_post_lock_extension_roi'] = round($s['_post_lock_ext_sum'] / $s['_post_lock_ext_count'], 4);
+            }
+            // Early-close risk score: higher positive post-lock extension → higher risk of exiting before peak
+            $avgExt = (float)($s['avg_post_lock_extension_roi'] ?? 0.0);
+            $s['early_close_risk_score'] = $avgExt > 0.0 ? round(min(1.0, $avgExt / 5.0), 4) : 0.0;
+
+            // Remove internal accumulator keys before writing to passport
+            unset(
+                $s['_current_roi_sum'], $s['_peak_roi_sum'],
+                $s['_lock_roi_sum'], $s['_lock_roi_count'],
+                $s['_stop_gap_sum'], $s['_stop_gap_count'],
+                $s['_lock_diff_sum'], $s['_lock_diff_count'],
+                $s['_post_lock_ext_sum'], $s['_post_lock_ext_count']
+            );
+        }
+        unset($s);
+
+        return $bySymbol;
+    }
+
+    /**
+     * Write per-symbol PM stats into coin passport (passive, best-effort).
+     *
+     * Locates CoinPassportService via sibling-path or SystemPaths, loads it
+     * once, then calls updateProfitManagerStats() for each symbol that has
+     * real observations. Fully non-fatal: any failure is captured in the
+     * returned observability array.
+     *
+     * @param array<string,array> $statsBySymbol  Output of aggregatePmStatsBySymbol()
+     * @param string              $ts             ISO timestamp for last_updated_at
+     * @return array  Observability counters
+     */
+    private function tryWritePassportPmStats(array $statsBySymbol, string $ts): array
+    {
+        $attempted = 0;
+        $success   = 0;
+        $skipped   = 0;
+        $errors    = 0;
+        $updated   = [];
+
+        if (empty($statsBySymbol)) {
+            return [
+                'passport_write_attempted_total' => 0,
+                'passport_write_success_total'   => 0,
+                'passport_write_skipped_total'   => 0,
+                'passport_write_error_total'     => 0,
+                'passport_symbols_updated'       => [],
+                'passport_write_skip_reason'     => 'no_meaningful_pm_data',
+            ];
+        }
+
+        // Resolve coin_passport module base: sibling path first, then SystemPaths
+        $passportBase = null;
+        if ($this->moduleBase !== null) {
+            $candidate = dirname($this->moduleBase) . '/coin_passport';
+            if (is_dir($candidate)) {
+                $passportBase = $candidate;
+            }
+        }
+        if ($passportBase === null) {
+            try {
+                $paths = SystemPaths::instance();
+                foreach (['system.coin_passport', 'modules.coin_passport'] as $key) {
+                    if ($paths->has($key)) {
+                        $p = $paths->get($key);
+                        if (is_string($p) && $p !== '' && is_dir($p)) {
+                            $passportBase = rtrim($p, '/');
+                            break;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+
+        if ($passportBase === null) {
+            $skipped = count($statsBySymbol);
+            return [
+                'passport_write_attempted_total' => 0,
+                'passport_write_success_total'   => 0,
+                'passport_write_skipped_total'   => $skipped,
+                'passport_write_error_total'     => 0,
+                'passport_symbols_updated'       => [],
+                'passport_write_skip_reason'     => 'passport_unavailable',
+            ];
+        }
+
+        // Load CoinPassportService (best-effort — require_once is idempotent)
+        $passportService = null;
+        try {
+            $enginePath  = $passportBase . '/lib/passport_engine.php';
+            $servicePath = $passportBase . '/service.php';
+            if (is_file($enginePath) && is_file($servicePath)) {
+                require_once $enginePath;
+                require_once $servicePath;
+                $passportService = new \CoinPassportService();
+            }
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        if ($passportService === null) {
+            $skipped = count($statsBySymbol);
+            return [
+                'passport_write_attempted_total' => 0,
+                'passport_write_success_total'   => 0,
+                'passport_write_skipped_total'   => $skipped,
+                'passport_write_error_total'     => 0,
+                'passport_symbols_updated'       => [],
+                'passport_write_skip_reason'     => 'passport_unavailable',
+            ];
+        }
+
+        foreach ($statsBySymbol as $symbol => $stats) {
+            if (($stats['samples_total'] ?? 0) <= 0) {
+                $skipped++;
+                continue;
+            }
+            if ($symbol === '') {
+                $skipped++;
+                continue;
+            }
+            $stats['last_updated_at'] = $ts;
+            $attempted++;
+            try {
+                $ok = $passportService->updateProfitManagerStats($symbol, $stats);
+                if ($ok) {
+                    $success++;
+                    $updated[] = $symbol;
+                } else {
+                    $errors++;
+                }
+            } catch (\Throwable $e) {
+                $errors++;
+            }
+        }
+
+        return [
+            'passport_write_attempted_total' => $attempted,
+            'passport_write_success_total'   => $success,
+            'passport_write_skipped_total'   => $skipped,
+            'passport_write_error_total'     => $errors,
+            'passport_symbols_updated'       => $updated,
+        ];
+    }
+
     /**
      * Resolve module base path via SystemPaths
      */

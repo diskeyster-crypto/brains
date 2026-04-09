@@ -292,6 +292,60 @@ final class CoinPassportEngine
     }
 
     // =========================================================================
+    // Profit Manager passive write-back
+    // =========================================================================
+
+    /**
+     * Passively write Profit Manager observation stats into a symbol's passport.
+     *
+     * Only updates the profit_manager_stats block — all other passport fields are
+     * left untouched. Creates a minimal passport stub if none exists yet for the symbol.
+     *
+     * Non-fatal by design: returns false instead of throwing on any I/O error.
+     *
+     * @param string              $symbol Upper-case symbol, e.g. 'BTCUSDT'
+     * @param array<string,mixed> $stats  Compact PM observation summary
+     * @return bool  true on success, false on any failure
+     */
+    public function updateProfitManagerStats(string $symbol, array $stats): bool
+    {
+        $symbol = preg_replace('/[^A-Z0-9_\-]/', '', strtoupper($symbol));
+        if ($symbol === '') {
+            return false;
+        }
+
+        if (!is_dir($this->passportsDir)) {
+            @mkdir($this->passportsDir, 0755, true);
+        }
+
+        $path     = $this->passportPath($symbol);
+        $existing = $this->readJson($path) ?? [];
+
+        // Write only the namespaced PM block — never touch other passport fields
+        $existing['profit_manager_stats'] = $stats;
+
+        // Atomic write: write to .tmp then rename
+        $tmp = $path . '.pmtmp.' . getmypid();
+        $json = json_encode(
+            $existing,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        ) . "\n";
+
+        $written = @file_put_contents($tmp, $json, LOCK_EX);
+        if ($written === false) {
+            @unlink($tmp);
+            return false;
+        }
+
+        if (!@rename($tmp, $path)) {
+            @unlink($tmp);
+            return false;
+        }
+
+        return true;
+    }
+
+    // =========================================================================
     // Data collection
     // =========================================================================
 

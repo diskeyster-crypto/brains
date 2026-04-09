@@ -872,8 +872,8 @@ final class TradingBotService
             // Atomically mark intents as claimed in live_intents.json to prevent
             // duplicate consumption by concurrent bot ticks.
             $claimResult = ['claimed_count' => 0, 'errors' => []];
+            $intentIdsToClaim = [];
             if ($brainControlled && !empty($liveIntentsFilePath) && !empty($scanIntents)) {
-                $intentIdsToClaim = [];
                 foreach ($scanIntents as $si) {
                     $iid = $si['intent_id'] ?? '';
                     if ($iid !== '') {
@@ -884,6 +884,10 @@ final class TradingBotService
                     $claimResult = $this->claimLiveIntents($intentIdsToClaim, $liveIntentsFilePath);
                 }
             }
+            // Track which claimed intent IDs receive a lifecycle update inside the loop.
+            // Any claimed intent NOT in this set when the loop ends (due to break/continue)
+            // will be explicitly rejected in the post-loop cleanup pass.
+            $lifecycleUpdatedIntentIds = [];
             $result['intent_claim'] = $claimResult;
             $result['intents_loaded_count'] = count($intentsResult['intents'] ?? []);
             $result['intents_claimed_now_count'] = $claimResult['claimed_count'] ?? 0;
@@ -1179,6 +1183,22 @@ final class TradingBotService
                                 'reason_codes'    => $decisionPacket['reason_codes'],
                             ],
                         ]);
+                        // ── Lifecycle: finalize the claimed intent as rejected ──────────────
+                        // The auto_mode skip decision is a deliberate rejection at the routing
+                        // stage. Without this update the intent would remain in 'claimed' state
+                        // and only die via rejected_claim_stale_timeout, giving no signal as to
+                        // why execution was not attempted.
+                        if ($brainControlled && !empty($liveIntentsFilePath)) {
+                            $iid = $intent['intent_id'] ?? '';
+                            if ($iid !== '') {
+                                $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                    'reject_reason'  => 'rejected_auto_mode_confidence_skip',
+                                    'reject_context' => 'confidence_band=' . ($decisionPacket['confidence_band'] ?? 'unknown')
+                                        . ', route_state=' . ($decisionPacket['route_state'] ?? 'unknown'),
+                                ]);
+                                $lifecycleUpdatedIntentIds[$iid] = true;
+                            }
+                        }
                         if ($isDemoLearning) {
                             $demoSkippedBeforeAttemptCount++;
                         } else {
@@ -1369,6 +1389,7 @@ final class TradingBotService
                                     'reject_context' => 'lifecycle_state=' . ($lifecycleState ?: 'empty') . ', exec_status=' . ($execResult['status'] ?? 'unknown'),
                                 ]);
                             }
+                            $lifecycleUpdatedIntentIds[$iid] = true;
                         }
                     }
 
@@ -1475,6 +1496,27 @@ final class TradingBotService
                     foreach ($deferredReasonCounts as $r => $cnt) {
                         $suffix = ($cnt > 1) ? (' x' . $cnt) : '';
                         $this->warnings[] = 'Deferred: ' . $r . $suffix;
+                    }
+                }
+
+                // ── Post-loop cleanup: reject any claimed intents not reached by the loop ──
+                // When the execution loop exits early (budget exhausted, error threshold,
+                // deferred limit), some claimed intents may never have been processed. Those
+                // would otherwise remain in 'claimed' state until the stale timeout kills them
+                // with no explanation. Explicitly reject them now with a clear reason.
+                if ($brainControlled && !empty($liveIntentsFilePath) && !empty($intentIdsToClaim)) {
+                    $notReachedCount = 0;
+                    foreach ($intentIdsToClaim as $claimedIid) {
+                        if (!isset($lifecycleUpdatedIntentIds[$claimedIid])) {
+                            $this->updateLiveIntentStatus($claimedIid, $liveIntentsFilePath, 'rejected', [
+                                'reject_reason'  => 'not_executed_loop_budget_exhausted',
+                                'reject_context' => 'intent_was_claimed_but_execution_loop_exited_before_reaching_it',
+                            ]);
+                            $notReachedCount++;
+                        }
+                    }
+                    if ($notReachedCount > 0) {
+                        $result['claimed_intents_not_reached_by_loop'] = $notReachedCount;
                     }
                 }
 

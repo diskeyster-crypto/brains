@@ -458,7 +458,7 @@ trait BotSourcesTrait
         $now = time();
         $cutoff = $now - ($claimTimeoutMin * 60);
 
-        $ok = $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($cutoff, $now, &$finalizeResult) {
+        $ok = $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($cutoff, $now, $claimTimeoutMin, &$finalizeResult) {
             $intents = &$data['intents'];
             if (!is_array($intents)) {
                 return;
@@ -486,7 +486,7 @@ trait BotSourcesTrait
                     'Claimed at %s (%ds ago), timeout %dmin exceeded',
                     $intent['claimed_at'] ?? 'unknown',
                     $now - $claimedTs,
-                    intdiv($now - $cutoff + ($now - $claimedTs), 60)
+                    $claimTimeoutMin
                 );
 
                 $finalizeResult['finalized_count']++;

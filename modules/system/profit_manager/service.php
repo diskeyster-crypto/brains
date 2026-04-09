@@ -282,13 +282,14 @@ final class ProfitManagerService
             // PM-8: Extract active-owner proof counters and build compact journal artifact.
             // The journal mirrors shadow_journal.json in purpose but for active-owner decisions.
             $pm8Counters = $runResult['pm8_counters'] ?? [];
+            $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
             // Includes the explicit PM-8 stage progression so runtime can show
             // which stages each position reached (not only final outcome).
             $journalItems = [];
             foreach ($items as $item) {
-                $journalItems[] = [
+                $entry = [
                     // Identity
                     'symbol'                                => $item['symbol'] ?? null,
                     'side'                                  => $item['side'] ?? null,
@@ -299,6 +300,8 @@ final class ProfitManagerService
                     'proposed_lock_roi'                     => $item['proposed_lock_roi'] ?? null,
                     'current_stop_or_lock_reference'        => $item['current_stop_or_lock_reference'] ?? null,
                     'proposed_stop_or_lock_reference'       => $item['proposed_stop_or_lock_reference'] ?? null,
+                    // PM-8 eligibility threshold (always present so archive can verify why eligible=0)
+                    'activation_roi_threshold'              => $item['activation_roi_threshold'] ?? $activationRoiThreshold,
                     // PM-8 explicit stage progression (ordered list of stages reached this tick)
                     'pm_stages_reached'                     => $item['pm_stages_reached'] ?? [],
                     // Stage flags (derived from pm_stages_reached for quick inspection)
@@ -316,12 +319,45 @@ final class ProfitManagerService
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
+                // Ineligibility diagnostics (only present when position is NOT eligible)
+                if (isset($item['ineligibility_reason'])) {
+                    $entry['ineligibility_reason']    = $item['ineligibility_reason'];
+                    $entry['roi_gap_to_activation']   = $item['roi_gap_to_activation'] ?? null;
+                }
+                $journalItems[] = $entry;
+            }
+
+            // Compact ineligibility summary: surfaces when all seen positions are below threshold.
+            // Lets the archive verify the activation threshold and how far each position is from it.
+            $ineligibilitySummary = null;
+            $pm8Eligible  = (int)($pm8Counters['active_owner_symbols_eligible_total'] ?? 0);
+            $pm8Seen      = (int)($pm8Counters['active_owner_symbols_seen_total']     ?? 0);
+            if ($pm8Eligible === 0 && $pm8Seen > 0) {
+                $ineligReasonCounts = [];
+                $maxPeakRoi = null;
+                foreach ($items as $item) {
+                    $reason = $item['ineligibility_reason'] ?? null;
+                    if ($reason !== null) {
+                        $ineligReasonCounts[$reason] = ($ineligReasonCounts[$reason] ?? 0) + 1;
+                    }
+                    $pr = $item['peak_roi'] ?? null;
+                    if ($pr !== null && ($maxPeakRoi === null || $pr > $maxPeakRoi)) {
+                        $maxPeakRoi = $pr;
+                    }
+                }
+                $ineligibilitySummary = [
+                    'activation_roi_threshold'      => $activationRoiThreshold,
+                    'max_peak_roi_seen'             => $maxPeakRoi,
+                    'ineligibility_reason_counts'   => $ineligReasonCounts,
+                    'all_below_activation'          => isset($ineligReasonCounts['below_activation_roi']),
+                ];
             }
 
             // Save compact active-owner journal — always overwrite, no stale payload
-            $this->store->saveActiveOwnerJournal([
+            $journalPayload = [
                 'ts'                                     => $ts,
                 'trailing_owner'                         => 'profit_manager',
+                'activation_roi_threshold'               => $activationRoiThreshold,
                 'positions_seen'                         => $runResult['positions_total'] ?? 0,
                 'positions_managed'                      => $runResult['positions_managed'] ?? 0,
                 // PM-8 aggregated counters (proof that PM was the sole active trailing owner)
@@ -333,7 +369,11 @@ final class ProfitManagerService
                 'active_owner_apply_skipped_total'       => $pm8Counters['active_owner_apply_skipped_total']       ?? 0,
                 'active_owner_apply_blocked_total'       => $pm8Counters['active_owner_apply_blocked_total']       ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
-            ]);
+            ];
+            if ($ineligibilitySummary !== null) {
+                $journalPayload['active_owner_ineligibility_summary'] = $ineligibilitySummary;
+            }
+            $this->store->saveActiveOwnerJournal($journalPayload);
 
             $result = [
                 'ts'                             => $ts,
@@ -374,6 +414,8 @@ final class ProfitManagerService
                 'active_owner_apply_success_total'        => $pm8Counters['active_owner_apply_success_total']       ?? 0,
                 'active_owner_apply_skipped_total'        => $pm8Counters['active_owner_apply_skipped_total']       ?? 0,
                 'active_owner_apply_blocked_total'        => $pm8Counters['active_owner_apply_blocked_total']       ?? 0,
+                // PM-8 activation threshold (for archive verification of eligibility conditions)
+                'active_owner_activation_roi_threshold'   => $activationRoiThreshold,
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

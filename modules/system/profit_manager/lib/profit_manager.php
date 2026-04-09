@@ -312,6 +312,15 @@ class ProfitManager
             $itemResult['skip_reason']                     = $skipReason;
             $itemResult['block_reason']                    = $blockReason;
 
+            // PM-8 eligibility observability: always surface the activation threshold so the archive
+            // can prove why eligible_total is zero when positions are below the threshold.
+            $itemResult['activation_roi_threshold']        = $activationRoiPct;
+            if (!$eligibleForPm) {
+                // Compact explanation: current peak ROI vs. what is needed to arm trailing
+                $itemResult['ineligibility_reason']        = 'below_activation_roi';
+                $itemResult['roi_gap_to_activation']       = round($activationRoiPct - $peakRoi, 4);
+            }
+
             // PM-8 counter updates for this position
             $pm8Seen++;
             if ($eligibleForPm) {
@@ -392,6 +401,8 @@ class ProfitManager
                 'active_owner_apply_success_total'       => $pm8Success,
                 'active_owner_apply_skipped_total'       => $pm8Skipped,
                 'active_owner_apply_blocked_total'       => $pm8Blocked,
+                // Always surface the threshold used for this run (key for archive verification)
+                'activation_roi_threshold'               => $activationRoiPct,
             ],
         ];
     }

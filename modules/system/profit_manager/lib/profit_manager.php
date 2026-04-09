@@ -319,6 +319,11 @@ class ProfitManager
                 // Compact explanation: current peak ROI vs. what is needed to arm trailing
                 $itemResult['ineligibility_reason']        = 'below_activation_roi';
                 $itemResult['roi_gap_to_activation']       = round($activationRoiPct - $peakRoi, 4);
+                // Sub-reason: distinguish positions that are currently unprofitable (losing money).
+                // This adds diagnostic granularity without changing the eligibility decision.
+                if ($currentRoi < 0.0) {
+                    $itemResult['ineligibility_sub_reason'] = 'not_profitable';
+                }
             }
 
             // PM-8 counter updates for this position

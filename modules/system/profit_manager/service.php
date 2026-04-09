@@ -321,8 +321,11 @@ final class ProfitManagerService
                 ];
                 // Ineligibility diagnostics (only present when position is NOT eligible)
                 if (isset($item['ineligibility_reason'])) {
-                    $entry['ineligibility_reason']    = $item['ineligibility_reason'];
-                    $entry['roi_gap_to_activation']   = $item['roi_gap_to_activation'] ?? null;
+                    $entry['ineligibility_reason']     = $item['ineligibility_reason'];
+                    $entry['roi_gap_to_activation']    = $item['roi_gap_to_activation'] ?? null;
+                    if (isset($item['ineligibility_sub_reason'])) {
+                        $entry['ineligibility_sub_reason'] = $item['ineligibility_sub_reason'];
+                    }
                 }
                 $journalItems[] = $entry;
             }
@@ -333,12 +336,17 @@ final class ProfitManagerService
             $pm8Eligible  = (int)($pm8Counters['active_owner_symbols_eligible_total'] ?? 0);
             $pm8Seen      = (int)($pm8Counters['active_owner_symbols_seen_total']     ?? 0);
             if ($pm8Eligible === 0 && $pm8Seen > 0) {
-                $ineligReasonCounts = [];
+                $ineligReasonCounts    = [];
+                $ineligSubReasonCounts = [];
                 $maxPeakRoi = null;
                 foreach ($items as $item) {
                     $reason = $item['ineligibility_reason'] ?? null;
                     if ($reason !== null) {
                         $ineligReasonCounts[$reason] = ($ineligReasonCounts[$reason] ?? 0) + 1;
+                    }
+                    $subReason = $item['ineligibility_sub_reason'] ?? null;
+                    if ($subReason !== null) {
+                        $ineligSubReasonCounts[$subReason] = ($ineligSubReasonCounts[$subReason] ?? 0) + 1;
                     }
                     $pr = $item['peak_roi'] ?? null;
                     if ($pr !== null && ($maxPeakRoi === null || $pr > $maxPeakRoi)) {
@@ -346,11 +354,14 @@ final class ProfitManagerService
                     }
                 }
                 $ineligibilitySummary = [
-                    'activation_roi_threshold'      => $activationRoiThreshold,
-                    'max_peak_roi_seen'             => $maxPeakRoi,
-                    'ineligibility_reason_counts'   => $ineligReasonCounts,
-                    'all_below_activation'          => isset($ineligReasonCounts['below_activation_roi']),
+                    'activation_roi_threshold'          => $activationRoiThreshold,
+                    'max_peak_roi_seen'                 => $maxPeakRoi,
+                    'ineligibility_reason_counts'       => $ineligReasonCounts,
+                    'all_below_activation'              => isset($ineligReasonCounts['below_activation_roi']),
                 ];
+                if (!empty($ineligSubReasonCounts)) {
+                    $ineligibilitySummary['ineligibility_sub_reason_counts'] = $ineligSubReasonCounts;
+                }
             }
 
             // Save compact active-owner journal — always overwrite, no stale payload

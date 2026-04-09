@@ -1199,6 +1199,44 @@ final class TradingBotService
                                 $lifecycleUpdatedIntentIds[$iid] = true;
                             }
                         }
+                        // ── Per-intent observability: record auto_mode skip in intent_results ──
+                        // Without this, auto_mode-rejected claimed intents are invisible to the
+                        // per-intent post-claim audit. The record mirrors buildIntentResultRecord's
+                        // structure so downstream post-processing can count it uniformly.
+                        $result['intent_results'][] = [
+                            'intent_id'                   => $intent['intent_id'] ?? ($intent['id'] ?? null),
+                            'signal_id'                   => $intent['signal_id'] ?? null,
+                            'symbol'                      => (string)($intent['symbol'] ?? ''),
+                            'side'                        => (string)($intent['side'] ?? ''),
+                            'brain_controlled'            => !empty($intent['brain_controlled']),
+                            'execution_identity_key'      => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? '')),
+                            'lifecycle_state'             => 'rejected',
+                            'processed_at'                => date('c'),
+                            'execution_result'            => 'rejected_auto_mode_confidence_skip',
+                            'rejection_reason'            => 'rejected_auto_mode_confidence_skip',
+                            'close_reason'                => null,
+                            'order_id'                    => null,
+                            'position_id'                 => null,
+                            'protection_status'           => 'none',
+                            'trailing_status'             => 'disabled',
+                            'source_status'               => $intent['source'] ?? 'brain_live_intent',
+                            'debug_message'               => 'confidence_band=' . ($decisionPacket['confidence_band'] ?? 'unknown')
+                                . ', route_state=' . ($decisionPacket['route_state'] ?? 'unknown'),
+                            'execution_stage'             => 'auto_mode_confidence_rejected',
+                            'exchange_submit_attempted'   => false,
+                            'exchange_response_code'      => null,
+                            'exchange_response_message'   => null,
+                            'validation_error_summary'    => null,
+                            'missing_fields_preview'      => [],
+                            'order_send_attempted'        => false,
+                            'order_sent'                  => false,
+                            'position_opened'             => false,
+                            'terminal_status'             => 'rejected',
+                        ];
+                        $result['intents_processed']++;
+                        $result['intents_skipped']++;
+                        $rr = 'rejected_auto_mode_confidence_skip';
+                        $result['rejection_reason_stats'][$rr] = ($result['rejection_reason_stats'][$rr] ?? 0) + 1;
                         if ($isDemoLearning) {
                             $demoSkippedBeforeAttemptCount++;
                         } else {
@@ -2081,6 +2119,30 @@ final class TradingBotService
             // Stale claim counters for telemetry
             $result['intents_claimed_stale_count'] = $staleClaimResult['stale_claimed_found'] ?? 0;
             $result['intents_claimed_finalized_count'] = $staleClaimResult['finalized_count'] ?? 0;
+
+            // ── Claimed-intent lifecycle counters ────────────────────────
+            // Canonical counters that prove each claimed intent reached a terminal state.
+            // Derived from intent_results (per-intent records) + stale-claim finalization.
+            $claimedLifecycleSeen          = $result['intents_claimed_now_count'] ?? 0;
+            $claimedLifecycleExecAttempted = 0;
+            $claimedLifecycleExecuted      = 0;
+            $claimedLifecycleRejected      = 0;
+            foreach ($result['intent_results'] as $_ir) {
+                if (!empty($_ir['exchange_submit_attempted'])) {
+                    $claimedLifecycleExecAttempted++;
+                }
+                $_irLs = $_ir['lifecycle_state'] ?? '';
+                if (in_array($_irLs, ['opened', 'protected', 'trailing_active'], true)) {
+                    $claimedLifecycleExecuted++;
+                } elseif (in_array($_irLs, ['rejected', 'failed', 'closed', 'skipped'], true)) {
+                    $claimedLifecycleRejected++;
+                }
+            }
+            $result['claimed_intents_seen_total']                = $claimedLifecycleSeen;
+            $result['claimed_intents_execution_attempted_total'] = $claimedLifecycleExecAttempted;
+            $result['claimed_intents_executed_total']            = $claimedLifecycleExecuted;
+            $result['claimed_intents_rejected_total']            = $claimedLifecycleRejected;
+            $result['claimed_intents_stale_timed_out_total']     = $staleClaimResult['finalized_count'] ?? 0;
 
             // ── Honest lifecycle telemetry ──────────────────────────────
             // Reload live_intents.json to get current lifecycle state after

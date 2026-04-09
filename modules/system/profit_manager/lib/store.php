@@ -486,6 +486,36 @@ class Store
         return $keys;
     }
 
+    /**
+     * Load all persisted per-position shadow state files from the runtime directory.
+     *
+     * Returns only states that have a non-empty 'symbol' field.
+     * Excludes the shadow journal file (shadow_journal.json) which has a different structure.
+     *
+     * Used by PM-7 passport write-back to supplement current-run items with states from
+     * recently closed positions (which are no longer returned by the exchange gateway).
+     *
+     * @return array[]
+     */
+    public function loadAllShadowStates(): array
+    {
+        $dir = $this->storageDir . '/runtime';
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $states = [];
+        foreach (glob($dir . '/shadow_*.json') ?: [] as $path) {
+            if (basename($path) === 'shadow_journal.json') {
+                continue;
+            }
+            $state = $this->readJson($path);
+            if (!empty($state) && isset($state['symbol']) && (string)$state['symbol'] !== '') {
+                $states[] = $state;
+            }
+        }
+        return $states;
+    }
+
     // =========================================================================
     // Active trailing runtime state (PM active mode)
     // =========================================================================

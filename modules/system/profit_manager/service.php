@@ -169,6 +169,20 @@ final class ProfitManagerService
                 'errors' => $runResult['errors'] ?? [],
                 'warnings' => $runResult['warnings'] ?? [],
             ];
+
+            // PM-7: Passive passport write-back (best-effort, non-fatal).
+            // In bot mode, use persisted shadow states (from any prior shadow runs) as the
+            // primary source so that passport PM blocks are kept up-to-date even when
+            // trailing_owner=bot.
+            $historicalShadowStates = $this->store->loadAllShadowStates();
+            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($historicalShadowStates);
+            $passportDiag = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
+
+            $result['passport_write_attempted_total'] = $passportDiag['passport_write_attempted_total'] ?? 0;
+            $result['passport_write_success_total']   = $passportDiag['passport_write_success_total']   ?? 0;
+            $result['passport_write_skipped_total']   = $passportDiag['passport_write_skipped_total']   ?? 0;
+            $result['passport_write_error_total']     = $passportDiag['passport_write_error_total']     ?? 0;
+            $result['passport_symbols_updated']       = $passportDiag['passport_symbols_updated']       ?? [];
             
             // Save last run
             $this->store->saveLastRun($result);
@@ -242,8 +256,27 @@ final class ProfitManagerService
                 }
             }
 
-            // PM-7: Passive passport write-back from active-mode observations (best-effort, non-fatal)
-            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($items);
+            // PM-7: Passive passport write-back from active-mode observations (best-effort, non-fatal).
+            // Supplement current-run items with persisted shadow states for symbols NOT already
+            // in the current run (provides coverage even when a position just closed).
+            $allActiveItems = $items;
+            $historicalShadowStates = $this->store->loadAllShadowStates();
+            if (!empty($historicalShadowStates)) {
+                $currentSymbols = [];
+                foreach ($items as $ai) {
+                    $sym = strtoupper((string)($ai['symbol'] ?? ''));
+                    if ($sym !== '') {
+                        $currentSymbols[$sym] = true;
+                    }
+                }
+                foreach ($historicalShadowStates as $hs) {
+                    $sym = strtoupper((string)($hs['symbol'] ?? ''));
+                    if ($sym !== '' && !isset($currentSymbols[$sym])) {
+                        $allActiveItems[] = $hs;
+                    }
+                }
+            }
+            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($allActiveItems);
             $passportDiag    = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
 
             $result = [
@@ -348,8 +381,27 @@ final class ProfitManagerService
             $shadowItems = $shadowResult['items'] ?? [];
             $shadowActive = count($shadowItems) > 0;
 
-            // PM-7: Passive passport write-back from shadow observations (best-effort, non-fatal)
-            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($shadowItems);
+            // PM-7: Passive passport write-back from shadow observations (best-effort, non-fatal).
+            // Supplement current-run items with persisted shadow states for symbols NOT already
+            // in the current run (covers recently closed positions that are no longer open).
+            $allShadowItems = $shadowItems;
+            $historicalShadowStates = $this->store->loadAllShadowStates();
+            if (!empty($historicalShadowStates)) {
+                $currentSymbols = [];
+                foreach ($shadowItems as $si) {
+                    $sym = strtoupper((string)($si['symbol'] ?? ''));
+                    if ($sym !== '') {
+                        $currentSymbols[$sym] = true;
+                    }
+                }
+                foreach ($historicalShadowStates as $hs) {
+                    $sym = strtoupper((string)($hs['symbol'] ?? ''));
+                    if ($sym !== '' && !isset($currentSymbols[$sym])) {
+                        $allShadowItems[] = $hs;
+                    }
+                }
+            }
+            $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($allShadowItems);
             $passportDiag    = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
 
             // Pick first active item for flat observability fields (multi-position: all in items[])

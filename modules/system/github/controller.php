@@ -185,7 +185,15 @@ class GithubController
         
         // If configured, try to get status
         if ($isConfigured) {
-            $data['status'] = $this->fetchStatus();
+            try {
+                $data['status'] = $this->fetchStatus();
+            } catch (\Throwable $e) {
+                System::log('system', 'GitHub status fetch failed', ['error' => $e->getMessage()]);
+                $data['status'] = [
+                    'connected' => false,
+                    'error'     => 'Status unavailable: ' . $e->getMessage(),
+                ];
+            }
         }
         
         return $this->render('index', $data);

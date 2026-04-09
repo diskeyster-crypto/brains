@@ -44,6 +44,139 @@ class ProfitManager
     }
     
     /**
+     * Active mode execution cycle (trailing_owner = profit_manager).
+     * PM is the sole dynamic trailing writer. Enriches each item with applied-state
+     * observability fields: applied_action, applied_stop_price, applied_lock_roi,
+     * last_applied_ts, exchange_update_attempted, exchange_update_ok, exchange_update_error.
+     *
+     * @return array Execution result with PM observability fields
+     */
+    public function runActive(): array
+    {
+        $items    = [];
+        $errors   = [];
+        $warnings = [];
+
+        $stats = [
+            'step_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+            'dumb_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+        ];
+
+        $positionsResult = $this->gateway->getPositions();
+        if (!($positionsResult['ok'] ?? false)) {
+            $errors[] = 'fetch_positions_failed: ' . ($positionsResult['error'] ?? 'unknown');
+            return [
+                'positions_total'   => 0,
+                'positions_managed' => 0,
+                'items'             => $items,
+                'stats'             => $stats,
+                'errors'            => $errors,
+                'warnings'          => $warnings,
+            ];
+        }
+
+        $positions      = $positionsResult['positions'] ?? [];
+        $positionsTotal = count($positions);
+
+        $managed        = $this->selector->getManagedSymbols($positions);
+        $positionsManaged = count($managed);
+
+        foreach ($managed as $symbol => $ctx) {
+            $itemResult = $this->processPosition($symbol, $ctx);
+
+            // Derive PM applied-state observability from step/dumb trailing sub-results
+            $appliedAction       = null;
+            $appliedStopPrice    = null;
+            $appliedLockRoi      = null;
+            $exchangeAttempted   = false;
+            $exchangeOk          = false;
+            $exchangeUpdateError = null;
+
+            $st = $itemResult['step_trailing'] ?? null;
+            $dt = $itemResult['dumb_trailing'] ?? null;
+
+            // Step trailing takes priority for applied fields
+            if ($st !== null && ($st['action'] ?? '') === 'step_sl_update') {
+                $appliedAction     = 'step_sl_update';
+                $appliedStopPrice  = $st['new_sl'] ?? null;
+                $appliedLockRoi    = $st['target_lock_roi'] ?? null;
+                $exchangeAttempted = true;
+                $exchangeOk        = ($st['ok'] ?? false) === true;
+                if (!$exchangeOk) {
+                    $exchangeUpdateError = $st['details']['error'] ?? ($st['reason'] ?? 'unknown');
+                }
+            } elseif ($st !== null && ($st['action'] ?? '') === 'failed') {
+                $appliedAction     = 'step_sl_update';
+                $exchangeAttempted = true;
+                $exchangeOk        = false;
+                $exchangeUpdateError = $st['details']['error'] ?? ($st['reason'] ?? 'unknown');
+            } elseif ($dt !== null && ($dt['action'] ?? '') === 'dumb_trailing_set') {
+                $appliedAction     = 'dumb_trailing_set';
+                $exchangeAttempted = true;
+                $exchangeOk        = ($dt['ok'] ?? false) === true;
+                if (!$exchangeOk) {
+                    $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
+                }
+            } elseif ($dt !== null && ($dt['action'] ?? '') === 'failed') {
+                $appliedAction     = 'dumb_trailing_set';
+                $exchangeAttempted = true;
+                $exchangeOk        = false;
+                $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
+            }
+
+            // Attach PM observability fields directly to item
+            $itemResult['trailing_runtime_owner']  = 'profit_manager';
+            $itemResult['applied_action']          = $appliedAction;
+            $itemResult['applied_stop_price']      = $appliedStopPrice;
+            $itemResult['applied_lock_roi']        = $appliedLockRoi;
+            $itemResult['last_applied_ts']         = $appliedAction !== null ? date('c') : null;
+            $itemResult['exchange_update_attempted'] = $exchangeAttempted;
+            $itemResult['exchange_update_ok']      = $exchangeOk;
+            $itemResult['exchange_update_error']   = $exchangeUpdateError;
+
+            $items[] = $itemResult;
+
+            // Update stats (same as run())
+            if ($st !== null) {
+                $action = $st['action'] ?? 'skip';
+                if ($action === 'step_sl_update') {
+                    $stats['step_trailing']['applied']++;
+                } elseif ($action === 'failed') {
+                    $stats['step_trailing']['failed']++;
+                } else {
+                    $stats['step_trailing']['skipped']++;
+                }
+            }
+
+            if ($dt !== null) {
+                $action = $dt['action'] ?? 'skip';
+                if ($action === 'dumb_trailing_set') {
+                    $stats['dumb_trailing']['applied']++;
+                } elseif ($action === 'failed') {
+                    $stats['dumb_trailing']['failed']++;
+                } else {
+                    $stats['dumb_trailing']['skipped']++;
+                }
+            }
+
+            if (!empty($itemResult['errors'])) {
+                $errors = array_merge($errors, $itemResult['errors']);
+            }
+
+            $this->updateSymbolStatus($symbol, $ctx, $itemResult);
+        }
+
+        return [
+            'positions_total'   => $positionsTotal,
+            'positions_managed' => $positionsManaged,
+            'items'             => $items,
+            'stats'             => $stats,
+            'errors'            => $errors,
+            'warnings'          => $warnings,
+        ];
+    }
+
+    /**
      * Main execution cycle
      * 
      * @return array Execution result

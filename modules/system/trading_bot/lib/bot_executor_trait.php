@@ -2848,6 +2848,11 @@ trait BotExecutorTrait
                 $trailingOwner = (string)($this->config['execution']['trailing_owner'] ?? 'bot');
                 if ($trailingOwner === 'profit_manager') {
                     $dumbTrailingGateOpen = false;
+                    // Mark in trade runtime that dynamic trailing is intentionally skipped by PM ownership
+                    $pmOwnerRuntime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $pmOwnerRuntime['bot_dynamic_trailing_skipped_by_owner'] = true;
+                    $pmOwnerRuntime['trailing_runtime_owner'] = 'profit_manager';
+                    $trade['runtime'] = $pmOwnerRuntime;
                 }
 
                 if ($dumbTrailingGateOpen) {
@@ -3224,7 +3229,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                     $beEnabled = (bool)($trailingCfg['break_even_enabled'] ?? false);
                     $beApplied = (bool)($runtime['break_even_applied'] ?? false);
 
-                    if ($beEnabled && !$beApplied) {
+                    if ($beEnabled && !$beApplied && $trailingOwner !== 'profit_manager') {
                         $beActivationRoi = (float)($trailingCfg['break_even_activation_roi'] ?? 0);
                         if ($beActivationRoi > 0) {
                             $positionIM = (float)($position['positionIM'] ?? 0);
@@ -3369,7 +3374,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                     $trailingMode = (string)($trailingCfg['trailing_mode'] ?? 'roi_giveback');
                     $trailingEnabled = (bool)($trailingCfg['enabled'] ?? false);
 
-                    if ($trailingMode === 'price_distance_floor' && $trailingEnabled) {
+                    if ($trailingMode === 'price_distance_floor' && $trailingEnabled && $trailingOwner !== 'profit_manager') {
 
                         $positionIM = (float)($position['positionIM'] ?? 0);
                         $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);

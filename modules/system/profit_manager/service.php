@@ -131,7 +131,12 @@ final class ProfitManagerService
         if ($trailingOwner === 'profit_manager_shadow') {
             return $this->executeShadow($ts, $startTime);
         }
-        
+
+        // Active PM mode: PM is sole dynamic trailing writer
+        if ($trailingOwner === 'profit_manager') {
+            return $this->executeActive($ts, $startTime);
+        }
+
         // Check if profit manager is initialized
         if ($this->profitManager === null) {
             return $this->buildErrorResult($ts, $startTime, 'profit_manager_not_initialized');
@@ -178,6 +183,97 @@ final class ProfitManagerService
             return $this->buildErrorResult($ts, $startTime, 'exception: ' . $e->getMessage());
         } finally {
             // Release run lock
+            $this->store->releaseRunLock($lockFp);
+        }
+    }
+
+    /**
+     * Execute PM in active trailing mode (trailing_owner = profit_manager).
+     * PM is the sole dynamic trailing writer. Bot has already skipped its own trailing.
+     * Uses the existing trailing logic with real exchange writes and PM observability fields.
+     *
+     * @param string $ts        ISO timestamp
+     * @param float  $startTime microtime start
+     * @return array
+     */
+    private function executeActive(string $ts, float $startTime): array
+    {
+        if ($this->profitManager === null) {
+            return $this->buildErrorResult($ts, $startTime, 'profit_manager_not_initialized');
+        }
+
+        $lockFp = $this->store->acquireRunLock();
+        if ($lockFp === false) {
+            return $this->buildErrorResult($ts, $startTime, 'run_lock_failed');
+        }
+
+        try {
+            $runResult = $this->profitManager->runActive();
+
+            $items = $runResult['items'] ?? [];
+
+            // Aggregate PM exchange update observability across all items
+            $exchangeAttempted = 0;
+            $exchangeOk        = 0;
+            $exchangeFailed    = 0;
+            $firstFailError    = null;
+            $pmAppliedAction   = null;
+            $pmAppliedStop     = null;
+            $pmAppliedLockRoi  = null;
+            foreach ($items as $item) {
+                if (!empty($item['exchange_update_attempted'])) {
+                    $exchangeAttempted++;
+                    if (!empty($item['exchange_update_ok'])) {
+                        $exchangeOk++;
+                        if ($pmAppliedAction === null) {
+                            $pmAppliedAction  = $item['applied_action'] ?? null;
+                            $pmAppliedStop    = $item['applied_stop_price'] ?? null;
+                            $pmAppliedLockRoi = $item['applied_lock_roi'] ?? null;
+                        }
+                    } else {
+                        $exchangeFailed++;
+                        if ($firstFailError === null) {
+                            $firstFailError = $item['exchange_update_error'] ?? 'unknown';
+                        }
+                    }
+                }
+            }
+
+            $result = [
+                'ts'                             => $ts,
+                'ok'                             => empty($runResult['errors']),
+                'status'                         => empty($runResult['errors']) ? 'ok' : 'with_errors',
+                'duration_ms'                    => (int)((microtime(true) - $startTime) * 1000),
+                'mode'                           => $this->config['module']['mode'] ?? 'dry',
+                'trailing_owner'                 => 'profit_manager',
+                'trailing_runtime_owner'         => 'profit_manager',
+                'pm_active'                      => count($items) > 0,
+                'pm_applied_action'              => $pmAppliedAction,
+                'pm_applied_stop_price'          => $pmAppliedStop,
+                'pm_applied_lock_roi'            => $pmAppliedLockRoi,
+                'pm_exchange_update_attempted'   => $exchangeAttempted > 0,
+                'pm_exchange_update_ok'          => $exchangeOk > 0,
+                'pm_exchange_update_error'       => $firstFailError,
+                'selected_mode'                  => $this->selector->getMode(),
+                'positions_total'                => $runResult['positions_total'] ?? 0,
+                'positions_managed'              => $runResult['positions_managed'] ?? 0,
+                'step_trailing'                  => $runResult['stats']['step_trailing'] ?? ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+                'dumb_trailing'                  => $runResult['stats']['dumb_trailing'] ?? ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+                'items'                          => array_slice($items, 0, 50),
+                'errors'                         => $runResult['errors'] ?? [],
+                'warnings'                       => $runResult['warnings'] ?? [],
+            ];
+
+            $this->store->saveLastRun($result);
+
+            return $result;
+        } catch (\Throwable $e) {
+            $this->store->logError('executeActive exception', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return $this->buildErrorResult($ts, $startTime, 'active_exception: ' . $e->getMessage());
+        } finally {
             $this->store->releaseRunLock($lockFp);
         }
     }

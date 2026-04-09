@@ -44,6 +44,237 @@ class ProfitManager
     }
     
     /**
+     * Active mode execution cycle (trailing_owner = profit_manager).
+     * PM is the sole dynamic trailing writer. Enriches each item with full trade
+     * context (trade_id, owner_mode, current_roi, peak_roi, trailing_armed, proposed_*)
+     * and applied-state observability fields.
+     *
+     * @param array $botTrades  Active bot trades for context matching (best-effort)
+     * @param array $botConfig  Bot config (for activation thresholds)
+     * @return array Execution result with PM observability fields
+     */
+    public function runActive(array $botTrades = [], array $botConfig = []): array
+    {
+        $items    = [];
+        $errors   = [];
+        $warnings = [];
+        $ts       = date('c');
+
+        $stats = [
+            'step_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+            'dumb_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+        ];
+
+        // Build bot-trade lookup by canonical "symbol_side" key
+        $botTradeByKey = [];
+        foreach ($botTrades as $bt) {
+            $bSym  = (string)($bt['symbol'] ?? '');
+            $bSide = strtolower((string)($bt['side'] ?? ''));
+            if ($bSide === 'buy')  { $bSide = 'long'; }
+            if ($bSide === 'sell') { $bSide = 'short'; }
+            if ($bSym !== '' && in_array($bSide, ['long', 'short'], true)) {
+                $botTradeByKey[$bSym . '_' . $bSide] = $bt;
+            }
+        }
+
+        // Activation ROI threshold for arm-state tracking
+        $activationRoiPct = (float)(
+            $this->config['step_trailing']['activation_roi_pct_default']
+            ?? $botConfig['execution']['trailing_activation_roi']
+            ?? 3.5
+        );
+
+        $positionsResult = $this->gateway->getPositions();
+        if (!($positionsResult['ok'] ?? false)) {
+            $errors[] = 'fetch_positions_failed: ' . ($positionsResult['error'] ?? 'unknown');
+            return [
+                'positions_total'   => 0,
+                'positions_managed' => 0,
+                'items'             => $items,
+                'stats'             => $stats,
+                'errors'            => $errors,
+                'warnings'          => $warnings,
+            ];
+        }
+
+        $positions      = $positionsResult['positions'] ?? [];
+        $positionsTotal = count($positions);
+
+        $managed        = $this->selector->getManagedSymbols($positions);
+        $positionsManaged = count($managed);
+
+        foreach ($managed as $symbol => $ctx) {
+            $position = $ctx['position'] ?? [];
+
+            // Derive stable trade key (same logic as shadow mode)
+            $side     = $this->validator->normalizeSide($position['side'] ?? '');
+            $tradeKey = $symbol . '_' . $side;
+            if (!empty($position['orderId'])) {
+                $tradeKey = (string)$position['orderId'];
+            } elseif (!empty($position['trade_id'])) {
+                $tradeKey = (string)$position['trade_id'];
+            }
+
+            // Load persisted active state for monotonic peak_roi continuity
+            $prevState     = $this->store->loadActiveState($tradeKey);
+            $positionIM    = (float)($position['positionIM'] ?? 0);
+            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+            $currentRoi    = ($positionIM > 0) ? round(($unrealisedPnl / $positionIM) * 100.0, 4) : 0.0;
+
+            // Peak ROI: monotonic — only increases
+            $prevPeakRoi   = (float)($prevState['peak_roi'] ?? 0.0);
+            $peakRoi       = max($prevPeakRoi, $currentRoi);
+            $trailingArmed = (bool)($prevState['trailing_armed'] ?? false);
+            if (!$trailingArmed && $activationRoiPct > 0.0 && $peakRoi >= $activationRoiPct) {
+                $trailingArmed = true;
+            }
+
+            // Execute existing trailing logic (real exchange writes)
+            $itemResult = $this->processPosition($symbol, $ctx);
+
+            // Derive PM applied-state observability from step/dumb trailing sub-results
+            $appliedAction       = null;
+            $appliedStopPrice    = null;
+            $appliedLockRoi      = null;
+            $exchangeAttempted   = false;
+            $exchangeOk          = false;
+            $exchangeUpdateError = null;
+
+            // Derive proposed fields from trailing sub-results (informational)
+            $proposedAction    = 'hold';
+            $proposedStopPrice = null;
+            $proposedLockRoi   = null;
+
+            $st = $itemResult['step_trailing'] ?? null;
+            $dt = $itemResult['dumb_trailing'] ?? null;
+
+            // Step trailing takes priority for applied fields
+            if ($st !== null && ($st['action'] ?? '') === 'step_sl_update') {
+                $appliedAction     = 'step_sl_update';
+                $appliedStopPrice  = $st['new_sl'] ?? null;
+                $appliedLockRoi    = $st['target_lock_roi'] ?? null;
+                $proposedAction    = 'step_sl_update';
+                $proposedStopPrice = $appliedStopPrice;
+                $proposedLockRoi   = $appliedLockRoi;
+                $exchangeAttempted = true;
+                $exchangeOk        = ($st['ok'] ?? false) === true;
+                if (!$exchangeOk) {
+                    $exchangeUpdateError = $st['details']['error'] ?? ($st['reason'] ?? 'unknown');
+                }
+            } elseif ($st !== null && ($st['action'] ?? '') === 'failed') {
+                $appliedAction     = 'step_sl_update';
+                $proposedAction    = 'step_sl_update';
+                $exchangeAttempted = true;
+                $exchangeOk        = false;
+                $exchangeUpdateError = $st['details']['error'] ?? ($st['reason'] ?? 'unknown');
+            } elseif ($dt !== null && ($dt['action'] ?? '') === 'dumb_trailing_set') {
+                $appliedAction     = 'dumb_trailing_set';
+                $proposedAction    = 'dumb_trailing_set';
+                $exchangeAttempted = true;
+                $exchangeOk        = ($dt['ok'] ?? false) === true;
+                if (!$exchangeOk) {
+                    $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
+                }
+            } elseif ($dt !== null && ($dt['action'] ?? '') === 'failed') {
+                $appliedAction     = 'dumb_trailing_set';
+                $proposedAction    = 'dumb_trailing_set';
+                $exchangeAttempted = true;
+                $exchangeOk        = false;
+                $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
+            }
+
+            // Persist updated active state (monotonic peak_roi, arm state)
+            $this->store->saveActiveState($tradeKey, [
+                'trade_id'       => $tradeKey,
+                'symbol'         => $symbol,
+                'side'           => $side,
+                'peak_roi'       => round($peakRoi, 4),
+                'trailing_armed' => $trailingArmed,
+                'last_lock_roi'  => $appliedLockRoi ?? (float)($prevState['last_lock_roi'] ?? 0.0),
+                'updated_at'     => $ts,
+            ]);
+
+            // Bot trade context matching (best-effort for observability)
+            $botKey   = $symbol . '_' . $side;
+            $botTrade = $botTradeByKey[$botKey] ?? null;
+
+            // Attach full trade-context fields to item
+            $itemResult['trade_id']       = $tradeKey;
+            $itemResult['owner_mode']     = 'profit_manager';
+            $itemResult['current_roi']    = $currentRoi;
+            $itemResult['peak_roi']       = round($peakRoi, 4);
+            $itemResult['trailing_armed'] = $trailingArmed;
+            $itemResult['proposed_action']     = $proposedAction;
+            $itemResult['proposed_stop_price'] = $proposedStopPrice;
+            $itemResult['proposed_lock_roi']   = $proposedLockRoi;
+
+            // Attach PM observability fields
+            $itemResult['trailing_runtime_owner']              = 'profit_manager';
+            $itemResult['bot_dynamic_trailing_skipped_by_owner'] = true;
+            $itemResult['applied_action']                      = $appliedAction;
+            $itemResult['applied_stop_price']                  = $appliedStopPrice;
+            $itemResult['applied_lock_roi']                    = $appliedLockRoi;
+            $itemResult['last_applied_ts']                     = $appliedAction !== null ? $ts : null;
+            $itemResult['exchange_update_attempted']           = $exchangeAttempted;
+            $itemResult['exchange_update_ok']                  = $exchangeOk;
+            $itemResult['exchange_update_error']               = $exchangeUpdateError;
+
+            // Bot trade context or unavailability reason
+            if ($botTrade !== null) {
+                $itemResult['bot_context'] = [
+                    'bot_trade_id'       => $botTrade['trade_id'] ?? null,
+                    'bot_effective_stop' => $botTrade['current_effective_stop_price'] ?? null,
+                    'bot_floor_lock_roi' => $botTrade['floor_locked_roi'] ?? ($botTrade['step_lock_roi'] ?? null),
+                ];
+            } elseif (empty($botTrades)) {
+                $itemResult['active_context_unavailable_reason'] = 'no_bot_trades_loaded';
+            } else {
+                $itemResult['active_context_unavailable_reason'] = 'no_matching_bot_trade';
+            }
+
+            $items[] = $itemResult;
+
+            // Update stats (same as run())
+            if ($st !== null) {
+                $action = $st['action'] ?? 'skip';
+                if ($action === 'step_sl_update') {
+                    $stats['step_trailing']['applied']++;
+                } elseif ($action === 'failed') {
+                    $stats['step_trailing']['failed']++;
+                } else {
+                    $stats['step_trailing']['skipped']++;
+                }
+            }
+
+            if ($dt !== null) {
+                $action = $dt['action'] ?? 'skip';
+                if ($action === 'dumb_trailing_set') {
+                    $stats['dumb_trailing']['applied']++;
+                } elseif ($action === 'failed') {
+                    $stats['dumb_trailing']['failed']++;
+                } else {
+                    $stats['dumb_trailing']['skipped']++;
+                }
+            }
+
+            if (!empty($itemResult['errors'])) {
+                $errors = array_merge($errors, $itemResult['errors']);
+            }
+
+            $this->updateSymbolStatus($symbol, $ctx, $itemResult);
+        }
+
+        return [
+            'positions_total'   => $positionsTotal,
+            'positions_managed' => $positionsManaged,
+            'items'             => $items,
+            'stats'             => $stats,
+            'errors'            => $errors,
+            'warnings'          => $warnings,
+        ];
+    }
+
+    /**
      * Main execution cycle
      * 
      * @return array Execution result
@@ -482,6 +713,371 @@ class ProfitManager
         }
 
         $this->store->updateSymbolStatus($symbol, $status);
+    }
+
+    // =========================================================================
+    // Shadow Trailing Mode (trailing_owner = profit_manager_shadow)
+    // =========================================================================
+
+    /**
+     * Run shadow trailing pass for all open positions.
+     * Does NOT call any exchange API — computes diagnostics only.
+     *
+     * @param array $positions     Raw exchange positions
+     * @param array $botConfig     Bot config (for trailing parameters)
+     * @return array Shadow result with per-position diagnostics
+     */
+    public function runShadow(array $positions, array $botConfig, array $botTrades = []): array
+    {
+        $items = [];
+        $ts    = date('c');
+        $nowTs = time();
+
+        // Aggregate counters
+        $positionsArmed     = 0;
+        $positionsTightened = 0;
+        $positionsExitReady = 0;
+        $peakRoiSum         = 0.0;
+        $currentRoiSum      = 0.0;
+
+        // Comparison aggregate counters
+        $comparedTotal              = 0;
+        $pmTighterTotal             = 0;
+        $pmLooserTotal              = 0;
+        $pmSameDirectionTotal       = 0;
+        $stopGapDiffAbsSum          = 0.0;
+        $lockDiffRoiAbsSum          = 0.0;
+        $positiveExtensionCount     = 0;
+        $postLockExtensionSum       = 0.0;
+        $maxPostLockExtension       = 0.0;
+
+        // Comparison diagnostic counters
+        $comparisonUnavailableTotal = 0;
+        $unavailableReasonDist      = [];
+
+        // Build bot-trade lookup by canonical "symbol_side" key (normalise buy/sell→long/short)
+        $botTradeByKey    = [];
+        $botMatchableCount = 0;
+        foreach ($botTrades as $bt) {
+            $bSym  = (string)($bt['symbol'] ?? '');
+            $bSide = strtolower((string)($bt['side'] ?? ''));
+            if ($bSide === 'buy')  { $bSide = 'long'; }
+            if ($bSide === 'sell') { $bSide = 'short'; }
+            if ($bSym !== '' && in_array($bSide, ['long', 'short'], true)) {
+                $botTradeByKey[$bSym . '_' . $bSide] = $bt;
+                $botMatchableCount++;
+            }
+        }
+
+        // Shadow trailing config from PM config block (set in trading_bot/config/config.php profit_manager.shadow_trailing)
+        $shadowCfg = is_array($this->config['shadow_trailing'] ?? null) ? $this->config['shadow_trailing'] : [];
+
+        // Bot.json execution block as runtime override / fallback source
+        $execCfg = is_array($botConfig['execution'] ?? null) ? $botConfig['execution'] : [];
+
+        $activationRoiPct = (float)($shadowCfg['activation_roi_pct'] ?? $execCfg['trailing_activation_roi'] ?? 3.5);
+        $firstLockRoiPct  = (float)($shadowCfg['first_lock_roi_pct'] ?? 0.0);
+        $stepRoiPct       = (float)($shadowCfg['step_roi_pct'] ?? $execCfg['step_trailing_step_roi_pct'] ?? 2.0);
+        $lockBufferRoiPct = (float)($shadowCfg['lock_buffer_roi_pct'] ?? $execCfg['step_trailing_lock_buffer_roi_pct'] ?? 0.5);
+        $cooldownSec      = (int)($shadowCfg['cooldown_sec'] ?? $execCfg['step_trailing_cooldown_sec'] ?? 30);
+        $minDistancePct   = (float)($shadowCfg['min_distance_to_price_pct'] ?? $execCfg['step_trailing_min_distance_to_price_pct'] ?? 1.0);
+
+        foreach ($positions as $position) {
+            $symbol = (string)($position['symbol'] ?? '');
+            if ($symbol === '') {
+                continue;
+            }
+
+            $side = strtolower((string)($position['side'] ?? ''));
+            if (!in_array($side, ['buy', 'sell', 'long', 'short'], true)) {
+                continue;
+            }
+            if ($side === 'buy')  { $side = 'long'; }
+            if ($side === 'sell') { $side = 'short'; }
+
+            // Position metrics
+            $positionIM    = (float)($position['positionIM'] ?? 0);
+            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+            $markPrice     = (float)($position['markPrice'] ?? 0);
+            $avgPrice      = (float)($position['avgPrice'] ?? 0);
+            $leverage      = (float)($position['leverage'] ?? 1);
+            if ($leverage <= 0.0) { $leverage = 1.0; }
+
+            $currentRoi = ($positionIM > 0) ? round(($unrealisedPnl / $positionIM) * 100.0, 4) : 0.0;
+
+            // Determine trade key (stable per position across ticks)
+            $tradeKey = $symbol . '_' . $side;
+            if (!empty($position['orderId'])) {
+                $tradeKey = (string)$position['orderId'];
+            } elseif (!empty($position['trade_id'])) {
+                $tradeKey = (string)$position['trade_id'];
+            }
+
+            // Load persisted shadow state for continuity between ticks
+            $prevState = $this->store->loadShadowState($tradeKey);
+
+            // --- Peak ROI: monotonic, only increases ---
+            $prevPeakRoi = (float)($prevState['peak_roi'] ?? 0.0);
+            $peakRoi     = max($prevPeakRoi, $currentRoi);
+
+            // --- Trailing arm state ---
+            $trailingArmed = (bool)($prevState['trailing_armed'] ?? false);
+            $lastLockRoi   = (float)($prevState['last_lock_roi'] ?? 0.0);
+            $lastMoveTs    = (int)($prevState['last_move_ts'] ?? 0);
+            $prevStop      = (float)($prevState['proposed_stop_price'] ?? 0.0);
+
+            // --- Arm check: activation threshold crossed ---
+            $justArmed = false;
+            if (!$trailingArmed && $activationRoiPct > 0.0 && $peakRoi >= $activationRoiPct) {
+                $trailingArmed = true;
+                $justArmed     = true;
+            }
+
+            // --- Cooldown check ---
+            $cooldownActive = false;
+            if ($cooldownSec > 0 && $lastMoveTs > 0) {
+                $cooldownActive = (($nowTs - $lastMoveTs) < $cooldownSec);
+            }
+
+            // --- Compute proposed lock and action ---
+            $proposedLockRoi    = $lastLockRoi;
+            $proposedStopPrice  = $prevStop;
+            $proposedAction     = 'hold';
+            $minDistanceBlocked = false;
+
+            if (!$trailingArmed) {
+                // Not yet armed — just watching
+                $proposedAction = 'hold';
+
+            } elseif ($justArmed && $lastLockRoi <= 0.0) {
+                // Arm event: record arm action, set initial soft lock ROI
+                // No stop price placed yet on arm — placement deferred to next tighten cycle
+                $proposedAction  = 'arm';
+                $proposedLockRoi = max($firstLockRoiPct, 0.0);
+
+            } else {
+                // Armed: compute target lock from peak ROI using step ratchet
+                if ($stepRoiPct > 0.0 && $avgPrice > 0.0 && $peakRoi >= $activationRoiPct) {
+                    $steps = (int)floor(($peakRoi - $activationRoiPct) / $stepRoiPct);
+
+                    if ($steps === 0) {
+                        // Peak is between activation and first step: use soft first lock
+                        $targetLockRoi = max($firstLockRoiPct, 0.0);
+                    } else {
+                        // Normal step ratchet
+                        $targetLockRoi = $activationRoiPct + ($steps * $stepRoiPct) - $lockBufferRoiPct;
+                        $targetLockRoi = max($targetLockRoi, $firstLockRoiPct, 0.0);
+                    }
+
+                    // Monotonic check: only tighten, never loosen
+                    if ($targetLockRoi > $lastLockRoi) {
+                        if ($cooldownActive) {
+                            // Cooldown blocking — do not move
+                            $proposedAction    = 'hold';
+                            $proposedLockRoi   = $lastLockRoi;
+                        } else {
+                            // Compute candidate stop price from lock ROI
+                            $roiPerUnit    = $targetLockRoi / 100.0 / $leverage;
+                            $candidateStop = ($side === 'long')
+                                ? $avgPrice * (1.0 + $roiPerUnit)
+                                : $avgPrice * (1.0 - $roiPerUnit);
+                            $candidateStop = round($candidateStop, 8);
+
+                            // Min distance to current price check (price %, scaled by leverage)
+                            if ($markPrice > 0.0 && $minDistancePct > 0.0) {
+                                $distancePct         = abs($markPrice - $candidateStop) / $markPrice * 100.0;
+                                $minDistEffective    = $minDistancePct / max(1.0, $leverage);
+                                $minDistanceBlocked  = ($distancePct < $minDistEffective);
+                            }
+
+                            if ($minDistanceBlocked) {
+                                $proposedAction = 'hold';
+                            } else {
+                                $proposedStopPrice = $candidateStop;
+                                $proposedLockRoi   = $targetLockRoi;
+                                // Action type: soft = first lock from zero, step = subsequent tighten
+                                $proposedAction    = ($lastLockRoi <= 0.0) ? 'tighten_soft' : 'tighten_step';
+                            }
+                        }
+                    }
+                    // else: targetLockRoi <= lastLockRoi → monotonic guard, keep hold
+                }
+            }
+
+            // --- Update persistent counters ---
+            $tightenAction = ($proposedAction === 'tighten_soft' || $proposedAction === 'tighten_step');
+            $newLastLockRoi = $tightenAction ? $proposedLockRoi : $lastLockRoi;
+            $newLastMoveTs  = $tightenAction ? $nowTs : $lastMoveTs;
+
+            // --- Build shadow state ---
+            $shadowState = [
+                'trade_id'             => $tradeKey,
+                'symbol'               => $symbol,
+                'side'                 => $side,
+                'owner_mode'           => 'profit_manager_shadow',
+                'current_roi'          => $currentRoi,
+                'peak_roi'             => round($peakRoi, 4),
+                'trailing_armed'       => $trailingArmed,
+                'proposed_lock_roi'    => round($proposedLockRoi, 4),
+                'proposed_stop_price'  => $proposedStopPrice,
+                'last_lock_roi'        => round($newLastLockRoi, 4),
+                'last_move_ts'         => $newLastMoveTs,
+                'proposed_action'      => $proposedAction,
+                'cooldown_active'      => $cooldownActive,
+                'min_distance_blocked' => $minDistanceBlocked,
+                'updated_at'           => $ts,
+            ];
+
+            // --- Bot vs PM comparison (when bot trade data is available) ---
+            $botKey   = $symbol . '_' . $side;
+            $botTrade = $botTradeByKey[$botKey] ?? null;
+            if ($botTrade !== null) {
+                $botStopPrice = (float)($botTrade['current_effective_stop_price'] ?? 0);
+                $botLockRoi   = (float)($botTrade['floor_locked_roi'] ?? $botTrade['step_lock_roi'] ?? 0);
+
+                $stopGapDiffPct     = 0.0;
+                $pmMoreConservative = false;
+                $pmMoreAggressive   = false;
+
+                // Compare stop distances when both stops are set
+                if ($markPrice > 0.0 && $proposedStopPrice > 0.0 && $botStopPrice > 0.0) {
+                    $pmDistFromPrice  = abs($markPrice - $proposedStopPrice);
+                    $botDistFromPrice = abs($markPrice - $botStopPrice);
+                    // Positive = PM stop is further from price (looser); negative = PM is closer (tighter)
+                    $stopGapDiffPct = round(($pmDistFromPrice - $botDistFromPrice) / $markPrice * 100.0, 4);
+                    if ($side === 'long') {
+                        $pmMoreConservative = ($proposedStopPrice > $botStopPrice);
+                        $pmMoreAggressive   = ($proposedStopPrice < $botStopPrice);
+                    } else {
+                        $pmMoreConservative = ($proposedStopPrice < $botStopPrice);
+                        $pmMoreAggressive   = ($proposedStopPrice > $botStopPrice);
+                    }
+                }
+
+                $lockDiffRoi = round($proposedLockRoi - $botLockRoi, 4);
+
+                // Post-lock extension: extra ROI available above PM's proposed lock
+                $postLockExtensionRoi = 0.0;
+                if ($proposedLockRoi > 0.0 && $currentRoi > $proposedLockRoi) {
+                    $postLockExtensionRoi = round($currentRoi - $proposedLockRoi, 4);
+                }
+
+                $comparisonEntry = [
+                    'trade_id'                    => $tradeKey,
+                    'symbol'                      => $symbol,
+                    'side'                        => $side,
+                    'current_roi'                 => $currentRoi,
+                    'peak_roi'                    => round($peakRoi, 4),
+                    'bot_effective_stop_price'    => $botStopPrice,
+                    'bot_last_lock_roi'           => $botLockRoi,
+                    'pm_shadow_proposed_stop'     => $proposedStopPrice,
+                    'pm_shadow_proposed_lock_roi' => round($proposedLockRoi, 4),
+                    'pm_shadow_proposed_action'   => $proposedAction,
+                    'stop_gap_difference_pct'     => $stopGapDiffPct,
+                    'lock_difference_roi'         => $lockDiffRoi,
+                    'pm_more_conservative'        => $pmMoreConservative,
+                    'pm_more_aggressive'          => $pmMoreAggressive,
+                    'post_lock_extension_roi'     => $postLockExtensionRoi,
+                    'compared_at'                 => $ts,
+                ];
+
+                $shadowState['bot_comparison'] = $comparisonEntry;
+
+                // Accumulate comparison counters
+                $comparedTotal++;
+                if ($pmMoreConservative) {
+                    $pmTighterTotal++;
+                } elseif ($pmMoreAggressive) {
+                    $pmLooserTotal++;
+                } else {
+                    $pmSameDirectionTotal++;
+                }
+                $stopGapDiffAbsSum += abs($stopGapDiffPct);
+                $lockDiffRoiAbsSum += abs($lockDiffRoi);
+                if ($postLockExtensionRoi > 0.0) {
+                    $positiveExtensionCount++;
+                    $postLockExtensionSum += $postLockExtensionRoi;
+                    if ($postLockExtensionRoi > $maxPostLockExtension) {
+                        $maxPostLockExtension = $postLockExtensionRoi;
+                    }
+                }
+            } else {
+                // No matching bot trade — record reason for diagnostics; do NOT set bot_comparison=null
+                $unavailableReason = (count($botTrades) === 0)
+                    ? 'no_bot_trades_loaded'
+                    : 'no_matching_bot_trade';
+                $shadowState['comparison_unavailable_reason'] = $unavailableReason;
+                $unavailableReasonDist[$unavailableReason]  = ($unavailableReasonDist[$unavailableReason] ?? 0) + 1;
+                $comparisonUnavailableTotal++;
+            }
+
+            $this->store->saveShadowState($tradeKey, $shadowState);
+
+            $items[] = $shadowState;
+
+            // Aggregate stats
+            $peakRoiSum    += $peakRoi;
+            $currentRoiSum += $currentRoi;
+            if ($trailingArmed)   { $positionsArmed++; }
+            if ($tightenAction)   { $positionsTightened++; }
+            if ($proposedAction === 'exit_ready') { $positionsExitReady++; }
+        }
+
+        $positionsSeen      = count($positions);
+        $positionsProcessed = count($items);
+        $avgPeakRoi         = $positionsProcessed > 0 ? round($peakRoiSum    / $positionsProcessed, 4) : 0.0;
+        $avgCurrentRoi      = $positionsProcessed > 0 ? round($currentRoiSum / $positionsProcessed, 4) : 0.0;
+
+        // Comparison aggregate metrics (this run)
+        $avgStopGapDiffPct       = $comparedTotal > 0 ? round($stopGapDiffAbsSum / $comparedTotal, 4) : null;
+        $avgLockDiffRoi          = $comparedTotal > 0 ? round($lockDiffRoiAbsSum / $comparedTotal, 4) : null;
+        $avgPostLockExtensionRoi = $positiveExtensionCount > 0 ? round($postLockExtensionSum / $positiveExtensionCount, 4) : null;
+        $maxPostLockExtensionRoi = $maxPostLockExtension > 0.0 ? round($maxPostLockExtension, 4) : null;
+
+        $comparisonMetrics = [
+            'compared_positions_total'           => $comparedTotal,
+            'pm_vs_bot_tighter_total'            => $pmTighterTotal,
+            'pm_vs_bot_looser_total'             => $pmLooserTotal,
+            'pm_vs_bot_same_direction_total'     => $pmSameDirectionTotal,
+            'average_stop_gap_difference_pct'    => $avgStopGapDiffPct,
+            'average_lock_difference_roi'        => $avgLockDiffRoi,
+            'positions_with_positive_extension'  => $positiveExtensionCount,
+            'average_post_lock_extension_roi'    => $avgPostLockExtensionRoi,
+            'max_post_lock_extension_roi'        => $maxPostLockExtensionRoi,
+        ];
+
+        $journal = [
+            'ts'                   => $ts,
+            'trailing_owner'       => 'profit_manager_shadow',
+            'pm_shadow_active'     => $positionsProcessed > 0,
+            'positions_seen'       => $positionsSeen,
+            'positions_processed'  => $positionsProcessed,
+            'positions_armed'      => $positionsArmed,
+            'positions_tightened'  => $positionsTightened,
+            'positions_exit_ready' => $positionsExitReady,
+            'average_peak_roi'     => $avgPeakRoi,
+            'average_current_roi'  => $avgCurrentRoi,
+            // Flat comparison fields (top-level for direct access)
+            'compared_positions_total'                   => $comparedTotal,
+            'pm_vs_bot_tighter_total'                    => $pmTighterTotal,
+            'pm_vs_bot_looser_total'                     => $pmLooserTotal,
+            'pm_vs_bot_same_direction_total'             => $pmSameDirectionTotal,
+            'average_stop_gap_difference_pct'            => $avgStopGapDiffPct,
+            'average_lock_difference_roi'                => $avgLockDiffRoi,
+            'average_post_lock_extension_roi'            => $avgPostLockExtensionRoi,
+            'max_post_lock_extension_roi'                => $maxPostLockExtensionRoi,
+            // Nested comparison block (for backward compat)
+            'comparison'           => $comparisonMetrics,
+            // Comparison diagnostics (per-run)
+            'comparison_matches_found_total'             => $comparedTotal,
+            'comparison_unavailable_total'               => $comparisonUnavailableTotal,
+            'comparison_unavailable_reason_distribution' => $unavailableReasonDist,
+            'bot_active_trades_provided'                 => count($botTrades),
+            'bot_active_trades_matchable'                => $botMatchableCount,
+            'items'                => $items,
+        ];
+
+        return $journal;
     }
 }
 

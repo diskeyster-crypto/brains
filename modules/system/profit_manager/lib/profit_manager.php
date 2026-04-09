@@ -45,22 +45,44 @@ class ProfitManager
     
     /**
      * Active mode execution cycle (trailing_owner = profit_manager).
-     * PM is the sole dynamic trailing writer. Enriches each item with applied-state
-     * observability fields: applied_action, applied_stop_price, applied_lock_roi,
-     * last_applied_ts, exchange_update_attempted, exchange_update_ok, exchange_update_error.
+     * PM is the sole dynamic trailing writer. Enriches each item with full trade
+     * context (trade_id, owner_mode, current_roi, peak_roi, trailing_armed, proposed_*)
+     * and applied-state observability fields.
      *
+     * @param array $botTrades  Active bot trades for context matching (best-effort)
+     * @param array $botConfig  Bot config (for activation thresholds)
      * @return array Execution result with PM observability fields
      */
-    public function runActive(): array
+    public function runActive(array $botTrades = [], array $botConfig = []): array
     {
         $items    = [];
         $errors   = [];
         $warnings = [];
+        $ts       = date('c');
 
         $stats = [
             'step_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
             'dumb_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
         ];
+
+        // Build bot-trade lookup by canonical "symbol_side" key
+        $botTradeByKey = [];
+        foreach ($botTrades as $bt) {
+            $bSym  = (string)($bt['symbol'] ?? '');
+            $bSide = strtolower((string)($bt['side'] ?? ''));
+            if ($bSide === 'buy')  { $bSide = 'long'; }
+            if ($bSide === 'sell') { $bSide = 'short'; }
+            if ($bSym !== '' && in_array($bSide, ['long', 'short'], true)) {
+                $botTradeByKey[$bSym . '_' . $bSide] = $bt;
+            }
+        }
+
+        // Activation ROI threshold for arm-state tracking
+        $activationRoiPct = (float)(
+            $this->config['step_trailing']['activation_roi_pct_default']
+            ?? $botConfig['execution']['trailing_activation_roi']
+            ?? 3.5
+        );
 
         $positionsResult = $this->gateway->getPositions();
         if (!($positionsResult['ok'] ?? false)) {
@@ -82,6 +104,32 @@ class ProfitManager
         $positionsManaged = count($managed);
 
         foreach ($managed as $symbol => $ctx) {
+            $position = $ctx['position'] ?? [];
+
+            // Derive stable trade key (same logic as shadow mode)
+            $side     = $this->validator->normalizeSide($position['side'] ?? '');
+            $tradeKey = $symbol . '_' . $side;
+            if (!empty($position['orderId'])) {
+                $tradeKey = (string)$position['orderId'];
+            } elseif (!empty($position['trade_id'])) {
+                $tradeKey = (string)$position['trade_id'];
+            }
+
+            // Load persisted active state for monotonic peak_roi continuity
+            $prevState     = $this->store->loadActiveState($tradeKey);
+            $positionIM    = (float)($position['positionIM'] ?? 0);
+            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+            $currentRoi    = ($positionIM > 0) ? round(($unrealisedPnl / $positionIM) * 100.0, 4) : 0.0;
+
+            // Peak ROI: monotonic — only increases
+            $prevPeakRoi   = (float)($prevState['peak_roi'] ?? 0.0);
+            $peakRoi       = max($prevPeakRoi, $currentRoi);
+            $trailingArmed = (bool)($prevState['trailing_armed'] ?? false);
+            if (!$trailingArmed && $activationRoiPct > 0.0 && $peakRoi >= $activationRoiPct) {
+                $trailingArmed = true;
+            }
+
+            // Execute existing trailing logic (real exchange writes)
             $itemResult = $this->processPosition($symbol, $ctx);
 
             // Derive PM applied-state observability from step/dumb trailing sub-results
@@ -92,6 +140,11 @@ class ProfitManager
             $exchangeOk          = false;
             $exchangeUpdateError = null;
 
+            // Derive proposed fields from trailing sub-results (informational)
+            $proposedAction    = 'hold';
+            $proposedStopPrice = null;
+            $proposedLockRoi   = null;
+
             $st = $itemResult['step_trailing'] ?? null;
             $dt = $itemResult['dumb_trailing'] ?? null;
 
@@ -100,6 +153,9 @@ class ProfitManager
                 $appliedAction     = 'step_sl_update';
                 $appliedStopPrice  = $st['new_sl'] ?? null;
                 $appliedLockRoi    = $st['target_lock_roi'] ?? null;
+                $proposedAction    = 'step_sl_update';
+                $proposedStopPrice = $appliedStopPrice;
+                $proposedLockRoi   = $appliedLockRoi;
                 $exchangeAttempted = true;
                 $exchangeOk        = ($st['ok'] ?? false) === true;
                 if (!$exchangeOk) {
@@ -107,11 +163,13 @@ class ProfitManager
                 }
             } elseif ($st !== null && ($st['action'] ?? '') === 'failed') {
                 $appliedAction     = 'step_sl_update';
+                $proposedAction    = 'step_sl_update';
                 $exchangeAttempted = true;
                 $exchangeOk        = false;
                 $exchangeUpdateError = $st['details']['error'] ?? ($st['reason'] ?? 'unknown');
             } elseif ($dt !== null && ($dt['action'] ?? '') === 'dumb_trailing_set') {
                 $appliedAction     = 'dumb_trailing_set';
+                $proposedAction    = 'dumb_trailing_set';
                 $exchangeAttempted = true;
                 $exchangeOk        = ($dt['ok'] ?? false) === true;
                 if (!$exchangeOk) {
@@ -119,20 +177,60 @@ class ProfitManager
                 }
             } elseif ($dt !== null && ($dt['action'] ?? '') === 'failed') {
                 $appliedAction     = 'dumb_trailing_set';
+                $proposedAction    = 'dumb_trailing_set';
                 $exchangeAttempted = true;
                 $exchangeOk        = false;
                 $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
             }
 
-            // Attach PM observability fields directly to item
-            $itemResult['trailing_runtime_owner']  = 'profit_manager';
-            $itemResult['applied_action']          = $appliedAction;
-            $itemResult['applied_stop_price']      = $appliedStopPrice;
-            $itemResult['applied_lock_roi']        = $appliedLockRoi;
-            $itemResult['last_applied_ts']         = $appliedAction !== null ? date('c') : null;
-            $itemResult['exchange_update_attempted'] = $exchangeAttempted;
-            $itemResult['exchange_update_ok']      = $exchangeOk;
-            $itemResult['exchange_update_error']   = $exchangeUpdateError;
+            // Persist updated active state (monotonic peak_roi, arm state)
+            $this->store->saveActiveState($tradeKey, [
+                'trade_id'       => $tradeKey,
+                'symbol'         => $symbol,
+                'side'           => $side,
+                'peak_roi'       => round($peakRoi, 4),
+                'trailing_armed' => $trailingArmed,
+                'last_lock_roi'  => $appliedLockRoi ?? (float)($prevState['last_lock_roi'] ?? 0.0),
+                'updated_at'     => $ts,
+            ]);
+
+            // Bot trade context matching (best-effort for observability)
+            $botKey   = $symbol . '_' . $side;
+            $botTrade = $botTradeByKey[$botKey] ?? null;
+
+            // Attach full trade-context fields to item
+            $itemResult['trade_id']       = $tradeKey;
+            $itemResult['owner_mode']     = 'profit_manager';
+            $itemResult['current_roi']    = $currentRoi;
+            $itemResult['peak_roi']       = round($peakRoi, 4);
+            $itemResult['trailing_armed'] = $trailingArmed;
+            $itemResult['proposed_action']     = $proposedAction;
+            $itemResult['proposed_stop_price'] = $proposedStopPrice;
+            $itemResult['proposed_lock_roi']   = $proposedLockRoi;
+
+            // Attach PM observability fields
+            $itemResult['trailing_runtime_owner']              = 'profit_manager';
+            $itemResult['bot_dynamic_trailing_skipped_by_owner'] = true;
+            $itemResult['applied_action']                      = $appliedAction;
+            $itemResult['applied_stop_price']                  = $appliedStopPrice;
+            $itemResult['applied_lock_roi']                    = $appliedLockRoi;
+            $itemResult['last_applied_ts']                     = $appliedAction !== null ? $ts : null;
+            $itemResult['exchange_update_attempted']           = $exchangeAttempted;
+            $itemResult['exchange_update_ok']                  = $exchangeOk;
+            $itemResult['exchange_update_error']               = $exchangeUpdateError;
+
+            // Bot trade context or unavailability reason
+            if ($botTrade !== null) {
+                $itemResult['bot_context'] = [
+                    'bot_trade_id'       => $botTrade['trade_id'] ?? null,
+                    'bot_effective_stop' => $botTrade['current_effective_stop_price'] ?? null,
+                    'bot_floor_lock_roi' => $botTrade['floor_locked_roi'] ?? ($botTrade['step_lock_roi'] ?? null),
+                ];
+            } elseif (empty($botTrades)) {
+                $itemResult['active_context_unavailable_reason'] = 'no_bot_trades_loaded';
+            } else {
+                $itemResult['active_context_unavailable_reason'] = 'no_matching_bot_trade';
+            }
 
             $items[] = $itemResult;
 

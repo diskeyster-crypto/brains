@@ -208,7 +208,10 @@ final class ProfitManagerService
         }
 
         try {
-            $runResult = $this->profitManager->runActive();
+            // Load bot active trades for context matching (best-effort, non-fatal — same as shadow mode)
+            $botTrades = $this->loadBotActiveTrades();
+
+            $runResult = $this->profitManager->runActive($botTrades, $this->config);
 
             $items = $runResult['items'] ?? [];
 
@@ -259,6 +262,11 @@ final class ProfitManagerService
                 'positions_managed'              => $runResult['positions_managed'] ?? 0,
                 'step_trailing'                  => $runResult['stats']['step_trailing'] ?? ['applied' => 0, 'skipped' => 0, 'failed' => 0],
                 'dumb_trailing'                  => $runResult['stats']['dumb_trailing'] ?? ['applied' => 0, 'skipped' => 0, 'failed' => 0],
+                // Bot trade load diagnostics (same as shadow mode)
+                'bot_active_trades_loaded_total'  => $this->botTradeLoadDiag['loaded'] ?? 0,
+                'bot_active_trades_matchable_total' => $this->botTradeLoadDiag['matchable'] ?? 0,
+                'bot_active_trades_storage_dir'   => $this->botTradeLoadDiag['storage_dir'] ?? null,
+                'bot_active_trades_load_error'    => $this->botTradeLoadDiag['error'] ?? null,
                 'items'                          => array_slice($items, 0, 50),
                 'errors'                         => $runResult['errors'] ?? [],
                 'warnings'                       => $runResult['warnings'] ?? [],

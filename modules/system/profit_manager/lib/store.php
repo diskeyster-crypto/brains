@@ -485,6 +485,36 @@ class Store
         }
         return $keys;
     }
+
+    // =========================================================================
+    // Active trailing runtime state (PM active mode)
+    // =========================================================================
+
+    /**
+     * Load active state for a trade key (persisted between ticks for monotonic peak_roi etc).
+     *
+     * @param string $tradeKey
+     * @return array
+     */
+    public function loadActiveState(string $tradeKey): array
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/active_' . $safe . '.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save active state for a trade key.
+     *
+     * @param string $tradeKey
+     * @param array  $state
+     */
+    public function saveActiveState(string $tradeKey, array $state): void
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/active_' . $safe . '.json';
+        $this->writeJson($path, $state);
+    }
 }
 
 /* RULES

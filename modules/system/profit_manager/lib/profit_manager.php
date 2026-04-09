@@ -846,8 +846,6 @@ class ProfitManager
             'items'                => $items,
         ];
 
-        $this->store->saveShadowJournal($journal);
-
         return $journal;
     }
 }

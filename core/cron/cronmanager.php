@@ -174,6 +174,7 @@ final class CronManager
                     'interval' => (int)($config['interval'] ?? 60),
                     'enabled' => $config['enabled'] ?? true,
                     'description' => $config['description'] ?? '',
+                    'priority' => (int)($config['priority'] ?? 50),
                     'last_run' => null,
                     'next_run' => time(),
                     'from_module' => true,
@@ -334,6 +335,12 @@ final class CronManager
                 $due[$taskId] = $task;
             }
         }
+
+        // Sort by priority descending: higher priority value runs first.
+        // Tasks without explicit priority default to 50.
+        uasort($due, static function (array $a, array $b): int {
+            return ($b['priority'] ?? 50) <=> ($a['priority'] ?? 50);
+        });
 
         return $due;
     }

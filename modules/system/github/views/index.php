@@ -197,6 +197,23 @@
     </div>
     
     <!-- Информация о репозитории -->
+    <?php if (isset($status['error']) || (isset($status['connected']) && !$status['connected'])): ?>
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Ошибка соединения с GitHub
+                </div>
+                <div class="card-body">
+                    <p class="mb-0 text-danger">
+                        <?= htmlspecialchars($status['error'] ?? 'GitHub API недоступен') ?>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
     <?php if (isset($status['repo'])): ?>
     <div class="row">
         <div class="col-lg-8">

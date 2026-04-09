@@ -283,26 +283,38 @@ final class ProfitManagerService
             // The journal mirrors shadow_journal.json in purpose but for active-owner decisions.
             $pm8Counters = $runResult['pm8_counters'] ?? [];
 
+            // Build compact journal entries (one per managed position).
+            // Includes the explicit PM-8 stage progression so runtime can show
+            // which stages each position reached (not only final outcome).
             $journalItems = [];
             foreach ($items as $item) {
                 $journalItems[] = [
-                    'symbol'                            => $item['symbol'] ?? null,
-                    'side'                              => $item['side'] ?? null,
-                    'owner_mode'                        => $item['owner_mode'] ?? 'profit_manager',
-                    'current_roi'                       => $item['current_roi'] ?? null,
-                    'peak_roi'                          => $item['peak_roi'] ?? null,
-                    'trailing_armed'                    => $item['trailing_armed'] ?? false,
-                    'proposed_lock_roi'                 => $item['proposed_lock_roi'] ?? null,
-                    'pm_management_stage'               => $item['pm_management_stage'] ?? 'pm_update_skipped',
-                    'lock_improvement_detected'         => $item['lock_improvement_detected'] ?? false,
-                    'current_stop_or_lock_reference'    => $item['current_stop_or_lock_reference'] ?? null,
-                    'proposed_stop_or_lock_reference'   => $item['proposed_stop_or_lock_reference'] ?? null,
-                    'apply_attempted'                   => $item['apply_attempted'] ?? false,
-                    'apply_applied'                     => $item['apply_applied'] ?? false,
-                    'skip_reason'                       => $item['skip_reason'] ?? null,
-                    'block_reason'                      => $item['block_reason'] ?? null,
+                    // Identity
+                    'symbol'                                => $item['symbol'] ?? null,
+                    'side'                                  => $item['side'] ?? null,
+                    'owner_mode'                            => $item['owner_mode'] ?? 'profit_manager',
+                    // Position metrics
+                    'current_roi'                           => $item['current_roi'] ?? null,
+                    'peak_roi'                              => $item['peak_roi'] ?? null,
+                    'proposed_lock_roi'                     => $item['proposed_lock_roi'] ?? null,
+                    'current_stop_or_lock_reference'        => $item['current_stop_or_lock_reference'] ?? null,
+                    'proposed_stop_or_lock_reference'       => $item['proposed_stop_or_lock_reference'] ?? null,
+                    // PM-8 explicit stage progression (ordered list of stages reached this tick)
+                    'pm_stages_reached'                     => $item['pm_stages_reached'] ?? [],
+                    // Stage flags (derived from pm_stages_reached for quick inspection)
+                    'eligible_for_pm_management'            => $item['eligible_for_pm_management'] ?? false,
+                    'pm_proposal_computed'                  => $item['pm_proposal_computed'] ?? false,
+                    // Final stage and outcome fields
+                    'pm_management_stage'                   => $item['pm_management_stage'] ?? 'pm_update_skipped',
+                    'lock_improvement_detected'             => $item['lock_improvement_detected'] ?? false,
+                    'apply_attempted'                       => $item['apply_attempted'] ?? false,
+                    'apply_applied'                         => $item['apply_applied'] ?? false,
+                    'skip_reason'                           => $item['skip_reason'] ?? null,
+                    'block_reason'                          => $item['block_reason'] ?? null,
+                    // Ownership clarity: confirms bot was NOT the competing trailing writer
                     'bot_dynamic_trailing_skipped_by_owner' => $item['bot_dynamic_trailing_skipped_by_owner'] ?? true,
-                    'updated_at'                        => $ts,
+                    // Timestamp
+                    'updated_at'                            => $ts,
                 ];
             }
 

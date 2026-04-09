@@ -245,27 +245,55 @@ class ProfitManager
             // (ratchet check already passed inside processStepTrailing) OR dumb trailing set
             $lockImprovementDetected = in_array($appliedAction, ['step_sl_update', 'dumb_trailing_set'], true);
 
-            // pm_management_stage: final stage reached this tick for this position
-            if ($exchangeAttempted && $exchangeOk) {
-                $pmStage = 'pm_update_applied';
-            } elseif ($exchangeAttempted) {
-                // Attempted but exchange returned an error → blocked
-                $pmStage = 'pm_update_blocked';
+            // PM-8 explicit stage model: build ordered progression for this position.
+            // Stages are accumulated as the position advances through PM decision logic.
+            // This lets the runtime artifact show exactly which stages were reached.
+            $pmStagesReached   = [];
+            $eligibleForPm     = $trailingArmed;   // position is above activation ROI
+            $proposalComputed  = false;             // PM computed an improving proposal
+
+            if ($eligibleForPm) {
+                $pmStagesReached[] = 'eligible_for_pm_management';
+                if ($lockImprovementDetected) {
+                    // Proposal exists (ratchet would improve the lock)
+                    $proposalComputed  = true;
+                    $pmStagesReached[] = 'pm_proposal_computed';
+                    if ($exchangeAttempted) {
+                        $pmStagesReached[] = 'pm_update_apply_attempted';
+                        $pmStagesReached[] = $exchangeOk ? 'pm_update_applied' : 'pm_update_blocked';
+                    } else {
+                        // Proposal computed but not sent (cooldown, distance guard, etc.)
+                        $pmStagesReached[] = 'pm_update_skipped';
+                    }
+                } else {
+                    // Armed but no improvement available (trailing not tightening this tick)
+                    $pmStagesReached[] = 'pm_update_skipped';
+                }
             } else {
-                // No exchange call made (no improving proposal, not armed, too close, etc.)
-                $pmStage = 'pm_update_skipped';
+                // Position not armed yet (below activation ROI)
+                $pmStagesReached[] = 'pm_update_skipped';
             }
 
-            // skip_reason: first available skip reason when no update was attempted
-            // Priority: step trailing reason > dumb trailing reason
+            // pm_management_stage: final stage in the progression
+            $pmStage = end($pmStagesReached);
+
+            // skip_reason: first available reason when final stage is pm_update_skipped
             $skipReason = null;
             if ($pmStage === 'pm_update_skipped') {
-                if ($st !== null && ($st['action'] ?? '') === 'skip') {
-                    $skipReason = $st['reason'] ?? 'no_step_trailing_action';
-                } elseif ($dt !== null && ($dt['action'] ?? '') === 'skip') {
-                    $skipReason = $dt['reason'] ?? 'no_dumb_trailing_action';
+                if (!$eligibleForPm) {
+                    $skipReason = 'trailing_not_armed_below_activation_roi';
+                } elseif (!$proposalComputed) {
+                    // Armed but no improvement this tick
+                    if ($st !== null && ($st['action'] ?? '') === 'skip') {
+                        $skipReason = $st['reason'] ?? 'no_step_trailing_action';
+                    } elseif ($dt !== null && ($dt['action'] ?? '') === 'skip') {
+                        $skipReason = $dt['reason'] ?? 'no_dumb_trailing_action';
+                    } else {
+                        $skipReason = 'no_trailing_action_computed';
+                    }
                 } else {
-                    $skipReason = 'no_trailing_action_computed';
+                    // Proposal computed but not sent (cooldown, min-distance guard, etc.)
+                    $skipReason = 'proposal_computed_but_not_sent';
                 }
             }
 
@@ -273,6 +301,9 @@ class ProfitManager
             $blockReason = ($pmStage === 'pm_update_blocked') ? $exchangeUpdateError : null;
 
             $itemResult['pm_management_stage']             = $pmStage;
+            $itemResult['pm_stages_reached']               = $pmStagesReached;
+            $itemResult['eligible_for_pm_management']      = $eligibleForPm;
+            $itemResult['pm_proposal_computed']            = $proposalComputed;
             $itemResult['lock_improvement_detected']       = $lockImprovementDetected;
             $itemResult['current_stop_or_lock_reference']  = $currentStopLoss > 0.0 ? $currentStopLoss : null;
             $itemResult['proposed_stop_or_lock_reference'] = $proposedStopPrice;
@@ -283,10 +314,10 @@ class ProfitManager
 
             // PM-8 counter updates for this position
             $pm8Seen++;
-            if ($trailingArmed) {
+            if ($eligibleForPm) {
                 $pm8Eligible++;
             }
-            if ($lockImprovementDetected) {
+            if ($proposalComputed) {
                 $pm8Proposals++;
             }
             if ($exchangeAttempted) {

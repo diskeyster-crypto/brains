@@ -32,7 +32,7 @@
         "max_deferred_intents_per_run": 10,
         "default_entry_timeout_minutes": 8,
         "default_late_threshold_pct": 1.25,
-        "retrace_slack_pct": 0.050000000000000003,
+        "retrace_slack_pct": 0.05,
         "demo_late_entry_tolerance_extra_pct": 1.5,
         "demo_entry_timeout_extra_minutes": 5,
         "exchange_positions_cache_ttl_sec": 2,
@@ -51,7 +51,7 @@
         "balance_cache_ttl_sec": 8,
         "balance_strict_stable_coin_only": true,
         "order_type": "Market",
-        "trailing_owner": "bot",
+        "trailing_owner": "profit_manager",
         "trailing_enabled": true,
         "break_even_enabled": true,
         "emergency_stop_enabled": false,
@@ -73,10 +73,10 @@
         "live_routing_policy": "green_plus_yellow_capped",
         "yellow_live_max_positions": 1,
         "yellow_live_max_leverage": 5,
-        "yellow_live_budget_multiplier": 0.40,
+        "yellow_live_budget_multiplier": 0.4,
         "yellow_live_require_min_healthy_samples": 0,
         "no_passport_green_threshold": 0.85,
-        "no_passport_yellow_threshold": 0.70,
+        "no_passport_yellow_threshold": 0.7,
         "no_passport_red_threshold": 0.35
     },
     "demo_sources": {
@@ -86,13 +86,13 @@
             "profile_id": "pattern_engine_demo_default",
             "budget_usdt_per_trade": 10,
             "leverage": 5,
-            "stop_from_liq_range_pct": 0.20000000000000001,
+            "stop_from_liq_range_pct": 0.2,
             "slippage_bps": 20,
             "fees_bps": 10,
             "order_type": "market",
             "stop_control": {
                 "stop_control_mode": "auto",
-                "stop_loss_from_entry_roi": 0.029999999999999999
+                "stop_loss_from_entry_roi": 0.03
             },
             "limits": {
                 "max_open_trades": 15,

@@ -286,11 +286,76 @@ final class ProfitManagerService
 
             $this->store->saveLastRun($result);
 
-            // Make shadow_journal.json authoritative with all flat comparison fields (TASK 1, TASK 4)
-            $this->store->saveShadowJournal($result);
+            // Build explicit shadow journal payload — do NOT reuse $result to avoid any merge gap.
+            // Pull comparison fields directly from $shadowResult (top-level keys in runShadow() return).
+            $journalItems = [];
+            foreach ($shadowItems as $item) {
+                $jItem = [
+                    'trade_id'             => $item['trade_id'] ?? null,
+                    'symbol'               => $item['symbol'] ?? null,
+                    'side'                 => $item['side'] ?? null,
+                    'owner_mode'           => $item['owner_mode'] ?? 'profit_manager_shadow',
+                    'current_roi'          => $item['current_roi'] ?? null,
+                    'peak_roi'             => $item['peak_roi'] ?? null,
+                    'trailing_armed'       => $item['trailing_armed'] ?? false,
+                    'proposed_lock_roi'    => $item['proposed_lock_roi'] ?? null,
+                    'proposed_stop_price'  => $item['proposed_stop_price'] ?? null,
+                    'proposed_action'      => $item['proposed_action'] ?? 'hold',
+                    'cooldown_active'      => $item['cooldown_active'] ?? false,
+                    'min_distance_blocked' => $item['min_distance_blocked'] ?? false,
+                    'updated_at'           => $item['updated_at'] ?? $ts,
+                ];
+                // Always include exactly one comparison status field — never leave both absent
+                if (isset($item['bot_comparison'])) {
+                    $jItem['bot_comparison'] = $item['bot_comparison'];
+                } else {
+                    $jItem['comparison_unavailable_reason'] = $item['comparison_unavailable_reason'] ?? 'no_bot_trades_loaded';
+                }
+                $journalItems[] = $jItem;
+            }
 
-            // Always persist aggregate comparison metrics file (zero counts are still informative)
-            $this->store->saveComparisonMetrics($comparisonAgg);
+            // Explicit authoritative shadow journal — all comparison fields always written even when zero
+            $shadowJournal = [
+                'ts'                                         => $ts,
+                'trailing_owner'                             => 'profit_manager_shadow',
+                'pm_shadow_active'                           => count($journalItems) > 0,
+                'positions_seen'                             => $shadowResult['positions_seen'] ?? count($positions),
+                'positions_processed'                        => $shadowResult['positions_processed'] ?? count($journalItems),
+                'positions_armed'                            => $shadowResult['positions_armed'] ?? 0,
+                'positions_tightened'                        => $shadowResult['positions_tightened'] ?? 0,
+                'positions_exit_ready'                       => $shadowResult['positions_exit_ready'] ?? 0,
+                'average_peak_roi'                           => $shadowResult['average_peak_roi'] ?? null,
+                'average_current_roi'                        => $shadowResult['average_current_roi'] ?? null,
+                'compared_positions_total'                   => $shadowResult['compared_positions_total'] ?? 0,
+                'comparison_matches_found_total'             => $shadowResult['comparison_matches_found_total'] ?? 0,
+                'comparison_unavailable_total'               => $shadowResult['comparison_unavailable_total'] ?? 0,
+                'comparison_unavailable_reason_distribution' => $shadowResult['comparison_unavailable_reason_distribution'] ?? [],
+                'pm_vs_bot_tighter_total'                    => $shadowResult['pm_vs_bot_tighter_total'] ?? 0,
+                'pm_vs_bot_looser_total'                     => $shadowResult['pm_vs_bot_looser_total'] ?? 0,
+                'average_stop_gap_difference_pct'            => $shadowResult['average_stop_gap_difference_pct'] ?? null,
+                'average_lock_difference_roi'                => $shadowResult['average_lock_difference_roi'] ?? null,
+                'average_post_lock_extension_roi'            => $shadowResult['average_post_lock_extension_roi'] ?? null,
+                'max_post_lock_extension_roi'                => $shadowResult['max_post_lock_extension_roi'] ?? null,
+                'items'                                      => array_slice($journalItems, 0, 50),
+            ];
+
+            // Always overwrite shadow_journal.json — no skip, no stale payload
+            $this->store->saveShadowJournal($shadowJournal);
+
+            // Always write shadow_comparison_metrics.json (zero counts are still informative)
+            $this->store->saveComparisonMetrics(!empty($comparisonAgg) ? $comparisonAgg : [
+                'ts'                                         => $ts,
+                'compared_positions_total'                   => $shadowResult['compared_positions_total'] ?? 0,
+                'comparison_matches_found_total'             => $shadowResult['comparison_matches_found_total'] ?? 0,
+                'comparison_unavailable_total'               => $shadowResult['comparison_unavailable_total'] ?? 0,
+                'pm_vs_bot_tighter_total'                    => $shadowResult['pm_vs_bot_tighter_total'] ?? 0,
+                'pm_vs_bot_looser_total'                     => $shadowResult['pm_vs_bot_looser_total'] ?? 0,
+                'average_stop_gap_difference_pct'            => $shadowResult['average_stop_gap_difference_pct'] ?? null,
+                'average_lock_difference_roi'                => $shadowResult['average_lock_difference_roi'] ?? null,
+                'average_post_lock_extension_roi'            => $shadowResult['average_post_lock_extension_roi'] ?? null,
+                'max_post_lock_extension_roi'                => $shadowResult['max_post_lock_extension_roi'] ?? null,
+                'last_updated'                               => $ts,
+            ]);
 
             return $result;
         } catch (\Throwable $e) {

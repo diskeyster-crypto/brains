@@ -1052,6 +1052,10 @@ final class ProfitManagerService
             $avgExt = (float)($s['avg_post_lock_extension_roi'] ?? 0.0);
             $s['early_close_risk_score'] = $avgExt > 0.0 ? round(min(1.0, $avgExt / 5.0), 4) : 0.0;
 
+            // Expose lock_roi sample count so passport merge can apply correct weighted average
+            // for avg_proposed_lock_roi across cumulative runs.
+            $s['samples_with_lock_roi'] = $s['_lock_roi_count'];
+
             // Remove internal accumulator keys before writing to passport
             unset(
                 $s['_current_roi_sum'], $s['_peak_roi_sum'],

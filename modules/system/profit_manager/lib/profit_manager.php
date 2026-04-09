@@ -496,7 +496,7 @@ class ProfitManager
      * @param array $botConfig     Bot config (for trailing parameters)
      * @return array Shadow result with per-position diagnostics
      */
-    public function runShadow(array $positions, array $botConfig): array
+    public function runShadow(array $positions, array $botConfig, array $botTrades = []): array
     {
         $items = [];
         $ts    = date('c');
@@ -508,6 +508,27 @@ class ProfitManager
         $positionsExitReady = 0;
         $peakRoiSum         = 0.0;
         $currentRoiSum      = 0.0;
+
+        // Comparison aggregate counters
+        $comparedTotal              = 0;
+        $pmTighterTotal             = 0;
+        $pmLooserTotal              = 0;
+        $pmSameDirectionTotal       = 0;
+        $stopGapDiffAbsSum          = 0.0;
+        $lockDiffRoiAbsSum          = 0.0;
+        $positiveExtensionCount     = 0;
+        $postLockExtensionSum       = 0.0;
+        $maxPostLockExtension       = 0.0;
+
+        // Build bot-trade lookup by "symbol_side" key
+        $botTradeByKey = [];
+        foreach ($botTrades as $bt) {
+            $bSym  = (string)($bt['symbol'] ?? '');
+            $bSide = strtolower((string)($bt['side'] ?? ''));
+            if ($bSym !== '' && in_array($bSide, ['long', 'short'], true)) {
+                $botTradeByKey[$bSym . '_' . $bSide] = $bt;
+            }
+        }
 
         // Shadow trailing config from PM config block (set in trading_bot/config/config.php profit_manager.shadow_trailing)
         $shadowCfg = is_array($this->config['shadow_trailing'] ?? null) ? $this->config['shadow_trailing'] : [];
@@ -668,6 +689,81 @@ class ProfitManager
                 'updated_at'           => $ts,
             ];
 
+            // --- Bot vs PM comparison (when bot trade data is available) ---
+            $botKey   = $symbol . '_' . $side;
+            $botTrade = $botTradeByKey[$botKey] ?? null;
+            if ($botTrade !== null) {
+                $botStopPrice = (float)($botTrade['current_effective_stop_price'] ?? 0);
+                $botLockRoi   = (float)($botTrade['floor_locked_roi'] ?? $botTrade['step_lock_roi'] ?? 0);
+
+                $stopGapDiffPct     = 0.0;
+                $pmMoreConservative = false;
+                $pmMoreAggressive   = false;
+
+                // Compare stop distances when both stops are set
+                if ($markPrice > 0.0 && $proposedStopPrice > 0.0 && $botStopPrice > 0.0) {
+                    $pmDistFromPrice  = abs($markPrice - $proposedStopPrice);
+                    $botDistFromPrice = abs($markPrice - $botStopPrice);
+                    // Positive = PM stop is further from price (looser); negative = PM is closer (tighter)
+                    $stopGapDiffPct = round(($pmDistFromPrice - $botDistFromPrice) / $markPrice * 100.0, 4);
+                    if ($side === 'long') {
+                        $pmMoreConservative = ($proposedStopPrice > $botStopPrice);
+                        $pmMoreAggressive   = ($proposedStopPrice < $botStopPrice);
+                    } else {
+                        $pmMoreConservative = ($proposedStopPrice < $botStopPrice);
+                        $pmMoreAggressive   = ($proposedStopPrice > $botStopPrice);
+                    }
+                }
+
+                $lockDiffRoi = round($proposedLockRoi - $botLockRoi, 4);
+
+                // Post-lock extension: extra ROI available above PM's proposed lock
+                $postLockExtensionRoi = 0.0;
+                if ($proposedLockRoi > 0.0 && $currentRoi > $proposedLockRoi) {
+                    $postLockExtensionRoi = round($currentRoi - $proposedLockRoi, 4);
+                }
+
+                $comparisonEntry = [
+                    'trade_id'                    => $tradeKey,
+                    'symbol'                      => $symbol,
+                    'side'                        => $side,
+                    'current_roi'                 => $currentRoi,
+                    'peak_roi'                    => round($peakRoi, 4),
+                    'bot_effective_stop_price'    => $botStopPrice,
+                    'bot_last_lock_roi'           => $botLockRoi,
+                    'pm_shadow_proposed_stop'     => $proposedStopPrice,
+                    'pm_shadow_proposed_lock_roi' => round($proposedLockRoi, 4),
+                    'pm_shadow_proposed_action'   => $proposedAction,
+                    'stop_gap_difference_pct'     => $stopGapDiffPct,
+                    'lock_difference_roi'         => $lockDiffRoi,
+                    'pm_more_conservative'        => $pmMoreConservative,
+                    'pm_more_aggressive'          => $pmMoreAggressive,
+                    'post_lock_extension_roi'     => $postLockExtensionRoi,
+                    'compared_at'                 => $ts,
+                ];
+
+                $shadowState['bot_comparison'] = $comparisonEntry;
+
+                // Accumulate comparison counters
+                $comparedTotal++;
+                if ($pmMoreConservative) {
+                    $pmTighterTotal++;
+                } elseif ($pmMoreAggressive) {
+                    $pmLooserTotal++;
+                } else {
+                    $pmSameDirectionTotal++;
+                }
+                $stopGapDiffAbsSum += abs($stopGapDiffPct);
+                $lockDiffRoiAbsSum += abs($lockDiffRoi);
+                if ($postLockExtensionRoi > 0.0) {
+                    $positiveExtensionCount++;
+                    $postLockExtensionSum += $postLockExtensionRoi;
+                    if ($postLockExtensionRoi > $maxPostLockExtension) {
+                        $maxPostLockExtension = $postLockExtensionRoi;
+                    }
+                }
+            }
+
             $this->store->saveShadowState($tradeKey, $shadowState);
 
             $items[] = $shadowState;
@@ -685,6 +781,24 @@ class ProfitManager
         $avgPeakRoi         = $positionsProcessed > 0 ? round($peakRoiSum    / $positionsProcessed, 4) : 0.0;
         $avgCurrentRoi      = $positionsProcessed > 0 ? round($currentRoiSum / $positionsProcessed, 4) : 0.0;
 
+        // Comparison aggregate metrics (this run)
+        $avgStopGapDiffPct       = $comparedTotal > 0 ? round($stopGapDiffAbsSum / $comparedTotal, 4) : null;
+        $avgLockDiffRoi          = $comparedTotal > 0 ? round($lockDiffRoiAbsSum / $comparedTotal, 4) : null;
+        $avgPostLockExtensionRoi = $positiveExtensionCount > 0 ? round($postLockExtensionSum / $positiveExtensionCount, 4) : null;
+        $maxPostLockExtensionRoi = $maxPostLockExtension > 0.0 ? round($maxPostLockExtension, 4) : null;
+
+        $comparisonMetrics = [
+            'compared_positions_total'           => $comparedTotal,
+            'pm_vs_bot_tighter_total'            => $pmTighterTotal,
+            'pm_vs_bot_looser_total'             => $pmLooserTotal,
+            'pm_vs_bot_same_direction_total'     => $pmSameDirectionTotal,
+            'average_stop_gap_difference_pct'    => $avgStopGapDiffPct,
+            'average_lock_difference_roi'        => $avgLockDiffRoi,
+            'positions_with_positive_extension'  => $positiveExtensionCount,
+            'average_post_lock_extension_roi'    => $avgPostLockExtensionRoi,
+            'max_post_lock_extension_roi'        => $maxPostLockExtensionRoi,
+        ];
+
         $journal = [
             'ts'                   => $ts,
             'trailing_owner'       => 'profit_manager_shadow',
@@ -696,6 +810,7 @@ class ProfitManager
             'positions_exit_ready' => $positionsExitReady,
             'average_peak_roi'     => $avgPeakRoi,
             'average_current_roi'  => $avgCurrentRoi,
+            'comparison'           => $comparisonMetrics,
             'items'                => $items,
         ];
 

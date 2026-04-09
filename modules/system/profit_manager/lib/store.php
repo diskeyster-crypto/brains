@@ -410,6 +410,81 @@ class Store
         $path = $this->storageDir . '/runtime/shadow_journal.json';
         return $this->readJson($path);
     }
+
+    // =========================================================================
+    // Comparison metrics (PM shadow vs bot trailing)
+    // =========================================================================
+
+    /**
+     * Load aggregate comparison metrics (accumulated across runs).
+     *
+     * @return array
+     */
+    public function loadComparisonMetrics(): array
+    {
+        $path = $this->storageDir . '/runtime/shadow_comparison_metrics.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save aggregate comparison metrics.
+     *
+     * @param array $metrics
+     */
+    public function saveComparisonMetrics(array $metrics): void
+    {
+        $path = $this->storageDir . '/runtime/shadow_comparison_metrics.json';
+        $this->writeJson($path, $metrics);
+    }
+
+    /**
+     * Save a per-trade closed comparison snapshot (lightweight).
+     *
+     * @param string $tradeKey
+     * @param array  $snapshot
+     */
+    public function saveComparisonSnapshot(string $tradeKey, array $snapshot): void
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/snapshot_' . $safe . '.json';
+        $this->writeJson($path, $snapshot);
+    }
+
+    /**
+     * Load a per-trade closed comparison snapshot.
+     *
+     * @param string $tradeKey
+     * @return array
+     */
+    public function loadComparisonSnapshot(string $tradeKey): array
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/snapshot_' . $safe . '.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Load all shadow state keys (trade keys that have a shadow state file).
+     *
+     * @return string[]
+     */
+    public function loadShadowStateKeys(): array
+    {
+        $dir = $this->storageDir . '/runtime';
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $keys = [];
+        foreach (glob($dir . '/shadow_*.json') as $path) {
+            $base = basename($path, '.json');
+            // strip "shadow_" prefix
+            $key = substr($base, strlen('shadow_'));
+            if ($key !== '') {
+                $keys[] = $key;
+            }
+        }
+        return $keys;
+    }
 }
 
 /* RULES

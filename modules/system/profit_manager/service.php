@@ -212,8 +212,20 @@ final class ProfitManagerService
 
             $positions = $positionsResult['positions'] ?? [];
 
+            // Read bot active trades for comparison (best-effort, non-fatal)
+            $botTrades = $this->loadBotActiveTrades();
+
             // Run shadow trailing compute (no exchange writes)
-            $shadowResult = $this->profitManager->runShadow($positions, $this->config);
+            $shadowResult = $this->profitManager->runShadow($positions, $this->config, $botTrades);
+
+            // Detect closed trades: shadow keys no longer in active trades → save comparison snapshot
+            if (!empty($botTrades)) {
+                $this->persistClosedTradeSnapshots($shadowResult['items'] ?? [], $botTrades);
+            }
+
+            // Load and update aggregate comparison metrics across runs
+            $comparisonThisRun = $shadowResult['comparison'] ?? [];
+            $comparisonAgg     = $this->updateAggregateComparisonMetrics($comparisonThisRun);
 
             // Build runtime observability fields
             $shadowItems = $shadowResult['items'] ?? [];
@@ -245,6 +257,17 @@ final class ProfitManagerService
                 'positions_exit_ready'        => $shadowResult['positions_exit_ready'] ?? 0,
                 'average_peak_roi'            => $shadowResult['average_peak_roi'] ?? null,
                 'average_current_roi'         => $shadowResult['average_current_roi'] ?? null,
+                // Comparison metrics (this run)
+                'compared_positions_total'        => $comparisonThisRun['compared_positions_total'] ?? 0,
+                'pm_vs_bot_tighter_total'         => $comparisonThisRun['pm_vs_bot_tighter_total'] ?? 0,
+                'pm_vs_bot_looser_total'          => $comparisonThisRun['pm_vs_bot_looser_total'] ?? 0,
+                'pm_vs_bot_same_direction_total'  => $comparisonThisRun['pm_vs_bot_same_direction_total'] ?? 0,
+                'average_stop_gap_difference_pct' => $comparisonThisRun['average_stop_gap_difference_pct'] ?? null,
+                'average_lock_difference_roi'     => $comparisonThisRun['average_lock_difference_roi'] ?? null,
+                'average_post_lock_extension_roi' => $comparisonThisRun['average_post_lock_extension_roi'] ?? null,
+                'max_post_lock_extension_roi'     => $comparisonThisRun['max_post_lock_extension_roi'] ?? null,
+                // Comparison aggregate (across all runs)
+                'comparison_aggregate'            => $comparisonAgg,
                 'items'                       => array_slice($shadowItems, 0, 50),
                 'errors'                      => [],
                 'warnings'                    => [],
@@ -261,6 +284,215 @@ final class ProfitManagerService
             return $this->buildErrorResult($ts, $startTime, 'shadow_exception: ' . $e->getMessage());
         } finally {
             $this->store->releaseRunLock($lockFp);
+        }
+    }
+
+    /**
+     * Load bot active trades from bot storage directory (best-effort, returns [] on any failure).
+     *
+     * @return array[]
+     */
+    private function loadBotActiveTrades(): array
+    {
+        try {
+            $botStorageDir = $this->resolveBotStorageDir();
+            if ($botStorageDir === null) {
+                return [];
+            }
+            $activeDir = $botStorageDir . '/trades/active';
+            if (!is_dir($activeDir)) {
+                return [];
+            }
+            $trades = [];
+            foreach (glob($activeDir . '/*.json') as $path) {
+                $content = @file_get_contents($path);
+                if ($content === false || $content === '') {
+                    continue;
+                }
+                $trade = json_decode($content, true);
+                if (is_array($trade) && !empty($trade)) {
+                    $trades[] = $trade;
+                }
+            }
+            return $trades;
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Resolve the bot storage directory using SystemPaths.
+     *
+     * @return string|null
+     */
+    private function resolveBotStorageDir(): ?string
+    {
+        $candidates = [
+            'system.trading_bot',
+            'trading.trading_bot',
+            'modules.trading_bot',
+        ];
+        $paths = SystemPaths::instance();
+        foreach ($candidates as $key) {
+            try {
+                $p = $paths->get($key);
+                if (is_string($p) && $p !== '' && is_dir($p)) {
+                    $storageDir = rtrim($p, '/') . '/storage';
+                    if (is_dir($storageDir)) {
+                        return $storageDir;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // try next
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Detect trades that have shadow state but are no longer in bot active trades,
+     * and persist a closed-trade comparison snapshot (lightweight, best-effort).
+     *
+     * @param array[] $shadowItems  Items returned by runShadow (still-open positions)
+     * @param array[] $botTrades    Current bot active trades
+     */
+    private function persistClosedTradeSnapshots(array $shadowItems, array $botTrades): void
+    {
+        try {
+            // Build set of active shadow trade keys from this run
+            $activeShadowKeys = [];
+            foreach ($shadowItems as $item) {
+                $key = (string)($item['trade_id'] ?? '');
+                if ($key !== '') {
+                    $activeShadowKeys[$key] = true;
+                }
+            }
+
+            // Load all existing shadow state keys from store
+            $allShadowKeys = $this->store->loadShadowStateKeys();
+
+            // Build set of current bot trade keys by trade_id
+            $activeBotTradeIds = [];
+            foreach ($botTrades as $bt) {
+                $tid = (string)($bt['trade_id'] ?? $bt['id'] ?? '');
+                if ($tid !== '') {
+                    $activeBotTradeIds[$tid] = true;
+                }
+            }
+
+            // Keys with shadow state that are no longer in active shadow items → potential closes
+            foreach ($allShadowKeys as $key) {
+                if (isset($activeShadowKeys[$key])) {
+                    continue; // still active
+                }
+                // Check if this key is also gone from bot active trades
+                if (isset($activeBotTradeIds[$key])) {
+                    continue; // still in bot active — just not in PM positions (exchange position may be zero)
+                }
+
+                // Load last shadow state for this key
+                $prevState = $this->store->loadShadowState($key);
+                if (empty($prevState)) {
+                    continue;
+                }
+
+                // Avoid duplicate snapshots: skip if snapshot already exists
+                $existingSnapshot = $this->store->loadComparisonSnapshot($key);
+                if (!empty($existingSnapshot)) {
+                    continue;
+                }
+
+                // Build lightweight comparison snapshot
+                $snapshot = [
+                    'trade_id'                    => $key,
+                    'symbol'                      => $prevState['symbol'] ?? null,
+                    'side'                        => $prevState['side'] ?? null,
+                    'close_reason'                => 'detected_closed',
+                    'close_roi'                   => null,
+                    'peak_roi_seen'               => $prevState['peak_roi'] ?? null,
+                    'pm_shadow_last_proposed_stop'     => $prevState['proposed_stop_price'] ?? null,
+                    'pm_shadow_last_proposed_lock_roi' => $prevState['last_lock_roi'] ?? null,
+                    'pm_shadow_last_action'            => $prevState['proposed_action'] ?? null,
+                    'bot_stop_context'            => ($prevState['bot_comparison']['bot_effective_stop_price'] ?? null),
+                    'estimated_early_close_damage_roi' => null,
+                    'estimated_runner_extension_roi'   => $prevState['bot_comparison']['post_lock_extension_roi'] ?? null,
+                    'snapshot_ts'                 => date('c'),
+                ];
+
+                $this->store->saveComparisonSnapshot($key, $snapshot);
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal: snapshot persistence must never break shadow execution
+        }
+    }
+
+    /**
+     * Load, merge, and save aggregate comparison metrics across runs.
+     *
+     * @param array $thisRun  Comparison metrics from the current run
+     * @return array          Updated aggregate metrics
+     */
+    private function updateAggregateComparisonMetrics(array $thisRun): array
+    {
+        try {
+            $agg = $this->store->loadComparisonMetrics();
+
+            $prevTotal   = (int)($agg['compared_positions_total'] ?? 0);
+            $thisTotal   = (int)($thisRun['compared_positions_total'] ?? 0);
+            $newTotal    = $prevTotal + $thisTotal;
+
+            $agg['compared_positions_total']       = $newTotal;
+            $agg['pm_vs_bot_tighter_total']        = ((int)($agg['pm_vs_bot_tighter_total'] ?? 0)) + ((int)($thisRun['pm_vs_bot_tighter_total'] ?? 0));
+            $agg['pm_vs_bot_looser_total']         = ((int)($agg['pm_vs_bot_looser_total'] ?? 0)) + ((int)($thisRun['pm_vs_bot_looser_total'] ?? 0));
+            $agg['pm_vs_bot_same_direction_total'] = ((int)($agg['pm_vs_bot_same_direction_total'] ?? 0)) + ((int)($thisRun['pm_vs_bot_same_direction_total'] ?? 0));
+
+            // Running averages: recompute from accumulated sum (store sum + count)
+            if ($thisTotal > 0) {
+                $prevStopGapSum  = (float)($agg['_stop_gap_sum'] ?? 0.0);
+                $prevLockDiffSum = (float)($agg['_lock_diff_sum'] ?? 0.0);
+
+                $thisStopGapAvg  = (float)($thisRun['average_stop_gap_difference_pct'] ?? 0.0);
+                $thisLockDiffAvg = (float)($thisRun['average_lock_difference_roi'] ?? 0.0);
+                $thisStopGapSum  = $thisStopGapAvg * $thisTotal;
+                $thisLockDiffSum = $thisLockDiffAvg * $thisTotal;
+
+                $newStopGapSum  = $prevStopGapSum + $thisStopGapSum;
+                $newLockDiffSum = $prevLockDiffSum + $thisLockDiffSum;
+
+                $agg['_stop_gap_sum']  = $newStopGapSum;
+                $agg['_lock_diff_sum'] = $newLockDiffSum;
+                $agg['average_stop_gap_difference_pct'] = $newTotal > 0 ? round($newStopGapSum / $newTotal, 4) : null;
+                $agg['average_lock_difference_roi']     = $newTotal > 0 ? round($newLockDiffSum / $newTotal, 4) : null;
+            }
+
+            // Post-lock extension aggregate
+            $thisExtCount = (int)($thisRun['positions_with_positive_extension'] ?? 0);
+            $prevExtCount = (int)($agg['positions_with_positive_extension_total'] ?? 0);
+            $newExtCount  = $prevExtCount + $thisExtCount;
+            $agg['positions_with_positive_extension_total'] = $newExtCount;
+
+            if ($thisExtCount > 0) {
+                $prevExtSum   = (float)($agg['_post_lock_extension_sum'] ?? 0.0);
+                $thisExtAvg   = (float)($thisRun['average_post_lock_extension_roi'] ?? 0.0);
+                $thisExtSum   = $thisExtAvg * $thisExtCount;
+                $newExtSum    = $prevExtSum + $thisExtSum;
+                $agg['_post_lock_extension_sum']     = $newExtSum;
+                $agg['average_post_lock_extension_roi'] = $newExtCount > 0 ? round($newExtSum / $newExtCount, 4) : null;
+
+                $thisMax = (float)($thisRun['max_post_lock_extension_roi'] ?? 0.0);
+                $prevMax = (float)($agg['max_post_lock_extension_roi'] ?? 0.0);
+                if ($thisMax > $prevMax) {
+                    $agg['max_post_lock_extension_roi'] = round($thisMax, 4);
+                }
+            }
+
+            $agg['last_updated'] = date('c');
+
+            $this->store->saveComparisonMetrics($agg);
+
+            return $agg;
+        } catch (\Throwable $e) {
+            return [];
         }
     }
     

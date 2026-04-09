@@ -520,13 +520,21 @@ class ProfitManager
         $postLockExtensionSum       = 0.0;
         $maxPostLockExtension       = 0.0;
 
-        // Build bot-trade lookup by "symbol_side" key
-        $botTradeByKey = [];
+        // Comparison diagnostic counters
+        $comparisonUnavailableTotal = 0;
+        $unavailableReasonDist      = [];
+
+        // Build bot-trade lookup by canonical "symbol_side" key (normalise buy/sell→long/short)
+        $botTradeByKey    = [];
+        $botMatchableCount = 0;
         foreach ($botTrades as $bt) {
             $bSym  = (string)($bt['symbol'] ?? '');
             $bSide = strtolower((string)($bt['side'] ?? ''));
+            if ($bSide === 'buy')  { $bSide = 'long'; }
+            if ($bSide === 'sell') { $bSide = 'short'; }
             if ($bSym !== '' && in_array($bSide, ['long', 'short'], true)) {
                 $botTradeByKey[$bSym . '_' . $bSide] = $bt;
+                $botMatchableCount++;
             }
         }
 
@@ -762,6 +770,15 @@ class ProfitManager
                         $maxPostLockExtension = $postLockExtensionRoi;
                     }
                 }
+            } else {
+                // No matching bot trade — record reason for diagnostics
+                $unavailableReason = (count($botTrades) === 0)
+                    ? 'no_bot_trades_loaded'
+                    : 'no_matching_bot_trade';
+                $shadowState['bot_comparison']              = null;
+                $shadowState['comparison_unavailable_reason'] = $unavailableReason;
+                $unavailableReasonDist[$unavailableReason]  = ($unavailableReasonDist[$unavailableReason] ?? 0) + 1;
+                $comparisonUnavailableTotal++;
             }
 
             $this->store->saveShadowState($tradeKey, $shadowState);
@@ -811,6 +828,12 @@ class ProfitManager
             'average_peak_roi'     => $avgPeakRoi,
             'average_current_roi'  => $avgCurrentRoi,
             'comparison'           => $comparisonMetrics,
+            // Comparison diagnostics (per-run)
+            'comparison_matches_found_total'             => $comparedTotal,
+            'comparison_unavailable_total'               => $comparisonUnavailableTotal,
+            'comparison_unavailable_reason_distribution' => $unavailableReasonDist,
+            'bot_active_trades_provided'                 => count($botTrades),
+            'bot_active_trades_matchable'                => $botMatchableCount,
             'items'                => $items,
         ];
 

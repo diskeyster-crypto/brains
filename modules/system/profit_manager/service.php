@@ -21,6 +21,9 @@ final class ProfitManagerService
     private ?string $configError = null;
     private array $errors = [];
     private array $warnings = [];
+
+    /** Diagnostics from last loadBotActiveTrades() call */
+    private array $botTradeLoadDiag = ['loaded' => 0, 'matchable' => 0, 'storage_dir' => null];
     
     /** @var Lib\Store */
     private $store;
@@ -257,17 +260,25 @@ final class ProfitManagerService
                 'positions_exit_ready'        => $shadowResult['positions_exit_ready'] ?? 0,
                 'average_peak_roi'            => $shadowResult['average_peak_roi'] ?? null,
                 'average_current_roi'         => $shadowResult['average_current_roi'] ?? null,
+                // Bot trade load diagnostics
+                'bot_active_trades_loaded_total'              => $this->botTradeLoadDiag['loaded'] ?? 0,
+                'bot_active_trades_matchable_total'           => $this->botTradeLoadDiag['matchable'] ?? 0,
+                'bot_active_trades_storage_dir'               => $this->botTradeLoadDiag['storage_dir'] ?? null,
+                'bot_active_trades_load_error'                => $this->botTradeLoadDiag['error'] ?? null,
                 // Comparison metrics (this run)
-                'compared_positions_total'        => $comparisonThisRun['compared_positions_total'] ?? 0,
-                'pm_vs_bot_tighter_total'         => $comparisonThisRun['pm_vs_bot_tighter_total'] ?? 0,
-                'pm_vs_bot_looser_total'          => $comparisonThisRun['pm_vs_bot_looser_total'] ?? 0,
-                'pm_vs_bot_same_direction_total'  => $comparisonThisRun['pm_vs_bot_same_direction_total'] ?? 0,
-                'average_stop_gap_difference_pct' => $comparisonThisRun['average_stop_gap_difference_pct'] ?? null,
-                'average_lock_difference_roi'     => $comparisonThisRun['average_lock_difference_roi'] ?? null,
-                'average_post_lock_extension_roi' => $comparisonThisRun['average_post_lock_extension_roi'] ?? null,
-                'max_post_lock_extension_roi'     => $comparisonThisRun['max_post_lock_extension_roi'] ?? null,
+                'compared_positions_total'                    => $comparisonThisRun['compared_positions_total'] ?? 0,
+                'comparison_matches_found_total'              => $shadowResult['comparison_matches_found_total'] ?? 0,
+                'comparison_unavailable_total'                => $shadowResult['comparison_unavailable_total'] ?? 0,
+                'comparison_unavailable_reason_distribution'  => $shadowResult['comparison_unavailable_reason_distribution'] ?? [],
+                'pm_vs_bot_tighter_total'                     => $comparisonThisRun['pm_vs_bot_tighter_total'] ?? 0,
+                'pm_vs_bot_looser_total'                      => $comparisonThisRun['pm_vs_bot_looser_total'] ?? 0,
+                'pm_vs_bot_same_direction_total'              => $comparisonThisRun['pm_vs_bot_same_direction_total'] ?? 0,
+                'average_stop_gap_difference_pct'             => $comparisonThisRun['average_stop_gap_difference_pct'] ?? null,
+                'average_lock_difference_roi'                 => $comparisonThisRun['average_lock_difference_roi'] ?? null,
+                'average_post_lock_extension_roi'             => $comparisonThisRun['average_post_lock_extension_roi'] ?? null,
+                'max_post_lock_extension_roi'                 => $comparisonThisRun['max_post_lock_extension_roi'] ?? null,
                 // Comparison aggregate (across all runs)
-                'comparison_aggregate'            => $comparisonAgg,
+                'comparison_aggregate'                        => $comparisonAgg,
                 'items'                       => array_slice($shadowItems, 0, 50),
                 'errors'                      => [],
                 'warnings'                    => [],
@@ -288,23 +299,29 @@ final class ProfitManagerService
     }
 
     /**
-     * Load bot active trades from bot storage directory (best-effort, returns [] on any failure).
+     * Load bot active trades from the correct mode-specific storage directory.
+     * Best-effort: returns [] on any failure. Populates $this->botTradeLoadDiag.
      *
      * @return array[]
      */
     private function loadBotActiveTrades(): array
     {
+        $this->botTradeLoadDiag = ['loaded' => 0, 'matchable' => 0, 'storage_dir' => null];
         try {
             $botStorageDir = $this->resolveBotStorageDir();
             if ($botStorageDir === null) {
+                $this->botTradeLoadDiag['error'] = 'bot_storage_dir_not_resolved';
                 return [];
             }
+            $this->botTradeLoadDiag['storage_dir'] = $botStorageDir;
             $activeDir = $botStorageDir . '/trades/active';
             if (!is_dir($activeDir)) {
+                $this->botTradeLoadDiag['error'] = 'active_trades_dir_not_found';
                 return [];
             }
             $trades = [];
-            foreach (glob($activeDir . '/*.json') as $path) {
+            $matchable = 0;
+            foreach (glob($activeDir . '/*.json') ?: [] as $path) {
                 $content = @file_get_contents($path);
                 if ($content === false || $content === '') {
                     continue;
@@ -312,41 +329,113 @@ final class ProfitManagerService
                 $trade = json_decode($content, true);
                 if (is_array($trade) && !empty($trade)) {
                     $trades[] = $trade;
+                    $sym  = (string)($trade['symbol'] ?? '');
+                    $side = strtolower((string)($trade['side'] ?? ''));
+                    if ($sym !== '' && in_array($side, ['long', 'short', 'buy', 'sell'], true)) {
+                        $matchable++;
+                    }
                 }
             }
+            $this->botTradeLoadDiag['loaded']    = count($trades);
+            $this->botTradeLoadDiag['matchable'] = $matchable;
             return $trades;
         } catch (\Throwable $e) {
+            $this->botTradeLoadDiag['error'] = $e->getMessage();
             return [];
         }
     }
 
     /**
-     * Resolve the bot storage directory using SystemPaths.
+     * Resolve the correct mode-specific bot storage directory.
+     * Reads bot.json to determine mode (live/demo/paper) and picks the matching
+     * storage_live / storage_demo / storage_paper subdirectory.
+     * Falls back through all known suffixes and then the legacy 'storage' dir.
      *
      * @return string|null
      */
     private function resolveBotStorageDir(): ?string
     {
-        $candidates = [
-            'system.trading_bot',
-            'trading.trading_bot',
-            'modules.trading_bot',
-        ];
+        $candidates = ['system.trading_bot', 'trading.trading_bot', 'modules.trading_bot'];
         $paths = SystemPaths::instance();
         foreach ($candidates as $key) {
             try {
                 $p = $paths->get($key);
-                if (is_string($p) && $p !== '' && is_dir($p)) {
-                    $storageDir = rtrim($p, '/') . '/storage';
-                    if (is_dir($storageDir)) {
-                        return $storageDir;
+                if (!is_string($p) || $p === '' || !is_dir($p)) {
+                    continue;
+                }
+                $base    = rtrim($p, '/');
+                $botMode = $this->readBotMode($base);
+                $ordered = $this->botStorageSuffixOrder($botMode);
+
+                // Prefer a dir that already has the active trades subdir
+                foreach ($ordered as $suffix) {
+                    $sd = $base . '/' . $suffix;
+                    if (is_dir($sd . '/trades/active')) {
+                        return $sd;
+                    }
+                }
+                // Fallback: any existing storage dir
+                foreach ($ordered as $suffix) {
+                    $sd = $base . '/' . $suffix;
+                    if (is_dir($sd)) {
+                        return $sd;
                     }
                 }
             } catch (\Throwable $e) {
-                // try next
+                // try next candidate
             }
         }
         return null;
+    }
+
+    /**
+     * Read the bot module.mode from bot.json (best-effort, defaults to 'demo').
+     *
+     * @param string $botBase Absolute path to trading_bot module root
+     * @return string e.g. 'demo', 'live', 'paper'
+     */
+    private function readBotMode(string $botBase): string
+    {
+        try {
+            $path = $botBase . '/config/bot.json';
+            if (!is_file($path)) {
+                return 'demo';
+            }
+            $json = @file_get_contents($path);
+            if ($json === false || $json === '') {
+                return 'demo';
+            }
+            $data = json_decode($json, true);
+            if (!is_array($data)) {
+                return 'demo';
+            }
+            $mode = (string)($data['module']['mode'] ?? $data['mode'] ?? 'demo');
+            return $mode !== '' ? $mode : 'demo';
+        } catch (\Throwable $e) {
+            return 'demo';
+        }
+    }
+
+    /**
+     * Return an ordered list of storage directory suffixes to try for a given bot mode.
+     * Mode-specific suffix is always first; legacy 'storage' is last fallback.
+     *
+     * @param string $botMode
+     * @return string[]
+     */
+    private function botStorageSuffixOrder(string $botMode): array
+    {
+        $modeMap = ['live' => 'storage_live', 'demo' => 'storage_demo', 'paper' => 'storage_paper'];
+        $preferred = $modeMap[$botMode] ?? 'storage_demo';
+        // Build ordered unique list: preferred first, then the rest, then legacy
+        $all = [$preferred];
+        foreach ($modeMap as $suffix) {
+            if ($suffix !== $preferred) {
+                $all[] = $suffix;
+            }
+        }
+        $all[] = 'storage';
+        return $all;
     }
 
     /**

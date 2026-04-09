@@ -316,7 +316,9 @@ final class ProfitManagerService
             $this->botTradeLoadDiag['storage_dir'] = $botStorageDir;
             $activeDir = $botStorageDir . '/trades/active';
             if (!is_dir($activeDir)) {
-                $this->botTradeLoadDiag['error'] = 'active_trades_dir_not_found';
+                // Directory missing simply means no active trades yet — not a config error
+                $this->botTradeLoadDiag['loaded']    = 0;
+                $this->botTradeLoadDiag['matchable'] = 0;
                 return [];
             }
             $trades = [];
@@ -385,6 +387,35 @@ final class ProfitManagerService
                 // try next candidate
             }
         }
+
+        // Sibling-path fallback: derive bot base from PM module base directory.
+        // Reliable when SystemPaths candidates are not registered (e.g. lightweight cron context).
+        if ($this->moduleBase !== null) {
+            try {
+                $base = dirname($this->moduleBase) . '/trading_bot';
+                if (is_dir($base)) {
+                    $botMode = $this->readBotMode($base);
+                    $ordered = $this->botStorageSuffixOrder($botMode);
+                    // Prefer a dir that already has the active trades subdir
+                    foreach ($ordered as $suffix) {
+                        $sd = $base . '/' . $suffix;
+                        if (is_dir($sd . '/trades/active')) {
+                            return $sd;
+                        }
+                    }
+                    // Fallback: any existing storage dir
+                    foreach ($ordered as $suffix) {
+                        $sd = $base . '/' . $suffix;
+                        if (is_dir($sd)) {
+                            return $sd;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // non-fatal
+            }
+        }
+
         return null;
     }
 
@@ -482,6 +513,12 @@ final class ProfitManagerService
                 // Load last shadow state for this key
                 $prevState = $this->store->loadShadowState($key);
                 if (empty($prevState)) {
+                    // No shadow state found — save a skip record so the reason is explicit
+                    $this->store->saveComparisonSnapshot($key, [
+                        'trade_id'             => $key,
+                        'snapshot_skip_reason' => 'no_shadow_state_found',
+                        'snapshot_ts'          => date('c'),
+                    ]);
                     continue;
                 }
 
@@ -502,7 +539,7 @@ final class ProfitManagerService
                     'pm_shadow_last_proposed_stop'     => $prevState['proposed_stop_price'] ?? null,
                     'pm_shadow_last_proposed_lock_roi' => $prevState['last_lock_roi'] ?? null,
                     'pm_shadow_last_action'            => $prevState['proposed_action'] ?? null,
-                    'bot_stop_context'            => ($prevState['bot_comparison']['bot_effective_stop_price'] ?? null),
+                    'bot_effective_stop_price'         => ($prevState['bot_comparison']['bot_effective_stop_price'] ?? null),
                     'estimated_early_close_damage_roi' => null,
                     'estimated_runner_extension_roi'   => $prevState['bot_comparison']['post_lock_extension_roi'] ?? null,
                     'snapshot_ts'                 => date('c'),

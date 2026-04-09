@@ -771,11 +771,10 @@ class ProfitManager
                     }
                 }
             } else {
-                // No matching bot trade — record reason for diagnostics
+                // No matching bot trade — record reason for diagnostics; do NOT set bot_comparison=null
                 $unavailableReason = (count($botTrades) === 0)
                     ? 'no_bot_trades_loaded'
                     : 'no_matching_bot_trade';
-                $shadowState['bot_comparison']              = null;
                 $shadowState['comparison_unavailable_reason'] = $unavailableReason;
                 $unavailableReasonDist[$unavailableReason]  = ($unavailableReasonDist[$unavailableReason] ?? 0) + 1;
                 $comparisonUnavailableTotal++;
@@ -827,6 +826,16 @@ class ProfitManager
             'positions_exit_ready' => $positionsExitReady,
             'average_peak_roi'     => $avgPeakRoi,
             'average_current_roi'  => $avgCurrentRoi,
+            // Flat comparison fields (top-level for direct access)
+            'compared_positions_total'                   => $comparedTotal,
+            'pm_vs_bot_tighter_total'                    => $pmTighterTotal,
+            'pm_vs_bot_looser_total'                     => $pmLooserTotal,
+            'pm_vs_bot_same_direction_total'             => $pmSameDirectionTotal,
+            'average_stop_gap_difference_pct'            => $avgStopGapDiffPct,
+            'average_lock_difference_roi'                => $avgLockDiffRoi,
+            'average_post_lock_extension_roi'            => $avgPostLockExtensionRoi,
+            'max_post_lock_extension_roi'                => $maxPostLockExtensionRoi,
+            // Nested comparison block (for backward compat)
             'comparison'           => $comparisonMetrics,
             // Comparison diagnostics (per-run)
             'comparison_matches_found_total'             => $comparedTotal,

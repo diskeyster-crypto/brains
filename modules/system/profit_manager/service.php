@@ -286,6 +286,14 @@ final class ProfitManagerService
 
             $this->store->saveLastRun($result);
 
+            // Make shadow_journal.json authoritative with all flat comparison fields (TASK 1, TASK 4)
+            $this->store->saveShadowJournal($result);
+
+            // Persist aggregate comparison metrics file when comparison data exists (TASK 5)
+            if (($comparisonThisRun['compared_positions_total'] ?? 0) > 0) {
+                $this->store->saveComparisonMetrics($comparisonAgg);
+            }
+
             return $result;
         } catch (\Throwable $e) {
             $this->store->logError('shadow execute exception', [

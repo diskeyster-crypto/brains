@@ -545,6 +545,35 @@ class Store
         $path = $this->storageDir . '/runtime/active_' . $safe . '.json';
         $this->writeJson($path, $state);
     }
+
+    // =========================================================================
+    // Active owner journal (PM-8 runtime proof artifact)
+    // =========================================================================
+
+    /**
+     * Save active-owner journal (latest executeActive() run decisions).
+     *
+     * Written on every executeActive() call. Mirrors shadow_journal.json pattern.
+     * Contains per-position stage, lock improvement, apply outcome, skip/block reasons.
+     *
+     * @param array $journal
+     */
+    public function saveActiveOwnerJournal(array $journal): void
+    {
+        $path = $this->storageDir . '/runtime/active_owner_journal.json';
+        $this->writeJson($path, $journal);
+    }
+
+    /**
+     * Load active-owner journal.
+     *
+     * @return array
+     */
+    public function loadActiveOwnerJournal(): array
+    {
+        $path = $this->storageDir . '/runtime/active_owner_journal.json';
+        return $this->readJson($path);
+    }
 }
 
 /* RULES

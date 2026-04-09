@@ -279,6 +279,50 @@ final class ProfitManagerService
             $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($allActiveItems);
             $passportDiag    = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
 
+            // PM-8: Extract active-owner proof counters and build compact journal artifact.
+            // The journal mirrors shadow_journal.json in purpose but for active-owner decisions.
+            $pm8Counters = $runResult['pm8_counters'] ?? [];
+
+            $journalItems = [];
+            foreach ($items as $item) {
+                $journalItems[] = [
+                    'symbol'                            => $item['symbol'] ?? null,
+                    'side'                              => $item['side'] ?? null,
+                    'owner_mode'                        => $item['owner_mode'] ?? 'profit_manager',
+                    'current_roi'                       => $item['current_roi'] ?? null,
+                    'peak_roi'                          => $item['peak_roi'] ?? null,
+                    'trailing_armed'                    => $item['trailing_armed'] ?? false,
+                    'proposed_lock_roi'                 => $item['proposed_lock_roi'] ?? null,
+                    'pm_management_stage'               => $item['pm_management_stage'] ?? 'pm_update_skipped',
+                    'lock_improvement_detected'         => $item['lock_improvement_detected'] ?? false,
+                    'current_stop_or_lock_reference'    => $item['current_stop_or_lock_reference'] ?? null,
+                    'proposed_stop_or_lock_reference'   => $item['proposed_stop_or_lock_reference'] ?? null,
+                    'apply_attempted'                   => $item['apply_attempted'] ?? false,
+                    'apply_applied'                     => $item['apply_applied'] ?? false,
+                    'skip_reason'                       => $item['skip_reason'] ?? null,
+                    'block_reason'                      => $item['block_reason'] ?? null,
+                    'bot_dynamic_trailing_skipped_by_owner' => $item['bot_dynamic_trailing_skipped_by_owner'] ?? true,
+                    'updated_at'                        => $ts,
+                ];
+            }
+
+            // Save compact active-owner journal — always overwrite, no stale payload
+            $this->store->saveActiveOwnerJournal([
+                'ts'                                     => $ts,
+                'trailing_owner'                         => 'profit_manager',
+                'positions_seen'                         => $runResult['positions_total'] ?? 0,
+                'positions_managed'                      => $runResult['positions_managed'] ?? 0,
+                // PM-8 aggregated counters (proof that PM was the sole active trailing owner)
+                'active_owner_symbols_seen_total'        => $pm8Counters['active_owner_symbols_seen_total']        ?? 0,
+                'active_owner_symbols_eligible_total'    => $pm8Counters['active_owner_symbols_eligible_total']    ?? 0,
+                'active_owner_proposals_computed_total'  => $pm8Counters['active_owner_proposals_computed_total']  ?? 0,
+                'active_owner_apply_attempted_total'     => $pm8Counters['active_owner_apply_attempted_total']     ?? 0,
+                'active_owner_apply_success_total'       => $pm8Counters['active_owner_apply_success_total']       ?? 0,
+                'active_owner_apply_skipped_total'       => $pm8Counters['active_owner_apply_skipped_total']       ?? 0,
+                'active_owner_apply_blocked_total'       => $pm8Counters['active_owner_apply_blocked_total']       ?? 0,
+                'items'                                  => array_slice($journalItems, 0, 50),
+            ]);
+
             $result = [
                 'ts'                             => $ts,
                 'ok'                             => empty($runResult['errors']),
@@ -300,19 +344,27 @@ final class ProfitManagerService
                 'step_trailing'                  => $runResult['stats']['step_trailing'] ?? ['applied' => 0, 'skipped' => 0, 'failed' => 0],
                 'dumb_trailing'                  => $runResult['stats']['dumb_trailing'] ?? ['applied' => 0, 'skipped' => 0, 'failed' => 0],
                 // Bot trade load diagnostics (same as shadow mode)
-                'bot_active_trades_loaded_total'  => $this->botTradeLoadDiag['loaded'] ?? 0,
-                'bot_active_trades_matchable_total' => $this->botTradeLoadDiag['matchable'] ?? 0,
-                'bot_active_trades_storage_dir'   => $this->botTradeLoadDiag['storage_dir'] ?? null,
-                'bot_active_trades_load_error'    => $this->botTradeLoadDiag['error'] ?? null,
+                'bot_active_trades_loaded_total'          => $this->botTradeLoadDiag['loaded'] ?? 0,
+                'bot_active_trades_matchable_total'       => $this->botTradeLoadDiag['matchable'] ?? 0,
+                'bot_active_trades_storage_dir'           => $this->botTradeLoadDiag['storage_dir'] ?? null,
+                'bot_active_trades_load_error'            => $this->botTradeLoadDiag['error'] ?? null,
                 // PM-7 passport write-back observability
-                'passport_write_attempted_total' => $passportDiag['passport_write_attempted_total'] ?? 0,
-                'passport_write_success_total'   => $passportDiag['passport_write_success_total'] ?? 0,
-                'passport_write_skipped_total'   => $passportDiag['passport_write_skipped_total'] ?? 0,
-                'passport_write_error_total'     => $passportDiag['passport_write_error_total'] ?? 0,
-                'passport_symbols_updated'       => $passportDiag['passport_symbols_updated'] ?? [],
-                'items'                          => array_slice($items, 0, 50),
-                'errors'                         => $runResult['errors'] ?? [],
-                'warnings'                       => $runResult['warnings'] ?? [],
+                'passport_write_attempted_total'          => $passportDiag['passport_write_attempted_total'] ?? 0,
+                'passport_write_success_total'            => $passportDiag['passport_write_success_total'] ?? 0,
+                'passport_write_skipped_total'            => $passportDiag['passport_write_skipped_total'] ?? 0,
+                'passport_write_error_total'              => $passportDiag['passport_write_error_total'] ?? 0,
+                'passport_symbols_updated'                => $passportDiag['passport_symbols_updated'] ?? [],
+                // PM-8 active-owner proof counters
+                'active_owner_symbols_seen_total'         => $pm8Counters['active_owner_symbols_seen_total']        ?? 0,
+                'active_owner_symbols_eligible_total'     => $pm8Counters['active_owner_symbols_eligible_total']    ?? 0,
+                'active_owner_proposals_computed_total'   => $pm8Counters['active_owner_proposals_computed_total']  ?? 0,
+                'active_owner_apply_attempted_total'      => $pm8Counters['active_owner_apply_attempted_total']     ?? 0,
+                'active_owner_apply_success_total'        => $pm8Counters['active_owner_apply_success_total']       ?? 0,
+                'active_owner_apply_skipped_total'        => $pm8Counters['active_owner_apply_skipped_total']       ?? 0,
+                'active_owner_apply_blocked_total'        => $pm8Counters['active_owner_apply_blocked_total']       ?? 0,
+                'items'                                   => array_slice($items, 0, 50),
+                'errors'                                  => $runResult['errors'] ?? [],
+                'warnings'                                => $runResult['warnings'] ?? [],
             ];
 
             $this->store->saveLastRun($result);

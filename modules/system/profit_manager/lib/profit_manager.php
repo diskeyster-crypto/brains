@@ -94,14 +94,32 @@ class ProfitManager
                 'stats'             => $stats,
                 'errors'            => $errors,
                 'warnings'          => $warnings,
+                'pm8_counters'      => [
+                    'active_owner_symbols_seen_total'        => 0,
+                    'active_owner_symbols_eligible_total'    => 0,
+                    'active_owner_proposals_computed_total'  => 0,
+                    'active_owner_apply_attempted_total'     => 0,
+                    'active_owner_apply_success_total'       => 0,
+                    'active_owner_apply_skipped_total'       => 0,
+                    'active_owner_apply_blocked_total'       => 0,
+                ],
             ];
         }
 
         $positions      = $positionsResult['positions'] ?? [];
         $positionsTotal = count($positions);
 
-        $managed        = $this->selector->getManagedSymbols($positions);
+        $managed          = $this->selector->getManagedSymbols($positions);
         $positionsManaged = count($managed);
+
+        // PM-8: Active-owner runtime proof counters — updated per managed position
+        $pm8Seen      = 0; // all positions seen by PM
+        $pm8Eligible  = 0; // positions where trailing is armed (above activation ROI)
+        $pm8Proposals = 0; // positions where an improving trailing proposal was computed
+        $pm8Attempted = 0; // positions where an exchange update was attempted
+        $pm8Success   = 0; // positions where the exchange update succeeded
+        $pm8Skipped   = 0; // positions where no update was warranted (not armed / not improving)
+        $pm8Blocked   = 0; // positions where update was attempted but exchange rejected/failed
 
         foreach ($managed as $symbol => $ctx) {
             $position = $ctx['position'] ?? [];
@@ -219,6 +237,69 @@ class ProfitManager
             $itemResult['exchange_update_ok']                  = $exchangeOk;
             $itemResult['exchange_update_error']               = $exchangeUpdateError;
 
+            // PM-8: Active-owner runtime proof fields — per position
+            // current_stop_or_lock_reference: stop loss currently set on the exchange position
+            $currentStopLoss = (float)($position['stopLoss'] ?? 0.0);
+
+            // lock_improvement_detected: true when step trailing action = step_sl_update
+            // (ratchet check already passed inside processStepTrailing) OR dumb trailing set
+            $lockImprovementDetected = in_array($appliedAction, ['step_sl_update', 'dumb_trailing_set'], true);
+
+            // pm_management_stage: final stage reached this tick for this position
+            if ($exchangeAttempted && $exchangeOk) {
+                $pmStage = 'pm_update_applied';
+            } elseif ($exchangeAttempted) {
+                // Attempted but exchange returned an error → blocked
+                $pmStage = 'pm_update_blocked';
+            } else {
+                // No exchange call made (no improving proposal, not armed, too close, etc.)
+                $pmStage = 'pm_update_skipped';
+            }
+
+            // skip_reason: first available skip reason when no update was attempted
+            // Priority: step trailing reason > dumb trailing reason
+            $skipReason = null;
+            if ($pmStage === 'pm_update_skipped') {
+                if ($st !== null && ($st['action'] ?? '') === 'skip') {
+                    $skipReason = $st['reason'] ?? 'no_step_trailing_action';
+                } elseif ($dt !== null && ($dt['action'] ?? '') === 'skip') {
+                    $skipReason = $dt['reason'] ?? 'no_dumb_trailing_action';
+                } else {
+                    $skipReason = 'no_trailing_action_computed';
+                }
+            }
+
+            // block_reason: exchange-level error when update was attempted but failed
+            $blockReason = ($pmStage === 'pm_update_blocked') ? $exchangeUpdateError : null;
+
+            $itemResult['pm_management_stage']             = $pmStage;
+            $itemResult['lock_improvement_detected']       = $lockImprovementDetected;
+            $itemResult['current_stop_or_lock_reference']  = $currentStopLoss > 0.0 ? $currentStopLoss : null;
+            $itemResult['proposed_stop_or_lock_reference'] = $proposedStopPrice;
+            $itemResult['apply_attempted']                 = $exchangeAttempted;
+            $itemResult['apply_applied']                   = $exchangeOk;
+            $itemResult['skip_reason']                     = $skipReason;
+            $itemResult['block_reason']                    = $blockReason;
+
+            // PM-8 counter updates for this position
+            $pm8Seen++;
+            if ($trailingArmed) {
+                $pm8Eligible++;
+            }
+            if ($lockImprovementDetected) {
+                $pm8Proposals++;
+            }
+            if ($exchangeAttempted) {
+                $pm8Attempted++;
+                if ($exchangeOk) {
+                    $pm8Success++;
+                } else {
+                    $pm8Blocked++;
+                }
+            } else {
+                $pm8Skipped++;
+            }
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -271,6 +352,16 @@ class ProfitManager
             'stats'             => $stats,
             'errors'            => $errors,
             'warnings'          => $warnings,
+            // PM-8: aggregated active-owner proof counters (consumed by service.php executeActive)
+            'pm8_counters'      => [
+                'active_owner_symbols_seen_total'        => $pm8Seen,
+                'active_owner_symbols_eligible_total'    => $pm8Eligible,
+                'active_owner_proposals_computed_total'  => $pm8Proposals,
+                'active_owner_apply_attempted_total'     => $pm8Attempted,
+                'active_owner_apply_success_total'       => $pm8Success,
+                'active_owner_apply_skipped_total'       => $pm8Skipped,
+                'active_owner_apply_blocked_total'       => $pm8Blocked,
+            ],
         ];
     }
 

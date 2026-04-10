@@ -574,6 +574,36 @@ class Store
         $path = $this->storageDir . '/runtime/active_owner_journal.json';
         return $this->readJson($path);
     }
+
+    // =========================================================================
+    // Last active-owner proof (PM-8 durable proof artifact)
+    // =========================================================================
+
+    /**
+     * Save the durable PM-8 proof artifact.
+     *
+     * Written only when a run has meaningful active-owner evidence
+     * (eligible > 0, apply_attempted > 0, or apply_success > 0).
+     * Never overwritten by a later empty/no-position run.
+     *
+     * @param array $proof
+     */
+    public function saveLastActiveOwnerProof(array $proof): void
+    {
+        $path = $this->storageDir . '/runtime/last_active_owner_proof.json';
+        $this->writeJson($path, $proof);
+    }
+
+    /**
+     * Load the durable PM-8 proof artifact.
+     *
+     * @return array
+     */
+    public function loadLastActiveOwnerProof(): array
+    {
+        $path = $this->storageDir . '/runtime/last_active_owner_proof.json';
+        return $this->readJson($path);
+    }
 }
 
 /* RULES

@@ -364,7 +364,14 @@ final class ProfitManagerService
                 }
             }
 
-            // Save compact active-owner journal — always overwrite, no stale payload
+            // PM-8 proof counters extracted for reuse below.
+            $pm8EligibleTotal  = (int)($pm8Counters['active_owner_symbols_eligible_total']   ?? 0);
+            $pm8AttemptedTotal = (int)($pm8Counters['active_owner_apply_attempted_total']    ?? 0);
+            $pm8SuccessTotal   = (int)($pm8Counters['active_owner_apply_success_total']      ?? 0);
+            $pm8BlockedTotal   = (int)($pm8Counters['active_owner_apply_blocked_total']      ?? 0);
+            $pm8SeenTotal      = (int)($pm8Counters['active_owner_symbols_seen_total']       ?? 0);
+
+            // Build compact journal payload.
             $journalPayload = [
                 'ts'                                     => $ts,
                 'trailing_owner'                         => 'profit_manager',
@@ -372,19 +379,53 @@ final class ProfitManagerService
                 'positions_seen'                         => $runResult['positions_total'] ?? 0,
                 'positions_managed'                      => $runResult['positions_managed'] ?? 0,
                 // PM-8 aggregated counters (proof that PM was the sole active trailing owner)
-                'active_owner_symbols_seen_total'        => $pm8Counters['active_owner_symbols_seen_total']        ?? 0,
-                'active_owner_symbols_eligible_total'    => $pm8Counters['active_owner_symbols_eligible_total']    ?? 0,
+                'active_owner_symbols_seen_total'        => $pm8SeenTotal,
+                'active_owner_symbols_eligible_total'    => $pm8EligibleTotal,
                 'active_owner_proposals_computed_total'  => $pm8Counters['active_owner_proposals_computed_total']  ?? 0,
-                'active_owner_apply_attempted_total'     => $pm8Counters['active_owner_apply_attempted_total']     ?? 0,
-                'active_owner_apply_success_total'       => $pm8Counters['active_owner_apply_success_total']       ?? 0,
+                'active_owner_apply_attempted_total'     => $pm8AttemptedTotal,
+                'active_owner_apply_success_total'       => $pm8SuccessTotal,
                 'active_owner_apply_skipped_total'       => $pm8Counters['active_owner_apply_skipped_total']       ?? 0,
-                'active_owner_apply_blocked_total'       => $pm8Counters['active_owner_apply_blocked_total']       ?? 0,
+                'active_owner_apply_blocked_total'       => $pm8BlockedTotal,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
                 $journalPayload['active_owner_ineligibility_summary'] = $ineligibilitySummary;
             }
-            $this->store->saveActiveOwnerJournal($journalPayload);
+
+            // Only overwrite active_owner_journal.json when this run has positions.
+            // A later empty run (no positions) must not erase meaningful PM-8 proof evidence.
+            if ($pm8SeenTotal > 0 || !empty($journalItems)) {
+                $this->store->saveActiveOwnerJournal($journalPayload);
+            }
+
+            // Durable PM-8 proof artifact: written only when this run has meaningful evidence
+            // (eligible > 0, apply_attempted > 0, apply_success > 0, or apply_blocked > 0).
+            // Never overwritten by a later empty/no-position tick.
+            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0) {
+                $proofItems = [];
+                foreach ($journalItems as $ji) {
+                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied'])) {
+                        $proofItems[] = $ji;
+                    }
+                }
+                // Fallback: if nothing filtered but counters say something happened, include all items.
+                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0)) {
+                    $proofItems = $journalItems;
+                }
+                $proofPayload = [
+                    'ts'                                    => $ts,
+                    'trailing_owner'                        => 'profit_manager',
+                    'positions_seen'                        => $pm8SeenTotal,
+                    'active_owner_symbols_eligible_total'   => $pm8EligibleTotal,
+                    'active_owner_proposals_computed_total' => $pm8Counters['active_owner_proposals_computed_total'] ?? 0,
+                    'active_owner_apply_attempted_total'    => $pm8AttemptedTotal,
+                    'active_owner_apply_success_total'      => $pm8SuccessTotal,
+                    'active_owner_apply_skipped_total'      => $pm8Counters['active_owner_apply_skipped_total']     ?? 0,
+                    'active_owner_apply_blocked_total'      => $pm8BlockedTotal,
+                    'items'                                 => array_slice($proofItems, 0, 50),
+                ];
+                $this->store->saveLastActiveOwnerProof($proofPayload);
+            }
 
             $result = [
                 'ts'                             => $ts,

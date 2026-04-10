@@ -357,6 +357,106 @@ final class ProfitManagerService
                 $journalItems[] = $entry;
             }
 
+            // PM-12: Passive post-entry evidence capture.
+            // Build one compact record per managed item from already-produced observability fields.
+            // Records are write-only (NDJSON append). They do NOT affect any PM decision.
+            $pm12EvidenceRecords     = [];
+            $pm12ThisRunWritten      = 0;
+            $pm12ThisRunApply        = 0;
+            $pm12ThisRunSkip         = 0;
+            $pm12ThisRunNoop         = 0;
+            $pm12ThisRunRefinement   = 0;
+            $pm12ThisRunAdaptive     = 0;
+            $pm12ThisRunSymbols      = [];
+            foreach ($items as $item) {
+                $evSymbol = (string)($item['symbol'] ?? '');
+                if ($evSymbol === '') {
+                    continue;
+                }
+                $evApplied    = !empty($item['apply_applied']);
+                $evNoop       = !empty($item['noop_same_lock']);
+                $evEventType  = $evApplied ? 'apply' : ($evNoop ? 'noop' : 'skip');
+                $evRefinement = isset($item['refinement_policy_stage'])
+                    && $item['refinement_policy_stage'] !== null
+                    && $item['refinement_policy_stage'] !== 'no_refinement';
+                $evAdaptive   = isset($item['adaptive_refinement_mode'])
+                    && $item['adaptive_refinement_mode'] !== null;
+                // Deterministic event_id: timestamp + symbol (safe) + microsecond suffix
+                $evEventId = sprintf(
+                    '%s_%s_%s',
+                    date('YmdHis'),
+                    preg_replace('/[^a-z0-9]/', '', strtolower($evSymbol)),
+                    substr(str_replace('.', '', (string)microtime(true)), -7)
+                );
+                $pm12EvidenceRecords[] = [
+                    'event_id'                              => $evEventId,
+                    'event_time'                            => $ts,
+                    'event_type'                            => $evEventType,
+                    'symbol'                                => $evSymbol,
+                    'side'                                  => $item['side'] ?? null,
+                    'owner_mode'                            => $item['owner_mode'] ?? 'profit_manager',
+                    'armed_state'                           => $item['trailing_armed'] ?? false,
+                    'current_roi'                           => $item['current_roi'] ?? null,
+                    'peak_roi'                              => $item['peak_roi'] ?? null,
+                    'previous_lock_roi'                     => $item['previous_lock_roi'] ?? null,
+                    'proposed_lock_roi'                     => $item['proposed_lock_roi'] ?? null,
+                    'applied_lock_roi'                      => $item['applied_lock_roi'] ?? null,
+                    'pm_management_stage'                   => $item['pm_management_stage'] ?? null,
+                    'pm_stages_reached'                     => $item['pm_stages_reached'] ?? [],
+                    'refinement_policy_stage'               => $item['refinement_policy_stage'] ?? null,
+                    'adaptive_refinement_mode'              => $item['adaptive_refinement_mode'] ?? null,
+                    'skip_reason'                           => $item['skip_reason'] ?? null,
+                    'block_reason'                          => $item['block_reason'] ?? null,
+                    'apply_attempted'                       => $item['apply_attempted'] ?? false,
+                    'apply_applied'                         => $evApplied,
+                    'no_change_reason'                      => $item['no_change_reason'] ?? null,
+                    'bot_dynamic_trailing_skipped_by_owner' => $item['bot_dynamic_trailing_skipped_by_owner'] ?? true,
+                    'continuation_after_first_lock'         => $item['continuation_extension_applied'] ?? null,
+                    'momentum_after_apply'                  => $evApplied ? ($item['lock_improvement_detected'] ?? null) : null,
+                    'carry_forward_state'                   => $item['carried_forward_state'] ?? null,
+                    'shallow_pullback_seen'                 => $item['shallow_pullback_protection_active'] ?? null,
+                    'updated_at'                            => $ts,
+                ];
+                $pm12ThisRunWritten++;
+                if ($evApplied)           { $pm12ThisRunApply++; }
+                elseif ($evNoop)          { $pm12ThisRunNoop++; }
+                else                      { $pm12ThisRunSkip++; }
+                if ($evRefinement)        { $pm12ThisRunRefinement++; }
+                if ($evAdaptive)          { $pm12ThisRunAdaptive++; }
+                $pm12ThisRunSymbols[$evSymbol] = true;
+            }
+            // Merge this-run PM-12 counts into cumulative pm12_counters.json (persisted across ticks)
+            $prevPm12   = $this->store->loadPm12Counters();
+            $pm12Totals = [
+                'evidence_records_written_total'      => ((int)($prevPm12['evidence_records_written_total']      ?? 0)) + $pm12ThisRunWritten,
+                'evidence_apply_events_total'         => ((int)($prevPm12['evidence_apply_events_total']         ?? 0)) + $pm12ThisRunApply,
+                'evidence_skip_events_total'          => ((int)($prevPm12['evidence_skip_events_total']          ?? 0)) + $pm12ThisRunSkip,
+                'evidence_noop_events_total'          => ((int)($prevPm12['evidence_noop_events_total']          ?? 0)) + $pm12ThisRunNoop,
+                'evidence_refinement_events_total'    => ((int)($prevPm12['evidence_refinement_events_total']    ?? 0)) + $pm12ThisRunRefinement,
+                'evidence_adaptive_mode_events_total' => ((int)($prevPm12['evidence_adaptive_mode_events_total'] ?? 0)) + $pm12ThisRunAdaptive,
+                'evidence_symbols_observed_total'     => ((int)($prevPm12['evidence_symbols_observed_total']     ?? 0)) + count($pm12ThisRunSymbols),
+                'updated_at'                          => $ts,
+            ];
+            $this->store->savePm12Counters($pm12Totals);
+            // Append evidence records to bounded NDJSON file (best-effort, non-fatal)
+            if (!empty($pm12EvidenceRecords)) {
+                $this->store->appendPostEntryEvidence($pm12EvidenceRecords);
+            }
+            // Per-symbol evidence linkage: update status with last event id/type and sample count
+            foreach ($pm12EvidenceRecords as $evRec) {
+                $evSym = (string)($evRec['symbol'] ?? '');
+                if ($evSym === '') {
+                    continue;
+                }
+                $existingStatus  = $this->store->getSymbolStatus($evSym) ?? [];
+                $existingSamples = (int)($existingStatus['evidence_samples_total'] ?? 0);
+                $this->store->updateSymbolStatus($evSym, [
+                    'last_evidence_event_id'   => $evRec['event_id'],
+                    'last_evidence_event_type' => $evRec['event_type'],
+                    'evidence_samples_total'   => $existingSamples + 1,
+                ]);
+            }
+
             // Compact ineligibility summary: surfaces when all seen positions are below threshold.
             // Lets the archive verify the activation threshold and how far each position is from it.
             $ineligibilitySummary = null;
@@ -447,6 +547,15 @@ final class ProfitManagerService
                 'this_run_adaptive_strong_continuation'        => $pm11Counters['this_run_strong_continuation']                 ?? 0,
                 'this_run_adaptive_shallow_pullback'           => $pm11Counters['this_run_shallow_pullback']                    ?? 0,
                 'this_run_adaptive_flat_carry'                 => $pm11Counters['this_run_flat_carry']                          ?? 0,
+                // PM-12 passive evidence counters (cumulative; proves write-only capture is active)
+                'evidence_records_written_total'               => $pm12Totals['evidence_records_written_total'],
+                'evidence_apply_events_total'                  => $pm12Totals['evidence_apply_events_total'],
+                'evidence_skip_events_total'                   => $pm12Totals['evidence_skip_events_total'],
+                'evidence_noop_events_total'                   => $pm12Totals['evidence_noop_events_total'],
+                'evidence_refinement_events_total'             => $pm12Totals['evidence_refinement_events_total'],
+                'evidence_adaptive_mode_events_total'          => $pm12Totals['evidence_adaptive_mode_events_total'],
+                'evidence_symbols_observed_total'              => $pm12Totals['evidence_symbols_observed_total'],
+                'evidence_this_run_written'                    => $pm12ThisRunWritten,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -483,6 +592,11 @@ final class ProfitManagerService
                     'active_owner_apply_success_total'      => $pm8SuccessTotal,
                     'active_owner_apply_skipped_total'      => $pm8Counters['active_owner_apply_skipped_total']     ?? 0,
                     'active_owner_apply_blocked_total'      => $pm8BlockedTotal,
+                    // PM-12 evidence counters in proof artifact (proves capture was active during eligible runs)
+                    'evidence_records_written_total'        => $pm12Totals['evidence_records_written_total'],
+                    'evidence_apply_events_total'           => $pm12Totals['evidence_apply_events_total'],
+                    'evidence_skip_events_total'            => $pm12Totals['evidence_skip_events_total'],
+                    'evidence_noop_events_total'            => $pm12Totals['evidence_noop_events_total'],
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
@@ -552,6 +666,14 @@ final class ProfitManagerService
                 'adaptive_adjustment_applied_total'            => $pm11Counters['adaptive_adjustment_applied_total']            ?? 0,
                 'adaptive_adjustment_noop_total'               => $pm11Counters['adaptive_adjustment_noop_total']               ?? 0,
                 'adaptive_bounds_hit_total'                    => $pm11Counters['adaptive_bounds_hit_total']                    ?? 0,
+                // PM-12 passive evidence counters (cumulative; appear in last_run.json for archive verification)
+                'evidence_records_written_total'               => $pm12Totals['evidence_records_written_total'],
+                'evidence_apply_events_total'                  => $pm12Totals['evidence_apply_events_total'],
+                'evidence_skip_events_total'                   => $pm12Totals['evidence_skip_events_total'],
+                'evidence_noop_events_total'                   => $pm12Totals['evidence_noop_events_total'],
+                'evidence_refinement_events_total'             => $pm12Totals['evidence_refinement_events_total'],
+                'evidence_adaptive_mode_events_total'          => $pm12Totals['evidence_adaptive_mode_events_total'],
+                'evidence_symbols_observed_total'              => $pm12Totals['evidence_symbols_observed_total'],
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

@@ -738,6 +738,108 @@ class Store
         $path = $this->storageDir . '/runtime/last_active_owner_proof.json';
         return $this->readJson($path);
     }
+
+    // =========================================================================
+    // PM-12 post-entry evidence (NDJSON bounded history, write-only memory)
+    // =========================================================================
+
+    /**
+     * Append one or more compact evidence records to the bounded NDJSON evidence file.
+     *
+     * Keeps at most 1000 records (oldest are dropped when the limit is exceeded).
+     * Write is best-effort and non-fatal — errors are silently ignored.
+     *
+     * @param array $records
+     */
+    public function appendPostEntryEvidence(array $records): void
+    {
+        if (empty($records)) {
+            return;
+        }
+        $path       = $this->storageDir . '/runtime/pm_post_entry_evidence.ndjson';
+        $maxRecords = 1000;
+
+        // Read existing records
+        $existing = $this->loadPostEntryEvidence(0);
+
+        // Append new records and trim to bound
+        $all = array_merge($existing, $records);
+        if (count($all) > $maxRecords) {
+            $all = array_slice($all, -$maxRecords);
+        }
+
+        // Write as NDJSON (one JSON object per line)
+        $lines = [];
+        foreach ($all as $record) {
+            $line = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($line !== false) {
+                $lines[] = $line;
+            }
+        }
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents($path, implode("\n", $lines) . "\n", LOCK_EX);
+    }
+
+    /**
+     * Load post-entry evidence records from the bounded NDJSON file.
+     *
+     * @param int $limit Maximum number of records to return (0 = all)
+     * @return array
+     */
+    public function loadPostEntryEvidence(int $limit = 0): array
+    {
+        $path = $this->storageDir . '/runtime/pm_post_entry_evidence.ndjson';
+        if (!file_exists($path)) {
+            return [];
+        }
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines)) {
+            return [];
+        }
+        $records = [];
+        foreach ($lines as $line) {
+            $decoded = json_decode($line, true);
+            if (is_array($decoded)) {
+                $records[] = $decoded;
+            }
+        }
+        if ($limit > 0 && count($records) > $limit) {
+            $records = array_slice($records, -$limit);
+        }
+        return $records;
+    }
+
+    // =========================================================================
+    // PM-12 evidence counters (cumulative, persisted across ticks)
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-12 passive evidence counters.
+     *
+     * Counters accumulate across all executeActive() cycles.
+     * Used to prove evidence capture is working in the archive.
+     *
+     * @return array
+     */
+    public function loadPm12Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm12_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-12 passive evidence counters.
+     *
+     * @param array $counters
+     */
+    public function savePm12Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm12_counters.json';
+        $this->writeJson($path, $counters);
+    }
 }
 
 /* RULES

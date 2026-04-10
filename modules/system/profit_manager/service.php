@@ -282,6 +282,7 @@ final class ProfitManagerService
             // PM-8: Extract active-owner proof counters and build compact journal artifact.
             // The journal mirrors shadow_journal.json in purpose but for active-owner decisions.
             $pm8Counters = $runResult['pm8_counters'] ?? [];
+            $pm9Counters = $runResult['pm9_counters'] ?? [];
             $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
@@ -316,6 +317,13 @@ final class ProfitManagerService
                     'block_reason'                          => $item['block_reason'] ?? null,
                     // Ownership clarity: confirms bot was NOT the competing trailing writer
                     'bot_dynamic_trailing_skipped_by_owner' => $item['bot_dynamic_trailing_skipped_by_owner'] ?? true,
+                    // PM-9: Multi-tick stabilization evidence per position
+                    'previous_lock_roi'                     => $item['previous_lock_roi'] ?? null,
+                    'carried_forward_state'                 => $item['carried_forward_state'] ?? false,
+                    'regression_prevented'                  => $item['regression_prevented'] ?? false,
+                    'duplicate_apply_prevented'             => $item['duplicate_apply_prevented'] ?? false,
+                    'noop_same_lock'                        => $item['noop_same_lock'] ?? false,
+                    'no_change_reason'                      => $item['no_change_reason'] ?? null,
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
@@ -386,6 +394,14 @@ final class ProfitManagerService
                 'active_owner_apply_success_total'       => $pm8SuccessTotal,
                 'active_owner_apply_skipped_total'       => $pm8Counters['active_owner_apply_skipped_total']       ?? 0,
                 'active_owner_apply_blocked_total'       => $pm8BlockedTotal,
+                // PM-9 this-run stabilization deltas (in journal for per-tick tracing)
+                'active_owner_cycles_total'                        => $pm9Counters['active_owner_cycles_total']                        ?? 0,
+                'this_run_carried_forward'                         => $pm9Counters['this_run_carried_forward']                         ?? 0,
+                'this_run_noop_same_lock'                          => $pm9Counters['this_run_noop_same_lock']                          ?? 0,
+                'this_run_regression_prevented'                    => $pm9Counters['this_run_regression_prevented']                    ?? 0,
+                'this_run_duplicate_apply_prevented'               => $pm9Counters['this_run_duplicate_apply_prevented']               ?? 0,
+                'this_run_missing_cleanup'                         => $pm9Counters['this_run_missing_cleanup']                         ?? 0,
+                'this_run_closed_cleanup'                          => $pm9Counters['this_run_closed_cleanup']                          ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -468,6 +484,14 @@ final class ProfitManagerService
                 'active_owner_apply_blocked_total'        => $pm8Counters['active_owner_apply_blocked_total']       ?? 0,
                 // PM-8 activation threshold (for archive verification of eligibility conditions)
                 'active_owner_activation_roi_threshold'   => $activationRoiThreshold,
+                // PM-9 stabilization counters (cumulative; prove multi-tick ownership stability)
+                'active_owner_cycles_total'                        => $pm9Counters['active_owner_cycles_total']                        ?? 0,
+                'active_owner_positions_carried_forward_total'     => $pm9Counters['active_owner_positions_carried_forward_total']     ?? 0,
+                'active_owner_noop_same_lock_total'                => $pm9Counters['active_owner_noop_same_lock_total']                ?? 0,
+                'active_owner_regression_prevented_total'          => $pm9Counters['active_owner_regression_prevented_total']          ?? 0,
+                'active_owner_duplicate_apply_prevented_total'     => $pm9Counters['active_owner_duplicate_apply_prevented_total']     ?? 0,
+                'active_owner_position_missing_cleanup_total'      => $pm9Counters['active_owner_position_missing_cleanup_total']      ?? 0,
+                'active_owner_position_closed_cleanup_total'       => $pm9Counters['active_owner_position_closed_cleanup_total']       ?? 0,
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

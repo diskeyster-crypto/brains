@@ -546,6 +546,82 @@ class Store
         $this->writeJson($path, $state);
     }
 
+    /**
+     * Load all safe trade keys that have a persisted active state file.
+     *
+     * Returns the safe-encoded key (the part after "active_" and before ".json").
+     * Excludes active_owner_journal and any other known non-position files.
+     * Used by PM-9 stale-state cleanup.
+     *
+     * @return string[]
+     */
+    public function loadAllActiveStateKeys(): array
+    {
+        $dir = $this->storageDir . '/runtime';
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $skipBases = ['active_owner_journal'];
+        $keys = [];
+        foreach (glob($dir . '/active_*.json') ?: [] as $path) {
+            $base = basename($path, '.json');
+            if (in_array($base, $skipBases, true)) {
+                continue;
+            }
+            $key = substr($base, strlen('active_'));
+            if ($key !== '') {
+                $keys[] = $key;
+            }
+        }
+        return $keys;
+    }
+
+    /**
+     * Delete active state for a trade key.
+     *
+     * Accepts either the original tradeKey or the already-safe key (regex is idempotent).
+     * Called by PM-9 position lifecycle cleanup when a position is no longer managed.
+     *
+     * @param string $tradeKey
+     */
+    public function deleteActiveState(string $tradeKey): void
+    {
+        $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+        $path = $this->storageDir . '/runtime/active_' . $safe . '.json';
+        if (file_exists($path)) {
+            @unlink($path);
+        }
+    }
+
+    // =========================================================================
+    // PM-9 stabilization counters (cumulative, persisted across ticks)
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-9 stabilization counters.
+     *
+     * Counters accumulate across all executeActive() cycles.
+     * Used to prove multi-tick ownership stability in the archive.
+     *
+     * @return array
+     */
+    public function loadPm9Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm9_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-9 stabilization counters.
+     *
+     * @param array $counters
+     */
+    public function savePm9Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm9_counters.json';
+        $this->writeJson($path, $counters);
+    }
+
     // =========================================================================
     // Active owner journal (PM-8 runtime proof artifact)
     // =========================================================================

@@ -65,6 +65,15 @@ class ProfitManager
             'dumb_trailing' => ['applied' => 0, 'skipped' => 0, 'failed' => 0],
         ];
 
+        // PM-9: Per-run stabilization counters (merged into cumulative pm9_counters.json at end)
+        $pm9CarriedForward        = 0; // positions that had persisted active state from a prior tick
+        $pm9NoopSameLock          = 0; // eligible positions with no computable improvement this tick
+        $pm9RegressionPrevented   = 0; // ratchet fired "not_improving" (prevents backward/same stop)
+        $pm9DuplicateApplyPrevented = 0; // ratchet prevented re-applying an already-current stop
+        $pm9MissingCleanup        = 0; // stale states deleted for positions gone from exchange & bot
+        $pm9ClosedCleanup         = 0; // stale states deleted for positions closed by bot
+        $handledTradeKeys         = []; // safe-keyed set of trade keys seen this tick (for cleanup)
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -135,6 +144,14 @@ class ProfitManager
 
             // Load persisted active state for monotonic peak_roi continuity
             $prevState     = $this->store->loadActiveState($tradeKey);
+
+            // PM-9: Track position continuity (was this position seen in a prior tick?)
+            $carriedForwardState = !empty($prevState);
+            if ($carriedForwardState) {
+                $pm9CarriedForward++;
+            }
+            $previousLockRoi = $carriedForwardState ? (float)($prevState['last_lock_roi'] ?? 0.0) : null;
+
             $positionIM    = (float)($position['positionIM'] ?? 0);
             $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
             $currentRoi    = ($positionIM > 0) ? round(($unrealisedPnl / $positionIM) * 100.0, 4) : 0.0;
@@ -201,15 +218,18 @@ class ProfitManager
                 $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
             }
 
-            // Persist updated active state (monotonic peak_roi, arm state)
+            // Persist updated active state (monotonic peak_roi, arm state, last applied stop)
             $this->store->saveActiveState($tradeKey, [
-                'trade_id'       => $tradeKey,
-                'symbol'         => $symbol,
-                'side'           => $side,
-                'peak_roi'       => round($peakRoi, 4),
-                'trailing_armed' => $trailingArmed,
-                'last_lock_roi'  => $appliedLockRoi ?? (float)($prevState['last_lock_roi'] ?? 0.0),
-                'updated_at'     => $ts,
+                'trade_id'                => $tradeKey,
+                'symbol'                  => $symbol,
+                'side'                    => $side,
+                'peak_roi'                => round($peakRoi, 4),
+                'trailing_armed'          => $trailingArmed,
+                'last_lock_roi'           => $appliedLockRoi ?? (float)($prevState['last_lock_roi'] ?? 0.0),
+                'last_applied_stop_price' => ($exchangeOk && $appliedStopPrice !== null)
+                                                ? $appliedStopPrice
+                                                : (float)($prevState['last_applied_stop_price'] ?? 0.0),
+                'updated_at'              => $ts,
             ]);
 
             // Bot trade context matching (best-effort for observability)
@@ -345,6 +365,45 @@ class ProfitManager
                 $pm8Skipped++;
             }
 
+            // PM-9: Stabilization observability fields (per position, multi-tick safety)
+            $pm9RegressionPrevHere     = false;
+            $pm9DuplicateApplyHere     = false;
+            $pm9NoopHere               = false;
+            $pm9NoChangeReason         = null;
+
+            if ($eligibleForPm && !$proposalComputed) {
+                // Armed but no exchange update — classify why
+                if ($skipReason === 'not_improving') {
+                    // Step trailing ratchet prevented a backward or same-level stop update
+                    $pm9RegressionPrevHere = true;
+                    $pm9RegressionPrevented++;
+                    $pm9NoChangeReason = 'ratchet_not_improving';
+                    // Sub-case: ratchet specifically prevented re-applying an already-current stop
+                    $lastAppliedStop = (float)($prevState['last_applied_stop_price'] ?? 0.0);
+                    if ($lastAppliedStop > 0.0
+                        && $currentStopLoss > 0.0
+                        && abs($currentStopLoss - $lastAppliedStop) < 0.0001
+                    ) {
+                        $pm9DuplicateApplyHere = true;
+                        $pm9DuplicateApplyPrevented++;
+                    }
+                } else {
+                    // Armed but no improvement computable (distance gate, cooldown, step not yet due)
+                    $pm9NoopHere       = true;
+                    $pm9NoopSameLock++;
+                    $pm9NoChangeReason = $skipReason ?? 'no_trailing_action_computed';
+                }
+            } elseif (!$eligibleForPm) {
+                $pm9NoChangeReason = $skipReason ?? 'below_activation_roi';
+            }
+
+            $itemResult['previous_lock_roi']           = $previousLockRoi;
+            $itemResult['carried_forward_state']       = $carriedForwardState;
+            $itemResult['regression_prevented']        = $pm9RegressionPrevHere;
+            $itemResult['duplicate_apply_prevented']   = $pm9DuplicateApplyHere;
+            $itemResult['noop_same_lock']              = $pm9NoopHere;
+            $itemResult['no_change_reason']            = $pm9NoChangeReason;
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -357,6 +416,10 @@ class ProfitManager
             } else {
                 $itemResult['active_context_unavailable_reason'] = 'no_matching_bot_trade';
             }
+
+            // PM-9: Record this trade key as handled this tick (for stale-state cleanup)
+            $safeTradeKey = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $tradeKey);
+            $handledTradeKeys[$safeTradeKey] = true;
 
             $items[] = $itemResult;
 
@@ -390,6 +453,50 @@ class ProfitManager
             $this->updateSymbolStatus($symbol, $ctx, $itemResult);
         }
 
+        // PM-9: Cleanup stale active states for positions that are no longer being managed.
+        // Grace period of 300 s prevents spurious cleanup on transient exchange fetch gaps.
+        $gracePeriodSec     = 300;
+        $allActiveStateKeys = $this->store->loadAllActiveStateKeys();
+        foreach ($allActiveStateKeys as $safeKey) {
+            if (isset($handledTradeKeys[$safeKey])) {
+                continue; // Position was seen this tick — healthy
+            }
+            // Load the persisted state to check age and identity
+            $prevActiveState = $this->store->loadActiveState($safeKey);
+            $updatedAt       = $prevActiveState['updated_at'] ?? null;
+            $ageSeconds      = $updatedAt ? max(0, time() - (int)strtotime((string)$updatedAt)) : PHP_INT_MAX;
+            if ($ageSeconds < $gracePeriodSec) {
+                continue; // Too fresh — may be a transient exchange fetch blip
+            }
+            // Classify: if the position's symbol+side has an active bot trade → position
+            // is still alive in bot records but absent from exchange (missing/race condition).
+            // If no bot trade record → position is likely cleanly closed.
+            $cleanupSymbol = (string)($prevActiveState['symbol'] ?? '');
+            $cleanupSide   = (string)($prevActiveState['side'] ?? '');
+            $botKey        = $cleanupSymbol . '_' . $cleanupSide;
+            $isClosed      = !isset($botTradeByKey[$botKey]);
+            $this->store->deleteActiveState($safeKey);
+            if ($isClosed) {
+                $pm9ClosedCleanup++;
+            } else {
+                $pm9MissingCleanup++;
+            }
+        }
+
+        // PM-9: Merge this-run counts into cumulative pm9_counters.json
+        $prevPm9    = $this->store->loadPm9Counters();
+        $pm9Totals  = [
+            'active_owner_cycles_total'                        => ((int)($prevPm9['active_owner_cycles_total']                        ?? 0)) + 1,
+            'active_owner_positions_carried_forward_total'     => ((int)($prevPm9['active_owner_positions_carried_forward_total']     ?? 0)) + $pm9CarriedForward,
+            'active_owner_noop_same_lock_total'                => ((int)($prevPm9['active_owner_noop_same_lock_total']                ?? 0)) + $pm9NoopSameLock,
+            'active_owner_regression_prevented_total'          => ((int)($prevPm9['active_owner_regression_prevented_total']          ?? 0)) + $pm9RegressionPrevented,
+            'active_owner_duplicate_apply_prevented_total'     => ((int)($prevPm9['active_owner_duplicate_apply_prevented_total']     ?? 0)) + $pm9DuplicateApplyPrevented,
+            'active_owner_position_missing_cleanup_total'      => ((int)($prevPm9['active_owner_position_missing_cleanup_total']      ?? 0)) + $pm9MissingCleanup,
+            'active_owner_position_closed_cleanup_total'       => ((int)($prevPm9['active_owner_position_closed_cleanup_total']       ?? 0)) + $pm9ClosedCleanup,
+            'updated_at'                                       => $ts,
+        ];
+        $this->store->savePm9Counters($pm9Totals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -408,6 +515,24 @@ class ProfitManager
                 'active_owner_apply_blocked_total'       => $pm8Blocked,
                 // Always surface the threshold used for this run (key for archive verification)
                 'activation_roi_threshold'               => $activationRoiPct,
+            ],
+            // PM-9: stabilization counters (both this-run and cumulative totals)
+            'pm9_counters'      => [
+                // This-run deltas
+                'this_run_carried_forward'                     => $pm9CarriedForward,
+                'this_run_noop_same_lock'                      => $pm9NoopSameLock,
+                'this_run_regression_prevented'                => $pm9RegressionPrevented,
+                'this_run_duplicate_apply_prevented'           => $pm9DuplicateApplyPrevented,
+                'this_run_missing_cleanup'                     => $pm9MissingCleanup,
+                'this_run_closed_cleanup'                      => $pm9ClosedCleanup,
+                // Cumulative totals (updated this tick)
+                'active_owner_cycles_total'                    => $pm9Totals['active_owner_cycles_total'],
+                'active_owner_positions_carried_forward_total' => $pm9Totals['active_owner_positions_carried_forward_total'],
+                'active_owner_noop_same_lock_total'            => $pm9Totals['active_owner_noop_same_lock_total'],
+                'active_owner_regression_prevented_total'      => $pm9Totals['active_owner_regression_prevented_total'],
+                'active_owner_duplicate_apply_prevented_total' => $pm9Totals['active_owner_duplicate_apply_prevented_total'],
+                'active_owner_position_missing_cleanup_total'  => $pm9Totals['active_owner_position_missing_cleanup_total'],
+                'active_owner_position_closed_cleanup_total'   => $pm9Totals['active_owner_position_closed_cleanup_total'],
             ],
         ];
     }
@@ -851,6 +976,25 @@ class ProfitManager
         }
 
         $this->store->updateSymbolStatus($symbol, $status);
+
+        // PM-9: Add stabilization evidence to per-symbol status (active mode only; fields are
+        // absent in bot/shadow mode so all reads use ?? to stay safe).
+        if (array_key_exists('carried_forward_state', $result)
+            || array_key_exists('previous_lock_roi', $result)
+        ) {
+            $pm9Status = [
+                'previous_lock_roi'          => $result['previous_lock_roi']          ?? null,
+                'applied_lock_roi'           => $result['applied_lock_roi']           ?? null,
+                'carried_forward_state'      => $result['carried_forward_state']      ?? false,
+                'regression_prevented'       => $result['regression_prevented']       ?? false,
+                'duplicate_apply_prevented'  => $result['duplicate_apply_prevented']  ?? false,
+                'noop_same_lock'             => $result['noop_same_lock']             ?? false,
+                'no_change_reason'           => $result['no_change_reason']           ?? null,
+                'cleaned_up_missing_position' => false,
+                'cleaned_up_closed_position'  => false,
+            ];
+            $this->store->updateSymbolStatus($symbol, $pm9Status);
+        }
     }
 
     // =========================================================================

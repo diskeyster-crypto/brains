@@ -1101,6 +1101,256 @@ class Store
         $path = $this->storageDir . '/runtime/pm13_counters.json';
         $this->writeJson($path, $counters);
     }
+
+    // =========================================================================
+    // PM-14 passive outcome linking
+    // =========================================================================
+
+    /**
+     * Build passive outcome-link records by joining PM post-entry evidence with real
+     * closed-position outcomes (supplied by the caller from ai_shadow virtual_trades_closed).
+     *
+     * Matching is symbol-first; side confirms the match. Confidence is:
+     *   - 'high'   : exactly one closed trade for symbol+side
+     *   - 'medium' : multiple closed trades for the same symbol+side, or side unavailable
+     *   - 'low'    : side mismatch (symbol matches but sides differ)
+     *
+     * This method is pure (no I/O). Call savePostEntryOutcomeLinks() to persist.
+     *
+     * @param array  $evidence     All records from loadPostEntryEvidence()
+     * @param array  $readModel    Result of buildPostEntryReadModel() (contains 'symbols' map)
+     * @param array  $closedTrades Closed trade objects from ai_shadow virtual_trades_closed/
+     * @param string $updatedAt    ISO timestamp for linked_at / updated_at fields
+     * @return array
+     */
+    public function buildPostEntryOutcomeLinks(
+        array  $evidence,
+        array  $readModel,
+        array  $closedTrades,
+        string $updatedAt = ''
+    ): array {
+        if ($updatedAt === '') {
+            $updatedAt = date('c');
+        }
+
+        $symbolEntries = $readModel['symbols'] ?? [];
+
+        // Build per-symbol index of the last event_id / event_type from ordered evidence records.
+        // Records are appended chronologically, so later entries overwrite earlier ones here.
+        $lastEventById   = [];
+        $lastEventByType = [];
+        foreach ($evidence as $rec) {
+            $sym = strtoupper((string)($rec['symbol'] ?? ''));
+            if ($sym === '') {
+                continue;
+            }
+            $lastEventById[$sym]   = $rec['event_id']   ?? null;
+            $lastEventByType[$sym] = $rec['event_type'] ?? null;
+        }
+
+        // Group closed trades by normalised symbol (upper-case)
+        $closedBySymbol = [];
+        foreach ($closedTrades as $ct) {
+            $sym = strtoupper((string)($ct['symbol'] ?? ''));
+            if ($sym === '' || ($ct['status'] ?? '') !== 'closed') {
+                continue;
+            }
+            $closedBySymbol[$sym][] = $ct;
+        }
+
+        $links            = [];
+        $globalLinked     = 0;
+        $globalProfitable = 0;
+        $globalLosing     = 0;
+        $globalNeutral    = 0;
+        $globalApply      = 0;
+        $globalSkip       = 0;
+        $globalNoop       = 0;
+        $globalLowConf    = 0;
+        $linkedSymbols    = [];
+
+        foreach ($symbolEntries as $sym => $entry) {
+            $symUpper = strtoupper($sym);
+            if (!isset($closedBySymbol[$symUpper])) {
+                continue; // no closed trades for this symbol → skip
+            }
+
+            $entrySymSide = strtolower((string)($entry['side'] ?? ''));
+            $tradesForSym = $closedBySymbol[$symUpper];
+
+            // Sort by closed_at descending so the most recent close appears first
+            usort($tradesForSym, static function ($a, $b) {
+                return ((int)($b['closed_at'] ?? 0)) <=> ((int)($a['closed_at'] ?? 0));
+            });
+
+            // Count same-side trades for confidence calculation
+            $sameSideCount = 0;
+            if ($entrySymSide !== '') {
+                foreach ($tradesForSym as $ct) {
+                    if (strtolower((string)($ct['side'] ?? '')) === $entrySymSide) {
+                        $sameSideCount++;
+                    }
+                }
+            }
+
+            foreach ($tradesForSym as $ct) {
+                $ctSide = strtolower((string)($ct['side'] ?? ''));
+
+                // Confidence determination
+                if ($entrySymSide !== '' && $ctSide !== '') {
+                    if ($entrySymSide === $ctSide) {
+                        $confidence = $sameSideCount === 1 ? 'high' : 'medium';
+                    } else {
+                        $confidence = 'low'; // side mismatch — link is tentative
+                    }
+                } else {
+                    $confidence = 'medium'; // side data missing on one side
+                }
+
+                // Prefer live_roi (the realised exchange result) over simulated roi
+                $liveRoi = isset($ct['live_roi']) && is_numeric($ct['live_roi']) ? (float)$ct['live_roi'] : null;
+                $compRoi = isset($ct['roi'])      && is_numeric($ct['roi'])      ? (float)$ct['roi']      : null;
+                $roi     = $liveRoi ?? $compRoi;
+
+                if ($roi === null) {
+                    $outcomeStatus = 'unknown';
+                } elseif ($roi > 0.0) {
+                    $outcomeStatus = 'profitable';
+                } elseif ($roi < 0.0) {
+                    $outcomeStatus = 'losing';
+                } else {
+                    $outcomeStatus = 'neutral';
+                }
+
+                // MFE (max favourable excursion) as peak_roi_seen; fall back to read-model avg
+                $mfe         = isset($ct['mfe']) && is_numeric($ct['mfe']) && (float)$ct['mfe'] !== 0.0
+                    ? (float)$ct['mfe']
+                    : null;
+                $peakRoiSeen = $mfe ?? ($entry['avg_peak_roi'] ?? null);
+
+                $link = [
+                    'symbol'                        => $entry['symbol'],
+                    'side'                          => $entry['side'],
+                    'owner_mode'                    => 'profit_manager',
+                    'evidence_samples_total'        => (int)($entry['samples_total']       ?? 0),
+                    'last_evidence_event_id'        => $lastEventById[$symUpper]            ?? null,
+                    'last_evidence_event_type'      => $lastEventByType[$symUpper]          ?? null,
+                    'last_pm_management_stage'      => $entry['last_pm_management_stage']   ?? null,
+                    'last_refinement_policy_stage'  => $entry['last_refinement_policy_stage'] ?? null,
+                    'last_adaptive_refinement_mode' => $entry['last_adaptive_refinement_mode'] ?? null,
+                    'apply_samples_total'           => (int)($entry['apply_samples_total']  ?? 0),
+                    'skip_samples_total'            => (int)($entry['skip_samples_total']   ?? 0),
+                    'noop_samples_total'            => (int)($entry['noop_samples_total']   ?? 0),
+                    'final_outcome_status'          => $outcomeStatus,
+                    'final_close_reason'            => $ct['live_close_reason'] ?? $ct['close_reason'] ?? null,
+                    'final_roi'                     => $roi,
+                    'peak_roi_seen'                 => $peakRoiSeen,
+                    'drawdown_after_apply'          => null, // requires tick-by-tick replay — not available
+                    'continuation_after_apply'      => null, // requires tick-by-tick replay — not available
+                    'outcome_link_confidence'       => $confidence,
+                    'linked_at'                     => $updatedAt,
+                    'source_refs'                   => [
+                        'virtual_trade_id' => $ct['virtual_trade_id'] ?? null,
+                        'live_trade_id'    => $ct['live_trade_id']    ?? null,
+                        'closed_at'        => $ct['closed_at']        ?? null,
+                    ],
+                ];
+
+                $links[]                   = $link;
+                $globalLinked++;
+                $linkedSymbols[$symUpper]  = true;
+
+                if ($outcomeStatus === 'profitable') {
+                    $globalProfitable++;
+                } elseif ($outcomeStatus === 'losing') {
+                    $globalLosing++;
+                } elseif ($outcomeStatus === 'neutral') {
+                    $globalNeutral++;
+                }
+
+                if ($confidence === 'low') {
+                    $globalLowConf++;
+                }
+
+                // Tabulate whether this symbol's evidence had apply/skip/noop activity
+                if ((int)($entry['apply_samples_total'] ?? 0) > 0) {
+                    $globalApply++;
+                }
+                if ((int)($entry['skip_samples_total'] ?? 0) > 0) {
+                    $globalSkip++;
+                }
+                if ((int)($entry['noop_samples_total'] ?? 0) > 0) {
+                    $globalNoop++;
+                }
+            }
+        }
+
+        $global = [
+            'linked_symbols_total'      => count($linkedSymbols),
+            'linked_records_total'      => $globalLinked,
+            'profitable_outcomes_total' => $globalProfitable,
+            'losing_outcomes_total'     => $globalLosing,
+            'neutral_outcomes_total'    => $globalNeutral,
+            'apply_linked_total'        => $globalApply,
+            'skip_linked_total'         => $globalSkip,
+            'noop_linked_total'         => $globalNoop,
+            'low_confidence_total'      => $globalLowConf,
+            'updated_at'                => $updatedAt,
+        ];
+
+        return [
+            'global' => $global,
+            'links'  => $links,
+        ];
+    }
+
+    /**
+     * Save the PM-14 post-entry outcome links to disk.
+     *
+     * @param array $links
+     */
+    public function savePostEntryOutcomeLinks(array $links): void
+    {
+        $path = $this->storageDir . '/runtime/pm_post_entry_outcome_links.json';
+        $this->writeJson($path, $links);
+    }
+
+    /**
+     * Load the PM-14 post-entry outcome links from disk.
+     *
+     * @return array
+     */
+    public function loadPostEntryOutcomeLinks(): array
+    {
+        $path = $this->storageDir . '/runtime/pm_post_entry_outcome_links.json';
+        return $this->readJson($path);
+    }
+
+    // =========================================================================
+    // PM-14 outcome-link counters (cumulative, persisted across ticks)
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-14 outcome-link generation counters.
+     *
+     * @return array
+     */
+    public function loadPm14Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm14_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-14 outcome-link generation counters.
+     *
+     * @param array $counters
+     */
+    public function savePm14Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm14_counters.json';
+        $this->writeJson($path, $counters);
+    }
 }
 
 /* RULES

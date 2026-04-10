@@ -460,6 +460,12 @@ final class ProfitManagerService
                 ]);
             }
 
+            // Pre-initialise shared variables that PM-13 writes and PM-14 reads.
+            // PHP does not have block scope so these survive the try-catch; explicit init guards
+            // against accessing unset variables when PM-13 fails before assignment.
+            $allEvidenceRecords = [];
+            $readModel          = [];
+
             // PM-13: Build and persist a compact read model from all post-entry evidence.
             // The read model is derived entirely from the existing evidence NDJSON.
             // It does NOT affect any PM decision. Generation is best-effort and non-fatal.
@@ -500,6 +506,52 @@ final class ProfitManagerService
                 'updated_at'                        => $ts,
             ];
             $this->store->savePm13Counters($pm13Totals);
+
+            // PM-14: Passive outcome linking — join PM post-entry evidence with real closed positions.
+            // Reads ai_shadow virtual_trades_closed as the authoritative closed-trade source.
+            // This is read-only and observational only. It does NOT affect any PM decision.
+            // Generation is best-effort and non-fatal.
+            $pm14Counters = [
+                'outcome_links_generated_total'        => 0,
+                'outcome_links_profitable_total'       => 0,
+                'outcome_links_losing_total'           => 0,
+                'outcome_links_neutral_total'          => 0,
+                'outcome_links_low_confidence_total'   => 0,
+                'outcome_links_generation_error_total' => 0,
+            ];
+            try {
+                $closedTrades = $this->loadAiShadowClosedTrades();
+                if (!empty($closedTrades) && !empty($allEvidenceRecords) && !empty($readModel)) {
+                    $outcomeLinks = $this->store->buildPostEntryOutcomeLinks(
+                        $allEvidenceRecords,
+                        $readModel,
+                        $closedTrades,
+                        $ts
+                    );
+                    $this->store->savePostEntryOutcomeLinks($outcomeLinks);
+                    $pm14Counters['outcome_links_generated_total']      = (int)(($outcomeLinks['global']['linked_records_total']      ?? 0));
+                    $pm14Counters['outcome_links_profitable_total']     = (int)(($outcomeLinks['global']['profitable_outcomes_total'] ?? 0));
+                    $pm14Counters['outcome_links_losing_total']         = (int)(($outcomeLinks['global']['losing_outcomes_total']     ?? 0));
+                    $pm14Counters['outcome_links_neutral_total']        = (int)(($outcomeLinks['global']['neutral_outcomes_total']    ?? 0));
+                    $pm14Counters['outcome_links_low_confidence_total'] = (int)(($outcomeLinks['global']['low_confidence_total']      ?? 0));
+                }
+            } catch (\Throwable $pm14Ex) {
+                $pm14Counters['outcome_links_generation_error_total'] = 1;
+            }
+            // Merge this-run PM-14 counters into cumulative pm14_counters.json.
+            // Current-snapshot counters (generated/profitable/losing/neutral/low_confidence) simply
+            // reflect the latest file state; only error_total is additive across ticks.
+            $prevPm14   = $this->store->loadPm14Counters();
+            $pm14Totals = [
+                'outcome_links_generated_total'        => $pm14Counters['outcome_links_generated_total'],
+                'outcome_links_profitable_total'       => $pm14Counters['outcome_links_profitable_total'],
+                'outcome_links_losing_total'           => $pm14Counters['outcome_links_losing_total'],
+                'outcome_links_neutral_total'          => $pm14Counters['outcome_links_neutral_total'],
+                'outcome_links_low_confidence_total'   => $pm14Counters['outcome_links_low_confidence_total'],
+                'outcome_links_generation_error_total' => ((int)($prevPm14['outcome_links_generation_error_total'] ?? 0)) + $pm14Counters['outcome_links_generation_error_total'],
+                'updated_at'                           => $ts,
+            ];
+            $this->store->savePm14Counters($pm14Totals);
 
             // Compact ineligibility summary: surfaces when all seen positions are below threshold.
             // Lets the archive verify the activation threshold and how far each position is from it.
@@ -608,6 +660,13 @@ final class ProfitManagerService
                 'read_model_noop_records_total'                => $pm13Totals['read_model_noop_records_total'],
                 'read_model_generated_ok'                      => $pm13Totals['read_model_generated_ok'],
                 'read_model_generation_error_total'            => $pm13Totals['read_model_generation_error_total'],
+                // PM-14 outcome-link counters (proves passive outcome linkage is active)
+                'outcome_links_generated_total'                => $pm14Totals['outcome_links_generated_total'],
+                'outcome_links_profitable_total'               => $pm14Totals['outcome_links_profitable_total'],
+                'outcome_links_losing_total'                   => $pm14Totals['outcome_links_losing_total'],
+                'outcome_links_neutral_total'                  => $pm14Totals['outcome_links_neutral_total'],
+                'outcome_links_low_confidence_total'           => $pm14Totals['outcome_links_low_confidence_total'],
+                'outcome_links_generation_error_total'         => $pm14Totals['outcome_links_generation_error_total'],
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -654,6 +713,11 @@ final class ProfitManagerService
                     'read_model_records_total'              => $pm13Totals['read_model_records_total'],
                     'read_model_apply_records_total'        => $pm13Totals['read_model_apply_records_total'],
                     'read_model_generated_ok'               => $pm13Totals['read_model_generated_ok'],
+                    // PM-14 outcome-link counters in proof artifact
+                    'outcome_links_generated_total'         => $pm14Totals['outcome_links_generated_total'],
+                    'outcome_links_profitable_total'        => $pm14Totals['outcome_links_profitable_total'],
+                    'outcome_links_losing_total'            => $pm14Totals['outcome_links_losing_total'],
+                    'outcome_links_generation_error_total'  => $pm14Totals['outcome_links_generation_error_total'],
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
@@ -739,6 +803,13 @@ final class ProfitManagerService
                 'read_model_noop_records_total'                => $pm13Totals['read_model_noop_records_total'],
                 'read_model_generated_ok'                      => $pm13Totals['read_model_generated_ok'],
                 'read_model_generation_error_total'            => $pm13Totals['read_model_generation_error_total'],
+                // PM-14 outcome-link counters (cumulative; appear in last_run.json for archive verification)
+                'outcome_links_generated_total'                => $pm14Totals['outcome_links_generated_total'],
+                'outcome_links_profitable_total'               => $pm14Totals['outcome_links_profitable_total'],
+                'outcome_links_losing_total'                   => $pm14Totals['outcome_links_losing_total'],
+                'outcome_links_neutral_total'                  => $pm14Totals['outcome_links_neutral_total'],
+                'outcome_links_low_confidence_total'           => $pm14Totals['outcome_links_low_confidence_total'],
+                'outcome_links_generation_error_total'         => $pm14Totals['outcome_links_generation_error_total'],
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],
@@ -1019,6 +1090,45 @@ final class ProfitManagerService
             return $trades;
         } catch (\Throwable $e) {
             $this->botTradeLoadDiag['error'] = $e->getMessage();
+            return [];
+        }
+    }
+
+    /**
+     * Load all closed virtual trades from ai_shadow (best-effort, non-fatal).
+     *
+     * Returns only records with status='closed' from the ai_shadow virtual_trades_closed/
+     * directory. Resolves the path via sibling-module convention relative to this module.
+     *
+     * @return array[]
+     */
+    private function loadAiShadowClosedTrades(): array
+    {
+        try {
+            if ($this->moduleBase === null) {
+                return [];
+            }
+            $aiShadowBase = dirname($this->moduleBase) . '/ai_shadow';
+            if (!is_dir($aiShadowBase)) {
+                return [];
+            }
+            $closedDir = $aiShadowBase . '/storage/virtual_trades_closed';
+            if (!is_dir($closedDir)) {
+                return [];
+            }
+            $trades = [];
+            foreach (glob($closedDir . '/vt_*.json') ?: [] as $path) {
+                $content = @file_get_contents($path);
+                if ($content === false || $content === '') {
+                    continue;
+                }
+                $trade = json_decode($content, true);
+                if (is_array($trade) && !empty($trade) && ($trade['status'] ?? '') === 'closed') {
+                    $trades[] = $trade;
+                }
+            }
+            return $trades;
+        } catch (\Throwable $e) {
             return [];
         }
     }

@@ -754,10 +754,35 @@ final class ProfitManagerService
                     'outcome_links_generated_total'         => $pm14Totals['outcome_links_generated_total'],
                     'outcome_links_profitable_total'        => $pm14Totals['outcome_links_profitable_total'],
                     'outcome_links_losing_total'            => $pm14Totals['outcome_links_losing_total'],
+                    'outcome_links_neutral_total'           => $pm14Totals['outcome_links_neutral_total'],
+                    'outcome_links_low_confidence_total'    => $pm14Totals['outcome_links_low_confidence_total'],
                     'outcome_links_generation_error_total'  => $pm14Totals['outcome_links_generation_error_total'],
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
+            } else {
+                // PM-14 proof mirror: the PM-8 gate above was not triggered (no active-owner
+                // activity this tick), but PM-14 may have non-zero counters.  Mirror them into
+                // the existing durable proof artifact so all four sources stay aligned.
+                // This is best-effort and non-fatal — a missing or unreadable proof file is silently skipped.
+                $pm14HasData = ($pm14Totals['outcome_links_generated_total'] ?? 0) > 0
+                    || ($pm14Totals['outcome_links_generation_error_total'] ?? 0) > 0;
+                if ($pm14HasData) {
+                    try {
+                        $existingProof = $this->store->loadLastActiveOwnerProof();
+                        if (!empty($existingProof)) {
+                            $existingProof['outcome_links_generated_total']        = $pm14Totals['outcome_links_generated_total'];
+                            $existingProof['outcome_links_profitable_total']       = $pm14Totals['outcome_links_profitable_total'];
+                            $existingProof['outcome_links_losing_total']           = $pm14Totals['outcome_links_losing_total'];
+                            $existingProof['outcome_links_neutral_total']          = $pm14Totals['outcome_links_neutral_total'];
+                            $existingProof['outcome_links_low_confidence_total']   = $pm14Totals['outcome_links_low_confidence_total'];
+                            $existingProof['outcome_links_generation_error_total'] = $pm14Totals['outcome_links_generation_error_total'];
+                            $this->store->saveLastActiveOwnerProof($existingProof);
+                        }
+                    } catch (\Throwable $ignored) {
+                        // non-fatal; PM-14 mirror into proof is best-effort
+                    }
+                }
             }
 
             $result = [

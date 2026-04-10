@@ -909,6 +909,7 @@ final class SmartBrainCore
             'passport_gate_passed_count' => (int)($liveIntentResult['passport_gate_passed_count'] ?? 0),
             'passport_gate_rejected_count' => (int)($liveIntentResult['passport_gate_rejected_count'] ?? 0),
             'passport_gate_allow_live_count' => (int)($liveIntentResult['passport_gate_allow_live_count'] ?? 0),
+            'passport_gate_bootstrap_live_count' => (int)($liveIntentResult['passport_gate_bootstrap_live_count'] ?? 0),
             'passport_gate_sim_only_count' => (int)($liveIntentResult['passport_gate_sim_only_count'] ?? 0),
             'passport_gate_shadow_only_count' => (int)($liveIntentResult['passport_gate_shadow_only_count'] ?? 0),
             'passport_gate_reject_count' => (int)($liveIntentResult['passport_gate_reject_count'] ?? 0),
@@ -1004,6 +1005,7 @@ final class SmartBrainCore
             'passport_gate_passed_count' => 0,
             'passport_gate_rejected_count' => 0,
             'passport_gate_allow_live_count' => 0,
+            'passport_gate_bootstrap_live_count' => 0,
             'passport_gate_sim_only_count' => 0,
             'passport_gate_shadow_only_count' => 0,
             'passport_gate_reject_count' => 0,
@@ -1399,7 +1401,7 @@ final class SmartBrainCore
 
             // === COIN PASSPORT LIVE GATE ===
             // Brain reads Coin Passport before allowing live signal issuance.
-            // Gate result: allow_live | sim_only | shadow_only | reject
+            // Gate result: allow_live | bootstrap_live | sim_only | shadow_only | reject
             if ($passportGateEnabled) {
                 $result['passport_gate_applied_count']++;
 
@@ -1474,6 +1476,27 @@ final class SmartBrainCore
                         $signal['passport_regime_health'] = $passport['market_regime_health_score'] ?? null;
                         $result['passport_gate_passed_count']++;
                         $result['passport_gate_allow_live_count']++;
+                    } elseif ($passportEligibility === 'bootstrap_live') {
+                        // bootstrap_live: 24h evidence is present but thin, or 7d context limited.
+                        // All metric gates passed — live orders are permitted at reduced confidence.
+                        // Smart Brain surfaces the bootstrap state explicitly so observers can
+                        // distinguish it from a full allow_live.
+                        $signal['passport_gate_result']           = 'bootstrap_live';
+                        $signal['passport_gate_bootstrap']        = true;
+                        $signal['passport_gate_bootstrap_reason'] = $passportBlockReason;
+                        $signal['passport_corridor_p75']          = $passportCorridorP75;
+                        $signal['passport_runner_prob']           = $passportRunnerProb;
+                        $signal['passport_noise_score']           = $passportNoiseScore;
+                        $signal['passport_regime_health']         = $passport['market_regime_health_score'] ?? null;
+                        // Compact gate observability fields
+                        $signal['passport_gate_state']            = 'bootstrap_live';
+                        $signal['passport_gate_decision']         = 'pass_bootstrap';
+                        $signal['passport_gate_demote_reason_detail'] = $passportBlockReason ?: null;
+                        // Fresh-window counters for downstream inspection
+                        $signal['passport_gate_samples_24h']     = (int)($passport['recent_samples_24h'] ?? 0);
+                        $signal['passport_gate_samples_7d']      = (int)($passport['recent_samples_7d']  ?? 0);
+                        $result['passport_gate_passed_count']++;
+                        $result['passport_gate_bootstrap_live_count']++;
                     } elseif ($passportEligibility === 'reject') {
                         // Hard reject — coin explicitly blocked
                         $result['passport_gate_signal_blocked_by_passport_count']++;
@@ -1492,16 +1515,21 @@ final class SmartBrainCore
                         }
                         continue;
                     } else {
-                        // sim_only / shadow_only — demote, do not issue live
+                        // sim_only / shadow_only — demote, do not issue live.
+                        // passport_gate_demote:sim_only is produced only for these states.
+                        // bootstrap_live is explicitly handled above and does NOT reach this branch.
                         $result['passport_gate_signal_blocked_by_passport_count']++;
                         $signal['passport_gate_result']    = $passportEligibility;
                         $signal['passport_gate_demoted']   = true;
                         $signal['passport_block_reason']   = $passportBlockReason;
-                        // Compact observability: surface the actual insufficiency detail so
-                        // observers can distinguish e.g. insufficient_total_samples from
-                        // metric-gate failures without inspecting the passport file directly.
+                        $signal['passport_gate_state']     = $passportEligibility;
+                        $signal['passport_gate_decision']  = 'demoted';
+                        // Surface the actual insufficiency detail so observers can distinguish
+                        // e.g. stale_24h from metric-gate failures without reading passport files.
                         if ($passportInsufReason !== '') {
                             $signal['passport_gate_demote_reason_detail'] = $passportInsufReason;
+                        } elseif ($passportBlockReason !== '') {
+                            $signal['passport_gate_demote_reason_detail'] = $passportBlockReason;
                         }
                         $result['passport_gate_demoted_to_sim_count']++;
                         if ($passportEligibility === 'sim_only') {

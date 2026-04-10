@@ -43,6 +43,31 @@ final class CoinPassportEngine
     private const LIVE_GATE_IMPULSE_STRENGTH_MIN   = 0.2;   // impulse_strength_score >= this
     private const LIVE_GATE_PULLBACK_SEVERITY_MAX  = 0.75;  // pullback_severity_score <= this
 
+    /**
+     * Fresh-window observation buckets (seconds).
+     * Only data within these windows is considered for live admission decisions.
+     * Data older than WINDOW_7D must not be a primary admission driver.
+     */
+    private const WINDOW_1H  = 3600;
+    private const WINDOW_6H  = 21600;
+    private const WINDOW_24H = 86400;
+    private const WINDOW_7D  = 604800;
+
+    /**
+     * Fresh-window sample thresholds for live eligibility states.
+     *
+     * States produced by the gate chain:
+     *   shadow_only    – no recent data at all (24h=0, 7d=0) or no confidence
+     *   sim_only       – 7d has data but 24h is dead, or hard metric failure
+     *   bootstrap_live – 24h has >= MIN_SAMPLES_24H_FOR_BOOTSTRAP samples and
+     *                    metric gates pass but not enough for full allow_live
+     *   allow_live     – 24h >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE AND
+     *                    7d >= MIN_SAMPLES_7D_FOR_CONTEXT AND metric gates pass
+     */
+    private const MIN_SAMPLES_24H_FOR_BOOTSTRAP  = 1; // >=1 24h sample → bootstrap_live candidate
+    private const MIN_SAMPLES_24H_FOR_ALLOW_LIVE = 2; // >=2 24h samples → allow_live candidate
+    private const MIN_SAMPLES_7D_FOR_CONTEXT     = 3; // >=3 7d samples → 7d behavior context present
+
     /** Evidence timeline config */
     private const MAX_EVIDENCE_ITEMS = 100;
 
@@ -634,9 +659,21 @@ final class CoinPassportEngine
         $burstCount = 0;
         $burstTotal = 0;
 
-        // Recent trades: last 30 days
-        $recentCutoff  = time() - 30 * 86400;
-        $recentSamples = 0;
+        // Fresh-window recent sample counters.
+        // These drive live eligibility decisions — only data within each window is counted.
+        // 30d bucket is kept separately for computeMarketRegimeHealthScore() only
+        // (non-admission use); it must NOT be used as a primary live gate.
+        $now           = time();
+        $cutoff1h      = $now - self::WINDOW_1H;
+        $cutoff6h      = $now - self::WINDOW_6H;
+        $cutoff24h     = $now - self::WINDOW_24H;
+        $cutoff7d      = $now - self::WINDOW_7D;
+        $cutoff30d     = $now - 30 * 86400;
+        $recentSamples    = 0;  // 30d — used only for computeMarketRegimeHealthScore
+        $recentSamples1h  = 0;
+        $recentSamples6h  = 0;
+        $recentSamples24h = 0;
+        $recentSamples7d  = 0;
 
         foreach ($trades as $trade) {
             $source  = (string)($trade['_source'] ?? 'live_closed');
@@ -693,8 +730,25 @@ final class CoinPassportEngine
                 }
             }
 
-            if ($closedTs >= $recentCutoff || ($openTs >= $recentCutoff && $openTs > 0)) {
+            if ($closedTs >= $cutoff30d || ($openTs >= $cutoff30d && $openTs > 0)) {
+                // Assign to the finest bucket whose cutoff the trade's effective timestamp satisfies.
+                $tradeTs = $closedTs > 0 ? $closedTs : ($openTs > 0 ? $openTs : 0);
                 $recentSamples++;
+                if ($tradeTs >= $cutoff1h) {
+                    $recentSamples1h++;
+                    $recentSamples6h++;
+                    $recentSamples24h++;
+                    $recentSamples7d++;
+                } elseif ($tradeTs >= $cutoff6h) {
+                    $recentSamples6h++;
+                    $recentSamples24h++;
+                    $recentSamples7d++;
+                } elseif ($tradeTs >= $cutoff24h) {
+                    $recentSamples24h++;
+                    $recentSamples7d++;
+                } elseif ($tradeTs >= $cutoff7d) {
+                    $recentSamples7d++;
+                }
             }
 
             if ($finalRoi !== null) {
@@ -896,8 +950,11 @@ final class CoinPassportEngine
         );
 
         // ── Data sufficiency ──────────────────────────────────────────────────
+        // Primary gate: 24h freshness (not lifetime totals).
+        // $recentSamples7d and $recentSamples24h drive the fresh-window model.
         [$insufficientFlag, $insufficientReason, $fallbackMode] = $this->computeDataSufficiency(
-            $sampleSizeTotal, $sampleV2, $sampleV3, $recentSamples, $dataConfidence
+            $sampleSizeTotal, $sampleV2, $sampleV3, $recentSamples, $dataConfidence,
+            $recentSamples24h, $recentSamples7d
         );
         $lastDataGapWarning = $insufficientFlag ? $insufficientReason : null;
 
@@ -919,6 +976,8 @@ final class CoinPassportEngine
         $recRunnerExpect   = $this->recommendRunnerExpectation($runnerProb, $reach10Rate, $corridorP90);
 
         // ── Live eligibility gate ─────────────────────────────────────────────
+        // States: shadow_only | sim_only | bootstrap_live | allow_live
+        // 24h freshness is the primary gate; 7d provides behavior context.
         [$liveEligibility, $liveBlockReason] = $this->computeLiveEligibility(
             $corridorP75,
             $runnerProb,
@@ -931,7 +990,9 @@ final class CoinPassportEngine
             $impulse['impulse_strength_score'],
             $pullbackBehavior['pullback_severity_score'],
             $patternBehavior['v2_success_rate'] ?? null,
-            (string)($insufficientReason ?? '')
+            (string)($insufficientReason ?? ''),
+            $recentSamples24h,
+            $recentSamples7d
         );
 
         // ── Diagnostic notes ──────────────────────────────────────────────────
@@ -959,6 +1020,18 @@ final class CoinPassportEngine
             'sample_size_demo_closed'       => $demoClosedSamples,
             'sample_size_demo_active'       => $demoActiveSamples,
             'healthy_closed_samples'        => $healthyClosedSamples,
+
+            // ── Fresh-window recent sample counters (primary live gate inputs) ──
+            // 24h is the primary live admission gate; 7d is the behavior context.
+            // 1h/6h are freshness/acceleration indicators only.
+            // Data older than 7d must not drive live admission directly.
+            'recent_samples_1h'             => $recentSamples1h,
+            'recent_samples_6h'             => $recentSamples6h,
+            'recent_samples_24h'            => $recentSamples24h,
+            'recent_samples_7d'             => $recentSamples7d,
+            // Derived sufficiency booleans for quick inspection
+            'fresh_behavior_window_ok'      => $recentSamples24h >= self::MIN_SAMPLES_24H_FOR_BOOTSTRAP,
+            'behavior_context_7d_ok'        => $recentSamples7d  >= self::MIN_SAMPLES_7D_FOR_CONTEXT,
 
             // ── Data confidence / sufficiency ──────────────────────────────────
             'data_confidence'               => $dataConfidence,
@@ -1051,8 +1124,18 @@ final class CoinPassportEngine
             'regime_sensitivity_score'      => $regimeBehavior['regime_sensitivity_score'],
 
             // ── Live eligibility ───────────────────────────────────────────────
+            // States: shadow_only | sim_only | bootstrap_live | allow_live
+            //   shadow_only    – no recent data (24h=0, 7d=0) or confidence=none
+            //   sim_only       – 24h dead (7d has history) or hard metric gate fail
+            //   bootstrap_live – 24h >= 1 sample, metric gates pass, but below
+            //                    MIN_SAMPLES_24H_FOR_ALLOW_LIVE or 7d context thin
+            //   allow_live     – 24h >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE + 7d context
+            //                    sufficient + all metric gates pass
             'recommended_live_eligibility'  => $liveEligibility,
             'live_block_reason'             => $liveBlockReason,
+            // Compact gate-decision observability (aliased for quick inspection)
+            'passport_gate_state'           => $liveEligibility,
+            'passport_gate_reason_detail'   => $liveBlockReason,
 
             // ── Decision Engine trust state (green / yellow / red / insufficient_data) ──
             // Consumed by BotDecisionEngine to compute confidence_band without re-running
@@ -1962,8 +2045,18 @@ final class CoinPassportEngine
     }
 
     /**
-     * Compute data sufficiency flags.
-     * Uses numeric confidence score so medium/high applies even without live-only data.
+     * Compute data sufficiency flags using the fresh-window model.
+     *
+     * Primary gate: 24h freshness.
+     * Behavior context: 7d window.
+     * Lifetime totals are NOT the primary driver.
+     *
+     * State mapping when insufficientFlag=true:
+     *   fallbackMode='shadow_only' → no usable data at all (total=0, or 24h+7d both empty, or confidence=none)
+     *   fallbackMode='sim_only'    → 7d has history but 24h is dead (stale coin)
+     *
+     * When insufficientFlag=false, computeLiveEligibility() decides among
+     * sim_only / bootstrap_live / allow_live based on metric gates and sample counts.
      *
      * NOTE: 'low' confidence is intentionally NOT flagged as insufficient here.
      * LIVE_GATE_CONFIDENCE_MIN = 'low' means 'low' is the minimum accepted level,
@@ -1977,23 +2070,37 @@ final class CoinPassportEngine
         int    $total,
         int    $shortV2,
         int    $shortV3,
-        int    $recent,
-        string $confidence
+        int    $recent,      // 30d bucket — kept for signature compat, not the primary gate
+        string $confidence,
+        int    $samples24h = 0,  // primary live gate window
+        int    $samples7d  = 0   // behavior context window
     ): array {
+        // No trade data at all → shadow_only (cannot say anything about the coin)
         if ($total === 0) {
             return [true, 'no_trade_data', 'shadow_only'];
         }
-        if ($total < self::MIN_TOTAL_SAMPLES) {
-            return [true, "insufficient_total_samples:{$total}<" . self::MIN_TOTAL_SAMPLES, 'sim_only'];
+
+        // Primary gate: 24h freshness.
+        // If 24h AND 7d both have zero samples, all data is older than 7 days.
+        // Such stale data must not drive live admission.
+        if ($samples24h === 0 && $samples7d === 0) {
+            return [true, 'no_recent_data:all_data_older_than_7d', 'shadow_only'];
         }
-        if ($recent < self::MIN_RECENT_SAMPLES) {
-            return [true, "insufficient_recent_samples:{$recent}<" . self::MIN_RECENT_SAMPLES, 'sim_only'];
+
+        // 24h is dead but 7d has history → coin was recently active but has gone stale in 24h.
+        // Demote to sim_only (not shadow_only, because we have recent context).
+        if ($samples24h === 0) {
+            return [true, "stale_24h:no_24h_evidence,{$samples7d}_7d_samples", 'sim_only'];
         }
+
+        // No data confidence (e.g. zero total quality signals) → shadow_only
         if ($confidence === 'none') {
-            return [true, "no_data_confidence", 'shadow_only'];
+            return [true, 'no_data_confidence', 'shadow_only'];
         }
-        // 'low' confidence is NOT treated as insufficient: LIVE_GATE_CONFIDENCE_MIN='low'
-        // means 'low' is the minimum live threshold, handled by the regular gate chain.
+
+        // 24h has >= 1 sample; proceed to metric gates in computeLiveEligibility()
+        // 'low' confidence is NOT treated as insufficient: the regular confidence
+        // gate inside computeLiveEligibility() handles it correctly.
         return [false, null, 'live_eligible'];
     }
 
@@ -2043,8 +2150,39 @@ final class CoinPassportEngine
     /**
      * Compute live eligibility decision based on all passport metrics.
      *
+     * States (in order of restrictiveness):
+     *   shadow_only    – forced by computeDataSufficiency() for no-data / no-confidence cases
+     *   sim_only       – forced by computeDataSufficiency() for stale 24h, OR by a metric gate failure
+     *   bootstrap_live – 24h has >= MIN_SAMPLES_24H_FOR_BOOTSTRAP samples, all metric gates pass,
+     *                    but 24h count is below MIN_SAMPLES_24H_FOR_ALLOW_LIVE OR 7d context is thin.
+     *                    Live orders are permitted at reduced confidence — Smart Brain must tag these.
+     *   allow_live     – 24h >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE, 7d context sufficient
+     *                    (>= MIN_SAMPLES_7D_FOR_CONTEXT), AND all metric gates pass.
+     *
+     * Which passport fields trigger sim_only:
+     *   - data_confidence below LIVE_GATE_CONFIDENCE_MIN ('low')
+     *   - corridor_p75_roi < LIVE_GATE_CORRIDOR_P75_MIN (3.0)
+     *   - noise_score > LIVE_GATE_NOISE_MAX (0.65)
+     *   - short_suitability_score < LIVE_GATE_SUITABILITY_MIN (0.3)
+     *   - runner_probability < LIVE_GATE_RUNNER_PROB_MIN (0.05)
+     *   - market_regime_health_score < LIVE_GATE_REGIME_HEALTH_MIN (0.3)
+     *   - impulse_strength_score < LIVE_GATE_IMPULSE_STRENGTH_MIN (0.2)
+     *   - pullback_severity_score > LIVE_GATE_PULLBACK_SEVERITY_MAX (0.75)
+     *   - v2_success_rate < 0.35 (when pattern data is available)
+     *
+     * What causes bootstrap_live (metric gates all pass, but fresh window is thin):
+     *   - recent_samples_24h >= MIN_SAMPLES_24H_FOR_BOOTSTRAP (1)
+     *     but < MIN_SAMPLES_24H_FOR_ALLOW_LIVE (2)
+     *   - OR recent_samples_7d < MIN_SAMPLES_7D_FOR_CONTEXT (3)
+     *
+     * Fallback when passport data is missing / partial / stale:
+     *   - total=0 or 24h+7d=0             → shadow_only (handled by computeDataSufficiency)
+     *   - 24h=0 but 7d>0                   → sim_only   (handled by computeDataSufficiency)
+     *   - confidence='none'                → shadow_only (handled by computeDataSufficiency)
+     *   - insufficientFlag=true, otherwise → sim_only or shadow_only per fallbackMode
+     *
      * @param string $insufficientReason  The actual reason set by computeDataSufficiency()
-     *                                    (e.g. "insufficient_total_samples:1<10"). Used to
+     *                                    (e.g. "stale_24h:no_24h_evidence,5_7d_samples"). Used to
      *                                    produce an informative live_block_reason instead of
      *                                    the opaque "insufficient_data:{fallbackMode}" string.
      * @return array{string, string|null}  [eligibility, block_reason]
@@ -2061,14 +2199,21 @@ final class CoinPassportEngine
         float   $impulseStrength = 0.5,
         float   $pullbackSeverity = 0.5,
         ?float  $patternSuccessRate = null,
-        string  $insufficientReason = ''
+        string  $insufficientReason = '',
+        int     $samples24h = 0,  // primary 24h window count
+        int     $samples7d  = 0   // 7d behavior context window count
     ): array {
-        // Insufficient data → forced fallback; include actual reason for observability
+        // Insufficient data → forced fallback; include actual reason for observability.
+        // The state is either shadow_only or sim_only per computeDataSufficiency().
         if ($insufficientFlag) {
             $detailReason = $insufficientReason !== '' ? $insufficientReason : $fallbackMode;
             return [$fallbackMode === 'shadow_only' ? 'shadow_only' : 'sim_only',
                     "insufficient_data:{$detailReason}"];
         }
+
+        // ── Metric gate chain ────────────────────────────────────────────────────
+        // All of these produce sim_only on failure — they reflect hard behavioral
+        // constraints that must hold regardless of the 24h freshness level.
 
         // Data confidence gate
         $confRank = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3];
@@ -2118,6 +2263,34 @@ final class CoinPassportEngine
             return ['sim_only', "pattern_success_rate_too_low:{$patternSuccessRate}<0.35"];
         }
 
+        // ── All metric gates passed. Apply fresh-window ceiling. ─────────────────
+        //
+        // 24h freshness is the primary live gate:
+        //   < MIN_SAMPLES_24H_FOR_ALLOW_LIVE (2) → bootstrap_live (probationary)
+        //   >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE     → check 7d context
+        //
+        // 7d behavior context:
+        //   < MIN_SAMPLES_7D_FOR_CONTEXT (3) → bootstrap_live (limited context)
+        //   >= MIN_SAMPLES_7D_FOR_CONTEXT    → allow_live
+
+        if ($samples24h < self::MIN_SAMPLES_24H_FOR_ALLOW_LIVE) {
+            // 24h has data (computeDataSufficiency ensured >= 1 sample) but not enough
+            // for full allow_live confidence. Permit live at bootstrap level.
+            return [
+                'bootstrap_live',
+                "bootstrap_24h:only_{$samples24h}_24h_samples,need_" . self::MIN_SAMPLES_24H_FOR_ALLOW_LIVE,
+            ];
+        }
+
+        if ($samples7d < self::MIN_SAMPLES_7D_FOR_CONTEXT) {
+            // 24h is strong but 7d context is too thin to confirm stable behavior.
+            return [
+                'bootstrap_live',
+                "bootstrap_7d:limited_context_{$samples7d}_7d_samples,need_" . self::MIN_SAMPLES_7D_FOR_CONTEXT,
+            ];
+        }
+
+        // Strong 24h freshness + sufficient 7d context + all metric gates passed.
         return ['allow_live', null];
     }
 
@@ -2255,6 +2428,8 @@ final class CoinPassportEngine
 
         if ($liveEligibility === 'allow_live') {
             $notes[] = "Live eligibility: ALLOWED — all passport gates passed.";
+        } elseif ($liveEligibility === 'bootstrap_live') {
+            $notes[] = "Live eligibility: BOOTSTRAP_LIVE — probationary live; 24h/7d windows thin. Reason: {$liveBlockReason}.";
         } elseif ($liveBlockReason !== null) {
             $notes[] = "Live eligibility: {$liveEligibility} — blocked: {$liveBlockReason}.";
         }
@@ -2316,8 +2491,10 @@ final class CoinPassportEngine
      * Promotion rules:
      *   insufficient_data → yellow: requires at least MIN_HEALTHY_CLOSED_FOR_YELLOW non-orphan healthy closes
      *   yellow → green:             requires at least MIN_HEALTHY_CLOSED_FOR_GREEN non-orphan healthy closes
-     *                               + live_eligible + medium/high data_confidence + noise <= 0.55
+     *                               + allow_live + medium/high data_confidence + noise <= 0.55
      *   Orphan protection: if healthy_closed_samples < MIN_HEALTHY_CLOSED_FOR_YELLOW, always insufficient_data
+     *
+     * bootstrap_live is treated as yellow: the coin is live-capable but still on probation.
      */
     private function computeTrustState(
         string $liveEligibility,
@@ -2338,7 +2515,8 @@ final class CoinPassportEngine
             return $dataConfidence !== 'none' ? 'yellow' : 'insufficient_data';
         }
 
-        if ($liveEligibility === 'live_eligible'
+        // allow_live + sufficient confidence + low noise → green
+        if ($liveEligibility === 'allow_live'
             && in_array($dataConfidence, ['medium', 'high'], true)
             && $noiseScore <= 0.55
             && $healthyClosedSamples >= self::MIN_HEALTHY_CLOSED_FOR_GREEN) {
@@ -2350,8 +2528,13 @@ final class CoinPassportEngine
             return 'red';
         }
 
-        if ($liveEligibility === 'live_eligible') {
-            // Eligible but not fully green (e.g., low data confidence or moderate noise)
+        // allow_live but not fully green (confidence or noise not quite there)
+        if ($liveEligibility === 'allow_live') {
+            return 'yellow';
+        }
+
+        // bootstrap_live: probationary live — treat as yellow (caution, not red)
+        if ($liveEligibility === 'bootstrap_live') {
             return 'yellow';
         }
 

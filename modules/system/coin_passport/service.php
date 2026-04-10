@@ -313,14 +313,25 @@ final class CoinPassportService
             'symbol'                                => $passport['symbol'],
             'available'                             => true,
             // Eligibility gate output
+            // States: shadow_only | sim_only | bootstrap_live | allow_live
             'recommended_live_eligibility'          => $passport['recommended_live_eligibility'] ?? 'sim_only',
             'live_block_reason'                     => $passport['live_block_reason'] ?? null,
+            'passport_gate_state'                   => $passport['passport_gate_state'] ?? ($passport['recommended_live_eligibility'] ?? 'sim_only'),
+            'passport_gate_reason_detail'           => $passport['passport_gate_reason_detail'] ?? ($passport['live_block_reason'] ?? null),
             // Data confidence
             'data_confidence'                       => $passport['data_confidence'],
             'insufficient_data_flag'                => $passport['insufficient_data_flag'] ?? false,
             'insufficient_data_reason'              => $passport['insufficient_data_reason'] ?? null,
             'fallback_mode'                         => $passport['fallback_mode'] ?? 'sim_only',
             'current_usable_samples'                => $passport['current_usable_samples'] ?? $passport['sample_size'] ?? 0,
+            // Fresh-window sample counters (primary live gate inputs)
+            'recent_samples_1h'                     => (int)($passport['recent_samples_1h']  ?? 0),
+            'recent_samples_6h'                     => (int)($passport['recent_samples_6h']  ?? 0),
+            'recent_samples_24h'                    => (int)($passport['recent_samples_24h'] ?? 0),
+            'recent_samples_7d'                     => (int)($passport['recent_samples_7d']  ?? 0),
+            // Derived sufficiency booleans
+            'fresh_behavior_window_ok'              => (bool)($passport['fresh_behavior_window_ok'] ?? false),
+            'behavior_context_7d_ok'                => (bool)($passport['behavior_context_7d_ok']   ?? false),
             // Corridor summary
             'corridor_p50_roi'                      => $passport['corridor_p50_roi'] ?? $passport['corridor_mid_roi'] ?? 0,
             'corridor_p75_roi'                      => $passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? 0,

@@ -840,6 +840,267 @@ class Store
         $path = $this->storageDir . '/runtime/pm12_counters.json';
         $this->writeJson($path, $counters);
     }
+
+    // =========================================================================
+    // PM-13 post-entry evidence read model (derived, write-only from evidence)
+    // =========================================================================
+
+    /**
+     * Build a compact read model from all post-entry evidence records.
+     *
+     * Produces per-symbol aggregates + a global summary block.
+     * Uses count-based weighted averages for ROI fields.
+     * This method is pure (no I/O). Call savePostEntryReadModel() to persist.
+     *
+     * @param array $records  All records from loadPostEntryEvidence()
+     * @param string $updatedAt  ISO timestamp for updated_at fields
+     * @return array
+     */
+    public function buildPostEntryReadModel(array $records, string $updatedAt = ''): array
+    {
+        if ($updatedAt === '') {
+            $updatedAt = date('c');
+        }
+
+        $bySymbol = [];
+
+        foreach ($records as $rec) {
+            $sym = (string)($rec['symbol'] ?? '');
+            if ($sym === '') {
+                continue;
+            }
+            $evType = (string)($rec['event_type'] ?? '');
+
+            if (!isset($bySymbol[$sym])) {
+                $bySymbol[$sym] = [
+                    'symbol'                              => $sym,
+                    'side'                                => $rec['side'] ?? null,
+                    'samples_total'                       => 0,
+                    'apply_samples_total'                 => 0,
+                    'skip_samples_total'                  => 0,
+                    'noop_samples_total'                  => 0,
+                    'first_lock_hold_samples_total'       => 0,
+                    'continuation_extension_samples_total' => 0,
+                    'shallow_pullback_samples_total'      => 0,
+                    'adaptive_weak_samples_total'         => 0,
+                    'adaptive_steady_samples_total'       => 0,
+                    'adaptive_strong_samples_total'       => 0,
+                    'adaptive_shallow_pullback_samples_total' => 0,
+                    '_sum_peak_roi'                       => 0.0,
+                    '_sum_current_roi'                    => 0.0,
+                    '_sum_proposed_lock_roi'              => 0.0,
+                    '_cnt_proposed_lock_roi'              => 0,
+                    '_sum_applied_lock_roi'               => 0.0,
+                    '_cnt_applied_lock_roi'               => 0,
+                    'last_pm_management_stage'            => null,
+                    'last_refinement_policy_stage'        => null,
+                    'last_adaptive_refinement_mode'       => null,
+                    'last_skip_reason'                    => null,
+                    'last_block_reason'                   => null,
+                    'last_apply_applied'                  => null,
+                    'last_event_time'                     => null,
+                ];
+            }
+
+            $s = &$bySymbol[$sym];
+            $s['samples_total']++;
+
+            if ($evType === 'apply') {
+                $s['apply_samples_total']++;
+            } elseif ($evType === 'noop') {
+                $s['noop_samples_total']++;
+            } else {
+                $s['skip_samples_total']++;
+            }
+
+            $refStage = (string)($rec['refinement_policy_stage'] ?? '');
+            if ($refStage === 'first_lock_protection') {
+                $s['first_lock_hold_samples_total']++;
+            } elseif ($refStage === 'continuation_extension') {
+                $s['continuation_extension_samples_total']++;
+            } elseif ($refStage === 'shallow_pullback_protection') {
+                $s['shallow_pullback_samples_total']++;
+            }
+
+            $adaptMode = (string)($rec['adaptive_refinement_mode'] ?? '');
+            if ($adaptMode === 'weak_continuation') {
+                $s['adaptive_weak_samples_total']++;
+            } elseif ($adaptMode === 'steady_continuation') {
+                $s['adaptive_steady_samples_total']++;
+            } elseif ($adaptMode === 'strong_continuation') {
+                $s['adaptive_strong_samples_total']++;
+            } elseif ($adaptMode === 'shallow_pullback') {
+                $s['adaptive_shallow_pullback_samples_total']++;
+            }
+
+            $peakRoi = $rec['peak_roi'] ?? null;
+            if (is_numeric($peakRoi)) {
+                $s['_sum_peak_roi'] += (float)$peakRoi;
+            }
+            $curRoi = $rec['current_roi'] ?? null;
+            if (is_numeric($curRoi)) {
+                $s['_sum_current_roi'] += (float)$curRoi;
+            }
+            $propLockRoi = $rec['proposed_lock_roi'] ?? null;
+            if (is_numeric($propLockRoi)) {
+                $s['_sum_proposed_lock_roi'] += (float)$propLockRoi;
+                $s['_cnt_proposed_lock_roi']++;
+            }
+            $appLockRoi = $rec['applied_lock_roi'] ?? null;
+            if (is_numeric($appLockRoi)) {
+                $s['_sum_applied_lock_roi'] += (float)$appLockRoi;
+                $s['_cnt_applied_lock_roi']++;
+            }
+
+            // Last-seen fields (always overwrite with latest record for this symbol)
+            if (($rec['pm_management_stage'] ?? null) !== null) {
+                $s['last_pm_management_stage'] = $rec['pm_management_stage'];
+            }
+            if (($rec['refinement_policy_stage'] ?? null) !== null) {
+                $s['last_refinement_policy_stage'] = $rec['refinement_policy_stage'];
+            }
+            if (($rec['adaptive_refinement_mode'] ?? null) !== null) {
+                $s['last_adaptive_refinement_mode'] = $rec['adaptive_refinement_mode'];
+            }
+            if (($rec['skip_reason'] ?? null) !== null) {
+                $s['last_skip_reason'] = $rec['skip_reason'];
+            }
+            if (($rec['block_reason'] ?? null) !== null) {
+                $s['last_block_reason'] = $rec['block_reason'];
+            }
+            $s['last_apply_applied'] = $rec['apply_applied'] ?? null;
+            $s['last_event_time']    = $rec['event_time'] ?? $rec['updated_at'] ?? null;
+        }
+
+        // Materialise per-symbol entries (compute averages, drop internal accumulator keys)
+        $globalApply      = 0;
+        $globalSkip       = 0;
+        $globalNoop       = 0;
+        $globalRefinement = 0;
+        $globalAdaptive   = 0;
+        $globalRecords    = 0;
+        $symbolEntries    = [];
+
+        foreach ($bySymbol as $sym => $s) {
+            unset($s['symbol']); // will be added back at front
+            $n = $s['samples_total'];
+
+            $avgPeakRoi        = $n > 0 ? round($s['_sum_peak_roi']    / $n, 6) : null;
+            $avgCurrentRoi     = $n > 0 ? round($s['_sum_current_roi'] / $n, 6) : null;
+            $cntProp = $s['_cnt_proposed_lock_roi'];
+            $avgProposedLockRoi = $cntProp > 0 ? round($s['_sum_proposed_lock_roi'] / $cntProp, 6) : null;
+            $cntApp  = $s['_cnt_applied_lock_roi'];
+            $avgAppliedLockRoi  = $cntApp  > 0 ? round($s['_sum_applied_lock_roi']  / $cntApp,  6) : null;
+
+            $refinementSamples = $s['first_lock_hold_samples_total']
+                + $s['continuation_extension_samples_total']
+                + $s['shallow_pullback_samples_total'];
+            $adaptiveSamples   = $s['adaptive_weak_samples_total']
+                + $s['adaptive_steady_samples_total']
+                + $s['adaptive_strong_samples_total']
+                + $s['adaptive_shallow_pullback_samples_total'];
+
+            $entry = [
+                'symbol'                                  => $sym,
+                'side'                                    => $s['side'],
+                'samples_total'                           => $n,
+                'apply_samples_total'                     => $s['apply_samples_total'],
+                'skip_samples_total'                      => $s['skip_samples_total'],
+                'noop_samples_total'                      => $s['noop_samples_total'],
+                'first_lock_hold_samples_total'           => $s['first_lock_hold_samples_total'],
+                'continuation_extension_samples_total'    => $s['continuation_extension_samples_total'],
+                'shallow_pullback_samples_total'          => $s['shallow_pullback_samples_total'],
+                'adaptive_weak_samples_total'             => $s['adaptive_weak_samples_total'],
+                'adaptive_steady_samples_total'           => $s['adaptive_steady_samples_total'],
+                'adaptive_strong_samples_total'           => $s['adaptive_strong_samples_total'],
+                'adaptive_shallow_pullback_samples_total' => $s['adaptive_shallow_pullback_samples_total'],
+                'avg_peak_roi'                            => $avgPeakRoi,
+                'avg_current_roi'                         => $avgCurrentRoi,
+                'avg_proposed_lock_roi'                   => $avgProposedLockRoi,
+                'avg_applied_lock_roi'                    => $avgAppliedLockRoi,
+                'last_pm_management_stage'                => $s['last_pm_management_stage'],
+                'last_refinement_policy_stage'            => $s['last_refinement_policy_stage'],
+                'last_adaptive_refinement_mode'           => $s['last_adaptive_refinement_mode'],
+                'last_skip_reason'                        => $s['last_skip_reason'],
+                'last_block_reason'                       => $s['last_block_reason'],
+                'last_apply_applied'                      => $s['last_apply_applied'],
+                'last_event_time'                         => $s['last_event_time'],
+                'updated_at'                              => $updatedAt,
+            ];
+            $symbolEntries[$sym] = $entry;
+
+            $globalApply      += $s['apply_samples_total'];
+            $globalSkip       += $s['skip_samples_total'];
+            $globalNoop       += $s['noop_samples_total'];
+            $globalRefinement += $refinementSamples;
+            $globalAdaptive   += $adaptiveSamples;
+            $globalRecords    += $n;
+        }
+
+        $global = [
+            'symbols_total'       => count($symbolEntries),
+            'records_total'       => $globalRecords,
+            'apply_records_total' => $globalApply,
+            'skip_records_total'  => $globalSkip,
+            'noop_records_total'  => $globalNoop,
+            'refinement_records_total' => $globalRefinement,
+            'adaptive_records_total'   => $globalAdaptive,
+            'updated_at'          => $updatedAt,
+        ];
+
+        return [
+            'global'  => $global,
+            'symbols' => $symbolEntries,
+        ];
+    }
+
+    /**
+     * Save the PM-13 post-entry read model to disk.
+     *
+     * @param array $model
+     */
+    public function savePostEntryReadModel(array $model): void
+    {
+        $path = $this->storageDir . '/runtime/pm_post_entry_read_model.json';
+        $this->writeJson($path, $model);
+    }
+
+    /**
+     * Load the PM-13 post-entry read model from disk.
+     *
+     * @return array
+     */
+    public function loadPostEntryReadModel(): array
+    {
+        $path = $this->storageDir . '/runtime/pm_post_entry_read_model.json';
+        return $this->readJson($path);
+    }
+
+    // =========================================================================
+    // PM-13 read model counters (cumulative, persisted across ticks)
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-13 read model generation counters.
+     *
+     * @return array
+     */
+    public function loadPm13Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm13_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-13 read model generation counters.
+     *
+     * @param array $counters
+     */
+    public function savePm13Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm13_counters.json';
+        $this->writeJson($path, $counters);
+    }
 }
 
 /* RULES

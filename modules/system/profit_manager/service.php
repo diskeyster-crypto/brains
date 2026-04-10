@@ -460,6 +460,47 @@ final class ProfitManagerService
                 ]);
             }
 
+            // PM-13: Build and persist a compact read model from all post-entry evidence.
+            // The read model is derived entirely from the existing evidence NDJSON.
+            // It does NOT affect any PM decision. Generation is best-effort and non-fatal.
+            $pm13Counters = [
+                'read_model_symbols_total'       => 0,
+                'read_model_records_total'        => 0,
+                'read_model_apply_records_total'  => 0,
+                'read_model_skip_records_total'   => 0,
+                'read_model_noop_records_total'   => 0,
+                'read_model_generated_ok'         => 0,
+                'read_model_generation_error_total' => 0,
+            ];
+            try {
+                $allEvidenceRecords = $this->store->loadPostEntryEvidence(0);
+                if (!empty($allEvidenceRecords)) {
+                    $readModel = $this->store->buildPostEntryReadModel($allEvidenceRecords, $ts);
+                    $this->store->savePostEntryReadModel($readModel);
+                    $pm13Counters['read_model_symbols_total']      = count($readModel['symbols'] ?? []);
+                    $pm13Counters['read_model_records_total']      = (int)(($readModel['global']['records_total']  ?? 0));
+                    $pm13Counters['read_model_apply_records_total']= (int)(($readModel['global']['apply_records_total'] ?? 0));
+                    $pm13Counters['read_model_skip_records_total'] = (int)(($readModel['global']['skip_records_total']  ?? 0));
+                    $pm13Counters['read_model_noop_records_total'] = (int)(($readModel['global']['noop_records_total']  ?? 0));
+                    $pm13Counters['read_model_generated_ok']       = 1;
+                }
+            } catch (\Throwable $pm13Ex) {
+                $pm13Counters['read_model_generation_error_total'] = 1;
+            }
+            // Merge this-run PM-13 counters into cumulative pm13_counters.json
+            $prevPm13   = $this->store->loadPm13Counters();
+            $pm13Totals = [
+                'read_model_symbols_total'          => $pm13Counters['read_model_symbols_total'],
+                'read_model_records_total'          => $pm13Counters['read_model_records_total'],
+                'read_model_apply_records_total'    => $pm13Counters['read_model_apply_records_total'],
+                'read_model_skip_records_total'     => $pm13Counters['read_model_skip_records_total'],
+                'read_model_noop_records_total'     => $pm13Counters['read_model_noop_records_total'],
+                'read_model_generated_ok'           => ((int)($prevPm13['read_model_generated_ok']             ?? 0)) + $pm13Counters['read_model_generated_ok'],
+                'read_model_generation_error_total' => ((int)($prevPm13['read_model_generation_error_total']   ?? 0)) + $pm13Counters['read_model_generation_error_total'],
+                'updated_at'                        => $ts,
+            ];
+            $this->store->savePm13Counters($pm13Totals);
+
             // Compact ineligibility summary: surfaces when all seen positions are below threshold.
             // Lets the archive verify the activation threshold and how far each position is from it.
             $ineligibilitySummary = null;
@@ -559,6 +600,14 @@ final class ProfitManagerService
                 'evidence_adaptive_mode_events_total'          => $pm12Totals['evidence_adaptive_mode_events_total'],
                 'evidence_symbols_observed_total'              => $pm12Totals['evidence_symbols_observed_total'],
                 'evidence_this_run_written'                    => $pm12ThisRunWritten,
+                // PM-13 read model counters (proves read model generation is active)
+                'read_model_symbols_total'                     => $pm13Totals['read_model_symbols_total'],
+                'read_model_records_total'                     => $pm13Totals['read_model_records_total'],
+                'read_model_apply_records_total'               => $pm13Totals['read_model_apply_records_total'],
+                'read_model_skip_records_total'                => $pm13Totals['read_model_skip_records_total'],
+                'read_model_noop_records_total'                => $pm13Totals['read_model_noop_records_total'],
+                'read_model_generated_ok'                      => $pm13Totals['read_model_generated_ok'],
+                'read_model_generation_error_total'            => $pm13Totals['read_model_generation_error_total'],
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -600,6 +649,11 @@ final class ProfitManagerService
                     'evidence_apply_events_total'           => $pm12Totals['evidence_apply_events_total'],
                     'evidence_skip_events_total'            => $pm12Totals['evidence_skip_events_total'],
                     'evidence_noop_events_total'            => $pm12Totals['evidence_noop_events_total'],
+                    // PM-13 read model counters in proof artifact
+                    'read_model_symbols_total'              => $pm13Totals['read_model_symbols_total'],
+                    'read_model_records_total'              => $pm13Totals['read_model_records_total'],
+                    'read_model_apply_records_total'        => $pm13Totals['read_model_apply_records_total'],
+                    'read_model_generated_ok'               => $pm13Totals['read_model_generated_ok'],
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
@@ -677,6 +731,14 @@ final class ProfitManagerService
                 'evidence_refinement_events_total'             => $pm12Totals['evidence_refinement_events_total'],
                 'evidence_adaptive_mode_events_total'          => $pm12Totals['evidence_adaptive_mode_events_total'],
                 'evidence_symbols_observed_total'              => $pm12Totals['evidence_symbols_observed_total'],
+                // PM-13 read model counters (cumulative; appear in last_run.json for archive verification)
+                'read_model_symbols_total'                     => $pm13Totals['read_model_symbols_total'],
+                'read_model_records_total'                     => $pm13Totals['read_model_records_total'],
+                'read_model_apply_records_total'               => $pm13Totals['read_model_apply_records_total'],
+                'read_model_skip_records_total'                => $pm13Totals['read_model_skip_records_total'],
+                'read_model_noop_records_total'                => $pm13Totals['read_model_noop_records_total'],
+                'read_model_generated_ok'                      => $pm13Totals['read_model_generated_ok'],
+                'read_model_generation_error_total'            => $pm13Totals['read_model_generation_error_total'],
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

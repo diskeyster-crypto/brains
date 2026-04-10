@@ -623,6 +623,35 @@ class Store
     }
 
     // =========================================================================
+    // PM-10 refinement counters (cumulative, persisted across ticks)
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-10 refinement counters.
+     *
+     * Counters accumulate across all executeActive() cycles.
+     * Used to prove which refinement branches were exercised in the archive.
+     *
+     * @return array
+     */
+    public function loadPm10Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm10_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-10 refinement counters.
+     *
+     * @param array $counters
+     */
+    public function savePm10Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm10_counters.json';
+        $this->writeJson($path, $counters);
+    }
+
+    // =========================================================================
     // Active owner journal (PM-8 runtime proof artifact)
     // =========================================================================
 

@@ -283,6 +283,7 @@ final class ProfitManagerService
             // The journal mirrors shadow_journal.json in purpose but for active-owner decisions.
             $pm8Counters = $runResult['pm8_counters'] ?? [];
             $pm9Counters = $runResult['pm9_counters'] ?? [];
+            $pm10Counters = $runResult['pm10_counters'] ?? [];
             $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
@@ -324,6 +325,15 @@ final class ProfitManagerService
                     'duplicate_apply_prevented'             => $item['duplicate_apply_prevented'] ?? false,
                     'noop_same_lock'                        => $item['noop_same_lock'] ?? false,
                     'no_change_reason'                      => $item['no_change_reason'] ?? null,
+                    // PM-10: Post-entry refinement evidence per position
+                    'refinement_policy_stage'              => $item['refinement_policy_stage']              ?? null,
+                    'refinement_reason'                    => $item['refinement_reason']                    ?? null,
+                    'first_lock_protection_active'         => $item['first_lock_protection_active']         ?? false,
+                    'continuation_extension_applied'       => $item['continuation_extension_applied']       ?? false,
+                    'shallow_pullback_protection_active'   => $item['shallow_pullback_protection_active']   ?? false,
+                    'proposed_lock_roi_before_refinement'  => $item['proposed_lock_roi_before_refinement']  ?? null,
+                    'proposed_lock_roi_after_refinement'   => $item['proposed_lock_roi_after_refinement']   ?? null,
+                    'refinement_delta_roi'                 => $item['refinement_delta_roi']                 ?? null,
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
@@ -402,6 +412,17 @@ final class ProfitManagerService
                 'this_run_duplicate_apply_prevented'               => $pm9Counters['this_run_duplicate_apply_prevented']               ?? 0,
                 'this_run_missing_cleanup'                         => $pm9Counters['this_run_missing_cleanup']                         ?? 0,
                 'this_run_closed_cleanup'                          => $pm9Counters['this_run_closed_cleanup']                          ?? 0,
+                // PM-10 refinement counters (cumulative; proves refinement branches were exercised)
+                'refinement_first_lock_protection_total'       => $pm10Counters['refinement_first_lock_protection_total']       ?? 0,
+                'refinement_continuation_extension_total'      => $pm10Counters['refinement_continuation_extension_total']      ?? 0,
+                'refinement_shallow_pullback_protection_total' => $pm10Counters['refinement_shallow_pullback_protection_total'] ?? 0,
+                'refinement_noop_total'                        => $pm10Counters['refinement_noop_total']                        ?? 0,
+                'refinement_symbols_affected_total'            => $pm10Counters['refinement_symbols_affected_total']            ?? 0,
+                // PM-10 this-run refinement deltas
+                'this_run_refinement_first_lock_protection'    => $pm10Counters['this_run_first_lock_protection']               ?? 0,
+                'this_run_refinement_continuation_extension'   => $pm10Counters['this_run_continuation_extension']              ?? 0,
+                'this_run_refinement_shallow_pullback'         => $pm10Counters['this_run_shallow_pullback_protection']         ?? 0,
+                'this_run_refinement_symbols_affected'         => $pm10Counters['this_run_symbols_affected']                    ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -492,6 +513,12 @@ final class ProfitManagerService
                 'active_owner_duplicate_apply_prevented_total'     => $pm9Counters['active_owner_duplicate_apply_prevented_total']     ?? 0,
                 'active_owner_position_missing_cleanup_total'      => $pm9Counters['active_owner_position_missing_cleanup_total']      ?? 0,
                 'active_owner_position_closed_cleanup_total'       => $pm9Counters['active_owner_position_closed_cleanup_total']       ?? 0,
+                // PM-10 refinement counters (cumulative; prove refinement branches were exercised)
+                'refinement_first_lock_protection_total'       => $pm10Counters['refinement_first_lock_protection_total']       ?? 0,
+                'refinement_continuation_extension_total'      => $pm10Counters['refinement_continuation_extension_total']      ?? 0,
+                'refinement_shallow_pullback_protection_total' => $pm10Counters['refinement_shallow_pullback_protection_total'] ?? 0,
+                'refinement_noop_total'                        => $pm10Counters['refinement_noop_total']                        ?? 0,
+                'refinement_symbols_affected_total'            => $pm10Counters['refinement_symbols_affected_total']            ?? 0,
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

@@ -426,6 +426,30 @@ return [
             ],
 
             /* ======================================================
+               PM-10: POST-ENTRY REFINEMENT POLICY
+               Applied only in active-owner mode (trailing_owner=profit_manager),
+               after trailing is armed. Controls three refinement branches:
+               first_lock_protection, shallow_pullback_protection,
+               and continuation_extension (observational).
+               ====================================================== */
+            'pm10_refinement' => [
+                // first_lock_protection: hold first lock when peak is barely above activation.
+                // Requires peakRoi >= activationRoi + (stepRoi * this_factor) before placing lock.
+                // 0.0 = disable (lock immediately on arm), 1.0 = require full first step.
+                'first_lock_min_continuation_factor' => 0.5,
+
+                // shallow_pullback_protection: hold tightening when pullback fraction exceeds this.
+                // Pullback fraction = (peakRoi - currentRoi) / peakRoi.
+                // 0.30 = hold if more than 30% of peak ROI has been given back.
+                // 0.0 = disable, 1.0 = never hold on pullback.
+                'shallow_pullback_threshold_factor' => 0.30,
+
+                // continuation_extension: observational branch, fires when position is this many
+                // ROI points above the last lock (confirms PM is allowing position to breathe).
+                'continuation_extension_min_headroom' => 1.0,
+            ],
+
+            /* ======================================================
                ANTI-SPAM / RATE LIMITS
                ====================================================== */
             'limits' => [

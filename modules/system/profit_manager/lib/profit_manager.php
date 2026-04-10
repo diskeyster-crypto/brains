@@ -74,6 +74,13 @@ class ProfitManager
         $pm9ClosedCleanup         = 0; // stale states deleted for positions closed by bot
         $handledTradeKeys         = []; // safe-keyed set of trade keys seen this tick (for cleanup)
 
+        // PM-10: Per-run refinement counters (merged into cumulative pm10_counters.json at end)
+        $pm10FirstLockProtection   = 0; // positions where first-lock was held (weak continuation)
+        $pm10ContinuationExtension = 0; // positions in strong continuation phase (observational)
+        $pm10ShallowPullback       = 0; // positions where pullback protection blocked tightening
+        $pm10Noop                  = 0; // positions where no refinement branch applied
+        $pm10SymbolsAffected       = 0; // positions where any behavioral refinement was applied
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -163,6 +170,21 @@ class ProfitManager
             if (!$trailingArmed && $activationRoiPct > 0.0 && $peakRoi >= $activationRoiPct) {
                 $trailingArmed = true;
             }
+
+            // PM-10: Post-entry policy refinement — computed before any exchange write.
+            // Determines which refinement branch applies this tick and whether to hold the update.
+            $pm10Fields = $this->computePm10Refinement($prevState, $peakRoi, $currentRoi, $activationRoiPct, $trailingArmed);
+            if ($pm10Fields['pm10_hold']) {
+                $ctx['pm10_hold']        = true;
+                $ctx['pm10_hold_reason'] = $pm10Fields['refinement_policy_stage'];
+            } else {
+                unset($ctx['pm10_hold'], $ctx['pm10_hold_reason']);
+            }
+            $pm10Stage = $pm10Fields['refinement_policy_stage'];
+            if ($pm10Stage === 'first_lock_protection')          { $pm10FirstLockProtection++;   $pm10SymbolsAffected++; }
+            elseif ($pm10Stage === 'shallow_pullback_protection') { $pm10ShallowPullback++;       $pm10SymbolsAffected++; }
+            elseif ($pm10Stage === 'continuation_extension')      { $pm10ContinuationExtension++; $pm10SymbolsAffected++; }
+            else                                                  { $pm10Noop++; }
 
             // Execute existing trailing logic (real exchange writes)
             $itemResult = $this->processPosition($symbol, $ctx);
@@ -404,6 +426,16 @@ class ProfitManager
             $itemResult['noop_same_lock']              = $pm9NoopHere;
             $itemResult['no_change_reason']            = $pm9NoChangeReason;
 
+            // PM-10: Post-entry refinement observability fields
+            $itemResult['refinement_policy_stage']             = $pm10Fields['refinement_policy_stage'];
+            $itemResult['refinement_reason']                   = $pm10Fields['refinement_reason'];
+            $itemResult['first_lock_protection_active']        = $pm10Fields['first_lock_protection_active'];
+            $itemResult['continuation_extension_applied']      = $pm10Fields['continuation_extension_applied'];
+            $itemResult['shallow_pullback_protection_active']  = $pm10Fields['shallow_pullback_protection_active'];
+            $itemResult['proposed_lock_roi_before_refinement'] = $pm10Fields['proposed_lock_roi_before_refinement'];
+            $itemResult['proposed_lock_roi_after_refinement']  = $pm10Fields['proposed_lock_roi_after_refinement'];
+            $itemResult['refinement_delta_roi']                = $pm10Fields['refinement_delta_roi'];
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -497,6 +529,18 @@ class ProfitManager
         ];
         $this->store->savePm9Counters($pm9Totals);
 
+        // PM-10: Merge this-run refinement counts into cumulative pm10_counters.json
+        $prevPm10   = $this->store->loadPm10Counters();
+        $pm10Totals = [
+            'refinement_first_lock_protection_total'       => ((int)($prevPm10['refinement_first_lock_protection_total']       ?? 0)) + $pm10FirstLockProtection,
+            'refinement_continuation_extension_total'      => ((int)($prevPm10['refinement_continuation_extension_total']      ?? 0)) + $pm10ContinuationExtension,
+            'refinement_shallow_pullback_protection_total' => ((int)($prevPm10['refinement_shallow_pullback_protection_total'] ?? 0)) + $pm10ShallowPullback,
+            'refinement_noop_total'                        => ((int)($prevPm10['refinement_noop_total']                        ?? 0)) + $pm10Noop,
+            'refinement_symbols_affected_total'            => ((int)($prevPm10['refinement_symbols_affected_total']            ?? 0)) + $pm10SymbolsAffected,
+            'updated_at'                                   => $ts,
+        ];
+        $this->store->savePm10Counters($pm10Totals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -533,6 +577,21 @@ class ProfitManager
                 'active_owner_duplicate_apply_prevented_total' => $pm9Totals['active_owner_duplicate_apply_prevented_total'],
                 'active_owner_position_missing_cleanup_total'  => $pm9Totals['active_owner_position_missing_cleanup_total'],
                 'active_owner_position_closed_cleanup_total'   => $pm9Totals['active_owner_position_closed_cleanup_total'],
+            ],
+            // PM-10: refinement counters (both this-run and cumulative totals)
+            'pm10_counters'     => [
+                // This-run deltas
+                'this_run_first_lock_protection'               => $pm10FirstLockProtection,
+                'this_run_continuation_extension'              => $pm10ContinuationExtension,
+                'this_run_shallow_pullback_protection'         => $pm10ShallowPullback,
+                'this_run_noop'                                => $pm10Noop,
+                'this_run_symbols_affected'                    => $pm10SymbolsAffected,
+                // Cumulative totals
+                'refinement_first_lock_protection_total'       => $pm10Totals['refinement_first_lock_protection_total'],
+                'refinement_continuation_extension_total'      => $pm10Totals['refinement_continuation_extension_total'],
+                'refinement_shallow_pullback_protection_total' => $pm10Totals['refinement_shallow_pullback_protection_total'],
+                'refinement_noop_total'                        => $pm10Totals['refinement_noop_total'],
+                'refinement_symbols_affected_total'            => $pm10Totals['refinement_symbols_affected_total'],
             ],
         ];
     }
@@ -672,6 +731,14 @@ class ProfitManager
      */
     private function processStepTrailing(string $symbol, array $position, array $ctx, float $tickSize): array
     {
+        // PM-10: Active-owner refinement hold — if the refinement layer decided to hold this tick, skip.
+        if (!empty($ctx['pm10_hold'])) {
+            return [
+                'action' => 'skip',
+                'reason' => $ctx['pm10_hold_reason'] ?? 'pm10_refinement_hold',
+            ];
+        }
+
         // Check if should skip
         $skipReason = $this->validator->shouldSkipStepTrailing($position, $ctx, $this->riskMath);
         if ($skipReason !== null) {
@@ -984,6 +1051,7 @@ class ProfitManager
         ) {
             $pm9Status = [
                 'previous_lock_roi'          => $result['previous_lock_roi']          ?? null,
+                'proposed_lock_roi'          => $result['proposed_lock_roi_after_refinement'] ?? ($result['proposed_lock_roi'] ?? null),
                 'applied_lock_roi'           => $result['applied_lock_roi']           ?? null,
                 'carried_forward_state'      => $result['carried_forward_state']      ?? false,
                 'regression_prevented'       => $result['regression_prevented']       ?? false,
@@ -992,9 +1060,146 @@ class ProfitManager
                 'no_change_reason'           => $result['no_change_reason']           ?? null,
                 'cleaned_up_missing_position' => false,
                 'cleaned_up_closed_position'  => false,
+                // PM-10: Refinement evidence
+                'refinement_policy_stage'              => $result['refinement_policy_stage']              ?? null,
+                'refinement_reason'                    => $result['refinement_reason']                    ?? null,
+                'first_lock_protection_active'         => $result['first_lock_protection_active']         ?? false,
+                'continuation_extension_applied'       => $result['continuation_extension_applied']       ?? false,
+                'shallow_pullback_protection_active'   => $result['shallow_pullback_protection_active']   ?? false,
+                'proposed_lock_roi_before_refinement'  => $result['proposed_lock_roi_before_refinement']  ?? null,
+                'proposed_lock_roi_after_refinement'   => $result['proposed_lock_roi_after_refinement']   ?? null,
+                'refinement_delta_roi'                 => $result['refinement_delta_roi']                 ?? null,
+                'updated_at'                           => date('c'),
             ];
             $this->store->updateSymbolStatus($symbol, $pm9Status);
         }
+    }
+
+    // =========================================================================
+    // PM-10: Post-entry refinement
+    // =========================================================================
+
+    /**
+     * Compute PM-10 post-entry policy refinement for a single position.
+     *
+     * Runs BEFORE processPosition() in runActive(). Determines which refinement
+     * branch applies this tick and whether the exchange update should be held.
+     * All branches are explicit and observable; safety gates in processStepTrailing
+     * remain fully active regardless of what this method returns.
+     *
+     * Branches:
+     *   first_lock_protection       — hold first lock when barely armed (weak continuation)
+     *   shallow_pullback_protection — hold tightening during significant pullback from peak
+     *   continuation_extension      — observe strong continuation above lock (no-op behavioral)
+     *   noop                        — no refinement applicable this tick
+     *
+     * @param array $prevState        Persisted active state from prior tick (may be empty)
+     * @param float $peakRoi          Monotonic peak ROI for this position
+     * @param float $currentRoi       Current ROI this tick
+     * @param float $activationRoiPct Arm threshold from config
+     * @param bool  $trailingArmed    Whether trailing is armed this tick
+     * @return array Refinement fields (safe to spread into item result)
+     */
+    private function computePm10Refinement(
+        array $prevState,
+        float $peakRoi,
+        float $currentRoi,
+        float $activationRoiPct,
+        bool  $trailingArmed
+    ): array {
+        $prevLockRoi = (float)($prevState['last_lock_roi'] ?? 0.0);
+        $stepRoiPct  = (float)($this->config['step_trailing']['step_roi_pct'] ?? 2.0);
+        $lockBuf     = (float)($this->config['step_trailing']['lock_buffer_roi_pct'] ?? 0.25);
+        $lockFloor   = (float)($this->config['step_trailing']['lock_floor_roi_pct'] ?? 0.0);
+
+        $pm10Cfg = is_array($this->config['pm10_refinement'] ?? null) ? $this->config['pm10_refinement'] : [];
+        $firstLockMinFactor    = (float)($pm10Cfg['first_lock_min_continuation_factor'] ?? 0.5);
+        $shallowPullbackFactor = (float)($pm10Cfg['shallow_pullback_threshold_factor']  ?? 0.30);
+        $contExtMinHeadroom    = (float)($pm10Cfg['continuation_extension_min_headroom'] ?? 1.0);
+
+        $fields = [
+            'refinement_policy_stage'              => 'noop',
+            'refinement_reason'                    => null,
+            'first_lock_protection_active'         => false,
+            'continuation_extension_applied'       => false,
+            'shallow_pullback_protection_active'   => false,
+            'proposed_lock_roi_before_refinement'  => null,
+            'proposed_lock_roi_after_refinement'   => null,
+            'refinement_delta_roi'                 => null,
+            'pm10_hold'                            => false,
+        ];
+
+        if (!$trailingArmed) {
+            // Not armed — refinement is not applicable pre-activation
+            return $fields;
+        }
+
+        // Compute what step trailing would propose as targetLockRoi this tick.
+        // Mirrors the formula in processStepTrailing / riskMath->calculateStepTrailingLockRoi.
+        $rawTargetLockRoi = null;
+        if ($activationRoiPct > 0.0 && $stepRoiPct > 0.0 && $currentRoi >= $activationRoiPct) {
+            $steps = (int)floor(($currentRoi - $activationRoiPct) / $stepRoiPct);
+            if ($steps === 0) {
+                $rawTargetLockRoi = max($lockFloor, 0.0);
+            } else {
+                $rawTargetLockRoi = max($activationRoiPct + ($steps * $stepRoiPct) - $lockBuf, $lockFloor, 0.0);
+            }
+        }
+
+        $fields['proposed_lock_roi_before_refinement'] = $rawTargetLockRoi;
+        $fields['proposed_lock_roi_after_refinement']  = $rawTargetLockRoi; // default: unchanged
+
+        // --- Branch 1: First-lock protection ---
+        // When no lock has been placed yet, require the peak to show at least a minimum
+        // continuation above activation before committing to the first lock.
+        // Prevents an eager lock the moment trailing arms on a barely-crossed threshold.
+        if ($prevLockRoi <= 0.0 && $stepRoiPct > 0.0) {
+            $minRequired = $activationRoiPct + ($stepRoiPct * $firstLockMinFactor);
+            if ($peakRoi < $minRequired) {
+                $fields['refinement_policy_stage']              = 'first_lock_protection';
+                $fields['refinement_reason']                    = 'weak_continuation_near_activation';
+                $fields['first_lock_protection_active']         = true;
+                $fields['pm10_hold']                            = true;
+                $fields['proposed_lock_roi_after_refinement']   = 0.0; // held at no-lock
+                $fields['refinement_delta_roi']                 = $rawTargetLockRoi !== null
+                    ? (0.0 - $rawTargetLockRoi)
+                    : null;
+                return $fields;
+            }
+        }
+
+        // --- Branch 2: Shallow pullback protection ---
+        // When a significant fraction of the peak ROI has been given back and step trailing
+        // would tighten the lock, hold to avoid ratcheting the stop tighter into a pullback.
+        // Only applies when a lock is already placed (prevLockRoi > 0) and step would tighten.
+        if ($prevLockRoi > 0.0 && $peakRoi > 0.0
+            && $rawTargetLockRoi !== null && $rawTargetLockRoi > $prevLockRoi
+        ) {
+            $pullbackFraction = ($peakRoi - $currentRoi) / $peakRoi;
+            if ($pullbackFraction > $shallowPullbackFactor) {
+                $fields['refinement_policy_stage']              = 'shallow_pullback_protection';
+                $fields['refinement_reason']                    = 'significant_pullback_from_peak';
+                $fields['shallow_pullback_protection_active']   = true;
+                $fields['pm10_hold']                            = true;
+                $fields['proposed_lock_roi_after_refinement']   = $prevLockRoi; // held at current lock
+                $fields['refinement_delta_roi']                 = $prevLockRoi - $rawTargetLockRoi;
+                return $fields;
+            }
+        }
+
+        // --- Branch 3: Continuation extension (observational) ---
+        // When the position is well above the last lock and price is continuing strongly,
+        // record that PM is in a healthy continuation phase. Step trailing handles the
+        // actual lock advancement; this branch confirms PM is not over-tightening.
+        if ($prevLockRoi > 0.0 && ($currentRoi - $prevLockRoi) >= $contExtMinHeadroom) {
+            $fields['refinement_policy_stage']        = 'continuation_extension';
+            $fields['refinement_reason']              = 'strong_continuation_above_lock';
+            $fields['continuation_extension_applied'] = true;
+            $fields['refinement_delta_roi']           = 0.0;
+            // pm10_hold remains false — step trailing proceeds normally
+        }
+
+        return $fields;
     }
 
     // =========================================================================

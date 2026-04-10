@@ -192,14 +192,26 @@ trait BotSourcesTrait
                     continue;
                 }
 
-                // Skip if already executed (idempotency) — check BOTH intent_id and signal_id for safety
+                // Skip if already executed (idempotency).
+                // A true duplicate is ONLY when a prior real live open (opened_protected) exists in
+                // the executed_index for this execution key. Rejected/failed/error prior attempts
+                // must allow fresh re-tries — the identity key can be reused across re-emissions.
                 $isDuplicate = false;
+                $priorEntry = null;
                 if (isset($executedIndex[$executionKey])) {
-                    $isDuplicate = true;
+                    $priorEntry = $executedIndex[$executionKey];
+                    // Only a genuine duplicate when the previous run produced a real live open.
+                    if (($priorEntry['result'] ?? '') === 'opened_protected') {
+                        $isDuplicate = true;
+                    }
                 }
                 // Also check signal_id separately for backward compat with old executed_index entries
                 if (!$isDuplicate && $intentId !== null && $signalId !== null && $intentId !== $signalId && isset($executedIndex[$signalId])) {
-                    $isDuplicate = true;
+                    $sigEntry = $executedIndex[$signalId];
+                    if (($sigEntry['result'] ?? '') === 'opened_protected') {
+                        $isDuplicate = true;
+                        $priorEntry = $sigEntry;
+                    }
                 }
 
                 if ($isDuplicate) {
@@ -222,13 +234,17 @@ trait BotSourcesTrait
                         'protection_status' => 'none',
                         'trailing_status' => 'disabled',
                         'source_status' => 'brain_live_intent',
-                        'debug_message' => 'Already processed (execution key exists in executed_index)',
+                        'debug_message' => 'Already processed (execution key exists in executed_index with opened_protected result)',
                         'execution_stage' => 'duplicate_skipped',
                         'exchange_submit_attempted' => false,
                         'exchange_response_code' => null,
                         'exchange_response_message' => null,
                         'validation_error_summary' => null,
                         'missing_fields_preview' => [],
+                        'duplicate_key_checked' => true,
+                        'duplicate_key_reason' => 'prior_live_open_found',
+                        'duplicate_key_existing_terminal_state' => $priorEntry['result'] ?? null,
+                        'duplicate_key_allowed_fresh_attempt' => false,
                     ];
                     continue;
                 }
@@ -288,6 +304,15 @@ trait BotSourcesTrait
 
                 if (isset($intent['side_original'])) {
                     $normalized['side_original'] = $intent['side_original'];
+                }
+
+                // If a prior non-live-open entry existed for this key, stamp observability fields
+                // so archives can trace that this was a deliberate fresh-attempt allowance.
+                if ($priorEntry !== null) {
+                    $normalized['duplicate_key_checked'] = true;
+                    $normalized['duplicate_key_existing_terminal_state'] = $priorEntry['result'] ?? null;
+                    $normalized['duplicate_key_allowed_fresh_attempt'] = true;
+                    $normalized['duplicate_key_reason'] = 'prior_result_not_live_open';
                 }
 
                 $validIntents[] = $normalized;

@@ -62,6 +62,12 @@ final class TradingBotService
      * Reset to false immediately after each demo-context executeIntent call.
      */
     private bool $demoExecutionContext = false;
+
+    /**
+     * Storage dir for demo shadow store (live mode only).
+     * Used by markSignalExecuted() to route demo-context writes to demo storage.
+     */
+    private string $demoStorageDir = '';
     
     public function __construct()
     {
@@ -97,6 +103,7 @@ final class TradingBotService
         if ($mode === 'live') {
             $demoStorageDir = $this->moduleBase . '/storage_demo';
             $this->parallelDemoStore = new Lib\BotStore($demoStorageDir, $this->config);
+            $this->demoStorageDir = $demoStorageDir;
         }
 
         // Decision Engine + Verdict Engine (Phase 1 + Phase 3 of roadmap)
@@ -136,13 +143,16 @@ final class TradingBotService
 
         // Wire verdict engine into the parallel demo store (live mode only) so shadow trade
         // closes also generate verdict artifacts, linked by the same decision_id.
+        // Use a separate demoVerdictEngine rooted at demoStorageDir so demo verdicts
+        // never land in live storage (storage_live/runtime/verdicts/).
         if ($this->parallelDemoStore !== null) {
+            $demoVerdictEng = new Lib\BotVerdictEngine($this->demoStorageDir);
             $this->parallelDemoStore->setOnTradeClosedHook(
-                function (string $tradeId, array $trade) use ($verdictEngine, $decisionEngine): void {
+                function (string $tradeId, array $trade) use ($demoVerdictEng, $decisionEngine): void {
                     $decisionId = (string)($trade['decision_id'] ?? '');
                     $dp         = $decisionId !== '' ? $decisionEngine->loadDecisionPacket($decisionId) : null;
-                    $verdict    = $verdictEngine->generateVerdict($tradeId, $trade, $dp);
-                    $verdictEngine->saveVerdict($tradeId, $verdict);
+                    $verdict    = $demoVerdictEng->generateVerdict($tradeId, $trade, $dp);
+                    $demoVerdictEng->saveVerdict($tradeId, $verdict);
                     // ── Journal: parallel_demo_shadow_closed + verdict_written ────────────
                     if (!empty($trade['is_parallel_demo_shadow'])) {
                         $this->journalEvent(
@@ -1360,6 +1370,8 @@ final class TradingBotService
                     // NOTE: summary counts are derived from finalized intent_results after
                     // updateActivePositions post-processing (single source of truth).
                     $intentResultRecord = $this->buildIntentResultRecord($intent, $execResult);
+                    // Stamp the execution namespace so archives show which path was taken.
+                    $intentResultRecord['final_execution_namespace'] = $intentExecMode;
                     $result['intent_results'][] = $intentResultRecord;
 
                     // ── Journal: signal_processed (one event per intent) ──────────────────
@@ -1393,6 +1405,7 @@ final class TradingBotService
                             'quality_score'                => $intent['quality_score'] ?? null,
                             'confidence_band'              => $intent['confidence_band'] ?? null,
                             'route_state'                  => $intent['route_state'] ?? null,
+                            'final_execution_namespace'    => $intentExecMode,
                             'late_entry_diagnostics'       => $execResult['late_entry_diagnostics']
                                                               ?? ($execResult['context']['late_entry_diagnostics'] ?? null),
                             'deadline_context'             => $execResult['deadline_context'] ?? null,
@@ -1407,7 +1420,16 @@ final class TradingBotService
                         $iid = $intent['intent_id'] ?? '';
                         if ($iid !== '') {
                             $lifecycleState = $intentResultRecord['lifecycle_state'] ?? '';
-                            if (in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true)) {
+                            if ($intentExecMode === 'demo' && in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true)) {
+                                // Demo-routed intent: a successful open in demo storage is NOT a live
+                                // execution. Mark the live intent as rejected so it is never confused
+                                // with a real live-opened position. The demo trade lives in demo storage.
+                                $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                    'reject_reason'  => 'routed_to_demo',
+                                    'reject_context' => 'route_state=' . ($decisionPacket['route_state'] ?? 'unknown')
+                                        . ', exec_status=' . ($execResult['status'] ?? 'unknown'),
+                                ]);
+                            } elseif (in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true)) {
                                 $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'executed', [
                                     'execution_result' => $execResult['status'] ?? 'unknown',
                                 ]);

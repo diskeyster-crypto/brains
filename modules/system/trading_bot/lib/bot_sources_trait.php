@@ -1604,7 +1604,13 @@ trait BotSourcesTrait
      */
     protected function markSignalExecuted(string $signalId, array $result, string $dedupeBasis = ''): void
     {
-        $path = $this->storageDir . '/executed_index.json';
+        // When the bot is running in demo execution context (live bot routing an intent
+        // to demo storage), the executed_index must also go to demo storage so that live
+        // executed_index.json is not polluted with demo-only openings (e.g. dry_* order ids).
+        $execStorageDir = ($this->demoExecutionContext && isset($this->demoStorageDir) && $this->demoStorageDir !== '')
+            ? $this->demoStorageDir
+            : $this->storageDir;
+        $path = $execStorageDir . '/executed_index.json';
         
         // B7: Use flock for atomic read-modify-write
         $fp = @fopen($path, 'c+');
@@ -1620,7 +1626,11 @@ trait BotSourcesTrait
         if ($fp === false) {
             // Last resort: non-atomic write with error logging
             error_log("TradingBot: flock failed for executed_index.json, falling back to non-atomic write");
-            $index = $this->loadExecutedIndex();
+            $rawContent = @file_get_contents($path);
+            $index = is_string($rawContent) ? (@json_decode($rawContent, true) ?? []) : [];
+            if (!is_array($index)) {
+                $index = [];
+            }
             $index[$signalId] = $this->buildExecutedEntry($result, $signalId, $dedupeBasis);
             @file_put_contents($path, json_encode($index, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
             $this->journalEvent('file_write', 'execute_intent', true,

@@ -1290,6 +1290,82 @@ class Store
             }
         }
 
+        // ── Trade-centric fallback path ───────────────────────────────────────
+        // When closed trades exist for a symbol that has NO PM read-model entry
+        // (e.g. PM has never observed that position, or this is the very first run),
+        // build minimal links directly from the trade data.
+        // These links carry evidence_samples_total=0 and PM-stage fields=null,
+        // and are always tagged confidence='low' because there is no PM evidence
+        // to correlate against.  They are purely observational — PM decisions are
+        // never affected by them.
+        foreach ($closedBySymbol as $symUpper => $trades) {
+            if (isset($linkedSymbols[$symUpper])) {
+                continue; // already handled by the read-model path above
+            }
+
+            foreach ($trades as $ct) {
+                $liveRoi = isset($ct['live_roi']) && is_numeric($ct['live_roi']) ? (float)$ct['live_roi'] : null;
+                $compRoi = isset($ct['roi'])      && is_numeric($ct['roi'])      ? (float)$ct['roi']      : null;
+                $roi     = $liveRoi ?? $compRoi;
+
+                if ($roi === null) {
+                    $outcomeStatus = 'unknown';
+                } elseif ($roi > 0.0) {
+                    $outcomeStatus = 'profitable';
+                } elseif ($roi < 0.0) {
+                    $outcomeStatus = 'losing';
+                } else {
+                    $outcomeStatus = 'neutral';
+                }
+
+                $mfe = isset($ct['mfe']) && is_numeric($ct['mfe']) && (float)$ct['mfe'] !== 0.0
+                    ? (float)$ct['mfe']
+                    : null;
+
+                $link = [
+                    'symbol'                        => $ct['symbol'],
+                    'side'                          => $ct['side'] ?? null,
+                    'owner_mode'                    => 'profit_manager',
+                    'evidence_samples_total'        => 0,
+                    'last_evidence_event_id'        => $lastEventById[$symUpper]  ?? null,
+                    'last_evidence_event_type'      => $lastEventByType[$symUpper] ?? null,
+                    'last_pm_management_stage'      => null,
+                    'last_refinement_policy_stage'  => null,
+                    'last_adaptive_refinement_mode' => null,
+                    'apply_samples_total'           => 0,
+                    'skip_samples_total'            => 0,
+                    'noop_samples_total'            => 0,
+                    'final_outcome_status'          => $outcomeStatus,
+                    'final_close_reason'            => $ct['live_close_reason'] ?? $ct['close_reason'] ?? null,
+                    'final_roi'                     => $roi,
+                    'peak_roi_seen'                 => $mfe,
+                    'drawdown_after_apply'          => null,
+                    'continuation_after_apply'      => null,
+                    'outcome_link_confidence'       => 'low', // no PM evidence — trade data only
+                    'linked_at'                     => $updatedAt,
+                    'source_refs'                   => [
+                        'source_type'      => $ct['_pm14_source']   ?? 'trade_only',
+                        'virtual_trade_id' => $ct['virtual_trade_id'] ?? null,
+                        'live_trade_id'    => $ct['live_trade_id']    ?? null,
+                        'closed_at'        => $ct['closed_at']        ?? null,
+                    ],
+                ];
+
+                $links[]                  = $link;
+                $globalLinked++;
+                $linkedSymbols[$symUpper] = true;
+                $globalLowConf++;
+
+                if ($outcomeStatus === 'profitable') {
+                    $globalProfitable++;
+                } elseif ($outcomeStatus === 'losing') {
+                    $globalLosing++;
+                } elseif ($outcomeStatus === 'neutral') {
+                    $globalNeutral++;
+                }
+            }
+        }
+
         $global = [
             'linked_symbols_total'      => count($linkedSymbols),
             'linked_records_total'      => $globalLinked,

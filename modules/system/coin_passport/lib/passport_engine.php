@@ -930,7 +930,8 @@ final class CoinPassportEngine
             $fallbackMode,
             $impulse['impulse_strength_score'],
             $pullbackBehavior['pullback_severity_score'],
-            $patternBehavior['v2_success_rate'] ?? null
+            $patternBehavior['v2_success_rate'] ?? null,
+            (string)($insufficientReason ?? '')
         );
 
         // ── Diagnostic notes ──────────────────────────────────────────────────
@@ -1964,6 +1965,12 @@ final class CoinPassportEngine
      * Compute data sufficiency flags.
      * Uses numeric confidence score so medium/high applies even without live-only data.
      *
+     * NOTE: 'low' confidence is intentionally NOT flagged as insufficient here.
+     * LIVE_GATE_CONFIDENCE_MIN = 'low' means 'low' is the minimum accepted level,
+     * so a coin with enough samples but low confidence must reach the regular
+     * confidence gate inside computeLiveEligibility(), which will correctly pass it.
+     * Treating 'low' as insufficient would bypass that gate and produce overbroad sim_only.
+     *
      * @return array{bool, string|null, string}  [insufficient_flag, reason, fallback_mode]
      */
     private function computeDataSufficiency(
@@ -1985,9 +1992,8 @@ final class CoinPassportEngine
         if ($confidence === 'none') {
             return [true, "no_data_confidence", 'shadow_only'];
         }
-        if ($confidence === 'low') {
-            return [true, "low_data_confidence:{$confidence}", 'sim_only'];
-        }
+        // 'low' confidence is NOT treated as insufficient: LIVE_GATE_CONFIDENCE_MIN='low'
+        // means 'low' is the minimum live threshold, handled by the regular gate chain.
         return [false, null, 'live_eligible'];
     }
 
@@ -2037,6 +2043,10 @@ final class CoinPassportEngine
     /**
      * Compute live eligibility decision based on all passport metrics.
      *
+     * @param string $insufficientReason  The actual reason set by computeDataSufficiency()
+     *                                    (e.g. "insufficient_total_samples:1<10"). Used to
+     *                                    produce an informative live_block_reason instead of
+     *                                    the opaque "insufficient_data:{fallbackMode}" string.
      * @return array{string, string|null}  [eligibility, block_reason]
      */
     private function computeLiveEligibility(
@@ -2050,12 +2060,14 @@ final class CoinPassportEngine
         string  $fallbackMode,
         float   $impulseStrength = 0.5,
         float   $pullbackSeverity = 0.5,
-        ?float  $patternSuccessRate = null
+        ?float  $patternSuccessRate = null,
+        string  $insufficientReason = ''
     ): array {
-        // Insufficient data → forced fallback
+        // Insufficient data → forced fallback; include actual reason for observability
         if ($insufficientFlag) {
+            $detailReason = $insufficientReason !== '' ? $insufficientReason : $fallbackMode;
             return [$fallbackMode === 'shadow_only' ? 'shadow_only' : 'sim_only',
-                    "insufficient_data:{$fallbackMode}"];
+                    "insufficient_data:{$detailReason}"];
         }
 
         // Data confidence gate

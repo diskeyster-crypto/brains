@@ -1424,6 +1424,10 @@ final class SmartBrainCore
                 } else {
                     $passportEligibility  = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
                     $passportBlockReason  = (string)($passport['live_block_reason'] ?? '');
+                    // Detailed insufficiency reason (e.g. "insufficient_total_samples:1<10").
+                    // Present when the sim_only outcome came from the data-sufficiency check;
+                    // null/empty when the block came from a metric gate instead.
+                    $passportInsufReason  = (string)($passport['insufficient_data_reason'] ?? '');
                     $passportConfidence   = (string)($passport['data_confidence'] ?? 'none');
                     $passportCorridorP75  = (float)($passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? 0.0);
                     $passportRunnerProb   = (float)($passport['runner_probability'] ?? 0.0);
@@ -1493,6 +1497,12 @@ final class SmartBrainCore
                         $signal['passport_gate_result']    = $passportEligibility;
                         $signal['passport_gate_demoted']   = true;
                         $signal['passport_block_reason']   = $passportBlockReason;
+                        // Compact observability: surface the actual insufficiency detail so
+                        // observers can distinguish e.g. insufficient_total_samples from
+                        // metric-gate failures without inspecting the passport file directly.
+                        if ($passportInsufReason !== '') {
+                            $signal['passport_gate_demote_reason_detail'] = $passportInsufReason;
+                        }
                         $result['passport_gate_demoted_to_sim_count']++;
                         if ($passportEligibility === 'sim_only') {
                             $result['passport_gate_sim_only_count']++;
@@ -1506,6 +1516,7 @@ final class SmartBrainCore
                                 'symbol'        => $symbol,
                                 'eligibility'   => $passportEligibility,
                                 'block_reason'  => $passportBlockReason,
+                                'insuf_reason'  => $passportInsufReason ?: null,
                                 'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
                             ];
                         }

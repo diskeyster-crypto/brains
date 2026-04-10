@@ -1295,6 +1295,71 @@ final class TradingBotService
                     );
                     // ─────────────────────────────────────────────────────────────────
 
+                    // ── Guard: Block live→demo silent reroute for brain-controlled live intents ──
+                    // A live intent claimed from live_intents.json must never be silently converted
+                    // into a demo execution. The decision engine may return 'enter_demo' for a live
+                    // intent (e.g. yellow/amber confidence band), but a claimed live intent must only
+                    // end as live-executed or live-rejected — never demo-routed.
+                    if ($brainControlled && $mode === 'live' && $intentExecMode === 'demo') {
+                        $rerouteBlockReason = 'rejected_live_reroute_to_demo_blocked';
+                        $this->store->saveRejectedIntent($intent, [
+                            'reason'  => $rerouteBlockReason,
+                            'context' => [
+                                'confidence_band'              => $decisionPacket['confidence_band'] ?? null,
+                                'route_state'                  => $decisionPacket['route_state'] ?? null,
+                                'decision_id'                  => $decisionPacket['decision_id'] ?? null,
+                                'input_intent_namespace'       => 'live',
+                                'final_execution_namespace'    => 'blocked',
+                                'live_to_demo_reroute_blocked' => true,
+                            ],
+                        ]);
+                        $iid = $intent['intent_id'] ?? '';
+                        if ($iid !== '' && !empty($liveIntentsFilePath)) {
+                            $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                'reject_reason'  => $rerouteBlockReason,
+                                'reject_context' => 'route_state=' . ($decisionPacket['route_state'] ?? 'unknown')
+                                    . ', confidence_band=' . ($decisionPacket['confidence_band'] ?? 'unknown'),
+                            ]);
+                            $lifecycleUpdatedIntentIds[$iid] = true;
+                        }
+                        $result['intent_results'][] = [
+                            'intent_id'                    => $intent['intent_id'] ?? ($intent['id'] ?? null),
+                            'signal_id'                    => $intent['signal_id'] ?? null,
+                            'symbol'                       => (string)($intent['symbol'] ?? ''),
+                            'side'                         => (string)($intent['side'] ?? ''),
+                            'brain_controlled'             => true,
+                            'execution_identity_key'       => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? '')),
+                            'lifecycle_state'              => 'rejected',
+                            'processed_at'                 => date('c'),
+                            'execution_result'             => $rerouteBlockReason,
+                            'rejection_reason'             => $rerouteBlockReason,
+                            'close_reason'                 => null,
+                            'order_id'                     => null,
+                            'position_id'                  => null,
+                            'protection_status'            => 'none',
+                            'trailing_status'              => 'disabled',
+                            'source_status'                => $intent['source'] ?? 'brain_live_intent',
+                            'debug_message'                => 'confidence_band=' . ($decisionPacket['confidence_band'] ?? 'unknown')
+                                . ', route_state=' . ($decisionPacket['route_state'] ?? 'unknown'),
+                            'execution_stage'              => 'live_reroute_to_demo_blocked',
+                            'exchange_submit_attempted'    => false,
+                            'exchange_response_code'       => null,
+                            'exchange_response_message'    => null,
+                            'validation_error_summary'     => null,
+                            'missing_fields_preview'       => [],
+                            'order_send_attempted'         => false,
+                            'order_sent'                   => false,
+                            'position_opened'              => false,
+                            'terminal_status'              => 'rejected',
+                            'final_execution_namespace'    => 'live',
+                            'input_intent_namespace'       => 'live',
+                            'live_to_demo_reroute_blocked' => true,
+                        ];
+                        $executedThisRun++;
+                        continue;
+                    }
+                    // ──────────────────────────────────────────────────────────────────────────
+
                     // True per-intent execution context separation:
                     // When the bot is live but this intent is demo-routed, we must:
                     //   1. Use demo storage (parallelDemoStore) — not the live store.

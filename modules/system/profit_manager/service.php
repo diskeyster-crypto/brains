@@ -555,6 +555,26 @@ final class ProfitManagerService
             } catch (\Throwable $pm14Ex) {
                 $pm14Counters['outcome_links_generation_error_total'] = 1;
             }
+            // If this tick did not generate fresh outcome links (closedTrades empty or error),
+            // fall back to the persisted pm_post_entry_outcome_links.json global summary so the
+            // snapshot counters always reflect what is currently in the file rather than
+            // regressing to zero on every empty tick.
+            if ($pm14Counters['outcome_links_generated_total'] === 0
+                && $pm14Counters['outcome_links_generation_error_total'] === 0) {
+                try {
+                    $persistedLinks = $this->store->loadPostEntryOutcomeLinks();
+                    if (!empty($persistedLinks['global'])) {
+                        $pg = $persistedLinks['global'];
+                        $pm14Counters['outcome_links_generated_total']      = (int)($pg['linked_records_total']      ?? 0);
+                        $pm14Counters['outcome_links_profitable_total']     = (int)($pg['profitable_outcomes_total'] ?? 0);
+                        $pm14Counters['outcome_links_losing_total']         = (int)($pg['losing_outcomes_total']     ?? 0);
+                        $pm14Counters['outcome_links_neutral_total']        = (int)($pg['neutral_outcomes_total']    ?? 0);
+                        $pm14Counters['outcome_links_low_confidence_total'] = (int)($pg['low_confidence_total']      ?? 0);
+                    }
+                } catch (\Throwable $ignored) {
+                    // non-fatal; counters remain zero if the file is unreadable
+                }
+            }
             // Merge this-run PM-14 counters into cumulative pm14_counters.json.
             // Current-snapshot counters (generated/profitable/losing/neutral/low_confidence) simply
             // reflect the latest file state; only error_total is additive across ticks.

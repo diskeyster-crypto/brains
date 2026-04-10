@@ -1108,7 +1108,11 @@ class Store
 
     /**
      * Build passive outcome-link records by joining PM post-entry evidence with real
-     * closed-position outcomes (supplied by the caller from ai_shadow virtual_trades_closed).
+     * closed-position outcomes.
+     *
+     * Accepts closed-trade records from any authoritative source (Trading Bot
+     * trades/closed_trades.json, ai_shadow virtual_trades_closed, etc.).  The caller
+     * normalises records to the expected shape before passing them here.
      *
      * Matching is symbol-first; side confirms the match. Confidence is:
      *   - 'high'   : exactly one closed trade for symbol+side
@@ -1117,9 +1121,9 @@ class Store
      *
      * This method is pure (no I/O). Call savePostEntryOutcomeLinks() to persist.
      *
-     * @param array  $evidence     All records from loadPostEntryEvidence()
+     * @param array  $evidence     All records from loadPostEntryEvidence() (may be empty)
      * @param array  $readModel    Result of buildPostEntryReadModel() (contains 'symbols' map)
-     * @param array  $closedTrades Closed trade objects from ai_shadow virtual_trades_closed/
+     * @param array  $closedTrades Normalised closed-trade objects
      * @param string $updatedAt    ISO timestamp for linked_at / updated_at fields
      * @return array
      */
@@ -1250,6 +1254,7 @@ class Store
                     'outcome_link_confidence'       => $confidence,
                     'linked_at'                     => $updatedAt,
                     'source_refs'                   => [
+                        'source_type'      => $ct['_pm14_source']   ?? 'ai_shadow',
                         'virtual_trade_id' => $ct['virtual_trade_id'] ?? null,
                         'live_trade_id'    => $ct['live_trade_id']    ?? null,
                         'closed_at'        => $ct['closed_at']        ?? null,

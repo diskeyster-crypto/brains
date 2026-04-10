@@ -508,7 +508,9 @@ final class ProfitManagerService
             $this->store->savePm13Counters($pm13Totals);
 
             // PM-14: Passive outcome linking — join PM post-entry evidence with real closed positions.
-            // Reads ai_shadow virtual_trades_closed as the authoritative closed-trade source.
+            // Primary source: Trading Bot trades/closed_trades.json + trades/closed/*.json.
+            // Fallback source: ai_shadow virtual_trades_closed (if present).
+            // If the current run produced no read model, the persisted read model from disk is used.
             // This is read-only and observational only. It does NOT affect any PM decision.
             // Generation is best-effort and non-fatal.
             $pm14Counters = [
@@ -520,11 +522,22 @@ final class ProfitManagerService
                 'outcome_links_generation_error_total' => 0,
             ];
             try {
-                $closedTrades = $this->loadAiShadowClosedTrades();
-                if (!empty($closedTrades) && !empty($allEvidenceRecords) && !empty($readModel)) {
+                // Load closed trades: bot primary, ai_shadow secondary.
+                $closedTrades = $this->loadBotClosedTrades();
+                if (empty($closedTrades)) {
+                    $closedTrades = $this->loadAiShadowClosedTrades();
+                }
+
+                // If the current tick produced no evidence/read-model (e.g. no active positions
+                // in this run), fall back to the persisted read model from a previous tick.
+                $effectiveReadModel = !empty($readModel)
+                    ? $readModel
+                    : $this->store->loadPostEntryReadModel();
+
+                if (!empty($closedTrades) && !empty($effectiveReadModel)) {
                     $outcomeLinks = $this->store->buildPostEntryOutcomeLinks(
-                        $allEvidenceRecords,
-                        $readModel,
+                        $allEvidenceRecords,  // may be empty; last-event index gracefully degrades
+                        $effectiveReadModel,
                         $closedTrades,
                         $ts
                     );
@@ -1090,6 +1103,109 @@ final class ProfitManagerService
             return $trades;
         } catch (\Throwable $e) {
             $this->botTradeLoadDiag['error'] = $e->getMessage();
+            return [];
+        }
+    }
+
+    /**
+     * Load closed trades from the Trading Bot's own closed-trade artifacts (best-effort, non-fatal).
+     *
+     * Primary source: {botStorageDir}/trades/closed_trades.json (aggregated flat array, last 200).
+     * Secondary source: individual {botStorageDir}/trades/closed/*.json files.
+     *
+     * Records are normalised to the shape expected by buildPostEntryOutcomeLinks():
+     *   - status forced to 'closed'
+     *   - closed_at converted to UNIX timestamp (integer) for consistent sorting
+     *   - live_trade_id populated from trade_id / signal_id
+     *   - _pm14_source set to 'bot_closed_trades' for traceability in source_refs
+     *
+     * @return array[]
+     */
+    private function loadBotClosedTrades(): array
+    {
+        try {
+            $botStorageDir = $this->resolveBotStorageDir();
+            if ($botStorageDir === null) {
+                return [];
+            }
+
+            $raw = [];
+
+            // Primary: aggregated snapshot (written by bot writeRuntimeSnapshot()).
+            $aggregatedPath = $botStorageDir . '/trades/closed_trades.json';
+            if (is_file($aggregatedPath)) {
+                $content = @file_get_contents($aggregatedPath);
+                if ($content !== false && $content !== '') {
+                    $decoded = json_decode($content, true);
+                    if (is_array($decoded) && !empty($decoded)) {
+                        $raw = $decoded;
+                    }
+                }
+            }
+
+            // Secondary: individual per-trade files (fallback when snapshot absent).
+            if (empty($raw)) {
+                $closedDir = $botStorageDir . '/trades/closed';
+                if (is_dir($closedDir)) {
+                    foreach (glob($closedDir . '/*.json') ?: [] as $path) {
+                        $content = @file_get_contents($path);
+                        if ($content === false || $content === '') {
+                            continue;
+                        }
+                        $trade = json_decode($content, true);
+                        if (is_array($trade) && !empty($trade)) {
+                            $raw[] = $trade;
+                        }
+                    }
+                }
+            }
+
+            if (empty($raw)) {
+                return [];
+            }
+
+            // Normalise to the shape buildPostEntryOutcomeLinks() expects.
+            $normalised = [];
+            foreach ($raw as $trade) {
+                $sym = (string)($trade['symbol'] ?? '');
+                if ($sym === '') {
+                    continue;
+                }
+
+                // Skip anything that isn't genuinely closed (no closed_at means it never closed).
+                if (!isset($trade['closed_at']) && !isset($trade['closed_ts'])) {
+                    continue;
+                }
+
+                // Resolve closed_at as an integer timestamp for consistent sorting.
+                if (isset($trade['closed_ts']) && is_numeric($trade['closed_ts'])) {
+                    $closedAtTs = (int)$trade['closed_ts'];
+                } elseif (isset($trade['closed_at'])) {
+                    $closedAtTs = is_numeric($trade['closed_at'])
+                        ? (int)$trade['closed_at']
+                        : (int)strtotime((string)$trade['closed_at']);
+                } else {
+                    $closedAtTs = 0;
+                }
+
+                $normalised[] = [
+                    'symbol'            => $sym,
+                    'side'              => $trade['side'] ?? null,
+                    'status'            => 'closed',
+                    'roi'               => isset($trade['roi'])     && is_numeric($trade['roi'])     ? (float)$trade['roi']     : null,
+                    'live_roi'          => null,
+                    'close_reason'      => $trade['close_reason_normalized'] ?? $trade['close_reason'] ?? null,
+                    'live_close_reason' => null,
+                    'closed_at'         => $closedAtTs,
+                    'mfe'               => isset($trade['mfe'])     && is_numeric($trade['mfe'])     ? (float)$trade['mfe']     : null,
+                    'virtual_trade_id'  => null,
+                    'live_trade_id'     => $trade['trade_id'] ?? $trade['signal_id'] ?? null,
+                    '_pm14_source'      => 'bot_closed_trades',
+                ];
+            }
+
+            return $normalised;
+        } catch (\Throwable $e) {
             return [];
         }
     }

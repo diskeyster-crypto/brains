@@ -373,9 +373,12 @@ final class ProfitManagerService
                 if ($evSymbol === '') {
                     continue;
                 }
+                // apply_attempted=true covers both successful applies and exchange-blocked attempts.
+                // This ensures every real PM action path is captured regardless of exchange outcome.
+                $evAttempted  = !empty($item['apply_attempted']);
                 $evApplied    = !empty($item['apply_applied']);
                 $evNoop       = !empty($item['noop_same_lock']);
-                $evEventType  = $evApplied ? 'apply' : ($evNoop ? 'noop' : 'skip');
+                $evEventType  = $evAttempted ? 'apply' : ($evNoop ? 'noop' : 'skip');
                 $evRefinement = isset($item['refinement_policy_stage'])
                     && $item['refinement_policy_stage'] !== null
                     && $item['refinement_policy_stage'] !== 'no_refinement';
@@ -407,18 +410,18 @@ final class ProfitManagerService
                     'adaptive_refinement_mode'              => $item['adaptive_refinement_mode'] ?? null,
                     'skip_reason'                           => $item['skip_reason'] ?? null,
                     'block_reason'                          => $item['block_reason'] ?? null,
-                    'apply_attempted'                       => $item['apply_attempted'] ?? false,
+                    'apply_attempted'                       => $evAttempted,
                     'apply_applied'                         => $evApplied,
                     'no_change_reason'                      => $item['no_change_reason'] ?? null,
                     'bot_dynamic_trailing_skipped_by_owner' => $item['bot_dynamic_trailing_skipped_by_owner'] ?? true,
                     'continuation_after_first_lock'         => $item['continuation_extension_applied'] ?? null,
-                    'momentum_after_apply'                  => $evApplied ? ($item['lock_improvement_detected'] ?? null) : null,
+                    'momentum_after_apply'                  => $evAttempted ? ($item['lock_improvement_detected'] ?? null) : null,
                     'carry_forward_state'                   => $item['carried_forward_state'] ?? null,
                     'shallow_pullback_seen'                 => $item['shallow_pullback_protection_active'] ?? null,
                     'updated_at'                            => $ts,
                 ];
                 $pm12ThisRunWritten++;
-                if ($evApplied)           { $pm12ThisRunApply++; }
+                if ($evAttempted)         { $pm12ThisRunApply++; }
                 elseif ($evNoop)          { $pm12ThisRunNoop++; }
                 else                      { $pm12ThisRunSkip++; }
                 if ($evRefinement)        { $pm12ThisRunRefinement++; }

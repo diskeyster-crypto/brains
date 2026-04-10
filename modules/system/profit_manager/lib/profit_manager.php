@@ -81,6 +81,16 @@ class ProfitManager
         $pm10Noop                  = 0; // positions where no refinement branch applied
         $pm10SymbolsAffected       = 0; // positions where any behavioral refinement was applied
 
+        // PM-11: Per-run adaptive refinement counters (merged into cumulative pm11_counters.json)
+        $pm11WeakContinuation    = 0; // positions classified as weak_continuation
+        $pm11SteadyContinuation  = 0; // positions classified as steady_continuation
+        $pm11StrongContinuation  = 0; // positions classified as strong_continuation
+        $pm11ShallowPullback     = 0; // positions classified as shallow_pullback
+        $pm11FlatCarry           = 0; // positions classified as flat_carry
+        $pm11AdjApplied          = 0; // positions where adaptive action was non-noop
+        $pm11AdjNoop             = 0; // positions where adaptive action was noop
+        $pm11BoundsHit           = 0; // positions where adaptive adjustment was capped by bounds
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -185,6 +195,29 @@ class ProfitManager
             elseif ($pm10Stage === 'shallow_pullback_protection') { $pm10ShallowPullback++;       $pm10SymbolsAffected++; }
             elseif ($pm10Stage === 'continuation_extension')      { $pm10ContinuationExtension++; $pm10SymbolsAffected++; }
             else                                                  { $pm10Noop++; }
+
+            // PM-11: Bounded adaptive refinement — sits on top of PM-10 and may adjust pm10_hold.
+            // Uses only immediate runtime facts already present in PM state.
+            $pm11Fields = $this->computePm11Adaptive(
+                $pm10Fields, $prevState, $peakRoi, $currentRoi, $activationRoiPct, $trailingArmed
+            );
+            // Apply hold override from adaptive layer (does not bypass safety gates)
+            if ($pm11Fields['pm11_hold_override'] === true) {
+                $ctx['pm10_hold']        = true;
+                $ctx['pm10_hold_reason'] = $pm11Fields['adaptive_refinement_mode'];
+            } elseif ($pm11Fields['pm11_hold_override'] === false && isset($ctx['pm10_hold'])) {
+                // Strong continuation: release PM-10 hold so step trailing proceeds normally
+                unset($ctx['pm10_hold'], $ctx['pm10_hold_reason']);
+            }
+            // Count adaptive mode
+            $aMode = $pm11Fields['adaptive_refinement_mode'];
+            if ($aMode === 'weak_continuation')     { $pm11WeakContinuation++; }
+            elseif ($aMode === 'steady_continuation') { $pm11SteadyContinuation++; }
+            elseif ($aMode === 'strong_continuation') { $pm11StrongContinuation++; }
+            elseif ($aMode === 'shallow_pullback')    { $pm11ShallowPullback++; }
+            elseif ($aMode === 'flat_carry')          { $pm11FlatCarry++; }
+            if ($pm11Fields['adaptive_action_taken'] !== 'noop') { $pm11AdjApplied++; } else { $pm11AdjNoop++; }
+            if ($pm11Fields['adaptive_bounds_applied'])           { $pm11BoundsHit++; }
 
             // Execute existing trailing logic (real exchange writes)
             $itemResult = $this->processPosition($symbol, $ctx);
@@ -436,6 +469,15 @@ class ProfitManager
             $itemResult['proposed_lock_roi_after_refinement']  = $pm10Fields['proposed_lock_roi_after_refinement'];
             $itemResult['refinement_delta_roi']                = $pm10Fields['refinement_delta_roi'];
 
+            // PM-11: Adaptive refinement observability fields
+            $itemResult['adaptive_refinement_mode']   = $pm11Fields['adaptive_refinement_mode'];
+            $itemResult['adaptive_refinement_reason'] = $pm11Fields['adaptive_refinement_reason'];
+            $itemResult['adaptive_input_regime']      = $pm11Fields['adaptive_input_regime'];
+            $itemResult['adaptive_strength_bucket']   = $pm11Fields['adaptive_strength_bucket'];
+            $itemResult['adaptive_action_taken']      = $pm11Fields['adaptive_action_taken'];
+            $itemResult['adaptive_adjustment_roi']    = $pm11Fields['adaptive_adjustment_roi'];
+            $itemResult['adaptive_bounds_applied']    = $pm11Fields['adaptive_bounds_applied'];
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -541,6 +583,21 @@ class ProfitManager
         ];
         $this->store->savePm10Counters($pm10Totals);
 
+        // PM-11: Merge adaptive refinement counts into cumulative pm11_counters.json
+        $prevPm11   = $this->store->loadPm11Counters();
+        $pm11Totals = [
+            'adaptive_mode_weak_continuation_total'   => ((int)($prevPm11['adaptive_mode_weak_continuation_total']   ?? 0)) + $pm11WeakContinuation,
+            'adaptive_mode_steady_continuation_total' => ((int)($prevPm11['adaptive_mode_steady_continuation_total'] ?? 0)) + $pm11SteadyContinuation,
+            'adaptive_mode_strong_continuation_total' => ((int)($prevPm11['adaptive_mode_strong_continuation_total'] ?? 0)) + $pm11StrongContinuation,
+            'adaptive_mode_shallow_pullback_total'    => ((int)($prevPm11['adaptive_mode_shallow_pullback_total']    ?? 0)) + $pm11ShallowPullback,
+            'adaptive_mode_flat_carry_total'          => ((int)($prevPm11['adaptive_mode_flat_carry_total']          ?? 0)) + $pm11FlatCarry,
+            'adaptive_adjustment_applied_total'       => ((int)($prevPm11['adaptive_adjustment_applied_total']       ?? 0)) + $pm11AdjApplied,
+            'adaptive_adjustment_noop_total'          => ((int)($prevPm11['adaptive_adjustment_noop_total']          ?? 0)) + $pm11AdjNoop,
+            'adaptive_bounds_hit_total'               => ((int)($prevPm11['adaptive_bounds_hit_total']               ?? 0)) + $pm11BoundsHit,
+            'updated_at'                              => $ts,
+        ];
+        $this->store->savePm11Counters($pm11Totals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -592,6 +649,27 @@ class ProfitManager
                 'refinement_shallow_pullback_protection_total' => $pm10Totals['refinement_shallow_pullback_protection_total'],
                 'refinement_noop_total'                        => $pm10Totals['refinement_noop_total'],
                 'refinement_symbols_affected_total'            => $pm10Totals['refinement_symbols_affected_total'],
+            ],
+            // PM-11: adaptive counters (both this-run and cumulative totals)
+            'pm11_counters'     => [
+                // This-run deltas
+                'this_run_weak_continuation'    => $pm11WeakContinuation,
+                'this_run_steady_continuation'  => $pm11SteadyContinuation,
+                'this_run_strong_continuation'  => $pm11StrongContinuation,
+                'this_run_shallow_pullback'     => $pm11ShallowPullback,
+                'this_run_flat_carry'           => $pm11FlatCarry,
+                'this_run_adj_applied'          => $pm11AdjApplied,
+                'this_run_adj_noop'             => $pm11AdjNoop,
+                'this_run_bounds_hit'           => $pm11BoundsHit,
+                // Cumulative totals
+                'adaptive_mode_weak_continuation_total'   => $pm11Totals['adaptive_mode_weak_continuation_total'],
+                'adaptive_mode_steady_continuation_total' => $pm11Totals['adaptive_mode_steady_continuation_total'],
+                'adaptive_mode_strong_continuation_total' => $pm11Totals['adaptive_mode_strong_continuation_total'],
+                'adaptive_mode_shallow_pullback_total'    => $pm11Totals['adaptive_mode_shallow_pullback_total'],
+                'adaptive_mode_flat_carry_total'          => $pm11Totals['adaptive_mode_flat_carry_total'],
+                'adaptive_adjustment_applied_total'       => $pm11Totals['adaptive_adjustment_applied_total'],
+                'adaptive_adjustment_noop_total'          => $pm11Totals['adaptive_adjustment_noop_total'],
+                'adaptive_bounds_hit_total'               => $pm11Totals['adaptive_bounds_hit_total'],
             ],
         ];
     }
@@ -1069,6 +1147,14 @@ class ProfitManager
                 'proposed_lock_roi_before_refinement'  => $result['proposed_lock_roi_before_refinement']  ?? null,
                 'proposed_lock_roi_after_refinement'   => $result['proposed_lock_roi_after_refinement']   ?? null,
                 'refinement_delta_roi'                 => $result['refinement_delta_roi']                 ?? null,
+                // PM-11: Adaptive refinement evidence
+                'adaptive_refinement_mode'             => $result['adaptive_refinement_mode']             ?? null,
+                'adaptive_refinement_reason'           => $result['adaptive_refinement_reason']           ?? null,
+                'adaptive_input_regime'                => $result['adaptive_input_regime']                ?? null,
+                'adaptive_strength_bucket'             => $result['adaptive_strength_bucket']             ?? null,
+                'adaptive_action_taken'                => $result['adaptive_action_taken']                ?? null,
+                'adaptive_adjustment_roi'              => $result['adaptive_adjustment_roi']              ?? null,
+                'adaptive_bounds_applied'              => $result['adaptive_bounds_applied']              ?? false,
                 'updated_at'                           => date('c'),
             ];
             $this->store->updateSymbolStatus($symbol, $pm9Status);
@@ -1203,8 +1289,147 @@ class ProfitManager
     }
 
     // =========================================================================
-    // Shadow Trailing Mode (trailing_owner = profit_manager_shadow)
+    // PM-11: Bounded adaptive post-entry refinement
     // =========================================================================
+
+    /**
+     * Compute PM-11 bounded adaptive refinement for a single position.
+     *
+     * Runs AFTER computePm10Refinement() in runActive(). Classifies the post-entry
+     * regime into one of five explicit adaptive modes and applies a small bounded
+     * adjustment. All branches are explicit and observable.
+     *
+     * Adaptive modes:
+     *   weak_continuation    — armed but barely above activation; PM-10 first_lock hold confirmed
+     *   steady_continuation  — normal progress; no special adjustment needed
+     *   strong_continuation  — well above last lock; allow step trailing to proceed (no PM-10 hold)
+     *   shallow_pullback     — significant pullback from peak; PM-10 hold confirmed
+     *   flat_carry           — armed with lock but stalled; no adjustment (carry forward)
+     *
+     * The pm11_hold_override may set or release the pm10_hold flag:
+     *   null  — no change (PM-10 decision stands)
+     *   true  — force hold (reinforce or extend PM-10 hold)
+     *   false — release hold (strong continuation overrides PM-10 continuation_extension noop)
+     *
+     * @param array $pm10Fields       Output from computePm10Refinement()
+     * @param array $prevState        Persisted active state from prior tick (may be empty)
+     * @param float $peakRoi          Monotonic peak ROI for this position
+     * @param float $currentRoi       Current ROI this tick
+     * @param float $activationRoiPct Arm threshold from config
+     * @param bool  $trailingArmed    Whether trailing is armed this tick
+     * @return array Adaptive fields (spread into itemResult, pm11_hold_override is internal)
+     */
+    private function computePm11Adaptive(
+        array $pm10Fields,
+        array $prevState,
+        float $peakRoi,
+        float $currentRoi,
+        float $activationRoiPct,
+        bool  $trailingArmed
+    ): array {
+        $stepRoiPct  = (float)($this->config['step_trailing']['step_roi_pct'] ?? 2.0);
+        $pm11Cfg     = is_array($this->config['pm11_adaptive'] ?? null) ? $this->config['pm11_adaptive'] : [];
+        $strongFactor   = (float)($pm11Cfg['strong_continuation_headroom_factor'] ?? 2.0);
+        $maxExtension   = (float)($pm11Cfg['max_extension_roi']                   ?? 0.5);
+        $flatCarryFactor = (float)($pm11Cfg['flat_carry_headroom_factor']         ?? 0.3);
+
+        $prevLockRoi = (float)($prevState['last_lock_roi'] ?? 0.0);
+
+        $out = [
+            'adaptive_refinement_mode'   => 'steady_continuation',
+            'adaptive_refinement_reason' => 'normal_progress',
+            'adaptive_input_regime'      => 'not_armed',
+            'adaptive_strength_bucket'   => 'steady',
+            'adaptive_action_taken'      => 'noop',
+            'adaptive_adjustment_roi'    => 0.0,
+            'adaptive_bounds_applied'    => false,
+            'pm11_hold_override'         => null,
+        ];
+
+        if (!$trailingArmed) {
+            // Not armed — adaptive layer is not applicable pre-activation
+            return $out;
+        }
+
+        // Characterise arm state for observability
+        $hasLock   = $prevLockRoi > 0.0;
+        $headroom  = $hasLock ? max(0.0, $currentRoi - $prevLockRoi) : 0.0;
+        $pm10Stage = $pm10Fields['refinement_policy_stage'] ?? 'noop';
+
+        $out['adaptive_input_regime'] = $hasLock ? 'armed_with_lock' : 'armed_no_lock';
+
+        // --- Mode 1: weak_continuation ---
+        // PM-10 first_lock_protection active, OR armed but peak barely above activation.
+        if ($pm10Stage === 'first_lock_protection'
+            || (!$hasLock && $activationRoiPct > 0.0 && $peakRoi < ($activationRoiPct + $stepRoiPct * 0.5))
+        ) {
+            $out['adaptive_refinement_mode']   = 'weak_continuation';
+            $out['adaptive_refinement_reason'] = 'barely_above_activation_or_first_lock_hold';
+            $out['adaptive_strength_bucket']   = 'weak';
+            $out['adaptive_action_taken']      = 'hold_confirmed';
+            $out['adaptive_adjustment_roi']    = 0.0;
+            // Reinforce PM-10 hold (it may already be set; this makes the intent explicit)
+            $out['pm11_hold_override']         = true;
+            return $out;
+        }
+
+        // --- Mode 2: shallow_pullback ---
+        // PM-10 shallow_pullback_protection active, OR pullback fraction exceeds threshold.
+        $pullbackFraction = ($peakRoi > 0.0) ? (($peakRoi - $currentRoi) / $peakRoi) : 0.0;
+        $pullbackThreshold = (float)($this->config['pm10_refinement']['shallow_pullback_threshold_factor'] ?? 0.30);
+        if ($pm10Stage === 'shallow_pullback_protection'
+            || ($hasLock && $pullbackFraction > $pullbackThreshold)
+        ) {
+            $out['adaptive_refinement_mode']   = 'shallow_pullback';
+            $out['adaptive_refinement_reason'] = 'significant_pullback_from_peak';
+            $out['adaptive_strength_bucket']   = 'weak';
+            $out['adaptive_action_taken']      = 'hold_confirmed';
+            $out['adaptive_adjustment_roi']    = 0.0;
+            // Reinforce PM-10 hold
+            $out['pm11_hold_override']         = true;
+            return $out;
+        }
+
+        // --- Mode 3: strong_continuation ---
+        // Position is well above last lock and price is continuing (headroom >= factor × step).
+        if ($hasLock && $stepRoiPct > 0.0 && $headroom >= ($stepRoiPct * $strongFactor)) {
+            $rawExtension = $headroom * 0.1; // observational: 10% of headroom
+            $boundsApplied = $rawExtension > $maxExtension;
+            $extension     = min($rawExtension, $maxExtension);
+
+            $out['adaptive_refinement_mode']   = 'strong_continuation';
+            $out['adaptive_refinement_reason'] = 'headroom_above_strong_threshold';
+            $out['adaptive_strength_bucket']   = 'strong';
+            $out['adaptive_action_taken']      = 'extension_noted';
+            $out['adaptive_adjustment_roi']    = round($extension, 4);
+            $out['adaptive_bounds_applied']    = $boundsApplied;
+            // Release any PM-10 hold so step trailing proceeds without interference
+            $out['pm11_hold_override']         = ($pm10Fields['pm10_hold'] ?? false) ? false : null;
+            return $out;
+        }
+
+        // --- Mode 4: flat_carry ---
+        // Armed with a lock but headroom is negligible (stalled, no material progress this tick).
+        if ($hasLock && $stepRoiPct > 0.0 && $headroom < ($stepRoiPct * $flatCarryFactor)) {
+            $out['adaptive_refinement_mode']   = 'flat_carry';
+            $out['adaptive_refinement_reason'] = 'headroom_below_flat_carry_threshold';
+            $out['adaptive_strength_bucket']   = 'weak';
+            $out['adaptive_action_taken']      = 'noop';
+            $out['adaptive_adjustment_roi']    = 0.0;
+            // No hold change — PM-10 decision stands
+            return $out;
+        }
+
+        // --- Mode 5: steady_continuation ---
+        // Normal progress, no special condition.
+        $out['adaptive_refinement_mode']   = 'steady_continuation';
+        $out['adaptive_refinement_reason'] = 'normal_progress';
+        $out['adaptive_strength_bucket']   = 'steady';
+        $out['adaptive_action_taken']      = 'noop';
+        $out['adaptive_adjustment_roi']    = 0.0;
+        return $out;
+    }
+
 
     /**
      * Run shadow trailing pass for all open positions.

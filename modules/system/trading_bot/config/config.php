@@ -449,6 +449,23 @@ return [
                 'continuation_extension_min_headroom' => 1.0,
             ],
 
+            'pm11_adaptive' => [
+                // strong_continuation: minimum headroom above last lock (in ROI points) to classify
+                // a position as "strong continuation". Must be >= 2 × step_roi_pct to qualify.
+                // Prevents classifying normal progress as strong continuation prematurely.
+                'strong_continuation_headroom_factor' => 2.0,
+
+                // strong_continuation: maximum ROI extension PM-11 may record as adaptive
+                // adjustment for a strong-continuation position. Pure observational bound —
+                // does not bypass the step trailing ratchet or cooldown guards.
+                'max_extension_roi' => 0.5,
+
+                // flat_carry: position is classified as flat_carry when trailing is armed,
+                // a lock is already placed, and the headroom (currentRoi - prevLockRoi) is below
+                // this fraction of step_roi_pct (e.g. 0.3 × step means barely above lock).
+                'flat_carry_headroom_factor' => 0.3,
+            ],
+
             /* ======================================================
                ANTI-SPAM / RATE LIMITS
                ====================================================== */

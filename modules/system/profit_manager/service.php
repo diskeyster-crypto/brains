@@ -284,6 +284,7 @@ final class ProfitManagerService
             $pm8Counters = $runResult['pm8_counters'] ?? [];
             $pm9Counters = $runResult['pm9_counters'] ?? [];
             $pm10Counters = $runResult['pm10_counters'] ?? [];
+            $pm11Counters = $runResult['pm11_counters'] ?? [];
             $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
@@ -334,6 +335,14 @@ final class ProfitManagerService
                     'proposed_lock_roi_before_refinement'  => $item['proposed_lock_roi_before_refinement']  ?? null,
                     'proposed_lock_roi_after_refinement'   => $item['proposed_lock_roi_after_refinement']   ?? null,
                     'refinement_delta_roi'                 => $item['refinement_delta_roi']                 ?? null,
+                    // PM-11: Adaptive refinement evidence per position
+                    'adaptive_refinement_mode'             => $item['adaptive_refinement_mode']             ?? null,
+                    'adaptive_refinement_reason'           => $item['adaptive_refinement_reason']           ?? null,
+                    'adaptive_input_regime'                => $item['adaptive_input_regime']                ?? null,
+                    'adaptive_strength_bucket'             => $item['adaptive_strength_bucket']             ?? null,
+                    'adaptive_action_taken'                => $item['adaptive_action_taken']                ?? null,
+                    'adaptive_adjustment_roi'              => $item['adaptive_adjustment_roi']              ?? null,
+                    'adaptive_bounds_applied'              => $item['adaptive_bounds_applied']              ?? false,
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
@@ -423,6 +432,21 @@ final class ProfitManagerService
                 'this_run_refinement_continuation_extension'   => $pm10Counters['this_run_continuation_extension']              ?? 0,
                 'this_run_refinement_shallow_pullback'         => $pm10Counters['this_run_shallow_pullback_protection']         ?? 0,
                 'this_run_refinement_symbols_affected'         => $pm10Counters['this_run_symbols_affected']                    ?? 0,
+                // PM-11 adaptive counters (cumulative; proves adaptive modes were exercised)
+                'adaptive_mode_weak_continuation_total'        => $pm11Counters['adaptive_mode_weak_continuation_total']        ?? 0,
+                'adaptive_mode_steady_continuation_total'      => $pm11Counters['adaptive_mode_steady_continuation_total']      ?? 0,
+                'adaptive_mode_strong_continuation_total'      => $pm11Counters['adaptive_mode_strong_continuation_total']      ?? 0,
+                'adaptive_mode_shallow_pullback_total'         => $pm11Counters['adaptive_mode_shallow_pullback_total']         ?? 0,
+                'adaptive_mode_flat_carry_total'               => $pm11Counters['adaptive_mode_flat_carry_total']               ?? 0,
+                'adaptive_adjustment_applied_total'            => $pm11Counters['adaptive_adjustment_applied_total']            ?? 0,
+                'adaptive_adjustment_noop_total'               => $pm11Counters['adaptive_adjustment_noop_total']               ?? 0,
+                'adaptive_bounds_hit_total'                    => $pm11Counters['adaptive_bounds_hit_total']                    ?? 0,
+                // PM-11 this-run adaptive deltas
+                'this_run_adaptive_weak_continuation'          => $pm11Counters['this_run_weak_continuation']                   ?? 0,
+                'this_run_adaptive_steady_continuation'        => $pm11Counters['this_run_steady_continuation']                 ?? 0,
+                'this_run_adaptive_strong_continuation'        => $pm11Counters['this_run_strong_continuation']                 ?? 0,
+                'this_run_adaptive_shallow_pullback'           => $pm11Counters['this_run_shallow_pullback']                    ?? 0,
+                'this_run_adaptive_flat_carry'                 => $pm11Counters['this_run_flat_carry']                          ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -519,6 +543,15 @@ final class ProfitManagerService
                 'refinement_shallow_pullback_protection_total' => $pm10Counters['refinement_shallow_pullback_protection_total'] ?? 0,
                 'refinement_noop_total'                        => $pm10Counters['refinement_noop_total']                        ?? 0,
                 'refinement_symbols_affected_total'            => $pm10Counters['refinement_symbols_affected_total']            ?? 0,
+                // PM-11 adaptive counters (cumulative; prove adaptive modes were exercised)
+                'adaptive_mode_weak_continuation_total'        => $pm11Counters['adaptive_mode_weak_continuation_total']        ?? 0,
+                'adaptive_mode_steady_continuation_total'      => $pm11Counters['adaptive_mode_steady_continuation_total']      ?? 0,
+                'adaptive_mode_strong_continuation_total'      => $pm11Counters['adaptive_mode_strong_continuation_total']      ?? 0,
+                'adaptive_mode_shallow_pullback_total'         => $pm11Counters['adaptive_mode_shallow_pullback_total']         ?? 0,
+                'adaptive_mode_flat_carry_total'               => $pm11Counters['adaptive_mode_flat_carry_total']               ?? 0,
+                'adaptive_adjustment_applied_total'            => $pm11Counters['adaptive_adjustment_applied_total']            ?? 0,
+                'adaptive_adjustment_noop_total'               => $pm11Counters['adaptive_adjustment_noop_total']               ?? 0,
+                'adaptive_bounds_hit_total'                    => $pm11Counters['adaptive_bounds_hit_total']                    ?? 0,
                 'items'                                   => array_slice($items, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

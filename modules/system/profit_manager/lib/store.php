@@ -652,6 +652,35 @@ class Store
     }
 
     // =========================================================================
+    // PM-11 adaptive counters (cumulative, persisted across ticks)
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-11 adaptive refinement counters.
+     *
+     * Counters accumulate across all executeActive() cycles.
+     * Used to prove which adaptive modes were exercised in the archive.
+     *
+     * @return array
+     */
+    public function loadPm11Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm11_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-11 adaptive refinement counters.
+     *
+     * @param array $counters
+     */
+    public function savePm11Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm11_counters.json';
+        $this->writeJson($path, $counters);
+    }
+
+    // =========================================================================
     // Active owner journal (PM-8 runtime proof artifact)
     // =========================================================================
 

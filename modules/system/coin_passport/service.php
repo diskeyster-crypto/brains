@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+use Core\System\SystemPaths;
+
 require_once __DIR__ . '/lib/passport_engine.php';
 
 /**
@@ -297,7 +299,23 @@ final class CoinPassportService
      */
     public function buildCycleProfiles(): array
     {
-        $parser2StorageDir = __DIR__ . '/../../parser/parser2_history_accumulator/storage';
+        // Resolve parser2 history storage via SystemPaths (project-standard resolver).
+        // Key 'parser.parser2_history_accumulator.storage' is the canonical key used
+        // by parser4, parser5, parser15, parser6_simulator, and simulator/controller.
+        $parser2StorageDir = '';
+        try {
+            $paths = SystemPaths::instance();
+            $parser2StorageDir = (string)$paths->get('parser.parser2_history_accumulator.storage');
+            if ($parser2StorageDir === '') {
+                // Fallback: base key + /storage
+                $base = (string)$paths->get('parser.parser2_history_accumulator');
+                if ($base !== '') {
+                    $parser2StorageDir = rtrim($base, '/') . '/storage';
+                }
+            }
+        } catch (\Throwable $e) {
+            // SystemPaths not available — best-effort, non-fatal
+        }
         $runtimeDir        = $this->storageDir . '/runtime';
         $outputPath        = $runtimeDir . '/coin_cycle_profile.json';
 

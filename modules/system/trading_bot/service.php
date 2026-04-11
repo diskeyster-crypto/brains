@@ -1283,7 +1283,7 @@ final class TradingBotService
                         $intent['brain_routed_live_intent']  = true;
                         $intent['bot_respected_brain_route'] = true;
 
-                        // Normalize decision metadata to live semantics.
+                        // Normalize intent metadata to live semantics.
                         // The bot's re-assessment (decision engine) may carry demo/gray labels
                         // (confidence_band=gray, route_state=demo_learn) even though the execution
                         // is live. Smart Brain owns route classification for its intents; the
@@ -1297,9 +1297,29 @@ final class TradingBotService
                         if (in_array($intent['route_state'] ?? '', ['demo_learn', ''], true)) {
                             $intent['route_state'] = 'brain_live_intent';
                         }
-                        $intent['actual_execution_namespace']  = 'live';
+                        $intent['actual_execution_namespace']    = 'live';
                         $intent['persisted_execution_namespace'] = 'live';
-                        $intent['metadata_normalized_to_live'] = true;
+                        $intent['metadata_normalized_to_live']   = true;
+
+                        // Normalize the decision packet itself to live semantics.
+                        // The initial saveDecisionPacket() call at line ~1178 persisted the raw
+                        // bot assessment (which may say enter_demo/demo_learn). For brain-controlled
+                        // live intents the persisted decision artifact must not carry demo semantics.
+                        // Preserve the bot's raw assessment in bot_assessed_* fields for audit.
+                        $decisionPacket['bot_assessed_decision']        = $decisionPacket['decision'] ?? null;
+                        $decisionPacket['bot_assessed_route_state']     = $decisionPacket['route_state'] ?? null;
+                        $decisionPacket['bot_assessed_confidence_band'] = $decisionPacket['confidence_band'] ?? null;
+                        $decisionPacket['bot_assessed_execution_mode']  = $decisionPacket['execution_mode'] ?? null;
+                        $decisionPacket['decision']                     = 'enter_live';
+                        $decisionPacket['route_state']                  = $intent['route_state'];
+                        $decisionPacket['execution_mode']               = 'live';
+                        if (in_array($decisionPacket['confidence_band'] ?? '', ['gray', ''], true)) {
+                            $decisionPacket['confidence_band']          = 'brain_live';
+                        }
+                        $decisionPacket['brain_routed_live_intent']    = true;
+                        $decisionPacket['metadata_normalized_to_live'] = true;
+                        // Resave with live-normalized values — overwrites the raw bot assessment.
+                        $this->decisionEngine->saveDecisionPacket($decisionPacket);
                     }
                     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1325,6 +1345,8 @@ final class TradingBotService
                             'decision'                => $decisionPacket['decision'] ?? null,
                             'is_parallel_demo_shadow' => false,
                             'auto_mode'               => $autoMode,
+                            'brain_routed_live_intent'=> $decisionPacket['brain_routed_live_intent'] ?? false,
+                            'metadata_normalized_to_live' => $decisionPacket['metadata_normalized_to_live'] ?? false,
                         ]
                     );
                     // ─────────────────────────────────────────────────────────────────

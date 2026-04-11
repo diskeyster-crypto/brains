@@ -1078,6 +1078,34 @@ final class SmartBrainCore
         $passportStrictMinPatternSuccess = (float)($userLimits['passport_gate_strict_min_pattern_success_rate'] ?? 0.35);
         $passports = [];
         $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
+
+        // Refresh cycle decision model into passport files before loading them (best-effort,
+        // non-fatal). This ensures coin_cycle_decision_model is present in passport files even
+        // if the coin_passport cron has not yet run since the passports were last rebuilt.
+        // Read-only observability only — does NOT affect routing decisions.
+        if ($passportGateEnabled && is_dir($passportsDir)) {
+            try {
+                $cpLibFile = dirname($this->moduleBase) . '/coin_passport/lib/passport_engine.php';
+                if (is_file($cpLibFile)) {
+                    if (!class_exists('CoinPassportEngine', false)) {
+                        require_once $cpLibFile;
+                    }
+                    $cpEng = new CoinPassportEngine(
+                        $passportsDir,
+                        dirname($this->moduleBase) . '/trading_bot/storage',
+                        dirname($this->moduleBase) . '/ai_shadow/storage'
+                    );
+                    $cpRuntimeDir = dirname($this->moduleBase) . '/coin_passport/storage/runtime';
+                    @mkdir($cpRuntimeDir, 0755, true);
+                    $cpEng->projectCycleDecisionModelToPassports(
+                        $cpRuntimeDir . '/coin_cycle_decision_model_projection.json'
+                    );
+                }
+            } catch (\Throwable $e) {
+                // non-fatal — passports load without cycle decision model
+            }
+        }
+
         if ($passportGateEnabled && is_dir($passportsDir)) {
             foreach (glob($passportsDir . '/*.json') ?: [] as $pFile) {
                 $raw = @file_get_contents($pFile);

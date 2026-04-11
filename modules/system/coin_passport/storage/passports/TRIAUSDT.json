@@ -134,5 +134,31 @@
         "Low runner probability: 10+ ROI is rare for this symbol.",
         "Typical trade peaks at 2.2% ROI (median). 75th pct: 2.2%.",
         "Live eligibility: sim_only — blocked: insufficient_data:sim_only."
-    ]
+    ],
+    "coin_cycle_decision_model": {
+        "updated_at": "2026-04-11T11:40:13+00:00",
+        "decision_model_state": "unavailable",
+        "decision_model_confidence": "unavailable",
+        "decision_model_readiness": "non_actionable",
+        "decision_model_actionability": "non_actionable",
+        "decision_model_risk_posture": "unavailable",
+        "decision_model_hold_posture": "unavailable",
+        "decision_model_stop_posture": "unavailable",
+        "decision_model_live_bias": "non_live_bias",
+        "decision_model_demo_bias": "non_demo_bias",
+        "decision_model_shadow_bias": "shadow_bias",
+        "decision_model_skip_bias": "skip_bias",
+        "decision_model_warning_flag": false,
+        "decision_model_warning_reason": null,
+        "decision_model_low_confidence_flag": true,
+        "decision_model_low_confidence_reason": "no_context_hints_summary_or_routing_profile",
+        "decision_model_preferred_mode": "shadow_only",
+        "decision_model_preferred_risk": "unavailable",
+        "decision_model_preferred_hold": "unavailable",
+        "decision_model_preferred_stop": "unavailable",
+        "source_routing_profile_updated_at": null,
+        "source_summary_updated_at": null,
+        "source_hints_updated_at": null,
+        "source_context_updated_at": null
+    }
 }

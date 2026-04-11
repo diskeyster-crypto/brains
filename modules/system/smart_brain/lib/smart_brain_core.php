@@ -1493,6 +1493,74 @@ final class SmartBrainCore
                 $result['cycle_debug_missing_total']++;
             }
 
+            // === COIN CYCLE MODEL VETO LAYER (Coin Core Step 11) ===
+            // Repositioned before the passport gate so the veto layer runs for ALL
+            // quality-floor-passing candidates, not only the rare subset that also
+            // clears the passport gate.  Hard gates (passport, quality floors, late-entry,
+            // duplicate) remain intact and execute after this block.
+            // Bounded: may only demote/skip; cannot promote or bypass existing hard gates.
+            $cycleModelUsed         = false;
+            $cycleModelVetoApplied  = false;
+            $cycleModelVetoReason   = null;
+            $cycleModelRouteBefore  = 'live';
+
+            if ($cycleDecisionDebug !== null && ($cycleDecisionDebug['available'] ?? false) === true) {
+                $cycleModelUsed  = true;
+                $cmState         = (string)($cycleDecisionDebug['model_state']         ?? 'unavailable');
+                $cmActionability = (string)($cycleDecisionDebug['model_actionability'] ?? 'non_actionable');
+                $cmRisk          = (string)($cycleDecisionDebug['model_risk_posture']  ?? 'unavailable');
+                $cmLiveBias      = (string)($cycleDecisionDebug['model_live_bias']     ?? 'non_live_bias');
+                $cmWarnFlag      = (bool)($cycleDecisionDebug['model_warning_flag']        ?? false);
+                $cmLowConf       = (bool)($cycleDecisionDebug['model_low_confidence_flag'] ?? false);
+
+                // Hard veto → skip: non_actionable AND high_risk together signal a clearly
+                // unfavorable entry window; skip is the appropriate outcome.
+                if ($cmActionability === 'non_actionable' && $cmRisk === 'high_risk') {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_veto_high_risk';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_skip_total']++;
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_high_risk', $selectionMode);
+                    continue;
+                }
+
+                // Hard veto → skip: model explicitly non_actionable with state weak or unavailable
+                if ($cmActionability === 'non_actionable' && in_array($cmState, ['weak', 'unavailable'], true)) {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_veto_non_actionable';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_skip_total']++;
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_non_actionable', $selectionMode);
+                    continue;
+                }
+
+                // Soft veto → demo: model has no live bias (would prefer demo/shadow)
+                if ($cmLiveBias === 'non_live_bias') {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_demote_demo';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_demo_total']++;
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
+                    continue;
+                }
+
+                // Soft veto → demo: warning active AND low confidence together
+                if ($cmWarnFlag && $cmLowConf) {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_demote_demo';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_demo_total']++;
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
+                    continue;
+                }
+
+                // No veto triggered — model conditions acceptable for live
+                $result['cycle_model_no_effect_total']++;
+            } else {
+                // Cycle model unavailable for this symbol — no veto applied
+                $result['cycle_model_unavailable_total']++;
+            }
+
             // === COIN PASSPORT LIVE GATE ===
             // Brain reads Coin Passport before allowing live signal issuance.
             // Gate result: allow_live | bootstrap_live | sim_only | shadow_only | reject
@@ -1646,72 +1714,6 @@ final class SmartBrainCore
                         continue;
                     }
                 }
-            }
-
-            // === COIN CYCLE MODEL VETO LAYER (Coin Core Step 11) ===
-            // Bounded filter: may only demote/skip live candidates. Cannot promote.
-            // Does not alter existing hard gates, activation checks, or PM/Bot logic.
-            // Runs only when cycleDecisionDebug is available (coin_cycle_decision_model present).
-            $cycleModelUsed         = false;
-            $cycleModelVetoApplied  = false;
-            $cycleModelVetoReason   = null;
-            $cycleModelRouteBefore  = 'live';
-
-            if ($cycleDecisionDebug !== null && ($cycleDecisionDebug['available'] ?? false) === true) {
-                $cycleModelUsed = true;
-                $cmState         = (string)($cycleDecisionDebug['model_state']         ?? 'unavailable');
-                $cmActionability = (string)($cycleDecisionDebug['model_actionability'] ?? 'non_actionable');
-                $cmRisk          = (string)($cycleDecisionDebug['model_risk_posture']  ?? 'unavailable');
-                $cmLiveBias      = (string)($cycleDecisionDebug['model_live_bias']     ?? 'non_live_bias');
-                $cmWarnFlag      = (bool)($cycleDecisionDebug['model_warning_flag']        ?? false);
-                $cmLowConf       = (bool)($cycleDecisionDebug['model_low_confidence_flag'] ?? false);
-
-                // Hard veto → skip: non_actionable AND high_risk together signal a clearly
-                // unfavorable entry window; skip is the appropriate outcome.
-                if ($cmActionability === 'non_actionable' && $cmRisk === 'high_risk') {
-                    $cycleModelVetoApplied = true;
-                    $cycleModelVetoReason  = 'cycle_model_veto_high_risk';
-                    $result['cycle_model_veto_total']++;
-                    $result['cycle_model_demote_skip_total']++;
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_high_risk', $selectionMode);
-                    continue;
-                }
-
-                // Hard veto → skip: model explicitly non_actionable with state weak or unavailable
-                if ($cmActionability === 'non_actionable' && in_array($cmState, ['weak', 'unavailable'], true)) {
-                    $cycleModelVetoApplied = true;
-                    $cycleModelVetoReason  = 'cycle_model_veto_non_actionable';
-                    $result['cycle_model_veto_total']++;
-                    $result['cycle_model_demote_skip_total']++;
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_non_actionable', $selectionMode);
-                    continue;
-                }
-
-                // Soft veto → demo: model has no live bias (would prefer demo/shadow)
-                if ($cmLiveBias === 'non_live_bias') {
-                    $cycleModelVetoApplied = true;
-                    $cycleModelVetoReason  = 'cycle_model_demote_demo';
-                    $result['cycle_model_veto_total']++;
-                    $result['cycle_model_demote_demo_total']++;
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
-                    continue;
-                }
-
-                // Soft veto → demo: warning active AND low confidence together
-                if ($cmWarnFlag && $cmLowConf) {
-                    $cycleModelVetoApplied = true;
-                    $cycleModelVetoReason  = 'cycle_model_demote_demo';
-                    $result['cycle_model_veto_total']++;
-                    $result['cycle_model_demote_demo_total']++;
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
-                    continue;
-                }
-
-                // No veto triggered — model conditions acceptable for live
-                $result['cycle_model_no_effect_total']++;
-            } else {
-                // Cycle model unavailable for this symbol — no veto applied
-                $result['cycle_model_unavailable_total']++;
             }
 
             // === APPROVED: build bot-ready live intent ===

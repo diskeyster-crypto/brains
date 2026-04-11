@@ -144,6 +144,13 @@ final class CoinPassportService
             // non-fatal
         }
 
+        // Derive passive cycle hints from the projected context (best-effort, non-fatal).
+        try {
+            $this->projectCycleHintsToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -212,6 +219,13 @@ final class CoinPassportService
         // After passports are rebuilt, project the latest cycle context into them (best-effort).
         try {
             $this->projectCycleContextToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Derive passive cycle hints from the projected context (best-effort, non-fatal).
+        try {
+            $this->projectCycleHintsToPassports();
         } catch (\Throwable $e) {
             // non-fatal
         }
@@ -355,6 +369,14 @@ final class CoinPassportService
                 // non-fatal
             }
 
+            // Derive passive cycle hints from the projected context (best-effort, non-fatal).
+            $hintsResult = [];
+            try {
+                $hintsResult = $this->projectCycleHintsToPassports();
+            } catch (\Throwable $hintsEx) {
+                // non-fatal
+            }
+
             return [
                 'ok'                             => true,
                 'cycle_symbols_total'            => $result['cycle_symbols_total']            ?? 0,
@@ -368,6 +390,9 @@ final class CoinPassportService
                 'projection_projected_total'     => $projectionResult['projected_total']  ?? 0,
                 'projection_skipped_total'       => $projectionResult['skipped_total']    ?? 0,
                 'projection_error_total'         => $projectionResult['error_total']      ?? 0,
+                'hints_symbols_total'            => $hintsResult['symbols_total']         ?? 0,
+                'hints_written_total'            => $hintsResult['hints_written_total']   ?? 0,
+                'hints_error_total'              => $hintsResult['error_total']           ?? 0,
             ];
         } catch (\Throwable $e) {
             return [
@@ -440,6 +465,38 @@ final class CoinPassportService
                 'low_confidence_total' => 0,
                 'error_total'          => 1,
                 'error'                => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Derive and write passive cycle eligibility hints into each passport.
+     * Reads coin_cycle_context already projected into passports, derives coin_cycle_hints.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleContextToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleHintsToPassports(): array
+    {
+        $runtimeDir  = $this->storageDir . '/runtime';
+        $summaryPath = $runtimeDir . '/coin_cycle_hints_summary.json';
+
+        try {
+            return $this->engine->projectCycleHintsToPassports($summaryPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'          => date('c'),
+                'source'              => 'coin_cycle_context',
+                'symbols_total'       => 0,
+                'hints_written_total' => 0,
+                'favorable_total'     => 0,
+                'cautious_total'      => 0,
+                'weak_total'          => 0,
+                'unavailable_total'   => 0,
+                'low_confidence_total' => 0,
+                'error_total'         => 1,
+                'error'               => $e->getMessage(),
             ];
         }
     }

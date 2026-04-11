@@ -1269,6 +1269,22 @@ final class TradingBotService
                         // skip is already handled above; fallback
                         $intentExecMode = $mode;
                     }
+
+                    // ── Brain-route override for brain-controlled live intents ──────────────
+                    // Smart Brain owns live/demo/skip routing for intents it emits.
+                    // The decision engine above runs for observability (confidence_band,
+                    // route_state are stamped on the intent for audit). Execution mode is
+                    // not subject to a second internal routing pass for brain-controlled intents:
+                    // if Brain emitted a live intent, Trading Bot must respect it as live-routed.
+                    // The bot may still reject it for execution-stage reasons (validation,
+                    // exchange submission, risk guard, etc.) but must not reclassify it to demo.
+                    if ($brainControlled && $mode === 'live') {
+                        $intentExecMode = 'live';
+                        $intent['brain_routed_live_intent']  = true;
+                        $intent['bot_respected_brain_route'] = true;
+                    }
+                    // ─────────────────────────────────────────────────────────────────────────
+
                     // Count by route_state (mode-independent routing class).
                     if ($dpRouteState === 'green_live_worthy') {
                         $routedGreenTotal++;
@@ -1295,11 +1311,11 @@ final class TradingBotService
                     );
                     // ─────────────────────────────────────────────────────────────────
 
-                    // ── Guard: Block live→demo silent reroute for brain-controlled live intents ──
-                    // A live intent claimed from live_intents.json must never be silently converted
-                    // into a demo execution. The decision engine may return 'enter_demo' for a live
-                    // intent (e.g. yellow/amber confidence band), but a claimed live intent must only
-                    // end as live-executed or live-rejected — never demo-routed.
+                    // ── Guard: Safety net — brain-controlled live intents never reach here as demo ──
+                    // The brain-route override above ensures $intentExecMode === 'live' for all
+                    // brain-controlled live intents before this point. This guard is retained as
+                    // a defensive safety net only. For non-brain-controlled intents the guard
+                    // remains active: a live-mode bot must not silently demo-route them either.
                     if ($brainControlled && $mode === 'live' && $intentExecMode === 'demo') {
                         $rerouteBlockReason = 'rejected_live_reroute_to_demo_blocked';
                         $this->store->saveRejectedIntent($intent, [

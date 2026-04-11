@@ -1106,7 +1106,11 @@ final class SmartBrainCore
             }
         }
 
-        if ($passportGateEnabled && is_dir($passportsDir)) {
+        // Passports are loaded unconditionally when the directory exists.
+        // The debug block below reads them regardless of whether the passport gate
+        // is enforcing routing decisions. The gate enforcement block (further below)
+        // is still controlled by $passportGateEnabled.
+        if (is_dir($passportsDir)) {
             foreach (glob($passportsDir . '/*.json') ?: [] as $pFile) {
                 $raw = @file_get_contents($pFile);
                 $pData = $raw !== false ? @json_decode($raw, true) : null;
@@ -1439,43 +1443,42 @@ final class SmartBrainCore
             // Evaluated here — before the passport gate — so ALL evaluated signals are counted,
             // including those that are later rejected/demoted by the gate. Counters reflect
             // reality for every signal that reaches this point in the evaluation loop.
+            // Runs unconditionally: passport gate enforcement is separate (see below).
             // cycle_decision_debug is only attached to the intent for approved signals below.
             $cycleDecisionDebug = null;
-            if ($passportGateEnabled) {
-                $passportForDebug = $passports[strtoupper($symbol)] ?? null;
-                if ($passportForDebug !== null && is_array($passportForDebug['coin_cycle_decision_model'] ?? null)) {
-                    $dm = $passportForDebug['coin_cycle_decision_model'];
-                    $cycleDecisionDebug = [
-                        'available'                  => true,
-                        'model_state'                => $dm['decision_model_state'] ?? null,
-                        'model_confidence'           => $dm['decision_model_confidence'] ?? null,
-                        'model_readiness'            => $dm['decision_model_readiness'] ?? null,
-                        'model_actionability'        => $dm['decision_model_actionability'] ?? null,
-                        'model_risk_posture'         => $dm['decision_model_risk_posture'] ?? null,
-                        'model_hold_posture'         => $dm['decision_model_hold_posture'] ?? null,
-                        'model_stop_posture'         => $dm['decision_model_stop_posture'] ?? null,
-                        'model_live_bias'            => $dm['decision_model_live_bias'] ?? null,
-                        'model_demo_bias'            => $dm['decision_model_demo_bias'] ?? null,
-                        'model_shadow_bias'          => $dm['decision_model_shadow_bias'] ?? null,
-                        'model_skip_bias'            => $dm['decision_model_skip_bias'] ?? null,
-                        'model_warning_flag'         => $dm['decision_model_warning_flag'] ?? null,
-                        'model_warning_reason'       => $dm['decision_model_warning_reason'] ?? null,
-                        'model_low_confidence_flag'  => $dm['decision_model_low_confidence_flag'] ?? null,
-                        'model_low_confidence_reason' => $dm['decision_model_low_confidence_reason'] ?? null,
-                        'model_preferred_mode'       => $dm['decision_model_preferred_mode'] ?? null,
-                        'model_preferred_risk'       => $dm['decision_model_preferred_risk'] ?? null,
-                        'model_preferred_hold'       => $dm['decision_model_preferred_hold'] ?? null,
-                        'model_preferred_stop'       => $dm['decision_model_preferred_stop'] ?? null,
-                        'source_updated_at'          => $dm['updated_at'] ?? null,
-                    ];
-                    $result['cycle_debug_available_total']++;
-                    if (!empty($dm['decision_model_low_confidence_flag'])) {
-                        $result['cycle_debug_low_confidence_total']++;
-                    }
-                } else {
-                    $cycleDecisionDebug = ['available' => false];
-                    $result['cycle_debug_missing_total']++;
+            $passportForDebug = $passports[strtoupper($symbol)] ?? null;
+            if ($passportForDebug !== null && is_array($passportForDebug['coin_cycle_decision_model'] ?? null)) {
+                $dm = $passportForDebug['coin_cycle_decision_model'];
+                $cycleDecisionDebug = [
+                    'available'                  => true,
+                    'model_state'                => $dm['decision_model_state'] ?? null,
+                    'model_confidence'           => $dm['decision_model_confidence'] ?? null,
+                    'model_readiness'            => $dm['decision_model_readiness'] ?? null,
+                    'model_actionability'        => $dm['decision_model_actionability'] ?? null,
+                    'model_risk_posture'         => $dm['decision_model_risk_posture'] ?? null,
+                    'model_hold_posture'         => $dm['decision_model_hold_posture'] ?? null,
+                    'model_stop_posture'         => $dm['decision_model_stop_posture'] ?? null,
+                    'model_live_bias'            => $dm['decision_model_live_bias'] ?? null,
+                    'model_demo_bias'            => $dm['decision_model_demo_bias'] ?? null,
+                    'model_shadow_bias'          => $dm['decision_model_shadow_bias'] ?? null,
+                    'model_skip_bias'            => $dm['decision_model_skip_bias'] ?? null,
+                    'model_warning_flag'         => $dm['decision_model_warning_flag'] ?? null,
+                    'model_warning_reason'       => $dm['decision_model_warning_reason'] ?? null,
+                    'model_low_confidence_flag'  => $dm['decision_model_low_confidence_flag'] ?? null,
+                    'model_low_confidence_reason' => $dm['decision_model_low_confidence_reason'] ?? null,
+                    'model_preferred_mode'       => $dm['decision_model_preferred_mode'] ?? null,
+                    'model_preferred_risk'       => $dm['decision_model_preferred_risk'] ?? null,
+                    'model_preferred_hold'       => $dm['decision_model_preferred_hold'] ?? null,
+                    'model_preferred_stop'       => $dm['decision_model_preferred_stop'] ?? null,
+                    'source_updated_at'          => $dm['updated_at'] ?? null,
+                ];
+                $result['cycle_debug_available_total']++;
+                if (!empty($dm['decision_model_low_confidence_flag'])) {
+                    $result['cycle_debug_low_confidence_total']++;
                 }
+            } else {
+                $cycleDecisionDebug = ['available' => false];
+                $result['cycle_debug_missing_total']++;
             }
 
             // === COIN PASSPORT LIVE GATE ===

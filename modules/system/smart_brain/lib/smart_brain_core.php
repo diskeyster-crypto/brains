@@ -930,6 +930,11 @@ final class SmartBrainCore
             'cycle_model_demote_skip_total' => (int)($liveIntentResult['cycle_model_demote_skip_total'] ?? 0),
             'cycle_model_no_effect_total' => (int)($liveIntentResult['cycle_model_no_effect_total'] ?? 0),
             'cycle_model_unavailable_total' => (int)($liveIntentResult['cycle_model_unavailable_total'] ?? 0),
+            // Coin cycle positive support layer counters (Coin Core Step 12)
+            'cycle_model_support_total'           => (int)($liveIntentResult['cycle_model_support_total'] ?? 0),
+            'cycle_model_support_live_total'      => (int)($liveIntentResult['cycle_model_support_live_total'] ?? 0),
+            'cycle_model_support_borderline_total' => (int)($liveIntentResult['cycle_model_support_borderline_total'] ?? 0),
+            'cycle_model_support_no_effect_total'  => (int)($liveIntentResult['cycle_model_support_no_effect_total'] ?? 0),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1036,6 +1041,11 @@ final class SmartBrainCore
             'cycle_model_demote_skip_total' => 0,
             'cycle_model_no_effect_total' => 0,
             'cycle_model_unavailable_total' => 0,
+            // Coin cycle positive support layer counters (Coin Core Step 12)
+            'cycle_model_support_total'           => 0,
+            'cycle_model_support_live_total'      => 0,
+            'cycle_model_support_borderline_total' => 0,
+            'cycle_model_support_no_effect_total'  => 0,
             // Intent lifecycle diagnostics
             'lifecycle_counters' => [],
             'lifecycle_summary' => [],
@@ -1499,10 +1509,26 @@ final class SmartBrainCore
             // clears the passport gate.  Hard gates (passport, quality floors, late-entry,
             // duplicate) remain intact and execute after this block.
             // Bounded: may only demote/skip; cannot promote or bypass existing hard gates.
+            //
+            // === COIN CYCLE POSITIVE SUPPORT LAYER (Coin Core Step 12) ===
+            // Integrated after the veto conditions below.
+            // For condition 3 (non_live_bias soft veto): if the overall cycle model is
+            // explicitly favorable + actionable + no warnings, Step 12 support preserves
+            // live routing instead of demoting to demo ("borderline live" case).
+            // For no-veto signals: Step 12 records whether the cycle model actively
+            // supports the live candidate (cycle_model_support_live) or is neutral
+            // (cycle_model_support_no_effect).
+            // Bounded: support can only preserve/tag; cannot promote hard-rejected candidates.
             $cycleModelUsed         = false;
             $cycleModelVetoApplied  = false;
             $cycleModelVetoReason   = null;
             $cycleModelRouteBefore  = 'live';
+            // Step 12 support tracking variables
+            $cycleModelSupportUsed          = false;
+            $cycleModelSupportApplied       = false;
+            $cycleModelSupportReason        = null;
+            $cycleModelRouteBeforeSupport   = null;
+            $cycleModelRouteAfterSupport    = null;
 
             if ($cycleDecisionDebug !== null && ($cycleDecisionDebug['available'] ?? false) === true) {
                 $cycleModelUsed  = true;
@@ -1512,6 +1538,16 @@ final class SmartBrainCore
                 $cmLiveBias      = (string)($cycleDecisionDebug['model_live_bias']     ?? 'non_live_bias');
                 $cmWarnFlag      = (bool)($cycleDecisionDebug['model_warning_flag']        ?? false);
                 $cmLowConf       = (bool)($cycleDecisionDebug['model_low_confidence_flag'] ?? false);
+
+                // Step 12: pre-compute support eligibility — explicit favorable conditions required.
+                // Used by condition 3 and the no-veto support evaluation below.
+                $isCycleSupportFavorable = (
+                    $cmState         === 'favorable'
+                    && $cmActionability === 'actionable'
+                    && $cmRisk        !== 'high_risk'
+                    && !$cmWarnFlag
+                    && !$cmLowConf
+                );
 
                 // Hard veto → skip: non_actionable AND high_risk together signal a clearly
                 // unfavorable entry window; skip is the appropriate outcome.
@@ -1534,17 +1570,34 @@ final class SmartBrainCore
                     continue;
                 }
 
-                // Soft veto → demo: model has no live bias (would prefer demo/shadow)
+                // Soft veto → demo: model has no live bias (would prefer demo/shadow).
+                // Step 12 override: when overall cycle conditions are explicitly favorable
+                // (state=favorable, actionable, no high_risk, no warnings, no low confidence),
+                // support preserves live routing rather than demoting — "borderline live" case.
                 if ($cmLiveBias === 'non_live_bias') {
-                    $cycleModelVetoApplied = true;
-                    $cycleModelVetoReason  = 'cycle_model_demote_demo';
-                    $result['cycle_model_veto_total']++;
-                    $result['cycle_model_demote_demo_total']++;
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
-                    continue;
+                    if ($isCycleSupportFavorable) {
+                        // Step 12 positive support: favorable overall state overrides non_live_bias
+                        $cycleModelSupportUsed         = true;
+                        $cycleModelSupportApplied      = true;
+                        $cycleModelSupportReason       = 'cycle_model_support_borderline_live';
+                        $cycleModelRouteBeforeSupport  = 'pending_demo_demotion';
+                        $cycleModelRouteAfterSupport   = 'live';
+                        $result['cycle_model_support_total']++;
+                        $result['cycle_model_support_borderline_total']++;
+                        // Do NOT continue — signal survives into passport gate
+                    } else {
+                        $cycleModelVetoApplied = true;
+                        $cycleModelVetoReason  = 'cycle_model_demote_demo';
+                        $result['cycle_model_veto_total']++;
+                        $result['cycle_model_demote_demo_total']++;
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
+                        continue;
+                    }
                 }
 
-                // Soft veto → demo: warning active AND low confidence together
+                // Soft veto → demo: warning active AND low confidence together.
+                // Note: $isCycleSupportFavorable requires !$cmWarnFlag && !$cmLowConf, so a
+                // borderline-support bypass (above) can never also satisfy this condition.
                 if ($cmWarnFlag && $cmLowConf) {
                     $cycleModelVetoApplied = true;
                     $cycleModelVetoReason  = 'cycle_model_demote_demo';
@@ -1554,7 +1607,23 @@ final class SmartBrainCore
                     continue;
                 }
 
-                // No veto triggered — model conditions acceptable for live
+                // No hard veto triggered — model conditions acceptable for live.
+                // Step 12: evaluate positive support for this viable candidate.
+                // (Borderline-bypass case already set $cycleModelSupportApplied above.)
+                if (!$cycleModelSupportApplied) {
+                    $cycleModelSupportUsed        = true;
+                    $cycleModelRouteBeforeSupport = 'live';
+                    $cycleModelRouteAfterSupport  = 'live';
+                    $result['cycle_model_support_total']++;
+                    if ($isCycleSupportFavorable) {
+                        $cycleModelSupportApplied = true;
+                        $cycleModelSupportReason  = 'cycle_model_support_live';
+                        $result['cycle_model_support_live_total']++;
+                    } else {
+                        $cycleModelSupportReason  = 'cycle_model_support_no_effect';
+                        $result['cycle_model_support_no_effect_total']++;
+                    }
+                }
                 $result['cycle_model_no_effect_total']++;
             } else {
                 // Cycle model unavailable for this symbol — no veto applied
@@ -1893,6 +1962,13 @@ final class SmartBrainCore
             $intent['cycle_model_route_before'] = $cycleModelRouteBefore;
             $intent['cycle_model_route_after']  = 'live';
 
+            // Attach cycle positive support layer observability fields (Coin Core Step 12)
+            $intent['cycle_model_support_used']          = $cycleModelSupportUsed;
+            $intent['cycle_model_support_applied']       = $cycleModelSupportApplied;
+            $intent['cycle_model_support_reason']        = $cycleModelSupportReason;
+            $intent['cycle_model_route_before_support']  = $cycleModelRouteBeforeSupport;
+            $intent['cycle_model_route_after_support']   = $cycleModelRouteAfterSupport;
+
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
                 $intent['symbol_hints'] = $symbolHints;
@@ -1926,6 +2002,11 @@ final class SmartBrainCore
                     'cycle_model_veto_reason' => $cycleModelVetoReason,
                     'cycle_model_route_before' => $cycleModelRouteBefore,
                     'cycle_model_route_after' => 'live',
+                    'cycle_model_support_used' => $cycleModelSupportUsed,
+                    'cycle_model_support_applied' => $cycleModelSupportApplied,
+                    'cycle_model_support_reason' => $cycleModelSupportReason,
+                    'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                    'cycle_model_route_after_support' => $cycleModelRouteAfterSupport,
                 ];
             }
         }

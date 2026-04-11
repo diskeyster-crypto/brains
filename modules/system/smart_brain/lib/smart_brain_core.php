@@ -935,6 +935,8 @@ final class SmartBrainCore
             'cycle_model_support_live_total'      => (int)($liveIntentResult['cycle_model_support_live_total'] ?? 0),
             'cycle_model_support_borderline_total' => (int)($liveIntentResult['cycle_model_support_borderline_total'] ?? 0),
             'cycle_model_support_no_effect_total'  => (int)($liveIntentResult['cycle_model_support_no_effect_total'] ?? 0),
+            // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
+            'cycle_model_support_preview'         => $liveIntentResult['cycle_model_support_preview'] ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1046,6 +1048,8 @@ final class SmartBrainCore
             'cycle_model_support_live_total'      => 0,
             'cycle_model_support_borderline_total' => 0,
             'cycle_model_support_no_effect_total'  => 0,
+            // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
+            'cycle_model_support_preview'         => [],
             // Intent lifecycle diagnostics
             'lifecycle_counters' => [],
             'lifecycle_summary' => [],
@@ -1628,6 +1632,20 @@ final class SmartBrainCore
             } else {
                 // Cycle model unavailable for this symbol — no veto applied
                 $result['cycle_model_unavailable_total']++;
+            }
+
+            // Step 12 support proof: record support evaluation before passport gate so the
+            // data survives even if the candidate is later rejected by a downstream gate.
+            if ($cycleModelSupportUsed && count($result['cycle_model_support_preview']) < 20) {
+                $result['cycle_model_support_preview'][] = [
+                    'symbol'                           => $symbol,
+                    'signal_id'                        => $signalId,
+                    'cycle_model_support_used'         => true,
+                    'cycle_model_support_applied'      => $cycleModelSupportApplied,
+                    'cycle_model_support_reason'       => $cycleModelSupportReason,
+                    'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                    'cycle_model_route_after_support'  => $cycleModelRouteAfterSupport,
+                ];
             }
 
             // === COIN PASSPORT LIVE GATE ===

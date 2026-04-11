@@ -944,6 +944,12 @@ final class TradingBotService
                 $cycleDebugMissingTotal       = 0;
                 $cycleDebugLowConfidenceTotal = 0;
 
+                // Coin/Bot Step 14: cycle execution filter counters (brain-controlled live only)
+                $cycleExecFilterTotal         = 0;
+                $cycleExecFilterRejectTotal   = 0;
+                $cycleExecFilterNoEffectTotal = 0;
+                $cycleExecFilterUnavailTotal  = 0;
+
                 // Demo budget tracking variables (populated below for demo mode)
                 $isDemoLearning               = false;
                 $demoAttemptBudgetEffective   = $maxExecutePerRun;
@@ -1435,6 +1441,128 @@ final class TradingBotService
                     }
                     // ──────────────────────────────────────────────────────────────────────────
 
+                    // ── Coin/Bot Step 14: Cycle Execution Filter ──────────────────────────────
+                    // Brain-controlled live intents only.
+                    // Reads passport cycle model snapshot (attached at decision time).
+                    // May only reject — cannot reroute to demo, promote, or alter sizing.
+                    // Mirrors Smart Brain Step 11 hard-veto conditions: if the cycle model
+                    // signals explicit high-risk or non-actionable state, reject at execution
+                    // stage before submitting to the exchange.
+                    if ($brainControlled && $mode === 'live' && $intentExecMode === 'live') {
+                        $efCycleDebug  = $intent['cycle_decision_debug'] ?? null;
+                        $efFilterUsed  = false;
+                        $efRejectReason = null;
+                        $efMState      = null;
+                        $efMRisk       = null;
+                        $efMAction     = null;
+
+                        if (is_array($efCycleDebug) && ($efCycleDebug['available'] ?? false) === true) {
+                            $efFilterUsed  = true;
+                            $cycleExecFilterTotal++;
+                            $efMState    = (string)($efCycleDebug['model_state']        ?? 'unavailable');
+                            $efMAction   = (string)($efCycleDebug['model_actionability'] ?? 'non_actionable');
+                            $efMRisk     = (string)($efCycleDebug['model_risk_posture']  ?? 'unavailable');
+                            $efWarnFlag  = (bool)($efCycleDebug['model_warning_flag']        ?? false);
+                            $efLowConf   = (bool)($efCycleDebug['model_low_confidence_flag'] ?? false);
+
+                            // Reject condition 1: clearly hostile — non_actionable + high_risk
+                            if ($efMAction === 'non_actionable' && $efMRisk === 'high_risk') {
+                                $efRejectReason = 'rejected_cycle_model_high_risk';
+                            }
+                            // Reject condition 2: model non_actionable + state weak/unavailable
+                            elseif ($efMAction === 'non_actionable' && in_array($efMState, ['weak', 'unavailable'], true)) {
+                                $efRejectReason = 'rejected_cycle_model_non_actionable';
+                            }
+                            // Reject condition 3: warning active AND low confidence together
+                            elseif ($efWarnFlag && $efLowConf) {
+                                $efRejectReason = 'rejected_cycle_model_low_confidence';
+                            }
+
+                            if ($efRejectReason !== null) {
+                                $cycleExecFilterRejectTotal++;
+                                $intent['cycle_execution_filter_used']               = true;
+                                $intent['cycle_execution_filter_applied']            = true;
+                                $intent['cycle_execution_filter_reason']             = $efRejectReason;
+                                $intent['cycle_execution_filter_model_state']        = $efMState;
+                                $intent['cycle_execution_filter_model_risk']         = $efMRisk;
+                                $intent['cycle_execution_filter_model_actionability'] = $efMAction;
+                                $this->store->saveRejectedIntent($intent, [
+                                    'reason'  => $efRejectReason,
+                                    'context' => [
+                                        'cycle_execution_filter_model_state'        => $efMState,
+                                        'cycle_execution_filter_model_risk'         => $efMRisk,
+                                        'cycle_execution_filter_model_actionability' => $efMAction,
+                                        'cycle_execution_filter_warn_flag'          => $efWarnFlag,
+                                        'cycle_execution_filter_low_conf_flag'      => $efLowConf,
+                                        'brain_routed_live_intent'                  => true,
+                                    ],
+                                ]);
+                                $iid = $intent['intent_id'] ?? '';
+                                if ($iid !== '' && !empty($liveIntentsFilePath)) {
+                                    $this->updateLiveIntentStatus($iid, $liveIntentsFilePath, 'rejected', [
+                                        'reject_reason'  => $efRejectReason,
+                                        'reject_context' => 'cycle_exec_filter:state=' . $efMState
+                                            . ',risk=' . $efMRisk . ',actionability=' . $efMAction,
+                                    ]);
+                                    $lifecycleUpdatedIntentIds[$iid] = true;
+                                }
+                                $result['intent_results'][] = [
+                                    'intent_id'                          => $intent['intent_id'] ?? ($intent['id'] ?? null),
+                                    'signal_id'                          => $intent['signal_id'] ?? null,
+                                    'symbol'                             => (string)($intent['symbol'] ?? ''),
+                                    'side'                               => (string)($intent['side'] ?? ''),
+                                    'brain_controlled'                   => true,
+                                    'execution_identity_key'             => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? '')),
+                                    'lifecycle_state'                    => 'rejected',
+                                    'processed_at'                       => date('c'),
+                                    'execution_result'                   => $efRejectReason,
+                                    'rejection_reason'                   => $efRejectReason,
+                                    'close_reason'                       => null,
+                                    'order_id'                           => null,
+                                    'position_id'                        => null,
+                                    'protection_status'                  => 'none',
+                                    'trailing_status'                    => 'disabled',
+                                    'source_status'                      => $intent['source'] ?? 'brain_live_intent',
+                                    'debug_message'                      => 'cycle_execution_filter:' . $efRejectReason,
+                                    'execution_stage'                    => 'cycle_execution_filter',
+                                    'exchange_submit_attempted'          => false,
+                                    'exchange_response_code'             => null,
+                                    'exchange_response_message'          => null,
+                                    'validation_error_summary'           => null,
+                                    'missing_fields_preview'             => [],
+                                    'order_send_attempted'               => false,
+                                    'order_sent'                         => false,
+                                    'position_opened'                    => false,
+                                    'terminal_status'                    => 'rejected',
+                                    'final_execution_namespace'          => 'live',
+                                    'input_intent_namespace'             => 'live',
+                                    'cycle_execution_filter_used'        => true,
+                                    'cycle_execution_filter_applied'     => true,
+                                    'cycle_execution_filter_reason'      => $efRejectReason,
+                                    'cycle_execution_filter_model_state' => $efMState,
+                                    'cycle_execution_filter_model_risk'  => $efMRisk,
+                                    'cycle_execution_filter_model_actionability' => $efMAction,
+                                ];
+                                $executedThisRun++;
+                                continue;
+                            } else {
+                                $cycleExecFilterNoEffectTotal++;
+                            }
+                        } else {
+                            // Cycle model unavailable — do not reject; count for observability
+                            $cycleExecFilterUnavailTotal++;
+                        }
+
+                        // Stamp no-reject observability on intent before execution
+                        $intent['cycle_execution_filter_used']               = $efFilterUsed;
+                        $intent['cycle_execution_filter_applied']            = false;
+                        $intent['cycle_execution_filter_reason']             = null;
+                        $intent['cycle_execution_filter_model_state']        = $efMState;
+                        $intent['cycle_execution_filter_model_risk']         = $efMRisk;
+                        $intent['cycle_execution_filter_model_actionability'] = $efMAction;
+                    }
+                    // ── End Coin/Bot Step 14 ──────────────────────────────────────────────────
+
                     // True per-intent execution context separation:
                     // When the bot is live but this intent is demo-routed, we must:
                     //   1. Use demo storage (parallelDemoStore) — not the live store.
@@ -1759,6 +1887,12 @@ final class TradingBotService
                 $result['cycle_debug_available_total']     = $cycleDebugAvailableTotal;
                 $result['cycle_debug_missing_total']       = $cycleDebugMissingTotal;
                 $result['cycle_debug_low_confidence_total'] = $cycleDebugLowConfidenceTotal;
+
+                // Coin/Bot Step 14: cycle execution filter counters (brain-controlled live only)
+                $result['cycle_execution_filter_total']           = $cycleExecFilterTotal;
+                $result['cycle_execution_filter_reject_total']    = $cycleExecFilterRejectTotal;
+                $result['cycle_execution_filter_no_effect_total'] = $cycleExecFilterNoEffectTotal;
+                $result['cycle_execution_filter_unavailable_total'] = $cycleExecFilterUnavailTotal;
 
             }
             

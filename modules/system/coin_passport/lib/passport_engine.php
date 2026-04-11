@@ -4398,6 +4398,270 @@ final class CoinPassportEngine
         return $projection;
     }
 
+    // =========================================================================
+    // Coin Core Step 7 — passive cycle decision model
+    // =========================================================================
+
+    /**
+     * Derive a compact passive decision model from context + hints + summary + routing_profile.
+     * All fields are compact labels only.  Does NOT drive any live, bot, or PM decisions.
+     *
+     * @param  array<string,mixed> $ctx
+     * @param  array<string,mixed> $hints
+     * @param  array<string,mixed> $summary
+     * @param  array<string,mixed> $routing
+     * @return array<string,mixed>
+     */
+    private function deriveDecisionModel(array $ctx, array $hints, array $summary, array $routing): array
+    {
+        $ts = date('c');
+
+        // --- Pull synthesised labels from the routing profile (single source of truth) ---
+        $profileState      = (string)($routing['routing_profile_state']         ?? 'unavailable');
+        $profileConf       = (string)($routing['routing_profile_confidence']     ?? 'unavailable');
+        $liveProfile       = (string)($routing['routing_live_profile']           ?? 'unavailable');
+        $demoProfile       = (string)($routing['routing_demo_profile']           ?? 'unavailable');
+        $shadowProfile     = (string)($routing['routing_shadow_profile']         ?? 'shadow_only');
+        $skipProfile       = (string)($routing['routing_skip_profile']           ?? 'skip');
+        $riskProfile       = (string)($routing['routing_risk_profile']           ?? 'unavailable');
+        $holdProfile       = (string)($routing['routing_hold_profile']           ?? 'unavailable');
+        $actionability     = (string)($routing['routing_actionability_profile']  ?? 'non_actionable');
+        $warnFlag          = (bool)($routing['routing_warning_flag']             ?? false);
+        $warnReason        = $routing['routing_warning_reason']                  ?? null;
+        $lowConfFlag       = (bool)($routing['routing_low_confidence_flag']      ?? false);
+        $lowConfReason     = $routing['routing_low_confidence_reason']           ?? null;
+        $preferredMode     = (string)($routing['routing_preferred_mode_hint']    ?? 'shadow_only');
+        $preferredRisk     = (string)($routing['routing_preferred_risk_hint']    ?? 'unavailable');
+        $preferredHold     = (string)($routing['routing_preferred_hold_hint']    ?? 'unavailable');
+        $preferredStop     = (string)($routing['routing_preferred_stop_hint']    ?? 'unavailable');
+        $routingAt         = $routing['updated_at']                              ?? null;
+        $sourceSummaryAt   = $routing['source_summary_updated_at']               ?? null;
+        $sourceHintsAt     = $routing['source_hints_updated_at']                 ?? null;
+        $sourceContextAt   = $routing['source_context_updated_at']               ?? null;
+
+        $unavailable = ($profileState === 'unavailable');
+
+        // decision_model_state — integrated state label
+        if ($unavailable) {
+            $modelState = 'unavailable';
+        } elseif ($profileState === 'favorable' && $actionability === 'actionable') {
+            $modelState = 'favorable';
+        } elseif ($profileState === 'cautious') {
+            $modelState = 'cautious';
+        } elseif ($profileState === 'weak') {
+            $modelState = 'weak';
+        } else {
+            $modelState = 'unavailable';
+        }
+
+        // decision_model_confidence — mirrors routing profile confidence
+        $modelConf = $unavailable ? 'unavailable' : $profileConf;
+
+        // decision_model_readiness — entry readiness
+        if (!$unavailable && $actionability === 'actionable' && !$warnFlag && !$lowConfFlag) {
+            $modelReadiness = 'actionable';
+        } else {
+            $modelReadiness = 'non_actionable';
+        }
+
+        // decision_model_actionability — same as readiness (distinct field for consumer clarity)
+        $modelActionability = $modelReadiness;
+
+        // decision_model_risk_posture
+        $modelRisk = $unavailable ? 'unavailable' : $riskProfile;
+
+        // decision_model_hold_posture
+        $modelHold = $unavailable ? 'unavailable' : $holdProfile;
+
+        // decision_model_stop_posture
+        $modelStop = $unavailable ? 'unavailable' : $preferredStop;
+
+        // decision_model_*_bias flags
+        $liveBias   = (!$unavailable && $liveProfile === 'live_ready')   ? 'live_bias'   : 'non_live_bias';
+        $demoBias   = (!$unavailable && ($liveProfile === 'demo_only' || ($demoProfile === 'favorable' && $liveProfile !== 'live_ready'))) ? 'demo_bias' : 'non_demo_bias';
+        $shadowBias = (!$unavailable && $shadowProfile === 'shadow_only') ? 'shadow_bias' : 'non_shadow_bias';
+        $skipBias   = ($unavailable || $skipProfile === 'skip')           ? 'skip_bias'   : 'non_skip_bias';
+
+        return [
+            'updated_at'                        => $ts,
+            'decision_model_state'              => $modelState,
+            'decision_model_confidence'         => $modelConf,
+            'decision_model_readiness'          => $modelReadiness,
+            'decision_model_actionability'      => $modelActionability,
+            'decision_model_risk_posture'       => $modelRisk,
+            'decision_model_hold_posture'       => $modelHold,
+            'decision_model_stop_posture'       => $modelStop,
+            'decision_model_live_bias'          => $liveBias,
+            'decision_model_demo_bias'          => $demoBias,
+            'decision_model_shadow_bias'        => $shadowBias,
+            'decision_model_skip_bias'          => $skipBias,
+            'decision_model_warning_flag'       => $warnFlag,
+            'decision_model_warning_reason'     => $warnReason,
+            'decision_model_low_confidence_flag'   => $lowConfFlag,
+            'decision_model_low_confidence_reason' => $lowConfReason,
+            'decision_model_preferred_mode'     => $preferredMode,
+            'decision_model_preferred_risk'     => $preferredRisk,
+            'decision_model_preferred_hold'     => $preferredHold,
+            'decision_model_preferred_stop'     => $preferredStop,
+            'source_routing_profile_updated_at' => $routingAt,
+            'source_summary_updated_at'         => $sourceSummaryAt,
+            'source_hints_updated_at'           => $sourceHintsAt,
+            'source_context_updated_at'         => $sourceContextAt,
+        ];
+    }
+
+    /**
+     * Project passive cycle decision models into all passport files.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary +
+     * coin_cycle_routing_profile from each passport, derives coin_cycle_decision_model,
+     * saves back.  Writes a compact projection artifact.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $outputPath  Absolute path to write coin_cycle_decision_model_projection.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleDecisionModelToPassports(string $outputPath): array
+    {
+        $ts                 = date('c');
+        $symbolsTotal       = 0;
+        $writtenTotal       = 0;
+        $favorableTotal     = 0;
+        $cautiousTotal      = 0;
+        $weakTotal          = 0;
+        $unavailTotal       = 0;
+        $actionableTotal    = 0;
+        $nonActionableTotal = 0;
+        $liveBiasTotal      = 0;
+        $demoBiasTotal      = 0;
+        $shadowBiasTotal    = 0;
+        $skipBiasTotal      = 0;
+        $lowConfTotal       = 0;
+        $errorTotal         = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx     = $passport['coin_cycle_context']        ?? null;
+                $hints   = $passport['coin_cycle_hints']          ?? null;
+                $summary = $passport['coin_cycle_summary']        ?? null;
+                $routing = $passport['coin_cycle_routing_profile'] ?? null;
+
+                if (!is_array($ctx) || !is_array($hints) || !is_array($summary) || !is_array($routing)) {
+                    // Source blocks absent — write compact unavailable decision model
+                    $passport['coin_cycle_decision_model'] = [
+                        'updated_at'                           => $ts,
+                        'decision_model_state'                 => 'unavailable',
+                        'decision_model_confidence'            => 'unavailable',
+                        'decision_model_readiness'             => 'non_actionable',
+                        'decision_model_actionability'         => 'non_actionable',
+                        'decision_model_risk_posture'          => 'unavailable',
+                        'decision_model_hold_posture'          => 'unavailable',
+                        'decision_model_stop_posture'          => 'unavailable',
+                        'decision_model_live_bias'             => 'non_live_bias',
+                        'decision_model_demo_bias'             => 'non_demo_bias',
+                        'decision_model_shadow_bias'           => 'shadow_bias',
+                        'decision_model_skip_bias'             => 'skip_bias',
+                        'decision_model_warning_flag'          => false,
+                        'decision_model_warning_reason'        => null,
+                        'decision_model_low_confidence_flag'   => true,
+                        'decision_model_low_confidence_reason' => 'no_context_hints_summary_or_routing_profile',
+                        'decision_model_preferred_mode'        => 'shadow_only',
+                        'decision_model_preferred_risk'        => 'unavailable',
+                        'decision_model_preferred_hold'        => 'unavailable',
+                        'decision_model_preferred_stop'        => 'unavailable',
+                        'source_routing_profile_updated_at'    => null,
+                        'source_summary_updated_at'            => null,
+                        'source_hints_updated_at'              => null,
+                        'source_context_updated_at'            => null,
+                    ];
+                    $unavailTotal++;
+                    $nonActionableTotal++;
+                    $shadowBiasTotal++;
+                    $skipBiasTotal++;
+                    $lowConfTotal++;
+                } else {
+                    $model = $this->deriveDecisionModel($ctx, $hints, $summary, $routing);
+                    $passport['coin_cycle_decision_model'] = $model;
+                    $writtenTotal++;
+
+                    $mState = $model['decision_model_state'];
+                    if ($mState === 'favorable')    { $favorableTotal++; }
+                    elseif ($mState === 'cautious') { $cautiousTotal++; }
+                    elseif ($mState === 'weak')     { $weakTotal++; }
+                    else                            { $unavailTotal++; }
+
+                    if ($model['decision_model_actionability'] === 'actionable') {
+                        $actionableTotal++;
+                    } else {
+                        $nonActionableTotal++;
+                    }
+
+                    if ($model['decision_model_live_bias']   === 'live_bias')   { $liveBiasTotal++; }
+                    if ($model['decision_model_demo_bias']   === 'demo_bias')   { $demoBiasTotal++; }
+                    if ($model['decision_model_shadow_bias'] === 'shadow_bias') { $shadowBiasTotal++; }
+                    if ($model['decision_model_skip_bias']   === 'skip_bias')   { $skipBiasTotal++; }
+
+                    if ((bool)($model['decision_model_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.cdmtmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projection = [
+            'updated_at'          => $ts,
+            'source'              => 'passport cycle layers',
+            'symbols_total'       => $symbolsTotal,
+            'models_written_total' => $writtenTotal,
+            'favorable_total'     => $favorableTotal,
+            'cautious_total'      => $cautiousTotal,
+            'weak_total'          => $weakTotal,
+            'unavailable_total'   => $unavailTotal,
+            'actionable_total'    => $actionableTotal,
+            'non_actionable_total' => $nonActionableTotal,
+            'live_bias_total'     => $liveBiasTotal,
+            'demo_bias_total'     => $demoBiasTotal,
+            'shadow_bias_total'   => $shadowBiasTotal,
+            'skip_bias_total'     => $skipBiasTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $dir = dirname($outputPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $outputPath,
+            json_encode($projection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projection;
+    }
+
     public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array
     {
         $ts             = date('c');

@@ -165,6 +165,13 @@ final class CoinPassportService
             // non-fatal
         }
 
+        // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleDecisionModelToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -254,6 +261,13 @@ final class CoinPassportService
         // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
         try {
             $this->projectCycleRoutingProfileToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleDecisionModelToPassports();
         } catch (\Throwable $e) {
             // non-fatal
         }
@@ -421,6 +435,14 @@ final class CoinPassportService
                 // non-fatal
             }
 
+            // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
+            $decisionResult = [];
+            try {
+                $decisionResult = $this->projectCycleDecisionModelToPassports();
+            } catch (\Throwable $decisionEx) {
+                // non-fatal
+            }
+
             return [
                 'ok'                              => true,
                 'cycle_symbols_total'             => $result['cycle_symbols_total']            ?? 0,
@@ -443,6 +465,9 @@ final class CoinPassportService
                 'routing_symbols_total'           => $routingResult['symbols_total']           ?? 0,
                 'routing_written_total'           => $routingResult['profiles_written_total']  ?? 0,
                 'routing_error_total'             => $routingResult['error_total']             ?? 0,
+                'decision_symbols_total'          => $decisionResult['symbols_total']          ?? 0,
+                'decision_written_total'          => $decisionResult['models_written_total']   ?? 0,
+                'decision_error_total'            => $decisionResult['error_total']            ?? 0,
             ];
         } catch (\Throwable $e) {
             return [
@@ -614,6 +639,45 @@ final class CoinPassportService
                 'low_confidence_total'   => 0,
                 'error_total'            => 1,
                 'error'                  => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build and write a passive cycle decision model into each passport.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary + coin_cycle_routing_profile
+     * from each passport, derives coin_cycle_decision_model, saves back.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleRoutingProfileToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleDecisionModelToPassports(): array
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $outputPath = $runtimeDir . '/coin_cycle_decision_model_projection.json';
+
+        try {
+            return $this->engine->projectCycleDecisionModelToPassports($outputPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'           => date('c'),
+                'source'               => 'passport cycle layers',
+                'symbols_total'        => 0,
+                'models_written_total' => 0,
+                'favorable_total'      => 0,
+                'cautious_total'       => 0,
+                'weak_total'           => 0,
+                'unavailable_total'    => 0,
+                'actionable_total'     => 0,
+                'non_actionable_total' => 0,
+                'live_bias_total'      => 0,
+                'demo_bias_total'      => 0,
+                'shadow_bias_total'    => 0,
+                'skip_bias_total'      => 0,
+                'low_confidence_total' => 0,
+                'error_total'          => 1,
+                'error'                => $e->getMessage(),
             ];
         }
     }

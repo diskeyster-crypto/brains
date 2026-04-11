@@ -340,6 +340,40 @@ final class CoinPassportService
     }
 
     /**
+     * Build coin_cycle_read_model.json from the existing coin_cycle_profile.json.
+     * Derives compact, decision-friendly per-symbol state summaries.
+     * Data layer only — does NOT feed into live admission or Bot/PM decisions.
+     * Called by CronManager (coin_passport:buildCycleReadModel).
+     *
+     * @return array<string,mixed>
+     */
+    public function buildCycleReadModel(): array
+    {
+        $runtimeDir    = $this->storageDir . '/runtime';
+        $profilePath   = $runtimeDir . '/coin_cycle_profile.json';
+        $readModelPath = $runtimeDir . '/coin_cycle_read_model.json';
+
+        try {
+            $result = $this->engine->buildCoinCycleReadModel($profilePath, $readModelPath);
+            return [
+                'ok'                         => true,
+                'read_model_symbols_total'   => $result['read_model_symbols_total']   ?? 0,
+                'read_model_generated_total' => $result['read_model_generated_total'] ?? 0,
+                'read_model_error_total'     => $result['read_model_error_total']     ?? 0,
+                'generated_at'               => $result['generated_at']               ?? date('c'),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok'                         => false,
+                'read_model_symbols_total'   => 0,
+                'read_model_generated_total' => 0,
+                'read_model_error_total'     => 1,
+                'error'                      => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Return a full guidance block for Brain to consume before signal approval.
      * Authoritative live eligibility gate output.
      *

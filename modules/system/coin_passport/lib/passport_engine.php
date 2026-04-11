@@ -2592,6 +2592,408 @@ final class CoinPassportEngine
         return $artifact;
     }
 
+    // =========================================================================
+    // Coin cycle read model (Step 2 — data layer only, no live routing)
+    // =========================================================================
+
+    /**
+     * Build coin_cycle_read_model.json from a previously written coin_cycle_profile.json.
+     *
+     * Reads the raw derived cycle metrics from the profile artifact and converts them
+     * into compact, decision-friendly per-symbol state summaries.
+     * Best-effort and non-fatal: if the profile is missing or a symbol entry fails,
+     * the remaining symbols are still processed.
+     *
+     * @param  string $profilePath        Absolute path to coin_cycle_profile.json
+     * @param  string $readModelOutputPath Absolute path to write coin_cycle_read_model.json
+     * @return array<string,mixed>
+     */
+    public function buildCoinCycleReadModel(string $profilePath, string $readModelOutputPath): array
+    {
+        $generatedAt     = date('c');
+        $symbolsTotal    = 0;
+        $generatedTotal  = 0;
+        $errorTotal      = 0;
+        $highConfTotal   = 0;
+        $mediumConfTotal = 0;
+        $lowConfTotal    = 0;
+        $entryReadyTotal = 0;
+        $pmReadyTotal    = 0;
+        $entries         = [];
+
+        $sourceProfileUpdated = null;
+
+        if (is_file($profilePath)) {
+            $raw = @file_get_contents($profilePath);
+            $profile = $raw !== false ? json_decode($raw, true) : null;
+            if (is_array($profile)) {
+                $sourceProfileUpdated = $profile['generated_at'] ?? null;
+                $symbols = $profile['symbols'] ?? [];
+                if (is_array($symbols)) {
+                    foreach ($symbols as $symbol => $symProfile) {
+                        if (!is_array($symProfile)) {
+                            continue;
+                        }
+                        $symbolsTotal++;
+                        try {
+                            $entry = $this->deriveSymbolReadModelEntry($symProfile, $generatedAt);
+                            $entries[$symbol] = $entry;
+                            $generatedTotal++;
+                            $conf = $entry['behavior_cycle_confidence'] ?? 'none';
+                            if ($conf === 'high')             { $highConfTotal++; }
+                            elseif ($conf === 'medium')       { $mediumConfTotal++; }
+                            else                              { $lowConfTotal++; }
+                            if (($entry['cycle_entry_readiness'] ?? '') === 'ready') { $entryReadyTotal++; }
+                            if (($entry['cycle_pm_readiness']    ?? '') === 'ready') { $pmReadyTotal++; }
+                        } catch (\Throwable $ex) {
+                            $entries[$symbol] = [
+                                'symbol'                    => (string)$symbol,
+                                'updated_at'                => $generatedAt,
+                                'behavior_cycle_state'      => 'error',
+                                'behavior_cycle_confidence' => 'none',
+                                'low_confidence_reason'     => 'read_model_build_error',
+                            ];
+                            $errorTotal++;
+                            $lowConfTotal++;
+                        }
+                    }
+                    ksort($entries);
+                }
+            }
+        }
+
+        $artifact = [
+            'generated_at'          => $generatedAt,
+            'source'                => 'coin_cycle_profile',
+            'source_profile_updated_at' => $sourceProfileUpdated,
+            'symbols_total'         => $symbolsTotal,
+            'high_confidence_total' => $highConfTotal,
+            'medium_confidence_total' => $mediumConfTotal,
+            'low_confidence_total'  => $lowConfTotal,
+            'entry_ready_total'     => $entryReadyTotal,
+            'pm_ready_total'        => $pmReadyTotal,
+            'generated_ok'          => $generatedTotal,
+            'error_total'           => $errorTotal,
+            'symbols'               => $entries,
+        ];
+
+        $runtimeDir = dirname($readModelOutputPath);
+        if (!is_dir($runtimeDir)) {
+            @mkdir($runtimeDir, 0755, true);
+        }
+        @file_put_contents(
+            $readModelOutputPath,
+            json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return [
+            'read_model_symbols_total'   => $symbolsTotal,
+            'read_model_generated_total' => $generatedTotal,
+            'read_model_error_total'     => $errorTotal,
+            'generated_at'               => $generatedAt,
+        ];
+    }
+
+    /**
+     * Derive a compact read-model entry for one symbol from its raw cycle profile.
+     *
+     * @param  array<string,mixed> $profile     Raw profile entry from coin_cycle_profile.json
+     * @param  string              $generatedAt ISO timestamp of the read model generation run
+     * @return array<string,mixed>
+     */
+    private function deriveSymbolReadModelEntry(array $profile, string $generatedAt): array
+    {
+        $state      = $profile['behavior_cycle_state']      ?? 'insufficient_data';
+        $confidence = $profile['behavior_cycle_confidence'] ?? 'none';
+
+        // ── Per-window activity states ──────────────────────────────────────────
+        $hot1h = $this->windowActivityState(
+            (int)($profile['recent_samples_1h'] ?? 0),
+            $profile['corridor_range_1h'] ?? null,
+            $profile['impulse_strength_1h'] ?? null
+        );
+
+        // 2h: no direct corridor/impulse in profile — proxy via 1h activity + 2h sample count
+        $s2h   = (int)($profile['recent_samples_2h'] ?? 0);
+        $hot2h = 'insufficient_data';
+        if ($s2h >= 2) {
+            if ($hot1h === 'active' && $s2h >= 5) {
+                $hot2h = 'active';
+            } elseif ($hot1h === 'cooling' || $hot1h === 'flat') {
+                $hot2h = $hot1h;
+            } else {
+                $hot2h = 'cooling';
+            }
+        }
+
+        $short3h = $this->windowActivityState(
+            (int)($profile['recent_samples_3h'] ?? 0),
+            $profile['corridor_range_3h'] ?? null,
+            $profile['impulse_strength_3h'] ?? null
+        );
+
+        $short6h = $this->windowActivityState(
+            (int)($profile['recent_samples_6h'] ?? 0),
+            $profile['corridor_range_6h'] ?? null,
+            $profile['impulse_strength_6h'] ?? null
+        );
+
+        // 12h: no direct corridor/impulse in profile — proxy via 24h metrics + 12h sample count
+        $s12h        = (int)($profile['recent_samples_12h'] ?? 0);
+        $range24h    = $profile['corridor_range_24h'] ?? null;
+        $impulse24h  = $profile['impulse_strength_24h'] ?? null;
+        $intraday12h = 'insufficient_data';
+        if ($s12h >= 2) {
+            if ($range24h !== null && $range24h >= 0.5 && ($impulse24h ?? 0.0) >= 0.25 && $s12h >= 10) {
+                $intraday12h = 'active';
+            } elseif ($range24h !== null && $range24h >= 0.2) {
+                $intraday12h = 'cooling';
+            } else {
+                $intraday12h = 'flat';
+            }
+        }
+
+        $daily24h = $this->windowActivityState(
+            (int)($profile['recent_samples_24h'] ?? 0),
+            $range24h,
+            $impulse24h
+        );
+
+        // ── Structural states (24h primary) ────────────────────────────────────
+        $corridorState = $this->deriveCorridorState($range24h);
+        $impulseState  = $this->deriveImpulseState($impulse24h);
+
+        $pullbackState     = (string)($profile['pullback_profile_24h']     ?? 'insufficient_data');
+        $continuationState = (string)($profile['continuation_profile_24h'] ?? 'insufficient_data');
+
+        $vol24h         = $profile['volatility_profile_24h'] ?? null;
+        $volatilityState = $this->deriveVolatilityState($vol24h);
+
+        $liquidityProfile = $profile['liquidity_profile_24h'] ?? [];
+        $liquidityState   = is_array($liquidityProfile)
+            ? (string)($liquidityProfile['state'] ?? 'insufficient_data')
+            : 'insufficient_data';
+
+        $oiPressureState = (string)($profile['oi_pressure_profile_24h'] ?? 'insufficient_data');
+
+        // ── Derived composite states ────────────────────────────────────────────
+        $cycleBiasState      = $this->deriveCycleBiasState($impulseState, $continuationState, $pullbackState);
+        $cycleQualityState   = $this->deriveCycleQualityState($confidence, (int)($profile['recent_samples_24h'] ?? 0));
+        $cycleStabilityState = $this->deriveCycleStabilityState($volatilityState, $corridorState);
+        $cycleEntryReadiness = $this->deriveCycleEntryReadiness($state, $confidence, $impulseState, $volatilityState, $liquidityState, $continuationState);
+        $cyclePmReadiness    = $this->deriveCyclePmReadiness($state, $confidence, $corridorState, $volatilityState);
+
+        // ── Low-confidence reason ───────────────────────────────────────────────
+        $lowConfidenceReason = null;
+        if ($confidence === 'none' || $state === 'insufficient_data') {
+            $s24h = (int)($profile['recent_samples_24h'] ?? 0);
+            if ($s24h < 2) {
+                $lowConfidenceReason = 'insufficient_24h_samples';
+            } elseif ($state === 'insufficient_data') {
+                $lowConfidenceReason = 'state_undetermined';
+            } else {
+                $lowConfidenceReason = 'no_confidence';
+            }
+        } elseif ($confidence === 'low') {
+            $lowConfidenceReason = 'low_sample_count';
+        }
+
+        return [
+            'symbol'                    => (string)($profile['symbol'] ?? ''),
+            'updated_at'                => $generatedAt,
+            'behavior_cycle_state'      => $state,
+            'behavior_cycle_confidence' => $confidence,
+            'hot_state_1h'              => $hot1h,
+            'hot_state_2h'              => $hot2h,
+            'short_state_3h'            => $short3h,
+            'short_state_6h'            => $short6h,
+            'intraday_state_12h'        => $intraday12h,
+            'daily_state_24h'           => $daily24h,
+            'behavior_context_7d_state' => (string)($profile['behavior_context_7d_state'] ?? 'insufficient_data'),
+            'corridor_state'            => $corridorState,
+            'impulse_state'             => $impulseState,
+            'pullback_state'            => $pullbackState,
+            'continuation_state'        => $continuationState,
+            'volatility_state'          => $volatilityState,
+            'liquidity_state'           => $liquidityState,
+            'oi_pressure_state'         => $oiPressureState,
+            'cycle_bias_state'          => $cycleBiasState,
+            'cycle_quality_state'       => $cycleQualityState,
+            'cycle_stability_state'     => $cycleStabilityState,
+            'cycle_entry_readiness'     => $cycleEntryReadiness,
+            'cycle_pm_readiness'        => $cyclePmReadiness,
+            'low_confidence_reason'     => $lowConfidenceReason,
+            'source_profile_updated_at' => $profile['updated_at'] ?? null,
+        ];
+    }
+
+    /**
+     * Classify window activity from sample count, corridor range %, and impulse strength.
+     * Returns 'active'|'cooling'|'flat'|'insufficient_data'.
+     */
+    private function windowActivityState(int $samples, ?float $corridorRange, ?float $impulse): string
+    {
+        if ($samples < 2 || $corridorRange === null) {
+            return 'insufficient_data';
+        }
+        $imp = $impulse ?? 0.0;
+        if ($corridorRange >= 0.5 && $imp >= 0.25) {
+            return 'active';
+        }
+        if ($corridorRange < 0.2) {
+            return 'flat';
+        }
+        return 'cooling';
+    }
+
+    /**
+     * Corridor state from 24h range %.
+     * Returns 'wide'|'normal'|'narrow'|'tight'|'insufficient_data'.
+     */
+    private function deriveCorridorState(?float $range24h): string
+    {
+        if ($range24h === null) {
+            return 'insufficient_data';
+        }
+        if ($range24h >= 3.0) { return 'wide'; }
+        if ($range24h >= 1.0) { return 'normal'; }
+        if ($range24h >= 0.3) { return 'narrow'; }
+        return 'tight';
+    }
+
+    /**
+     * Impulse state from 24h impulse strength (0–1).
+     * Returns 'strong'|'moderate'|'weak'|'insufficient_data'.
+     */
+    private function deriveImpulseState(?float $impulse24h): string
+    {
+        if ($impulse24h === null) {
+            return 'insufficient_data';
+        }
+        if ($impulse24h >= 0.6) { return 'strong'; }
+        if ($impulse24h >= 0.3) { return 'moderate'; }
+        return 'weak';
+    }
+
+    /**
+     * Volatility state from 24h coefficient-of-variation %.
+     * Returns 'high'|'moderate'|'low'|'insufficient_data'.
+     */
+    private function deriveVolatilityState(?float $vol24h): string
+    {
+        if ($vol24h === null) {
+            return 'insufficient_data';
+        }
+        if ($vol24h >= 2.0)  { return 'high'; }
+        if ($vol24h >= 0.5)  { return 'moderate'; }
+        return 'low';
+    }
+
+    /**
+     * Cycle bias: directional character derived from impulse, continuation, pullback.
+     * Returns 'directional'|'reverting'|'choppy'|'neutral'|'insufficient_data'.
+     */
+    private function deriveCycleBiasState(string $impulse, string $continuation, string $pullback): string
+    {
+        if ($impulse === 'insufficient_data' && $continuation === 'insufficient_data') {
+            return 'insufficient_data';
+        }
+        if ($pullback === 'severe') {
+            return 'reverting';
+        }
+        if ($impulse === 'strong' && in_array($continuation, ['moderate', 'strong'], true)) {
+            return 'directional';
+        }
+        if ($impulse === 'weak' && $continuation === 'none') {
+            return 'choppy';
+        }
+        return 'neutral';
+    }
+
+    /**
+     * Cycle quality: overall data quality label.
+     * Returns 'high'|'medium'|'low'|'insufficient_data'.
+     */
+    private function deriveCycleQualityState(string $confidence, int $samples24h): string
+    {
+        if ($confidence === 'none') { return 'insufficient_data'; }
+        if ($confidence === 'high' && $samples24h >= 100) { return 'high'; }
+        if ($confidence === 'medium')                     { return 'medium'; }
+        if ($confidence === 'high')                       { return 'medium'; } // high conf but not enough samples for 'high' quality
+        return 'low';
+    }
+
+    /**
+     * Cycle stability: how settled/predictable the price corridor is.
+     * Returns 'stable'|'moderate'|'volatile'|'insufficient_data'.
+     */
+    private function deriveCycleStabilityState(string $volatility, string $corridor): string
+    {
+        if ($volatility === 'insufficient_data' || $corridor === 'insufficient_data') {
+            return 'insufficient_data';
+        }
+        if ($volatility === 'high' || $corridor === 'wide') {
+            return 'volatile';
+        }
+        if ($volatility === 'low' && in_array($corridor, ['narrow', 'tight'], true)) {
+            return 'stable';
+        }
+        return 'moderate';
+    }
+
+    /**
+     * Cycle entry readiness: whether this symbol looks favourable for a new entry.
+     * Returns 'ready'|'marginal'|'not_ready'.
+     */
+    private function deriveCycleEntryReadiness(
+        string $state,
+        string $confidence,
+        string $impulse,
+        string $volatility,
+        string $liquidity,
+        string $continuation
+    ): string {
+        if ($confidence === 'none' || $state === 'insufficient_data') {
+            return 'not_ready';
+        }
+        if ($state !== 'active') {
+            return 'not_ready';
+        }
+        // Active but high volatility or poor liquidity → marginal
+        if ($volatility === 'high') {
+            return 'marginal';
+        }
+        if (in_array($liquidity, ['insufficient_data', 'unknown', 'low'], true)) {
+            return 'marginal';
+        }
+        if ($impulse === 'strong' && in_array($continuation, ['moderate', 'strong'], true)) {
+            return 'ready';
+        }
+        return 'marginal';
+    }
+
+    /**
+     * Cycle PM readiness: whether conditions support profit-manager trailing.
+     * Returns 'ready'|'marginal'|'not_ready'.
+     */
+    private function deriveCyclePmReadiness(
+        string $state,
+        string $confidence,
+        string $corridor,
+        string $volatility
+    ): string {
+        if ($confidence === 'none' || $state === 'insufficient_data') {
+            return 'not_ready';
+        }
+        if ($state === 'active' && in_array($corridor, ['normal', 'wide'], true) && $volatility !== 'high') {
+            return 'ready';
+        }
+        if ($state !== 'flat') {
+            return 'marginal';
+        }
+        return 'not_ready';
+    }
+
     /**
      * Read all parser2 NDJSON records for one symbol that fall within the 7d window.
      * Reads daily files for the last 8 calendar days (extra day for timezone boundaries).

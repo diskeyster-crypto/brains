@@ -2496,6 +2496,579 @@ final class CoinPassportEngine
      *
      * bootstrap_live is treated as yellow: the coin is live-capable but still on probation.
      */
+    // =========================================================================
+    // Coin Cycle Profile (data layer — not yet wired into live or PM decisions)
+    // =========================================================================
+
+    /**
+     * Build derived coin behavior cycle profiles from parser2_history_accumulator NDJSON data.
+     *
+     * Primary window: 24h. Context window: 7d. Data older than 7d is excluded entirely.
+     * Output is a read-only behavior profile artifact — does NOT feed into live admission
+     * or PM decisions at this stage.
+     *
+     * @param string $parser2StorageDir  Absolute path to parser2 per-symbol storage root
+     *                                   (contains {SYMBOL}/{YYYY-MM-DD}.ndjson files)
+     * @param string $runtimeOutputPath  Absolute path to write coin_cycle_profile.json
+     * @param int    $now                Unix timestamp (0 = use time())
+     * @return array<string,mixed>
+     */
+    public function buildCoinCycleProfiles(string $parser2StorageDir, string $runtimeOutputPath, int $now = 0): array
+    {
+        if ($now === 0) {
+            $now = time();
+        }
+        $generatedAt = date('c', $now);
+
+        /** @var array<string,int> $cutoffs */
+        $cutoffs = [
+            '1h'  => $now - 3600,
+            '2h'  => $now - 7200,
+            '3h'  => $now - 10800,
+            '6h'  => $now - 21600,
+            '12h' => $now - 43200,
+            '24h' => $now - 86400,
+            '7d'  => $now - 604800,
+        ];
+
+        $cycleSymbolsTotal = 0;
+        $cycleProfilesOk   = 0;
+        $cycleErrorTotal   = 0;
+        $profiles          = [];
+
+        if (is_dir($parser2StorageDir)) {
+            $entries = scandir($parser2StorageDir) ?: [];
+            foreach ($entries as $entry) {
+                if ($entry === '.' || $entry === '..') {
+                    continue;
+                }
+                $entryPath = $parser2StorageDir . '/' . $entry;
+                if (!is_dir($entryPath)) {
+                    continue;
+                }
+                // Symbol directory names are uppercase alphanumeric (e.g. BTCUSDT)
+                if (!preg_match('/^[A-Z][A-Z0-9]+$/', $entry)) {
+                    continue;
+                }
+                $cycleSymbolsTotal++;
+                $symbol = $entry;
+                try {
+                    $records           = $this->readParser2SymbolRecords($entryPath, $cutoffs['7d'], $now);
+                    $profiles[$symbol] = $this->computeCycleProfile($symbol, $records, $cutoffs, $generatedAt);
+                    $cycleProfilesOk++;
+                } catch (\Throwable $ex) {
+                    $profiles[$symbol] = [
+                        'symbol'                    => $symbol,
+                        'updated_at'                => $generatedAt,
+                        'behavior_cycle_state'      => 'error',
+                        'behavior_cycle_confidence' => 'none',
+                    ];
+                    $cycleErrorTotal++;
+                }
+            }
+            ksort($profiles);
+        }
+
+        $artifact = [
+            'generated_at'                   => $generatedAt,
+            'source'                         => 'parser2_history_accumulator',
+            'symbols_total'                  => $cycleSymbolsTotal,
+            'generated_ok'                   => $cycleProfilesOk,
+            'cycle_symbols_total'            => $cycleSymbolsTotal,
+            'cycle_profiles_generated_total' => $cycleProfilesOk,
+            'cycle_generation_error_total'   => $cycleErrorTotal,
+            'symbols'                        => $profiles,
+        ];
+
+        $runtimeDir = dirname($runtimeOutputPath);
+        if (!is_dir($runtimeDir)) {
+            @mkdir($runtimeDir, 0755, true);
+        }
+        @file_put_contents(
+            $runtimeOutputPath,
+            json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $artifact;
+    }
+
+    /**
+     * Read all parser2 NDJSON records for one symbol that fall within the 7d window.
+     * Reads daily files for the last 8 calendar days (extra day for timezone boundaries).
+     *
+     * @param  string $symDir   Absolute path to the symbol's NDJSON directory
+     * @param  int    $cutoff7d Unix timestamp: exclude records older than this
+     * @param  int    $now      Current Unix timestamp
+     * @return list<array<string,mixed>>  Records sorted by ts_unix ascending
+     */
+    private function readParser2SymbolRecords(string $symDir, int $cutoff7d, int $now): array
+    {
+        $records = [];
+        for ($i = 0; $i <= 7; $i++) {
+            $day  = date('Y-m-d', $now - $i * 86400);
+            $file = $symDir . '/' . $day . '.ndjson';
+            if (!is_file($file)) {
+                continue;
+            }
+            $lines = @file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if ($lines === false) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                $row = json_decode($line, true);
+                if (!is_array($row)) {
+                    continue;
+                }
+                $tsUnix = (int)($row['ts_unix'] ?? 0);
+                if ($tsUnix < $cutoff7d) {
+                    continue; // Older than 7d — exclude
+                }
+                $records[] = $row;
+            }
+        }
+        // Sort ascending by ts_unix (oldest first — needed for directional metrics)
+        usort($records, static fn(array $a, array $b): int => $a['ts_unix'] <=> $b['ts_unix']);
+        return $records;
+    }
+
+    /**
+     * Compute the derived cycle profile for one symbol from its NDJSON records.
+     *
+     * @param  string                    $symbol
+     * @param  list<array<string,mixed>> $records    All 7d records sorted ascending by ts_unix
+     * @param  array<string,int>         $cutoffs    Window cutoffs keyed by '1h','2h',…,'7d'
+     * @param  string                    $generatedAt ISO timestamp string
+     * @return array<string,mixed>
+     */
+    private function computeCycleProfile(
+        string $symbol,
+        array  $records,
+        array  $cutoffs,
+        string $generatedAt
+    ): array {
+        // Partition records into per-window buckets
+        $b1h  = [];
+        $b2h  = [];
+        $b3h  = [];
+        $b6h  = [];
+        $b12h = [];
+        $b24h = [];
+        $b7d  = $records;
+
+        foreach ($records as $r) {
+            $ts = (int)($r['ts_unix'] ?? 0);
+            if ($ts >= $cutoffs['1h'])  { $b1h[]  = $r; }
+            if ($ts >= $cutoffs['2h'])  { $b2h[]  = $r; }
+            if ($ts >= $cutoffs['3h'])  { $b3h[]  = $r; }
+            if ($ts >= $cutoffs['6h'])  { $b6h[]  = $r; }
+            if ($ts >= $cutoffs['12h']) { $b12h[] = $r; }
+            if ($ts >= $cutoffs['24h']) { $b24h[] = $r; }
+        }
+
+        // Pre-compute 24h metrics used by state/confidence/context
+        $range24h   = $this->cycleCorridorRange($b24h);
+        $impulse24h = $this->cycleImpulseStrength($b24h);
+        $vol24h     = $this->cycleVolatilityPct($b24h);
+
+        $profile = [
+            'symbol'     => $symbol,
+            'updated_at' => $generatedAt,
+            // Sample counts per window
+            'recent_samples_1h'  => count($b1h),
+            'recent_samples_2h'  => count($b2h),
+            'recent_samples_3h'  => count($b3h),
+            'recent_samples_6h'  => count($b6h),
+            'recent_samples_12h' => count($b12h),
+            'recent_samples_24h' => count($b24h),
+            'recent_samples_7d'  => count($b7d),
+            // Corridor ranges (% of mid-price; null = insufficient samples)
+            'corridor_range_1h'  => $this->cycleCorridorRange($b1h),
+            'corridor_range_3h'  => $this->cycleCorridorRange($b3h),
+            'corridor_range_6h'  => $this->cycleCorridorRange($b6h),
+            'corridor_range_24h' => $range24h,
+            // Impulse strength: 0.0 = choppy/flat, 1.0 = strongly directional
+            'impulse_strength_1h'  => $this->cycleImpulseStrength($b1h),
+            'impulse_strength_3h'  => $this->cycleImpulseStrength($b3h),
+            'impulse_strength_6h'  => $this->cycleImpulseStrength($b6h),
+            'impulse_strength_24h' => $impulse24h,
+            // Pullback profiles
+            'pullback_profile_6h'  => $this->cyclePullbackProfile($b6h),
+            'pullback_profile_24h' => $this->cyclePullbackProfile($b24h),
+            // Continuation profiles
+            'continuation_profile_6h'  => $this->cycleContinuationProfile($b6h),
+            'continuation_profile_24h' => $this->cycleContinuationProfile($b24h),
+            // Volatility profiles (coefficient of variation, %)
+            'volatility_profile_6h'  => $this->cycleVolatilityPct($b6h),
+            'volatility_profile_24h' => $vol24h,
+            // Liquidity (from 24h window)
+            'liquidity_profile_24h' => $this->cycleLiquidityProfile($b24h),
+            // Open-interest pressure
+            'oi_pressure_profile_6h'  => $this->cycleOiPressureProfile($b6h),
+            'oi_pressure_profile_24h' => $this->cycleOiPressureProfile($b24h),
+        ];
+
+        // Behavior cycle state & confidence (24h is the primary window)
+        [$state, $confidence] = $this->cycleBehaviorState(count($b24h), $range24h, $impulse24h);
+        $profile['behavior_cycle_state']      = $state;
+        $profile['behavior_cycle_confidence'] = $confidence;
+
+        // 7d behavior context (weak background signal — must not dominate)
+        $profile['behavior_context_7d_state'] = $this->cycleContext7dState(count($b7d), $range24h, $vol24h);
+
+        return $profile;
+    }
+
+    /**
+     * Price corridor range as a percentage of the mid-price.
+     * Returns null when fewer than 2 price records are available.
+     *
+     * @param list<array<string,mixed>> $records
+     */
+    private function cycleCorridorRange(array $records): ?float
+    {
+        if (count($records) < 2) {
+            return null;
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 2) {
+            return null;
+        }
+        $min = min($prices);
+        $max = max($prices);
+        if ($min <= 0.0) {
+            return null;
+        }
+        return round(($max - $min) / $min * 100.0, 4);
+    }
+
+    /**
+     * Impulse strength: net directional move as a fraction of the total price range.
+     * 0.0 = pure chop (start ≈ end relative to range), 1.0 = perfectly directional.
+     * Returns null when fewer than 2 records.
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     */
+    private function cycleImpulseStrength(array $records): ?float
+    {
+        if (count($records) < 2) {
+            return null;
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 2) {
+            return null;
+        }
+        $first = $prices[0];
+        $last  = $prices[count($prices) - 1];
+        $min   = min($prices);
+        $max   = max($prices);
+        $range = $max - $min;
+        if ($range <= 0.0) {
+            return 0.0;
+        }
+        return round(abs($last - $first) / $range, 4);
+    }
+
+    /**
+     * Pullback profile: classify how much the price retraced from its peak within the window.
+     * Returns 'insufficient_data' when fewer than 3 records.
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     * @return string  'insufficient_data'|'none'|'mild'|'moderate'|'severe'
+     */
+    private function cyclePullbackProfile(array $records): string
+    {
+        if (count($records) < 3) {
+            return 'insufficient_data';
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 3) {
+            return 'insufficient_data';
+        }
+        // Find peak index
+        $peakIdx = 0;
+        $peakVal = $prices[0];
+        foreach ($prices as $i => $p) {
+            if ($p > $peakVal) {
+                $peakVal = $p;
+                $peakIdx = $i;
+            }
+        }
+        // Minimum after the peak (retracement from peak)
+        $postPeak = array_slice($prices, $peakIdx);
+        if (count($postPeak) < 2) {
+            return 'none'; // Peak is at the very end — no retracement measurable
+        }
+        $minAfterPeak = min($postPeak);
+        if ($peakVal <= 0.0) {
+            return 'insufficient_data';
+        }
+        $retrace = ($peakVal - $minAfterPeak) / $peakVal;
+        if ($retrace < 0.005) {
+            return 'none';
+        }
+        if ($retrace < 0.02) {
+            return 'mild';
+        }
+        if ($retrace < 0.05) {
+            return 'moderate';
+        }
+        return 'severe';
+    }
+
+    /**
+     * Continuation profile: how much of the total range was sustained (not retraced) at window end.
+     * Returns 'insufficient_data' when fewer than 3 records.
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     * @return string  'insufficient_data'|'none'|'weak'|'moderate'|'strong'
+     */
+    private function cycleContinuationProfile(array $records): string
+    {
+        if (count($records) < 3) {
+            return 'insufficient_data';
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 3) {
+            return 'insufficient_data';
+        }
+        $first = $prices[0];
+        $last  = $prices[count($prices) - 1];
+        $min   = min($prices);
+        $max   = max($prices);
+        $range = $max - $min;
+        if ($range <= 0.0) {
+            return 'none';
+        }
+        $netMove      = abs($last - $first);
+        $continuation = $netMove / $range;
+        if ($continuation < 0.1) {
+            return 'none';
+        }
+        if ($continuation < 0.35) {
+            return 'weak';
+        }
+        if ($continuation < 0.65) {
+            return 'moderate';
+        }
+        return 'strong';
+    }
+
+    /**
+     * Volatility profile: coefficient of variation (std deviation / mean) of last_price, as %.
+     * Returns null when fewer than 2 records.
+     *
+     * @param list<array<string,mixed>> $records
+     */
+    private function cycleVolatilityPct(array $records): ?float
+    {
+        if (count($records) < 2) {
+            return null;
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        $n = count($prices);
+        if ($n < 2) {
+            return null;
+        }
+        $mean = array_sum($prices) / $n;
+        if ($mean <= 0.0) {
+            return null;
+        }
+        $variance = 0.0;
+        foreach ($prices as $p) {
+            $variance += ($p - $mean) ** 2;
+        }
+        $std = sqrt($variance / $n);
+        return round($std / $mean * 100.0, 4);
+    }
+
+    /**
+     * Liquidity profile derived from 24h volume/turnover/spread snapshots.
+     *
+     * @param list<array<string,mixed>> $records
+     * @return array<string,mixed>
+     */
+    private function cycleLiquidityProfile(array $records): array
+    {
+        if (empty($records)) {
+            return ['state' => 'insufficient_data', 'samples' => 0];
+        }
+        $spreads   = [];
+        $volumes   = [];
+        $turnovers = [];
+        foreach ($records as $r) {
+            $ask  = (float)($r['ask1_price'] ?? 0);
+            $bid  = (float)($r['bid1_price'] ?? 0);
+            $last = (float)($r['last_price']  ?? 0);
+            $vol  = (float)($r['volume24h']   ?? 0);
+            $turn = (float)($r['turnover24h'] ?? 0);
+            if ($ask > 0.0 && $bid > 0.0 && $last > 0.0) {
+                $spreads[] = ($ask - $bid) / $last * 100.0;
+            }
+            if ($vol  > 0.0) { $volumes[]   = $vol;  }
+            if ($turn > 0.0) { $turnovers[] = $turn; }
+        }
+        $avgSpread   = count($spreads)   > 0 ? round(array_sum($spreads)   / count($spreads),   6) : null;
+        $avgVolume   = count($volumes)   > 0 ? round(array_sum($volumes)   / count($volumes),   2) : null;
+        $avgTurnover = count($turnovers) > 0 ? round(array_sum($turnovers) / count($turnovers), 2) : null;
+
+        $state = 'unknown';
+        if ($avgTurnover !== null) {
+            if ($avgTurnover >= 10_000_000) {
+                $state = 'high';
+            } elseif ($avgTurnover >= 1_000_000) {
+                $state = 'medium';
+            } elseif ($avgTurnover > 0.0) {
+                $state = 'low';
+            }
+        }
+        return [
+            'state'           => $state,
+            'avg_spread_pct'  => $avgSpread,
+            'avg_volume24h'   => $avgVolume,
+            'avg_turnover24h' => $avgTurnover,
+            'samples'         => count($records),
+        ];
+    }
+
+    /**
+     * Open-interest pressure: detect whether OI is trending up/flat/down over the window.
+     * Reads openInterestValue from the raw 'data' field (Bybit linear ticker).
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     * @return string  'insufficient_data'|'falling'|'flat'|'rising'
+     */
+    private function cycleOiPressureProfile(array $records): string
+    {
+        if (count($records) < 3) {
+            return 'insufficient_data';
+        }
+        $oiValues = [];
+        foreach ($records as $r) {
+            $raw = is_array($r['data'] ?? null) ? $r['data'] : [];
+            $oi  = null;
+            if (isset($raw['openInterestValue'])) {
+                $oi = (float)$raw['openInterestValue'];
+            } elseif (isset($raw['openInterest'])) {
+                $oi = (float)$raw['openInterest'];
+            }
+            if ($oi !== null && $oi > 0.0) {
+                $oiValues[] = $oi;
+            }
+        }
+        if (count($oiValues) < 3) {
+            return 'insufficient_data';
+        }
+        $first = $oiValues[0];
+        $last  = $oiValues[count($oiValues) - 1];
+        if ($first <= 0.0) {
+            return 'insufficient_data';
+        }
+        $changePct = ($last - $first) / $first * 100.0;
+        if ($changePct > 1.0) {
+            return 'rising';
+        }
+        if ($changePct < -1.0) {
+            return 'falling';
+        }
+        return 'flat';
+    }
+
+    /**
+     * Behavior cycle state classification driven by the 24h window.
+     *
+     * States:
+     *   active            – substantial range + directional character in 24h
+     *   cooling           – some range but losing direction
+     *   flat              – very low range (coin barely moving)
+     *   insufficient_data – too few samples to determine state
+     *
+     * @param int        $samples24h  Number of ticker records in 24h window
+     * @param float|null $range24h    Price corridor range % (may be null)
+     * @param float|null $impulse24h  Impulse strength 0–1 (may be null)
+     * @return array{string, string}  [state, confidence]
+     */
+    private function cycleBehaviorState(int $samples24h, ?float $range24h, ?float $impulse24h): array
+    {
+        if ($samples24h < 2 || $range24h === null) {
+            return ['insufficient_data', 'none'];
+        }
+        $confidence = 'none';
+        if ($samples24h >= 100) {
+            $confidence = 'high';
+        } elseif ($samples24h >= 20) {
+            $confidence = 'medium';
+        } elseif ($samples24h >= 2) {
+            $confidence = 'low';
+        }
+        $impulse = $impulse24h ?? 0.0;
+        // Active: meaningful range + clear directional character
+        if ($range24h >= 1.0 && $impulse >= 0.3) {
+            return ['active', $confidence];
+        }
+        // Flat: very low range regardless of direction
+        if ($range24h < 0.3) {
+            return ['flat', $confidence];
+        }
+        // Some range but losing direction or low impulse → cooling
+        return ['cooling', $confidence];
+    }
+
+    /**
+     * 7d behavior context state (weak background signal — must not dominate decisions).
+     *
+     * @param int        $samples7d  Number of records in 7d window
+     * @param float|null $range24h   Price range % from 24h (most recent activity proxy)
+     * @param float|null $vol24h     Volatility % from 24h
+     * @return string  'insufficient_data'|'active'|'moderate'|'quiet'
+     */
+    private function cycleContext7dState(int $samples7d, ?float $range24h, ?float $vol24h): string
+    {
+        if ($samples7d < 3 || $range24h === null) {
+            return 'insufficient_data';
+        }
+        if ($range24h >= 1.5 && $samples7d >= 20) {
+            return 'active';
+        }
+        if ($range24h >= 0.5 || $samples7d >= 10) {
+            return 'moderate';
+        }
+        return 'quiet';
+    }
+
+    // =========================================================================
+    // Trust state
+    // =========================================================================
+
     private function computeTrustState(
         string $liveEligibility,
         string $dataConfidence,

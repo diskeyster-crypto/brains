@@ -12,6 +12,11 @@ declare(strict_types=1);
  *   coin_passport:rebuildRecentSymbols — lighter pass for recently active symbols (every 1 h)
  */
 return [
+    'buildCycleProfiles' => [
+        'interval'    => 3600, // 1 hour
+        'enabled'     => true,
+        'description' => 'Coin Passport: build derived coin behavior cycle profiles from parser2 history data',
+    ],
     'rebuildAll' => [
         'interval'    => 21600, // 6 hours
         'enabled'     => true,

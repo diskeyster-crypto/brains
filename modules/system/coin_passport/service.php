@@ -289,6 +289,39 @@ final class CoinPassportService
     // =========================================================================
 
     /**
+     * Build derived coin behavior cycle profiles from parser2_history_accumulator NDJSON data.
+     * Data-layer only — does NOT feed into live admission or PM decisions yet.
+     * Called by CronManager (coin_passport:buildCycleProfiles).
+     *
+     * @return array<string,mixed>
+     */
+    public function buildCycleProfiles(): array
+    {
+        $parser2StorageDir = __DIR__ . '/../../parser/parser2_history_accumulator/storage';
+        $runtimeDir        = $this->storageDir . '/runtime';
+        $outputPath        = $runtimeDir . '/coin_cycle_profile.json';
+
+        try {
+            $result = $this->engine->buildCoinCycleProfiles($parser2StorageDir, $outputPath);
+            return [
+                'ok'                             => true,
+                'cycle_symbols_total'            => $result['cycle_symbols_total']            ?? 0,
+                'cycle_profiles_generated_total' => $result['cycle_profiles_generated_total'] ?? 0,
+                'cycle_generation_error_total'   => $result['cycle_generation_error_total']   ?? 0,
+                'generated_at'                   => $result['generated_at']                   ?? date('c'),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok'                             => false,
+                'cycle_symbols_total'            => 0,
+                'cycle_profiles_generated_total' => 0,
+                'cycle_generation_error_total'   => 1,
+                'error'                          => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Return a full guidance block for Brain to consume before signal approval.
      * Authoritative live eligibility gate output.
      *

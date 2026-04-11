@@ -172,6 +172,14 @@ final class CoinPassportService
             // non-fatal
         }
 
+        // Apply bounded cycle eligibility refinement from decision model (Coin Core Step 13).
+        // Best-effort, non-fatal — failure leaves recommended_live_eligibility unchanged.
+        try {
+            $this->applyCycleEligibilityRefinement();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -268,6 +276,13 @@ final class CoinPassportService
         // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
         try {
             $this->projectCycleDecisionModelToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Apply bounded cycle eligibility refinement from decision model (Coin Core Step 13).
+        try {
+            $this->applyCycleEligibilityRefinement();
         } catch (\Throwable $e) {
             // non-fatal
         }
@@ -443,6 +458,14 @@ final class CoinPassportService
                 // non-fatal
             }
 
+            // Apply bounded cycle eligibility refinement from decision model (Coin Core Step 13).
+            $refinementResult = [];
+            try {
+                $refinementResult = $this->applyCycleEligibilityRefinement();
+            } catch (\Throwable $refineEx) {
+                // non-fatal
+            }
+
             return [
                 'ok'                              => true,
                 'cycle_symbols_total'             => $result['cycle_symbols_total']            ?? 0,
@@ -468,6 +491,13 @@ final class CoinPassportService
                 'decision_symbols_total'          => $decisionResult['symbols_total']          ?? 0,
                 'decision_written_total'          => $decisionResult['models_written_total']   ?? 0,
                 'decision_error_total'            => $decisionResult['error_total']            ?? 0,
+                'refinement_symbols_total'        => $refinementResult['symbols_total']   ?? 0,
+                'refinement_processed_total'      => $refinementResult['processed_total'] ?? 0,
+                'refinement_upgrade_total'        => $refinementResult['upgrade_total']   ?? 0,
+                'refinement_downgrade_total'      => $refinementResult['downgrade_total'] ?? 0,
+                'refinement_no_effect_total'      => $refinementResult['no_effect_total'] ?? 0,
+                'refinement_unavailable_total'    => $refinementResult['unavailable_total'] ?? 0,
+                'refinement_error_total'          => $refinementResult['error_total']     ?? 0,
             ];
         } catch (\Throwable $e) {
             return [
@@ -678,6 +708,37 @@ final class CoinPassportService
                 'low_confidence_total' => 0,
                 'error_total'          => 1,
                 'error'                => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Apply bounded cycle-aware eligibility refinement to each passport.
+     * Reads coin_cycle_decision_model already in each passport, applies conservative
+     * bounded rules to refine recommended_live_eligibility (Coin Core Step 13).
+     * Called after projectCycleDecisionModelToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function applyCycleEligibilityRefinement(): array
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $outputPath = $runtimeDir . '/coin_cycle_eligibility_refinement.json';
+
+        try {
+            return $this->engine->applyCycleEligibilityRefinement($outputPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'      => date('c'),
+                'source'          => 'passport coin_cycle_decision_model',
+                'symbols_total'   => 0,
+                'processed_total' => 0,
+                'upgrade_total'   => 0,
+                'downgrade_total' => 0,
+                'no_effect_total' => 0,
+                'unavailable_total' => 0,
+                'error_total'     => 1,
+                'error'           => $e->getMessage(),
             ];
         }
     }

@@ -937,6 +937,12 @@ final class SmartBrainCore
             'cycle_model_support_no_effect_total'  => (int)($liveIntentResult['cycle_model_support_no_effect_total'] ?? 0),
             // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
             'cycle_model_support_preview'         => $liveIntentResult['cycle_model_support_preview'] ?? [],
+            // Coin cycle eligibility refinement counters (Coin Core Step 13)
+            'cycle_eligibility_refine_total'      => (int)($liveIntentResult['cycle_eligibility_refine_total']      ?? 0),
+            'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
+            'cycle_eligibility_downgrade_total'   => (int)($liveIntentResult['cycle_eligibility_downgrade_total']   ?? 0),
+            'cycle_eligibility_no_effect_total'   => (int)($liveIntentResult['cycle_eligibility_no_effect_total']   ?? 0),
+            'cycle_eligibility_unavailable_total' => (int)($liveIntentResult['cycle_eligibility_unavailable_total'] ?? 0),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1050,6 +1056,12 @@ final class SmartBrainCore
             'cycle_model_support_no_effect_total'  => 0,
             // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
             'cycle_model_support_preview'         => [],
+            // Coin cycle eligibility refinement counters (Coin Core Step 13)
+            'cycle_eligibility_refine_total'      => 0,
+            'cycle_eligibility_upgrade_total'     => 0,
+            'cycle_eligibility_downgrade_total'   => 0,
+            'cycle_eligibility_no_effect_total'   => 0,
+            'cycle_eligibility_unavailable_total' => 0,
             // Intent lifecycle diagnostics
             'lifecycle_counters' => [],
             'lifecycle_summary' => [],
@@ -1126,6 +1138,16 @@ final class SmartBrainCore
                     $cpEng->projectCycleDecisionModelToPassports(
                         $cpRuntimeDir . '/coin_cycle_decision_model_projection.json'
                     );
+                    // Step 13: Apply cycle-aware eligibility refinement immediately after the
+                    // decision model is projected so Smart Brain reads already-refined passports.
+                    // Best-effort, non-fatal — failure leaves recommended_live_eligibility unchanged.
+                    try {
+                        $cpEng->applyCycleEligibilityRefinement(
+                            $cpRuntimeDir . '/coin_cycle_eligibility_refinement.json'
+                        );
+                    } catch (\Throwable $refineEx) {
+                        // non-fatal
+                    }
                 }
             } catch (\Throwable $e) {
                 // non-fatal — passports load without cycle decision model
@@ -1648,6 +1670,15 @@ final class SmartBrainCore
                 ];
             }
 
+            // Step 13: cycle eligibility refinement observability variables.
+            // Populated inside the passport gate when passport is found; remain null/false
+            // when passport is absent or refinement has not yet been applied.
+            $cycleRefUsed            = false;
+            $cycleRefApplied         = false;
+            $cycleRefReason          = null;
+            $passportEligBase        = null;
+            $passportEligAfterCycle  = null;
+
             // === COIN PASSPORT LIVE GATE ===
             // Brain reads Coin Passport before allowing live signal issuance.
             // Gate result: allow_live | bootstrap_live | sim_only | shadow_only | reject
@@ -1685,6 +1716,31 @@ final class SmartBrainCore
                     $passportNoiseScore   = (float)($passport['noise_score'] ?? 1.0);
                     $pb                   = is_array($passport['pattern_behavior'] ?? null) ? $passport['pattern_behavior'] : [];
                     $passportV2Success    = is_float($pb['v2_success_rate'] ?? null) ? (float)$pb['v2_success_rate'] : null;
+
+                    // Step 13: Read cycle eligibility refinement fields written by
+                    // applyCycleEligibilityRefinement() (Coin Core Step 13).
+                    // recommended_live_eligibility already reflects the refined value when present.
+                    if (array_key_exists('cycle_refinement_applied', $passport)) {
+                        $cycleRefUsed           = true;
+                        $cycleRefApplied        = (bool)($passport['cycle_refinement_applied'] ?? false);
+                        $cycleRefReason         = ($passport['cycle_refinement_reason'] ?? null) ?: null;
+                        $passportEligBase       = ($passport['base_live_eligibility'] ?? null) ?: null;
+                        $passportEligAfterCycle = ($passport['cycle_refined_live_eligibility'] ?? null) ?: null;
+                        // Increment Step 13 counters
+                        $result['cycle_eligibility_refine_total']++;
+                        if ($cycleRefApplied && $passportEligBase !== null && $passportEligAfterCycle !== null) {
+                            $eligOrder = ['shadow_only' => 0, 'sim_only' => 1, 'bootstrap_live' => 2, 'allow_live' => 3];
+                            if (($eligOrder[$passportEligAfterCycle] ?? 1) > ($eligOrder[$passportEligBase] ?? 1)) {
+                                $result['cycle_eligibility_upgrade_total']++;
+                            } else {
+                                $result['cycle_eligibility_downgrade_total']++;
+                            }
+                        } else {
+                            $result['cycle_eligibility_no_effect_total']++;
+                        }
+                    } else {
+                        $result['cycle_eligibility_unavailable_total']++;
+                    }
 
                     // Track low-confidence passports regardless of eligibility decision
                     if ($passportConfidence === 'none' || $passportConfidence === 'low') {
@@ -1756,10 +1812,22 @@ final class SmartBrainCore
                             ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: 'reject'] ?? 0) + 1;
                         if (count($result['passport_gate_rejected_preview']) < 10) {
                             $result['passport_gate_rejected_preview'][] = [
-                                'symbol'        => $symbol,
-                                'eligibility'   => $passportEligibility,
-                                'block_reason'  => $passportBlockReason,
-                                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                                'symbol'                           => $symbol,
+                                'eligibility'                      => $passportEligibility,
+                                'block_reason'                     => $passportBlockReason,
+                                'pattern_algorithm'                => (string)($signal['pattern_algorithm'] ?? ''),
+                                // Step 12: cycle support fields for cross-reference
+                                'cycle_model_support_used'         => $cycleModelSupportUsed,
+                                'cycle_model_support_applied'      => $cycleModelSupportApplied,
+                                'cycle_model_support_reason'       => $cycleModelSupportReason,
+                                'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                                'cycle_model_route_after_support'  => $cycleModelRouteAfterSupport,
+                                // Step 13: cycle eligibility refinement fields
+                                'passport_cycle_refinement_used'     => $cycleRefUsed,
+                                'passport_cycle_refinement_applied'  => $cycleRefApplied,
+                                'passport_cycle_refinement_reason'   => $cycleRefReason,
+                                'passport_eligibility_before_cycle'  => $passportEligBase,
+                                'passport_eligibility_after_cycle'   => $passportEligAfterCycle,
                             ];
                         }
                         continue;
@@ -1790,11 +1858,23 @@ final class SmartBrainCore
                             ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: $passportEligibility] ?? 0) + 1;
                         if (count($result['passport_gate_rejected_preview']) < 10) {
                             $result['passport_gate_rejected_preview'][] = [
-                                'symbol'        => $symbol,
-                                'eligibility'   => $passportEligibility,
-                                'block_reason'  => $passportBlockReason,
-                                'insuf_reason'  => $passportInsufReason ?: null,
-                                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                                'symbol'                           => $symbol,
+                                'eligibility'                      => $passportEligibility,
+                                'block_reason'                     => $passportBlockReason,
+                                'insuf_reason'                     => $passportInsufReason ?: null,
+                                'pattern_algorithm'                => (string)($signal['pattern_algorithm'] ?? ''),
+                                // Step 12: cycle support fields for cross-reference
+                                'cycle_model_support_used'         => $cycleModelSupportUsed,
+                                'cycle_model_support_applied'      => $cycleModelSupportApplied,
+                                'cycle_model_support_reason'       => $cycleModelSupportReason,
+                                'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                                'cycle_model_route_after_support'  => $cycleModelRouteAfterSupport,
+                                // Step 13: cycle eligibility refinement fields
+                                'passport_cycle_refinement_used'     => $cycleRefUsed,
+                                'passport_cycle_refinement_applied'  => $cycleRefApplied,
+                                'passport_cycle_refinement_reason'   => $cycleRefReason,
+                                'passport_eligibility_before_cycle'  => $passportEligBase,
+                                'passport_eligibility_after_cycle'   => $passportEligAfterCycle,
                             ];
                         }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_demote:' . $passportEligibility, $selectionMode);
@@ -1987,6 +2067,13 @@ final class SmartBrainCore
             $intent['cycle_model_route_before_support']  = $cycleModelRouteBeforeSupport;
             $intent['cycle_model_route_after_support']   = $cycleModelRouteAfterSupport;
 
+            // Attach cycle eligibility refinement observability fields (Coin Core Step 13)
+            $intent['passport_cycle_refinement_used']    = $cycleRefUsed;
+            $intent['passport_cycle_refinement_applied'] = $cycleRefApplied;
+            $intent['passport_cycle_refinement_reason']  = $cycleRefReason;
+            $intent['passport_eligibility_before_cycle'] = $passportEligBase;
+            $intent['passport_eligibility_after_cycle']  = $passportEligAfterCycle;
+
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
                 $intent['symbol_hints'] = $symbolHints;
@@ -2025,6 +2112,12 @@ final class SmartBrainCore
                     'cycle_model_support_reason' => $cycleModelSupportReason,
                     'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
                     'cycle_model_route_after_support' => $cycleModelRouteAfterSupport,
+                    // Step 13: cycle eligibility refinement observability
+                    'passport_cycle_refinement_used'    => $cycleRefUsed,
+                    'passport_cycle_refinement_applied' => $cycleRefApplied,
+                    'passport_cycle_refinement_reason'  => $cycleRefReason,
+                    'passport_eligibility_before_cycle' => $passportEligBase,
+                    'passport_eligibility_after_cycle'  => $passportEligAfterCycle,
                 ];
             }
         }

@@ -4662,8 +4662,200 @@ final class CoinPassportEngine
         return $projection;
     }
 
-    public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array
+    /**
+     * Apply bounded cycle-aware refinement to each passport's live eligibility.
+     *
+     * Reads the coin_cycle_decision_model already projected into each passport and
+     * applies conservative bounded rules to refine recommended_live_eligibility.
+     * Saves the refined value back to recommended_live_eligibility so Smart Brain
+     * reads it automatically via the existing passport gate path.
+     *
+     * Coin Core Step 13.
+     *
+     * Refinement rules (conservative):
+     *   Upgrade  sim_only → bootstrap_live   : cycle favorable+actionable+live_bias, no risk/warn/lowconf
+     *   Downgrade allow_live → sim_only      : cycle non_actionable+high_risk
+     *   Downgrade allow_live → bootstrap_live: cycle warning+low_confidence
+     *   Downgrade bootstrap_live → sim_only  : cycle non_actionable+(high_risk|weak|unavailable)
+     *   Downgrade bootstrap_live → sim_only  : cycle warning+low_confidence
+     *   shadow_only: never modified (most restrictive state)
+     *
+     * @param  string $outputPath  Absolute path to write coin_cycle_eligibility_refinement.json
+     * @return array<string,mixed>
+     */
+    public function applyCycleEligibilityRefinement(string $outputPath): array
     {
+        $ts             = date('c');
+        $symbolsTotal   = 0;
+        $processedTotal = 0;
+        $upgradeTotal   = 0;
+        $downgradeTotal = 0;
+        $noEffectTotal  = 0;
+        $unavailTotal   = 0;
+        $errorTotal     = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $baseEligibility = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
+                // Preserve original base when refinement is re-applied (subsequent passes)
+                if (array_key_exists('base_live_eligibility', $passport)) {
+                    $baseEligibility = (string)$passport['base_live_eligibility'];
+                }
+
+                $dm = is_array($passport['coin_cycle_decision_model'] ?? null)
+                    ? $passport['coin_cycle_decision_model']
+                    : null;
+
+                if (
+                    $dm === null
+                    || ($dm['decision_model_state'] ?? 'unavailable') === 'unavailable'
+                    || !($dm['available'] ?? true)  // explicit unavailable marker
+                ) {
+                    // Cycle model not present — record but do not change eligibility
+                    $passport['base_live_eligibility']          = $baseEligibility;
+                    $passport['cycle_refined_live_eligibility'] = $baseEligibility;
+                    $passport['cycle_refinement_applied']       = false;
+                    $passport['cycle_refinement_reason']        = 'cycle_model_unavailable';
+                    // Restore recommended_live_eligibility to base (in case a previous pass
+                    // had changed it but the cycle model is now gone/unavailable).
+                    $passport['recommended_live_eligibility']   = $baseEligibility;
+                    $passport['passport_gate_state']            = $baseEligibility;
+                    $unavailTotal++;
+                } else {
+                    $cmState      = (string)($dm['decision_model_state']           ?? 'unavailable');
+                    $cmActionable = (string)($dm['decision_model_actionability']   ?? 'non_actionable');
+                    $cmRisk       = (string)($dm['decision_model_risk_posture']    ?? 'unavailable');
+                    $cmLiveBias   = (string)($dm['decision_model_live_bias']       ?? 'non_live_bias');
+                    $cmWarnFlag   = (bool)  ($dm['decision_model_warning_flag']          ?? false);
+                    $cmLowConf    = (bool)  ($dm['decision_model_low_confidence_flag']   ?? false);
+
+                    $refinedEligibility = $baseEligibility;
+                    $refinementApplied  = false;
+                    $refinementReason   = 'cycle_no_effect';
+
+                    if ($baseEligibility === 'shadow_only') {
+                        // Never modify the most restrictive state
+                        $refinementReason = 'cycle_no_effect_shadow_protected';
+                    } elseif (
+                        // Upgrade: sim_only → bootstrap_live when cycle is explicitly strong
+                        $baseEligibility === 'sim_only'
+                        && $cmState       === 'favorable'
+                        && $cmActionable  === 'actionable'
+                        && $cmLiveBias    === 'live_bias'
+                        && $cmRisk        !== 'high_risk'
+                        && !$cmWarnFlag
+                        && !$cmLowConf
+                    ) {
+                        $refinedEligibility = 'bootstrap_live';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_upgrade_sim_to_bootstrap';
+                        $upgradeTotal++;
+                    } elseif (
+                        // Downgrade: allow_live → sim_only when cycle is clearly unsafe
+                        $baseEligibility === 'allow_live'
+                        && $cmActionable  === 'non_actionable'
+                        && $cmRisk        === 'high_risk'
+                    ) {
+                        $refinedEligibility = 'sim_only';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_allow_to_sim';
+                        $downgradeTotal++;
+                    } elseif (
+                        // Downgrade: allow_live → bootstrap_live when warning+low_confidence
+                        $baseEligibility === 'allow_live'
+                        && $cmWarnFlag
+                        && $cmLowConf
+                    ) {
+                        $refinedEligibility = 'bootstrap_live';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_allow_to_bootstrap';
+                        $downgradeTotal++;
+                    } elseif (
+                        // Downgrade: bootstrap_live → sim_only when non_actionable + (high_risk|weak)
+                        $baseEligibility === 'bootstrap_live'
+                        && $cmActionable  === 'non_actionable'
+                        && ($cmRisk === 'high_risk' || in_array($cmState, ['weak', 'unavailable'], true))
+                    ) {
+                        $refinedEligibility = 'sim_only';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_bootstrap_to_sim';
+                        $downgradeTotal++;
+                    } elseif (
+                        // Downgrade: bootstrap_live → sim_only when warning+low_confidence
+                        $baseEligibility === 'bootstrap_live'
+                        && $cmWarnFlag
+                        && $cmLowConf
+                    ) {
+                        $refinedEligibility = 'sim_only';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_bootstrap_to_sim_warn_lowconf';
+                        $downgradeTotal++;
+                    }
+
+                    $passport['base_live_eligibility']          = $baseEligibility;
+                    $passport['cycle_refined_live_eligibility'] = $refinedEligibility;
+                    $passport['cycle_refinement_applied']       = $refinementApplied;
+                    $passport['cycle_refinement_reason']        = $refinementReason;
+                    // Apply refined value to the field Smart Brain reads
+                    $passport['recommended_live_eligibility']   = $refinedEligibility;
+                    $passport['passport_gate_state']            = $refinedEligibility;
+                    $processedTotal++;
+                    if (!$refinementApplied) {
+                        $noEffectTotal++;
+                    }
+                }
+
+                // Atomic write: tmp → rename
+                $tmp  = $file . '.certmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projection = [
+            'updated_at'      => $ts,
+            'source'          => 'passport coin_cycle_decision_model',
+            'symbols_total'   => $symbolsTotal,
+            'processed_total' => $processedTotal,
+            'upgrade_total'   => $upgradeTotal,
+            'downgrade_total' => $downgradeTotal,
+            'no_effect_total' => $noEffectTotal,
+            'unavailable_total' => $unavailTotal,
+            'error_total'     => $errorTotal,
+        ];
+
+        $dir = dirname($outputPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $outputPath,
+            json_encode($projection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projection;
+    }
+
+    public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array    {
         $ts             = date('c');
         $symbolsTotal   = 0;
         $projectedTotal = 0;

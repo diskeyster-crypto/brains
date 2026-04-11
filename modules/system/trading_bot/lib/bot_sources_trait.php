@@ -1882,6 +1882,11 @@ trait BotSourcesTrait
             $record['close_reason'] = $this->normalizeCloseReason($execStatus);
         }
 
+        // Coin Core Step 9: propagate read-only cycle_decision_debug snapshot if present on intent.
+        if (isset($intent['cycle_decision_debug'])) {
+            $record['cycle_decision_debug'] = $intent['cycle_decision_debug'];
+        }
+
         return $record;
     }
 

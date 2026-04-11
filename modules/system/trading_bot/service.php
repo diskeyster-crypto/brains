@@ -939,6 +939,11 @@ final class TradingBotService
                 $routedDemoTotal  = 0;
                 $routedSkipTotal  = 0;
 
+                // Coin Core Step 9: cycle_decision_debug observability counters
+                $cycleDebugAvailableTotal     = 0;
+                $cycleDebugMissingTotal       = 0;
+                $cycleDebugLowConfidenceTotal = 0;
+
                 // Demo budget tracking variables (populated below for demo mode)
                 $isDemoLearning               = false;
                 $demoAttemptBudgetEffective   = $maxExecutePerRun;
@@ -1175,6 +1180,20 @@ final class TradingBotService
                         $intent, $mode, $this->config,
                         ['open_yellow_live_count' => $openYellowLiveCount]
                     );
+                    // Coin Core Step 9: attach read-only coin_cycle_decision_model debug snapshot
+                    // before saving the decision packet so it is included in all persisted artifacts.
+                    // Purely observability — does not affect routing, execution, or decision logic.
+                    $cycleDebug = $this->buildCycleDecisionDebug((string)($intent['symbol'] ?? ''));
+                    $decisionPacket['cycle_decision_debug'] = $cycleDebug;
+                    $intent['cycle_decision_debug'] = $cycleDebug;
+                    if (!empty($cycleDebug['available'])) {
+                        $cycleDebugAvailableTotal++;
+                        if (!empty($cycleDebug['model_low_confidence_flag'])) {
+                            $cycleDebugLowConfidenceTotal++;
+                        }
+                    } else {
+                        $cycleDebugMissingTotal++;
+                    }
                     $this->decisionEngine->saveDecisionPacket($decisionPacket);
                     // Stamp lineage fields onto intent so they propagate into the opened trade record
                     $intent['decision_id']     = $decisionPacket['decision_id'];
@@ -1735,6 +1754,11 @@ final class TradingBotService
                 $result['routed_green_total'] = $routedGreenTotal;
                 $result['routed_demo_total']  = $routedDemoTotal;
                 $result['routed_skip_total']  = $routedSkipTotal;
+
+                // Coin Core Step 9: cycle_decision_debug observability counters
+                $result['cycle_debug_available_total']     = $cycleDebugAvailableTotal;
+                $result['cycle_debug_missing_total']       = $cycleDebugMissingTotal;
+                $result['cycle_debug_low_confidence_total'] = $cycleDebugLowConfidenceTotal;
 
             }
             
@@ -3116,6 +3140,57 @@ final class TradingBotService
     }
 
     /**
+    /**
+    /**
+     * Coin Core Step 9: Build a compact read-only coin_cycle_decision_model debug snapshot
+     * from the symbol's passport file. Purely observability — must never influence routing.
+     *
+     * @param string $symbol
+     * @return array<string,mixed>
+     */
+    private function buildCycleDecisionDebug(string $symbol): array
+    {
+        if ($symbol === '' || $this->moduleBase === null) {
+            return ['available' => false];
+        }
+        $passportPath = dirname($this->moduleBase) . '/coin_passport/storage/passports/' . strtoupper($symbol) . '.json';
+        if (!is_file($passportPath)) {
+            return ['available' => false];
+        }
+        $raw = @file_get_contents($passportPath);
+        if ($raw === false || $raw === '') {
+            return ['available' => false];
+        }
+        $passport = json_decode($raw, true);
+        if (!is_array($passport) || !is_array($passport['coin_cycle_decision_model'] ?? null)) {
+            return ['available' => false];
+        }
+        $dm = $passport['coin_cycle_decision_model'];
+        return [
+            'available'                    => true,
+            'model_state'                  => $dm['decision_model_state'] ?? null,
+            'model_confidence'             => $dm['decision_model_confidence'] ?? null,
+            'model_readiness'              => $dm['decision_model_readiness'] ?? null,
+            'model_actionability'          => $dm['decision_model_actionability'] ?? null,
+            'model_risk_posture'           => $dm['decision_model_risk_posture'] ?? null,
+            'model_hold_posture'           => $dm['decision_model_hold_posture'] ?? null,
+            'model_stop_posture'           => $dm['decision_model_stop_posture'] ?? null,
+            'model_live_bias'              => $dm['decision_model_live_bias'] ?? null,
+            'model_demo_bias'              => $dm['decision_model_demo_bias'] ?? null,
+            'model_shadow_bias'            => $dm['decision_model_shadow_bias'] ?? null,
+            'model_skip_bias'              => $dm['decision_model_skip_bias'] ?? null,
+            'model_warning_flag'           => $dm['decision_model_warning_flag'] ?? null,
+            'model_warning_reason'         => $dm['decision_model_warning_reason'] ?? null,
+            'model_low_confidence_flag'    => $dm['decision_model_low_confidence_flag'] ?? null,
+            'model_low_confidence_reason'  => $dm['decision_model_low_confidence_reason'] ?? null,
+            'model_preferred_mode'         => $dm['decision_model_preferred_mode'] ?? null,
+            'model_preferred_risk'         => $dm['decision_model_preferred_risk'] ?? null,
+            'model_preferred_hold'         => $dm['decision_model_preferred_hold'] ?? null,
+            'model_preferred_stop'         => $dm['decision_model_preferred_stop'] ?? null,
+            'source_updated_at'            => $dm['updated_at'] ?? null,
+        ];
+    }
+
     /**
      * Count current open live positions where confidence_band=yellow.
      * Used for yellow live cap enforcement under green_plus_yellow_capped policy.

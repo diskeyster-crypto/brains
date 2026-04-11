@@ -321,12 +321,25 @@ final class CoinPassportService
 
         try {
             $result = $this->engine->buildCoinCycleProfiles($parser2StorageDir, $outputPath);
+
+            // Immediately derive the read model from the freshly written profile (best-effort, non-fatal).
+            $readModelResult = [];
+            try {
+                $readModelPath   = $runtimeDir . '/coin_cycle_read_model.json';
+                $readModelResult = $this->engine->buildCoinCycleReadModel($outputPath, $readModelPath);
+            } catch (\Throwable $rmEx) {
+                // non-fatal — counters will be zero
+            }
+
             return [
                 'ok'                             => true,
                 'cycle_symbols_total'            => $result['cycle_symbols_total']            ?? 0,
                 'cycle_profiles_generated_total' => $result['cycle_profiles_generated_total'] ?? 0,
                 'cycle_generation_error_total'   => $result['cycle_generation_error_total']   ?? 0,
                 'generated_at'                   => $result['generated_at']                   ?? date('c'),
+                'read_model_symbols_total'       => $readModelResult['read_model_symbols_total']   ?? 0,
+                'read_model_generated_total'     => $readModelResult['read_model_generated_total'] ?? 0,
+                'read_model_error_total'         => $readModelResult['read_model_error_total']     ?? 0,
             ];
         } catch (\Throwable $e) {
             return [

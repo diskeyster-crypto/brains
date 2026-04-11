@@ -17,6 +17,11 @@ return [
         'enabled'     => true,
         'description' => 'Coin Passport: build derived coin behavior cycle profiles from parser2 history data',
     ],
+    'buildCycleReadModel' => [
+        'interval'    => 3600, // 1 hour — runs after buildCycleProfiles
+        'enabled'     => true,
+        'description' => 'Coin Passport: build compact per-symbol cycle read model from coin_cycle_profile.json',
+    ],
     'rebuildAll' => [
         'interval'    => 21600, // 6 hours
         'enabled'     => true,

@@ -3520,4 +3520,153 @@ final class CoinPassportEngine
 
         return 'red';
     }
+
+    // =========================================================================
+    // Coin cycle context projection (Step 3 — passive, storage/read-side only)
+    // =========================================================================
+
+    /**
+     * Project coin_cycle_read_model.json into each passport as a passive
+     * namespaced 'coin_cycle_context' block.
+     *
+     * Reads the already-generated read-model artifact and writes the compact
+     * per-symbol state block into every passport file found.  Does NOT affect
+     * live-admission, Bot routing, or PM behavior.  Best-effort and non-fatal.
+     *
+     * Also writes a compact projection summary artifact.
+     *
+     * @param  string $readModelPath      Absolute path to coin_cycle_read_model.json
+     * @param  string $summaryOutputPath  Absolute path to write coin_cycle_projection_summary.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array
+    {
+        $ts             = date('c');
+        $symbolsTotal   = 0;
+        $projectedTotal = 0;
+        $skippedTotal   = 0;
+        $lowConfTotal   = 0;
+        $errorTotal     = 0;
+
+        // Load read model entries indexed by symbol
+        $readModelEntries = [];
+        $sourceReadModelAt = null;
+        if (is_file($readModelPath)) {
+            $raw = @file_get_contents($readModelPath);
+            $rm  = ($raw !== false) ? json_decode($raw, true) : null;
+            if (is_array($rm)) {
+                $sourceReadModelAt = $rm['generated_at'] ?? null;
+                $symbols = $rm['symbols'] ?? [];
+                if (is_array($symbols)) {
+                    foreach ($symbols as $sym => $entry) {
+                        if (is_array($entry)) {
+                            $readModelEntries[strtoupper((string)$sym)] = $entry;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Collect all passport files to update
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            $symbol = basename($file, '.json');
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $skippedTotal++;
+                    continue;
+                }
+
+                $upper = strtoupper($symbol);
+                if (!isset($readModelEntries[$upper])) {
+                    // No read-model entry for this symbol — write explicit unavailable block
+                    $passport['coin_cycle_context'] = [
+                        'updated_at'                => $ts,
+                        'behavior_cycle_state'      => 'unavailable',
+                        'behavior_cycle_confidence' => 'none',
+                        'low_confidence_reason'     => 'no_read_model_entry',
+                        'source_profile_updated_at' => null,
+                    ];
+                    $skippedTotal++;
+                } else {
+                    $entry = $readModelEntries[$upper];
+                    $conf  = (string)($entry['behavior_cycle_confidence'] ?? 'none');
+
+                    // Project compact namespaced block — only the defined cycle-context fields
+                    $passport['coin_cycle_context'] = [
+                        'updated_at'                => $ts,
+                        'behavior_cycle_state'      => $entry['behavior_cycle_state']      ?? 'unavailable',
+                        'behavior_cycle_confidence' => $conf,
+                        'hot_state_1h'              => $entry['hot_state_1h']              ?? null,
+                        'hot_state_2h'              => $entry['hot_state_2h']              ?? null,
+                        'short_state_3h'            => $entry['short_state_3h']            ?? null,
+                        'short_state_6h'            => $entry['short_state_6h']            ?? null,
+                        'intraday_state_12h'        => $entry['intraday_state_12h']        ?? null,
+                        'daily_state_24h'           => $entry['daily_state_24h']           ?? null,
+                        'behavior_context_7d_state' => $entry['behavior_context_7d_state'] ?? null,
+                        'corridor_state'            => $entry['corridor_state']            ?? null,
+                        'impulse_state'             => $entry['impulse_state']             ?? null,
+                        'pullback_state'            => $entry['pullback_state']            ?? null,
+                        'continuation_state'        => $entry['continuation_state']        ?? null,
+                        'volatility_state'          => $entry['volatility_state']          ?? null,
+                        'liquidity_state'           => $entry['liquidity_state']           ?? null,
+                        'oi_pressure_state'         => $entry['oi_pressure_state']         ?? null,
+                        'cycle_bias_state'          => $entry['cycle_bias_state']          ?? null,
+                        'cycle_quality_state'       => $entry['cycle_quality_state']       ?? null,
+                        'cycle_stability_state'     => $entry['cycle_stability_state']     ?? null,
+                        'cycle_entry_readiness'     => $entry['cycle_entry_readiness']     ?? null,
+                        'cycle_pm_readiness'        => $entry['cycle_pm_readiness']        ?? null,
+                        'low_confidence_reason'     => $entry['low_confidence_reason']     ?? null,
+                        'source_profile_updated_at' => $entry['source_profile_updated_at'] ?? null,
+                    ];
+
+                    $projectedTotal++;
+                    if (in_array($conf, ['none', 'low'], true)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write: tmp → rename
+                $tmp  = $file . '.cctmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        // Persist the projection summary
+        $summary = [
+            'updated_at'          => $ts,
+            'source'              => 'coin_cycle_read_model',
+            'source_read_model_at' => $sourceReadModelAt,
+            'symbols_total'       => $symbolsTotal,
+            'projected_total'     => $projectedTotal,
+            'skipped_total'       => $skippedTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $summaryDir = dirname($summaryOutputPath);
+        if (!is_dir($summaryDir)) {
+            @mkdir($summaryDir, 0755, true);
+        }
+        @file_put_contents(
+            $summaryOutputPath,
+            json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $summary;
+    }
 }

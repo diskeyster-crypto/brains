@@ -136,6 +136,14 @@ final class CoinPassportService
     {
         $result = $this->engine->rebuildAll();
         $this->saveStatus('rebuild_all', $result);
+
+        // After passports are rebuilt, project the latest cycle context into them (best-effort).
+        try {
+            $this->projectCycleContextToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -200,6 +208,14 @@ final class CoinPassportService
         }
 
         $this->saveStatus('rebuild_recent', $result);
+
+        // After passports are rebuilt, project the latest cycle context into them (best-effort).
+        try {
+            $this->projectCycleContextToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -331,6 +347,14 @@ final class CoinPassportService
                 // non-fatal — counters will be zero
             }
 
+            // Project the cycle context block into each passport (best-effort, non-fatal).
+            $projectionResult = [];
+            try {
+                $projectionResult = $this->projectCycleContextToPassports();
+            } catch (\Throwable $projEx) {
+                // non-fatal
+            }
+
             return [
                 'ok'                             => true,
                 'cycle_symbols_total'            => $result['cycle_symbols_total']            ?? 0,
@@ -340,6 +364,10 @@ final class CoinPassportService
                 'read_model_symbols_total'       => $readModelResult['read_model_symbols_total']   ?? 0,
                 'read_model_generated_total'     => $readModelResult['read_model_generated_total'] ?? 0,
                 'read_model_error_total'         => $readModelResult['read_model_error_total']     ?? 0,
+                'projection_symbols_total'       => $projectionResult['symbols_total']    ?? 0,
+                'projection_projected_total'     => $projectionResult['projected_total']  ?? 0,
+                'projection_skipped_total'       => $projectionResult['skipped_total']    ?? 0,
+                'projection_error_total'         => $projectionResult['error_total']      ?? 0,
             ];
         } catch (\Throwable $e) {
             return [
@@ -382,6 +410,36 @@ final class CoinPassportService
                 'read_model_generated_total' => 0,
                 'read_model_error_total'     => 1,
                 'error'                      => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Project coin_cycle_read_model.json into each passport as a passive
+     * 'coin_cycle_context' namespaced block.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after buildCycleProfiles() and after passport rebuilds.
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleContextToPassports(): array
+    {
+        $runtimeDir   = $this->storageDir . '/runtime';
+        $readModelPath = $runtimeDir . '/coin_cycle_read_model.json';
+        $summaryPath   = $runtimeDir . '/coin_cycle_projection_summary.json';
+
+        try {
+            return $this->engine->projectCycleContextToPassports($readModelPath, $summaryPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'           => date('c'),
+                'source'               => 'coin_cycle_read_model',
+                'symbols_total'        => 0,
+                'projected_total'      => 0,
+                'skipped_total'        => 0,
+                'low_confidence_total' => 0,
+                'error_total'          => 1,
+                'error'                => $e->getMessage(),
             ];
         }
     }

@@ -8,19 +8,20 @@ declare(strict_types=1);
  * Handler methods are called on CoinPassportService instance.
  *
  * Tasks:
+ *   coin_passport:buildCycleProfiles   — build cycle profiles from parser2 history,
+ *                                        then immediately derives the read model and
+ *                                        projects cycle-context into passports (1 h)
  *   coin_passport:rebuildAll           — rebuild every known symbol (full pass, every 6 h)
  *   coin_passport:rebuildRecentSymbols — lighter pass for recently active symbols (every 1 h)
+ *
+ * Removed (was redundant):
+ *   coin_passport:buildCycleReadModel  — now runs inline inside buildCycleProfiles
  */
 return [
     'buildCycleProfiles' => [
         'interval'    => 3600, // 1 hour
         'enabled'     => true,
-        'description' => 'Coin Passport: build derived coin behavior cycle profiles from parser2 history data',
-    ],
-    'buildCycleReadModel' => [
-        'interval'    => 3600, // 1 hour — runs after buildCycleProfiles
-        'enabled'     => true,
-        'description' => 'Coin Passport: build compact per-symbol cycle read model from coin_cycle_profile.json',
+        'description' => 'Coin Passport: build derived coin behavior cycle profiles from parser2 history data, derive the read model, and project cycle-context into passports',
     ],
     'rebuildAll' => [
         'interval'    => 21600, // 6 hours

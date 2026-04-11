@@ -3799,6 +3799,282 @@ final class CoinPassportEngine
         return $summary;
     }
 
+    // =========================================================================
+    // Step 5 — Passive passport-side cycle decision summary block
+    // =========================================================================
+
+    /**
+     * Derive a compact cycle decision summary from the passport's existing
+     * coin_cycle_context and coin_cycle_hints blocks.
+     * All values use the label set: favorable | cautious | weak | unavailable |
+     * stable | unstable | actionable | non_actionable.
+     * Pure / side-effect-free.
+     *
+     * @param  array<string,mixed> $ctx    The passport's coin_cycle_context block
+     * @param  array<string,mixed> $hints  The passport's coin_cycle_hints block
+     * @return array<string,mixed>
+     */
+    private function deriveCycleSummary(array $ctx, array $hints): array
+    {
+        $ts = date('c');
+
+        // Pull from context
+        $state     = (string)($ctx['behavior_cycle_state']      ?? 'unavailable');
+        $conf      = (string)($ctx['behavior_cycle_confidence'] ?? 'none');
+        $stability = (string)($ctx['cycle_stability_state']     ?? '');
+        $bias      = (string)($ctx['cycle_bias_state']          ?? '');
+        $ctxAt     = $ctx['updated_at'] ?? null;
+
+        // Pull from hints
+        $entryHint     = (string)($hints['cycle_entry_hint']          ?? 'unavailable');
+        $pmHint        = (string)($hints['cycle_pm_hint']             ?? 'unavailable');
+        $liveHint      = (string)($hints['cycle_live_hint']           ?? 'unavailable');
+        $riskHint      = (string)($hints['cycle_risk_hint']           ?? 'unavailable');
+        $stopHint      = (string)($hints['cycle_stop_hint']           ?? 'unavailable');
+        $holdHint      = (string)($hints['cycle_hold_hint']           ?? 'unavailable');
+        $warnFlag      = (bool)($hints['cycle_warning_flag']          ?? false);
+        $warnReason    = $hints['cycle_warning_reason']               ?? null;
+        $lowConfFlag   = (bool)($hints['cycle_low_confidence_flag']   ?? false);
+        $lowConfReason = $hints['cycle_low_confidence_reason']        ?? null;
+        $hintsAt       = $hints['updated_at']                         ?? null;
+
+        $unavailable = ($state === 'unavailable' || $conf === 'none');
+
+        // cycle_summary_state
+        if ($unavailable) {
+            $summaryState = 'unavailable';
+        } elseif ($state === 'active') {
+            $summaryState = ($conf === 'high') ? 'favorable' : 'cautious';
+        } elseif ($state === 'cooling') {
+            $summaryState = 'cautious';
+        } elseif ($state === 'flat') {
+            $summaryState = 'weak';
+        } else {
+            $summaryState = 'unavailable';
+        }
+
+        // cycle_summary_confidence
+        if ($conf === 'high') {
+            $summaryConf = 'favorable';
+        } elseif ($conf === 'medium') {
+            $summaryConf = 'cautious';
+        } elseif ($conf === 'low') {
+            $summaryConf = 'weak';
+        } else {
+            $summaryConf = 'unavailable';
+        }
+
+        // cycle_entry_summary: combines entry + pm hint
+        $entryPmVals = [$entryHint, $pmHint];
+        if (in_array('unavailable', $entryPmVals, true)) {
+            $entrySummary = 'unavailable';
+        } elseif (in_array('weak', $entryPmVals, true)) {
+            $entrySummary = 'weak';
+        } elseif (in_array('cautious', $entryPmVals, true)) {
+            $entrySummary = 'cautious';
+        } else {
+            $entrySummary = 'favorable';
+        }
+
+        // cycle_readiness_state: aggregate entry + pm + live
+        $readinessVals    = [$entryHint, $pmHint, $liveHint];
+        $readinessNonAvail = array_filter($readinessVals, static fn(string $v): bool => $v !== 'unavailable');
+        if (empty($readinessNonAvail)) {
+            $readinessState = 'unavailable';
+        } elseif (!in_array('weak', $readinessNonAvail, true) && !in_array('cautious', $readinessNonAvail, true)) {
+            $readinessState = 'favorable';
+        } elseif (in_array('weak', $readinessNonAvail, true)) {
+            $readinessState = 'weak';
+        } else {
+            $readinessState = 'cautious';
+        }
+
+        // cycle_stability_summary
+        if ($unavailable || $stability === '') {
+            $stabilitySummary = 'unavailable';
+        } elseif ($stability === 'stable') {
+            $stabilitySummary = 'stable';
+        } elseif ($stability === 'unstable') {
+            $stabilitySummary = 'unstable';
+        } else {
+            $stabilitySummary = 'unavailable';
+        }
+
+        // cycle_bias_summary
+        if ($unavailable || $bias === '') {
+            $biasSummary = 'unavailable';
+        } elseif ($bias === 'trending') {
+            $biasSummary = 'favorable';
+        } elseif ($bias === 'neutral') {
+            $biasSummary = 'cautious';
+        } elseif (in_array($bias, ['choppy', 'reverting'], true)) {
+            $biasSummary = 'weak';
+        } else {
+            $biasSummary = 'cautious';
+        }
+
+        // cycle_actionability_summary
+        $entryOk = in_array($entryHint, ['favorable', 'cautious'], true);
+        $liveOk  = in_array($liveHint, ['favorable', 'cautious'], true);
+        if (!$unavailable && $entryOk && $liveOk && !$lowConfFlag) {
+            $actionability = 'actionable';
+        } elseif (!$unavailable && ($entryOk || $liveOk) && !$warnFlag) {
+            $actionability = 'actionable';
+        } else {
+            $actionability = 'non_actionable';
+        }
+
+        return [
+            'updated_at'                  => $ts,
+            'cycle_summary_state'         => $summaryState,
+            'cycle_summary_confidence'    => $summaryConf,
+            'cycle_entry_summary'         => $entrySummary,
+            'cycle_pm_summary'            => $pmHint,
+            'cycle_live_summary'          => $liveHint,
+            'cycle_risk_summary'          => $riskHint,
+            'cycle_stop_summary'          => $stopHint,
+            'cycle_hold_summary'          => $holdHint,
+            'cycle_warning_flag'          => $warnFlag,
+            'cycle_warning_reason'        => $warnReason,
+            'cycle_low_confidence_flag'   => $lowConfFlag,
+            'cycle_low_confidence_reason' => $lowConfReason,
+            'cycle_readiness_state'       => $readinessState,
+            'cycle_stability_summary'     => $stabilitySummary,
+            'cycle_bias_summary'          => $biasSummary,
+            'cycle_actionability_summary' => $actionability,
+            'source_context_updated_at'   => $ctxAt,
+            'source_hints_updated_at'     => $hintsAt,
+        ];
+    }
+
+    /**
+     * Project passive cycle decision summaries into all passport files.
+     * Reads coin_cycle_context + coin_cycle_hints from each passport, derives
+     * coin_cycle_summary, saves back.  Writes a compact summary artifact.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $summaryOutputPath  Absolute path to write coin_cycle_summary_projection.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleSummaryToPassports(string $summaryOutputPath): array
+    {
+        $ts                 = date('c');
+        $symbolsTotal       = 0;
+        $writtenTotal       = 0;
+        $favorableTotal     = 0;
+        $cautiousTotal      = 0;
+        $weakTotal          = 0;
+        $unavailTotal       = 0;
+        $actionableTotal    = 0;
+        $nonActionableTotal = 0;
+        $lowConfTotal       = 0;
+        $errorTotal         = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx   = $passport['coin_cycle_context'] ?? null;
+                $hints = $passport['coin_cycle_hints']   ?? null;
+
+                if (!is_array($ctx) || !is_array($hints)) {
+                    // Source blocks absent — write compact unavailable summary
+                    $passport['coin_cycle_summary'] = [
+                        'updated_at'                  => $ts,
+                        'cycle_summary_state'         => 'unavailable',
+                        'cycle_summary_confidence'    => 'unavailable',
+                        'cycle_entry_summary'         => 'unavailable',
+                        'cycle_pm_summary'            => 'unavailable',
+                        'cycle_live_summary'          => 'unavailable',
+                        'cycle_risk_summary'          => 'unavailable',
+                        'cycle_stop_summary'          => 'unavailable',
+                        'cycle_hold_summary'          => 'unavailable',
+                        'cycle_warning_flag'          => false,
+                        'cycle_warning_reason'        => null,
+                        'cycle_low_confidence_flag'   => true,
+                        'cycle_low_confidence_reason' => 'no_context_or_hints',
+                        'cycle_readiness_state'       => 'unavailable',
+                        'cycle_stability_summary'     => 'unavailable',
+                        'cycle_bias_summary'          => 'unavailable',
+                        'cycle_actionability_summary' => 'non_actionable',
+                        'source_context_updated_at'   => null,
+                        'source_hints_updated_at'     => null,
+                    ];
+                    $unavailTotal++;
+                    $lowConfTotal++;
+                    $nonActionableTotal++;
+                } else {
+                    $cycleSummary = $this->deriveCycleSummary($ctx, $hints);
+                    $passport['coin_cycle_summary'] = $cycleSummary;
+                    $writtenTotal++;
+
+                    $summaryState = $cycleSummary['cycle_summary_state'];
+                    if ($summaryState === 'favorable')    { $favorableTotal++; }
+                    elseif ($summaryState === 'cautious') { $cautiousTotal++; }
+                    elseif ($summaryState === 'weak')     { $weakTotal++; }
+                    else                                  { $unavailTotal++; }
+
+                    if ($cycleSummary['cycle_actionability_summary'] === 'actionable') {
+                        $actionableTotal++;
+                    } else {
+                        $nonActionableTotal++;
+                    }
+                    if ((bool)($cycleSummary['cycle_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.cstmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projectionSummary = [
+            'updated_at'              => $ts,
+            'source'                  => 'passport coin_cycle_context + coin_cycle_hints',
+            'symbols_total'           => $symbolsTotal,
+            'summaries_written_total' => $writtenTotal,
+            'favorable_total'         => $favorableTotal,
+            'cautious_total'          => $cautiousTotal,
+            'weak_total'              => $weakTotal,
+            'unavailable_total'       => $unavailTotal,
+            'actionable_total'        => $actionableTotal,
+            'non_actionable_total'    => $nonActionableTotal,
+            'low_confidence_total'    => $lowConfTotal,
+            'error_total'             => $errorTotal,
+        ];
+
+        $summaryDir = dirname($summaryOutputPath);
+        if (!is_dir($summaryDir)) {
+            @mkdir($summaryDir, 0755, true);
+        }
+        @file_put_contents(
+            $summaryOutputPath,
+            json_encode($projectionSummary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projectionSummary;
+    }
+
     public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array
     {
         $ts             = date('c');

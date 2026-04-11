@@ -151,6 +151,13 @@ final class CoinPassportService
             // non-fatal
         }
 
+        // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
+        try {
+            $this->projectCycleSummaryToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -226,6 +233,13 @@ final class CoinPassportService
         // Derive passive cycle hints from the projected context (best-effort, non-fatal).
         try {
             $this->projectCycleHintsToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
+        try {
+            $this->projectCycleSummaryToPassports();
         } catch (\Throwable $e) {
             // non-fatal
         }
@@ -377,22 +391,33 @@ final class CoinPassportService
                 // non-fatal
             }
 
+            // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
+            $summaryResult = [];
+            try {
+                $summaryResult = $this->projectCycleSummaryToPassports();
+            } catch (\Throwable $summaryEx) {
+                // non-fatal
+            }
+
             return [
-                'ok'                             => true,
-                'cycle_symbols_total'            => $result['cycle_symbols_total']            ?? 0,
-                'cycle_profiles_generated_total' => $result['cycle_profiles_generated_total'] ?? 0,
-                'cycle_generation_error_total'   => $result['cycle_generation_error_total']   ?? 0,
-                'generated_at'                   => $result['generated_at']                   ?? date('c'),
-                'read_model_symbols_total'       => $readModelResult['read_model_symbols_total']   ?? 0,
-                'read_model_generated_total'     => $readModelResult['read_model_generated_total'] ?? 0,
-                'read_model_error_total'         => $readModelResult['read_model_error_total']     ?? 0,
-                'projection_symbols_total'       => $projectionResult['symbols_total']    ?? 0,
-                'projection_projected_total'     => $projectionResult['projected_total']  ?? 0,
-                'projection_skipped_total'       => $projectionResult['skipped_total']    ?? 0,
-                'projection_error_total'         => $projectionResult['error_total']      ?? 0,
-                'hints_symbols_total'            => $hintsResult['symbols_total']         ?? 0,
-                'hints_written_total'            => $hintsResult['hints_written_total']   ?? 0,
-                'hints_error_total'              => $hintsResult['error_total']           ?? 0,
+                'ok'                              => true,
+                'cycle_symbols_total'             => $result['cycle_symbols_total']            ?? 0,
+                'cycle_profiles_generated_total'  => $result['cycle_profiles_generated_total'] ?? 0,
+                'cycle_generation_error_total'    => $result['cycle_generation_error_total']   ?? 0,
+                'generated_at'                    => $result['generated_at']                   ?? date('c'),
+                'read_model_symbols_total'        => $readModelResult['read_model_symbols_total']   ?? 0,
+                'read_model_generated_total'      => $readModelResult['read_model_generated_total'] ?? 0,
+                'read_model_error_total'          => $readModelResult['read_model_error_total']     ?? 0,
+                'projection_symbols_total'        => $projectionResult['symbols_total']    ?? 0,
+                'projection_projected_total'      => $projectionResult['projected_total']  ?? 0,
+                'projection_skipped_total'        => $projectionResult['skipped_total']    ?? 0,
+                'projection_error_total'          => $projectionResult['error_total']      ?? 0,
+                'hints_symbols_total'             => $hintsResult['symbols_total']         ?? 0,
+                'hints_written_total'             => $hintsResult['hints_written_total']   ?? 0,
+                'hints_error_total'               => $hintsResult['error_total']           ?? 0,
+                'summary_symbols_total'           => $summaryResult['symbols_total']           ?? 0,
+                'summary_written_total'           => $summaryResult['summaries_written_total'] ?? 0,
+                'summary_error_total'             => $summaryResult['error_total']             ?? 0,
             ];
         } catch (\Throwable $e) {
             return [
@@ -497,6 +522,40 @@ final class CoinPassportService
                 'low_confidence_total' => 0,
                 'error_total'         => 1,
                 'error'               => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build and write a passive cycle decision summary into each passport.
+     * Reads coin_cycle_context + coin_cycle_hints already in passports, derives coin_cycle_summary.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleHintsToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleSummaryToPassports(): array
+    {
+        $runtimeDir  = $this->storageDir . '/runtime';
+        $summaryPath = $runtimeDir . '/coin_cycle_summary_projection.json';
+
+        try {
+            return $this->engine->projectCycleSummaryToPassports($summaryPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'              => date('c'),
+                'source'                  => 'passport coin_cycle_context + coin_cycle_hints',
+                'symbols_total'           => 0,
+                'summaries_written_total' => 0,
+                'favorable_total'         => 0,
+                'cautious_total'          => 0,
+                'weak_total'              => 0,
+                'unavailable_total'       => 0,
+                'actionable_total'        => 0,
+                'non_actionable_total'    => 0,
+                'low_confidence_total'    => 0,
+                'error_total'             => 1,
+                'error'                   => $e->getMessage(),
             ];
         }
     }

@@ -158,6 +158,13 @@ final class CoinPassportService
             // non-fatal
         }
 
+        // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleRoutingProfileToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return $result;
     }
 
@@ -240,6 +247,13 @@ final class CoinPassportService
         // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
         try {
             $this->projectCycleSummaryToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleRoutingProfileToPassports();
         } catch (\Throwable $e) {
             // non-fatal
         }
@@ -399,6 +413,14 @@ final class CoinPassportService
                 // non-fatal
             }
 
+            // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
+            $routingResult = [];
+            try {
+                $routingResult = $this->projectCycleRoutingProfileToPassports();
+            } catch (\Throwable $routingEx) {
+                // non-fatal
+            }
+
             return [
                 'ok'                              => true,
                 'cycle_symbols_total'             => $result['cycle_symbols_total']            ?? 0,
@@ -418,6 +440,9 @@ final class CoinPassportService
                 'summary_symbols_total'           => $summaryResult['symbols_total']           ?? 0,
                 'summary_written_total'           => $summaryResult['summaries_written_total'] ?? 0,
                 'summary_error_total'             => $summaryResult['error_total']             ?? 0,
+                'routing_symbols_total'           => $routingResult['symbols_total']           ?? 0,
+                'routing_written_total'           => $routingResult['profiles_written_total']  ?? 0,
+                'routing_error_total'             => $routingResult['error_total']             ?? 0,
             ];
         } catch (\Throwable $e) {
             return [
@@ -556,6 +581,39 @@ final class CoinPassportService
                 'low_confidence_total'    => 0,
                 'error_total'             => 1,
                 'error'                   => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build and write a passive cycle routing profile into each passport.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary from each passport,
+     * derives coin_cycle_routing_profile, saves back.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleSummaryToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleRoutingProfileToPassports(): array
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $outputPath = $runtimeDir . '/coin_cycle_routing_profile_projection.json';
+
+        try {
+            return $this->engine->projectCycleRoutingProfileToPassports($outputPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'             => date('c'),
+                'source'                 => 'passport cycle layers',
+                'symbols_total'          => 0,
+                'profiles_written_total' => 0,
+                'live_ready_total'       => 0,
+                'demo_only_total'        => 0,
+                'shadow_only_total'      => 0,
+                'skip_total'             => 0,
+                'low_confidence_total'   => 0,
+                'error_total'            => 1,
+                'error'                  => $e->getMessage(),
             ];
         }
     }

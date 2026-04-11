@@ -4075,6 +4075,329 @@ final class CoinPassportEngine
         return $projectionSummary;
     }
 
+    // =========================================================================
+    // Coin Core Step 6 — passive cycle routing profile
+    // =========================================================================
+
+    /**
+     * Derive a compact passive routing profile from context + hints + summary.
+     * All fields are compact labels only.  Does NOT drive any live decisions.
+     *
+     * @param  array<string,mixed> $ctx
+     * @param  array<string,mixed> $hints
+     * @param  array<string,mixed> $summary
+     * @return array<string,mixed>
+     */
+    private function deriveRoutingProfile(array $ctx, array $hints, array $summary): array
+    {
+        $ts = date('c');
+
+        // Inputs from context
+        $state        = (string)($ctx['behavior_cycle_state']      ?? 'unavailable');
+        $conf         = (string)($ctx['behavior_cycle_confidence'] ?? 'none');
+        $ctxAt        = $ctx['updated_at'] ?? null;
+
+        // Inputs from hints
+        $liveHint     = (string)($hints['cycle_live_hint']           ?? 'unavailable');
+        $riskHint     = (string)($hints['cycle_risk_hint']           ?? 'unavailable');
+        $stopHint     = (string)($hints['cycle_stop_hint']           ?? 'unavailable');
+        $holdHint     = (string)($hints['cycle_hold_hint']           ?? 'unavailable');
+        $warnFlag     = (bool)($hints['cycle_warning_flag']          ?? false);
+        $warnReason   = $hints['cycle_warning_reason']               ?? null;
+        $lowConfFlag  = (bool)($hints['cycle_low_confidence_flag']   ?? false);
+        $lowConfReason = $hints['cycle_low_confidence_reason']       ?? null;
+        $hintsAt      = $hints['updated_at']                         ?? null;
+
+        // Inputs from summary
+        $summaryState  = (string)($summary['cycle_summary_state']         ?? 'unavailable');
+        $summaryConf   = (string)($summary['cycle_summary_confidence']    ?? 'unavailable');
+        $actionability = (string)($summary['cycle_actionability_summary'] ?? 'non_actionable');
+        $summaryAt     = $summary['updated_at']                           ?? null;
+
+        $unavailable = ($state === 'unavailable' || $conf === 'none' || $summaryState === 'unavailable');
+
+        // routing_profile_state — overall profile label
+        if ($unavailable) {
+            $profileState = 'unavailable';
+        } elseif ($summaryState === 'favorable' && $actionability === 'actionable') {
+            $profileState = 'favorable';
+        } elseif ($summaryState === 'cautious') {
+            $profileState = 'cautious';
+        } elseif ($summaryState === 'weak') {
+            $profileState = 'weak';
+        } else {
+            $profileState = 'unavailable';
+        }
+
+        // routing_profile_confidence
+        if ($conf === 'high' && !$lowConfFlag) {
+            $profileConf = 'favorable';
+        } elseif ($conf === 'medium') {
+            $profileConf = 'cautious';
+        } elseif ($conf === 'low' || $lowConfFlag) {
+            $profileConf = 'weak';
+        } else {
+            $profileConf = 'unavailable';
+        }
+
+        // routing_live_profile — can this symbol go live?
+        if ($unavailable || $warnFlag || $lowConfFlag) {
+            $liveProfile = 'unavailable';
+        } elseif ($liveHint === 'favorable' && $summaryState === 'favorable') {
+            $liveProfile = 'live_ready';
+        } elseif (in_array($liveHint, ['favorable', 'cautious'], true) && $summaryState !== 'weak') {
+            $liveProfile = 'live_ready';
+        } else {
+            $liveProfile = 'demo_only';
+        }
+
+        // routing_demo_profile
+        if ($unavailable) {
+            $demoProfile = 'unavailable';
+        } elseif (in_array($liveProfile, ['live_ready', 'demo_only'], true)) {
+            $demoProfile = 'favorable';
+        } else {
+            $demoProfile = 'cautious';
+        }
+
+        // routing_shadow_profile
+        if ($unavailable) {
+            $shadowProfile = 'shadow_only';
+        } elseif ($summaryState === 'weak') {
+            $shadowProfile = 'shadow_only';
+        } else {
+            $shadowProfile = 'favorable';
+        }
+
+        // routing_skip_profile — should this symbol be skipped entirely?
+        if ($unavailable || ($summaryState === 'weak' && $warnFlag)) {
+            $skipProfile = 'skip';
+        } else {
+            $skipProfile = 'non_skip';
+        }
+
+        // routing_risk_profile
+        if ($unavailable) {
+            $riskProfile = 'unavailable';
+        } elseif ($riskHint === 'low_risk' || $riskHint === 'favorable') {
+            $riskProfile = 'low_risk';
+        } elseif ($riskHint === 'medium_risk' || $riskHint === 'cautious') {
+            $riskProfile = 'medium_risk';
+        } elseif ($riskHint === 'high_risk' || $riskHint === 'weak') {
+            $riskProfile = 'high_risk';
+        } else {
+            $riskProfile = 'medium_risk';
+        }
+
+        // routing_hold_profile
+        if ($unavailable) {
+            $holdProfile = 'unavailable';
+        } elseif ($holdHint === 'favorable') {
+            $holdProfile = 'favorable';
+        } elseif ($holdHint === 'cautious') {
+            $holdProfile = 'cautious';
+        } elseif ($holdHint === 'weak') {
+            $holdProfile = 'weak';
+        } else {
+            $holdProfile = 'cautious';
+        }
+
+        // routing_actionability_profile
+        if (!$unavailable && $actionability === 'actionable' && !$warnFlag && $liveProfile !== 'unavailable') {
+            $actionabilityProfile = 'actionable';
+        } else {
+            $actionabilityProfile = 'non_actionable';
+        }
+
+        // routing_preferred_mode_hint (compact label for future routing use)
+        if ($unavailable) {
+            $preferredMode = 'shadow_only';
+        } elseif ($liveProfile === 'live_ready') {
+            $preferredMode = 'live';
+        } elseif ($demoProfile === 'favorable') {
+            $preferredMode = 'demo';
+        } else {
+            $preferredMode = 'shadow_only';
+        }
+
+        // routing_preferred_risk_hint
+        if ($unavailable) {
+            $preferredRisk = 'unavailable';
+        } elseif ($riskProfile === 'low_risk') {
+            $preferredRisk = 'low_risk';
+        } elseif ($riskProfile === 'medium_risk') {
+            $preferredRisk = 'medium_risk';
+        } else {
+            $preferredRisk = 'high_risk';
+        }
+
+        // routing_preferred_hold_hint
+        $preferredHold = $unavailable ? 'unavailable' : $holdProfile;
+
+        // routing_preferred_stop_hint
+        if ($unavailable) {
+            $preferredStop = 'unavailable';
+        } elseif ($stopHint === 'favorable') {
+            $preferredStop = 'tight';
+        } elseif ($stopHint === 'cautious') {
+            $preferredStop = 'normal';
+        } elseif ($stopHint === 'weak') {
+            $preferredStop = 'wide';
+        } else {
+            $preferredStop = 'normal';
+        }
+
+        return [
+            'updated_at'                    => $ts,
+            'routing_profile_state'         => $profileState,
+            'routing_profile_confidence'    => $profileConf,
+            'routing_live_profile'          => $liveProfile,
+            'routing_demo_profile'          => $demoProfile,
+            'routing_shadow_profile'        => $shadowProfile,
+            'routing_skip_profile'          => $skipProfile,
+            'routing_risk_profile'          => $riskProfile,
+            'routing_hold_profile'          => $holdProfile,
+            'routing_actionability_profile' => $actionabilityProfile,
+            'routing_warning_flag'          => $warnFlag,
+            'routing_warning_reason'        => $warnReason,
+            'routing_low_confidence_flag'   => $lowConfFlag,
+            'routing_low_confidence_reason' => $lowConfReason,
+            'routing_preferred_mode_hint'   => $preferredMode,
+            'routing_preferred_risk_hint'   => $preferredRisk,
+            'routing_preferred_hold_hint'   => $preferredHold,
+            'routing_preferred_stop_hint'   => $preferredStop,
+            'source_summary_updated_at'     => $summaryAt,
+            'source_hints_updated_at'       => $hintsAt,
+            'source_context_updated_at'     => $ctxAt,
+        ];
+    }
+
+    /**
+     * Project passive cycle routing profiles into all passport files.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary from each
+     * passport, derives coin_cycle_routing_profile, saves back.
+     * Writes a compact projection artifact.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $outputPath  Absolute path to write coin_cycle_routing_profile_projection.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleRoutingProfileToPassports(string $outputPath): array
+    {
+        $ts               = date('c');
+        $symbolsTotal     = 0;
+        $writtenTotal     = 0;
+        $liveReadyTotal   = 0;
+        $demoOnlyTotal    = 0;
+        $shadowOnlyTotal  = 0;
+        $skipTotal        = 0;
+        $lowConfTotal     = 0;
+        $errorTotal       = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx     = $passport['coin_cycle_context']  ?? null;
+                $hints   = $passport['coin_cycle_hints']    ?? null;
+                $summary = $passport['coin_cycle_summary']  ?? null;
+
+                if (!is_array($ctx) || !is_array($hints) || !is_array($summary)) {
+                    // Source blocks absent — write compact unavailable routing profile
+                    $passport['coin_cycle_routing_profile'] = [
+                        'updated_at'                    => $ts,
+                        'routing_profile_state'         => 'unavailable',
+                        'routing_profile_confidence'    => 'unavailable',
+                        'routing_live_profile'          => 'unavailable',
+                        'routing_demo_profile'          => 'unavailable',
+                        'routing_shadow_profile'        => 'shadow_only',
+                        'routing_skip_profile'          => 'skip',
+                        'routing_risk_profile'          => 'unavailable',
+                        'routing_hold_profile'          => 'unavailable',
+                        'routing_actionability_profile' => 'non_actionable',
+                        'routing_warning_flag'          => false,
+                        'routing_warning_reason'        => null,
+                        'routing_low_confidence_flag'   => true,
+                        'routing_low_confidence_reason' => 'no_context_hints_or_summary',
+                        'routing_preferred_mode_hint'   => 'shadow_only',
+                        'routing_preferred_risk_hint'   => 'unavailable',
+                        'routing_preferred_hold_hint'   => 'unavailable',
+                        'routing_preferred_stop_hint'   => 'unavailable',
+                        'source_summary_updated_at'     => null,
+                        'source_hints_updated_at'       => null,
+                        'source_context_updated_at'     => null,
+                    ];
+                    $shadowOnlyTotal++;
+                    $skipTotal++;
+                    $lowConfTotal++;
+                } else {
+                    $profile = $this->deriveRoutingProfile($ctx, $hints, $summary);
+                    $passport['coin_cycle_routing_profile'] = $profile;
+                    $writtenTotal++;
+
+                    $liveP = $profile['routing_live_profile'];
+                    $skipP = $profile['routing_skip_profile'];
+
+                    if ($liveP === 'live_ready')   { $liveReadyTotal++; }
+                    elseif ($liveP === 'demo_only') { $demoOnlyTotal++; }
+                    else                            { $shadowOnlyTotal++; }
+
+                    if ($skipP === 'skip') { $skipTotal++; }
+
+                    if ((bool)($profile['routing_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.crptmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projection = [
+            'updated_at'          => $ts,
+            'source'              => 'passport cycle layers',
+            'symbols_total'       => $symbolsTotal,
+            'profiles_written_total' => $writtenTotal,
+            'live_ready_total'    => $liveReadyTotal,
+            'demo_only_total'     => $demoOnlyTotal,
+            'shadow_only_total'   => $shadowOnlyTotal,
+            'skip_total'          => $skipTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $dir = dirname($outputPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $outputPath,
+            json_encode($projection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projection;
+    }
+
     public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array
     {
         $ts             = date('c');

@@ -290,6 +290,13 @@ final class ProfitManagerService
             // Build compact journal entries (one per managed position).
             // Includes the explicit PM-8 stage progression so runtime can show
             // which stages each position reached (not only final outcome).
+
+            // Coin Core Step 10: cycle_decision_debug observability counters
+            $cycleDebugAvailableTotal     = 0;
+            $cycleDebugMissingTotal       = 0;
+            $cycleDebugLowConfidenceTotal = 0;
+            $cycleDebugCache              = []; // per-symbol cache; avoids redundant passport reads
+
             $journalItems = [];
             foreach ($items as $item) {
                 $entry = [
@@ -354,7 +361,32 @@ final class ProfitManagerService
                         $entry['ineligibility_sub_reason'] = $item['ineligibility_sub_reason'];
                     }
                 }
+                // Coin Core Step 10: attach read-only cycle_decision_debug snapshot (observability only)
+                $cddSym = strtoupper((string)($item['symbol'] ?? ''));
+                if (!isset($cycleDebugCache[$cddSym])) {
+                    $cycleDebugCache[$cddSym] = $this->buildCycleDecisionDebug($cddSym);
+                    if (!empty($cycleDebugCache[$cddSym]['available'])) {
+                        $cycleDebugAvailableTotal++;
+                        if (!empty($cycleDebugCache[$cddSym]['model_low_confidence_flag'])) {
+                            $cycleDebugLowConfidenceTotal++;
+                        }
+                    } else {
+                        $cycleDebugMissingTotal++;
+                    }
+                }
+                $entry['cycle_decision_debug'] = $cycleDebugCache[$cddSym];
+
                 $journalItems[] = $entry;
+            }
+
+            // Coin Core Step 10: inject cycle_decision_debug into raw items for last_run.json items payload
+            $itemsWithCycleDebug = [];
+            foreach ($items as $rawItem) {
+                $rawSym = strtoupper((string)($rawItem['symbol'] ?? ''));
+                if (isset($cycleDebugCache[$rawSym])) {
+                    $rawItem['cycle_decision_debug'] = $cycleDebugCache[$rawSym];
+                }
+                $itemsWithCycleDebug[] = $rawItem;
             }
 
             // PM-12: Passive post-entry evidence capture.
@@ -704,6 +736,10 @@ final class ProfitManagerService
                 'outcome_links_neutral_total'                  => $pm14Totals['outcome_links_neutral_total'],
                 'outcome_links_low_confidence_total'           => $pm14Totals['outcome_links_low_confidence_total'],
                 'outcome_links_generation_error_total'         => $pm14Totals['outcome_links_generation_error_total'],
+                // Coin Core Step 10: cycle_decision_debug observability counters
+                'cycle_debug_available_total'                  => $cycleDebugAvailableTotal,
+                'cycle_debug_missing_total'                    => $cycleDebugMissingTotal,
+                'cycle_debug_low_confidence_total'             => $cycleDebugLowConfidenceTotal,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -872,7 +908,11 @@ final class ProfitManagerService
                 'outcome_links_neutral_total'                  => $pm14Totals['outcome_links_neutral_total'],
                 'outcome_links_low_confidence_total'           => $pm14Totals['outcome_links_low_confidence_total'],
                 'outcome_links_generation_error_total'         => $pm14Totals['outcome_links_generation_error_total'],
-                'items'                                   => array_slice($items, 0, 50),
+                // Coin Core Step 10: cycle_decision_debug observability counters
+                'cycle_debug_available_total'                  => $cycleDebugAvailableTotal,
+                'cycle_debug_missing_total'                    => $cycleDebugMissingTotal,
+                'cycle_debug_low_confidence_total'             => $cycleDebugLowConfidenceTotal,
+                'items'                                   => array_slice($itemsWithCycleDebug, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],
             ];
@@ -966,6 +1006,28 @@ final class ProfitManagerService
             $pmStatsBySymbol = $this->aggregatePmStatsBySymbol($allShadowItems);
             $passportDiag    = $this->tryWritePassportPmStats($pmStatsBySymbol, $ts);
 
+            // Coin Core Step 10: cycle_decision_debug observability for shadow items (read-only, passport-sourced)
+            $cycleDebugAvailableTotal     = 0;
+            $cycleDebugMissingTotal       = 0;
+            $cycleDebugLowConfidenceTotal = 0;
+            $cycleDebugCache              = [];
+            foreach ($shadowItems as &$si) {
+                $siSym = strtoupper((string)($si['symbol'] ?? ''));
+                if (!isset($cycleDebugCache[$siSym])) {
+                    $cycleDebugCache[$siSym] = $this->buildCycleDecisionDebug($siSym);
+                    if (!empty($cycleDebugCache[$siSym]['available'])) {
+                        $cycleDebugAvailableTotal++;
+                        if (!empty($cycleDebugCache[$siSym]['model_low_confidence_flag'])) {
+                            $cycleDebugLowConfidenceTotal++;
+                        }
+                    } else {
+                        $cycleDebugMissingTotal++;
+                    }
+                }
+                $si['cycle_decision_debug'] = $cycleDebugCache[$siSym];
+            }
+            unset($si);
+
             // Pick first active item for flat observability fields (multi-position: all in items[])
             $firstItem = $shadowItems[0] ?? [];
 
@@ -1017,6 +1079,10 @@ final class ProfitManagerService
                 'passport_write_skipped_total'                => $passportDiag['passport_write_skipped_total'] ?? 0,
                 'passport_write_error_total'                  => $passportDiag['passport_write_error_total'] ?? 0,
                 'passport_symbols_updated'                    => $passportDiag['passport_symbols_updated'] ?? [],
+                // Coin Core Step 10: cycle_decision_debug observability counters
+                'cycle_debug_available_total'                 => $cycleDebugAvailableTotal,
+                'cycle_debug_missing_total'                   => $cycleDebugMissingTotal,
+                'cycle_debug_low_confidence_total'            => $cycleDebugLowConfidenceTotal,
                 'items'                       => array_slice($shadowItems, 0, 50),
                 'errors'                      => [],
                 'warnings'                    => [],
@@ -1049,6 +1115,11 @@ final class ProfitManagerService
                 } else {
                     $jItem['comparison_unavailable_reason'] = $item['comparison_unavailable_reason'] ?? 'no_bot_trades_loaded';
                 }
+                // Coin Core Step 10: attach cycle_decision_debug from per-symbol cache
+                $jSym = strtoupper((string)($item['symbol'] ?? ''));
+                if (isset($cycleDebugCache[$jSym])) {
+                    $jItem['cycle_decision_debug'] = $cycleDebugCache[$jSym];
+                }
                 $journalItems[] = $jItem;
             }
 
@@ -1074,6 +1145,10 @@ final class ProfitManagerService
                 'average_lock_difference_roi'                => $shadowResult['average_lock_difference_roi'] ?? null,
                 'average_post_lock_extension_roi'            => $shadowResult['average_post_lock_extension_roi'] ?? null,
                 'max_post_lock_extension_roi'                => $shadowResult['max_post_lock_extension_roi'] ?? null,
+                // Coin Core Step 10: cycle_decision_debug observability counters
+                'cycle_debug_available_total'                => $cycleDebugAvailableTotal,
+                'cycle_debug_missing_total'                  => $cycleDebugMissingTotal,
+                'cycle_debug_low_confidence_total'           => $cycleDebugLowConfidenceTotal,
                 'items'                                      => array_slice($journalItems, 0, 50),
             ];
 
@@ -1973,6 +2048,56 @@ final class ProfitManagerService
         }
     }
     
+    /**
+     * Coin Core Step 10: Build a compact read-only coin_cycle_decision_model debug snapshot
+     * from the symbol's passport file. Purely observability — must never influence PM decisions.
+     *
+     * @param string $symbol
+     * @return array<string,mixed>
+     */
+    private function buildCycleDecisionDebug(string $symbol): array
+    {
+        if ($symbol === '' || $this->moduleBase === null) {
+            return ['available' => false];
+        }
+        $passportPath = dirname($this->moduleBase) . '/coin_passport/storage/passports/' . strtoupper($symbol) . '.json';
+        if (!is_file($passportPath)) {
+            return ['available' => false];
+        }
+        $raw = @file_get_contents($passportPath);
+        if ($raw === false || $raw === '') {
+            return ['available' => false];
+        }
+        $passport = json_decode($raw, true);
+        if (!is_array($passport) || !is_array($passport['coin_cycle_decision_model'] ?? null)) {
+            return ['available' => false];
+        }
+        $dm = $passport['coin_cycle_decision_model'];
+        return [
+            'available'                    => true,
+            'model_state'                  => $dm['decision_model_state'] ?? null,
+            'model_confidence'             => $dm['decision_model_confidence'] ?? null,
+            'model_readiness'              => $dm['decision_model_readiness'] ?? null,
+            'model_actionability'          => $dm['decision_model_actionability'] ?? null,
+            'model_risk_posture'           => $dm['decision_model_risk_posture'] ?? null,
+            'model_hold_posture'           => $dm['decision_model_hold_posture'] ?? null,
+            'model_stop_posture'           => $dm['decision_model_stop_posture'] ?? null,
+            'model_live_bias'              => $dm['decision_model_live_bias'] ?? null,
+            'model_demo_bias'              => $dm['decision_model_demo_bias'] ?? null,
+            'model_shadow_bias'            => $dm['decision_model_shadow_bias'] ?? null,
+            'model_skip_bias'              => $dm['decision_model_skip_bias'] ?? null,
+            'model_warning_flag'           => $dm['decision_model_warning_flag'] ?? null,
+            'model_warning_reason'         => $dm['decision_model_warning_reason'] ?? null,
+            'model_low_confidence_flag'    => $dm['decision_model_low_confidence_flag'] ?? null,
+            'model_low_confidence_reason'  => $dm['decision_model_low_confidence_reason'] ?? null,
+            'model_preferred_mode'         => $dm['decision_model_preferred_mode'] ?? null,
+            'model_preferred_risk'         => $dm['decision_model_preferred_risk'] ?? null,
+            'model_preferred_hold'         => $dm['decision_model_preferred_hold'] ?? null,
+            'model_preferred_stop'         => $dm['decision_model_preferred_stop'] ?? null,
+            'source_updated_at'            => $dm['updated_at'] ?? null,
+        ];
+    }
+
     /**
      * Build error result
      */

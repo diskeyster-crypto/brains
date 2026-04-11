@@ -1350,6 +1350,16 @@ trait BotExecutorTrait
             'decision_id'     => (string)($intent['decision_id'] ?? ''),
             'confidence_band' => (string)($intent['confidence_band'] ?? ''),
             'route_state'     => (string)($intent['route_state'] ?? ''),
+            // Brain-route observability: present when a brain-controlled live intent was
+            // executed live. confidence_band/route_state above reflect normalized live
+            // semantics; bot_assessed_* preserve the bot's internal re-assessment for audit.
+            'brain_routed_live_intent'     => (bool)($intent['brain_routed_live_intent'] ?? false),
+            'bot_respected_brain_route'    => (bool)($intent['bot_respected_brain_route'] ?? false),
+            'actual_execution_namespace'   => (string)($intent['actual_execution_namespace'] ?? ''),
+            'persisted_execution_namespace'=> (string)($intent['persisted_execution_namespace'] ?? ''),
+            'metadata_normalized_to_live'  => (bool)($intent['metadata_normalized_to_live'] ?? false),
+            'bot_assessed_confidence_band' => $intent['bot_assessed_confidence_band'] ?? null,
+            'bot_assessed_route_state'     => $intent['bot_assessed_route_state'] ?? null,
             'mode' => $this->getMode(),
             'risk' => $intent['risk'],
             'exchange' => [

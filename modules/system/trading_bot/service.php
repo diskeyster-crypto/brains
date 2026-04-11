@@ -1282,6 +1282,24 @@ final class TradingBotService
                         $intentExecMode = 'live';
                         $intent['brain_routed_live_intent']  = true;
                         $intent['bot_respected_brain_route'] = true;
+
+                        // Normalize decision metadata to live semantics.
+                        // The bot's re-assessment (decision engine) may carry demo/gray labels
+                        // (confidence_band=gray, route_state=demo_learn) even though the execution
+                        // is live. Smart Brain owns route classification for its intents; the
+                        // trade/verdict artifact chain must reflect live semantics.
+                        // Bot's assessed values are preserved in diagnostic fields for audit.
+                        $intent['bot_assessed_confidence_band'] = $intent['confidence_band'] ?? null;
+                        $intent['bot_assessed_route_state']     = $intent['route_state'] ?? null;
+                        if (in_array($intent['confidence_band'] ?? '', ['gray', ''], true)) {
+                            $intent['confidence_band'] = 'brain_live';
+                        }
+                        if (in_array($intent['route_state'] ?? '', ['demo_learn', ''], true)) {
+                            $intent['route_state'] = 'brain_live_intent';
+                        }
+                        $intent['actual_execution_namespace']  = 'live';
+                        $intent['persisted_execution_namespace'] = 'live';
+                        $intent['metadata_normalized_to_live'] = true;
                     }
                     // ─────────────────────────────────────────────────────────────────────────
 

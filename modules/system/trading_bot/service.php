@@ -1206,8 +1206,13 @@ final class TradingBotService
                     $intent['confidence_band'] = $decisionPacket['confidence_band'];
                     $intent['route_state']     = $decisionPacket['route_state'];
                     // Auto mode: skip red-confidence signals (Phase 6 low-confidence policy)
+                    // Brain-controlled intents bypass this filter — the brain owns routing and
+                    // has already made the confidence decision.  The Coin/Bot Step 14 cycle
+                    // execution filter is the bounded quality gate for brain-controlled live
+                    // intents; duplicating the bot's own confidence skip on top of that is
+                    // incorrect and prevents the cycle filter from ever running.
                     $autoMode = (bool)($this->config['execution']['auto_mode'] ?? false);
-                    if ($autoMode && $decisionPacket['decision'] === 'skip') {
+                    if ($autoMode && !$brainControlled && $decisionPacket['decision'] === 'skip') {
                         $routedSkipTotal++;
                         $this->store->saveRejectedIntent($intent, [
                             'reason'  => 'auto_mode_confidence_red',
@@ -1456,9 +1461,12 @@ final class TradingBotService
                         $efMRisk       = null;
                         $efMAction     = null;
 
+                        // Total counts every brain-controlled live intent evaluated by the filter,
+                        // regardless of whether the cycle model data was available.
+                        $cycleExecFilterTotal++;
+
                         if (is_array($efCycleDebug) && ($efCycleDebug['available'] ?? false) === true) {
                             $efFilterUsed  = true;
-                            $cycleExecFilterTotal++;
                             $efMState    = (string)($efCycleDebug['model_state']        ?? 'unavailable');
                             $efMAction   = (string)($efCycleDebug['model_actionability'] ?? 'non_actionable');
                             $efMRisk     = (string)($efCycleDebug['model_risk_posture']  ?? 'unavailable');

@@ -1464,15 +1464,19 @@ class ProfitManager
                 'cycle_pm_model_state'         => $result['cycle_pm_model_state']         ?? null,
                 'cycle_pm_model_risk'          => $result['cycle_pm_model_risk']          ?? null,
                 'cycle_pm_model_actionability' => $result['cycle_pm_model_actionability'] ?? null,
-                // PM-16: Cycle positive support layer evidence
+                // PM-16: Cycle positive support layer evidence — model-state fields always updated;
+                // applied/reason omitted when false so array_merge preserves the prior durable value
+                // in status.json when support did not fire this run.
                 'cycle_pm_support_used'              => $result['cycle_pm_support_used']              ?? false,
-                'cycle_pm_support_applied'           => $result['cycle_pm_support_applied']           ?? false,
-                'cycle_pm_support_reason'            => $result['cycle_pm_support_reason']            ?? null,
                 'cycle_pm_support_model_state'       => $result['cycle_pm_support_model_state']       ?? null,
                 'cycle_pm_support_model_risk'        => $result['cycle_pm_support_model_risk']        ?? null,
                 'cycle_pm_support_model_actionability' => $result['cycle_pm_support_model_actionability'] ?? null,
                 'updated_at'                           => date('c'),
             ];
+            if (!empty($result['cycle_pm_support_applied'])) {
+                $pm9Status['cycle_pm_support_applied'] = true;
+                $pm9Status['cycle_pm_support_reason']  = $result['cycle_pm_support_reason'] ?? null;
+            }
             $this->store->updateSymbolStatus($symbol, $pm9Status);
         }
     }

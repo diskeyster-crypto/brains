@@ -730,6 +730,34 @@ final class ProfitManagerService
             $pm8BlockedTotal   = (int)($pm8Counters['active_owner_apply_blocked_total']      ?? 0);
             $pm8SeenTotal      = (int)($pm8Counters['active_owner_symbols_seen_total']       ?? 0);
 
+            // PM-16: Journal carry-forward — if the cumulative support counter shows support was
+            // applied in a prior run but the current journal has no support-applied items, carry
+            // one representative item from the most recent durable proof so active_owner_journal.json
+            // stays aligned with the cumulative counter and status.json. Best-effort; non-fatal.
+            $pm16CumApplyForJournal = (int)($pm16Counters['cycle_pm_support_apply_total'] ?? 0);
+            if ($pm16CumApplyForJournal > 0) {
+                $journalHasSupportItem = false;
+                foreach ($journalItems as $_jci) {
+                    if (!empty($_jci['cycle_pm_support_applied'])) {
+                        $journalHasSupportItem = true;
+                        break;
+                    }
+                }
+                if (!$journalHasSupportItem) {
+                    try {
+                        $prevProofForJournal = $this->store->loadLastActiveOwnerProof();
+                        foreach (($prevProofForJournal['items'] ?? []) as $_prevJournalItem) {
+                            if (!empty($_prevJournalItem['cycle_pm_support_applied'])) {
+                                $journalItems[] = $_prevJournalItem;
+                                break;
+                            }
+                        }
+                    } catch (\Throwable $_pm16JournalIgnored) {
+                        // best-effort; non-fatal
+                    }
+                }
+            }
+
             // Build compact journal payload.
             $journalPayload = [
                 'ts'                                     => $ts,

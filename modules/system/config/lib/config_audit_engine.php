@@ -264,6 +264,24 @@ final class ConfigAuditEngine
         }
         unset($entry);
 
+        // Attach migration_readiness status to each parameter
+        $legacySources = ['bot_config', 'brain_risk_engine', 'brain_effective', 'pm_config', 'passport_manifest'];
+        foreach ($map as $key => &$entry) {
+            if ($entry['unused']) {
+                $entry['migration_readiness'] = 'blocked_by_missing_owner';
+            } elseif ($entry['conflict']) {
+                $entry['migration_readiness'] = 'blocked_by_conflict';
+            } else {
+                // Check if all sources are legacy (no runtime override)
+                $sourceNames = array_column($entry['sources'], 'source');
+                $hasRuntimeOwner = !empty(array_diff($sourceNames, $legacySources));
+                $entry['migration_readiness'] = $hasRuntimeOwner
+                    ? 'ready_for_soft_switch'
+                    : 'blocked_by_legacy_dependency';
+            }
+        }
+        unset($entry);
+
         return [
             'generated_at' => $ts,
             'parameters'   => array_values($map),
@@ -282,16 +300,29 @@ final class ConfigAuditEngine
      */
     private function buildConflictReport(array $ownershipMap): array
     {
+        $winReasonMap = [
+            'brain_user_config' => 'User override — highest runtime precedence',
+            'brain_effective'   => 'Effective merged runtime snapshot',
+            'bot_runtime'       => 'Bot runtime config (bot.json override)',
+            'bot_config'        => 'Bot static config.php (lowest operational precedence)',
+            'brain_risk_engine' => 'Risk engine coefficients (immutable)',
+            'pm_config'         => 'Profit Manager config.php',
+            'passport_manifest' => 'Coin Passport manifest',
+        ];
+
         $conflicts = [];
         foreach ($ownershipMap['parameters'] ?? [] as $entry) {
             if (!($entry['conflict'] ?? false)) {
                 continue;
             }
+            $primarySrc = $entry['primary'] ?? 'unknown';
             $conflicts[] = [
-                'key'     => $entry['key'],
-                'type'    => $entry['type'],
-                'primary' => $entry['primary'],
-                'sources' => array_map(static fn($s) => [
+                'key'              => $entry['key'],
+                'type'             => $entry['type'],
+                'primary'          => $primarySrc,
+                'win_reason'       => $winReasonMap[$primarySrc] ?? 'First defined source wins',
+                'migration_target' => ($entry['type'] === 'immutable') ? 'immutable_internal' : 'operational_master',
+                'sources'          => array_map(static fn($s) => [
                     'source' => $s['source'],
                     'file'   => $s['file'],
                     'value'  => $s['value'],
@@ -306,9 +337,10 @@ final class ConfigAuditEngine
                 continue;
             }
             $duplicates[] = [
-                'key'     => $entry['key'],
-                'type'    => $entry['type'],
-                'sources' => array_column($entry['sources'], 'source'),
+                'key'              => $entry['key'],
+                'type'             => $entry['type'],
+                'migration_target' => ($entry['type'] === 'immutable') ? 'immutable_internal' : 'operational_master',
+                'sources'          => array_column($entry['sources'], 'source'),
             ];
         }
 

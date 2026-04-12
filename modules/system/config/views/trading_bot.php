@@ -59,9 +59,21 @@ ob_start();
                 <?php if (empty($botPreview)): ?>
                     <div class="p-3 text-muted">No data — run Re-extract first.</div>
                 <?php else: ?>
+                    <?php
+                    // Annotate each section with its source layer
+                    $layerMap = [
+                        'module'    => ['label' => 'bot_runtime › bot_config', 'title' => 'bot.json overrides merged with config.php'],
+                        'execution' => ['label' => 'bot_runtime › bot_config', 'title' => 'execution block: bot.json overrides merged with config.php'],
+                        'exchange'  => ['label' => 'bot_config (immutable)',   'title' => 'exchange defaults from config.php — not expected to change at runtime'],
+                    ];
+                    ?>
                     <?php foreach ($botPreview as $section => $block): ?>
                     <div class="p-2 border-bottom" style="border-color: var(--border-color) !important;">
-                        <div class="text-muted small mb-1 text-uppercase" style="letter-spacing:.05em"><?= htmlspecialchars($section) ?></div>
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <span class="text-muted small text-uppercase" style="letter-spacing:.05em"><?= htmlspecialchars($section) ?></span>
+                            <?php $layer = $layerMap[$section] ?? ['label' => 'operational_master', 'title' => '']; ?>
+                            <span class="badge bg-secondary" title="<?= htmlspecialchars($layer['title']) ?>"><?= htmlspecialchars($layer['label']) ?></span>
+                        </div>
                         <?php if (is_array($block)): ?>
                             <?php foreach ($block as $k => $v): ?>
                             <div class="small d-flex gap-2">
@@ -74,6 +86,10 @@ ob_start();
                         <?php endif; ?>
                     </div>
                     <?php endforeach; ?>
+                    <div class="p-2" style="font-size:0.78rem;color:#64748b;">
+                        Source: <code>bot_runtime</code> (bot.json) overrides <code>bot_config</code> (config.php).
+                        Not yet governed by Config Center.
+                    </div>
                 <?php endif; ?>
             </div>
         </div>

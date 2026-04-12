@@ -73,7 +73,7 @@ ob_start();
                     <div class="p-3 text-muted">No data — run Re-extract first.</div>
                 <?php else: ?>
                 <table class="table table-sm mb-0">
-                    <thead><tr><th>Section</th><th>Values</th></tr></thead>
+                    <thead><tr><th style="width:30%">Section</th><th>Key / Value</th><th style="width:20%">Layer</th></tr></thead>
                     <tbody>
                     <?php foreach ($brainPreview as $section => $vals): ?>
                     <tr class="param-row">
@@ -94,10 +94,18 @@ ob_start();
                             <span class="font-monospace small"><?= htmlspecialchars((string)$vals) ?></span>
                         <?php endif; ?>
                         </td>
+                        <td class="align-top">
+                            <span class="badge bg-secondary" title="Source: brain_effective (merged runtime snapshot)">effective_runtime</span>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                <div class="p-2 border-top" style="border-color:var(--border-color)!important;font-size:0.78rem;color:#64748b;">
+                    Source: <code>brain_effective</code> = merged runtime snapshot (effective_config.json).
+                    Values shown are what Smart Brain currently operates under.
+                    Not yet governed by Config Center.
+                </div>
                 <?php endif; ?>
             </div>
         </div>

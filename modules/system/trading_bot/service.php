@@ -950,6 +950,12 @@ final class TradingBotService
                 $cycleExecFilterNoEffectTotal = 0;
                 $cycleExecFilterUnavailTotal  = 0;
 
+                // Coin/Bot Step 17: cycle execution positive support counters (brain-controlled live only)
+                $cycleExecSupportTotal         = 0;
+                $cycleExecSupportApplyTotal    = 0;
+                $cycleExecSupportNoEffectTotal = 0;
+                $cycleExecSupportUnavailTotal  = 0;
+
                 // Demo budget tracking variables (populated below for demo mode)
                 $isDemoLearning               = false;
                 $demoAttemptBudgetEffective   = $maxExecutePerRun;
@@ -1571,6 +1577,69 @@ final class TradingBotService
                     }
                     // ── End Coin/Bot Step 14 ──────────────────────────────────────────────────
 
+                    // ── Coin/Bot Step 17: cycle execution positive support (brain-controlled live) ─────
+                    // Reads the same cycle_decision_debug snapshot already attached to the intent.
+                    // May only stamp observability fields and record support state — never rejects,
+                    // never reroutes, never bypasses any guard. Applies only to brain-controlled live
+                    // intents that have already passed the Step 14 filter.
+                    if ($brainControlled && $mode === 'live' && $intentExecMode === 'live') {
+                        $cycleExecSupportTotal++;
+                        $esDebug    = $intent['cycle_decision_debug'] ?? null;
+                        $esUsed     = false;
+                        $esApplied  = false;
+                        $esReason   = 'cycle_execution_support_no_effect';
+                        $esMState   = null;
+                        $esMRisk    = null;
+                        $esMAction  = null;
+
+                        if (is_array($esDebug) && ($esDebug['available'] ?? false) === true) {
+                            $esUsed    = true;
+                            $esMState  = (string)($esDebug['model_state']          ?? 'unavailable');
+                            $esMAction = (string)($esDebug['model_actionability']  ?? 'non_actionable');
+                            $esMRisk   = (string)($esDebug['model_risk_posture']   ?? 'unavailable');
+                            $esLiveBias  = (string)($esDebug['model_live_bias']    ?? 'non_live_bias');
+                            $esWarnFlag  = (bool)($esDebug['model_warning_flag']          ?? false);
+                            $esLowConf   = (bool)($esDebug['model_low_confidence_flag']   ?? false);
+
+                            // Clearly favorable: all positive signals aligned
+                            if (
+                                $esMState   === 'favorable'
+                                && $esMAction === 'actionable'
+                                && $esMRisk   !== 'high_risk'
+                                && !$esWarnFlag
+                                && !$esLowConf
+                                && $esLiveBias === 'live_bias'
+                            ) {
+                                $esApplied = true;
+                                $esReason  = 'cycle_execution_support_live';
+                                $cycleExecSupportApplyTotal++;
+                            } elseif (
+                                $esMAction === 'actionable'
+                                && $esMRisk  !== 'high_risk'
+                                && !$esWarnFlag
+                            ) {
+                                // Borderline: actionable + not high_risk + no active warning,
+                                // but not fully favorable state
+                                $esApplied = true;
+                                $esReason  = 'cycle_execution_support_borderline';
+                                $cycleExecSupportApplyTotal++;
+                            } else {
+                                $esReason = 'cycle_execution_support_no_effect';
+                                $cycleExecSupportNoEffectTotal++;
+                            }
+                        } else {
+                            $cycleExecSupportUnavailTotal++;
+                        }
+
+                        $intent['cycle_execution_support_used']               = $esUsed;
+                        $intent['cycle_execution_support_applied']            = $esApplied;
+                        $intent['cycle_execution_support_reason']             = $esReason;
+                        $intent['cycle_execution_support_model_state']        = $esMState;
+                        $intent['cycle_execution_support_model_risk']         = $esMRisk;
+                        $intent['cycle_execution_support_model_actionability'] = $esMAction;
+                    }
+                    // ── End Coin/Bot Step 17 ─────────────────────────────────────────────────────────
+
                     // True per-intent execution context separation:
                     // When the bot is live but this intent is demo-routed, we must:
                     //   1. Use demo storage (parallelDemoStore) — not the live store.
@@ -1901,6 +1970,12 @@ final class TradingBotService
                 $result['cycle_execution_filter_reject_total']    = $cycleExecFilterRejectTotal;
                 $result['cycle_execution_filter_no_effect_total'] = $cycleExecFilterNoEffectTotal;
                 $result['cycle_execution_filter_unavailable_total'] = $cycleExecFilterUnavailTotal;
+
+                // Coin/Bot Step 17: cycle execution positive support counters (brain-controlled live only)
+                $result['cycle_execution_support_total']            = $cycleExecSupportTotal;
+                $result['cycle_execution_support_apply_total']      = $cycleExecSupportApplyTotal;
+                $result['cycle_execution_support_no_effect_total']  = $cycleExecSupportNoEffectTotal;
+                $result['cycle_execution_support_unavailable_total'] = $cycleExecSupportUnavailTotal;
 
             }
             

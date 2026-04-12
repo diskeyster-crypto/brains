@@ -1887,6 +1887,20 @@ trait BotSourcesTrait
             $record['cycle_decision_debug'] = $intent['cycle_decision_debug'];
         }
 
+        // Coin/Bot Step 17: propagate cycle_execution_support fields if stamped on intent.
+        foreach ([
+            'cycle_execution_support_used',
+            'cycle_execution_support_applied',
+            'cycle_execution_support_reason',
+            'cycle_execution_support_model_state',
+            'cycle_execution_support_model_risk',
+            'cycle_execution_support_model_actionability',
+        ] as $_suppField) {
+            if (array_key_exists($_suppField, $intent)) {
+                $record[$_suppField] = $intent[$_suppField];
+            }
+        }
+
         return $record;
     }
 

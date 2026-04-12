@@ -51,6 +51,9 @@ $pageContent = function() use ($last_run, $signals, $monitors, $waiting, $active
         </div>
         <div class="d-flex align-items-center gap-3">
             <small class="text-secondary">Last update: <?= htmlspecialchars((string)($last_run['updated_at'] ?? '-')) ?></small>
+            <a href="<?= htmlspecialchars($smartBrainUrl) ?>/config_all" class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-sliders2 me-1"></i> Config Center
+            </a>
             <button id="btn-run-now" class="btn btn-primary btn-sm" onclick="runSmartBrain()">
                 <i class="bi bi-play-fill me-1"></i> Run now
             </button>

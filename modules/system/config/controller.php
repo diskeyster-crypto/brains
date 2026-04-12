@@ -147,7 +147,7 @@ final class UnifiedConfigController
     }
 
     /**
-     * POST /admin/smart_brain/config/api/extract
+     * POST /admin/smart_brain/config_all/api/extract
      * Trigger a manual extraction pass.
      */
     public function apiExtract(): void

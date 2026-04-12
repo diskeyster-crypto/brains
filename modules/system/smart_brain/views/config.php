@@ -63,6 +63,26 @@ $pageContent = function() use ($config, $user_limits, $brain_auto, $effective_co
             <h4 class="mb-1"><i class="bi bi-gear me-2 text-primary"></i>Global Configuration</h4>
             <p class="text-secondary mb-0">Brain Auto / Effective Runtime / Advanced Raw — <a href="<?= htmlspecialchars($smartBrainUrl) ?>/user_config" class="text-info">Edit User Config →</a></p>
         </div>
+        <a href="<?= htmlspecialchars($smartBrainUrl) ?>/config_all" class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-sliders2 me-1"></i> Config Center <span class="badge badge-shadow ms-1" style="background:#f59e0b;color:#000;font-size:0.7rem;">preview</span>
+        </a>
+    </div>
+
+    <!-- Config Center transition notice -->
+    <div class="mb-4 p-3 rounded" style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);">
+        <div class="d-flex align-items-center justify-content-between">
+            <div>
+                <i class="bi bi-sliders2 text-warning me-2"></i>
+                <strong>Unified Config Center</strong>
+                <span class="text-secondary ms-2" style="font-size:0.85rem;">— shadow preview, not yet active runtime authority</span>
+            </div>
+            <a href="<?= htmlspecialchars($smartBrainUrl) ?>/config_all" class="btn btn-sm btn-warning text-dark fw-semibold">
+                Open Config Center →
+            </a>
+        </div>
+        <p class="text-secondary mb-0 mt-1" style="font-size:0.82rem;">
+            Audits and previews config values from all modules. Migration in progress — this page remains the active authority for now.
+        </p>
     </div>
 
     <div class="row">

@@ -816,6 +816,11 @@ final class SmartBrainCore
             'long_enter_now_live_applied_count' => (int)($liveIntentResult['long_enter_now_live_applied_count'] ?? 0),
             'long_enter_now_live_approved_count' => (int)($liveIntentResult['long_enter_now_live_approved_count'] ?? 0),
             'long_enter_now_live_rejected_count' => (int)($liveIntentResult['long_enter_now_live_rejected_count'] ?? 0),
+            // Long-path funnel observability counters
+            'long_quality_floor_reject_total' => (int)($liveIntentResult['long_quality_floor_reject_total'] ?? 0),
+            'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
+            'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
+            'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -900,6 +905,11 @@ final class SmartBrainCore
             'short_signals_count' => $shortSignalsCount,
             'long_live_candidates_approved_count' => (int)($liveIntentResult['long_approved_count'] ?? 0),
             'long_live_intents_created_count' => (int)($liveIntentResult['long_intents_created_count'] ?? 0),
+            // Long-path funnel observability counters
+            'long_quality_floor_reject_total' => (int)($liveIntentResult['long_quality_floor_reject_total'] ?? 0),
+            'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
+            'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
+            'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
             'live_intents_total_after_merge' => $liveIntentResult['intents_total_after_merge'] ?? 0,
             'live_terminal_retained_count' => $liveIntentResult['terminal_retained_count'] ?? 0,
             'lifecycle_counters' => $liveIntentResult['lifecycle_counters'] ?? [],
@@ -1072,6 +1082,11 @@ final class SmartBrainCore
             // Long-path intent counters
             'long_approved_count' => 0,
             'long_intents_created_count' => 0,
+            // Long-path funnel rejection counters (per problem-statement requirement)
+            'long_quality_floor_reject_total' => 0,
+            'long_sniper_v3_live_rejected_count' => 0,
+            'long_passport_gate_reject_total' => 0,
+            'long_cycle_veto_total' => 0,
             // Manual blacklist diagnostics
             'manual_blacklist_active' => false,
             'manual_blacklist_count' => 0,
@@ -1485,6 +1500,10 @@ final class SmartBrainCore
                     if ($isLongEnterNow) {
                         $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
                     }
+                    // Long-path funnel observability
+                    if ($signalSide === 'long') {
+                        $result['long_quality_floor_reject_total']++;
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
                     continue;
                 }
@@ -1529,6 +1548,10 @@ final class SmartBrainCore
                     }
                     $result['sniper_v3_live_rejected_count'] = ($result['sniper_v3_live_rejected_count'] ?? 0) + 1;
                     $result['sniper_v3_shadow_only_count'] = ($result['sniper_v3_shadow_only_count'] ?? 0) + 1;
+                    // Long-path funnel observability
+                    if ($side === 'long') {
+                        $result['long_sniper_v3_live_rejected_count']++;
+                    }
                     // Record preview for diagnostics (first 10)
                     if (count($result['sniper_v3_rejected_preview'] ?? []) < 10) {
                         $result['sniper_v3_rejected_preview'][] = [
@@ -1539,15 +1562,19 @@ final class SmartBrainCore
                             'checked_values' => $sniperFilterResult['checked_values'],
                             'threshold_source' => $sniperFilterResult['checked_values']['threshold_source'] ?? 'default_v3',
                             'short_v3_threshold_applied' => $sniperFilterResult['short_v3_threshold_applied'] ?? false,
+                            'long_v3_threshold_applied' => $sniperFilterResult['long_v3_threshold_applied'] ?? false,
                         ];
                     }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'sniper_v3_quality_filter', $selectionMode);
                     continue;
                 }
                 $result['sniper_v3_live_eligible_count'] = ($result['sniper_v3_live_eligible_count'] ?? 0) + 1;
-                // Track short V3 eligible separately
+                // Track short/long V3 eligible separately
                 if (!empty($sniperFilterResult['short_v3_threshold_applied'])) {
                     $result['sniper_v3_short_live_eligible_count'] = ($result['sniper_v3_short_live_eligible_count'] ?? 0) + 1;
+                }
+                if (!empty($sniperFilterResult['long_v3_threshold_applied'])) {
+                    $result['sniper_v3_long_live_eligible_count'] = ($result['sniper_v3_long_live_eligible_count'] ?? 0) + 1;
                 }
             }
 
@@ -1646,6 +1673,9 @@ final class SmartBrainCore
                     $cycleModelVetoReason  = 'cycle_model_veto_high_risk';
                     $result['cycle_model_veto_total']++;
                     $result['cycle_model_demote_skip_total']++;
+                    if ($side === 'long') {
+                        $result['long_cycle_veto_total']++;
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_high_risk', $selectionMode);
                     continue;
                 }
@@ -1656,6 +1686,9 @@ final class SmartBrainCore
                     $cycleModelVetoReason  = 'cycle_model_veto_non_actionable';
                     $result['cycle_model_veto_total']++;
                     $result['cycle_model_demote_skip_total']++;
+                    if ($side === 'long') {
+                        $result['long_cycle_veto_total']++;
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_non_actionable', $selectionMode);
                     continue;
                 }
@@ -1680,6 +1713,9 @@ final class SmartBrainCore
                         $cycleModelVetoReason  = 'cycle_model_demote_demo';
                         $result['cycle_model_veto_total']++;
                         $result['cycle_model_demote_demo_total']++;
+                        if ($side === 'long') {
+                            $result['long_cycle_veto_total']++;
+                        }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
                         continue;
                     }
@@ -1693,6 +1729,9 @@ final class SmartBrainCore
                     $cycleModelVetoReason  = 'cycle_model_demote_demo';
                     $result['cycle_model_veto_total']++;
                     $result['cycle_model_demote_demo_total']++;
+                    if ($side === 'long') {
+                        $result['long_cycle_veto_total']++;
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
                     continue;
                 }
@@ -1869,6 +1908,9 @@ final class SmartBrainCore
                     } elseif ($passportEligibility === 'reject') {
                         // Hard reject — coin explicitly blocked
                         $result['passport_gate_signal_blocked_by_passport_count']++;
+                        if ($side === 'long') {
+                            $result['long_passport_gate_reject_total']++;
+                        }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_reject:' . $passportBlockReason, $selectionMode);
                         $result['passport_gate_rejected_count']++;
                         $result['passport_gate_reject_count']++;
@@ -1900,6 +1942,9 @@ final class SmartBrainCore
                         // passport_gate_demote:sim_only is produced only for these states.
                         // bootstrap_live is explicitly handled above and does NOT reach this branch.
                         $result['passport_gate_signal_blocked_by_passport_count']++;
+                        if ($side === 'long') {
+                            $result['long_passport_gate_reject_total']++;
+                        }
                         $signal['passport_gate_result']    = $passportEligibility;
                         $signal['passport_gate_demoted']   = true;
                         $signal['passport_block_reason']   = $passportBlockReason;

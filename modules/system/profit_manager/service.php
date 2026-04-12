@@ -396,6 +396,31 @@ final class ProfitManagerService
                 }
                 $entry['cycle_decision_debug'] = $cycleDebugCache[$cddSym];
 
+                // PM-16: Service-side support mirror — derive applied/reason from the raw item's
+                // trailing action when the model was evaluated as favorable and caution did not block,
+                // but cycle_pm_support_applied was not set by the direct PM-16 detection.
+                // This is a propagation fallback only: it does not affect any counter.
+                if (!$entry['cycle_pm_support_applied']
+                    && !empty($entry['cycle_pm_support_used'])
+                    && !$entry['cycle_pm_caution_applied']
+                    && ($entry['cycle_pm_support_model_state'] ?? '') === 'favorable'
+                    && ($entry['cycle_pm_support_model_actionability'] ?? '') === 'actionable'
+                    && !in_array($entry['cycle_pm_support_model_risk'] ?? 'unavailable', ['high_risk', 'unavailable'], true)
+                ) {
+                    $_pm16St = $item['step_trailing'] ?? null;
+                    $_pm16Dt = $item['dumb_trailing'] ?? null;
+                    if ($_pm16St !== null && ($_pm16St['action'] ?? '') === 'step_sl_update') {
+                        $entry['cycle_pm_support_applied'] = true;
+                        $entry['cycle_pm_support_reason']  = 'cycle_pm_support_extension';
+                    } elseif ($_pm16Dt !== null && ($_pm16Dt['action'] ?? '') === 'dumb_trailing_set') {
+                        $entry['cycle_pm_support_applied'] = true;
+                        $entry['cycle_pm_support_reason']  = 'cycle_pm_support_tighten';
+                    } elseif (!empty($entry['pm_proposal_computed'])) {
+                        $entry['cycle_pm_support_applied'] = true;
+                        $entry['cycle_pm_support_reason']  = 'cycle_pm_support_continue';
+                    }
+                }
+
                 $journalItems[] = $entry;
             }
 
@@ -405,6 +430,28 @@ final class ProfitManagerService
                 $rawSym = strtoupper((string)($rawItem['symbol'] ?? ''));
                 if (isset($cycleDebugCache[$rawSym])) {
                     $rawItem['cycle_decision_debug'] = $cycleDebugCache[$rawSym];
+                }
+                // PM-16: Service-side support mirror for last_run.json items — same propagation
+                // fallback as the journal items mirror above; operates on the raw item copy.
+                if (!($rawItem['cycle_pm_support_applied'] ?? false)
+                    && !empty($rawItem['cycle_pm_support_used'])
+                    && empty($rawItem['cycle_pm_caution_applied'])
+                    && ($rawItem['cycle_pm_support_model_state'] ?? '') === 'favorable'
+                    && ($rawItem['cycle_pm_support_model_actionability'] ?? '') === 'actionable'
+                    && !in_array($rawItem['cycle_pm_support_model_risk'] ?? 'unavailable', ['high_risk', 'unavailable'], true)
+                ) {
+                    $_pm16StR = $rawItem['step_trailing'] ?? null;
+                    $_pm16DtR = $rawItem['dumb_trailing'] ?? null;
+                    if ($_pm16StR !== null && ($_pm16StR['action'] ?? '') === 'step_sl_update') {
+                        $rawItem['cycle_pm_support_applied'] = true;
+                        $rawItem['cycle_pm_support_reason']  = 'cycle_pm_support_extension';
+                    } elseif ($_pm16DtR !== null && ($_pm16DtR['action'] ?? '') === 'dumb_trailing_set') {
+                        $rawItem['cycle_pm_support_applied'] = true;
+                        $rawItem['cycle_pm_support_reason']  = 'cycle_pm_support_tighten';
+                    } elseif (!empty($rawItem['pm_proposal_computed'])) {
+                        $rawItem['cycle_pm_support_applied'] = true;
+                        $rawItem['cycle_pm_support_reason']  = 'cycle_pm_support_continue';
+                    }
                 }
                 $itemsWithCycleDebug[] = $rawItem;
             }
@@ -798,6 +845,34 @@ final class ProfitManagerService
                 // Fallback: if nothing filtered but counters say something happened, include all items.
                 if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0)) {
                     $proofItems = $journalItems;
+                }
+                // PM-16: Carry-forward — if the cumulative counter confirms support was applied in a
+                // previous run but the current run produced no support-applied items, preserve one
+                // representative support-applied item from the most recent durable proof so the artifact
+                // stays aligned with status.json and the cumulative counter.
+                // This is best-effort and non-fatal.
+                $pm16CumApplyTotal = (int)($pm16Counters['cycle_pm_support_apply_total'] ?? 0);
+                if ($pm16CumApplyTotal > 0 && $pm16SupportThisRun === 0) {
+                    $hasSupportItem = false;
+                    foreach ($proofItems as $_pi) {
+                        if (!empty($_pi['cycle_pm_support_applied'])) {
+                            $hasSupportItem = true;
+                            break;
+                        }
+                    }
+                    if (!$hasSupportItem) {
+                        try {
+                            $prevProof = $this->store->loadLastActiveOwnerProof();
+                            foreach (($prevProof['items'] ?? []) as $_prevItem) {
+                                if (!empty($_prevItem['cycle_pm_support_applied'])) {
+                                    $proofItems[] = $_prevItem;
+                                    break;
+                                }
+                            }
+                        } catch (\Throwable $_ignored) {
+                            // best-effort; non-fatal
+                        }
+                    }
                 }
                 $proofPayload = [
                     'ts'                                    => $ts,

@@ -380,6 +380,13 @@ class ProfitManager
             // Support is tagging-only: it marks a real PM action path as cycle-favored.
             // It must NOT force new actions, loosen stops, widen risk, or bypass caution blocks.
             // Only fires when PM already has a real apply/proposal path AND caution did not block.
+
+            // Pre-compute proposalAvailable from already-set $appliedAction and $trailingArmed so the
+            // gate below does not read a stale $proposalComputed value from a previous loop iteration.
+            // ($proposalComputed is the canonical PM-8 variable; it is initialised later at line ~473.)
+            $pm16ProposalAvailable = $trailingArmed
+                && in_array($appliedAction, ['step_sl_update', 'dumb_trailing_set'], true);
+
             $cycPmSupportUsed    = false;
             $cycPmSupportApplied = false;
             $cycPmSupportReason  = null;
@@ -400,14 +407,14 @@ class ProfitManager
                 );
                 // Real action path: PM attempted an exchange update OR computed an improving proposal.
                 // Caution-blocked paths are excluded (no real action to support).
-                $pm16RealActionPath = !$cycPmCautionApplied && ($exchangeAttempted || $proposalComputed);
+                $pm16RealActionPath = !$cycPmCautionApplied && ($exchangeAttempted || $pm16ProposalAvailable);
                 if ($pm16Favorable && $pm16RealActionPath) {
                     $cycPmSupportApplied = true;
                     if ($appliedAction === 'step_sl_update') {
                         $cycPmSupportReason = 'cycle_pm_support_extension';
                     } elseif ($appliedAction === 'dumb_trailing_set') {
                         $cycPmSupportReason = 'cycle_pm_support_tighten';
-                    } elseif ($proposalComputed) {
+                    } elseif ($pm16ProposalAvailable) {
                         $cycPmSupportReason = 'cycle_pm_support_continue';
                     } else {
                         $cycPmSupportReason = 'cycle_pm_support_hold';
@@ -415,6 +422,22 @@ class ProfitManager
                     $cycPmSupportApplyTotal++;
                 } else {
                     $cycPmSupportNoEffectTotal++;
+                }
+            }
+
+            // PM-16: Reason-based mirror — ensures applied/reason are always set when a real trailing
+            // apply happened, the model was favorable, and caution did not block, even if the direct
+            // detection above missed the case (e.g. model state/risk satisfied at a broader level).
+            // This is a propagation fallback only: it does NOT increment any counter.
+            if (!$cycPmSupportApplied && $cycPmSupportUsed && !$cycPmCautionApplied
+                && $cycPmModelState === 'favorable' && $cycPmModelAction === 'actionable'
+            ) {
+                if ($appliedAction === 'step_sl_update') {
+                    $cycPmSupportApplied = true;
+                    $cycPmSupportReason  = 'cycle_pm_support_extension';
+                } elseif ($appliedAction === 'dumb_trailing_set') {
+                    $cycPmSupportApplied = true;
+                    $cycPmSupportReason  = 'cycle_pm_support_tighten';
                 }
             }
 

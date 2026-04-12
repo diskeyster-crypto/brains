@@ -346,6 +346,30 @@ class ProfitManager
                 $cycPmCautionBlockTotal++;
             }
 
+            // PM-15: reason-based mirror — ensure cycle_pm_caution_applied/reason are always set
+            // whenever a trailing sub-result returned an explicit caution reason string, even if
+            // cycle_pm_caution_blocked was absent from the sub-result for any edge-case reason.
+            // This is a propagation fallback only: it does NOT increment block_total (the counter
+            // is authoritative and managed solely by the direct detection above).
+            if (!$cycPmCautionApplied && $cycPmCautionUsed) {
+                static $pm15CautionReasonStrings = [
+                    'cycle_pm_caution_high_risk'      => true,
+                    'cycle_pm_caution_non_actionable' => true,
+                    'cycle_pm_caution_low_confidence' => true,
+                    'cycle_pm_caution_unavailable'    => true,
+                ];
+                foreach ([
+                    ($st !== null && ($st['action'] ?? '') === 'skip') ? ($st['reason'] ?? null) : null,
+                    ($dt !== null && ($dt['action'] ?? '') === 'skip') ? ($dt['reason'] ?? null) : null,
+                ] as $_pm15r) {
+                    if ($_pm15r !== null && isset($pm15CautionReasonStrings[$_pm15r])) {
+                        $cycPmCautionApplied = true;
+                        $cycPmCautionReason  = $_pm15r;
+                        break;
+                    }
+                }
+            }
+
             // Persist updated active state (monotonic peak_roi, arm state, last applied stop)
             $this->store->saveActiveState($tradeKey, [
                 'trade_id'                => $tradeKey,

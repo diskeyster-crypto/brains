@@ -770,17 +770,19 @@ final class ProfitManagerService
             }
 
             // Durable PM-8 proof artifact: written only when this run has meaningful evidence
-            // (eligible > 0, apply_attempted > 0, apply_success > 0, or apply_blocked > 0).
+            // (eligible > 0, apply_attempted > 0, apply_success > 0, apply_blocked > 0, or
+            // cycle caution blocked a real execute-path position this tick).
             // Never overwritten by a later empty/no-position tick.
-            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0) {
+            $pm15BlockThisRun = (int)($pm15Counters['this_run_caution_block_total'] ?? 0);
+            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0 || $pm15BlockThisRun > 0) {
                 $proofItems = [];
                 foreach ($journalItems as $ji) {
-                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied'])) {
+                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied']) || !empty($ji['cycle_pm_caution_applied'])) {
                         $proofItems[] = $ji;
                     }
                 }
                 // Fallback: if nothing filtered but counters say something happened, include all items.
-                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0)) {
+                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0 || $pm15BlockThisRun > 0)) {
                     $proofItems = $journalItems;
                 }
                 $proofPayload = [
@@ -819,26 +821,36 @@ final class ProfitManagerService
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
             } else {
-                // PM-14 proof mirror: the PM-8 gate above was not triggered (no active-owner
-                // activity this tick), but PM-14 may have non-zero counters.  Mirror them into
-                // the existing durable proof artifact so all four sources stay aligned.
+                // PM-14/15 proof mirror: the PM-8 gate above was not triggered (no active-owner
+                // activity this tick), but PM-14 or PM-15 may have non-zero counters.  Mirror them
+                // into the existing durable proof artifact so all sources stay aligned.
                 // This is best-effort and non-fatal — a missing or unreadable proof file is silently skipped.
                 $pm14HasData = ($pm14Totals['outcome_links_generated_total'] ?? 0) > 0
                     || ($pm14Totals['outcome_links_generation_error_total'] ?? 0) > 0;
-                if ($pm14HasData) {
+                $pm15HasData = ($pm15Counters['cycle_pm_caution_total'] ?? 0) > 0
+                    || ($pm15Counters['cycle_pm_caution_block_total'] ?? 0) > 0;
+                if ($pm14HasData || $pm15HasData) {
                     try {
                         $existingProof = $this->store->loadLastActiveOwnerProof();
                         if (!empty($existingProof)) {
-                            $existingProof['outcome_links_generated_total']        = $pm14Totals['outcome_links_generated_total'];
-                            $existingProof['outcome_links_profitable_total']       = $pm14Totals['outcome_links_profitable_total'];
-                            $existingProof['outcome_links_losing_total']           = $pm14Totals['outcome_links_losing_total'];
-                            $existingProof['outcome_links_neutral_total']          = $pm14Totals['outcome_links_neutral_total'];
-                            $existingProof['outcome_links_low_confidence_total']   = $pm14Totals['outcome_links_low_confidence_total'];
-                            $existingProof['outcome_links_generation_error_total'] = $pm14Totals['outcome_links_generation_error_total'];
+                            if ($pm14HasData) {
+                                $existingProof['outcome_links_generated_total']        = $pm14Totals['outcome_links_generated_total'];
+                                $existingProof['outcome_links_profitable_total']       = $pm14Totals['outcome_links_profitable_total'];
+                                $existingProof['outcome_links_losing_total']           = $pm14Totals['outcome_links_losing_total'];
+                                $existingProof['outcome_links_neutral_total']          = $pm14Totals['outcome_links_neutral_total'];
+                                $existingProof['outcome_links_low_confidence_total']   = $pm14Totals['outcome_links_low_confidence_total'];
+                                $existingProof['outcome_links_generation_error_total'] = $pm14Totals['outcome_links_generation_error_total'];
+                            }
+                            if ($pm15HasData) {
+                                $existingProof['cycle_pm_caution_total']             = $pm15Counters['cycle_pm_caution_total']           ?? 0;
+                                $existingProof['cycle_pm_caution_block_total']       = $pm15Counters['cycle_pm_caution_block_total']     ?? 0;
+                                $existingProof['cycle_pm_caution_no_effect_total']   = $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0;
+                                $existingProof['cycle_pm_caution_unavailable_total'] = $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0;
+                            }
                             $this->store->saveLastActiveOwnerProof($existingProof);
                         }
                     } catch (\Throwable $ignored) {
-                        // non-fatal; PM-14 mirror into proof is best-effort
+                        // non-fatal; PM-14/15 mirror into proof is best-effort
                     }
                 }
             }

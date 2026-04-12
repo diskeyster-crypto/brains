@@ -1330,6 +1330,13 @@ class ProfitManager
                 'adaptive_action_taken'                => $result['adaptive_action_taken']                ?? null,
                 'adaptive_adjustment_roi'              => $result['adaptive_adjustment_roi']              ?? null,
                 'adaptive_bounds_applied'              => $result['adaptive_bounds_applied']              ?? false,
+                // PM-15: Cycle caution layer evidence
+                'cycle_pm_caution_used'        => $result['cycle_pm_caution_used']        ?? false,
+                'cycle_pm_caution_applied'     => $result['cycle_pm_caution_applied']     ?? false,
+                'cycle_pm_caution_reason'      => $result['cycle_pm_caution_reason']      ?? null,
+                'cycle_pm_model_state'         => $result['cycle_pm_model_state']         ?? null,
+                'cycle_pm_model_risk'          => $result['cycle_pm_model_risk']          ?? null,
+                'cycle_pm_model_actionability' => $result['cycle_pm_model_actionability'] ?? null,
                 'updated_at'                           => date('c'),
             ];
             $this->store->updateSymbolStatus($symbol, $pm9Status);

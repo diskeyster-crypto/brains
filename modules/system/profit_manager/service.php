@@ -419,6 +419,22 @@ final class ProfitManagerService
                         $entry['cycle_pm_support_applied'] = true;
                         $entry['cycle_pm_support_reason']  = 'cycle_pm_support_continue';
                     }
+                    // PM-16: When the service mirror corrected the support-applied state,
+                    // propagate into status.json so per-symbol status stays consistent with
+                    // the journal and proof artifacts. Best-effort; non-fatal.
+                    if (!empty($entry['cycle_pm_support_applied'])) {
+                        $_pm16MirrorSym = strtoupper((string)($item['symbol'] ?? ''));
+                        if ($_pm16MirrorSym !== '') {
+                            try {
+                                $this->store->updateSymbolStatus($_pm16MirrorSym, [
+                                    'cycle_pm_support_applied' => true,
+                                    'cycle_pm_support_reason'  => $entry['cycle_pm_support_reason'],
+                                ]);
+                            } catch (\Throwable $_pm16StatusIgnored) {
+                                // best-effort; non-fatal
+                            }
+                        }
+                    }
                 }
 
                 $journalItems[] = $entry;

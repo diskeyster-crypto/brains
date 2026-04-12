@@ -540,7 +540,16 @@ trait BotExecutorTrait
             // Step 5: Submit market order
             // ============================================================
             $result['execution_stage'] = 'exchange_submit_started';
-            $orderLinkId = 'tb_' . substr($signalId, 0, 32);
+            // Generate a fresh, unique OrderLinkedID for each exchange submit attempt.
+            // The stable execution-dedup identity is tracked separately via executionKey /
+            // executed_index — that protection is unaffected. Using a microsecond-based
+            // nonce prevents "OrderLinkedID is duplicate" rejections when the same intent
+            // is retried or replayed after a prior failed/incomplete submit.
+            // Format: 'tb_' (3) + 27 signal chars + 6 hex nonce = 36 chars (Bybit limit).
+            $orderLinkId = 'tb_' . substr($signalId, 0, 27) . substr(uniqid(), -6);
+            $result['live_submit_attempt_id']     = $orderLinkId;
+            $result['exchange_order_link_id']     = $orderLinkId;
+            $result['exchange_order_link_reused'] = false;
             $order = $this->buildOrder($intent, $positionSize, $risk, $orderLinkId);
             
             if (in_array($mode, ['live', 'demo'], true)) {

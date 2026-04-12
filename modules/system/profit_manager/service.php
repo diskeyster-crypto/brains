@@ -57,6 +57,10 @@ final class ProfitManagerService
         
         $this->storageDir = $this->moduleBase . '/storage';
         $this->config = $this->loadConfig();
+
+        // PM-15: Inject passports directory so ProfitManager can read coin_cycle_decision_model
+        // for bounded cycle caution evaluation. Read-only, best-effort, non-fatal.
+        $this->config['_pm_passports_dir'] = dirname($this->moduleBase) . '/coin_passport/storage/passports';
         
         // Initialize sub-components
         $this->store = new Lib\Store($this->storageDir, $this->config);
@@ -281,10 +285,11 @@ final class ProfitManagerService
 
             // PM-8: Extract active-owner proof counters and build compact journal artifact.
             // The journal mirrors shadow_journal.json in purpose but for active-owner decisions.
-            $pm8Counters = $runResult['pm8_counters'] ?? [];
-            $pm9Counters = $runResult['pm9_counters'] ?? [];
+            $pm8Counters  = $runResult['pm8_counters']  ?? [];
+            $pm9Counters  = $runResult['pm9_counters']  ?? [];
             $pm10Counters = $runResult['pm10_counters'] ?? [];
             $pm11Counters = $runResult['pm11_counters'] ?? [];
+            $pm15Counters = $runResult['pm15_counters'] ?? [];
             $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
@@ -350,6 +355,13 @@ final class ProfitManagerService
                     'adaptive_action_taken'                => $item['adaptive_action_taken']                ?? null,
                     'adaptive_adjustment_roi'              => $item['adaptive_adjustment_roi']              ?? null,
                     'adaptive_bounds_applied'              => $item['adaptive_bounds_applied']              ?? false,
+                    // PM-15: Cycle caution layer evidence per position
+                    'cycle_pm_caution_used'        => $item['cycle_pm_caution_used']        ?? false,
+                    'cycle_pm_caution_applied'     => $item['cycle_pm_caution_applied']     ?? false,
+                    'cycle_pm_caution_reason'      => $item['cycle_pm_caution_reason']      ?? null,
+                    'cycle_pm_model_state'         => $item['cycle_pm_model_state']         ?? null,
+                    'cycle_pm_model_risk'          => $item['cycle_pm_model_risk']          ?? null,
+                    'cycle_pm_model_actionability' => $item['cycle_pm_model_actionability'] ?? null,
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
@@ -740,6 +752,11 @@ final class ProfitManagerService
                 'cycle_debug_available_total'                  => $cycleDebugAvailableTotal,
                 'cycle_debug_missing_total'                    => $cycleDebugMissingTotal,
                 'cycle_debug_low_confidence_total'             => $cycleDebugLowConfidenceTotal,
+                // PM-15: cycle caution counters (cumulative; prove caution layer is active)
+                'cycle_pm_caution_total'                       => $pm15Counters['cycle_pm_caution_total']           ?? 0,
+                'cycle_pm_caution_block_total'                 => $pm15Counters['cycle_pm_caution_block_total']     ?? 0,
+                'cycle_pm_caution_no_effect_total'             => $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0,
+                'cycle_pm_caution_unavailable_total'           => $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -793,6 +810,11 @@ final class ProfitManagerService
                     'outcome_links_neutral_total'           => $pm14Totals['outcome_links_neutral_total'],
                     'outcome_links_low_confidence_total'    => $pm14Totals['outcome_links_low_confidence_total'],
                     'outcome_links_generation_error_total'  => $pm14Totals['outcome_links_generation_error_total'],
+                    // PM-15: cycle caution counters in proof artifact
+                    'cycle_pm_caution_total'                => $pm15Counters['cycle_pm_caution_total']           ?? 0,
+                    'cycle_pm_caution_block_total'          => $pm15Counters['cycle_pm_caution_block_total']     ?? 0,
+                    'cycle_pm_caution_no_effect_total'      => $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0,
+                    'cycle_pm_caution_unavailable_total'    => $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0,
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
@@ -912,6 +934,11 @@ final class ProfitManagerService
                 'cycle_debug_available_total'                  => $cycleDebugAvailableTotal,
                 'cycle_debug_missing_total'                    => $cycleDebugMissingTotal,
                 'cycle_debug_low_confidence_total'             => $cycleDebugLowConfidenceTotal,
+                // PM-15: cycle caution counters (cumulative; appear in last_run.json for archive verification)
+                'cycle_pm_caution_total'                       => $pm15Counters['cycle_pm_caution_total']           ?? 0,
+                'cycle_pm_caution_block_total'                 => $pm15Counters['cycle_pm_caution_block_total']     ?? 0,
+                'cycle_pm_caution_no_effect_total'             => $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0,
+                'cycle_pm_caution_unavailable_total'           => $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0,
                 'items'                                   => array_slice($itemsWithCycleDebug, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

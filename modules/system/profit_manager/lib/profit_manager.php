@@ -91,6 +91,12 @@ class ProfitManager
         $pm11AdjNoop             = 0; // positions where adaptive action was noop
         $pm11BoundsHit           = 0; // positions where adaptive adjustment was capped by bounds
 
+        // PM-15: Per-run cycle caution counters (merged into cumulative pm15_cycle_caution_counters.json)
+        $cycPmCautionTotal       = 0; // positions where cycle caution was evaluated
+        $cycPmCautionBlockTotal  = 0; // positions where caution blocked a PM apply/tighten
+        $cycPmCautionNoEffectTotal = 0; // positions where caution was evaluated but had no effect
+        $cycPmCautionUnavailTotal  = 0; // positions where cycle model was unavailable
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -218,6 +224,55 @@ class ProfitManager
             elseif ($aMode === 'flat_carry')          { $pm11FlatCarry++; }
             if ($pm11Fields['adaptive_action_taken'] !== 'noop') { $pm11AdjApplied++; } else { $pm11AdjNoop++; }
             if ($pm11Fields['adaptive_bounds_applied'])           { $pm11BoundsHit++; }
+
+            // PM-15: Bounded cycle caution layer — read coin_cycle_decision_model from passport.
+            // This is a caution/veto gate only: it may block or defer PM apply/tighten when cycle
+            // conditions are clearly weak or bad. It must NOT loosen stops, widen risk, or override
+            // monotonic protection. PM ownership and all safety gates remain intact.
+            $cycPmCautionModel  = $this->readCycleDecisionModel($symbol);
+            $cycPmCautionUsed   = false;
+            $cycPmCautionApplied = false;
+            $cycPmCautionReason  = null;
+            $cycPmModelState     = $cycPmCautionModel['decision_model_state']         ?? 'unavailable';
+            $cycPmModelRisk      = $cycPmCautionModel['decision_model_risk_posture']  ?? 'unavailable';
+            $cycPmModelAction    = $cycPmCautionModel['decision_model_actionability'] ?? 'non_actionable';
+
+            if ($cycPmCautionModel === null) {
+                // Cycle model unavailable — no caution possible, pass through
+                $cycPmCautionUnavailTotal++;
+            } else {
+                $cycPmCautionTotal++;
+                $cycPmCautionUsed = true;
+
+                // Determine if any explicit bad state triggers caution veto
+                $cautionReason = null;
+                if ($cycPmModelState === 'unavailable' || $cycPmModelState === 'weak') {
+                    $cautionReason = 'cycle_pm_caution_unavailable';
+                } elseif ($cycPmModelAction === 'non_actionable') {
+                    $cautionReason = 'cycle_pm_caution_non_actionable';
+                } elseif ($cycPmModelRisk === 'high_risk') {
+                    $cautionReason = 'cycle_pm_caution_high_risk';
+                } elseif (!empty($cycPmCautionModel['decision_model_low_confidence_flag'])) {
+                    $cautionReason = 'cycle_pm_caution_low_confidence';
+                } elseif (
+                    !empty($cycPmCautionModel['decision_model_warning_flag'])
+                    && !empty($cycPmCautionModel['decision_model_warning_reason'])
+                ) {
+                    $cautionReason = 'cycle_pm_caution_non_actionable';
+                }
+
+                if ($cautionReason !== null) {
+                    // Caution applies: inject hold flag into ctx so processStepTrailing skips tighten
+                    $ctx['cycle_pm_caution_hold']   = true;
+                    $ctx['cycle_pm_caution_reason']  = $cautionReason;
+                    $cycPmCautionApplied = true;
+                    $cycPmCautionReason  = $cautionReason;
+                    $cycPmCautionBlockTotal++;
+                } else {
+                    // Cycle conditions acceptable — caution evaluated but no effect
+                    $cycPmCautionNoEffectTotal++;
+                }
+            }
 
             // Execute existing trailing logic (real exchange writes)
             $itemResult = $this->processPosition($symbol, $ctx);
@@ -478,6 +533,14 @@ class ProfitManager
             $itemResult['adaptive_adjustment_roi']    = $pm11Fields['adaptive_adjustment_roi'];
             $itemResult['adaptive_bounds_applied']    = $pm11Fields['adaptive_bounds_applied'];
 
+            // PM-15: Cycle caution layer observability fields
+            $itemResult['cycle_pm_caution_used']        = $cycPmCautionUsed;
+            $itemResult['cycle_pm_caution_applied']     = $cycPmCautionApplied;
+            $itemResult['cycle_pm_caution_reason']      = $cycPmCautionReason;
+            $itemResult['cycle_pm_model_state']         = $cycPmModelState;
+            $itemResult['cycle_pm_model_risk']          = $cycPmModelRisk;
+            $itemResult['cycle_pm_model_actionability'] = $cycPmModelAction;
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -598,6 +661,17 @@ class ProfitManager
         ];
         $this->store->savePm11Counters($pm11Totals);
 
+        // PM-15: Merge cycle caution counts into cumulative pm15_cycle_caution_counters.json
+        $prevCyc15   = $this->store->loadCyclePmCautionCounters();
+        $cyc15Totals = [
+            'cycle_pm_caution_total'           => ((int)($prevCyc15['cycle_pm_caution_total']           ?? 0)) + $cycPmCautionTotal,
+            'cycle_pm_caution_block_total'     => ((int)($prevCyc15['cycle_pm_caution_block_total']     ?? 0)) + $cycPmCautionBlockTotal,
+            'cycle_pm_caution_no_effect_total' => ((int)($prevCyc15['cycle_pm_caution_no_effect_total'] ?? 0)) + $cycPmCautionNoEffectTotal,
+            'cycle_pm_caution_unavailable_total' => ((int)($prevCyc15['cycle_pm_caution_unavailable_total'] ?? 0)) + $cycPmCautionUnavailTotal,
+            'updated_at'                       => $ts,
+        ];
+        $this->store->saveCyclePmCautionCounters($cyc15Totals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -670,6 +744,19 @@ class ProfitManager
                 'adaptive_adjustment_applied_total'       => $pm11Totals['adaptive_adjustment_applied_total'],
                 'adaptive_adjustment_noop_total'          => $pm11Totals['adaptive_adjustment_noop_total'],
                 'adaptive_bounds_hit_total'               => $pm11Totals['adaptive_bounds_hit_total'],
+            ],
+            // PM-15: cycle caution counters (both this-run and cumulative totals)
+            'pm15_counters'     => [
+                // This-run deltas
+                'this_run_caution_total'           => $cycPmCautionTotal,
+                'this_run_caution_block_total'     => $cycPmCautionBlockTotal,
+                'this_run_caution_no_effect_total' => $cycPmCautionNoEffectTotal,
+                'this_run_caution_unavailable_total' => $cycPmCautionUnavailTotal,
+                // Cumulative totals
+                'cycle_pm_caution_total'           => $cyc15Totals['cycle_pm_caution_total'],
+                'cycle_pm_caution_block_total'     => $cyc15Totals['cycle_pm_caution_block_total'],
+                'cycle_pm_caution_no_effect_total' => $cyc15Totals['cycle_pm_caution_no_effect_total'],
+                'cycle_pm_caution_unavailable_total' => $cyc15Totals['cycle_pm_caution_unavailable_total'],
             ],
         ];
     }
@@ -817,6 +904,14 @@ class ProfitManager
             ];
         }
 
+        // PM-15: Cycle caution hold — if cycle conditions are clearly weak/bad, defer tightening.
+        if (!empty($ctx['cycle_pm_caution_hold'])) {
+            return [
+                'action' => 'skip',
+                'reason' => $ctx['cycle_pm_caution_reason'] ?? 'cycle_pm_caution',
+            ];
+        }
+
         // Check if should skip
         $skipReason = $this->validator->shouldSkipStepTrailing($position, $ctx, $this->riskMath);
         if ($skipReason !== null) {
@@ -936,6 +1031,14 @@ class ProfitManager
      */
     private function processDumbTrailing(string $symbol, array $position, array $ctx, float $tickSize): array
     {
+        // PM-15: Cycle caution hold — defer dumb trailing writes when cycle conditions are clearly weak/bad.
+        if (!empty($ctx['cycle_pm_caution_hold'])) {
+            return [
+                'action' => 'skip',
+                'reason' => $ctx['cycle_pm_caution_reason'] ?? 'cycle_pm_caution',
+            ];
+        }
+
         // Check if should skip
         $skipReason = $this->validator->shouldSkipDumbTrailing($position, $ctx, $this->riskMath);
         if ($skipReason !== null) {
@@ -1790,6 +1893,36 @@ class ProfitManager
         ];
 
         return $journal;
+    }
+
+    /**
+     * PM-15: Read coin_cycle_decision_model for a single symbol from passport file.
+     *
+     * Returns the raw decision model array if available, or null if unavailable.
+     * This is a best-effort read — any failure returns null (no exception propagation).
+     *
+     * @param  string $symbol
+     * @return array|null
+     */
+    private function readCycleDecisionModel(string $symbol): ?array
+    {
+        $passportsDir = $this->config['_pm_passports_dir'] ?? null;
+        if ($passportsDir === null || $symbol === '') {
+            return null;
+        }
+        $path = $passportsDir . '/' . strtoupper($symbol) . '.json';
+        if (!is_file($path)) {
+            return null;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        $passport = json_decode($raw, true);
+        if (!is_array($passport) || !is_array($passport['coin_cycle_decision_model'] ?? null)) {
+            return null;
+        }
+        return $passport['coin_cycle_decision_model'];
     }
 }
 

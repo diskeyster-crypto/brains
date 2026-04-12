@@ -150,6 +150,24 @@ final class CoinPassportEngine
     }
 
     /**
+     * Return the coin_cycle_decision_model block from a symbol's passport, or null if unavailable.
+     *
+     * Read-only, best-effort accessor used by PM-15 cycle caution layer and other subsystems
+     * that need cycle model data without loading the full passport.
+     *
+     * @param  string $symbol  Upper-case or mixed-case symbol (normalised internally)
+     * @return array<string,mixed>|null
+     */
+    public function getCycleDecisionModelForSymbol(string $symbol): ?array
+    {
+        $passport = $this->load($symbol);
+        if ($passport === null || !is_array($passport['coin_cycle_decision_model'] ?? null)) {
+            return null;
+        }
+        return $passport['coin_cycle_decision_model'];
+    }
+
+    /**
      * Rebuild passports for all symbols found in trade data.
      *
      * @return array{updated:int,symbols:list<string>,errors:list<string>,bot_storage_namespaces_scanned:list<string>,demo_samples_count:int,live_samples_count:int,shadow_samples_count:int}

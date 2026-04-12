@@ -744,6 +744,24 @@ final class CoinPassportService
     }
 
     /**
+     * Return coin_cycle_decision_model for a single symbol, or null if unavailable.
+     *
+     * Used by the PM-15 cycle caution layer and any subsystem that needs cycle model
+     * data without loading the full passport or instantiating the engine directly.
+     *
+     * @param  string $symbol
+     * @return array<string,mixed>|null
+     */
+    public function getCycleDecisionModel(string $symbol): ?array
+    {
+        try {
+            return $this->engine->getCycleDecisionModelForSymbol(strtoupper($symbol));
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Return a full guidance block for Brain to consume before signal approval.
      * Authoritative live eligibility gate output.
      *

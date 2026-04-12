@@ -1,0 +1,13 @@
+{
+    "name": "config",
+    "title": "Unified Config Module (Shadow)",
+    "version": "0.1.0",
+    "description": "Shadow config module: audits, models, and previews unified config across all system modules. Read-only — not yet runtime authority.",
+    "category": "system",
+    "paths": {
+        "storage": "storage",
+        "runtime": "storage/runtime",
+        "config": "config/config.php",
+        "logs": "storage/runtime"
+    }
+}

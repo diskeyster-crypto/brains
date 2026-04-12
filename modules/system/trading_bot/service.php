@@ -878,37 +878,26 @@ final class TradingBotService
             // Step 4: Execute valid intents (open positions)
             $safetyStopThreshold = (int)($this->config['module']['safety_stop_on_errors'] ?? 5);
 
-            // ── Lifecycle: Claim intents before execution ────────────────
-            // Atomically mark intents as claimed in live_intents.json to prevent
-            // duplicate consumption by concurrent bot ticks.
-            $claimResult = ['claimed_count' => 0, 'errors' => []];
+            // ── Lifecycle: Per-intent claim (moved inside loop) ──────────────
+            // Intents are now claimed individually inside the execution loop,
+            // immediately before each intent is processed. This prevents budget
+            // starvation: if the loop exhausts its budget before reaching a long
+            // intent, the long intent was never claimed so it stays 'pending' and
+            // can be picked up in the next tick.  The old bulk pre-loop claim would
+            // mark all scan intents as 'claimed' regardless of whether the loop
+            // reached them, causing unclaimed longs to be permanently rejected as
+            // not_executed_loop_budget_exhausted.
+            // $claimResult is accumulated per-intent inside the loop below.
+            $claimResult = ['claimed_count' => 0, 'already_claimed' => 0, 'not_found' => 0, 'expired_skipped' => 0, 'errors' => []];
+            // $intentIdsToClaim tracks IDs claimed inside the loop for post-loop cleanup.
             $intentIdsToClaim = [];
-            if ($brainControlled && !empty($liveIntentsFilePath) && !empty($scanIntents)) {
-                foreach ($scanIntents as $si) {
-                    $iid = $si['intent_id'] ?? '';
-                    if ($iid !== '') {
-                        $intentIdsToClaim[] = $iid;
-                    }
-                }
-                if (!empty($intentIdsToClaim)) {
-                    $claimResult = $this->claimLiveIntents($intentIdsToClaim, $liveIntentsFilePath);
-                }
-            }
             // Track which claimed intent IDs receive a lifecycle update inside the loop.
             // Any claimed intent NOT in this set when the loop ends (due to break/continue)
             // will be explicitly rejected in the post-loop cleanup pass.
             $lifecycleUpdatedIntentIds = [];
-            $result['intent_claim'] = $claimResult;
+            // intent_claim result and step reporting are written AFTER the loop,
+            // once all per-intent claims are accumulated into $claimResult.
             $result['intents_loaded_count'] = count($intentsResult['intents'] ?? []);
-            $result['intents_claimed_now_count'] = $claimResult['claimed_count'] ?? 0;
-            $result['steps'][] = [
-                'step' => 'claim_intents',
-                'status' => empty($claimResult['errors']) ? 'ok' : 'warning',
-                'claimed' => $claimResult['claimed_count'] ?? 0,
-                'already_claimed' => $claimResult['already_claimed'] ?? 0,
-                'not_found' => $claimResult['not_found'] ?? 0,
-                'expired_skipped' => $claimResult['expired_skipped'] ?? 0,
-            ];
 
             // ── Lifecycle: Finalize stale claimed intents ────────────────
             // Claimed intents that exceeded the claim timeout are finalized
@@ -1181,7 +1170,32 @@ final class TradingBotService
                         if ($isDemoLearning) { $demoLoopStoppedReason = 'fatal_exchange_blocker'; }
                         break;
                     }
-                    
+
+                    // ── Lifecycle: Per-intent claim ───────────────────────────────────────
+                    // Claim this intent now — after safety checks passed, before any processing.
+                    // This is the per-intent claim that replaced the old bulk pre-loop claim.
+                    // Only intents the loop actually reaches get claimed; intents not reached
+                    // (due to budget exhaustion on a prior intent) stay 'pending' for the next tick.
+                    if ($brainControlled && !empty($liveIntentsFilePath)) {
+                        $_claimIid = $intent['intent_id'] ?? '';
+                        if ($_claimIid !== '') {
+                            $_singleClaim = $this->claimLiveIntents([$_claimIid], $liveIntentsFilePath);
+                            $claimResult['claimed_count']   += ($_singleClaim['claimed_count']   ?? 0);
+                            $claimResult['already_claimed'] += ($_singleClaim['already_claimed'] ?? 0);
+                            $claimResult['not_found']       += ($_singleClaim['not_found']       ?? 0);
+                            $claimResult['expired_skipped'] += ($_singleClaim['expired_skipped'] ?? 0);
+                            if (!empty($_singleClaim['errors'])) {
+                                foreach ($_singleClaim['errors'] as $_ce) {
+                                    $claimResult['errors'][] = $_ce;
+                                }
+                            }
+                            if (($_singleClaim['claimed_count'] ?? 0) > 0) {
+                                $intentIdsToClaim[] = $_claimIid;
+                            }
+                        }
+                    }
+                    // ── End per-intent claim ─────────────────────────────────────────────
+
                     // ── Decision Engine: generate canonical decision packet ────────────
                     // Phase 1 (roadmap): every intent gets a decision packet with confidence_band,
                     // decision (enter_live/enter_demo/skip), passport snapshot, and lineage IDs.
@@ -1903,6 +1917,57 @@ final class TradingBotService
                         $this->warnings[] = 'Deferred: ' . $r . $suffix;
                     }
                 }
+
+                // ── Post-loop: finalize claim result reporting ────────────────────────
+                // Now that the loop is done, $claimResult is fully accumulated.
+                // Write the intent_claim result and step record with accurate counts.
+                $result['intent_claim'] = $claimResult;
+                $result['intents_claimed_now_count'] = $claimResult['claimed_count'] ?? 0;
+                $result['steps'][] = [
+                    'step' => 'claim_intents',
+                    'status' => empty($claimResult['errors']) ? 'ok' : 'warning',
+                    'claimed' => $claimResult['claimed_count'] ?? 0,
+                    'already_claimed' => $claimResult['already_claimed'] ?? 0,
+                    'not_found' => $claimResult['not_found'] ?? 0,
+                    'expired_skipped' => $claimResult['expired_skipped'] ?? 0,
+                    'note' => 'per_intent_claim_in_loop',
+                ];
+
+                // ── Long lifecycle observability counters ─────────────────────────────
+                // Compact counters proving where side=long intents pass or stop in the lifecycle.
+                // Counts are derived from the already-built intent_results + scanIntents.
+                $_longIntentsLoadedTotal    = 0;
+                $_longExecutableTotal       = 0;
+                $_longReachedLoopTotal      = 0;
+                $_longBudgetExhaustedTotal  = 0;
+                $_longUnresolvedLifecycle   = 0;
+                foreach ($intentsResult['intents'] ?? [] as $_li) {
+                    if (strtolower((string)($_li['side'] ?? '')) === 'long') {
+                        $_longIntentsLoadedTotal++;
+                    }
+                }
+                foreach ($scanIntents as $_si) {
+                    if (strtolower((string)($_si['side'] ?? '')) === 'long') {
+                        $_longExecutableTotal++;
+                    }
+                }
+                foreach ($result['intent_results'] as $_ir) {
+                    if (strtolower((string)($_ir['side'] ?? '')) !== 'long') {
+                        continue;
+                    }
+                    $_longReachedLoopTotal++;
+                    $_irReason = $_ir['rejection_reason'] ?? $_ir['execution_result'] ?? '';
+                    if ($_irReason === 'not_executed_loop_budget_exhausted') {
+                        $_longBudgetExhaustedTotal++;
+                    } elseif ($_irReason === 'rejected_unresolved_lifecycle') {
+                        $_longUnresolvedLifecycle++;
+                    }
+                }
+                $result['long_intents_loaded_total']          = $_longIntentsLoadedTotal;
+                $result['long_executable_intents_total']      = $_longExecutableTotal;
+                $result['long_reached_execution_loop_total']  = $_longReachedLoopTotal;
+                $result['long_loop_budget_exhausted_total']   = $_longBudgetExhaustedTotal;
+                $result['long_unresolved_lifecycle_total']    = $_longUnresolvedLifecycle;
 
                 // ── Post-loop cleanup: reject any claimed intents not reached by the loop ──
                 // When the execution loop exits early (budget exhausted, error threshold,

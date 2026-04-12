@@ -1759,7 +1759,18 @@ trait BotSourcesTrait
 
         $status = $execResult['status'] ?? '';
 
-        if (strpos($status, 'rejected_') === 0) {
+        // Map all rejection-class prefixes to 'rejected'.
+        // 'rejected_*' covers most cases. 'skipped_*' covers limit/position guards
+        // (skipped_active_trade_exists, skipped_max_positions_reached, skipped_symbol_busy).
+        // 'orphan_*' covers orphan-detection guards (orphan_exchange_detected_defer_reconcile).
+        // 'symbol_busy*' covers adopted-orphan ownership guards.
+        // Without this, those statuses fall through to 'pending', which triggers the
+        // rejected_unresolved_lifecycle catch-all in service.php for long intents.
+        if (strpos($status, 'rejected_') === 0
+            || strpos($status, 'skipped_') === 0
+            || strpos($status, 'orphan_') === 0
+            || strpos($status, 'symbol_busy') === 0
+        ) {
             return 'rejected';
         }
         if ($status === 'critical_unprotected_position_close_failed') {

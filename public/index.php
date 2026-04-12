@@ -1497,6 +1497,83 @@ Router::get('/admin/pattern_engine/api/sim_signals', function () {
 });
 
 // ============================================================
+// UNIFIED CONFIG MODULE — Shadow UI (config_all)
+// Read-only preview. NOT runtime authority. Legacy /admin/smart_brain/config untouched.
+// ============================================================
+
+require_once ROOT . '/modules/system/config/lib/config_store.php';
+require_once ROOT . '/modules/system/config/lib/config_audit_engine.php';
+require_once ROOT . '/modules/system/config/service.php';
+require_once ROOT . '/modules/system/config/controller.php';
+
+use Modules\System\Config\UnifiedConfigController;
+
+Router::get('/admin/smart_brain/config_all', function () {
+    $controller = new UnifiedConfigController();
+    $controller->index();
+});
+
+Router::get('/admin/smart_brain/config_all/patterns', function () {
+    $controller = new UnifiedConfigController();
+    $controller->patterns();
+});
+
+Router::get('/admin/smart_brain/config_all/smart_brain', function () {
+    $controller = new UnifiedConfigController();
+    $controller->smartBrain();
+});
+
+Router::get('/admin/smart_brain/config_all/trading_bot', function () {
+    $controller = new UnifiedConfigController();
+    $controller->tradingBot();
+});
+
+Router::get('/admin/smart_brain/config_all/profit_manager', function () {
+    $controller = new UnifiedConfigController();
+    $controller->profitManager();
+});
+
+Router::get('/admin/smart_brain/config_all/coin_cycle', function () {
+    $controller = new UnifiedConfigController();
+    $controller->coinCycle();
+});
+
+Router::get('/admin/smart_brain/config_all/advanced', function () {
+    $controller = new UnifiedConfigController();
+    $controller->advanced();
+});
+
+Router::get('/admin/smart_brain/config_all/api/ownership', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiOwnership();
+});
+
+Router::get('/admin/smart_brain/config_all/api/conflicts', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiConflicts();
+});
+
+Router::get('/admin/smart_brain/config_all/api/operational', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiOperational();
+});
+
+Router::get('/admin/smart_brain/config_all/api/immutable', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiImmutable();
+});
+
+Router::get('/admin/smart_brain/config_all/api/preview', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiPreview();
+});
+
+Router::post('/admin/smart_brain/config_all/api/extract', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiExtract();
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

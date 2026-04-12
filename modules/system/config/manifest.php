@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Shadow system: audits, models, and previews unified config.
  * NOT yet runtime authority for any module.
  *
- * UI: /admin/smart_brain/config/
+ * UI: /admin/smart_brain/config_all/
  *
  * @package Modules\System\Config
  * @version 0.1.0
@@ -30,23 +30,23 @@ return [
     ],
     'routes'      => [
         // Main config UI
-        '/admin/smart_brain/config'                    => 'UnifiedConfigController@index',
-        '/admin/smart_brain/config/patterns'           => 'UnifiedConfigController@patterns',
-        '/admin/smart_brain/config/smart_brain'        => 'UnifiedConfigController@smartBrain',
-        '/admin/smart_brain/config/trading_bot'        => 'UnifiedConfigController@tradingBot',
-        '/admin/smart_brain/config/profit_manager'     => 'UnifiedConfigController@profitManager',
-        '/admin/smart_brain/config/coin_cycle'         => 'UnifiedConfigController@coinCycle',
-        '/admin/smart_brain/config/advanced'           => 'UnifiedConfigController@advanced',
+        '/admin/smart_brain/config_all'                    => 'UnifiedConfigController@index',
+        '/admin/smart_brain/config_all/patterns'           => 'UnifiedConfigController@patterns',
+        '/admin/smart_brain/config_all/smart_brain'        => 'UnifiedConfigController@smartBrain',
+        '/admin/smart_brain/config_all/trading_bot'        => 'UnifiedConfigController@tradingBot',
+        '/admin/smart_brain/config_all/profit_manager'     => 'UnifiedConfigController@profitManager',
+        '/admin/smart_brain/config_all/coin_cycle'         => 'UnifiedConfigController@coinCycle',
+        '/admin/smart_brain/config_all/advanced'           => 'UnifiedConfigController@advanced',
 
         // API endpoints (read-only)
-        '/admin/smart_brain/config/api/ownership'      => 'UnifiedConfigController@apiOwnership',
-        '/admin/smart_brain/config/api/conflicts'      => 'UnifiedConfigController@apiConflicts',
-        '/admin/smart_brain/config/api/operational'    => 'UnifiedConfigController@apiOperational',
-        '/admin/smart_brain/config/api/immutable'      => 'UnifiedConfigController@apiImmutable',
-        '/admin/smart_brain/config/api/preview'        => 'UnifiedConfigController@apiPreview',
+        '/admin/smart_brain/config_all/api/ownership'      => 'UnifiedConfigController@apiOwnership',
+        '/admin/smart_brain/config_all/api/conflicts'      => 'UnifiedConfigController@apiConflicts',
+        '/admin/smart_brain/config_all/api/operational'    => 'UnifiedConfigController@apiOperational',
+        '/admin/smart_brain/config_all/api/immutable'      => 'UnifiedConfigController@apiImmutable',
+        '/admin/smart_brain/config_all/api/preview'        => 'UnifiedConfigController@apiPreview',
 
         // Action: run extraction pass
-        'POST /admin/smart_brain/config/api/extract'   => 'UnifiedConfigController@apiExtract',
+        'POST /admin/smart_brain/config_all/api/extract'   => 'UnifiedConfigController@apiExtract',
     ],
 ];
 

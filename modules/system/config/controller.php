@@ -9,7 +9,7 @@ use Core\System\System;
 /**
  * UnifiedConfigController — admin UI and read-only API for the Unified Config Module.
  *
- * Routes are served under /admin/smart_brain/config/.
+ * Routes are served under /admin/smart_brain/config_all/.
  * All pages are read-only — no config mutations are possible from the UI.
  *
  * @package Modules\System\Config
@@ -23,7 +23,7 @@ final class UnifiedConfigController
     {
         // Bootstrap service (loads lib files via bootstrap.php which is auto-loaded)
         $this->service = new UnifiedConfigService();
-        $this->baseUrl = '/admin/smart_brain/config';
+        $this->baseUrl = '/admin/smart_brain/config_all';
     }
 
     // =========================================================================

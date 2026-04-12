@@ -7,7 +7,7 @@ use Core\System\System;
  * Unified Config Module — Tab navigation
  */
 
-$baseUrl = $baseUrl ?? '/admin/smart_brain/config';
+$baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
 
 $tabs = [
     'quick_control'  => ['label' => 'Quick Control',    'icon' => 'bi-sliders',         'url' => $baseUrl],

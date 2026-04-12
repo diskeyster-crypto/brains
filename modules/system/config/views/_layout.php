@@ -8,7 +8,7 @@ use Core\System\System;
  * Consistent with project dark-theme style (Bootstrap 5.3.3 + Bootstrap Icons).
  */
 
-$baseUrl = $baseUrl ?? '/admin/smart_brain/config';
+$baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
 ?>
 <!DOCTYPE html>
 <html lang="en">

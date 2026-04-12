@@ -92,10 +92,10 @@ class ProfitManager
         $pm11BoundsHit           = 0; // positions where adaptive adjustment was capped by bounds
 
         // PM-15: Per-run cycle caution counters (merged into cumulative pm15_cycle_caution_counters.json)
-        $cycPmCautionTotal       = 0; // positions where cycle caution was evaluated
-        $cycPmCautionBlockTotal  = 0; // positions where caution blocked a PM apply/tighten
-        $cycPmCautionNoEffectTotal = 0; // positions where caution was evaluated but had no effect
-        $cycPmCautionUnavailTotal  = 0; // positions where cycle model was unavailable
+        $cycPmCautionTotal       = 0; // positions where cycle model was found (broad observability)
+        $cycPmCautionBlockTotal  = 0; // positions where caution blocked a real apply/tighten action path
+        $cycPmCautionNoEffectTotal = 0; // positions where cycle model found but no bad state (no block)
+        $cycPmCautionUnavailTotal  = 0; // positions where cycle model was unavailable (null)
 
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
@@ -229,6 +229,12 @@ class ProfitManager
             // This is a caution/veto gate only: it may block or defer PM apply/tighten when cycle
             // conditions are clearly weak or bad. It must NOT loosen stops, widen risk, or override
             // monotonic protection. PM ownership and all safety gates remain intact.
+            //
+            // The model is read here for broad observability (total/no_effect/unavailable counters)
+            // and injected into ctx as raw data. The actual block decision is made inside
+            // processStepTrailing/processDumbTrailing, AFTER the skip/eligibility check, so caution
+            // can only intercept a symbol that is genuinely on the real apply/tighten execute path.
+            // block_total and cycle_pm_caution_applied are set after processPosition returns.
             $cycPmCautionModel  = $this->readCycleDecisionModel($symbol);
             $cycPmCautionUsed   = false;
             $cycPmCautionApplied = false;
@@ -237,47 +243,42 @@ class ProfitManager
             $cycPmModelRisk      = $cycPmCautionModel['decision_model_risk_posture']  ?? 'unavailable';
             $cycPmModelAction    = $cycPmCautionModel['decision_model_actionability'] ?? 'non_actionable';
 
+            // Inject raw model into ctx so processStepTrailing/processDumbTrailing can evaluate it.
+            $ctx['cycle_pm_caution_model'] = $cycPmCautionModel;
+
             if ($cycPmCautionModel === null) {
-                // Cycle model unavailable — no caution possible, pass through
+                // Cycle model unavailable — count for broad observability; no caution possible
                 $cycPmCautionUnavailTotal++;
             } else {
                 $cycPmCautionTotal++;
                 $cycPmCautionUsed = true;
 
-                // Determine if any explicit bad state triggers caution veto.
-                // States covered: unavailable/weak (no or degraded data), cautious (intermediate
-                // bad state — cycle is not favorable, PM tightening is non-actionable), then
-                // field-level checks for non_actionable, high_risk, low_confidence, and warning.
-                $cautionReason = null;
+                // Evaluate trigger conditions here for the no_effect counter (broad observability).
+                // The same conditions are re-evaluated inside processStepTrailing/processDumbTrailing
+                // on the real execute path to determine whether to actually block.
+                $preCautionReason = null;
                 if ($cycPmModelState === 'unavailable' || $cycPmModelState === 'weak') {
-                    $cautionReason = 'cycle_pm_caution_unavailable';
+                    $preCautionReason = 'cycle_pm_caution_unavailable';
                 } elseif ($cycPmModelState === 'cautious') {
-                    // 'cautious' cycle state: conditions are not favorable — defer PM tightening.
-                    $cautionReason = 'cycle_pm_caution_non_actionable';
+                    $preCautionReason = 'cycle_pm_caution_non_actionable';
                 } elseif ($cycPmModelAction === 'non_actionable') {
-                    $cautionReason = 'cycle_pm_caution_non_actionable';
+                    $preCautionReason = 'cycle_pm_caution_non_actionable';
                 } elseif ($cycPmModelRisk === 'high_risk') {
-                    $cautionReason = 'cycle_pm_caution_high_risk';
+                    $preCautionReason = 'cycle_pm_caution_high_risk';
                 } elseif (!empty($cycPmCautionModel['decision_model_low_confidence_flag'])) {
-                    $cautionReason = 'cycle_pm_caution_low_confidence';
+                    $preCautionReason = 'cycle_pm_caution_low_confidence';
                 } elseif (
                     !empty($cycPmCautionModel['decision_model_warning_flag'])
                     && !empty($cycPmCautionModel['decision_model_warning_reason'])
                 ) {
-                    $cautionReason = 'cycle_pm_caution_non_actionable';
+                    $preCautionReason = 'cycle_pm_caution_non_actionable';
                 }
 
-                if ($cautionReason !== null) {
-                    // Caution applies: inject hold flag into ctx so processStepTrailing skips tighten
-                    $ctx['cycle_pm_caution_hold']   = true;
-                    $ctx['cycle_pm_caution_reason']  = $cautionReason;
-                    $cycPmCautionApplied = true;
-                    $cycPmCautionReason  = $cautionReason;
-                    $cycPmCautionBlockTotal++;
-                } else {
-                    // Cycle conditions acceptable — caution evaluated but no effect
+                if ($preCautionReason === null) {
+                    // Cycle conditions acceptable — caution evaluated, no bad state found
                     $cycPmCautionNoEffectTotal++;
                 }
+                // block_total is updated after processPosition (real action-path intercept only)
             }
 
             // Execute existing trailing logic (real exchange writes)
@@ -332,6 +333,17 @@ class ProfitManager
                 $exchangeAttempted = true;
                 $exchangeOk        = false;
                 $exchangeUpdateError = $dt['details']['error'] ?? ($dt['reason'] ?? 'unknown');
+            }
+
+            // PM-15: Detect real caution block on the actual execute path.
+            // processStepTrailing and processDumbTrailing set cycle_pm_caution_blocked=true only
+            // when caution fired AFTER shouldSkipStepTrailing/shouldSkipDumbTrailing passed,
+            // confirming the symbol was genuinely about to apply a trailing update before caution
+            // deferred it. This is the only path that increments block_total.
+            if (!empty($st['cycle_pm_caution_blocked']) || !empty($dt['cycle_pm_caution_blocked'])) {
+                $cycPmCautionApplied = true;
+                $cycPmCautionReason  = $st['cycle_pm_caution_reason'] ?? $dt['cycle_pm_caution_reason'] ?? null;
+                $cycPmCautionBlockTotal++;
             }
 
             // Persist updated active state (monotonic peak_roi, arm state, last applied stop)
@@ -910,14 +922,6 @@ class ProfitManager
             ];
         }
 
-        // PM-15: Cycle caution hold — if cycle conditions are clearly weak/bad, defer tightening.
-        if (!empty($ctx['cycle_pm_caution_hold'])) {
-            return [
-                'action' => 'skip',
-                'reason' => $ctx['cycle_pm_caution_reason'] ?? 'cycle_pm_caution',
-            ];
-        }
-
         // Check if should skip
         $skipReason = $this->validator->shouldSkipStepTrailing($position, $ctx, $this->riskMath);
         if ($skipReason !== null) {
@@ -925,6 +929,42 @@ class ProfitManager
                 'action' => 'skip',
                 'reason' => $skipReason,
             ];
+        }
+
+        // PM-15: Cycle caution — evaluated AFTER skip/eligibility check so it can only intercept
+        // a symbol that is genuinely on the execute path (would apply a step trailing update).
+        // Trigger conditions match the pre-check in runActive(); the return includes
+        // cycle_pm_caution_blocked=true so runActive() can update block_total and applied.
+        $cycPmModel = $ctx['cycle_pm_caution_model'] ?? null;
+        if ($cycPmModel !== null) {
+            $cycPmModelState  = $cycPmModel['decision_model_state']         ?? 'unavailable';
+            $cycPmModelRisk   = $cycPmModel['decision_model_risk_posture']  ?? 'unavailable';
+            $cycPmModelAction = $cycPmModel['decision_model_actionability'] ?? 'non_actionable';
+            $cycPmCautionReason = null;
+            if ($cycPmModelState === 'unavailable' || $cycPmModelState === 'weak') {
+                $cycPmCautionReason = 'cycle_pm_caution_unavailable';
+            } elseif ($cycPmModelState === 'cautious') {
+                $cycPmCautionReason = 'cycle_pm_caution_non_actionable';
+            } elseif ($cycPmModelAction === 'non_actionable') {
+                $cycPmCautionReason = 'cycle_pm_caution_non_actionable';
+            } elseif ($cycPmModelRisk === 'high_risk') {
+                $cycPmCautionReason = 'cycle_pm_caution_high_risk';
+            } elseif (!empty($cycPmModel['decision_model_low_confidence_flag'])) {
+                $cycPmCautionReason = 'cycle_pm_caution_low_confidence';
+            } elseif (
+                !empty($cycPmModel['decision_model_warning_flag'])
+                && !empty($cycPmModel['decision_model_warning_reason'])
+            ) {
+                $cycPmCautionReason = 'cycle_pm_caution_non_actionable';
+            }
+            if ($cycPmCautionReason !== null) {
+                return [
+                    'action'                   => 'skip',
+                    'reason'                   => $cycPmCautionReason,
+                    'cycle_pm_caution_blocked' => true,
+                    'cycle_pm_caution_reason'  => $cycPmCautionReason,
+                ];
+            }
         }
         
         // Calculate ROI and target lock
@@ -1037,14 +1077,6 @@ class ProfitManager
      */
     private function processDumbTrailing(string $symbol, array $position, array $ctx, float $tickSize): array
     {
-        // PM-15: Cycle caution hold — defer dumb trailing writes when cycle conditions are clearly weak/bad.
-        if (!empty($ctx['cycle_pm_caution_hold'])) {
-            return [
-                'action' => 'skip',
-                'reason' => $ctx['cycle_pm_caution_reason'] ?? 'cycle_pm_caution',
-            ];
-        }
-
         // Check if should skip
         $skipReason = $this->validator->shouldSkipDumbTrailing($position, $ctx, $this->riskMath);
         if ($skipReason !== null) {
@@ -1053,7 +1085,41 @@ class ProfitManager
                 'reason' => $skipReason,
             ];
         }
-        
+
+        // PM-15: Cycle caution — evaluated AFTER skip/eligibility check so it can only intercept
+        // a symbol that is genuinely on the execute path (would apply a dumb trailing update).
+        $cycPmModel = $ctx['cycle_pm_caution_model'] ?? null;
+        if ($cycPmModel !== null) {
+            $cycPmModelState  = $cycPmModel['decision_model_state']         ?? 'unavailable';
+            $cycPmModelRisk   = $cycPmModel['decision_model_risk_posture']  ?? 'unavailable';
+            $cycPmModelAction = $cycPmModel['decision_model_actionability'] ?? 'non_actionable';
+            $cycPmCautionReason = null;
+            if ($cycPmModelState === 'unavailable' || $cycPmModelState === 'weak') {
+                $cycPmCautionReason = 'cycle_pm_caution_unavailable';
+            } elseif ($cycPmModelState === 'cautious') {
+                $cycPmCautionReason = 'cycle_pm_caution_non_actionable';
+            } elseif ($cycPmModelAction === 'non_actionable') {
+                $cycPmCautionReason = 'cycle_pm_caution_non_actionable';
+            } elseif ($cycPmModelRisk === 'high_risk') {
+                $cycPmCautionReason = 'cycle_pm_caution_high_risk';
+            } elseif (!empty($cycPmModel['decision_model_low_confidence_flag'])) {
+                $cycPmCautionReason = 'cycle_pm_caution_low_confidence';
+            } elseif (
+                !empty($cycPmModel['decision_model_warning_flag'])
+                && !empty($cycPmModel['decision_model_warning_reason'])
+            ) {
+                $cycPmCautionReason = 'cycle_pm_caution_non_actionable';
+            }
+            if ($cycPmCautionReason !== null) {
+                return [
+                    'action'                   => 'skip',
+                    'reason'                   => $cycPmCautionReason,
+                    'cycle_pm_caution_blocked' => true,
+                    'cycle_pm_caution_reason'  => $cycPmCautionReason,
+                ];
+            }
+        }
+
         // Check if already has trailing stop
         $existingTrailing = (float) ($position['trailingStop'] ?? 0);
         $existingActive = (float) ($position['activePrice'] ?? 0);

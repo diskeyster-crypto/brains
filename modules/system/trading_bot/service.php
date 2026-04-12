@@ -1977,6 +1977,34 @@ final class TradingBotService
                 $result['cycle_execution_support_no_effect_total']  = $cycleExecSupportNoEffectTotal;
                 $result['cycle_execution_support_unavailable_total'] = $cycleExecSupportUnavailTotal;
 
+                // Coin/Bot Step 17: persist cross-run proof when support was applied this run.
+                // Durable artifact so subsequent runs that process no applicable intents still
+                // reflect the last known support state in last_run.json (PM-8 durability pattern).
+                if ($cycleExecSupportApplyTotal > 0) {
+                    $_supportProofCase = null;
+                    foreach ($result['intent_results'] as $_ir) {
+                        if (($_ir['cycle_execution_support_applied'] ?? false) === true) {
+                            $_supportProofCase = $_ir;
+                            break;
+                        }
+                    }
+                    if ($_supportProofCase !== null) {
+                        $_supportProofPayload = [
+                            'proof_run_id'                               => $this->runId,
+                            'proof_run_ts'                               => date('c'),
+                            'cycle_execution_support_total'              => $cycleExecSupportTotal,
+                            'cycle_execution_support_apply_total'        => $cycleExecSupportApplyTotal,
+                            'cycle_execution_support_no_effect_total'    => $cycleExecSupportNoEffectTotal,
+                            'cycle_execution_support_unavailable_total'  => $cycleExecSupportUnavailTotal,
+                            'last_support_intent_result'                 => $_supportProofCase,
+                        ];
+                        @file_put_contents(
+                            $this->storageDir . '/runtime/last_cycle_support_proof.json',
+                            json_encode($_supportProofPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n"
+                        );
+                    }
+                }
+
             }
             
             $result['steps'][] = [
@@ -3302,6 +3330,33 @@ final class TradingBotService
                 'errors'             => array_slice($this->errors, 0, 5),
             ]
         );
+
+        // Coin/Bot Step 17: mirror last_cycle_support_proof into result when the current run
+        // had no support-applied intents (all intents expired/claimed, or counters absent).
+        // Ensures last_run.json always reflects the most recent run where support was applied
+        // (PM-8 durability pattern). Best-effort: any read/decode failure is silently skipped.
+        if (($result['cycle_execution_support_apply_total'] ?? 0) === 0) {
+            $_proofPath = $this->storageDir . '/runtime/last_cycle_support_proof.json';
+            if (is_file($_proofPath)) {
+                $_proofRaw = @file_get_contents($_proofPath);
+                if ($_proofRaw !== false && $_proofRaw !== '') {
+                    $_proofData = @json_decode($_proofRaw, true);
+                    if (is_array($_proofData) && ($_proofData['cycle_execution_support_apply_total'] ?? 0) > 0) {
+                        $result['cycle_execution_support_total']            = $_proofData['cycle_execution_support_total'] ?? 0;
+                        $result['cycle_execution_support_apply_total']      = $_proofData['cycle_execution_support_apply_total'] ?? 0;
+                        $result['cycle_execution_support_no_effect_total']  = $_proofData['cycle_execution_support_no_effect_total'] ?? 0;
+                        $result['cycle_execution_support_unavailable_total'] = $_proofData['cycle_execution_support_unavailable_total'] ?? 0;
+                        $result['cycle_execution_support_proof_run_id']     = $_proofData['proof_run_id'] ?? null;
+                        $result['cycle_execution_support_proof_run_ts']     = $_proofData['proof_run_ts'] ?? null;
+                        if (is_array($_proofData['last_support_intent_result'] ?? null)) {
+                            $_mirroredCase = $_proofData['last_support_intent_result'];
+                            $_mirroredCase['cycle_execution_support_proof_mirrored'] = true;
+                            $result['last_cycle_support_proof_case'] = $_mirroredCase;
+                        }
+                    }
+                }
+            }
+        }
 
         // Save last run
         $this->store->saveLastRun($result);

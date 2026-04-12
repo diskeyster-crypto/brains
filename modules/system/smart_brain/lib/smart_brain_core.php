@@ -422,6 +422,9 @@ final class SmartBrainCore
                     'short_enter_now_candidates_count' => 0,
                     'short_enter_now_signal_emitted_count' => 0,
                     'short_enter_now_monitor_bypassed_count' => 0,
+                    'long_enter_now_candidates_count' => 0,
+                    'long_enter_now_signal_emitted_count' => 0,
+                    'long_enter_now_monitor_bypassed_count' => 0,
                     'avg_zone_width_pct' => 0.0,
                     'avg_zone_distance' => 0.0,
                     'avg_price_position' => 0.0,
@@ -467,6 +470,13 @@ final class SmartBrainCore
                 $v2DownstreamFunnel[$algo]['short_enter_now_candidates_count']++;
                 if (!empty($m['enter_now_promoted'])) {
                     $v2DownstreamFunnel[$algo]['short_enter_now_monitor_bypassed_count']++;
+                }
+            }
+            // Track long enter_now candidates and monitor bypass (symmetric)
+            if ($mSide === 'long' && $mEntryAction === 'enter_now') {
+                $v2DownstreamFunnel[$algo]['long_enter_now_candidates_count']++;
+                if (!empty($m['enter_now_promoted'])) {
+                    $v2DownstreamFunnel[$algo]['long_enter_now_monitor_bypassed_count']++;
                 }
             }
 
@@ -553,6 +563,10 @@ final class SmartBrainCore
                 $sEntryAction = (string)($s['entry_action'] ?? 'wait_retrace');
                 if ($sSide === 'short' && $sEntryAction === 'enter_now') {
                     $v2DownstreamFunnel[$algo]['short_enter_now_signal_emitted_count']++;
+                }
+                // Track long enter_now signal emission (symmetric)
+                if ($sSide === 'long' && $sEntryAction === 'enter_now') {
+                    $v2DownstreamFunnel[$algo]['long_enter_now_signal_emitted_count']++;
                 }
             }
             // Track global tier distribution for V2 signals
@@ -745,6 +759,28 @@ final class SmartBrainCore
             }
         }
 
+        // Compute side-specific candidate/signal totals for long-path observability
+        $longCandidatesCount = 0;
+        $shortCandidatesCount = 0;
+        foreach ($candidates as $c) {
+            $cSide = strtolower(trim((string)($c['side'] ?? '')));
+            if ($cSide === 'long') {
+                $longCandidatesCount++;
+            } elseif ($cSide === 'short') {
+                $shortCandidatesCount++;
+            }
+        }
+        $longSignalsCount = 0;
+        $shortSignalsCount = 0;
+        foreach ($signals as $s) {
+            $sSide2 = strtolower(trim((string)($s['side'] ?? '')));
+            if ($sSide2 === 'long') {
+                $longSignalsCount++;
+            } elseif ($sSide2 === 'short') {
+                $shortSignalsCount++;
+            }
+        }
+
         // Persist V2 downstream funnel
         $this->state->writeJson('storage/v2_downstream_funnel.json', [
             'by_pattern' => $v2DownstreamFunnel,
@@ -776,6 +812,10 @@ final class SmartBrainCore
             'short_enter_now_live_rejected_count' => (int)($liveIntentResult['short_enter_now_live_rejected_count'] ?? 0),
             'short_enter_now_live_reject_reasons' => $liveIntentResult['short_enter_now_live_reject_reasons'] ?? [],
             'short_enter_now_live_borderline_pass_count' => (int)($liveIntentResult['short_enter_now_live_borderline_pass_count'] ?? 0),
+            // Long enter_now live diagnostics (symmetric)
+            'long_enter_now_live_applied_count' => (int)($liveIntentResult['long_enter_now_live_applied_count'] ?? 0),
+            'long_enter_now_live_approved_count' => (int)($liveIntentResult['long_enter_now_live_approved_count'] ?? 0),
+            'long_enter_now_live_rejected_count' => (int)($liveIntentResult['long_enter_now_live_rejected_count'] ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -853,6 +893,13 @@ final class SmartBrainCore
             'live_signal_id_source_stats' => $liveIntentResult['signal_id_source_stats'],
             'live_intents_created_count' => $liveIntentResult['intents_created'],
             'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
+            // Long-path observability counters
+            'long_candidates_count' => $longCandidatesCount,
+            'short_candidates_count' => $shortCandidatesCount,
+            'long_signals_count' => $longSignalsCount,
+            'short_signals_count' => $shortSignalsCount,
+            'long_live_candidates_approved_count' => (int)($liveIntentResult['long_approved_count'] ?? 0),
+            'long_live_intents_created_count' => (int)($liveIntentResult['long_intents_created_count'] ?? 0),
             'live_intents_total_after_merge' => $liveIntentResult['intents_total_after_merge'] ?? 0,
             'live_terminal_retained_count' => $liveIntentResult['terminal_retained_count'] ?? 0,
             'lifecycle_counters' => $liveIntentResult['lifecycle_counters'] ?? [],
@@ -1018,6 +1065,13 @@ final class SmartBrainCore
             'short_enter_now_live_rejected_count' => 0,
             'short_enter_now_live_reject_reasons' => [],
             'short_enter_now_live_borderline_pass_count' => 0,
+            // Long enter_now live diagnostics (symmetric)
+            'long_enter_now_live_applied_count' => 0,
+            'long_enter_now_live_approved_count' => 0,
+            'long_enter_now_live_rejected_count' => 0,
+            // Long-path intent counters
+            'long_approved_count' => 0,
+            'long_intents_created_count' => 0,
             // Manual blacklist diagnostics
             'manual_blacklist_active' => false,
             'manual_blacklist_count' => 0,
@@ -1396,8 +1450,12 @@ final class SmartBrainCore
                 $signalSide = strtolower(trim((string)($signal['side'] ?? '')));
                 $signalEntryAction = (string)($signal['entry_action'] ?? 'wait_retrace');
                 $isShortEnterNow = ($signalSide === 'short' && $signalEntryAction === 'enter_now');
+                $isLongEnterNow  = ($signalSide === 'long'  && $signalEntryAction === 'enter_now');
                 if ($isShortEnterNow) {
                     $result['short_enter_now_live_applied_count'] = ($result['short_enter_now_live_applied_count'] ?? 0) + 1;
+                }
+                if ($isLongEnterNow) {
+                    $result['long_enter_now_live_applied_count'] = ($result['long_enter_now_live_applied_count'] ?? 0) + 1;
                 }
 
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
@@ -1416,7 +1474,7 @@ final class SmartBrainCore
                             'checked_values' => $v2FloorResult['checked_values'],
                         ];
                     }
-                    // Track short enter_now rejection with explicit reason
+                    // Track short/long enter_now rejection with explicit reason
                     if ($isShortEnterNow) {
                         $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
                         foreach ($v2FloorResult['reject_reasons'] as $vr) {
@@ -1424,16 +1482,22 @@ final class SmartBrainCore
                                 ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
                         }
                     }
+                    if ($isLongEnterNow) {
+                        $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
                     continue;
                 }
                 $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
-                // Track short enter_now quality floor pass
+                // Track short/long enter_now quality floor pass
                 if ($isShortEnterNow) {
                     $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
                     if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
                         $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
                     }
+                }
+                if ($isLongEnterNow) {
+                    $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
                 }
             }
 
@@ -1988,6 +2052,9 @@ final class SmartBrainCore
 
             // Increment approved count only after bot-ready validation passes
             $result['approved_count']++;
+            if ($side === 'long') {
+                $result['long_approved_count']++;
+            }
 
             $intent = [
                 'schema_version' => 'live_intent_v1',
@@ -2123,6 +2190,7 @@ final class SmartBrainCore
         }
 
         $result['intents_created'] = count($intents);
+        $result['long_intents_created_count'] = count(array_filter($intents, static fn($i) => ($i['side'] ?? '') === 'long'));
 
         // Build rejection reason stats (grouped counts)
         $reasonStats = [];

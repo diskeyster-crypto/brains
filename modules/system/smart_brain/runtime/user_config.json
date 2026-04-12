@@ -81,6 +81,8 @@
     "live_reverse_side_enabled": false,
     "patterns": {
         "enabled": [
+            "double_bottom_contextual_v2",
+            "double_bottom_contextual_v3",
             "double_top_contextual_v2",
             "double_top_contextual_v3"
         ],

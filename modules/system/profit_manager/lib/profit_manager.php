@@ -244,10 +244,16 @@ class ProfitManager
                 $cycPmCautionTotal++;
                 $cycPmCautionUsed = true;
 
-                // Determine if any explicit bad state triggers caution veto
+                // Determine if any explicit bad state triggers caution veto.
+                // States covered: unavailable/weak (no or degraded data), cautious (intermediate
+                // bad state — cycle is not favorable, PM tightening is non-actionable), then
+                // field-level checks for non_actionable, high_risk, low_confidence, and warning.
                 $cautionReason = null;
                 if ($cycPmModelState === 'unavailable' || $cycPmModelState === 'weak') {
                     $cautionReason = 'cycle_pm_caution_unavailable';
+                } elseif ($cycPmModelState === 'cautious') {
+                    // 'cautious' cycle state: conditions are not favorable — defer PM tightening.
+                    $cautionReason = 'cycle_pm_caution_non_actionable';
                 } elseif ($cycPmModelAction === 'non_actionable') {
                     $cautionReason = 'cycle_pm_caution_non_actionable';
                 } elseif ($cycPmModelRisk === 'high_risk') {

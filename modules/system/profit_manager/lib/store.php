@@ -1454,6 +1454,28 @@ class Store
         $path = $this->storageDir . '/runtime/pm15_cycle_caution_counters.json';
         $this->writeJson($path, $counters);
     }
+
+    /**
+     * Load cumulative PM-16 cycle positive support counters.
+     *
+     * @return array
+     */
+    public function loadCyclePmSupportCounters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm16_cycle_support_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-16 cycle positive support counters.
+     *
+     * @param array $counters
+     */
+    public function saveCyclePmSupportCounters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm16_cycle_support_counters.json';
+        $this->writeJson($path, $counters);
+    }
 }
 
 /* RULES

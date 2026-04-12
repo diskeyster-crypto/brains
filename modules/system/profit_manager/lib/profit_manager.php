@@ -97,6 +97,12 @@ class ProfitManager
         $cycPmCautionNoEffectTotal = 0; // positions where cycle model found but no bad state (no block)
         $cycPmCautionUnavailTotal  = 0; // positions where cycle model was unavailable (null)
 
+        // PM-16: Per-run cycle positive support counters (merged into cumulative pm16_cycle_support_counters.json)
+        $cycPmSupportTotal         = 0; // positions where cycle model evaluated for support
+        $cycPmSupportApplyTotal    = 0; // positions where support tagged a real apply/tighten/extension path
+        $cycPmSupportNoEffectTotal = 0; // positions where model found but not favorable / no real action path
+        $cycPmSupportUnavailTotal  = 0; // positions where cycle model was unavailable (null)
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -370,6 +376,48 @@ class ProfitManager
                 }
             }
 
+            // PM-16: Bounded cycle positive support layer — uses the same model already read for PM-15.
+            // Support is tagging-only: it marks a real PM action path as cycle-favored.
+            // It must NOT force new actions, loosen stops, widen risk, or bypass caution blocks.
+            // Only fires when PM already has a real apply/proposal path AND caution did not block.
+            $cycPmSupportUsed    = false;
+            $cycPmSupportApplied = false;
+            $cycPmSupportReason  = null;
+            if ($cycPmCautionModel === null) {
+                $cycPmSupportUnavailTotal++;
+            } else {
+                $cycPmSupportTotal++;
+                $cycPmSupportUsed = true;
+                // Favorable condition: state=favorable, actionable, risk not high/unavailable,
+                // no low-confidence or warning flags, live bias active.
+                $pm16Favorable = (
+                    $cycPmModelState  === 'favorable'
+                    && $cycPmModelAction === 'actionable'
+                    && !in_array($cycPmModelRisk, ['high_risk', 'unavailable'], true)
+                    && empty($cycPmCautionModel['decision_model_low_confidence_flag'])
+                    && empty($cycPmCautionModel['decision_model_warning_flag'])
+                    && ($cycPmCautionModel['decision_model_live_bias'] ?? 'non_live_bias') === 'live_bias'
+                );
+                // Real action path: PM attempted an exchange update OR computed an improving proposal.
+                // Caution-blocked paths are excluded (no real action to support).
+                $pm16RealActionPath = !$cycPmCautionApplied && ($exchangeAttempted || $proposalComputed);
+                if ($pm16Favorable && $pm16RealActionPath) {
+                    $cycPmSupportApplied = true;
+                    if ($appliedAction === 'step_sl_update') {
+                        $cycPmSupportReason = 'cycle_pm_support_extension';
+                    } elseif ($appliedAction === 'dumb_trailing_set') {
+                        $cycPmSupportReason = 'cycle_pm_support_tighten';
+                    } elseif ($proposalComputed) {
+                        $cycPmSupportReason = 'cycle_pm_support_continue';
+                    } else {
+                        $cycPmSupportReason = 'cycle_pm_support_hold';
+                    }
+                    $cycPmSupportApplyTotal++;
+                } else {
+                    $cycPmSupportNoEffectTotal++;
+                }
+            }
+
             // Persist updated active state (monotonic peak_roi, arm state, last applied stop)
             $this->store->saveActiveState($tradeKey, [
                 'trade_id'                => $tradeKey,
@@ -583,6 +631,14 @@ class ProfitManager
             $itemResult['cycle_pm_model_risk']          = $cycPmModelRisk;
             $itemResult['cycle_pm_model_actionability'] = $cycPmModelAction;
 
+            // PM-16: Cycle positive support layer observability fields
+            $itemResult['cycle_pm_support_used']              = $cycPmSupportUsed;
+            $itemResult['cycle_pm_support_applied']           = $cycPmSupportApplied;
+            $itemResult['cycle_pm_support_reason']            = $cycPmSupportReason;
+            $itemResult['cycle_pm_support_model_state']       = $cycPmModelState;
+            $itemResult['cycle_pm_support_model_risk']        = $cycPmModelRisk;
+            $itemResult['cycle_pm_support_model_actionability'] = $cycPmModelAction;
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -714,6 +770,17 @@ class ProfitManager
         ];
         $this->store->saveCyclePmCautionCounters($cyc15Totals);
 
+        // PM-16: Merge cycle support counts into cumulative pm16_cycle_support_counters.json
+        $prevCyc16   = $this->store->loadCyclePmSupportCounters();
+        $cyc16Totals = [
+            'cycle_pm_support_total'           => ((int)($prevCyc16['cycle_pm_support_total']           ?? 0)) + $cycPmSupportTotal,
+            'cycle_pm_support_apply_total'     => ((int)($prevCyc16['cycle_pm_support_apply_total']     ?? 0)) + $cycPmSupportApplyTotal,
+            'cycle_pm_support_no_effect_total' => ((int)($prevCyc16['cycle_pm_support_no_effect_total'] ?? 0)) + $cycPmSupportNoEffectTotal,
+            'cycle_pm_support_unavailable_total' => ((int)($prevCyc16['cycle_pm_support_unavailable_total'] ?? 0)) + $cycPmSupportUnavailTotal,
+            'updated_at'                       => $ts,
+        ];
+        $this->store->saveCyclePmSupportCounters($cyc16Totals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -799,6 +866,19 @@ class ProfitManager
                 'cycle_pm_caution_block_total'     => $cyc15Totals['cycle_pm_caution_block_total'],
                 'cycle_pm_caution_no_effect_total' => $cyc15Totals['cycle_pm_caution_no_effect_total'],
                 'cycle_pm_caution_unavailable_total' => $cyc15Totals['cycle_pm_caution_unavailable_total'],
+            ],
+            // PM-16: cycle positive support counters (both this-run and cumulative totals)
+            'pm16_counters'     => [
+                // This-run deltas
+                'this_run_support_total'           => $cycPmSupportTotal,
+                'this_run_support_apply_total'     => $cycPmSupportApplyTotal,
+                'this_run_support_no_effect_total' => $cycPmSupportNoEffectTotal,
+                'this_run_support_unavailable_total' => $cycPmSupportUnavailTotal,
+                // Cumulative totals
+                'cycle_pm_support_total'           => $cyc16Totals['cycle_pm_support_total'],
+                'cycle_pm_support_apply_total'     => $cyc16Totals['cycle_pm_support_apply_total'],
+                'cycle_pm_support_no_effect_total' => $cyc16Totals['cycle_pm_support_no_effect_total'],
+                'cycle_pm_support_unavailable_total' => $cyc16Totals['cycle_pm_support_unavailable_total'],
             ],
         ];
     }
@@ -1361,6 +1441,13 @@ class ProfitManager
                 'cycle_pm_model_state'         => $result['cycle_pm_model_state']         ?? null,
                 'cycle_pm_model_risk'          => $result['cycle_pm_model_risk']          ?? null,
                 'cycle_pm_model_actionability' => $result['cycle_pm_model_actionability'] ?? null,
+                // PM-16: Cycle positive support layer evidence
+                'cycle_pm_support_used'              => $result['cycle_pm_support_used']              ?? false,
+                'cycle_pm_support_applied'           => $result['cycle_pm_support_applied']           ?? false,
+                'cycle_pm_support_reason'            => $result['cycle_pm_support_reason']            ?? null,
+                'cycle_pm_support_model_state'       => $result['cycle_pm_support_model_state']       ?? null,
+                'cycle_pm_support_model_risk'        => $result['cycle_pm_support_model_risk']        ?? null,
+                'cycle_pm_support_model_actionability' => $result['cycle_pm_support_model_actionability'] ?? null,
                 'updated_at'                           => date('c'),
             ];
             $this->store->updateSymbolStatus($symbol, $pm9Status);

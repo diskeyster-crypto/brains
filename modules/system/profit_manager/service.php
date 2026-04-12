@@ -290,6 +290,7 @@ final class ProfitManagerService
             $pm10Counters = $runResult['pm10_counters'] ?? [];
             $pm11Counters = $runResult['pm11_counters'] ?? [];
             $pm15Counters = $runResult['pm15_counters'] ?? [];
+            $pm16Counters = $runResult['pm16_counters'] ?? [];
             $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
@@ -362,6 +363,13 @@ final class ProfitManagerService
                     'cycle_pm_model_state'         => $item['cycle_pm_model_state']         ?? null,
                     'cycle_pm_model_risk'          => $item['cycle_pm_model_risk']          ?? null,
                     'cycle_pm_model_actionability' => $item['cycle_pm_model_actionability'] ?? null,
+                    // PM-16: Cycle positive support layer evidence per position
+                    'cycle_pm_support_used'              => $item['cycle_pm_support_used']              ?? false,
+                    'cycle_pm_support_applied'           => $item['cycle_pm_support_applied']           ?? false,
+                    'cycle_pm_support_reason'            => $item['cycle_pm_support_reason']            ?? null,
+                    'cycle_pm_support_model_state'       => $item['cycle_pm_support_model_state']       ?? null,
+                    'cycle_pm_support_model_risk'        => $item['cycle_pm_support_model_risk']        ?? null,
+                    'cycle_pm_support_model_actionability' => $item['cycle_pm_support_model_actionability'] ?? null,
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
@@ -757,6 +765,11 @@ final class ProfitManagerService
                 'cycle_pm_caution_block_total'                 => $pm15Counters['cycle_pm_caution_block_total']     ?? 0,
                 'cycle_pm_caution_no_effect_total'             => $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0,
                 'cycle_pm_caution_unavailable_total'           => $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0,
+                // PM-16: cycle positive support counters (cumulative; prove support layer is active)
+                'cycle_pm_support_total'                       => $pm16Counters['cycle_pm_support_total']           ?? 0,
+                'cycle_pm_support_apply_total'                 => $pm16Counters['cycle_pm_support_apply_total']     ?? 0,
+                'cycle_pm_support_no_effect_total'             => $pm16Counters['cycle_pm_support_no_effect_total'] ?? 0,
+                'cycle_pm_support_unavailable_total'           => $pm16Counters['cycle_pm_support_unavailable_total'] ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -771,18 +784,19 @@ final class ProfitManagerService
 
             // Durable PM-8 proof artifact: written only when this run has meaningful evidence
             // (eligible > 0, apply_attempted > 0, apply_success > 0, apply_blocked > 0, or
-            // cycle caution blocked a real execute-path position this tick).
+            // cycle caution blocked or cycle support tagged a real execute-path position this tick).
             // Never overwritten by a later empty/no-position tick.
-            $pm15BlockThisRun = (int)($pm15Counters['this_run_caution_block_total'] ?? 0);
-            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0 || $pm15BlockThisRun > 0) {
+            $pm15BlockThisRun  = (int)($pm15Counters['this_run_caution_block_total']  ?? 0);
+            $pm16SupportThisRun = (int)($pm16Counters['this_run_support_apply_total'] ?? 0);
+            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0) {
                 $proofItems = [];
                 foreach ($journalItems as $ji) {
-                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied']) || !empty($ji['cycle_pm_caution_applied'])) {
+                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied']) || !empty($ji['cycle_pm_caution_applied']) || !empty($ji['cycle_pm_support_applied'])) {
                         $proofItems[] = $ji;
                     }
                 }
                 // Fallback: if nothing filtered but counters say something happened, include all items.
-                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0 || $pm15BlockThisRun > 0)) {
+                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0)) {
                     $proofItems = $journalItems;
                 }
                 $proofPayload = [
@@ -817,19 +831,26 @@ final class ProfitManagerService
                     'cycle_pm_caution_block_total'          => $pm15Counters['cycle_pm_caution_block_total']     ?? 0,
                     'cycle_pm_caution_no_effect_total'      => $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0,
                     'cycle_pm_caution_unavailable_total'    => $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0,
+                    // PM-16: cycle positive support counters in proof artifact
+                    'cycle_pm_support_total'                => $pm16Counters['cycle_pm_support_total']           ?? 0,
+                    'cycle_pm_support_apply_total'          => $pm16Counters['cycle_pm_support_apply_total']     ?? 0,
+                    'cycle_pm_support_no_effect_total'      => $pm16Counters['cycle_pm_support_no_effect_total'] ?? 0,
+                    'cycle_pm_support_unavailable_total'    => $pm16Counters['cycle_pm_support_unavailable_total'] ?? 0,
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
             } else {
-                // PM-14/15 proof mirror: the PM-8 gate above was not triggered (no active-owner
-                // activity this tick), but PM-14 or PM-15 may have non-zero counters.  Mirror them
-                // into the existing durable proof artifact so all sources stay aligned.
+                // PM-14/15/16 proof mirror: the PM-8 gate above was not triggered (no active-owner
+                // activity this tick), but PM-14, PM-15, or PM-16 may have non-zero counters. Mirror
+                // them into the existing durable proof artifact so all sources stay aligned.
                 // This is best-effort and non-fatal — a missing or unreadable proof file is silently skipped.
                 $pm14HasData = ($pm14Totals['outcome_links_generated_total'] ?? 0) > 0
                     || ($pm14Totals['outcome_links_generation_error_total'] ?? 0) > 0;
                 $pm15HasData = ($pm15Counters['cycle_pm_caution_total'] ?? 0) > 0
                     || ($pm15Counters['cycle_pm_caution_block_total'] ?? 0) > 0;
-                if ($pm14HasData || $pm15HasData) {
+                $pm16HasData = ($pm16Counters['cycle_pm_support_total'] ?? 0) > 0
+                    || ($pm16Counters['cycle_pm_support_apply_total'] ?? 0) > 0;
+                if ($pm14HasData || $pm15HasData || $pm16HasData) {
                     try {
                         $existingProof = $this->store->loadLastActiveOwnerProof();
                         if (!empty($existingProof)) {
@@ -847,10 +868,16 @@ final class ProfitManagerService
                                 $existingProof['cycle_pm_caution_no_effect_total']   = $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0;
                                 $existingProof['cycle_pm_caution_unavailable_total'] = $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0;
                             }
+                            if ($pm16HasData) {
+                                $existingProof['cycle_pm_support_total']             = $pm16Counters['cycle_pm_support_total']           ?? 0;
+                                $existingProof['cycle_pm_support_apply_total']       = $pm16Counters['cycle_pm_support_apply_total']     ?? 0;
+                                $existingProof['cycle_pm_support_no_effect_total']   = $pm16Counters['cycle_pm_support_no_effect_total'] ?? 0;
+                                $existingProof['cycle_pm_support_unavailable_total'] = $pm16Counters['cycle_pm_support_unavailable_total'] ?? 0;
+                            }
                             $this->store->saveLastActiveOwnerProof($existingProof);
                         }
                     } catch (\Throwable $ignored) {
-                        // non-fatal; PM-14/15 mirror into proof is best-effort
+                        // non-fatal; PM-14/15/16 mirror into proof is best-effort
                     }
                 }
             }
@@ -951,6 +978,11 @@ final class ProfitManagerService
                 'cycle_pm_caution_block_total'                 => $pm15Counters['cycle_pm_caution_block_total']     ?? 0,
                 'cycle_pm_caution_no_effect_total'             => $pm15Counters['cycle_pm_caution_no_effect_total'] ?? 0,
                 'cycle_pm_caution_unavailable_total'           => $pm15Counters['cycle_pm_caution_unavailable_total'] ?? 0,
+                // PM-16: cycle positive support counters (cumulative; appear in last_run.json for archive verification)
+                'cycle_pm_support_total'                       => $pm16Counters['cycle_pm_support_total']           ?? 0,
+                'cycle_pm_support_apply_total'                 => $pm16Counters['cycle_pm_support_apply_total']     ?? 0,
+                'cycle_pm_support_no_effect_total'             => $pm16Counters['cycle_pm_support_no_effect_total'] ?? 0,
+                'cycle_pm_support_unavailable_total'           => $pm16Counters['cycle_pm_support_unavailable_total'] ?? 0,
                 'items'                                   => array_slice($itemsWithCycleDebug, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

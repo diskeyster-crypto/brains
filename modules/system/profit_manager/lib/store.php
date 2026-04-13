@@ -1476,6 +1476,33 @@ class Store
         $path = $this->storageDir . '/runtime/pm16_cycle_support_counters.json';
         $this->writeJson($path, $counters);
     }
+
+    // =========================================================================
+    // PM-17: Profit capture counters
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-17 profit capture counters.
+     * Counters accumulate across all executeActive() cycles.
+     *
+     * @return array
+     */
+    public function loadPm17Counters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm17_profit_capture_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-17 profit capture counters.
+     *
+     * @param array $counters
+     */
+    public function savePm17Counters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm17_profit_capture_counters.json';
+        $this->writeJson($path, $counters);
+    }
 }
 
 /* RULES

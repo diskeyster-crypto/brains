@@ -466,6 +466,32 @@ return [
                 'flat_carry_headroom_factor' => 0.3,
             ],
 
+            // PM-17: Profit capture — drawdown from peak ROI tracking and lock enforcement.
+            // Computes drawdown = peak_roi - current_roi and classifies into branches.
+            // When drawdown exceeds the aggressive threshold the layer overrides any pm10_hold
+            // so step trailing can fire and tighten the stop. Only tightens — never loosens.
+            'pm17_profit_capture' => [
+                // peak_headroom_min: peak_roi must exceed activation_roi_pct by at least this many
+                // ROI points for the position to be considered "meaningfully peaked".
+                // Prevents premature profit-capture action on barely-armed positions.
+                'peak_headroom_min' => 0.5,
+
+                // shallow_drawdown_max_fraction: drawdown / peak_roi <= this = shallow pullback.
+                // At shallow pullback the layer tags the position but does NOT force action —
+                // position may continue to new highs.
+                'shallow_drawdown_max_fraction' => 0.20,
+
+                // lock_strengthen_at_peak_max_fraction: drawdown / peak_roi <= this = at/near peak.
+                // At peak the layer overrides any pm10_hold so step trailing can lock in gains
+                // immediately rather than being held by first_lock_protection or adaptive hold.
+                'lock_strengthen_at_peak_max_fraction' => 0.05,
+
+                // aggressive_drawdown_fraction: drawdown / peak_roi >= this = significant giveback.
+                // At this level the layer overrides pm10_hold unconditionally to force the stop
+                // to tighten and capture remaining profit.
+                'aggressive_drawdown_fraction' => 0.35,
+            ],
+
             /* ======================================================
                ANTI-SPAM / RATE LIMITS
                ====================================================== */

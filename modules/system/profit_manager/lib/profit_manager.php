@@ -103,6 +103,15 @@ class ProfitManager
         $cycPmSupportNoEffectTotal = 0; // positions where model found but not favorable / no real action path
         $cycPmSupportUnavailTotal  = 0; // positions where cycle model was unavailable (null)
 
+        // PM-17: Per-run profit capture counters (merged into cumulative pm17_profit_capture_counters.json)
+        $pm17CaptureTotal              = 0; // positions with meaningful peak evaluated by profit capture
+        $pm17CaptureApplyTotal         = 0; // positions where capture actively overrode pm10_hold
+        $pm17PeakDrawdownTotal         = 0; // positions classified as peak_drawdown (aggressive giveback)
+        $pm17ShallowPullbackHoldTotal  = 0; // positions classified as shallow_pullback_hold
+        $pm17LockStrengthenTotal       = 0; // positions classified as lock_strengthen (at/near peak)
+        $pm17IntermediateTotal         = 0; // positions classified as intermediate_giveback (between thresholds)
+        $pm17NoEffectTotal             = 0; // positions where peak was not yet meaningful
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -230,6 +239,36 @@ class ProfitManager
             elseif ($aMode === 'flat_carry')          { $pm11FlatCarry++; }
             if ($pm11Fields['adaptive_action_taken'] !== 'noop') { $pm11AdjApplied++; } else { $pm11AdjNoop++; }
             if ($pm11Fields['adaptive_bounds_applied'])           { $pm11BoundsHit++; }
+
+            // PM-17: Profit capture — drawdown from peak ROI tracking and active lock enforcement.
+            // Runs AFTER PM-11 so the current pm10_hold state reflects PM-10 + PM-11 decisions.
+            // This layer may CLEAR pm10_hold to allow step trailing to fire when drawdown from
+            // peak is meaningful. It never loosens stops or reduces existing lock — only tightens.
+            $pm17Fields = $this->computePm17ProfitCapture(
+                $peakRoi, $currentRoi, $activationRoiPct, $trailingArmed, isset($ctx['pm10_hold'])
+            );
+            // Apply PM-17 hold override when capture logic determined hold should be released
+            if ($pm17Fields['pm17_override_hold'] && isset($ctx['pm10_hold'])) {
+                unset($ctx['pm10_hold'], $ctx['pm10_hold_reason']);
+            }
+            // Count PM-17 modes
+            $pm17CaptureMode = $pm17Fields['pm17_capture_mode'];
+            if ($pm17CaptureMode === 'no_effect') {
+                $pm17NoEffectTotal++;
+            } else {
+                $pm17CaptureTotal++;
+                if ($pm17CaptureMode === 'peak_drawdown') {
+                    $pm17PeakDrawdownTotal++;
+                    if ($pm17Fields['pm17_applied']) { $pm17CaptureApplyTotal++; }
+                } elseif ($pm17CaptureMode === 'shallow_pullback_hold') {
+                    $pm17ShallowPullbackHoldTotal++;
+                } elseif ($pm17CaptureMode === 'lock_strengthen') {
+                    $pm17LockStrengthenTotal++;
+                    if ($pm17Fields['pm17_applied']) { $pm17CaptureApplyTotal++; }
+                } elseif ($pm17CaptureMode === 'intermediate_giveback') {
+                    $pm17IntermediateTotal++;
+                }
+            }
 
             // PM-15: Bounded cycle caution layer — read coin_cycle_decision_model from passport.
             // This is a caution/veto gate only: it may block or defer PM apply/tighten when cycle
@@ -662,6 +701,15 @@ class ProfitManager
             $itemResult['cycle_pm_support_model_risk']        = $cycPmModelRisk;
             $itemResult['cycle_pm_support_model_actionability'] = $cycPmModelAction;
 
+            // PM-17: Profit capture observability fields
+            $itemResult['pm17_capture_mode']         = $pm17Fields['pm17_capture_mode'];
+            $itemResult['pm17_capture_reason']       = $pm17Fields['pm17_capture_reason'];
+            $itemResult['pm17_drawdown']             = $pm17Fields['pm17_drawdown'];
+            $itemResult['pm17_drawdown_fraction']    = $pm17Fields['pm17_drawdown_fraction'];
+            $itemResult['pm17_peak_meaningful']      = $pm17Fields['pm17_peak_meaningful'];
+            $itemResult['pm17_override_hold']        = $pm17Fields['pm17_override_hold'];
+            $itemResult['pm17_applied']              = $pm17Fields['pm17_applied'];
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -804,6 +852,20 @@ class ProfitManager
         ];
         $this->store->saveCyclePmSupportCounters($cyc16Totals);
 
+        // PM-17: Merge this-run profit capture counts into cumulative pm17_profit_capture_counters.json
+        $prevPm17   = $this->store->loadPm17Counters();
+        $pm17Totals = [
+            'pm_profit_capture_total'              => ((int)($prevPm17['pm_profit_capture_total']              ?? 0)) + $pm17CaptureTotal,
+            'pm_profit_capture_apply_total'        => ((int)($prevPm17['pm_profit_capture_apply_total']        ?? 0)) + $pm17CaptureApplyTotal,
+            'pm_profit_capture_peak_drawdown_total'=> ((int)($prevPm17['pm_profit_capture_peak_drawdown_total']?? 0)) + $pm17PeakDrawdownTotal,
+            'pm_profit_capture_shallow_pullback_hold_total' => ((int)($prevPm17['pm_profit_capture_shallow_pullback_hold_total'] ?? 0)) + $pm17ShallowPullbackHoldTotal,
+            'pm_profit_capture_lock_strengthen_total' => ((int)($prevPm17['pm_profit_capture_lock_strengthen_total'] ?? 0)) + $pm17LockStrengthenTotal,
+            'pm_profit_capture_intermediate_total' => ((int)($prevPm17['pm_profit_capture_intermediate_total'] ?? 0)) + $pm17IntermediateTotal,
+            'pm_profit_capture_no_effect_total'    => ((int)($prevPm17['pm_profit_capture_no_effect_total']    ?? 0)) + $pm17NoEffectTotal,
+            'updated_at'                           => $ts,
+        ];
+        $this->store->savePm17Counters($pm17Totals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -902,6 +964,25 @@ class ProfitManager
                 'cycle_pm_support_apply_total'     => $cyc16Totals['cycle_pm_support_apply_total'],
                 'cycle_pm_support_no_effect_total' => $cyc16Totals['cycle_pm_support_no_effect_total'],
                 'cycle_pm_support_unavailable_total' => $cyc16Totals['cycle_pm_support_unavailable_total'],
+            ],
+            // PM-17: profit capture counters (both this-run and cumulative totals)
+            'pm17_counters'     => [
+                // This-run deltas
+                'this_run_capture_total'              => $pm17CaptureTotal,
+                'this_run_capture_apply_total'        => $pm17CaptureApplyTotal,
+                'this_run_peak_drawdown_total'        => $pm17PeakDrawdownTotal,
+                'this_run_shallow_pullback_hold_total'=> $pm17ShallowPullbackHoldTotal,
+                'this_run_lock_strengthen_total'      => $pm17LockStrengthenTotal,
+                'this_run_intermediate_total'         => $pm17IntermediateTotal,
+                'this_run_no_effect_total'            => $pm17NoEffectTotal,
+                // Cumulative totals
+                'pm_profit_capture_total'              => $pm17Totals['pm_profit_capture_total'],
+                'pm_profit_capture_apply_total'        => $pm17Totals['pm_profit_capture_apply_total'],
+                'pm_profit_capture_peak_drawdown_total'=> $pm17Totals['pm_profit_capture_peak_drawdown_total'],
+                'pm_profit_capture_shallow_pullback_hold_total' => $pm17Totals['pm_profit_capture_shallow_pullback_hold_total'],
+                'pm_profit_capture_lock_strengthen_total' => $pm17Totals['pm_profit_capture_lock_strengthen_total'],
+                'pm_profit_capture_intermediate_total' => $pm17Totals['pm_profit_capture_intermediate_total'],
+                'pm_profit_capture_no_effect_total'    => $pm17Totals['pm_profit_capture_no_effect_total'],
             ],
         ];
     }
@@ -1471,6 +1552,13 @@ class ProfitManager
                 'cycle_pm_support_model_state'       => $result['cycle_pm_support_model_state']       ?? null,
                 'cycle_pm_support_model_risk'        => $result['cycle_pm_support_model_risk']        ?? null,
                 'cycle_pm_support_model_actionability' => $result['cycle_pm_support_model_actionability'] ?? null,
+                // PM-17: Profit capture layer evidence — always updated so drawdown is visible
+                'pm17_capture_mode'      => $result['pm17_capture_mode']      ?? null,
+                'pm17_capture_reason'    => $result['pm17_capture_reason']    ?? null,
+                'pm17_drawdown'          => $result['pm17_drawdown']          ?? null,
+                'pm17_drawdown_fraction' => $result['pm17_drawdown_fraction'] ?? null,
+                'pm17_peak_meaningful'   => $result['pm17_peak_meaningful']   ?? false,
+                'pm17_applied'           => $result['pm17_applied']           ?? false,
                 'updated_at'                           => date('c'),
             ];
             if (!empty($result['cycle_pm_support_applied'])) {
@@ -1748,6 +1836,111 @@ class ProfitManager
         $out['adaptive_action_taken']      = 'noop';
         $out['adaptive_adjustment_roi']    = 0.0;
         return $out;
+    }
+
+    // =========================================================================
+    // PM-17: Profit capture — drawdown from peak ROI tracking
+    // =========================================================================
+
+    /**
+     * Compute PM-17 profit capture classification for a single position.
+     *
+     * Runs AFTER computePm11Adaptive() in runActive(). Uses peak_roi and current_roi
+     * (already computed by the runActive loop) to classify the position's drawdown
+     * state and decide whether to override the pm10_hold gate.
+     *
+     * Branches (in priority order):
+     *   no_effect           — peak not yet meaningful (below activation + headroom_min)
+     *   peak_drawdown       — significant drawdown from peak; override hold → force step trailing
+     *   shallow_pullback_hold — small drawdown; allow continuation, do not force
+     *   lock_strengthen     — at or near peak; override any hold so lock proceeds immediately
+     *   intermediate_giveback — drawdown between shallow and aggressive thresholds; observe only
+     *
+     * All overrides are additive-only: they clear pm10_hold but never reduce an existing lock.
+     * The step-trailing ratchet (isSLImproving) remains fully active and enforces monotonicity.
+     *
+     * @param float $peakRoi          Monotonic peak ROI for this position
+     * @param float $currentRoi       Current ROI this tick
+     * @param float $activationRoiPct Arm threshold from config
+     * @param bool  $trailingArmed    Whether trailing is armed this tick
+     * @param bool  $holdActive       Whether pm10_hold is currently set (from PM-10 or PM-11)
+     * @return array PM-17 fields (safe to read from item result)
+     */
+    private function computePm17ProfitCapture(
+        float $peakRoi,
+        float $currentRoi,
+        float $activationRoiPct,
+        bool  $trailingArmed,
+        bool  $holdActive
+    ): array {
+        $pm17Cfg = is_array($this->config['pm17_profit_capture'] ?? null)
+            ? $this->config['pm17_profit_capture']
+            : [];
+
+        $peakHeadroomMin          = (float)($pm17Cfg['peak_headroom_min']                   ?? 0.5);
+        $shallowDrawdownMaxFrac   = (float)($pm17Cfg['shallow_drawdown_max_fraction']        ?? 0.20);
+        $lockStrengthenAtPeakMax  = (float)($pm17Cfg['lock_strengthen_at_peak_max_fraction'] ?? 0.05);
+        $aggressiveDrawdownFrac   = (float)($pm17Cfg['aggressive_drawdown_fraction']         ?? 0.35);
+
+        $drawdown         = round($peakRoi - $currentRoi, 4);
+        $drawdownFraction = ($peakRoi > 0.0) ? round($drawdown / $peakRoi, 4) : 0.0;
+        $peakMeaningful   = $trailingArmed && ($peakRoi >= ($activationRoiPct + $peakHeadroomMin));
+
+        $base = [
+            'pm17_capture_mode'       => 'no_effect',
+            'pm17_capture_reason'     => null,
+            'pm17_drawdown'           => $drawdown,
+            'pm17_drawdown_fraction'  => $drawdownFraction,
+            'pm17_peak_meaningful'    => $peakMeaningful,
+            'pm17_override_hold'      => false,
+            'pm17_applied'            => false,
+        ];
+
+        if (!$peakMeaningful) {
+            // Peak has not reached a meaningful level above activation.
+            // Do not apply profit capture yet — allow position to grow.
+            return $base;
+        }
+
+        // --- Branch: peak_drawdown (aggressive giveback) ---
+        // drawdownFraction >= aggressive threshold → significant profit is being given back.
+        // Override pm10_hold so step trailing can tighten the stop and preserve remaining profit.
+        if ($drawdownFraction >= $aggressiveDrawdownFrac) {
+            $base['pm17_capture_mode']   = 'peak_drawdown';
+            $base['pm17_capture_reason'] = 'pm_profit_capture_peak_drawdown';
+            $base['pm17_override_hold']  = $holdActive; // only meaningful when hold was set
+            $base['pm17_applied']        = $holdActive; // applied = hold was actually cleared
+            return $base;
+        }
+
+        // --- Branch: lock_strengthen (at or near peak) ---
+        // drawdownFraction <= at-peak threshold → position is at or very close to peak.
+        // Override any pm10_hold so the step-trailing lock proceeds immediately rather than
+        // being deferred by first_lock_protection or PM-11 holds.
+        if ($drawdownFraction <= $lockStrengthenAtPeakMax) {
+            $base['pm17_capture_mode']   = 'lock_strengthen';
+            $base['pm17_capture_reason'] = 'pm_profit_capture_lock_strengthen';
+            $base['pm17_override_hold']  = $holdActive;
+            $base['pm17_applied']        = $holdActive;
+            return $base;
+        }
+
+        // --- Branch: shallow_pullback_hold ---
+        // Small drawdown (above at-peak but <= shallow threshold) → allow continuation.
+        // The position may recover to new highs; do not force a tighter stop.
+        if ($drawdownFraction <= $shallowDrawdownMaxFrac) {
+            $base['pm17_capture_mode']   = 'shallow_pullback_hold';
+            $base['pm17_capture_reason'] = 'pm_profit_capture_shallow_pullback_hold';
+            // pm17_override_hold remains false — allow PM-10/PM-11 hold to stand
+            return $base;
+        }
+
+        // --- Branch: intermediate_giveback ---
+        // Drawdown is between shallow threshold and aggressive threshold.
+        // Observe and record; no hold override in this band.
+        $base['pm17_capture_mode']   = 'intermediate_giveback';
+        $base['pm17_capture_reason'] = 'pm_profit_capture_intermediate_giveback';
+        return $base;
     }
 
 

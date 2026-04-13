@@ -106,13 +106,15 @@ final class UnifiedConfigController
     public function coinCycle(): void
     {
         $this->requireAuth();
-        $tab     = 'coin_cycle';
-        $title   = 'Центр Конфигурации — Монета / Цикл';
-        $summary = $this->service->getSummary();
-        $data    = $this->service->getOperationalDraft();
-        $master  = $this->service->getOperationalMaster();
-        $baseUrl = $this->baseUrl;
-        $flash   = $this->consumeFlash();
+        $tab             = 'coin_cycle';
+        $title           = 'Центр Конфигурации — Coin Passport';
+        $summary         = $this->service->getSummary();
+        $data            = $this->service->getOperationalDraft();
+        $master          = $this->service->getOperationalMaster();
+        $preview         = $this->service->getEffectivePreview();
+        $migrationStatus = $this->service->getCoinPassportMigrationStatus();
+        $baseUrl         = $this->baseUrl;
+        $flash           = $this->consumeFlash();
         include __DIR__ . '/views/coin_cycle.php';
     }
 

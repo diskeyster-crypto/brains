@@ -147,6 +147,7 @@ final class ConfigAuditEngine
             'bot_config'           => $this->loadPhpConfig($this->botBase  . '/config/config.php'),
             'bot_runtime'          => $this->loadJsonFile($this->botBase   . '/config/bot.json'),
             'pm_config'            => $this->loadPhpConfig($this->pmBase   . '/config/config.php'),
+            'cp_config'            => $this->loadPhpConfig($this->passportBase . '/config/config.php'),
             'passport_manifest'    => $this->loadPhpConfig($this->passportBase . '/manifest.php'),
         ];
     }
@@ -265,7 +266,7 @@ final class ConfigAuditEngine
         unset($entry);
 
         // Attach migration_readiness status to each parameter
-        $legacySources = ['bot_config', 'brain_risk_engine', 'brain_effective', 'pm_config', 'passport_manifest'];
+        $legacySources = ['bot_config', 'brain_risk_engine', 'brain_effective', 'pm_config', 'cp_config', 'passport_manifest'];
         foreach ($map as $key => &$entry) {
             if ($entry['unused']) {
                 $entry['migration_readiness'] = 'blocked_by_missing_owner';
@@ -307,6 +308,7 @@ final class ConfigAuditEngine
             'bot_config'        => 'Bot static config.php (lowest operational precedence)',
             'brain_risk_engine' => 'Risk engine coefficients (immutable)',
             'pm_config'         => 'Profit Manager config.php',
+            'cp_config'         => 'Coin Passport config.php',
             'passport_manifest' => 'Coin Passport manifest',
         ];
 
@@ -541,9 +543,10 @@ final class ConfigAuditEngine
             'execution' => $pmCfg['execution'] ?? null,
         ];
 
-        // Coin Passport — no dedicated effective config
+        // Coin Passport — first-wave operational config from cp_config
+        $cpCfg = $sources['cp_config'] ?? [];
         $passportPreview = [
-            'note' => 'Coin Passport has no dedicated config file. Operational params come from Smart Brain and Trading Bot.',
+            'module' => $cpCfg['module'] ?? null,
         ];
 
         return [
@@ -627,6 +630,12 @@ final class ConfigAuditEngine
             // ── Profit Manager — core ──────────────────────────────────────
             ['key' => 'pm_trailing_owner',         'source' => 'bot_runtime',       'path' => 'execution.trailing_owner',  'type' => 'operational', 'notes' => 'bot | profit_manager | profit_manager_shadow'],
             ['key' => 'pm_enabled',                'source' => 'bot_config',        'path' => 'profit_manager.module.enabled', 'type' => 'operational', 'notes' => 'Profit Manager on/off'],
+
+            // ── Coin Passport — first-wave operational ─────────────────────
+            ['key' => 'cp_enabled',                'source' => 'cp_config',         'path' => 'module.enabled',                'type' => 'operational', 'notes' => 'Coin Passport master on/off switch'],
+            ['key' => 'cp_rebuild_all_enabled',    'source' => 'cp_config',         'path' => 'module.rebuild_all_enabled',    'type' => 'operational', 'notes' => 'Full rebuildAll cron task enabled'],
+            ['key' => 'cp_rebuild_recent_enabled', 'source' => 'cp_config',         'path' => 'module.rebuild_recent_enabled', 'type' => 'operational', 'notes' => 'rebuildRecentSymbols cron task enabled'],
+            ['key' => 'cp_cycle_profiles_enabled', 'source' => 'cp_config',         'path' => 'module.cycle_profiles_enabled', 'type' => 'operational', 'notes' => 'buildCycleProfiles cron task enabled'],
 
             // ── Smart Brain — risk engine coefficients (immutable) ─────────
             ['key' => 'risk_levels',               'source' => 'brain_risk_engine', 'path' => 'settings.risk_levels',      'type' => 'immutable', 'notes' => 'Corridor-width → leverage coefficient table'],
@@ -1006,6 +1015,7 @@ final class ConfigAuditEngine
             'bot_config'        => 'modules/system/trading_bot/config/config.php',
             'bot_runtime'       => 'modules/system/trading_bot/config/bot.json',
             'pm_config'         => 'modules/system/profit_manager/config/config.php',
+            'cp_config'         => 'modules/system/coin_passport/config/config.php',
             'passport_manifest' => 'modules/system/coin_passport/manifest.php',
             default             => $source,
         };

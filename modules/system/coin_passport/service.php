@@ -22,12 +22,26 @@ final class CoinPassportService
     /** Path to rebuild status file */
     private const STATUS_FILE = 'status.json';
 
+    /** Merged config (local config.php, overridden by unified config overlay) */
+    private array $config = [];
+
+    /** Config migration status (set during construction) */
+    private array $cpMigrationStatus = [];
+
     public function __construct()
     {
-        $this->storageDir   = __DIR__ . '/storage';
-        $passportsDir       = $this->storageDir . '/passports';
-        $tradingBotStorage  = __DIR__ . '/../trading_bot/storage';
-        $aiShadowStorage    = __DIR__ . '/../ai_shadow/storage';
+        $this->storageDir = __DIR__ . '/storage';
+
+        // CFG-8: Load local config and apply unified Config Module overlay for
+        // first-wave CP operational params.  On any failure the local config
+        // defaults remain in effect (safe fallback — all defaults are true).
+        $this->config            = $this->loadConfig();
+        $this->cpMigrationStatus = $this->applyCpUnifiedConfigOverlay($this->config);
+        $this->writeCpMigrationStatus($this->cpMigrationStatus);
+
+        $passportsDir      = $this->storageDir . '/passports';
+        $tradingBotStorage = __DIR__ . '/../trading_bot/storage';
+        $aiShadowStorage   = __DIR__ . '/../ai_shadow/storage';
 
         $this->engine = new CoinPassportEngine($passportsDir, $tradingBotStorage, $aiShadowStorage);
     }
@@ -134,6 +148,9 @@ final class CoinPassportService
      */
     public function rebuildAll(): array
     {
+        if (!($this->config['module']['rebuild_all_enabled'] ?? true)) {
+            return ['updated' => 0, 'symbols' => [], 'errors' => ['rebuild_all_disabled_by_config']];
+        }
         $result = $this->engine->rebuildAll();
         $this->saveStatus('rebuild_all', $result);
 
@@ -192,6 +209,9 @@ final class CoinPassportService
      */
     public function rebuildRecentSymbols(): array
     {
+        if (!($this->config['module']['rebuild_recent_enabled'] ?? true)) {
+            return ['updated' => 0, 'symbols' => [], 'errors' => ['rebuild_recent_disabled_by_config']];
+        }
         $cutoff    = time() - 7 * 86400;
         $recent    = [];
         $botBase   = __DIR__ . '/../trading_bot';
@@ -330,8 +350,270 @@ final class CoinPassportService
         @file_put_contents($path, json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    // =========================================================================
+    // Config helpers — CFG-8: unified config soft-switch
+    // =========================================================================
+
     /**
-     * Return global market health summary across all passports.
+     * Load Coin Passport local config from config/config.php.
+     *
+     * @return array<string,mixed>
+     */
+    private function loadConfig(): array
+    {
+        $cfgPath = __DIR__ . '/config/config.php';
+        if (!is_file($cfgPath)) {
+            return [];
+        }
+        try {
+            $cfg = require $cfgPath;
+            return is_array($cfg) ? $cfg : [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Apply first-wave Config Module unified config overlay to the CP config.
+     *
+     * Priority: config_operational_master.json → config_operational_draft.json → local config.php defaults.
+     * All sources are explicit in the returned status record; no silent fallbacks.
+     *
+     * First-wave params overlaid:
+     *   cp_enabled               → $config['module']['enabled']
+     *   cp_rebuild_all_enabled   → $config['module']['rebuild_all_enabled']
+     *   cp_rebuild_recent_enabled → $config['module']['rebuild_recent_enabled']
+     *   cp_cycle_profiles_enabled → $config['module']['cycle_profiles_enabled']
+     *
+     * @param array<string,mixed> $config Reference to the merged config array (mutated in place)
+     * @return array<string,mixed> Migration status record
+     */
+    private function applyCpUnifiedConfigOverlay(array &$config): array
+    {
+        $firstWave = [
+            'cp_enabled'                => ['path' => 'module.enabled',                'cast' => 'bool'],
+            'cp_rebuild_all_enabled'    => ['path' => 'module.rebuild_all_enabled',    'cast' => 'bool'],
+            'cp_rebuild_recent_enabled' => ['path' => 'module.rebuild_recent_enabled', 'cast' => 'bool'],
+            'cp_cycle_profiles_enabled' => ['path' => 'module.cycle_profiles_enabled', 'cast' => 'bool'],
+        ];
+
+        $status = [
+            'module'                     => 'coin_passport',
+            'switch_wave'                => 'v1_operational_params',
+            'unified_config_available'   => false,
+            'unified_config_master_path' => '',
+            'unified_config_draft_path'  => '',
+            'source'                     => 'legacy_cp_config',
+            'partially_migrated'         => false,
+            'first_wave_total'           => count($firstWave),
+            'migrated_count'             => 0,
+            'fallback_count'             => 0,
+            'switched_params'            => [],
+            'fallback_params'            => [],
+            'switched_params_detail'     => [],
+            'fallback_params_detail'     => [],
+            'recorded_at'                => date('c'),
+        ];
+
+        $systemDir  = __DIR__ . '/..'; // modules/system/
+        $masterPath = $systemDir . '/config/storage/runtime/config_operational_master.json';
+        $draftPath  = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_master_path'] = $masterPath;
+        $status['unified_config_draft_path']  = $draftPath;
+
+        /** Helper: get a value from $config using dot-notation path. */
+        $dotGet = static function (array $cfg, string $path) {
+            $parts   = explode('.', $path);
+            $current = $cfg;
+            foreach ($parts as $part) {
+                if (!is_array($current) || !array_key_exists($part, $current)) {
+                    return null;
+                }
+                $current = $current[$part];
+            }
+            return $current;
+        };
+
+        /** Helper: set a value in $config using dot-notation path. */
+        $dotSet = static function (array &$cfg, string $path, $value): void {
+            $parts   = explode('.', $path);
+            $current = &$cfg;
+            foreach ($parts as $i => $part) {
+                if ($i === count($parts) - 1) {
+                    $current[$part] = $value;
+                } else {
+                    if (!isset($current[$part]) || !is_array($current[$part])) {
+                        $current[$part] = [];
+                    }
+                    $current = &$current[$part];
+                }
+            }
+        };
+
+        /** Build fallback detail for all first-wave params using current local config. */
+        $buildFallbackDetail = static function (string $fallbackReason) use ($firstWave, $config, $dotGet): array {
+            $detail = [];
+            foreach ($firstWave as $key => $def) {
+                $detail[$key] = [
+                    'value'                => $dotGet($config, $def['path']),
+                    'source_layer'         => 'legacy_cp_config',
+                    'source_owner'         => 'coin_passport',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => $fallbackReason,
+                    'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
+                ];
+            }
+            return $detail;
+        };
+
+        // ── Load master (preferred) ─────────────────────────────────────────
+        $masterParams = [];
+        $masterAvail  = false;
+        if (is_file($masterPath)) {
+            $rawMaster = @file_get_contents($masterPath);
+            if ($rawMaster !== false) {
+                $masterData = @json_decode($rawMaster, true);
+                if (is_array($masterData) && !empty($masterData['params'])) {
+                    $masterParams = $masterData['params'];
+                    $masterAvail  = true;
+                    $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                }
+            }
+        }
+
+        // ── Load draft (fallback source) ────────────────────────────────────
+        $draftParams = [];
+        $draftAvail  = false;
+        if (is_file($draftPath)) {
+            $rawDraft = @file_get_contents($draftPath);
+            if ($rawDraft !== false) {
+                $draftData = @json_decode($rawDraft, true);
+                if (is_array($draftData) && !empty($draftData['params'])) {
+                    $draftParams = $draftData['params'];
+                    $draftAvail  = true;
+                    $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                }
+            }
+        }
+
+        if (!$masterAvail && !$draftAvail) {
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_not_found');
+            return $status;
+        }
+
+        $status['unified_config_available'] = true;
+
+        foreach ($firstWave as $key => $def) {
+            $entry       = null;
+            $sourceLayer = 'legacy_cp_config';
+            $via         = '';
+
+            if ($masterAvail && isset($masterParams[$key]) && ($masterParams[$key]['value'] ?? null) !== null) {
+                $entry       = $masterParams[$key];
+                $sourceLayer = 'unified_config_master';
+                $via         = 'unified_config_operational_master';
+            } elseif ($draftAvail && isset($draftParams[$key]) && ($draftParams[$key]['value'] ?? null) !== null) {
+                $entry       = $draftParams[$key];
+                $sourceLayer = 'unified_config';
+                $via         = 'unified_config_operational_draft';
+            }
+
+            if ($entry === null) {
+                $status['fallback_params'][] = $key;
+                $status['fallback_params_detail'][$key] = [
+                    'value'                => $dotGet($config, $def['path']),
+                    'source_layer'         => 'legacy_cp_config',
+                    'source_owner'         => 'coin_passport',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => 'param_not_in_unified_config',
+                    'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
+                ];
+                continue;
+            }
+
+            $rawVal  = $entry['value'];
+            $castVal = match ($def['cast']) {
+                'bool' => (bool)$rawVal,
+                'int'  => (int)$rawVal,
+                default => (string)$rawVal,
+            };
+
+            $dotSet($config, $def['path'], $castVal);
+
+            $status['switched_params'][] = $key;
+            $status['switched_params_detail'][$key] = [
+                'value'                => $castVal,
+                'original_source'      => $entry['source']      ?? ($sourceLayer === 'unified_config_master' ? 'config_center_save' : 'unknown'),
+                'original_source_file' => $entry['source_file'] ?? null,
+                'via'                  => $via,
+                'source_layer'         => $sourceLayer,
+                'source_owner'         => 'coin_passport',
+                'unified_config_used'  => true,
+                'legacy_fallback_used' => false,
+            ];
+        }
+
+        $migratedCount = count($status['switched_params']);
+        $fallbackCount = count($status['fallback_params']);
+        $status['migrated_count']     = $migratedCount;
+        $status['fallback_count']     = $fallbackCount;
+        $status['partially_migrated'] = $migratedCount > 0;
+        $status['source']             = $migratedCount === 0
+            ? 'legacy_cp_config'
+            : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
+
+        return $status;
+    }
+
+    /**
+     * Write CP config migration status to its runtime storage.
+     *
+     * @param array<string,mixed> $migrationStatus
+     */
+    private function writeCpMigrationStatus(array $migrationStatus): void
+    {
+        $path = $this->storageDir . '/runtime/config_source_status.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($migrationStatus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
+        );
+    }
+
+    /**
+     * Build a concise migration summary for inclusion in runtime result output.
+     *
+     * @return array<string,mixed>
+     */
+    public function buildCpMigrationSummary(): array
+    {
+        $s = $this->cpMigrationStatus;
+        return [
+            'module'                   => 'coin_passport',
+            'migration_wave'           => $s['switch_wave']               ?? 'v1_operational_params',
+            'partially_migrated'       => (bool)($s['partially_migrated'] ?? false),
+            'unified_config_available' => (bool)($s['unified_config_available'] ?? false),
+            'unified_config_used'      => ($s['migrated_count'] ?? 0) > 0,
+            'legacy_fallback_used'     => ($s['fallback_count'] ?? 0) > 0,
+            'migrated_count'           => (int)($s['migrated_count']   ?? 0),
+            'fallback_count'           => (int)($s['fallback_count']   ?? 0),
+            'first_wave_total'         => (int)($s['first_wave_total'] ?? 0),
+            'switched_params'          => $s['switched_params']         ?? [],
+            'fallback_params'          => $s['fallback_params']         ?? [],
+            'source'                   => $s['source']                  ?? 'legacy_cp_config',
+            'recorded_at'              => $s['recorded_at']             ?? null,
+        ];
+    }
+
+    /**
      * Used by index UI (Phase 6) and Brain to gauge overall market conditions.
      *
      * @return array<string,mixed>
@@ -386,6 +668,9 @@ final class CoinPassportService
      */
     public function buildCycleProfiles(): array
     {
+        if (!($this->config['module']['cycle_profiles_enabled'] ?? true)) {
+            return ['built' => 0, 'symbols' => [], 'errors' => ['cycle_profiles_disabled_by_config']];
+        }
         // Resolve parser2 history storage via SystemPaths (project-standard resolver).
         // Key 'parser.parser2_history_accumulator.storage' is the canonical key used
         // by parser4, parser5, parser15, parser6_simulator, and simulator/controller.

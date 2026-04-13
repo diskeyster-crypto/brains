@@ -15,7 +15,7 @@ $tabs = [
     'smart_brain'    => ['label' => 'Smart Brain',        'icon' => 'bi-cpu',              'url' => $baseUrl . '/smart_brain'],
     'trading_bot'    => ['label' => 'Trading Bot',        'icon' => 'bi-robot',            'url' => $baseUrl . '/trading_bot'],
     'profit_manager' => ['label' => 'Менеджер прибыли',  'icon' => 'bi-cash-coin',        'url' => $baseUrl . '/profit_manager'],
-    'coin_cycle'     => ['label' => 'Монета / Цикл',     'icon' => 'bi-coin',             'url' => $baseUrl . '/coin_cycle'],
+    'coin_cycle'     => ['label' => 'Coin Passport',         'icon' => 'bi-coin',             'url' => $baseUrl . '/coin_cycle'],
     'advanced'       => ['label' => 'Расширенный',        'icon' => 'bi-tools',            'url' => $baseUrl . '/advanced'],
 ];
 ?>

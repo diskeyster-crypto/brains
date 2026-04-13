@@ -271,7 +271,8 @@ ob_start();
                 читаются из <code>config_operational_master.json</code> в приоритете над legacy-источником.
                 При отсутствии параметра в мастер-конфиге — явный fallback на legacy-прокси с фиксацией в
                 <code>profit_manager/storage/runtime/config_source_status.json</code>.
-                Coin Passport остаётся без изменений.</p>
+                Coin Passport мигрирован — см. вкладку
+                <a href="<?= htmlspecialchars($baseUrl) ?>/coin_cycle" class="text-info">«Монета / Цикл»</a>.</p>
             </div>
         </div>
     </div>

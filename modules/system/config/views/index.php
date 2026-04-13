@@ -49,6 +49,10 @@ $labels = [
     'bot_brain_controlled'          => 'Управление от Brain',
     'pm_trailing_owner'             => 'Трейлинг управляет',
     'pm_enabled'                    => 'PM включён',
+    'cp_enabled'                    => 'Coin Passport включён',
+    'cp_rebuild_all_enabled'        => 'CP: полный перестрой',
+    'cp_rebuild_recent_enabled'     => 'CP: перестрой активных',
+    'cp_cycle_profiles_enabled'     => 'CP: цикловые профили',
 ];
 
 $groups = [
@@ -87,6 +91,11 @@ $groups = [
         'color' => 'text-success',
         'keys'  => ['pm_enabled'],
     ],
+    'Coin Passport' => [
+        'icon'  => 'bi-coin',
+        'color' => 'text-warning',
+        'keys'  => ['cp_enabled', 'cp_rebuild_all_enabled', 'cp_rebuild_recent_enabled', 'cp_cycle_profiles_enabled'],
+    ],
 ];
 
 // Operational params allowed in the save form (immutable params excluded)
@@ -100,6 +109,7 @@ $editableKeys = [
     'execution_profile', 'patterns_mode',
     'bot_enabled', 'bot_mode', 'max_intents_per_run', 'max_concurrent_positions',
     'bot_brain_controlled', 'pm_trailing_owner', 'pm_enabled',
+    'cp_enabled', 'cp_rebuild_all_enabled', 'cp_rebuild_recent_enabled', 'cp_cycle_profiles_enabled',
 ];
 
 // Conflict detection
@@ -183,7 +193,7 @@ ob_start();
                             <?php if (!$editable): ?>
                                 <!-- Immutable / not editable — just show the value -->
                                 <div class="font-monospace text-secondary small"><?= htmlspecialchars($renderVal($effectiveVal)) ?></div>
-                            <?php elseif (is_bool($draftVal) || $key === 'live_trading_enabled' || $key === 'bot_enabled' || $key === 'trailing_enabled' || $key === 'break_even_enabled' || $key === 'live_one_trade_per_symbol' || $key === 'live_reverse_side_enabled' || $key === 'bot_brain_controlled' || $key === 'pm_enabled'): ?>
+                            <?php elseif (is_bool($draftVal) || $key === 'live_trading_enabled' || $key === 'bot_enabled' || $key === 'trailing_enabled' || $key === 'break_even_enabled' || $key === 'live_one_trade_per_symbol' || $key === 'live_reverse_side_enabled' || $key === 'bot_brain_controlled' || $key === 'pm_enabled' || $key === 'cp_enabled' || $key === 'cp_rebuild_all_enabled' || $key === 'cp_rebuild_recent_enabled' || $key === 'cp_cycle_profiles_enabled'): ?>
                                 <!-- Boolean toggle -->
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="<?= htmlspecialchars($key) ?>"

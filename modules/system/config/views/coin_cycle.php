@@ -108,7 +108,7 @@ $fallbackReasonLabels = [
                 <table class="table table-sm mb-0">
                     <thead>
                         <tr>
-                            <th style="width:40%">Параметр</th>
+                            <th style="width:38%">Параметр</th>
                             <th>Значение</th>
                             <th>Источник</th>
                             <th>Статус</th>
@@ -116,16 +116,18 @@ $fallbackReasonLabels = [
                     </thead>
                     <tbody>
                     <?php foreach ($cpFirstWaveKeys as $k):
-                        $isSwitched = in_array($k, $switchedParams, true);
-                        $isFallback = in_array($k, $fallbackParams, true);
-                        $detail     = $isSwitched ? ($switchedDetail[$k] ?? []) : ($fallbackDetail[$k] ?? []);
-                        $val        = $detail['value'] ?? null;
-                        $valStr     = is_bool($val) ? ($val ? 'true' : 'false') : ($val === null ? '—' : (string)$val);
-                        $layer      = $detail['source_layer'] ?? ($isSwitched ? 'unified_config_master' : 'legacy_cp_config');
-                        $label      = $labels[$k] ?? $k;
-                        $rawReason  = $detail['fallback_reason'] ?? '';
-                        $ruReason   = $fallbackReasonLabels[$rawReason] ?? $rawReason;
-                        $rowClass   = $isFallback ? 'table-warning' : '';
+                        $isSwitched     = in_array($k, $switchedParams, true);
+                        $isFallback     = in_array($k, $fallbackParams, true);
+                        $detail         = $isSwitched ? ($switchedDetail[$k] ?? []) : ($fallbackDetail[$k] ?? []);
+                        $val            = $detail['value'] ?? null;
+                        $valStr         = is_bool($val) ? ($val ? 'true' : 'false') : ($val === null ? '—' : (string)$val);
+                        $layer          = $detail['source_layer'] ?? ($isSwitched ? 'unified_config_master' : 'legacy_cp_config');
+                        $label          = $labels[$k] ?? $k;
+                        $rawReason      = $detail['fallback_reason'] ?? '';
+                        $ruReason       = $fallbackReasonLabels[$rawReason] ?? $rawReason;
+                        $defaultApplied = (bool)($detail['default_applied'] ?? false);
+                        $userDefined    = (bool)($detail['user_defined']    ?? false);
+                        $rowClass       = $isFallback ? 'table-warning' : '';
                     ?>
                     <tr class="param-row <?= $rowClass ?>">
                         <td class="fw-medium"><?= htmlspecialchars($label) ?></td>
@@ -143,11 +145,20 @@ $fallbackReasonLabels = [
                         <td>
                             <?php if ($isSwitched): ?>
                                 <span class="badge badge-ok" style="font-size:0.7rem;"><i class="bi bi-check-circle me-1"></i>мигрирован</span>
+                                <?php if ($userDefined): ?>
+                                    <br><span class="badge bg-success" style="font-size:0.65rem;margin-top:2px;"><i class="bi bi-person-check me-1"></i>задано пользователем</span>
+                                <?php elseif ($defaultApplied): ?>
+                                    <br><span class="badge bg-info text-dark" style="font-size:0.65rem;margin-top:2px;" title="Используется значение по умолчанию (не задано пользователем)"><i class="bi bi-info-circle me-1"></i>по умолчанию</span>
+                                    <br><small class="text-info" style="font-size:0.63rem;">Используется значение по умолчанию (не задано пользователем)</small>
+                                <?php endif; ?>
                             <?php elseif ($isFallback): ?>
                                 <span class="badge bg-warning text-dark" style="font-size:0.7rem;" title="<?= htmlspecialchars($rawReason) ?>">
                                     <i class="bi bi-arrow-return-right me-1"></i>legacy
                                 </span>
-                                <?php if ($ruReason): ?>
+                                <?php if ($defaultApplied): ?>
+                                    <br><span class="badge bg-info text-dark" style="font-size:0.65rem;margin-top:2px;" title="Используется значение по умолчанию (не задано пользователем)"><i class="bi bi-info-circle me-1"></i>по умолчанию</span>
+                                    <br><small class="text-info" style="font-size:0.63rem;">Используется значение по умолчанию (не задано пользователем)</small>
+                                <?php elseif ($ruReason): ?>
                                     <br><small class="text-warning" style="font-size:0.65rem;"><?= htmlspecialchars($ruReason) ?></small>
                                 <?php endif; ?>
                             <?php else: ?>
@@ -158,9 +169,11 @@ $fallbackReasonLabels = [
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?php $defaultAppliedCount = (int)($migrationStatus['default_applied_count'] ?? 0); ?>
                 <div class="px-3 py-2" style="font-size:0.78rem;color:#94a3b8;border-top:1px solid var(--border-color);">
                     Мигрировано: <strong class="text-light"><?= $migCount ?></strong> / <?= $totalFirst ?> ·
-                    Fallback: <strong class="text-warning"><?= $fallback ?></strong> ·
+                    Fallback: <strong class="text-warning"><?= $fallback ?></strong><?php if ($defaultAppliedCount > 0): ?> ·
+                    По умолчанию: <strong class="text-info"><?= $defaultAppliedCount ?></strong><?php endif; ?> ·
                     Записано: <?= htmlspecialchars($migrationStatus['recorded_at'] ?? '—') ?>
                 </div>
                 <?php endif; ?>

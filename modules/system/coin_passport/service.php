@@ -396,11 +396,14 @@ final class CoinPassportService
      */
     private function applyCpUnifiedConfigOverlay(array &$config): array
     {
+        // First-wave parameters with their config paths, cast types, and safe defaults.
+        // Safe defaults are applied only when the value is not explicitly set by the user
+        // (i.e., source !== 'config_center_save') and the cast value is boolean false.
         $firstWave = [
-            'cp_enabled'                => ['path' => 'module.enabled',                'cast' => 'bool'],
-            'cp_rebuild_all_enabled'    => ['path' => 'module.rebuild_all_enabled',    'cast' => 'bool'],
-            'cp_rebuild_recent_enabled' => ['path' => 'module.rebuild_recent_enabled', 'cast' => 'bool'],
-            'cp_cycle_profiles_enabled' => ['path' => 'module.cycle_profiles_enabled', 'cast' => 'bool'],
+            'cp_enabled'                => ['path' => 'module.enabled',                'cast' => 'bool', 'safe_default' => true],
+            'cp_rebuild_all_enabled'    => ['path' => 'module.rebuild_all_enabled',    'cast' => 'bool', 'safe_default' => true],
+            'cp_rebuild_recent_enabled' => ['path' => 'module.rebuild_recent_enabled', 'cast' => 'bool', 'safe_default' => true],
+            'cp_cycle_profiles_enabled' => ['path' => 'module.cycle_profiles_enabled', 'cast' => 'bool', 'safe_default' => true],
         ];
 
         $status = [
@@ -414,6 +417,7 @@ final class CoinPassportService
             'first_wave_total'           => count($firstWave),
             'migrated_count'             => 0,
             'fallback_count'             => 0,
+            'default_applied_count'      => 0,
             'switched_params'            => [],
             'fallback_params'            => [],
             'switched_params_detail'     => [],
@@ -456,21 +460,20 @@ final class CoinPassportService
             }
         };
 
-        /** Build fallback detail for all first-wave params using current local config. */
-        $buildFallbackDetail = static function (string $fallbackReason) use ($firstWave, $config, $dotGet): array {
-            $detail = [];
-            foreach ($firstWave as $key => $def) {
-                $detail[$key] = [
-                    'value'                => $dotGet($config, $def['path']),
-                    'source_layer'         => 'legacy_cp_config',
-                    'source_owner'         => 'coin_passport',
-                    'unified_config_used'  => false,
-                    'legacy_fallback_used' => true,
-                    'fallback_reason'      => $fallbackReason,
-                    'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
-                ];
+        /**
+         * Helper: if a boolean param is not user-defined and its value is false,
+         * apply the safe default (true) to $config and record default_applied=true.
+         * Returns [$effectiveValue, $defaultApplied].
+         */
+        $trySafeDefault = function (string $key, array $def, bool $userDefined, $castVal) use (&$config, $dotSet, &$status): array {
+            $defaultApplied = false;
+            if (!$userDefined && $def['cast'] === 'bool' && $castVal === false && isset($def['safe_default'])) {
+                $castVal        = $def['safe_default'];
+                $defaultApplied = true;
+                $dotSet($config, $def['path'], $castVal);
+                $status['default_applied_count']++;
             }
-            return $detail;
+            return [$castVal, $defaultApplied];
         };
 
         // ── Load master (preferred) ─────────────────────────────────────────
@@ -527,9 +530,26 @@ final class CoinPassportService
             $globalReason = ($masterReadError || $draftReadError)
                 ? 'read_error'
                 : 'unified_config_not_found';
+            $fallbackDetail = [];
+            foreach ($firstWave as $key => $def) {
+                $legacyVal = $dotGet($config, $def['path']);
+                // user_defined=false — unified config is entirely unavailable.
+                [$legacyVal, $defaultApplied] = $trySafeDefault($key, $def, false, (bool)$legacyVal);
+                $fallbackDetail[$key] = [
+                    'value'                => $legacyVal,
+                    'source_layer'         => 'legacy_cp_config',
+                    'source_owner'         => 'coin_passport',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => $globalReason,
+                    'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
+                    'user_defined'         => false,
+                    'default_applied'      => $defaultApplied,
+                ];
+            }
             $status['fallback_params']        = array_keys($firstWave);
             $status['fallback_count']         = count($firstWave);
-            $status['fallback_params_detail'] = $buildFallbackDetail($globalReason);
+            $status['fallback_params_detail'] = $fallbackDetail;
             return $status;
         }
 
@@ -576,25 +596,36 @@ final class CoinPassportService
                 } else {
                     $fallbackReason = 'missing_in_unified';
                 }
+                $legacyVal = $dotGet($config, $def['path']);
+                // user_defined=false — param absent from unified config; try safe default.
+                [$legacyVal, $defaultApplied] = $trySafeDefault($key, $def, false, (bool)$legacyVal);
                 $status['fallback_params'][] = $key;
                 $status['fallback_params_detail'][$key] = [
-                    'value'                => $dotGet($config, $def['path']),
+                    'value'                => $legacyVal,
                     'source_layer'         => 'legacy_cp_config',
                     'source_owner'         => 'coin_passport',
                     'unified_config_used'  => false,
                     'legacy_fallback_used' => true,
                     'fallback_reason'      => $fallbackReason,
                     'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
+                    'user_defined'         => false,
+                    'default_applied'      => $defaultApplied,
                 ];
                 continue;
             }
 
-            $rawVal  = $entry['value'];
-            $castVal = match ($def['cast']) {
+            $rawVal      = $entry['value'];
+            // A param is user-defined only when explicitly saved via Config Center.
+            $userDefined = ($entry['source'] ?? '') === 'config_center_save';
+            $castVal     = match ($def['cast']) {
                 'bool' => (bool)$rawVal,
                 'int'  => (int)$rawVal,
                 default => (string)$rawVal,
             };
+
+            // Apply safe default when not user-defined and boolean value is false,
+            // to prevent unintentional disabling by inherited/extracted defaults.
+            [$castVal, $defaultApplied] = $trySafeDefault($key, $def, $userDefined, $castVal);
 
             $dotSet($config, $def['path'], $castVal);
 
@@ -608,6 +639,8 @@ final class CoinPassportService
                 'source_owner'         => 'coin_passport',
                 'unified_config_used'  => true,
                 'legacy_fallback_used' => false,
+                'user_defined'         => $userDefined,
+                'default_applied'      => $defaultApplied,
             ];
         }
 
@@ -657,13 +690,14 @@ final class CoinPassportService
             'unified_config_available' => (bool)($s['unified_config_available'] ?? false),
             'unified_config_used'      => ($s['migrated_count'] ?? 0) > 0,
             'legacy_fallback_used'     => ($s['fallback_count'] ?? 0) > 0,
-            'migrated_count'           => (int)($s['migrated_count']   ?? 0),
-            'fallback_count'           => (int)($s['fallback_count']   ?? 0),
-            'first_wave_total'         => (int)($s['first_wave_total'] ?? 0),
-            'switched_params'          => $s['switched_params']         ?? [],
-            'fallback_params'          => $s['fallback_params']         ?? [],
-            'source'                   => $s['source']                  ?? 'legacy_cp_config',
-            'recorded_at'              => $s['recorded_at']             ?? null,
+            'migrated_count'           => (int)($s['migrated_count']          ?? 0),
+            'fallback_count'           => (int)($s['fallback_count']          ?? 0),
+            'default_applied_count'    => (int)($s['default_applied_count']   ?? 0),
+            'first_wave_total'         => (int)($s['first_wave_total']        ?? 0),
+            'switched_params'          => $s['switched_params']               ?? [],
+            'fallback_params'          => $s['fallback_params']               ?? [],
+            'source'                   => $s['source']                        ?? 'legacy_cp_config',
+            'recorded_at'              => $s['recorded_at']                   ?? null,
         ];
     }
 

@@ -1026,6 +1026,7 @@ final class SmartBrainCore
             'slot_priority_lost_total'            => (int)($liveIntentResult['slot_priority_lost_total']             ?? 0),
             'slot_priority_not_needed_total'      => (int)($liveIntentResult['slot_priority_not_needed_total']       ?? 0),
             'slot_priority_open_positions_count'  => (int)($liveIntentResult['slot_priority_open_positions_count']   ?? 0),
+            'slot_priority_existing_active_slots' => (int)($liveIntentResult['slot_priority_existing_active_slots']  ?? 0),
             'slot_priority_slots_available'       => (int)($liveIntentResult['slot_priority_slots_available']        ?? 0),
             'slot_priority_rejected_preview'      => $liveIntentResult['slot_priority_rejected_preview']             ?? [],
         ];
@@ -1164,14 +1165,15 @@ final class SmartBrainCore
             'lifecycle_summary' => [],
             'intent_ttl_minutes' => SmartBrainConfig::LIVE_INTENT_TTL_MINUTES,
             // Slot priority layer diagnostics (time-aware candidate ranking)
-            'slot_priority_used'              => false,
-            'slot_priority_candidates_total'  => 0,
-            'slot_priority_won_total'         => 0,
-            'slot_priority_lost_total'        => 0,
-            'slot_priority_not_needed_total'  => 0,
-            'slot_priority_open_positions_count' => 0,
-            'slot_priority_slots_available'   => 0,
-            'slot_priority_rejected_preview'  => [],
+            'slot_priority_used'                  => false,
+            'slot_priority_candidates_total'      => 0,
+            'slot_priority_won_total'             => 0,
+            'slot_priority_lost_total'            => 0,
+            'slot_priority_not_needed_total'      => 0,
+            'slot_priority_open_positions_count'  => 0,
+            'slot_priority_existing_active_slots' => 0,
+            'slot_priority_slots_available'       => 0,
+            'slot_priority_rejected_preview'      => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2306,6 +2308,7 @@ final class SmartBrainCore
         // Time-aware candidate ranking for limited live slots.
         // Applied AFTER all existing gates, BEFORE lifecycle merge.
         // Does NOT change hard slot limits — only ranks competing candidates.
+        // Pipeline: signal → decision → slot_priority → slot_competition → routing
         {
             $slotPriorityEnabled     = (bool)($userLimits['slot_priority_enabled']     ?? true);
             $freshnessDecayEnabled   = (bool)($userLimits['freshness_decay_enabled']   ?? true);
@@ -2330,26 +2333,67 @@ final class SmartBrainCore
                 // non-fatal — slotsAvailable falls back to maxPositions
             }
 
-            $slotsAvailable  = max(0, $maxPositions - $currentOpenPositions);
+            // Count pending+claimed intents already in live_intents.json that are NOT being
+            // superseded by the current run. These occupy future slots and must be subtracted
+            // from available slots to correctly detect slot pressure.
+            $existingActiveSlots = 0;
+            $liveIntentsPathForSlot = $this->state->resolvePath('storage/live_intents.json');
+            try {
+                if (is_file($liveIntentsPathForSlot)) {
+                    $rawLiveIntents = @file_get_contents($liveIntentsPathForSlot);
+                    if ($rawLiveIntents !== false) {
+                        $existingLiveData = @json_decode($rawLiveIntents, true);
+                        if (is_array($existingLiveData)) {
+                            // Build set of intent_ids being emitted by this run
+                            $thisRunIntentIds = [];
+                            foreach ($intents as $spCheckIntent) {
+                                $thisRunId = $spCheckIntent['intent_id'] ?? '';
+                                if ($thisRunId !== '') {
+                                    $thisRunIntentIds[$thisRunId] = true;
+                                }
+                            }
+                            // Count non-terminal existing intents not replaced by this run
+                            foreach ($existingLiveData['intents'] ?? [] as $ei) {
+                                $eiId     = $ei['intent_id'] ?? '';
+                                $eiStatus = $ei['status']    ?? 'pending';
+                                if (($eiStatus === SmartBrainConfig::INTENT_STATUS_PENDING ||
+                                     $eiStatus === SmartBrainConfig::INTENT_STATUS_CLAIMED) &&
+                                    ($eiId === '' || !isset($thisRunIntentIds[$eiId]))) {
+                                    $existingActiveSlots++;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $slotLookEx) {
+                // non-fatal — existingActiveSlots stays 0
+            }
+
+            $slotsAvailable  = max(0, $maxPositions - $currentOpenPositions - $existingActiveSlots);
             $candidatesCount = count($intents);
 
-            $result['slot_priority_open_positions_count'] = $currentOpenPositions;
-            $result['slot_priority_slots_available']      = $slotsAvailable;
-            $result['slot_priority_candidates_total']     = $candidatesCount;
+            $result['slot_priority_open_positions_count']   = $currentOpenPositions;
+            $result['slot_priority_existing_active_slots']  = $existingActiveSlots;
+            $result['slot_priority_slots_available']        = $slotsAvailable;
+            $result['slot_priority_candidates_total']       = $candidatesCount;
 
             if (!$slotPriorityEnabled || $candidatesCount <= $slotsAvailable) {
                 // No slot competition — all candidates fit or feature disabled.
-                $result['slot_priority_used']            = false;
+                $result['slot_priority_used']             = false;
                 $result['slot_priority_not_needed_total'] = $candidatesCount;
+                $spNoCompIdx = 0;
                 foreach ($intents as &$spIntentRef) {
                     $priorityData = $this->computeSlotPriorityScore($spIntentRef, $freshnessDecayEnabled, $freshnessWindowMinutes);
-                    $spIntentRef['slot_priority_score']      = $priorityData['score'];
-                    $spIntentRef['slot_priority_bucket']     = $priorityData['bucket'];
-                    $spIntentRef['slot_priority_reason']     = $priorityData['reason'];
-                    $spIntentRef['slot_competition_result']  = 'not_needed';
-                    $spIntentRef['slot_competition_reason']  = $slotPriorityEnabled
-                        ? 'slots_available_for_all'
+                    $spIntentRef['slot_priority_score']           = $priorityData['score'];
+                    $spIntentRef['slot_priority_bucket']          = $priorityData['bucket'];
+                    $spIntentRef['slot_priority_reason']          = $priorityData['reason'];
+                    $spIntentRef['slot_priority_ranking_index']   = $spNoCompIdx;
+                    $spIntentRef['slot_priority_total_competitors'] = $candidatesCount;
+                    $spIntentRef['slot_competition_result']       = 'not_needed';
+                    $spIntentRef['slot_competition_reason']       = $slotPriorityEnabled
+                        ? 'slots_available'
                         : 'slot_priority_disabled';
+                    $spNoCompIdx++;
                 }
                 unset($spIntentRef);
             } else {
@@ -2361,48 +2405,65 @@ final class SmartBrainCore
                 foreach ($intents as $spIdx => $spIntent) {
                     $priorityData = $this->computeSlotPriorityScore($spIntent, $freshnessDecayEnabled, $freshnessWindowMinutes);
                     $scoredCandidates[] = [
-                        'idx'    => $spIdx,
-                        'intent' => $spIntent,
-                        'score'  => $priorityData['score'],
-                        'bucket' => $priorityData['bucket'],
-                        'reason' => $priorityData['reason'],
+                        'idx'       => $spIdx,
+                        'intent'    => $spIntent,
+                        'score'     => $priorityData['score'],
+                        'bucket'    => $priorityData['bucket'],
+                        'reason'    => $priorityData['reason'],
+                        'created_ts' => (int)($spIntent['created_ts'] ?? 0),
+                        'quality_score' => (float)($spIntent['quality_score'] ?? 0.0),
                     ];
                 }
 
-                // Sort by priority score descending (higher = better).
-                usort($scoredCandidates, static fn($a, $b) => $b['score'] <=> $a['score']);
+                // Sort: primary = score desc, secondary = freshness (created_ts desc),
+                // tertiary = quality_score desc.
+                usort($scoredCandidates, static function (array $a, array $b): int {
+                    if ($b['score'] !== $a['score']) {
+                        return $b['score'] <=> $a['score'];
+                    }
+                    if ($b['created_ts'] !== $a['created_ts']) {
+                        return $b['created_ts'] <=> $a['created_ts'];
+                    }
+                    return $b['quality_score'] <=> $a['quality_score'];
+                });
 
+                $totalCompetitors = count($scoredCandidates);
                 $winners = array_slice($scoredCandidates, 0, $slotsAvailable);
                 $losers  = array_slice($scoredCandidates, $slotsAvailable);
 
                 $winnerIdxSet = [];
-                foreach ($winners as $w) {
-                    $winnerIdxSet[$w['idx']] = $w;
+                foreach ($winners as $wRank => $w) {
+                    $winnerIdxSet[$w['idx']] = ['data' => $w, 'rank' => $wRank];
                 }
 
                 // Rebuild intents list with only winners; annotate priority fields.
                 $priorityFilteredIntents = [];
                 foreach ($intents as $spIdx => $spIntent) {
                     if (isset($winnerIdxSet[$spIdx])) {
-                        $w = $winnerIdxSet[$spIdx];
-                        $spIntent['slot_priority_score']     = $w['score'];
-                        $spIntent['slot_priority_bucket']    = $w['bucket'];
-                        $spIntent['slot_priority_reason']    = $w['reason'];
-                        $spIntent['slot_competition_result'] = 'won';
-                        $spIntent['slot_competition_reason'] = 'best_priority_score_for_available_slots';
+                        $wEntry = $winnerIdxSet[$spIdx];
+                        $w      = $wEntry['data'];
+                        $spIntent['slot_priority_score']            = $w['score'];
+                        $spIntent['slot_priority_bucket']           = $w['bucket'];
+                        $spIntent['slot_priority_reason']           = $w['reason'];
+                        $spIntent['slot_priority_ranking_index']    = $wEntry['rank'];
+                        $spIntent['slot_priority_total_competitors'] = $totalCompetitors;
+                        $spIntent['slot_competition_result']        = 'won';
+                        $spIntent['slot_competition_reason']        = 'higher_priority_won';
                         $priorityFilteredIntents[] = $spIntent;
                         $result['slot_priority_won_total']++;
                     }
                 }
 
                 // Record losers in rejection_reasons and preview (observability only).
-                foreach ($losers as $l) {
+                foreach ($losers as $lRank => $l) {
                     $lIntent = $l['intent'];
-                    $lIntent['slot_priority_score']     = $l['score'];
-                    $lIntent['slot_priority_bucket']    = $l['bucket'];
-                    $lIntent['slot_priority_reason']    = $l['reason'];
-                    $lIntent['slot_competition_result'] = 'lost';
-                    $lIntent['slot_competition_reason'] = 'lower_priority_score_slot_cap_reached';
+                    $lIntent['slot_priority_score']            = $l['score'];
+                    $lIntent['slot_priority_bucket']           = $l['bucket'];
+                    $lIntent['slot_priority_reason']           = $l['reason'];
+                    $lIntent['slot_priority_ranking_index']    = $slotsAvailable + $lRank;
+                    $lIntent['slot_priority_total_competitors'] = $totalCompetitors;
+                    $lIntent['slot_competition_result']        = 'lost';
+                    $lIntent['slot_competition_reason']        = 'low_priority_lost';
                     $this->rejectLiveSignal(
                         $result,
                         (string)($lIntent['symbol'] ?? ''),
@@ -2413,13 +2474,15 @@ final class SmartBrainCore
                     $result['slot_priority_lost_total']++;
                     if (count($result['slot_priority_rejected_preview']) < 5) {
                         $result['slot_priority_rejected_preview'][] = [
-                            'symbol'                => (string)($lIntent['symbol'] ?? ''),
-                            'side'                  => (string)($lIntent['side'] ?? ''),
-                            'slot_priority_score'   => $l['score'],
-                            'slot_priority_bucket'  => $l['bucket'],
-                            'slot_priority_reason'  => $l['reason'],
-                            'slot_competition_result' => 'lost',
-                            'slot_competition_reason' => 'lower_priority_score_slot_cap_reached',
+                            'symbol'                          => (string)($lIntent['symbol'] ?? ''),
+                            'side'                            => (string)($lIntent['side'] ?? ''),
+                            'slot_priority_score'             => $l['score'],
+                            'slot_priority_bucket'            => $l['bucket'],
+                            'slot_priority_reason'            => $l['reason'],
+                            'slot_priority_ranking_index'     => $slotsAvailable + $lRank,
+                            'slot_priority_total_competitors' => $totalCompetitors,
+                            'slot_competition_result'         => 'lost',
+                            'slot_competition_reason'         => 'low_priority_lost',
                         ];
                     }
                 }
@@ -2427,7 +2490,7 @@ final class SmartBrainCore
                 $intents = $priorityFilteredIntents;
 
                 // Update derived intent counters to reflect post-priority filtering.
-                $result['intents_created']           = count($intents);
+                $result['intents_created']            = count($intents);
                 $result['long_intents_created_count'] = count(array_filter($intents, static fn($i) => ($i['side'] ?? '') === 'long'));
             }
         }

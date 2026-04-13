@@ -1,5 +1,5 @@
 {
-    "extracted_at": "2026-04-13T04:11:02+00:00",
+    "extracted_at": "2026-04-13T04:19:04+00:00",
     "status": "partial",
     "errors": [
         "Failed to load /home/runner/work/brains/brains/modules/system/profit_manager/config/config.php: Class \"Core\\System\\SystemPaths\" not found"
@@ -11,5 +11,13 @@
         "operational": true,
         "immutable": true,
         "preview": true
+    },
+    "counts": {
+        "ownership_entries": 40,
+        "conflicts": 1,
+        "duplicates": 10,
+        "operational_params": 26,
+        "immutable_params": 14,
+        "preview_sections": 4
     }
 }

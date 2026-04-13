@@ -1,0 +1,142 @@
+{
+    "module": "smart_brain",
+    "switch_wave": "v1_operational_params",
+    "unified_config_available": true,
+    "unified_config_draft_path": "/home/runner/work/brains/brains/modules/system/config/storage/runtime/config_operational_draft.json",
+    "source": "unified_config_operational_draft",
+    "switched_params": [
+        "live_trading_enabled",
+        "live_max_positions",
+        "live_signal_selection_mode",
+        "live_one_trade_per_symbol",
+        "live_entry_policy",
+        "live_reverse_side_enabled",
+        "leverage_mode",
+        "manual_leverage",
+        "max_budget_per_coin",
+        "stop_control_mode",
+        "stop_loss_from_entry_roi",
+        "trailing_enabled",
+        "trailing_mode",
+        "trailing_activation_roi",
+        "trailing_activation_floor_roi",
+        "break_even_enabled",
+        "break_even_activation_roi",
+        "execution_profile"
+    ],
+    "fallback_params": [
+        "trailing_floor_lock_roi"
+    ],
+    "switched_params_detail": {
+        "live_trading_enabled": {
+            "value": true,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "live_max_positions": {
+            "value": 5,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "live_signal_selection_mode": {
+            "value": "all",
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "live_one_trade_per_symbol": {
+            "value": true,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "live_entry_policy": {
+            "value": "enter_now",
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "live_reverse_side_enabled": {
+            "value": false,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "leverage_mode": {
+            "value": "manual",
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "manual_leverage": {
+            "value": 5,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "max_budget_per_coin": {
+            "value": 6,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "stop_control_mode": {
+            "value": "entry_roi",
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "stop_loss_from_entry_roi": {
+            "value": 0.01,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "trailing_enabled": {
+            "value": true,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "trailing_mode": {
+            "value": "price_distance_floor",
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "trailing_activation_roi": {
+            "value": 0.07,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "trailing_activation_floor_roi": {
+            "value": 0.09,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "break_even_enabled": {
+            "value": true,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "break_even_activation_roi": {
+            "value": 0.025,
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        },
+        "execution_profile": {
+            "value": "sniper_lite",
+            "original_source": "brain_user_config",
+            "original_source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "via": "unified_config_operational_draft"
+        }
+    },
+    "recorded_at": "2026-04-13T04:19:13+00:00",
+    "unified_config_generated_at": "2026-04-13T04:19:04+00:00"
+}

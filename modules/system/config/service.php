@@ -83,11 +83,19 @@ final class UnifiedConfigService
 
         $ts = date('c');
         $this->store->saveLastExtract([
-            'extracted_at' => $ts,
-            'status'       => $ok ? 'ok' : 'partial',
-            'errors'       => $this->errors,
-            'warnings'     => $this->warnings,
+            'extracted_at'    => $ts,
+            'status'          => $ok ? 'ok' : 'partial',
+            'errors'          => $this->errors,
+            'warnings'        => $this->warnings,
             'artefacts_saved' => $saved,
+            'counts'          => [
+                'ownership_entries'  => count($result['ownership_map']['parameters'] ?? []),
+                'conflicts'          => (int)($result['conflict_report']['conflict_count'] ?? 0),
+                'duplicates'         => (int)($result['conflict_report']['duplicate_count'] ?? 0),
+                'operational_params' => count($result['operational_draft']['params'] ?? []),
+                'immutable_params'   => count($result['immutable_draft']['params'] ?? []),
+                'preview_sections'   => count($result['effective_preview']['modules'] ?? []),
+            ],
         ]);
 
         return [

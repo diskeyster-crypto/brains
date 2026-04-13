@@ -23,6 +23,8 @@ final class SmartBrainConfig
     private string $moduleBase;
     /** @var array<string,mixed> */
     private array $config;
+    /** @var array<string,mixed> config source / migration status (set by applyUserConfig) */
+    private array $configMigrationStatus = [];
 
     public function __construct(string $moduleBase)
     {
@@ -1172,6 +1174,9 @@ final class SmartBrainConfig
             'profiles' => $this->getEffective('profiles'),
             'simulator' => $this->getEffective('simulator'),
             'ui' => $this->getEffective('ui'),
+            'config_source_status' => empty($this->configMigrationStatus)
+                ? ['source' => 'legacy_user_config', 'unified_config_available' => false]
+                : $this->configMigrationStatus,
             'generated_at' => date('c'),
         ];
     }
@@ -1900,33 +1905,166 @@ final class SmartBrainConfig
 
     /**
      * Apply user config from runtime/user_config.json over base user_limits.
+     *
+     * Soft-switch (wave 1): after applying user_config.json, overlays first-wave
+     * operational parameters from the unified Config Module operational draft (if
+     * available and readable).  Values are identical — this establishes Config Module
+     * as the authoritative source for tracked parameters without changing behaviour.
      */
     private function applyUserConfig(): void
     {
         $saved = $this->loadUserConfig();
-        if (empty($saved)) {
-            return;
+        if (!empty($saved)) {
+            if (!isset($this->config['risk_engine']['user_limits'])) {
+                $this->config['risk_engine']['user_limits'] = [];
+            }
+
+            $this->config['risk_engine']['user_limits'] = array_merge(
+                $this->config['risk_engine']['user_limits'],
+                $saved
+            );
+
+            // Apply execution profile bundle over managed fields (non-custom profiles only)
+            $this->applyExecutionProfile();
+
+            // Apply pattern selection from user config into parser4 config
+            if (isset($saved['patterns']) && is_array($saved['patterns'])) {
+                $this->applyPatternSelection($saved['patterns']);
+            }
+
+            // Apply profile-driven pattern routing AFTER manual patterns (overrides when profile_controlled)
+            $this->applyProfilePatternRouting();
         }
 
-        if (!isset($this->config['risk_engine']['user_limits'])) {
-            $this->config['risk_engine']['user_limits'] = [];
+        // Soft-switch overlay: read first-wave params from unified Config Module draft.
+        // Non-fatal — falls back to user_config.json values already applied above.
+        $this->configMigrationStatus = $this->applyUnifiedConfigOverlay();
+        $this->writeMigrationStatus($this->configMigrationStatus);
+    }
+
+    /**
+     * Overlay first-wave Smart Brain operational parameters from the unified
+     * Config Module operational draft (shadow artifact).
+     *
+     * Reads config_operational_draft.json from the sibling Config Module's runtime
+     * storage.  If unavailable, no overlay occurs and values from user_config.json
+     * remain in effect.
+     *
+     * Smart Brain behaviour is NOT changed — values are identical to user_config.json
+     * because the Config Module extracts them from user_config.json.  The overlay
+     * establishes the unified Config Module as the tracked source for these params.
+     *
+     * @return array<string,mixed> migration status record
+     */
+    private function applyUnifiedConfigOverlay(): array
+    {
+        // First-wave: flat operational params that map 1:1 into user_limits.
+        // Patterns are excluded (nested structure; left for a later wave).
+        $firstWaveParams = [
+            'live_trading_enabled',
+            'live_max_positions',
+            'live_signal_selection_mode',
+            'live_one_trade_per_symbol',
+            'live_entry_policy',
+            'live_reverse_side_enabled',
+            'leverage_mode',
+            'manual_leverage',
+            'max_budget_per_coin',
+            'stop_control_mode',
+            'stop_loss_from_entry_roi',
+            'trailing_enabled',
+            'trailing_mode',
+            'trailing_activation_roi',
+            'trailing_activation_floor_roi',
+            'trailing_floor_lock_roi',
+            'break_even_enabled',
+            'break_even_activation_roi',
+            'execution_profile',
+        ];
+
+        $status = [
+            'module'                       => 'smart_brain',
+            'switch_wave'                  => 'v1_operational_params',
+            'unified_config_available'     => false,
+            'unified_config_draft_path'    => '',
+            'source'                       => 'legacy_user_config',
+            'switched_params'              => [],
+            'fallback_params'              => [],
+            'switched_params_detail'       => [],
+            'recorded_at'                  => date('c'),
+        ];
+
+        // Locate Config Module (sibling directory under the same system/ parent)
+        $systemDir = dirname($this->moduleBase);
+        $draftPath = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_draft_path'] = $draftPath;
+
+        if (!is_file($draftPath)) {
+            $status['fallback_params'] = $firstWaveParams;
+            return $status;
         }
 
-        $this->config['risk_engine']['user_limits'] = array_merge(
-            $this->config['risk_engine']['user_limits'],
-            $saved
+        $raw = @file_get_contents($draftPath);
+        if ($raw === false) {
+            $status['fallback_params'] = $firstWaveParams;
+            return $status;
+        }
+
+        $draft = @json_decode($raw, true);
+        if (!is_array($draft) || empty($draft['params'])) {
+            $status['fallback_params'] = $firstWaveParams;
+            return $status;
+        }
+
+        $status['unified_config_available']    = true;
+        $status['unified_config_generated_at'] = $draft['generated_at'] ?? null;
+
+        $allParams = $draft['params'];
+
+        foreach ($firstWaveParams as $key) {
+            if (!isset($allParams[$key]) || ($allParams[$key]['value'] ?? null) === null) {
+                $status['fallback_params'][] = $key;
+                continue;
+            }
+            $entry = $allParams[$key];
+            // Overlay the value (identical to user_config.json; Config Module read it from there)
+            if (!isset($this->config['risk_engine']['user_limits'])) {
+                $this->config['risk_engine']['user_limits'] = [];
+            }
+            $this->config['risk_engine']['user_limits'][$key] = $entry['value'];
+            $status['switched_params'][]        = $key;
+            $status['switched_params_detail'][$key] = [
+                'value'               => $entry['value'],
+                'original_source'     => $entry['source']      ?? 'unknown',
+                'original_source_file'=> $entry['source_file'] ?? null,
+                'via'                 => 'unified_config_operational_draft',
+            ];
+        }
+
+        $status['source'] = empty($status['switched_params'])
+            ? 'legacy_user_config'
+            : 'unified_config_operational_draft';
+
+        return $status;
+    }
+
+    /**
+     * Write Smart Brain config source / migration status to runtime storage.
+     *
+     * @param array<string,mixed> $migrationStatus
+     */
+    private function writeMigrationStatus(array $migrationStatus): void
+    {
+        $path = $this->moduleBase . '/runtime/config_source_status.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($migrationStatus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
         );
-
-        // Apply execution profile bundle over managed fields (non-custom profiles only)
-        $this->applyExecutionProfile();
-
-        // Apply pattern selection from user config into parser4 config
-        if (isset($saved['patterns']) && is_array($saved['patterns'])) {
-            $this->applyPatternSelection($saved['patterns']);
-        }
-
-        // Apply profile-driven pattern routing AFTER manual patterns (overrides when profile_controlled)
-        $this->applyProfilePatternRouting();
     }
 
     /**

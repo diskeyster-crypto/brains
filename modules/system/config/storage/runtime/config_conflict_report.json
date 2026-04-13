@@ -1,0 +1,118 @@
+{
+    "generated_at": "2026-04-13T04:11:02+00:00",
+    "conflict_count": 1,
+    "duplicate_count": 10,
+    "conflicts": [
+        {
+            "key": "bot_mode",
+            "type": "operational",
+            "primary": "bot_runtime",
+            "win_reason": "Bot runtime config (bot.json override)",
+            "migration_target": "operational_master",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "file": "modules/system/trading_bot/config/bot.json",
+                    "value": "demo"
+                },
+                {
+                    "source": "bot_config",
+                    "file": "modules/system/trading_bot/config/config.php",
+                    "value": "paper"
+                }
+            ]
+        }
+    ],
+    "duplicates": [
+        {
+            "key": "live_trading_enabled",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "live_max_positions",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "live_signal_selection_mode",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "live_one_trade_per_symbol",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "manual_leverage",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "stop_control_mode",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "stop_loss_from_entry_roi",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "trailing_enabled",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "bot_runtime"
+            ]
+        },
+        {
+            "key": "break_even_enabled",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "bot_runtime"
+            ]
+        },
+        {
+            "key": "max_intents_per_run",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "bot_runtime",
+                "bot_config"
+            ]
+        }
+    ]
+}

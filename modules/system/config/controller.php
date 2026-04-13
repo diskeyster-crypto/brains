@@ -24,6 +24,10 @@ final class UnifiedConfigController
         // Bootstrap service (loads lib files via bootstrap.php which is auto-loaded)
         $this->service = new UnifiedConfigService();
         $this->baseUrl = '/admin/smart_brain/config_all';
+
+        // Auto-extract on first page load if no artefacts exist yet.
+        // Subsequent loads are cheap (just checks last_extract.json timestamp).
+        $this->service->maybeAutoExtract();
     }
 
     // =========================================================================

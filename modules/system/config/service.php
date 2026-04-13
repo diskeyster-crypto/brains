@@ -37,6 +37,22 @@ final class UnifiedConfigService
     // =========================================================================
 
     /**
+     * Trigger extraction only if no successful extraction has run yet (first-boot helper).
+     *
+     * Called from the controller on every page load so that the shadow artefacts
+     * are written to disk on the very first visit, without requiring a manual
+     * Re-extract click.  Subsequent page loads are skipped once a timestamp
+     * exists in last_extract.json.
+     */
+    public function maybeAutoExtract(): void
+    {
+        $last = $this->store->loadLastExtract();
+        if (($last['extracted_at'] ?? null) === null || ($last['status'] ?? 'never') === 'never') {
+            $this->extract();
+        }
+    }
+
+    /**
      * Run a full extraction pass: read all module configs and save artefacts.
      *
      * @return array{ok:bool,errors:list<string>,warnings:list<string>,extracted_at:string}

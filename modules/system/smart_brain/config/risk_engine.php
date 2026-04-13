@@ -101,5 +101,11 @@ return [
         'sniper_v3_min_trend_match_score_short' => 0.40,
         'sniper_v3_min_entry_quality_score_short' => 0.60,
         'sniper_v3_min_corridor_fit_score_short' => 0.60,
+        // Slot Priority Layer — time-aware candidate ranking for limited live slots
+        // Ranks competing candidates when approved signals exceed available slots.
+        // Does NOT raise slot limits or bypass any hard gate.
+        'slot_priority_enabled'                 => true,
+        'freshness_decay_enabled'               => true,
+        'slot_priority_freshness_window_minutes' => 30,
     ],
 ];

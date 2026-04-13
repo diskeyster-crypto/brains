@@ -2090,24 +2090,24 @@ final class SmartBrainCore
                     $result['entry_quality_filter_total']++;
 
                     // Rule 1: entry_quality_late_pressure (HARD reject)
-                    // enter_now signals past the confirmation window are always late —
-                    // removing the secondary confidence gate so this fires reliably.
+                    // Fires for: (a) enter_now signals past the confirmation window, OR
+                    // (b) any signal in stale freshness state (age > 66% of late limit).
+                    // Only strong signals (quality >= 0.72 AND conf >= 0.62) are exempt.
                     $eqLateEnterNowMaxSec = max(120, (int)($userLimits['entry_quality_late_enter_now_max_minutes'] ?? 8) * 60);
-                    if (!$eqFilterApplied
-                        && $eqEntryAction === 'enter_now'
-                        && $eqSignalAge > $eqLateEnterNowMaxSec
-                    ) {
+                    $eqIsStrongSignal     = ($eqEntryQuality >= 0.72 && $eqPatternConf >= 0.62);
+                    $eqIsLate             = ($eqEntryAction === 'enter_now' && $eqSignalAge > $eqLateEnterNowMaxSec)
+                                        || ($eqFreshnessState === 'stale');
+                    if (!$eqFilterApplied && $eqIsLate && !$eqIsStrongSignal) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_late_pressure';
                     }
 
                     // Rule 2: entry_quality_overstretched (HARD reject)
-                    // Wide corridor (>= 0.25) + mediocre entry quality → market moved too far
-                    // from zone to justify entry. Threshold lowered from 0.35 to 0.25 so that
-                    // clearly-stretched signals are caught before they reach the bot.
+                    // Price too far from zone (corridor >= 0.25). To pass, signal must be BOTH
+                    // strong (quality >= 0.72) AND fresh — any other overstretched signal is rejected.
                     if (!$eqFilterApplied
                         && $eqCorridorWidth >= 0.25
-                        && $eqEntryQuality < 0.65
+                        && !($eqEntryQuality >= 0.72 && $eqFreshnessState === 'fresh')
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_overstretched';
@@ -2116,23 +2116,22 @@ final class SmartBrainCore
                     // Rule 3: entry_quality_weak_structure (HARD reject)
                     // Both hold quality and pattern confidence are low — structural basis too weak.
                     if (!$eqFilterApplied
-                        && $eqHoldQuality < 0.35
-                        && $eqPatternConf < 0.55
+                        && $eqHoldQuality < 0.40
+                        && $eqPatternConf < 0.60
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_weak_structure';
                     }
 
-                    // Rule 4: entry_quality_weak_stale (soft demote → demo)
-                    // Below-average entry quality + signal not fresh — neither compensates.
-                    // Threshold raised from 0.35 to 0.55 to catch more borderline signals.
-                    // Counted as filter_demo_total (soft demote) rather than a hard reject.
+                    // Rule 4: entry_quality_weak_stale
+                    // Threshold raised from 0.55 to 0.62 to catch more borderline signals.
+                    // Stale + weak → hard reject; aging + weak → soft demote to demo.
                     if (!$eqFilterApplied
-                        && $eqEntryQuality < 0.55
+                        && $eqEntryQuality < 0.62
                         && $eqFreshnessState !== 'fresh'
                     ) {
                         $eqFilterApplied = true;
-                        $eqIsDemote      = true;
+                        $eqIsDemote      = ($eqFreshnessState === 'aging');
                         $eqFilterReason  = 'entry_quality_weak_stale';
                     }
 

@@ -105,7 +105,7 @@ class ProfitManager
 
         // PM-17: Per-run profit capture counters (merged into cumulative pm17_profit_capture_counters.json)
         $pm17CaptureTotal              = 0; // positions with meaningful peak evaluated by profit capture
-        $pm17CaptureApplyTotal         = 0; // positions where capture actively overrode pm10_hold
+        $pm17CaptureApplyTotal         = 0; // positions where capture classified as peak_drawdown or lock_strengthen
         $pm17PeakDrawdownTotal         = 0; // positions classified as peak_drawdown (aggressive giveback)
         $pm17ShallowPullbackHoldTotal  = 0; // positions classified as shallow_pullback_hold
         $pm17LockStrengthenTotal       = 0; // positions classified as lock_strengthen (at/near peak)
@@ -1909,7 +1909,7 @@ class ProfitManager
             $base['pm17_capture_mode']   = 'peak_drawdown';
             $base['pm17_capture_reason'] = 'pm_profit_capture_peak_drawdown';
             $base['pm17_override_hold']  = $holdActive; // only meaningful when hold was set
-            $base['pm17_applied']        = $holdActive; // applied = hold was actually cleared
+            $base['pm17_applied']        = true;        // always applied: drawdown is actively captured
             return $base;
         }
 
@@ -1921,7 +1921,7 @@ class ProfitManager
             $base['pm17_capture_mode']   = 'lock_strengthen';
             $base['pm17_capture_reason'] = 'pm_profit_capture_lock_strengthen';
             $base['pm17_override_hold']  = $holdActive;
-            $base['pm17_applied']        = $holdActive;
+            $base['pm17_applied']        = true; // always applied: at-peak lock is actively enforced
             return $base;
         }
 

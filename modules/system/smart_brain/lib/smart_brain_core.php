@@ -1036,11 +1036,12 @@ final class SmartBrainCore
             'entry_quality_filter_no_effect_total' => (int)($liveIntentResult['entry_quality_filter_no_effect_total'] ?? 0),
             'entry_quality_filter_rejected_preview' => $liveIntentResult['entry_quality_filter_rejected_preview']     ?? [],
             // Wave Filter diagnostics (bounded wave amplitude/speed improvement layer)
-            'wave_filter_total'            => (int)($liveIntentResult['wave_filter_total']            ?? 0),
-            'wave_filter_reject_total'     => (int)($liveIntentResult['wave_filter_reject_total']     ?? 0),
-            'wave_filter_demo_total'       => (int)($liveIntentResult['wave_filter_demo_total']       ?? 0),
-            'wave_filter_no_effect_total'  => (int)($liveIntentResult['wave_filter_no_effect_total']  ?? 0),
-            'wave_filter_rejected_preview' => $liveIntentResult['wave_filter_rejected_preview']       ?? [],
+            'wave_filter_total'                => (int)($liveIntentResult['wave_filter_total']                ?? 0),
+            'wave_filter_reject_total'         => (int)($liveIntentResult['wave_filter_reject_total']         ?? 0),
+            'wave_filter_demo_total'           => (int)($liveIntentResult['wave_filter_demo_total']           ?? 0),
+            'wave_filter_no_effect_total'      => (int)($liveIntentResult['wave_filter_no_effect_total']      ?? 0),
+            'wave_filter_rejected_preview'     => $liveIntentResult['wave_filter_rejected_preview']           ?? [],
+            'wave_filter_release_valve_used'   => (bool)($liveIntentResult['wave_filter_release_valve_used']  ?? false),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1193,11 +1194,12 @@ final class SmartBrainCore
             'entry_quality_filter_no_effect_total' => 0,
             'entry_quality_filter_rejected_preview' => [],
             // Wave filter diagnostics (bounded wave amplitude/speed improvement layer)
-            'wave_filter_total'            => 0,
-            'wave_filter_reject_total'     => 0,
-            'wave_filter_demo_total'       => 0,
-            'wave_filter_no_effect_total'  => 0,
-            'wave_filter_rejected_preview' => [],
+            'wave_filter_total'                => 0,
+            'wave_filter_reject_total'         => 0,
+            'wave_filter_demo_total'           => 0,
+            'wave_filter_no_effect_total'      => 0,
+            'wave_filter_rejected_preview'     => [],
+            'wave_filter_release_valve_used'   => false,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2259,20 +2261,32 @@ final class SmartBrainCore
                 // truly high quality AND fresh (rare cases — strong breakout in a slow market).
                 $wfHighQualityFreshExcept = ($wfEntryQuality >= 0.78 && $wfPatternConf >= 0.70
                                             && $eqFreshnessState === 'fresh');
+                // Rule 1 excellent escape: weak+slow signal with excellent quality + fresh → pass entirely.
+                // Prevents over-rejection when the entire pool is classified as weak+slow.
+                $wfRule1ExcellentEscape = ($wfEntryQuality >= 0.80 && $wfPatternConf >= 0.72
+                                           && $eqFreshnessState === 'fresh');
+                // Rule 1 soft escape: weak+slow signal with good quality + fresh → demote, not reject.
+                // Shifts hard rejects toward demo when signal quality justifies it.
+                $wfRule1SoftEscape = ($wfEntryQuality >= 0.72 && $wfPatternConf >= 0.65
+                                      && $eqFreshnessState === 'fresh');
 
                 if ($wfEnabled) {
                     $result['wave_filter_total']++;
 
-                    // Rule 1: weak amplitude + slow speed → HARD reject (critical combined condition).
-                    // No exception: this is the primary reject source for narrow+slow candidates.
+                    // Rule 1: weak amplitude + slow speed → HARD reject with quality exceptions.
+                    // Excellent quality + fresh: pass entirely (release valve for over-filtered pools).
+                    // Good quality + fresh: demote to demo (not hard reject).
+                    // All others: hard reject (primary reject source for narrow+slow candidates).
                     if (!$wfApplied
                         && $wfAmplitudeState === 'weak'
                         && $wfSpeedState === 'slow'
+                        && !$wfRule1ExcellentEscape
                     ) {
                         $wfApplied  = true;
-                        $wfIsDemote = false;
+                        $wfIsDemote = $wfRule1SoftEscape; // demote if good quality, reject if poor
                         $wfReason   = 'wave_filter_low_amplitude_slow_wave';
                     }
+                    // else: $wfRule1ExcellentEscape → pass through (wfApplied stays false)
 
                     // Rule 2: weak amplitude (normal or fast speed) → default to demote.
                     // Exception: strong signal + high quality + fresh + fast speed → allow pass.
@@ -2612,6 +2626,13 @@ final class SmartBrainCore
 
         $result['intents_created'] = count($intents);
         $result['long_intents_created_count'] = count(array_filter($intents, static fn($i) => ($i['side'] ?? '') === 'long'));
+
+        // Wave filter release valve: if live pool ended up empty despite signals being wave-filtered,
+        // flag for observability. The quality exceptions in Rule 1 serve as the primary release
+        // mechanism (excellent-quality weak+slow signals pass entirely instead of being rejected).
+        if ($result['approved_count'] === 0 && $result['wave_filter_total'] > 0) {
+            $result['wave_filter_release_valve_used'] = true;
+        }
 
         // Build rejection reason stats (grouped counts)
         $reasonStats = [];

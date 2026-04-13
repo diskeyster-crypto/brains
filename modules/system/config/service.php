@@ -125,6 +125,125 @@ final class UnifiedConfigService
         return $this->store->loadOperationalDraft();
     }
 
+    /**
+     * Load the editable operational master config.
+     * Returns null when no master has been saved yet (first-time setup).
+     *
+     * @return array{saved_at:string|null,saved_by:string,params:array<string,mixed>}|null
+     */
+    public function getOperationalMaster(): ?array
+    {
+        return $this->store->loadOperationalMaster();
+    }
+
+    /**
+     * Persist the operational master config.
+     *
+     * Only known operational param keys accepted; values are typed per schema.
+     * Immutable/internal params are silently ignored (they stay read-only).
+     *
+     * @param array<string,mixed> $rawPost Associative array from POST/JSON
+     * @return array{ok:bool,saved_at:string,errors:list<string>}
+     */
+    public function saveOperationalMaster(array $rawPost): array
+    {
+        $errors = [];
+
+        // ------------------------------------------------------------------
+        // Schema: key → [type, required]
+        // Only operational (non-immutable) params that consumers actually use.
+        // ------------------------------------------------------------------
+        $schema = [
+            // Smart Brain first-wave
+            'live_trading_enabled'           => 'bool',
+            'live_max_positions'             => 'int',
+            'live_signal_selection_mode'     => 'str',
+            'live_one_trade_per_symbol'      => 'bool',
+            'live_entry_policy'              => 'str',
+            'live_reverse_side_enabled'      => 'bool',
+            'leverage_mode'                  => 'str',
+            'manual_leverage'                => 'int',
+            'max_leverage'                   => 'int',
+            'max_budget_per_coin'            => 'float',
+            'stop_control_mode'              => 'str',
+            'stop_loss_from_entry_roi'       => 'float',
+            'trailing_enabled'               => 'bool',
+            'trailing_mode'                  => 'str',
+            'trailing_activation_roi'        => 'float',
+            'trailing_activation_floor_roi'  => 'float',
+            'break_even_enabled'             => 'bool',
+            'break_even_activation_roi'      => 'float',
+            'patterns_enabled'               => 'array',
+            'patterns_mode'                  => 'str',
+            'execution_profile'              => 'str',
+            // Trading Bot first-wave
+            'bot_enabled'                    => 'bool',
+            'bot_mode'                       => 'str',
+            'max_intents_per_run'            => 'int',
+            'max_concurrent_positions'       => 'int',
+            'bot_brain_controlled'           => 'bool',
+            'pm_trailing_owner'              => 'str',
+        ];
+
+        $params = [];
+        $ts     = date('c');
+
+        foreach ($schema as $key => $type) {
+            if (!array_key_exists($key, $rawPost)) {
+                continue; // not submitted — do not overwrite existing master value
+            }
+            $raw = $rawPost[$key];
+            switch ($type) {
+                case 'bool':
+                    $val = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                    if ($val === null) {
+                        // HTML checkboxes send 'on'/'1'/'' when toggled
+                        $val = in_array(strtolower((string)$raw), ['1','true','on','yes'], true);
+                    }
+                    break;
+                case 'int':
+                    $val = (int)$raw;
+                    break;
+                case 'float':
+                    $val = (float)$raw;
+                    break;
+                case 'array':
+                    $val = is_array($raw) ? array_values(array_filter(array_map('trim', $raw))) : [];
+                    break;
+                default: // 'str'
+                    $val = trim((string)$raw);
+            }
+            $params[$key] = [
+                'value'    => $val,
+                'type'     => $type,
+                'saved_at' => $ts,
+            ];
+        }
+
+        // Load existing master and merge (keep keys not submitted)
+        $existing = $this->store->loadOperationalMaster();
+        $existingParams = $existing['params'] ?? [];
+        $merged = array_merge($existingParams, $params);
+
+        $masterData = [
+            'saved_at'  => $ts,
+            'saved_by'  => 'config_center',
+            'param_count' => count($merged),
+            'params'    => $merged,
+        ];
+
+        $ok = $this->store->saveOperationalMaster($masterData);
+        if (!$ok) {
+            $errors[] = 'Не удалось записать config_operational_master.json';
+        }
+
+        return [
+            'ok'       => $ok,
+            'saved_at' => $ts,
+            'errors'   => $errors,
+        ];
+    }
+
     public function getImmutableDraft(): array
     {
         return $this->store->loadImmutableDraft();
@@ -198,19 +317,22 @@ final class UnifiedConfigService
         $lastExtract    = $this->store->loadLastExtract();
         $ownership      = $this->store->loadOwnershipMap();
         $conflictReport = $this->store->loadConflictReport();
+        $master         = $this->store->loadOperationalMaster();
 
         $paramCount    = count($ownership['parameters'] ?? []);
         $conflictCount = (int)($conflictReport['conflict_count'] ?? 0);
         $dupCount      = (int)($conflictReport['duplicate_count'] ?? 0);
 
         return [
-            'extracted_at'     => $lastExtract['extracted_at']   ?? null,
-            'extract_status'   => $lastExtract['status']          ?? 'never',
-            'extract_errors'   => $lastExtract['errors']          ?? [],
-            'param_count'      => $paramCount,
-            'conflict_count'   => $conflictCount,
-            'duplicate_count'  => $dupCount,
-            'module_base'      => $this->moduleBase,
+            'extracted_at'         => $lastExtract['extracted_at']   ?? null,
+            'extract_status'       => $lastExtract['status']          ?? 'never',
+            'extract_errors'       => $lastExtract['errors']          ?? [],
+            'param_count'          => $paramCount,
+            'conflict_count'       => $conflictCount,
+            'duplicate_count'      => $dupCount,
+            'module_base'          => $this->moduleBase,
+            'master_saved_at'      => $master['saved_at']             ?? null,
+            'master_param_count'   => count($master['params']         ?? []),
         ];
     }
 

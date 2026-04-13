@@ -4,18 +4,19 @@ declare(strict_types=1);
 use Core\System\System;
 
 /**
- * Unified Config Module — Admin Layout
+ * Unified Config Module — Admin Layout (Russian UI)
  * Uses the same design system as the Smart Brain admin pages.
  */
 
 $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
+$flash   = $flash   ?? [];
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($title ?? 'Config Center') ?> — Tredercopis</title>
+    <title><?= htmlspecialchars($title ?? 'Центр Конфигурации') ?> — Tredercopis</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
@@ -39,6 +40,7 @@ $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
         .nav-tabs .nav-link.active { color: var(--primary); border-bottom-color: var(--primary); background: transparent; }
         .nav-tabs .nav-link:hover { color: #e2e8f0; border: none; }
         .badge-operational { background: var(--primary); }
+        .badge-master      { background: #7c3aed; }
         .badge-immutable   { background: #475569; }
         .badge-conflict    { background: #dc2626; }
         .badge-ok          { background: #16a34a; }
@@ -46,10 +48,19 @@ $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
         .param-row:hover   { background: rgba(255,255,255,0.03); }
         .source-tag        { font-size: 0.75rem; color: #94a3b8; font-family: monospace; }
         .conflict-badge    { font-size: 0.7rem; }
-        .shadow-notice     { background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.35); border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem; font-size: 0.88rem; }
+        .migration-notice  { background: rgba(59,130,246,0.10); border: 1px solid rgba(59,130,246,0.35); border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem; font-size: 0.88rem; }
         .breadcrumb-back   { font-size: 0.82rem; color: #64748b; }
         .breadcrumb-back a { color: #60a5fa; text-decoration: none; }
         .breadcrumb-back a:hover { text-decoration: underline; }
+        .form-control, .form-select {
+            background: #0f172a; color: #e2e8f0; border-color: var(--border-color);
+        }
+        .form-control:focus, .form-select:focus {
+            background: #1e293b; color: #e2e8f0; border-color: var(--primary); box-shadow: none;
+        }
+        .form-check-input { background-color: #0f172a; border-color: var(--border-color); }
+        .form-check-input:checked { background-color: var(--primary); border-color: var(--primary); }
+        .master-badge { background: rgba(124,58,237,0.18); border: 1px solid rgba(124,58,237,0.5); color: #a78bfa; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -59,53 +70,71 @@ $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
     <div class="breadcrumb-back mb-2">
         <a href="/admin/smart_brain"><i class="bi bi-arrow-left me-1"></i>Smart Brain</a>
         <span class="mx-1">/</span>
-        <a href="/admin/smart_brain/config">Global Config</a>
+        <a href="/admin/smart_brain/config">Конфигурация (устар.)</a>
         <span class="mx-1">/</span>
-        <span class="text-secondary">Config Center</span>
+        <span class="text-secondary">Центр Конфигурации</span>
     </div>
+
+    <!-- Flash message -->
+    <?php if (!empty($flash)): ?>
+    <?php $flashType = $flash['type'] ?? 'info'; $flashClass = ['success'=>'success','error'=>'danger','warning'=>'warning'][$flashType] ?? 'info'; ?>
+    <div class="alert alert-<?= $flashClass ?> alert-dismissible fade show py-2" role="alert">
+        <?php if ($flashType === 'success'): ?><i class="bi bi-check-circle me-1"></i>
+        <?php elseif ($flashType === 'error'): ?><i class="bi bi-x-circle me-1"></i>
+        <?php else: ?><i class="bi bi-exclamation-triangle me-1"></i><?php endif; ?>
+        <?= htmlspecialchars($flash['message'] ?? '') ?>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+    </div>
+    <?php endif; ?>
 
     <!-- Header -->
     <div class="d-flex align-items-center justify-content-between mb-3">
         <div class="d-flex align-items-center">
-            <i class="bi bi-sliders2 fs-4 me-2 text-warning"></i>
+            <i class="bi bi-sliders2 fs-4 me-2 text-primary"></i>
             <div>
-                <h4 class="mb-0"><?= htmlspecialchars($title ?? 'Config Center') ?></h4>
-                <small class="text-secondary">Unified Config — Smart Brain &amp; Trading Bot: partially migrated (wave 1)</small>
+                <h4 class="mb-0"><?= htmlspecialchars($title ?? 'Центр Конфигурации') ?></h4>
+                <small class="text-secondary">
+                    Единый Config — <span class="text-success">Smart Brain</span> и <span class="text-success">Trading Bot</span>: частично мигрированы (волна 1)
+                </small>
             </div>
-            <span class="badge badge-shadow ms-3">Shadow / Read-Only</span>
+            <?php if (!empty($summary['master_saved_at'])): ?>
+                <span class="badge badge-master ms-3"><i class="bi bi-floppy me-1"></i>Мастер сохранён: <?= htmlspecialchars(date('H:i', strtotime($summary['master_saved_at']))) ?></span>
+            <?php else: ?>
+                <span class="badge bg-secondary ms-3">Мастер: не сохранён</span>
+            <?php endif; ?>
         </div>
         <?php if (!empty($summary)): ?>
         <div class="d-flex align-items-center gap-3">
             <span class="text-secondary" style="font-size:0.82rem;">
-                Last extract:
-                <strong class="text-light ms-1"><?= $summary['extracted_at'] ? htmlspecialchars(date('Y-m-d H:i', strtotime($summary['extracted_at']))) : '<span class="text-danger">never</span>' ?></strong>
+                Извлечено:
+                <strong class="text-light ms-1"><?= $summary['extracted_at'] ? htmlspecialchars(date('Y-m-d H:i', strtotime($summary['extracted_at']))) : '<span class="text-danger">никогда</span>' ?></strong>
             </span>
             <span class="text-secondary" style="font-size:0.82rem;">
-                Params: <strong class="text-light ms-1"><?= (int)($summary['param_count'] ?? 0) ?></strong>
+                Параметров: <strong class="text-light ms-1"><?= (int)($summary['param_count'] ?? 0) ?></strong>
             </span>
             <?php if (($summary['conflict_count'] ?? 0) > 0): ?>
-                <span class="badge badge-conflict"><?= (int)$summary['conflict_count'] ?> conflicts</span>
+                <span class="badge badge-conflict"><?= (int)$summary['conflict_count'] ?> конфликт(а)</span>
             <?php else: ?>
-                <span class="badge badge-ok">no conflicts</span>
+                <span class="badge badge-ok">без конфликтов</span>
             <?php endif; ?>
             <form method="post" action="<?= htmlspecialchars($baseUrl) ?>/api/extract" class="d-inline" id="extractForm">
-                <button type="submit" class="btn btn-sm btn-outline-warning">
-                    <i class="bi bi-arrow-clockwise me-1"></i>Re-extract
+                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Перечитать
                 </button>
             </form>
         </div>
         <?php endif; ?>
     </div>
 
-    <!-- Shadow notice banner -->
-    <div class="shadow-notice d-flex align-items-start gap-2">
-        <i class="bi bi-eye-fill text-warning mt-1 flex-shrink-0"></i>
+    <!-- Migration status notice -->
+    <div class="migration-notice d-flex align-items-start gap-2">
+        <i class="bi bi-shuffle text-primary mt-1 flex-shrink-0"></i>
         <div>
-            <strong>Migration in progress — soft-switch active.</strong>
-            <strong class="text-success">Smart Brain</strong> and <strong class="text-success">Trading Bot</strong>
-            are now partial consumers of the unified Config Module (first-wave operational params).
-            Profit Manager and Coin Passport continue to read their own configs (not yet migrated).
-            All migrated parameters include explicit source visibility and safe legacy fallback.
+            <strong>Миграция в процессе — мягкое переключение активно.</strong>
+            <span class="text-success">Smart Brain</span> и <span class="text-success">Trading Bot</span>
+            уже используют Центр Конфигурации как основной источник параметров (волна 1).
+            Менеджер Прибыли и Coin Passport пока читают собственные конфиги (не мигрированы).
+            Редактируемые параметры сохраняются в <code>config_operational_master.json</code> и применяются немедленно при следующем цикле.
         </div>
     </div>
 
@@ -120,6 +149,9 @@ $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
 <script>
 document.getElementById('extractForm')?.addEventListener('submit', function(e) {
     e.preventDefault();
+    const btn = this.querySelector('button');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Обработка...';
     fetch(this.action, { method: 'POST' })
         .then(r => r.json())
         .then(() => location.reload())

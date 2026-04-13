@@ -38,15 +38,20 @@ return [
         '/admin/smart_brain/config_all/coin_cycle'         => 'UnifiedConfigController@coinCycle',
         '/admin/smart_brain/config_all/advanced'           => 'UnifiedConfigController@advanced',
 
-        // API endpoints (read-only)
+        // API endpoints (read)
         '/admin/smart_brain/config_all/api/ownership'      => 'UnifiedConfigController@apiOwnership',
         '/admin/smart_brain/config_all/api/conflicts'      => 'UnifiedConfigController@apiConflicts',
         '/admin/smart_brain/config_all/api/operational'    => 'UnifiedConfigController@apiOperational',
+        '/admin/smart_brain/config_all/api/master'         => 'UnifiedConfigController@apiMaster',
         '/admin/smart_brain/config_all/api/immutable'      => 'UnifiedConfigController@apiImmutable',
         '/admin/smart_brain/config_all/api/preview'        => 'UnifiedConfigController@apiPreview',
 
         // Action: run extraction pass
-        'POST /admin/smart_brain/config_all/api/extract'   => 'UnifiedConfigController@apiExtract',
+        'POST /admin/smart_brain/config_all/api/extract'            => 'UnifiedConfigController@apiExtract',
+
+        // Action: save operational master config
+        'POST /admin/smart_brain/config_all/api/save'               => 'UnifiedConfigController@apiSave',
+        'POST /admin/smart_brain/config_all/api/save_and_reextract' => 'UnifiedConfigController@apiSaveAndReextract',
     ],
 ];
 

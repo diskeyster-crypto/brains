@@ -2004,6 +2004,7 @@ final class SmartBrainConfig
             'module'                       => 'smart_brain',
             'switch_wave'                  => 'v1_operational_params',
             'unified_config_available'     => false,
+            'unified_config_master_path'   => '',
             'unified_config_draft_path'    => '',
             'source'                       => 'legacy_user_config',
             'partially_migrated'           => false,
@@ -2018,9 +2019,11 @@ final class SmartBrainConfig
         ];
 
         // Locate Config Module (sibling directory under the same system/ parent)
-        $systemDir = dirname($this->moduleBase);
-        $draftPath = $systemDir . '/config/storage/runtime/config_operational_draft.json';
-        $status['unified_config_draft_path'] = $draftPath;
+        $systemDir   = dirname($this->moduleBase);
+        $masterPath  = $systemDir . '/config/storage/runtime/config_operational_master.json';
+        $draftPath   = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_master_path'] = $masterPath;
+        $status['unified_config_draft_path']  = $draftPath;
 
         /** Build fallback detail for all first-wave params using legacy user_limits values. */
         $buildFallbackDetail = function (string $fallbackReason) use ($firstWaveParams): array {
@@ -2039,36 +2042,62 @@ final class SmartBrainConfig
             return $detail;
         };
 
-        if (!is_file($draftPath)) {
+        // ── Load master (preferred) ─────────────────────────────────────────
+        $masterParams = [];
+        $masterAvail  = false;
+        if (is_file($masterPath)) {
+            $rawMaster = @file_get_contents($masterPath);
+            if ($rawMaster !== false) {
+                $masterData = @json_decode($rawMaster, true);
+                if (is_array($masterData) && !empty($masterData['params'])) {
+                    $masterParams = $masterData['params'];
+                    $masterAvail  = true;
+                    $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                }
+            }
+        }
+
+        // ── Load draft (fallback source) ────────────────────────────────────
+        $draftParams = [];
+        $draftAvail  = false;
+        if (is_file($draftPath)) {
+            $rawDraft = @file_get_contents($draftPath);
+            if ($rawDraft !== false) {
+                $draftData = @json_decode($rawDraft, true);
+                if (is_array($draftData) && !empty($draftData['params'])) {
+                    $draftParams = $draftData['params'];
+                    $draftAvail  = true;
+                    $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                }
+            }
+        }
+
+        if (!$masterAvail && !$draftAvail) {
             $status['fallback_params']        = $firstWaveParams;
             $status['fallback_count']         = count($firstWaveParams);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_not_found');
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_not_found');
             return $status;
         }
 
-        $raw = @file_get_contents($draftPath);
-        if ($raw === false) {
-            $status['fallback_params']        = $firstWaveParams;
-            $status['fallback_count']         = count($firstWaveParams);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_unreadable');
-            return $status;
-        }
-
-        $draft = @json_decode($raw, true);
-        if (!is_array($draft) || empty($draft['params'])) {
-            $status['fallback_params']        = $firstWaveParams;
-            $status['fallback_count']         = count($firstWaveParams);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_invalid_or_empty');
-            return $status;
-        }
-
-        $status['unified_config_available']    = true;
-        $status['unified_config_generated_at'] = $draft['generated_at'] ?? null;
-
-        $allParams = $draft['params'];
+        $status['unified_config_available'] = true;
 
         foreach ($firstWaveParams as $key) {
-            if (!isset($allParams[$key]) || ($allParams[$key]['value'] ?? null) === null) {
+            // Priority: master → draft → legacy
+            $entry      = null;
+            $sourceLayer = 'legacy_user_config';
+            $via         = '';
+
+            if ($masterAvail && isset($masterParams[$key]) && ($masterParams[$key]['value'] ?? null) !== null) {
+                $entry       = $masterParams[$key];
+                $sourceLayer = 'unified_config_master';
+                $via         = 'unified_config_operational_master';
+            } elseif ($draftAvail && isset($draftParams[$key]) && ($draftParams[$key]['value'] ?? null) !== null) {
+                $entry       = $draftParams[$key];
+                $sourceLayer = 'unified_config';
+                $via         = 'unified_config_operational_draft';
+            }
+
+            if ($entry === null) {
                 $status['fallback_params'][] = $key;
                 $userLimits = $this->config['risk_engine']['user_limits'] ?? [];
                 $status['fallback_params_detail'][$key] = [
@@ -2076,13 +2105,12 @@ final class SmartBrainConfig
                     'source_layer'        => 'legacy_user_config',
                     'unified_config_used' => false,
                     'legacy_fallback_used'=> true,
-                    'fallback_reason'     => 'param_not_in_unified_config_draft',
+                    'fallback_reason'     => 'param_not_in_unified_config',
                     'fallback_source'     => 'brain_user_config (runtime/user_config.json)',
                 ];
                 continue;
             }
-            $entry = $allParams[$key];
-            // Overlay the value (identical to user_config.json; Config Module read it from there)
+
             if (!isset($this->config['risk_engine']['user_limits'])) {
                 $this->config['risk_engine']['user_limits'] = [];
             }
@@ -2090,10 +2118,10 @@ final class SmartBrainConfig
             $status['switched_params'][]        = $key;
             $status['switched_params_detail'][$key] = [
                 'value'               => $entry['value'],
-                'original_source'     => $entry['source']      ?? 'unknown',
+                'original_source'     => $entry['source']      ?? ($sourceLayer === 'unified_config_master' ? 'config_center_save' : 'unknown'),
                 'original_source_file'=> $entry['source_file'] ?? null,
-                'via'                 => 'unified_config_operational_draft',
-                'source_layer'        => 'unified_config',
+                'via'                 => $via,
+                'source_layer'        => $sourceLayer,
                 'unified_config_used' => true,
                 'legacy_fallback_used'=> false,
             ];
@@ -2107,7 +2135,7 @@ final class SmartBrainConfig
 
         $status['source'] = $migratedCount === 0
             ? 'legacy_user_config'
-            : 'unified_config_operational_draft';
+            : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
 
         return $status;
     }

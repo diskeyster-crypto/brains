@@ -438,27 +438,24 @@ trait BotConfigTrait
     /**
      * Apply first-wave Config Module unified config overlay to the Trading Bot config.
      *
-     * Reads config_operational_draft.json from the sibling Config Module's runtime
-     * storage. If unavailable, all first-wave params fall back to the values already
-     * loaded from bot.json + config.php (no silent loss — fallback is explicit in
-     * the returned status record).
+     * Priority: config_operational_master.json → config_operational_draft.json → legacy bot.json.
+     * All sources are explicit in the returned status record; no silent fallbacks.
      *
      * First-wave params overlaid:
-     *   bot_enabled          → $config['module']['enabled']
-     *   bot_mode             → $config['module']['mode']
-     *   max_intents_per_run  → $config['execution']['max_intents_per_run']
-     *   max_concurrent_positions → $config['module']['max_concurrent_positions']
-     *   bot_brain_controlled → $config['sources']['brain_source_enabled']
-     *   pm_trailing_owner    → $config['execution']['trailing_owner']
+     *   bot_enabled               → $config['module']['enabled']
+     *   bot_mode                  → $config['module']['mode']
+     *   max_intents_per_run       → $config['execution']['max_intents_per_run']
+     *   max_concurrent_positions  → $config['module']['max_concurrent_positions']
+     *   bot_brain_controlled      → $config['sources']['brain_source_enabled']
+     *   pm_trailing_owner         → $config['execution']['trailing_owner']
      *
      * @param array<string,mixed> $config Reference to merged config array (mutated in place)
      * @return array<string,mixed> Migration status record
      */
     private function applyBotUnifiedConfigOverlay(array &$config): array
     {
-        // First-wave: bot-owned operational params that map 1:1 to the draft.
-        // Format: draft_key => [config_path, cast_fn]
-        // config_path uses dot notation into $config.
+        // First-wave: bot-owned operational params that map 1:1 to the unified config.
+        // Format: unified_key => [config_path (dot notation), cast_fn]
         $firstWave = [
             'bot_enabled'             => ['path' => 'module.enabled',                   'cast' => 'bool'],
             'bot_mode'                => ['path' => 'module.mode',                      'cast' => 'str'],
@@ -469,26 +466,29 @@ trait BotConfigTrait
         ];
 
         $status = [
-            'module'                    => 'trading_bot',
-            'switch_wave'               => 'v1_operational_params',
-            'unified_config_available'  => false,
-            'unified_config_draft_path' => '',
-            'source'                    => 'legacy_bot_runtime',
-            'partially_migrated'        => false,
-            'first_wave_total'          => count($firstWave),
-            'migrated_count'            => 0,
-            'fallback_count'            => 0,
-            'switched_params'           => [],
-            'fallback_params'           => [],
-            'switched_params_detail'    => [],
-            'fallback_params_detail'    => [],
-            'recorded_at'               => date('c'),
+            'module'                     => 'trading_bot',
+            'switch_wave'                => 'v1_operational_params',
+            'unified_config_available'   => false,
+            'unified_config_master_path' => '',
+            'unified_config_draft_path'  => '',
+            'source'                     => 'legacy_bot_runtime',
+            'partially_migrated'         => false,
+            'first_wave_total'           => count($firstWave),
+            'migrated_count'             => 0,
+            'fallback_count'             => 0,
+            'switched_params'            => [],
+            'fallback_params'            => [],
+            'switched_params_detail'     => [],
+            'fallback_params_detail'     => [],
+            'recorded_at'                => date('c'),
         ];
 
         // Locate Config Module (sibling directory under the same system/ parent).
-        $systemDir = dirname($this->moduleBase ?? __DIR__);
-        $draftPath = $systemDir . '/config/storage/runtime/config_operational_draft.json';
-        $status['unified_config_draft_path'] = $draftPath;
+        $systemDir  = dirname($this->moduleBase ?? __DIR__);
+        $masterPath = $systemDir . '/config/storage/runtime/config_operational_master.json';
+        $draftPath  = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_master_path'] = $masterPath;
+        $status['unified_config_draft_path']  = $draftPath;
 
         /** Build fallback detail for all first-wave params using current config values. */
         $buildFallbackDetail = function (string $fallbackReason) use ($firstWave, $config): array {
@@ -507,38 +507,62 @@ trait BotConfigTrait
             return $detail;
         };
 
-        if (!is_file($draftPath)) {
+        // ── Load master (preferred) ─────────────────────────────────────────
+        $masterParams = [];
+        $masterAvail  = false;
+        if (is_file($masterPath)) {
+            $rawMaster = @file_get_contents($masterPath);
+            if ($rawMaster !== false) {
+                $masterData = @json_decode($rawMaster, true);
+                if (is_array($masterData) && !empty($masterData['params'])) {
+                    $masterParams = $masterData['params'];
+                    $masterAvail  = true;
+                    $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                }
+            }
+        }
+
+        // ── Load draft (fallback source) ────────────────────────────────────
+        $draftParams = [];
+        $draftAvail  = false;
+        if (is_file($draftPath)) {
+            $rawDraft = @file_get_contents($draftPath);
+            if ($rawDraft !== false) {
+                $draftData = @json_decode($rawDraft, true);
+                if (is_array($draftData) && !empty($draftData['params'])) {
+                    $draftParams = $draftData['params'];
+                    $draftAvail  = true;
+                    $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                }
+            }
+        }
+
+        if (!$masterAvail && !$draftAvail) {
             $status['fallback_params']        = array_keys($firstWave);
             $status['fallback_count']         = count($firstWave);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_not_found');
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_not_found');
             return $status;
         }
 
-        $raw = @file_get_contents($draftPath);
-        if ($raw === false) {
-            $status['fallback_params']        = array_keys($firstWave);
-            $status['fallback_count']         = count($firstWave);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_unreadable');
-            return $status;
-        }
-
-        $draft = @json_decode($raw, true);
-        if (!is_array($draft) || empty($draft['params'])) {
-            $status['fallback_params']        = array_keys($firstWave);
-            $status['fallback_count']         = count($firstWave);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_invalid_or_empty');
-            return $status;
-        }
-
-        $status['unified_config_available']    = true;
-        $status['unified_config_generated_at'] = $draft['generated_at'] ?? null;
-
-        $allParams = $draft['params'];
+        $status['unified_config_available'] = true;
 
         foreach ($firstWave as $key => $def) {
-            $draftEntry = $allParams[$key] ?? null;
-            if ($draftEntry === null || ($draftEntry['value'] ?? null) === null) {
-                // Param missing from draft — explicit fallback
+            // Priority: master → draft → legacy
+            $entry       = null;
+            $sourceLayer = 'legacy_bot_runtime';
+            $via         = '';
+
+            if ($masterAvail && isset($masterParams[$key]) && ($masterParams[$key]['value'] ?? null) !== null) {
+                $entry       = $masterParams[$key];
+                $sourceLayer = 'unified_config_master';
+                $via         = 'unified_config_operational_master';
+            } elseif ($draftAvail && isset($draftParams[$key]) && ($draftParams[$key]['value'] ?? null) !== null) {
+                $entry       = $draftParams[$key];
+                $sourceLayer = 'unified_config';
+                $via         = 'unified_config_operational_draft';
+            }
+
+            if ($entry === null) {
                 $status['fallback_params'][] = $key;
                 $status['fallback_params_detail'][$key] = [
                     'value'                => $this->dotGetConfig($config, $def['path']),
@@ -546,14 +570,13 @@ trait BotConfigTrait
                     'source_owner'         => 'trading_bot',
                     'unified_config_used'  => false,
                     'legacy_fallback_used' => true,
-                    'fallback_reason'      => 'param_not_in_unified_config_draft',
+                    'fallback_reason'      => 'param_not_in_unified_config',
                     'fallback_source'      => 'bot_runtime (config/bot.json)',
                 ];
                 continue;
             }
 
-            // Overlay the value (identical to bot.json; Config Module extracted it from there)
-            $rawVal = $draftEntry['value'];
+            $rawVal  = $entry['value'];
             $castVal = match ($def['cast']) {
                 'bool' => (bool)$rawVal,
                 'int'  => (int)$rawVal,
@@ -565,10 +588,10 @@ trait BotConfigTrait
             $status['switched_params'][] = $key;
             $status['switched_params_detail'][$key] = [
                 'value'                => $castVal,
-                'original_source'      => $draftEntry['source']      ?? 'unknown',
-                'original_source_file' => $draftEntry['source_file'] ?? null,
-                'via'                  => 'unified_config_operational_draft',
-                'source_layer'         => 'unified_config',
+                'original_source'      => $entry['source']      ?? ($sourceLayer === 'unified_config_master' ? 'config_center_save' : 'unknown'),
+                'original_source_file' => $entry['source_file'] ?? null,
+                'via'                  => $via,
+                'source_layer'         => $sourceLayer,
                 'source_owner'         => 'trading_bot',
                 'unified_config_used'  => true,
                 'legacy_fallback_used' => false,
@@ -582,7 +605,7 @@ trait BotConfigTrait
         $status['partially_migrated'] = $migratedCount > 0 && $fallbackCount > 0;
         $status['source']             = $migratedCount === 0
             ? 'legacy_bot_runtime'
-            : 'unified_config_operational_draft';
+            : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
 
         return $status;
     }

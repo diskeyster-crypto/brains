@@ -47,19 +47,20 @@ return [
        STORAGE (relative to module base)
        ====================================================== */
     'storage' => [
-        'ownership_map_file'      => 'storage/runtime/config_ownership_map.json',
-        'conflict_report_file'    => 'storage/runtime/config_conflict_report.json',
-        'operational_draft_file'  => 'storage/runtime/config_operational_draft.json',
-        'immutable_draft_file'    => 'storage/runtime/config_immutable_draft.json',
-        'effective_preview_file'  => 'storage/runtime/config_effective_preview.json',
-        'last_extract_file'       => 'storage/runtime/last_extract.json',
+        'ownership_map_file'         => 'storage/runtime/config_ownership_map.json',
+        'conflict_report_file'       => 'storage/runtime/config_conflict_report.json',
+        'operational_draft_file'     => 'storage/runtime/config_operational_draft.json',
+        'operational_master_file'    => 'storage/runtime/config_operational_master.json',
+        'immutable_draft_file'       => 'storage/runtime/config_immutable_draft.json',
+        'effective_preview_file'     => 'storage/runtime/config_effective_preview.json',
+        'last_extract_file'          => 'storage/runtime/last_extract.json',
     ],
 
     /* ======================================================
        UI
        ====================================================== */
     'ui' => [
-        'read_only' => true,
+        'read_only'             => false,  // Config Center is now editable for operational params
         'show_source_ownership' => true,
         'show_conflicts'        => true,
         'show_field_type'       => true,   // operational vs immutable

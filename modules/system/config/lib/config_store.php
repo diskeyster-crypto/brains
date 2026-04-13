@@ -110,6 +110,32 @@ final class ConfigStore
     }
 
     // =========================================================================
+    // Operational master config (editable by Config Center)
+    // =========================================================================
+
+    /**
+     * Load config_operational_master.json.
+     * Returns null (not an empty array) when the file does not yet exist so
+     * callers can distinguish "never saved" from an empty save.
+     *
+     * @return array{saved_at:string|null,saved_by:string,params:array<string,mixed>}|null
+     */
+    public function loadOperationalMaster(): ?array
+    {
+        return $this->readJson($this->resolvePath('operational_master_file'));
+    }
+
+    /**
+     * Save config_operational_master.json.
+     *
+     * @param array<string,mixed> $data
+     */
+    public function saveOperationalMaster(array $data): bool
+    {
+        return $this->writeJson($this->resolvePath('operational_master_file'), $data);
+    }
+
+    // =========================================================================
     // Immutable / internal config draft
     // =========================================================================
 

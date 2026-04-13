@@ -1029,6 +1029,12 @@ final class SmartBrainCore
             'slot_priority_existing_active_slots' => (int)($liveIntentResult['slot_priority_existing_active_slots']  ?? 0),
             'slot_priority_slots_available'       => (int)($liveIntentResult['slot_priority_slots_available']        ?? 0),
             'slot_priority_rejected_preview'      => $liveIntentResult['slot_priority_rejected_preview']             ?? [],
+            // Entry Quality Filter diagnostics (bounded entry-quality improvement layer)
+            'entry_quality_filter_total'           => (int)($liveIntentResult['entry_quality_filter_total']           ?? 0),
+            'entry_quality_filter_reject_total'    => (int)($liveIntentResult['entry_quality_filter_reject_total']    ?? 0),
+            'entry_quality_filter_demo_total'      => (int)($liveIntentResult['entry_quality_filter_demo_total']      ?? 0),
+            'entry_quality_filter_no_effect_total' => (int)($liveIntentResult['entry_quality_filter_no_effect_total'] ?? 0),
+            'entry_quality_filter_rejected_preview' => $liveIntentResult['entry_quality_filter_rejected_preview']     ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1174,6 +1180,12 @@ final class SmartBrainCore
             'slot_priority_existing_active_slots' => 0,
             'slot_priority_slots_available'       => 0,
             'slot_priority_rejected_preview'      => [],
+            // Entry quality filter diagnostics (bounded entry-quality improvement layer)
+            'entry_quality_filter_total'          => 0,
+            'entry_quality_filter_reject_total'   => 0,
+            'entry_quality_filter_demo_total'     => 0,
+            'entry_quality_filter_no_effect_total' => 0,
+            'entry_quality_filter_rejected_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2031,6 +2043,139 @@ final class SmartBrainCore
                 }
             }
 
+            // === ENTRY QUALITY FILTER (Bounded Entry-Quality Layer) ===
+            // Runs AFTER all hard gates pass. Rejects structurally poor entry setups
+            // before a live intent is created. Does NOT bypass passport/cycle/late-entry.
+            // Rules are conservative — each rule requires two weak indicators together.
+            {
+                $eqFilterEnabled = (bool)($userLimits['entry_quality_filter_enabled'] ?? true);
+                $eqFilterApplied  = false;
+                $eqFilterReason   = null;
+
+                // Freshness state (for observability and rule use)
+                $eqSignalAge      = max(0, (int)(time() - (int)($signal['created_ts'] ?? time())));
+                $eqLateLimitSec   = max(60, (int)($userLimits['late_entry_max_minutes'] ?? 15) * 60);
+                $eqFreshnessRatio = $eqLateLimitSec > 0 ? ($eqSignalAge / $eqLateLimitSec) : 0.0;
+                if ($eqFreshnessRatio <= 0.33) {
+                    $eqFreshnessState = 'fresh';
+                } elseif ($eqFreshnessRatio <= 0.66) {
+                    $eqFreshnessState = 'aging';
+                } else {
+                    $eqFreshnessState = 'stale';
+                }
+
+                // Stretch state from corridor_width (for observability and rule use)
+                $eqCorridorWidth = (float)($signal['corridor_width'] ?? 0.0);
+                if ($eqCorridorWidth >= 0.35) {
+                    $eqStretchState = 'overstretched';
+                } elseif ($eqCorridorWidth >= 0.20) {
+                    $eqStretchState = 'wide';
+                } else {
+                    $eqStretchState = 'normal';
+                }
+
+                if ($eqFilterEnabled) {
+                    $eqEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                    $eqHoldQuality  = (float)($signal['hold_quality_score']  ?? 0.0);
+                    $eqPatternConf  = (float)($signal['pattern_confidence']  ?? $signal['confirmation_score'] ?? 0.0);
+                    $eqEntryAction  = (string)($signal['entry_action']       ?? 'wait_retrace');
+                    $eqCmAvailable  = ($cycleDecisionDebug['available'] ?? false) === true;
+                    $eqCmState      = $eqCmAvailable ? (string)($cycleDecisionDebug['model_state']        ?? '') : '';
+                    $eqCmRisk       = $eqCmAvailable ? (string)($cycleDecisionDebug['model_risk_posture'] ?? '') : '';
+
+                    $result['entry_quality_filter_total']++;
+
+                    // Rule 1: entry_quality_late_pressure
+                    // enter_now signals that are aging/stale with low pattern confidence —
+                    // the confirmation window has effectively closed.
+                    $eqLateEnterNowMaxSec = max(120, (int)($userLimits['entry_quality_late_enter_now_max_minutes'] ?? 8) * 60);
+                    if (!$eqFilterApplied
+                        && $eqEntryAction === 'enter_now'
+                        && $eqSignalAge > $eqLateEnterNowMaxSec
+                        && $eqPatternConf < 0.65
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_late_pressure';
+                    }
+
+                    // Rule 2: entry_quality_overstretched
+                    // Very wide corridor + low entry quality → market moved too far from zone.
+                    if (!$eqFilterApplied
+                        && $eqStretchState === 'overstretched'
+                        && $eqEntryQuality < 0.45
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_overstretched';
+                    }
+
+                    // Rule 3: entry_quality_weak_structure
+                    // Both hold quality and pattern confidence are low — structural basis too weak.
+                    if (!$eqFilterApplied
+                        && $eqHoldQuality < 0.25
+                        && $eqPatternConf < 0.45
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_weak_structure';
+                    }
+
+                    // Rule 4: entry_quality_low_quality_freshness
+                    // Low entry quality + aging/stale signal — neither compensates for the other.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.35
+                        && $eqFreshnessState !== 'fresh'
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_low_quality_freshness';
+                    }
+
+                    // Rule 5: entry_quality_poor_actionability
+                    // Cycle model: weak/unavailable state + medium_risk + below-average entry quality.
+                    if (!$eqFilterApplied
+                        && $eqCmAvailable
+                        && in_array($eqCmState, ['weak', 'unavailable'], true)
+                        && $eqCmRisk === 'medium_risk'
+                        && $eqEntryQuality < 0.50
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_poor_actionability';
+                    }
+
+                    if ($eqFilterApplied) {
+                        $result['entry_quality_filter_reject_total']++;
+                        if (count($result['entry_quality_filter_rejected_preview']) < 10) {
+                            $result['entry_quality_filter_rejected_preview'][] = [
+                                'symbol'              => $symbol,
+                                'side'                => $side,
+                                'pattern_algorithm'   => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'       => $eqFilterReason,
+                                'entry_quality_score' => $eqEntryQuality,
+                                'hold_quality_score'  => $eqHoldQuality,
+                                'pattern_confidence'  => $eqPatternConf,
+                                'signal_age_seconds'  => $eqSignalAge,
+                                'freshness_state'     => $eqFreshnessState,
+                                'stretch_state'       => $eqStretchState,
+                                'corridor_width'      => $eqCorridorWidth,
+                                'entry_action'        => $eqEntryAction,
+                            ];
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $eqFilterReason, $selectionMode);
+                        continue;
+                    }
+
+                    $result['entry_quality_filter_no_effect_total']++;
+                }
+
+                // Capture filter state for intent-level observability (attached to intent below)
+                $eqFilterResult = [
+                    'entry_quality_filter_used'     => $eqFilterEnabled,
+                    'entry_quality_filter_applied'  => $eqFilterApplied,
+                    'entry_quality_filter_reason'   => $eqFilterReason,
+                    'entry_quality_freshness_state' => $eqFreshnessState,
+                    'entry_quality_stretch_state'   => $eqStretchState,
+                ];
+            }
+            // === END ENTRY QUALITY FILTER ===
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -2225,6 +2370,13 @@ final class SmartBrainCore
             $intent['passport_eligibility_before_cycle'] = $passportEligBase;
             $intent['passport_eligibility_after_cycle']  = $passportEligAfterCycle;
 
+            // Attach entry quality filter observability fields
+            $intent['entry_quality_filter_used']     = $eqFilterResult['entry_quality_filter_used'];
+            $intent['entry_quality_filter_applied']  = $eqFilterResult['entry_quality_filter_applied'];
+            $intent['entry_quality_filter_reason']   = $eqFilterResult['entry_quality_filter_reason'];
+            $intent['entry_quality_freshness_state'] = $eqFilterResult['entry_quality_freshness_state'];
+            $intent['entry_quality_stretch_state']   = $eqFilterResult['entry_quality_stretch_state'];
+
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
                 $intent['symbol_hints'] = $symbolHints;
@@ -2269,6 +2421,10 @@ final class SmartBrainCore
                     'passport_cycle_refinement_reason'  => $cycleRefReason,
                     'passport_eligibility_before_cycle' => $passportEligBase,
                     'passport_eligibility_after_cycle'  => $passportEligAfterCycle,
+                    // Entry quality filter observability
+                    'entry_quality_filter_used'     => $eqFilterResult['entry_quality_filter_used'],
+                    'entry_quality_freshness_state' => $eqFilterResult['entry_quality_freshness_state'],
+                    'entry_quality_stretch_state'   => $eqFilterResult['entry_quality_stretch_state'],
                 ];
             }
         }

@@ -70,7 +70,7 @@ $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
             <i class="bi bi-sliders2 fs-4 me-2 text-warning"></i>
             <div>
                 <h4 class="mb-0"><?= htmlspecialchars($title ?? 'Config Center') ?></h4>
-                <small class="text-secondary">Unified Config — shadow preview, not yet runtime authority</small>
+                <small class="text-secondary">Unified Config — Smart Brain &amp; Trading Bot: partially migrated (wave 1)</small>
             </div>
             <span class="badge badge-shadow ms-3">Shadow / Read-Only</span>
         </div>
@@ -101,10 +101,11 @@ $baseUrl = $baseUrl ?? '/admin/smart_brain/config_all';
     <div class="shadow-notice d-flex align-items-start gap-2">
         <i class="bi bi-eye-fill text-warning mt-1 flex-shrink-0"></i>
         <div>
-            <strong>Preview only — migration in progress.</strong>
-            This module extracts and audits config values from existing modules.
-            It does <em>not</em> govern runtime behaviour.
-            Smart Brain, Trading Bot, Profit Manager, and Coin Passport continue to read their own configs.
+            <strong>Migration in progress — soft-switch active.</strong>
+            <strong class="text-success">Smart Brain</strong> and <strong class="text-success">Trading Bot</strong>
+            are now partial consumers of the unified Config Module (first-wave operational params).
+            Profit Manager and Coin Passport continue to read their own configs (not yet migrated).
+            All migrated parameters include explicit source visibility and safe legacy fallback.
         </div>
     </div>
 

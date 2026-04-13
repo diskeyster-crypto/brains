@@ -72,12 +72,13 @@ final class UnifiedConfigController
     public function tradingBot(): void
     {
         $this->requireAuth();
-        $tab     = 'trading_bot';
-        $title   = 'Config — Trading Bot';
-        $summary = $this->service->getSummary();
-        $data    = $this->service->getOperationalDraft();
-        $preview = $this->service->getEffectivePreview();
-        $baseUrl = $this->baseUrl;
+        $tab             = 'trading_bot';
+        $title           = 'Config — Trading Bot';
+        $summary         = $this->service->getSummary();
+        $data            = $this->service->getOperationalDraft();
+        $preview         = $this->service->getEffectivePreview();
+        $migrationStatus = $this->service->getTradingBotMigrationStatus();
+        $baseUrl         = $this->baseUrl;
         include __DIR__ . '/views/trading_bot.php';
     }
 

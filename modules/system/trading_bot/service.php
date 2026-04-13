@@ -346,6 +346,26 @@ final class TradingBotService
 
             // ── Journal: config_snapshot ─────────────────────────────────────────
             $demoValCfgSnap = is_array($this->config['demo_validation_mode'] ?? null) ? $this->config['demo_validation_mode'] : [];
+            // Config Module migration proof — first-wave soft-switch runtime evidence.
+            $botMigStatus = $this->loadBotMigrationStatus();
+            $botMigMigratedCount = $botMigStatus['migrated_count'] ?? count($botMigStatus['switched_params'] ?? []);
+            $botMigFallbackCount = $botMigStatus['fallback_count'] ?? count($botMigStatus['fallback_params'] ?? []);
+            $botConfigSourceProof = [
+                'migration_wave'           => $botMigStatus['switch_wave']               ?? 'v1_operational_params',
+                'partially_migrated'       => (bool)($botMigStatus['partially_migrated'] ?? ($botMigMigratedCount > 0 && $botMigFallbackCount > 0)),
+                'unified_config_available' => (bool)($botMigStatus['unified_config_available'] ?? false),
+                'unified_config_used'      => $botMigMigratedCount > 0,
+                'legacy_fallback_used'     => $botMigFallbackCount > 0,
+                'migrated_count'           => $botMigMigratedCount,
+                'fallback_count'           => $botMigFallbackCount,
+                'first_wave_total'         => $botMigStatus['first_wave_total'] ?? ($botMigMigratedCount + $botMigFallbackCount),
+                'switched_params'          => $botMigStatus['switched_params']  ?? [],
+                'fallback_params'          => $botMigStatus['fallback_params']  ?? [],
+                'switched_params_detail'   => $botMigStatus['switched_params_detail'] ?? [],
+                'fallback_params_detail'   => $botMigStatus['fallback_params_detail'] ?? [],
+                'source'                   => $botMigStatus['source']           ?? 'legacy_bot_runtime',
+                'recorded_at'              => $botMigStatus['recorded_at']      ?? null,
+            ];
             $this->journalEvent('config_snapshot', 'config_snapshot', true, 'Effective config for this tick', [
                 'trailing_owner'                 => $execCfg['trailing_owner'] ?? 'bot',
                 'trailing_enabled'               => $execCfg['trailing_enabled'] ?? null,
@@ -367,6 +387,7 @@ final class TradingBotService
                 'demo_validation_thresholds_active' => $demoValidationThresholdsActive,
                 'demo_learning_mode_enabled'     => (bool)($dlmCfgJournal['enabled'] ?? false),
                 'reconcile_before_action'        => $this->config['module']['reconcile_before_action'] ?? null,
+                'bot_config_source_proof'        => $botConfigSourceProof,
             ]);
 
             // Step 1: Reconcile with exchange

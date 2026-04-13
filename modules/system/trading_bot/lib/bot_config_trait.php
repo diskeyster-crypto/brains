@@ -424,9 +424,257 @@ trait BotConfigTrait
             }
         }
 
+        // Apply unified Config Module overlay (first-wave soft-switch).
+        // Reads config_operational_draft.json from the sibling Config Module.
+        // Values are identical to bot.json since the draft is extracted from there;
+        // the overlay establishes the unified layer as the tracked authority.
+        // On any failure, existing config values remain in effect (safe fallback).
+        $migrationStatus = $this->applyBotUnifiedConfigOverlay($config);
+        $this->writeBotMigrationStatus($migrationStatus);
+
         return $config;
     }
-    
+
+    /**
+     * Apply first-wave Config Module unified config overlay to the Trading Bot config.
+     *
+     * Reads config_operational_draft.json from the sibling Config Module's runtime
+     * storage. If unavailable, all first-wave params fall back to the values already
+     * loaded from bot.json + config.php (no silent loss — fallback is explicit in
+     * the returned status record).
+     *
+     * First-wave params overlaid:
+     *   bot_enabled          → $config['module']['enabled']
+     *   bot_mode             → $config['module']['mode']
+     *   max_intents_per_run  → $config['execution']['max_intents_per_run']
+     *   max_concurrent_positions → $config['module']['max_concurrent_positions']
+     *   bot_brain_controlled → $config['sources']['brain_source_enabled']
+     *   pm_trailing_owner    → $config['execution']['trailing_owner']
+     *
+     * @param array<string,mixed> $config Reference to merged config array (mutated in place)
+     * @return array<string,mixed> Migration status record
+     */
+    private function applyBotUnifiedConfigOverlay(array &$config): array
+    {
+        // First-wave: bot-owned operational params that map 1:1 to the draft.
+        // Format: draft_key => [config_path, cast_fn]
+        // config_path uses dot notation into $config.
+        $firstWave = [
+            'bot_enabled'             => ['path' => 'module.enabled',                   'cast' => 'bool'],
+            'bot_mode'                => ['path' => 'module.mode',                      'cast' => 'str'],
+            'max_intents_per_run'     => ['path' => 'execution.max_intents_per_run',    'cast' => 'int'],
+            'max_concurrent_positions'=> ['path' => 'module.max_concurrent_positions',  'cast' => 'int'],
+            'bot_brain_controlled'    => ['path' => 'sources.brain_source_enabled',     'cast' => 'bool'],
+            'pm_trailing_owner'       => ['path' => 'execution.trailing_owner',         'cast' => 'str'],
+        ];
+
+        $status = [
+            'module'                    => 'trading_bot',
+            'switch_wave'               => 'v1_operational_params',
+            'unified_config_available'  => false,
+            'unified_config_draft_path' => '',
+            'source'                    => 'legacy_bot_runtime',
+            'partially_migrated'        => false,
+            'first_wave_total'          => count($firstWave),
+            'migrated_count'            => 0,
+            'fallback_count'            => 0,
+            'switched_params'           => [],
+            'fallback_params'           => [],
+            'switched_params_detail'    => [],
+            'fallback_params_detail'    => [],
+            'recorded_at'               => date('c'),
+        ];
+
+        // Locate Config Module (sibling directory under the same system/ parent).
+        $systemDir = dirname($this->moduleBase ?? __DIR__);
+        $draftPath = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_draft_path'] = $draftPath;
+
+        /** Build fallback detail for all first-wave params using current config values. */
+        $buildFallbackDetail = function (string $fallbackReason) use ($firstWave, $config): array {
+            $detail = [];
+            foreach ($firstWave as $key => $def) {
+                $detail[$key] = [
+                    'value'                => $this->dotGetConfig($config, $def['path']),
+                    'source_layer'         => 'legacy_bot_runtime',
+                    'source_owner'         => 'trading_bot',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => $fallbackReason,
+                    'fallback_source'      => 'bot_runtime (config/bot.json)',
+                ];
+            }
+            return $detail;
+        };
+
+        if (!is_file($draftPath)) {
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_not_found');
+            return $status;
+        }
+
+        $raw = @file_get_contents($draftPath);
+        if ($raw === false) {
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_unreadable');
+            return $status;
+        }
+
+        $draft = @json_decode($raw, true);
+        if (!is_array($draft) || empty($draft['params'])) {
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_invalid_or_empty');
+            return $status;
+        }
+
+        $status['unified_config_available']    = true;
+        $status['unified_config_generated_at'] = $draft['generated_at'] ?? null;
+
+        $allParams = $draft['params'];
+
+        foreach ($firstWave as $key => $def) {
+            $draftEntry = $allParams[$key] ?? null;
+            if ($draftEntry === null || ($draftEntry['value'] ?? null) === null) {
+                // Param missing from draft — explicit fallback
+                $status['fallback_params'][] = $key;
+                $status['fallback_params_detail'][$key] = [
+                    'value'                => $this->dotGetConfig($config, $def['path']),
+                    'source_layer'         => 'legacy_bot_runtime',
+                    'source_owner'         => 'trading_bot',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => 'param_not_in_unified_config_draft',
+                    'fallback_source'      => 'bot_runtime (config/bot.json)',
+                ];
+                continue;
+            }
+
+            // Overlay the value (identical to bot.json; Config Module extracted it from there)
+            $rawVal = $draftEntry['value'];
+            $castVal = match ($def['cast']) {
+                'bool' => (bool)$rawVal,
+                'int'  => (int)$rawVal,
+                default => (string)$rawVal,
+            };
+
+            $this->dotSetConfig($config, $def['path'], $castVal);
+
+            $status['switched_params'][] = $key;
+            $status['switched_params_detail'][$key] = [
+                'value'                => $castVal,
+                'original_source'      => $draftEntry['source']      ?? 'unknown',
+                'original_source_file' => $draftEntry['source_file'] ?? null,
+                'via'                  => 'unified_config_operational_draft',
+                'source_layer'         => 'unified_config',
+                'source_owner'         => 'trading_bot',
+                'unified_config_used'  => true,
+                'legacy_fallback_used' => false,
+            ];
+        }
+
+        $migratedCount = count($status['switched_params']);
+        $fallbackCount = count($status['fallback_params']);
+        $status['migrated_count']     = $migratedCount;
+        $status['fallback_count']     = $fallbackCount;
+        $status['partially_migrated'] = $migratedCount > 0 && $fallbackCount > 0;
+        $status['source']             = $migratedCount === 0
+            ? 'legacy_bot_runtime'
+            : 'unified_config_operational_draft';
+
+        return $status;
+    }
+
+    /**
+     * Write Trading Bot config migration status to its runtime storage.
+     *
+     * @param array<string,mixed> $migrationStatus
+     */
+    private function writeBotMigrationStatus(array $migrationStatus): void
+    {
+        $base = $this->moduleBase ?? '';
+        if ($base === '') {
+            return;
+        }
+        $path = $base . '/runtime/config_source_status.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($migrationStatus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
+        );
+    }
+
+    /**
+     * Get a value from config using dot-notation path.
+     *
+     * @param array<string,mixed> $config
+     * @return mixed
+     */
+    private function dotGetConfig(array $config, string $path)
+    {
+        $parts = explode('.', $path);
+        $current = $config;
+        foreach ($parts as $part) {
+            if (!is_array($current) || !array_key_exists($part, $current)) {
+                return null;
+            }
+            $current = $current[$part];
+        }
+        return $current;
+    }
+
+    /**
+     * Set a value in config using dot-notation path (mutates $config in place).
+     *
+     * @param array<string,mixed> $config
+     * @param mixed $value
+     */
+    private function dotSetConfig(array &$config, string $path, $value): void
+    {
+        $parts = explode('.', $path);
+        $current = &$config;
+        foreach ($parts as $i => $part) {
+            if ($i === count($parts) - 1) {
+                $current[$part] = $value;
+            } else {
+                if (!isset($current[$part]) || !is_array($current[$part])) {
+                    $current[$part] = [];
+                }
+                $current = &$current[$part];
+            }
+        }
+    }
+
+    /**
+     * Load Trading Bot config migration status from runtime artifact.
+     * Returns empty array if not yet written.
+     *
+     * @return array<string,mixed>
+     */
+    protected function loadBotMigrationStatus(): array
+    {
+        $base = $this->moduleBase ?? '';
+        if ($base === '') {
+            return [];
+        }
+        $path = $base . '/runtime/config_source_status.json';
+        if (!is_file($path)) {
+            return [];
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
+            return [];
+        }
+        $data = @json_decode($raw, true);
+        return is_array($data) ? $data : [];
+    }
+
     /**
      * Save runtime config to bot.json
      * 

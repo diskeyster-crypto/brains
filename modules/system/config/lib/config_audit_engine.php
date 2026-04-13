@@ -854,6 +854,20 @@ final class ConfigAuditEngine
                     'bot_config'  => 'execution.max_intents_per_run',
                 ],
             ],
+            'max_concurrent_positions' => [
+                'label' => 'Max Concurrent Positions',
+                'notes' => 'Bot-side concurrent position cap (0 = unlimited)',
+                'sources' => [
+                    'bot_runtime' => 'max_positions',
+                ],
+            ],
+            'bot_brain_controlled' => [
+                'label' => 'Brain-Controlled Mode',
+                'notes' => 'Whether bot operates exclusively on Brain-issued live intents',
+                'sources' => [
+                    'bot_runtime' => 'sources.brain_source_enabled',
+                ],
+            ],
             // Profit Manager
             'pm_trailing_owner' => [
                 'label' => 'Trailing Owner',

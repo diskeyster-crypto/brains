@@ -29,38 +29,69 @@ $flash   = $flash   ?? [];
             --heading-color:#f1f5f9;
         }
         body { background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        /* Cards */
         .card { background: var(--card-bg); border: 1px solid var(--border-color); }
-        .card-header { background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border-color); }
+        .card-header { background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--border-color); color: #f1f5f9; }
+        .card-body { color: #e2e8f0; }
+        /* Tables — ensure all text is readable */
         .table { --bs-table-bg: transparent; color: #e2e8f0; }
-        .table th { color: #94a3b8; font-weight: 600; }
+        .table th { color: #cbd5e1; font-weight: 600; background: rgba(0,0,0,0.15); }
+        .table td { color: #e2e8f0; }
         .table > thead { border-bottom: 2px solid var(--border-color); }
         .table > tbody > tr { border-bottom: 1px solid var(--border-color); }
+        /* Tabs */
         .nav-tabs { border-bottom: 1px solid var(--border-color); }
         .nav-tabs .nav-link { color: #94a3b8; border: none; border-bottom: 2px solid transparent; border-radius: 0; }
         .nav-tabs .nav-link.active { color: var(--primary); border-bottom-color: var(--primary); background: transparent; }
-        .nav-tabs .nav-link:hover { color: #e2e8f0; border: none; }
-        .badge-operational { background: var(--primary); }
-        .badge-master      { background: #7c3aed; }
-        .badge-immutable   { background: #475569; }
-        .badge-conflict    { background: #dc2626; }
-        .badge-ok          { background: #16a34a; }
+        .nav-tabs .nav-link:hover { color: #f1f5f9; border: none; }
+        /* Badges */
+        .badge-operational { background: var(--primary); color: #fff; }
+        .badge-master      { background: #7c3aed; color: #fff; }
+        .badge-immutable   { background: #475569; color: #e2e8f0; }
+        .badge-conflict    { background: #dc2626; color: #fff; }
+        .badge-ok          { background: #16a34a; color: #fff; }
         .badge-shadow      { background: #f59e0b; color: #000; }
-        .param-row:hover   { background: rgba(255,255,255,0.03); }
+        /* Param rows */
+        .param-row:hover   { background: rgba(255,255,255,0.04); }
+        .param-row td      { color: #e2e8f0; }
+        /* Source tags: visible but subdued */
         .source-tag        { font-size: 0.75rem; color: #94a3b8; font-family: monospace; }
+        /* Conflict badge */
         .conflict-badge    { font-size: 0.7rem; }
-        .migration-notice  { background: rgba(59,130,246,0.10); border: 1px solid rgba(59,130,246,0.35); border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem; font-size: 0.88rem; }
-        .breadcrumb-back   { font-size: 0.82rem; color: #64748b; }
+        /* Migration notice */
+        .migration-notice  { background: rgba(59,130,246,0.10); border: 1px solid rgba(59,130,246,0.35); border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem; font-size: 0.88rem; color: #e2e8f0; }
+        .migration-notice strong { color: #f1f5f9; }
+        /* Breadcrumb */
+        .breadcrumb-back   { font-size: 0.82rem; color: #94a3b8; }
         .breadcrumb-back a { color: #60a5fa; text-decoration: none; }
         .breadcrumb-back a:hover { text-decoration: underline; }
+        /* Forms */
         .form-control, .form-select {
             background: #0f172a; color: #e2e8f0; border-color: var(--border-color);
         }
+        .form-control::placeholder { color: #64748b; }
         .form-control:focus, .form-select:focus {
             background: #1e293b; color: #e2e8f0; border-color: var(--primary); box-shadow: none;
         }
-        .form-check-input { background-color: #0f172a; border-color: var(--border-color); }
+        .form-check-input { background-color: #0f172a; border-color: #64748b; }
         .form-check-input:checked { background-color: var(--primary); border-color: var(--primary); }
-        .master-badge { background: rgba(124,58,237,0.18); border: 1px solid rgba(124,58,237,0.5); color: #a78bfa; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        .form-check-label { color: #e2e8f0; }
+        .form-label { color: #cbd5e1; font-weight: 500; }
+        /* Master badge */
+        .master-badge { background: rgba(124,58,237,0.25); border: 1px solid rgba(124,58,237,0.6); color: #c4b5fd; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        /* Helper / hint text */
+        .form-text { color: #94a3b8; }
+        small.text-secondary, .small.text-secondary { color: #94a3b8 !important; }
+        /* Section headers inside cards */
+        .card-header .text-muted { color: #94a3b8 !important; }
+        /* Monospace values */
+        .font-monospace { color: #e2e8f0; }
+        /* fw-medium for param labels */
+        .fw-medium { color: #f1f5f9; }
+        /* Alert secondary */
+        .alert-secondary { background: rgba(71,85,105,0.25); border-color: #475569; color: #e2e8f0; }
+        /* code/pre */
+        code { color: #93c5fd; background: rgba(59,130,246,0.08); padding: 1px 4px; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -93,8 +124,11 @@ $flash   = $flash   ?? [];
             <i class="bi bi-sliders2 fs-4 me-2 text-primary"></i>
             <div>
                 <h4 class="mb-0"><?= htmlspecialchars($title ?? 'Центр Конфигурации') ?></h4>
-                <small class="text-secondary">
-                    Единый Config — <span class="text-success">Smart Brain</span> и <span class="text-success">Trading Bot</span>: частично мигрированы (волна 1)
+                <small style="color:#94a3b8;">
+                    Единый Config —
+                    <span class="text-success">Smart Brain</span>,
+                    <span class="text-success">Trading Bot</span>,
+                    <span class="text-warning">Менеджер Прибыли</span>: частично мигрированы (волна 1)
                 </small>
             </div>
             <?php if (!empty($summary['master_saved_at'])): ?>
@@ -131,10 +165,11 @@ $flash   = $flash   ?? [];
         <i class="bi bi-shuffle text-primary mt-1 flex-shrink-0"></i>
         <div>
             <strong>Миграция в процессе — мягкое переключение активно.</strong>
-            <span class="text-success">Smart Brain</span> и <span class="text-success">Trading Bot</span>
-            уже используют Центр Конфигурации как основной источник параметров (волна 1).
-            Менеджер Прибыли и Coin Passport пока читают собственные конфиги (не мигрированы).
-            Редактируемые параметры сохраняются в <code>config_operational_master.json</code> и применяются немедленно при следующем цикле.
+            <span class="text-success">Smart Brain</span>, <span class="text-success">Trading Bot</span>
+            и <span class="text-warning">Менеджер Прибыли</span>
+            используют Центр Конфигурации как основной источник параметров (волна 1).
+            <span style="color:#94a3b8;">Coin Passport пока читает собственный конфиг (не мигрирован).</span>
+            Редактируемые параметры сохраняются в <code>config_operational_master.json</code> и применяются при следующем цикле.
         </div>
     </div>
 

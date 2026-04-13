@@ -183,6 +183,8 @@ final class UnifiedConfigService
             'max_concurrent_positions'       => 'int',
             'bot_brain_controlled'           => 'bool',
             'pm_trailing_owner'              => 'str',
+            // Profit Manager first-wave
+            'pm_enabled'                     => 'bool',
         ];
 
         $params = [];
@@ -322,6 +324,31 @@ final class UnifiedConfigService
     {
         $botBase = dirname($this->moduleBase) . '/trading_bot';
         $path = $botBase . '/runtime/config_source_status.json';
+        if (!is_file($path)) {
+            return ['available' => false, 'reason' => 'file_not_found'];
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
+            return ['available' => false, 'reason' => 'read_failed'];
+        }
+        $data = @json_decode($raw, true);
+        if (!is_array($data)) {
+            return ['available' => false, 'reason' => 'invalid_json'];
+        }
+        return array_merge(['available' => true], $data);
+    }
+
+    /**
+     * Load Profit Manager config migration status from its runtime artifact.
+     * Returns the contents of profit_manager/storage/runtime/config_source_status.json,
+     * or an array with available=false on any failure.
+     *
+     * @return array<string,mixed>
+     */
+    public function getProfitManagerMigrationStatus(): array
+    {
+        $pmBase = dirname($this->moduleBase) . '/profit_manager';
+        $path = $pmBase . '/storage/runtime/config_source_status.json';
         if (!is_file($path)) {
             return ['available' => false, 'reason' => 'file_not_found'];
         }

@@ -24,6 +24,9 @@ final class ProfitManagerService
 
     /** Diagnostics from last loadBotActiveTrades() call */
     private array $botTradeLoadDiag = ['loaded' => 0, 'matchable' => 0, 'storage_dir' => null];
+
+    /** Config migration status (set during construction) */
+    private array $pmMigrationStatus = [];
     
     /** @var Lib\Store */
     private $store;
@@ -61,7 +64,13 @@ final class ProfitManagerService
         // PM-15: Inject passports directory so ProfitManager can read coin_cycle_decision_model
         // for bounded cycle caution evaluation. Read-only, best-effort, non-fatal.
         $this->config['_pm_passports_dir'] = dirname($this->moduleBase) . '/coin_passport/storage/passports';
-        
+
+        // CFG-7: Apply unified Config Module overlay for first-wave PM operational params.
+        // Reads from config_operational_master.json (primary) → config_operational_draft.json (fallback).
+        // On any failure the existing legacy config values remain in effect (safe fallback).
+        $this->pmMigrationStatus = $this->applyPmUnifiedConfigOverlay($this->config);
+        $this->writePmMigrationStatus($this->pmMigrationStatus);
+
         // Initialize sub-components
         $this->store = new Lib\Store($this->storageDir, $this->config);
         $this->riskMath = new Lib\RiskMath($this->config);
@@ -187,6 +196,9 @@ final class ProfitManagerService
             $result['passport_write_skipped_total']   = $passportDiag['passport_write_skipped_total']   ?? 0;
             $result['passport_write_error_total']     = $passportDiag['passport_write_error_total']     ?? 0;
             $result['passport_symbols_updated']       = $passportDiag['passport_symbols_updated']       ?? [];
+
+            // CFG-7: PM config migration status (runtime source visibility)
+            $result['pm_config_migration'] = $this->buildPmMigrationSummary();
             
             // Save last run
             $this->store->saveLastRun($result);
@@ -1105,6 +1117,8 @@ final class ProfitManagerService
                 'items'                                   => array_slice($itemsWithCycleDebug, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],
+                // CFG-7: PM config migration status (runtime source visibility)
+                'pm_config_migration'                     => $this->buildPmMigrationSummary(),
             ];
 
             $this->store->saveLastRun($result);
@@ -1276,6 +1290,8 @@ final class ProfitManagerService
                 'items'                       => array_slice($shadowItems, 0, 50),
                 'errors'                      => [],
                 'warnings'                    => [],
+                // CFG-7: PM config migration status (runtime source visibility)
+                'pm_config_migration'         => $this->buildPmMigrationSummary(),
             ];
 
             $this->store->saveLastRun($result);
@@ -2173,6 +2189,259 @@ final class ProfitManagerService
             'passport_write_skipped_total'   => $skipped,
             'passport_write_error_total'     => $errors,
             'passport_symbols_updated'       => $updated,
+        ];
+    }
+
+    // =========================================================================
+    // CFG-7: PM unified config overlay (first-wave soft-switch)
+    // =========================================================================
+
+    /**
+     * Apply first-wave Config Module unified config overlay to the PM config.
+     *
+     * Priority: config_operational_master.json → config_operational_draft.json → legacy PM proxy.
+     * All sources are explicit in the returned status record; no silent fallbacks.
+     *
+     * First-wave params overlaid:
+     *   pm_enabled        → $config['module']['enabled']
+     *   pm_trailing_owner → $config['execution']['trailing_owner']
+     *
+     * @param array<string,mixed> $config Reference to the merged config array (mutated in place)
+     * @return array<string,mixed> Migration status record
+     */
+    private function applyPmUnifiedConfigOverlay(array &$config): array
+    {
+        // First-wave: PM-owned operational params in the unified config model.
+        $firstWave = [
+            'pm_enabled'        => ['path' => 'module.enabled',              'cast' => 'bool'],
+            'pm_trailing_owner' => ['path' => 'execution.trailing_owner',    'cast' => 'str'],
+        ];
+
+        $status = [
+            'module'                     => 'profit_manager',
+            'switch_wave'                => 'v1_operational_params',
+            'unified_config_available'   => false,
+            'unified_config_master_path' => '',
+            'unified_config_draft_path'  => '',
+            'source'                     => 'legacy_pm_proxy',
+            'partially_migrated'         => false,
+            'first_wave_total'           => count($firstWave),
+            'migrated_count'             => 0,
+            'fallback_count'             => 0,
+            'switched_params'            => [],
+            'fallback_params'            => [],
+            'switched_params_detail'     => [],
+            'fallback_params_detail'     => [],
+            'recorded_at'                => date('c'),
+        ];
+
+        // Locate Config Module (sibling directory under the same system/ parent).
+        $systemDir  = $this->moduleBase !== null ? dirname($this->moduleBase) : '';
+        $masterPath = $systemDir . '/config/storage/runtime/config_operational_master.json';
+        $draftPath  = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_master_path'] = $masterPath;
+        $status['unified_config_draft_path']  = $draftPath;
+
+        /** Helper: get a value from $config using dot-notation path. */
+        $dotGet = static function (array $cfg, string $path) {
+            $parts   = explode('.', $path);
+            $current = $cfg;
+            foreach ($parts as $part) {
+                if (!is_array($current) || !array_key_exists($part, $current)) {
+                    return null;
+                }
+                $current = $current[$part];
+            }
+            return $current;
+        };
+
+        /** Helper: set a value in $config using dot-notation path. */
+        $dotSet = static function (array &$cfg, string $path, $value): void {
+            $parts   = explode('.', $path);
+            $current = &$cfg;
+            foreach ($parts as $i => $part) {
+                if ($i === count($parts) - 1) {
+                    $current[$part] = $value;
+                } else {
+                    if (!isset($current[$part]) || !is_array($current[$part])) {
+                        $current[$part] = [];
+                    }
+                    $current = &$current[$part];
+                }
+            }
+        };
+
+        /** Build fallback detail for all first-wave params using current legacy config. */
+        $buildFallbackDetail = static function (string $fallbackReason) use ($firstWave, $config, $dotGet): array {
+            $detail = [];
+            foreach ($firstWave as $key => $def) {
+                $detail[$key] = [
+                    'value'                => $dotGet($config, $def['path']),
+                    'source_layer'         => 'legacy_pm_proxy',
+                    'source_owner'         => 'profit_manager',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => $fallbackReason,
+                    'fallback_source'      => 'pm_config_proxy (config/config.php → bot config)',
+                ];
+            }
+            return $detail;
+        };
+
+        if ($systemDir === '') {
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $buildFallbackDetail('module_base_unknown');
+            return $status;
+        }
+
+        // ── Load master (preferred) ─────────────────────────────────────────
+        $masterParams = [];
+        $masterAvail  = false;
+        if (is_file($masterPath)) {
+            $rawMaster = @file_get_contents($masterPath);
+            if ($rawMaster !== false) {
+                $masterData = @json_decode($rawMaster, true);
+                if (is_array($masterData) && !empty($masterData['params'])) {
+                    $masterParams = $masterData['params'];
+                    $masterAvail  = true;
+                    $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                }
+            }
+        }
+
+        // ── Load draft (fallback source) ────────────────────────────────────
+        $draftParams = [];
+        $draftAvail  = false;
+        if (is_file($draftPath)) {
+            $rawDraft = @file_get_contents($draftPath);
+            if ($rawDraft !== false) {
+                $draftData = @json_decode($rawDraft, true);
+                if (is_array($draftData) && !empty($draftData['params'])) {
+                    $draftParams = $draftData['params'];
+                    $draftAvail  = true;
+                    $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                }
+            }
+        }
+
+        if (!$masterAvail && !$draftAvail) {
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_not_found');
+            return $status;
+        }
+
+        $status['unified_config_available'] = true;
+
+        foreach ($firstWave as $key => $def) {
+            // Priority: master → draft → legacy
+            $entry       = null;
+            $sourceLayer = 'legacy_pm_proxy';
+            $via         = '';
+
+            if ($masterAvail && isset($masterParams[$key]) && ($masterParams[$key]['value'] ?? null) !== null) {
+                $entry       = $masterParams[$key];
+                $sourceLayer = 'unified_config_master';
+                $via         = 'unified_config_operational_master';
+            } elseif ($draftAvail && isset($draftParams[$key]) && ($draftParams[$key]['value'] ?? null) !== null) {
+                $entry       = $draftParams[$key];
+                $sourceLayer = 'unified_config';
+                $via         = 'unified_config_operational_draft';
+            }
+
+            if ($entry === null) {
+                $status['fallback_params'][] = $key;
+                $status['fallback_params_detail'][$key] = [
+                    'value'                => $dotGet($config, $def['path']),
+                    'source_layer'         => 'legacy_pm_proxy',
+                    'source_owner'         => 'profit_manager',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => 'param_not_in_unified_config',
+                    'fallback_source'      => 'pm_config_proxy (config/config.php → bot config)',
+                ];
+                continue;
+            }
+
+            $rawVal  = $entry['value'];
+            $castVal = match ($def['cast']) {
+                'bool' => (bool)$rawVal,
+                'int'  => (int)$rawVal,
+                default => (string)$rawVal,
+            };
+
+            $dotSet($config, $def['path'], $castVal);
+
+            $status['switched_params'][] = $key;
+            $status['switched_params_detail'][$key] = [
+                'value'                => $castVal,
+                'original_source'      => $entry['source']      ?? ($sourceLayer === 'unified_config_master' ? 'config_center_save' : 'unknown'),
+                'original_source_file' => $entry['source_file'] ?? null,
+                'via'                  => $via,
+                'source_layer'         => $sourceLayer,
+                'source_owner'         => 'profit_manager',
+                'unified_config_used'  => true,
+                'legacy_fallback_used' => false,
+            ];
+        }
+
+        $migratedCount = count($status['switched_params']);
+        $fallbackCount = count($status['fallback_params']);
+        $status['migrated_count']     = $migratedCount;
+        $status['fallback_count']     = $fallbackCount;
+        $status['partially_migrated'] = $migratedCount > 0;
+        $status['source']             = $migratedCount === 0
+            ? 'legacy_pm_proxy'
+            : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
+
+        return $status;
+    }
+
+    /**
+     * Write PM config migration status to its runtime storage.
+     *
+     * @param array<string,mixed> $migrationStatus
+     */
+    private function writePmMigrationStatus(array $migrationStatus): void
+    {
+        if ($this->moduleBase === null) {
+            return;
+        }
+        $path = $this->moduleBase . '/storage/runtime/config_source_status.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($migrationStatus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
+        );
+    }
+
+    /**
+     * Build a concise migration summary for inclusion in runtime result output.
+     *
+     * @return array<string,mixed>
+     */
+    private function buildPmMigrationSummary(): array
+    {
+        $s = $this->pmMigrationStatus;
+        return [
+            'module'                   => 'profit_manager',
+            'migration_wave'           => $s['switch_wave']               ?? 'v1_operational_params',
+            'partially_migrated'       => (bool)($s['partially_migrated'] ?? false),
+            'unified_config_available' => (bool)($s['unified_config_available'] ?? false),
+            'unified_config_used'      => ($s['migrated_count'] ?? 0) > 0,
+            'legacy_fallback_used'     => ($s['fallback_count'] ?? 0) > 0,
+            'migrated_count'           => (int)($s['migrated_count']   ?? 0),
+            'fallback_count'           => (int)($s['fallback_count']   ?? 0),
+            'first_wave_total'         => (int)($s['first_wave_total'] ?? 0),
+            'switched_params'          => $s['switched_params']         ?? [],
+            'fallback_params'          => $s['fallback_params']         ?? [],
+            'source'                   => $s['source']                  ?? 'legacy_pm_proxy',
+            'recorded_at'              => $s['recorded_at']             ?? null,
         ];
     }
 

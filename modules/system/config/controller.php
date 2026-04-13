@@ -91,14 +91,15 @@ final class UnifiedConfigController
     public function profitManager(): void
     {
         $this->requireAuth();
-        $tab     = 'profit_manager';
-        $title   = 'Центр Конфигурации — Менеджер Прибыли';
-        $summary = $this->service->getSummary();
-        $data    = $this->service->getOperationalDraft();
-        $master  = $this->service->getOperationalMaster();
-        $preview = $this->service->getEffectivePreview();
-        $baseUrl = $this->baseUrl;
-        $flash   = $this->consumeFlash();
+        $tab             = 'profit_manager';
+        $title           = 'Центр Конфигурации — Менеджер Прибыли';
+        $summary         = $this->service->getSummary();
+        $data            = $this->service->getOperationalDraft();
+        $master          = $this->service->getOperationalMaster();
+        $preview         = $this->service->getEffectivePreview();
+        $migrationStatus = $this->service->getProfitManagerMigrationStatus();
+        $baseUrl         = $this->baseUrl;
+        $flash           = $this->consumeFlash();
         include __DIR__ . '/views/profit_manager.php';
     }
 

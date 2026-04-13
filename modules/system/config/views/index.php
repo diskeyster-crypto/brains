@@ -82,6 +82,11 @@ $groups = [
         'color' => 'text-warning',
         'keys'  => ['bot_enabled', 'bot_mode', 'max_intents_per_run', 'max_concurrent_positions', 'bot_brain_controlled', 'pm_trailing_owner'],
     ],
+    'Менеджер Прибыли' => [
+        'icon'  => 'bi-cash-coin',
+        'color' => 'text-success',
+        'keys'  => ['pm_enabled'],
+    ],
 ];
 
 // Operational params allowed in the save form (immutable params excluded)
@@ -94,7 +99,7 @@ $editableKeys = [
     'break_even_enabled', 'break_even_activation_roi',
     'execution_profile', 'patterns_mode',
     'bot_enabled', 'bot_mode', 'max_intents_per_run', 'max_concurrent_positions',
-    'bot_brain_controlled', 'pm_trailing_owner',
+    'bot_brain_controlled', 'pm_trailing_owner', 'pm_enabled',
 ];
 
 // Conflict detection
@@ -178,7 +183,7 @@ ob_start();
                             <?php if (!$editable): ?>
                                 <!-- Immutable / not editable — just show the value -->
                                 <div class="font-monospace text-secondary small"><?= htmlspecialchars($renderVal($effectiveVal)) ?></div>
-                            <?php elseif (is_bool($draftVal) || $key === 'live_trading_enabled' || $key === 'bot_enabled' || $key === 'trailing_enabled' || $key === 'break_even_enabled' || $key === 'live_one_trade_per_symbol' || $key === 'live_reverse_side_enabled' || $key === 'bot_brain_controlled'): ?>
+                            <?php elseif (is_bool($draftVal) || $key === 'live_trading_enabled' || $key === 'bot_enabled' || $key === 'trailing_enabled' || $key === 'break_even_enabled' || $key === 'live_one_trade_per_symbol' || $key === 'live_reverse_side_enabled' || $key === 'bot_brain_controlled' || $key === 'pm_enabled'): ?>
                                 <!-- Boolean toggle -->
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="<?= htmlspecialchars($key) ?>"

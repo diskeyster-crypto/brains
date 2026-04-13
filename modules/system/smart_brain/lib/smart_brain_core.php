@@ -1036,10 +1036,11 @@ final class SmartBrainCore
             'entry_quality_filter_no_effect_total' => (int)($liveIntentResult['entry_quality_filter_no_effect_total'] ?? 0),
             'entry_quality_filter_rejected_preview' => $liveIntentResult['entry_quality_filter_rejected_preview']     ?? [],
             // Wave Filter diagnostics (bounded wave amplitude/speed improvement layer)
-            'wave_filter_total'           => (int)($liveIntentResult['wave_filter_total']           ?? 0),
-            'wave_filter_reject_total'    => (int)($liveIntentResult['wave_filter_reject_total']    ?? 0),
-            'wave_filter_demo_total'      => (int)($liveIntentResult['wave_filter_demo_total']      ?? 0),
-            'wave_filter_no_effect_total' => (int)($liveIntentResult['wave_filter_no_effect_total'] ?? 0),
+            'wave_filter_total'            => (int)($liveIntentResult['wave_filter_total']            ?? 0),
+            'wave_filter_reject_total'     => (int)($liveIntentResult['wave_filter_reject_total']     ?? 0),
+            'wave_filter_demo_total'       => (int)($liveIntentResult['wave_filter_demo_total']       ?? 0),
+            'wave_filter_no_effect_total'  => (int)($liveIntentResult['wave_filter_no_effect_total']  ?? 0),
+            'wave_filter_rejected_preview' => $liveIntentResult['wave_filter_rejected_preview']       ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1192,10 +1193,11 @@ final class SmartBrainCore
             'entry_quality_filter_no_effect_total' => 0,
             'entry_quality_filter_rejected_preview' => [],
             // Wave filter diagnostics (bounded wave amplitude/speed improvement layer)
-            'wave_filter_total'          => 0,
-            'wave_filter_reject_total'   => 0,
-            'wave_filter_demo_total'     => 0,
-            'wave_filter_no_effect_total' => 0,
+            'wave_filter_total'            => 0,
+            'wave_filter_reject_total'     => 0,
+            'wave_filter_demo_total'       => 0,
+            'wave_filter_no_effect_total'  => 0,
+            'wave_filter_rejected_preview' => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2211,32 +2213,35 @@ final class SmartBrainCore
             // === WAVE FILTER (Bounded Wave Amplitude/Speed Layer) ===
             // Runs after entry quality filter. Targets narrow low-amplitude / slow-wave candidates.
             // Uses existing signal data only. Does NOT bypass passport/cycle/slot gates.
-            // Conservative first version: a few clear amplitude + speed rules only.
+            // v2: amplitude thresholds tightened; speed proxy replaced with trend_match_score +
+            //     volatility_norm (better real-market spread than confirmation/analyzer proxy).
             {
                 $wfEnabled  = (bool)($userLimits['wave_filter_enabled'] ?? true);
                 $wfApplied  = false;
                 $wfReason   = null;
                 $wfIsDemote = false;
 
-                // Wave amplitude: derived from initial_roi / entry_roi (expected move size)
-                // and corridor_width (price range span). Higher = bigger wave = more ROI potential.
+                // Wave amplitude: corridor_width is the primary signal (initial_roi is rarely set).
+                // Thresholds raised vs v1 so narrow-corridor candidates become 'weak'.
                 $wfInitialRoi = (float)($signal['initial_roi'] ?? $signal['entry_roi'] ?? 0.0);
-                if ($wfInitialRoi >= 0.015 || $eqCorridorWidth >= 0.10) {
+                if ($wfInitialRoi >= 0.015 || $eqCorridorWidth >= 0.15) {
                     $wfAmplitudeState = 'strong';
-                } elseif ($wfInitialRoi >= 0.007 || $eqCorridorWidth >= 0.05) {
+                } elseif ($wfInitialRoi >= 0.007 || $eqCorridorWidth >= 0.08) {
                     $wfAmplitudeState = 'acceptable';
                 } else {
                     $wfAmplitudeState = 'weak';
                 }
 
-                // Wave speed: derived from confirmation_score (60%) + analyzer_score (40%).
-                // Higher combined proxy = more decisive / faster wave development.
-                $wfConfScore     = (float)($signal['confirmation_score'] ?? 0.0);
-                $wfAnalyzerScore = (float)($signal['analyzer_score']     ?? 0.0);
-                $wfSpeedProxy    = ($wfConfScore * 0.6 + $wfAnalyzerScore * 0.4);
-                if ($wfSpeedProxy >= 0.60) {
+                // Wave speed: trend_match_score (trend momentum, 70%) +
+                //             volatility normalized to [0,1] via cap at 0.005 (30%).
+                // This proxy has much better real-market spread than confirmation/analyzer scores.
+                $wfTrendScore = (float)($signal['trend_match_score'] ?? 0.0);
+                $wfVolatility = (float)($signal['volatility']        ?? 0.0);
+                $wfVolNorm    = min(1.0, $wfVolatility / 0.005);
+                $wfSpeedProxy = ($wfTrendScore * 0.7 + $wfVolNorm * 0.3);
+                if ($wfSpeedProxy >= 0.65) {
                     $wfSpeedState = 'fast';
-                } elseif ($wfSpeedProxy >= 0.38) {
+                } elseif ($wfSpeedProxy >= 0.45) {
                     $wfSpeedState = 'normal';
                 } else {
                     $wfSpeedState = 'slow';
@@ -2245,7 +2250,7 @@ final class SmartBrainCore
                 if ($wfEnabled) {
                     $result['wave_filter_total']++;
 
-                    // Rule: weak amplitude + slow speed → reject (worst combination)
+                    // Rule: weak amplitude + slow speed → hard reject (worst combination)
                     if (!$wfApplied
                         && $wfAmplitudeState === 'weak'
                         && $wfSpeedState === 'slow'
@@ -2277,6 +2282,20 @@ final class SmartBrainCore
                             $result['wave_filter_demo_total']++;
                         } else {
                             $result['wave_filter_reject_total']++;
+                        }
+                        if (count($result['wave_filter_rejected_preview']) < 10) {
+                            $result['wave_filter_rejected_preview'][] = [
+                                'symbol'              => $symbol,
+                                'side'                => $side,
+                                'pattern_algorithm'   => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'       => $wfReason,
+                                'filter_outcome'      => $wfIsDemote ? 'demote' : 'reject',
+                                'wave_amplitude_state' => $wfAmplitudeState,
+                                'wave_speed_state'    => $wfSpeedState,
+                                'corridor_width'      => $eqCorridorWidth,
+                                'trend_match_score'   => $wfTrendScore,
+                                'volatility'          => $wfVolatility,
+                            ];
                         }
                         $this->rejectLiveSignal($result, $symbol, $signalId, $wfReason, $selectionMode);
                         continue;

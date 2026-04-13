@@ -131,6 +131,7 @@ ob_start();
     <div class="col-12">
         <form method="post" action="<?= htmlspecialchars($baseUrl) ?>/api/save" id="masterSaveForm">
             <input type="hidden" name="_redirect" value="<?= htmlspecialchars($baseUrl) ?>">
+            <input type="hidden" name="_html_form" value="1">
 
             <div class="row g-3">
 

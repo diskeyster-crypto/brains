@@ -48,6 +48,7 @@ ob_start();
             <div class="card-body">
                 <form method="post" action="<?= htmlspecialchars($baseUrl) ?>/api/save">
                     <input type="hidden" name="_redirect" value="<?= htmlspecialchars($baseUrl) ?>/patterns">
+                    <input type="hidden" name="_html_form" value="1">
 
                     <?php if ($patternsEnabled === null): ?>
                         <p class="text-muted">Нет данных — нажмите <strong>Перечитать</strong>.</p>

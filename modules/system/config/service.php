@@ -150,7 +150,7 @@ final class UnifiedConfigService
         $errors = [];
 
         // ------------------------------------------------------------------
-        // Schema: key → [type, required]
+        // Schema: key → type
         // Only operational (non-immutable) params that consumers actually use.
         // ------------------------------------------------------------------
         $schema = [
@@ -188,35 +188,62 @@ final class UnifiedConfigService
         $params = [];
         $ts     = date('c');
 
-        foreach ($schema as $key => $type) {
-            if (!array_key_exists($key, $rawPost)) {
-                continue; // not submitted — do not overwrite existing master value
+        // HTML form semantics: unchecked checkboxes are not sent in POST.
+        // _bool_fields sentinel: a comma-separated list of boolean field names
+        // that were rendered as checkboxes in the form.  Any bool key that was
+        // rendered but not present in POST must be treated as false.
+        $boolSentinel = [];
+        if (isset($rawPost['_bool_fields'])) {
+            foreach (explode(',', (string)$rawPost['_bool_fields']) as $bf) {
+                $bf = trim($bf);
+                if ($bf !== '' && isset($schema[$bf]) && $schema[$bf] === 'bool') {
+                    $boolSentinel[$bf] = true;
+                }
             }
-            $raw = $rawPost[$key];
-            switch ($type) {
-                case 'bool':
-                    $val = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                    if ($val === null) {
-                        // HTML checkboxes send 'on'/'1'/'' when toggled
-                        $val = in_array(strtolower((string)$raw), ['1','true','on','yes'], true);
-                    }
-                    break;
-                case 'int':
-                    $val = (int)$raw;
-                    break;
-                case 'float':
-                    $val = (float)$raw;
-                    break;
-                case 'array':
-                    $val = is_array($raw) ? array_values(array_filter(array_map('trim', $raw))) : [];
-                    break;
-                default: // 'str'
-                    $val = trim((string)$raw);
+        }
+        // If a generic "this was an HTML form" marker is present, apply sentinel
+        // to ALL boolean fields not in POST (since all booleans are checkboxes).
+        $isHtmlForm = isset($rawPost['_html_form']) || isset($rawPost['_bool_fields']);
+
+        foreach ($schema as $key => $type) {
+            $inPost = array_key_exists($key, $rawPost);
+            if (!$inPost) {
+                // For bool/array types from an HTML form: missing = unchecked/empty
+                if ($type === 'bool' && ($isHtmlForm || isset($boolSentinel[$key]))) {
+                    $val = false;
+                } elseif ($type === 'array' && $isHtmlForm) {
+                    $val = [];
+                } else {
+                    continue; // not submitted — do not overwrite existing master value
+                }
+            } else {
+                $raw = $rawPost[$key];
+                switch ($type) {
+                    case 'bool':
+                        $val = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                        if ($val === null) {
+                            // HTML checkboxes send '1'/'' when toggled
+                            $val = in_array(strtolower((string)$raw), ['1','true','on','yes'], true);
+                        }
+                        break;
+                    case 'int':
+                        $val = (int)$raw;
+                        break;
+                    case 'float':
+                        $val = (float)$raw;
+                        break;
+                    case 'array':
+                        $val = is_array($raw) ? array_values(array_filter(array_map('trim', $raw))) : [];
+                        break;
+                    default: // 'str'
+                        $val = trim((string)$raw);
+                }
             }
             $params[$key] = [
                 'value'    => $val,
                 'type'     => $type,
                 'saved_at' => $ts,
+                'source'   => 'config_center_save',
             ];
         }
 

@@ -2,133 +2,111 @@
 declare(strict_types=1);
 
 /**
- * Trading Bot tab — Bot operational config preview + migration status.
- * READ-ONLY — soft-switch migration panel + shadow config preview.
+ * Trading Bot — операционная конфигурация и статус миграции.
+ * Editable — первая волна параметров Trading Bot сохраняется в мастер-конфиге.
+ * Частично мигрирован (волна 1). Менеджер Прибыли — не мигрирован.
  */
 
 $params          = $data['params']             ?? [];
+$master          = $master                     ?? null;
+$masterParams    = $master['params']           ?? [];
 $botPreview      = ($preview['modules'] ?? [])['trading_bot'] ?? [];
 $migrationStatus = $migrationStatus            ?? [];
 
-$botKeys = [
-    'bot_enabled',
-    'bot_mode',
-    'bot_brain_controlled',
-    'max_concurrent_positions',
-    'max_intents_per_run',
-    'trailing_enabled',
-    'break_even_enabled',
-    'pm_trailing_owner',
-    'pm_enabled',
-];
+$botKeys = ['bot_enabled','bot_mode','bot_brain_controlled','max_concurrent_positions',
+            'max_intents_per_run','trailing_enabled','break_even_enabled','pm_trailing_owner','pm_enabled'];
+
+$msAvail      = !empty($migrationStatus['available']);
+$msWave       = htmlspecialchars($migrationStatus['switch_wave']       ?? 'v1_operational_params');
+$msPartial    = (bool)($migrationStatus['partially_migrated']           ?? false);
+$msUnified    = (bool)($migrationStatus['unified_config_available']    ?? false);
+$msMigCount   = (int)($migrationStatus['migrated_count']               ?? count($migrationStatus['switched_params'] ?? []));
+$msFbCount    = (int)($migrationStatus['fallback_count']               ?? count($migrationStatus['fallback_params'] ?? []));
+$msTotalCount = (int)($migrationStatus['first_wave_total']             ?? ($msMigCount + $msFbCount));
+$msSwitched   = (array)($migrationStatus['switched_params']            ?? []);
+$msFallback   = (array)($migrationStatus['fallback_params']            ?? []);
+$msFbDetail   = (array)($migrationStatus['fallback_params_detail']     ?? []);
+$msSwDetail   = (array)($migrationStatus['switched_params_detail']     ?? []);
+$msRecAt      = htmlspecialchars($migrationStatus['recorded_at']       ?? '—');
+$msMasterSrc  = str_contains($migrationStatus['source'] ?? '', 'master');
 
 ob_start();
 ?>
 <div class="row g-3">
 
-    <?php
-    // ── Migration Status Banner ──────────────────────────────────────────────
-    $msAvail      = !empty($migrationStatus['available']);
-    $msWave       = htmlspecialchars($migrationStatus['switch_wave']       ?? 'v1_operational_params');
-    $msPartial    = (bool)($migrationStatus['partially_migrated']           ?? false);
-    $msUnified    = (bool)($migrationStatus['unified_config_available']    ?? false);
-    $msMigCount   = (int)($migrationStatus['migrated_count']               ?? count($migrationStatus['switched_params'] ?? []));
-    $msFbCount    = (int)($migrationStatus['fallback_count']               ?? count($migrationStatus['fallback_params'] ?? []));
-    $msTotalCount = (int)($migrationStatus['first_wave_total']             ?? ($msMigCount + $msFbCount));
-    $msSwitched   = (array)($migrationStatus['switched_params']            ?? []);
-    $msFallback   = (array)($migrationStatus['fallback_params']            ?? []);
-    $msFbDetail   = (array)($migrationStatus['fallback_params_detail']     ?? []);
-    $msSwDetail   = (array)($migrationStatus['switched_params_detail']     ?? []);
-    $msRecAt      = htmlspecialchars($migrationStatus['recorded_at']       ?? '—');
-    ?>
+    <!-- Статус миграции -->
     <div class="col-12">
         <div class="card border-<?= $msAvail ? ($msFbCount > 0 ? 'warning' : 'success') : 'secondary' ?>">
             <div class="card-header d-flex align-items-center justify-content-between">
                 <span>
                     <i class="bi bi-shuffle me-2 <?= $msAvail ? 'text-warning' : 'text-secondary' ?>"></i>
-                    <strong>Trading Bot — Config Migration Status</strong>
+                    <strong>Trading Bot — Статус миграции конфига</strong>
                 </span>
                 <span class="badge <?= $msAvail ? ($msPartial ? 'bg-warning text-dark' : 'bg-success') : 'bg-secondary' ?>">
-                    <?php if (!$msAvail): ?>not available
-                    <?php elseif ($msPartial): ?>partially migrated / soft-switched
-                    <?php elseif ($msMigCount > 0): ?>fully migrated (wave 1)
-                    <?php else: ?>legacy only
-                    <?php endif; ?>
+                    <?php if (!$msAvail): ?>не доступно
+                    <?php elseif ($msPartial): ?>частично мигрирован / мягкое переключение
+                    <?php elseif ($msMigCount > 0): ?>полностью мигрирован (волна 1)
+                    <?php else: ?>только legacy<?php endif; ?>
                 </span>
             </div>
             <div class="card-body">
                 <?php if (!$msAvail): ?>
-                <p class="text-muted mb-0 small">Migration status not available — run Trading Bot at least once to generate <code>runtime/config_source_status.json</code>.</p>
+                <p class="text-muted mb-0 small">Статус миграции недоступен — запустите Trading Bot хотя бы один раз.</p>
                 <?php else: ?>
                 <div class="row g-3">
                     <div class="col-12 col-md-6 col-xl-3">
-                        <div class="small text-muted mb-1">Migration Wave</div>
-                        <code class="fs-6"><?= $msWave ?></code>
+                        <div class="small text-muted mb-1">Волна миграции</div><code class="fs-6"><?= $msWave ?></code>
                     </div>
                     <div class="col-12 col-md-6 col-xl-3">
-                        <div class="small text-muted mb-1">Unified Config Available</div>
-                        <span class="badge <?= $msUnified ? 'bg-success' : 'bg-danger' ?>"><?= $msUnified ? 'yes' : 'no' ?></span>
+                        <div class="small text-muted mb-1">Единый конфиг доступен</div>
+                        <span class="badge <?= $msUnified ? 'bg-success' : 'bg-danger' ?>"><?= $msUnified ? 'да' : 'нет' ?></span>
                     </div>
                     <div class="col-12 col-md-6 col-xl-3">
-                        <div class="small text-muted mb-1">Params via Unified Config</div>
-                        <strong class="text-success"><?= $msMigCount ?></strong>
-                        <span class="text-muted small"> / <?= $msTotalCount ?></span>
+                        <div class="small text-muted mb-1">Параметров через единый конфиг</div>
+                        <strong class="text-success"><?= $msMigCount ?></strong><span class="text-muted small"> / <?= $msTotalCount ?></span>
                     </div>
                     <div class="col-12 col-md-6 col-xl-3">
-                        <div class="small text-muted mb-1">Params on Legacy Fallback</div>
+                        <div class="small text-muted mb-1">Параметров на legacy-fallback</div>
                         <strong class="<?= $msFbCount > 0 ? 'text-warning' : 'text-muted' ?>"><?= $msFbCount ?></strong>
                         <span class="text-muted small"> / <?= $msTotalCount ?></span>
                     </div>
                 </div>
-
+                <?php if ($msMasterSrc): ?>
+                <div class="mt-2"><span class="badge badge-master"><i class="bi bi-floppy me-1"></i>Источник: config_operational_master.json</span></div>
+                <?php endif; ?>
                 <?php if (!empty($msSwitched)): ?>
                 <div class="mt-3">
-                    <div class="small fw-bold text-success mb-1"><i class="bi bi-check-circle me-1"></i>Using Unified Config (<?= $msMigCount ?> params)</div>
+                    <div class="small fw-bold text-success mb-1"><i class="bi bi-check-circle me-1"></i>Используют единый конфиг (<?= $msMigCount ?> параметров)</div>
                     <div class="d-flex flex-wrap gap-1">
                     <?php foreach ($msSwitched as $sp):
-                        $spd = $msSwDetail[$sp] ?? [];
-                        $spVal = $spd['value'] ?? '—';
-                        if (is_bool($spVal)) $spVal = $spVal ? 'true' : 'false';
-                        $spSrcOwner = $spd['source_owner'] ?? 'trading_bot';
-                        $spSrcLayer = $spd['source_layer'] ?? 'unified_config';
-                        $spOrigSrc  = $spd['original_source'] ?? '—';
-                        $spOrigFile = basename($spd['original_source_file'] ?? '');
-                        $spTitle = "value={$spVal} | source_owner={$spSrcOwner} | source_layer={$spSrcLayer} | original_source={$spOrigSrc}" . ($spOrigFile ? " ({$spOrigFile})" : '');
+                        $spd = $msSwDetail[$sp] ?? []; $spv = $spd['value'] ?? '—';
+                        if (is_bool($spv)) $spv = $spv ? 'true' : 'false';
+                        $isMaster = str_contains($spd['via'] ?? '', 'master');
+                        $spTitle = 'value='.$spv.' | source_layer='.($spd['source_layer'] ?? '?').' | via='.($spd['via'] ?? '?');
                     ?>
-                        <span class="badge bg-success bg-opacity-25 border border-success text-success"
-                              title="<?= htmlspecialchars($spTitle) ?>">
-                            <?= htmlspecialchars($sp) ?>
-                            <span class="ms-1 opacity-75 font-monospace" style="font-size:0.7em"><?= htmlspecialchars((string)$spVal) ?></span>
+                        <span class="badge" style="<?= $isMaster ? 'background:#7c3aed!' : 'background:#16a34a!' ?>important"
+                              title="<?= htmlspecialchars($spTitle) ?>" data-bs-toggle="tooltip">
+                            <?= htmlspecialchars($sp) ?><?php if ($isMaster): ?><i class="bi bi-floppy ms-1"></i><?php endif; ?>
                         </span>
                     <?php endforeach; ?>
                     </div>
                 </div>
                 <?php endif; ?>
-
                 <?php if (!empty($msFallback)): ?>
                 <div class="mt-2">
-                    <div class="small fw-bold text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Legacy Fallback in use (<?= $msFbCount ?> params) — explicit, not silent</div>
+                    <div class="small fw-bold text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Legacy fallback — явный (<?= $msFbCount ?> параметров)</div>
                     <div class="d-flex flex-wrap gap-1">
                     <?php foreach ($msFallback as $fp):
-                        $fpd = $msFbDetail[$fp] ?? [];
-                        $fpVal = $fpd['value'] ?? '—';
-                        if (is_bool($fpVal)) $fpVal = $fpVal ? 'true' : 'false';
-                        $fpReason  = $fpd['fallback_reason'] ?? '—';
-                        $fpSrc     = $fpd['fallback_source'] ?? '—';
-                        $fpSrcOwner= $fpd['source_owner'] ?? 'trading_bot';
-                        $fpTitle   = "value={$fpVal} | source_owner={$fpSrcOwner} | source_layer=legacy_bot_runtime | fallback_reason={$fpReason} | fallback_source={$fpSrc}";
+                        $fpd = $msFbDetail[$fp] ?? []; $fpv = $fpd['value'] ?? '—';
+                        if (is_bool($fpv)) $fpv = $fpv ? 'true' : 'false';
+                        $fpTitle = 'value='.$fpv.' | source_layer=legacy_bot_runtime | fallback_reason='.($fpd['fallback_reason'] ?? '—');
                     ?>
-                        <span class="badge bg-warning bg-opacity-25 border border-warning text-warning"
-                              title="<?= htmlspecialchars($fpTitle) ?>">
-                            <?= htmlspecialchars($fp) ?>
-                            <span class="ms-1 opacity-75 font-monospace" style="font-size:0.7em"><?= htmlspecialchars((string)$fpVal) ?></span>
-                        </span>
+                        <span class="badge bg-warning text-dark" title="<?= htmlspecialchars($fpTitle) ?>" data-bs-toggle="tooltip"><?= htmlspecialchars($fp) ?></span>
                     <?php endforeach; ?>
                     </div>
                 </div>
                 <?php endif; ?>
-
-                <!-- Per-param detail table -->
+                <!-- Таблица доказательств источников -->
                 <?php
                 $allMigDetail = array_merge(
                     array_map(fn($k) => array_merge(['_key' => $k, '_status' => 'unified'], $msSwDetail[$k] ?? []), $msSwitched),
@@ -137,57 +115,38 @@ ob_start();
                 ?>
                 <?php if (!empty($allMigDetail)): ?>
                 <div class="mt-3">
-                    <div class="small fw-bold mb-2">Per-Parameter Source Proof</div>
+                    <div class="small fw-bold mb-2">Доказательство источника по параметрам</div>
                     <div class="table-responsive">
                     <table class="table table-sm mb-0" style="font-size:0.8rem;">
                         <thead>
                             <tr>
-                                <th>Parameter</th>
-                                <th>Final Value</th>
-                                <th>Source Owner</th>
-                                <th>Source Layer</th>
-                                <th>Unified Config</th>
-                                <th>Legacy Fallback</th>
-                                <th>Fallback Reason / Original Source</th>
+                                <th>Параметр</th><th>Значение</th><th>Владелец</th>
+                                <th>Слой источника</th><th>Единый конфиг</th><th>Legacy fallback</th><th>Причина / Источник</th>
                             </tr>
                         </thead>
                         <tbody>
                         <?php foreach ($allMigDetail as $row):
                             $isUnified = ($row['_status'] === 'unified');
-                            $val = $row['value'] ?? '—';
-                            if (is_bool($val)) $val = $val ? 'true' : 'false';
+                            $val = $row['value'] ?? '—'; if (is_bool($val)) $val = $val ? 'true' : 'false';
                             $srcOwner = $row['source_owner'] ?? 'trading_bot';
                             $srcLayer = $row['source_layer'] ?? ($isUnified ? 'unified_config' : 'legacy_bot_runtime');
+                            $isMaster = str_contains($srcLayer, 'master');
                             $ucUsed   = (bool)($row['unified_config_used'] ?? $isUnified);
                             $lfUsed   = (bool)($row['legacy_fallback_used'] ?? !$isUnified);
-                            $fbReason = $row['fallback_reason'] ?? ($isUnified ? ('via: ' . ($row['via'] ?? 'unified_config_operational_draft')) : '—');
+                            $fbReason = $row['fallback_reason'] ?? ($isUnified ? ('via: '.($row['via'] ?? 'unified_config_operational_draft')) : '—');
                             $origSrc  = $row['original_source'] ?? ($row['fallback_source'] ?? '—');
                         ?>
                         <tr>
                             <td><code><?= htmlspecialchars($row['_key']) ?></code></td>
                             <td class="font-monospace"><?= htmlspecialchars((string)$val) ?></td>
                             <td><span class="badge bg-secondary"><?= htmlspecialchars($srcOwner) ?></span></td>
-                            <td>
-                                <?php if ($isUnified): ?>
-                                    <span class="badge bg-success">unified_config</span>
-                                <?php else: ?>
-                                    <span class="badge bg-warning text-dark">legacy_bot_runtime</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="text-center">
-                                <?php if ($ucUsed): ?>
-                                    <span class="badge bg-success"><i class="bi bi-check"></i> yes</span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary">no</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="text-center">
-                                <?php if ($lfUsed): ?>
-                                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> yes</span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary">no</span>
-                                <?php endif; ?>
-                            </td>
+                            <td><?php if ($isUnified): ?>
+                                <span class="badge" style="background:<?= $isMaster ? '#7c3aed' : '#16a34a' ?>">
+                                    <?= $isMaster ? 'мастер' : 'unified_config' ?>
+                                </span>
+                            <?php else: ?><span class="badge bg-warning text-dark">legacy_bot_runtime</span><?php endif; ?></td>
+                            <td class="text-center"><?php if ($ucUsed): ?><span class="badge bg-success"><i class="bi bi-check"></i> да</span><?php else: ?><span class="badge bg-secondary">нет</span><?php endif; ?></td>
+                            <td class="text-center"><?php if ($lfUsed): ?><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> да</span><?php else: ?><span class="badge bg-secondary">нет</span><?php endif; ?></td>
                             <td class="source-tag"><?= htmlspecialchars($fbReason) ?><br><span class="text-secondary"><?= htmlspecialchars($origSrc) ?></span></td>
                         </tr>
                         <?php endforeach; ?>
@@ -196,61 +155,84 @@ ob_start();
                     </div>
                 </div>
                 <?php endif; ?>
-
-                <div class="mt-2 text-secondary" style="font-size:0.78rem;">
-                    Last recorded: <code><?= $msRecAt ?></code>
-                    &nbsp;·&nbsp;
-                    Source artifact: <code>trading_bot/runtime/config_source_status.json</code>
-                </div>
+                <div class="mt-2 text-secondary" style="font-size:0.78rem;">Записано: <code><?= $msRecAt ?></code> &nbsp;·&nbsp; <code>trading_bot/runtime/config_source_status.json</code></div>
                 <?php endif; ?>
             </div>
         </div>
     </div>
 
-    <!-- Operational Config Draft table -->
+    <!-- Редактируемые параметры -->
     <div class="col-12 col-xl-6">
         <div class="card">
-            <div class="card-header"><i class="bi bi-robot me-2 text-warning"></i>Trading Bot — Operational Config (Draft)</div>
-            <div class="card-body p-0">
-                <table class="table table-sm mb-0">
-                    <thead><tr><th style="width:40%">Parameter</th><th>Value</th><th>Source File</th><th>Conflict?</th></tr></thead>
-                    <tbody>
-                    <?php foreach ($botKeys as $k):
-                        if (!isset($params[$k])) continue;
-                        $e      = $params[$k];
-                        $val    = $e['value'];
-                        $valStr = is_array($val) ? json_encode($val) : (is_bool($val) ? ($val ? 'true' : 'false') : (string)$val);
-                        $valStr = ($val === null || $valStr === '') ? '—' : $valStr;
-                        $conflict = isset($e['all_values']) && count($e['all_values']) > 1;
+            <div class="card-header"><i class="bi bi-robot me-2 text-warning"></i>Trading Bot — Операционные параметры (редактировать)</div>
+            <div class="card-body">
+                <form method="post" action="<?= htmlspecialchars($baseUrl) ?>/api/save">
+                    <input type="hidden" name="_redirect" value="<?= htmlspecialchars($baseUrl) ?>/trading_bot">
+                    <input type="hidden" name="_html_form" value="1">
+                    <?php
+                    $editFields = [
+                        'bot_enabled'              => ['type'=>'bool',   'label'=>'Бот включён'],
+                        'bot_mode'                 => ['type'=>'select', 'label'=>'Режим бота',
+                            'opts'=>['live'=>'live — лайв','demo'=>'demo — демо','paper'=>'paper — бумажная']],
+                        'bot_brain_controlled'     => ['type'=>'bool',   'label'=>'Управление от Brain'],
+                        'max_concurrent_positions' => ['type'=>'int',    'label'=>'Макс. одновременных позиций'],
+                        'max_intents_per_run'      => ['type'=>'int',    'label'=>'Макс. намерений за цикл'],
+                        'pm_trailing_owner'        => ['type'=>'select', 'label'=>'Трейлинг управляет',
+                            'opts'=>['profit_manager'=>'profit_manager','trading_bot'=>'trading_bot']],
+                    ];
+                    foreach ($editFields as $k => $def):
+                        $draftEntry  = $params[$k] ?? null;
+                        $draftVal    = $draftEntry['value'] ?? null;
+                        $effectiveV  = isset($masterParams[$k]) ? $masterParams[$k]['value'] : $draftVal;
+                        $hasMast     = isset($masterParams[$k]);
                     ?>
-                    <tr class="param-row">
-                        <td><strong><?= htmlspecialchars($e['label'] ?? $k) ?></strong></td>
-                        <td class="font-monospace"><?= htmlspecialchars($valStr) ?></td>
-                        <td class="source-tag"><?= htmlspecialchars(basename($e['source_file'] ?? '')) ?></td>
-                        <td><?php if ($conflict): ?><span class="badge badge-conflict conflict-badge">conflict</span><?php else: ?>—<?php endif; ?></td>
-                    </tr>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold mb-1">
+                            <?= htmlspecialchars($def['label']) ?>
+                            <?php if ($hasMast): ?><span class="master-badge ms-1">мастер</span><?php endif; ?>
+                        </label>
+                        <?php if ($def['type'] === 'bool'): ?>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="<?= htmlspecialchars($k) ?>"
+                                       id="bf_<?= htmlspecialchars($k) ?>" value="1" <?= (bool)$effectiveV ? 'checked' : '' ?>>
+                                <label class="form-check-label small text-muted" for="bf_<?= htmlspecialchars($k) ?>">
+                                    <?= (bool)$effectiveV ? 'включено' : 'выключено' ?>
+                                </label>
+                            </div>
+                        <?php elseif ($def['type'] === 'int'): ?>
+                            <input type="number" class="form-control form-control-sm" name="<?= htmlspecialchars($k) ?>" value="<?= htmlspecialchars((string)(int)$effectiveV) ?>" step="1">
+                        <?php elseif ($def['type'] === 'select'): ?>
+                            <select class="form-select form-select-sm" name="<?= htmlspecialchars($k) ?>">
+                                <?php foreach ($def['opts'] as $ov => $ol): ?>
+                                    <option value="<?= htmlspecialchars($ov) ?>" <?= (string)$effectiveV === $ov ? 'selected' : '' ?>><?= htmlspecialchars($ol) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php endif; ?>
+                        <?php if ($draftEntry): ?><div class="source-tag mt-1"><?= htmlspecialchars(basename($draftEntry['source_file'] ?? '—')) ?></div><?php endif; ?>
+                    </div>
                     <?php endforeach; ?>
-                    </tbody>
-                </table>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-floppy me-1"></i>Сохранить</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="botSaveReextract"><i class="bi bi-arrow-clockwise me-1"></i>Сохранить и перечитать</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 
+    <!-- Эффективный конфиг -->
     <div class="col-12 col-xl-6">
         <div class="card">
-            <div class="card-header"><i class="bi bi-eye me-2 text-success"></i>Trading Bot — Effective Config Preview</div>
+            <div class="card-header"><i class="bi bi-eye me-2 text-success"></i>Trading Bot — Текущий эффективный конфиг</div>
             <div class="card-body p-0">
                 <?php if (empty($botPreview)): ?>
-                    <div class="p-3 text-muted">No data — run Re-extract first.</div>
+                    <div class="p-3 text-muted">Нет данных — нажмите «Перечитать».</div>
                 <?php else: ?>
-                    <?php
-                    // Annotate each section with its source layer
-                    $layerMap = [
-                        'module'    => ['label' => 'unified_config › bot_runtime › bot_config', 'title' => 'First-wave params via unified Config Module; remainder: bot.json overrides merged with config.php'],
-                        'execution' => ['label' => 'unified_config › bot_runtime › bot_config', 'title' => 'First-wave execution params via unified Config Module; remainder from bot.json'],
-                        'exchange'  => ['label' => 'bot_config (immutable)',                     'title' => 'exchange defaults from config.php — internal, not in first-wave migration'],
-                    ];
-                    ?>
+                    <?php $layerMap = [
+                        'module'    => ['label' => 'unified_config › bot_runtime › bot_config',  'title' => 'Параметры первой волны через Config Module; остальное: bot.json'],
+                        'execution' => ['label' => 'unified_config › bot_runtime › bot_config',  'title' => 'Параметры исполнения первой волны через Config Module'],
+                        'exchange'  => ['label' => 'bot_config (immutable)',                      'title' => 'Параметры биржи из config.php — внутренние, не в первой волне'],
+                    ]; ?>
                     <?php foreach ($botPreview as $section => $block): ?>
                     <div class="p-2 border-bottom" style="border-color: var(--border-color) !important;">
                         <div class="d-flex align-items-center justify-content-between mb-1">
@@ -265,20 +247,33 @@ ob_start();
                                 <span class="font-monospace"><?= htmlspecialchars(is_array($v) ? json_encode($v) : (is_bool($v) ? ($v ? 'true' : 'false') : (string)$v)) ?></span>
                             </div>
                             <?php endforeach; ?>
-                        <?php else: ?>
-                            <span class="text-muted">—</span>
-                        <?php endif; ?>
+                        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
                     </div>
                     <?php endforeach; ?>
                     <div class="p-2" style="font-size:0.78rem;color:#64748b;">
-                        First-wave params (<code>bot_enabled</code>, <code>bot_mode</code>, <code>max_intents_per_run</code>, <code>max_concurrent_positions</code>, <code>bot_brain_controlled</code>, <code>pm_trailing_owner</code>)
-                        now resolved via unified Config Module. Remaining params: <code>bot_runtime</code> (bot.json) overrides <code>bot_config</code> (config.php).
+                        Параметры первой волны (<code>bot_enabled</code>, <code>bot_mode</code>, <code>max_intents_per_run</code> и др.) разрешаются через Центр Конфигурации.
+                        Остальное: <code>bot.json</code> → <code>config.php</code>.
                     </div>
                 <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
+<script>
+document.getElementById('botSaveReextract')?.addEventListener('click', function() {
+    const form = this.closest('form'); if (!form) return;
+    const orig = form.action;
+    form.action = orig.replace('/api/save', '/api/save_and_reextract');
+    form.submit(); form.action = orig;
+});
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el, {trigger:'hover'}));
+document.querySelectorAll('.form-check-input[type=checkbox]').forEach(function(el) {
+    if (!el.closest('.form-switch')) return;
+    const label = el.closest('.form-switch')?.querySelector('.form-check-label');
+    if (!label) return;
+    el.addEventListener('change', function() { label.textContent = this.checked ? 'включено' : 'выключено'; });
+});
+</script>
 <?php
 $content = ob_get_clean();
 include __DIR__ . '/_layout.php';

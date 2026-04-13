@@ -376,7 +376,8 @@ final class ConfigAuditEngine
         //   3. bot_runtime       (bot.json)
         //   4. bot_config        (static config.php)
         //   5. brain_risk_engine (risk_engine.php)
-        $precedence = ['brain_user_config', 'brain_effective', 'bot_runtime', 'bot_config', 'brain_risk_engine'];
+        //   6. cp_config         (Coin Passport config.php — first-wave params)
+        $precedence = ['brain_user_config', 'brain_effective', 'bot_runtime', 'bot_config', 'brain_risk_engine', 'cp_config'];
 
         foreach ($this->operationalSchema() as $key => $def) {
             $resolved      = null;
@@ -890,6 +891,35 @@ final class ConfigAuditEngine
                 'notes' => 'PM on/off (reads from bot config profit_manager block)',
                 'sources' => [
                     'bot_config' => 'profit_manager.module.enabled',
+                ],
+            ],
+            // Coin Passport — first-wave operational params
+            'cp_enabled' => [
+                'label' => 'Coin Passport Enabled',
+                'notes' => 'Master on/off switch for the Coin Passport module',
+                'sources' => [
+                    'cp_config' => 'module.enabled',
+                ],
+            ],
+            'cp_rebuild_all_enabled' => [
+                'label' => 'CP: Full Rebuild Enabled',
+                'notes' => 'Enable/disable the rebuildAll cron task',
+                'sources' => [
+                    'cp_config' => 'module.rebuild_all_enabled',
+                ],
+            ],
+            'cp_rebuild_recent_enabled' => [
+                'label' => 'CP: Rebuild Recent Enabled',
+                'notes' => 'Enable/disable the rebuildRecentSymbols cron task',
+                'sources' => [
+                    'cp_config' => 'module.rebuild_recent_enabled',
+                ],
+            ],
+            'cp_cycle_profiles_enabled' => [
+                'label' => 'CP: Cycle Profiles Enabled',
+                'notes' => 'Enable/disable the buildCycleProfiles cron task',
+                'sources' => [
+                    'cp_config' => 'module.cycle_profiles_enabled',
                 ],
             ],
         ];

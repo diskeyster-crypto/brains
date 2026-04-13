@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-04-13T04:19:04+00:00",
+    "generated_at": "2026-04-13T12:10:07+00:00",
     "modules": {
         "smart_brain": {
             "live_trading": {
@@ -199,6 +199,39 @@
                 "soft_whitelist_min_winrate": 0.5,
                 "soft_whitelist_min_avg_roi": 0.005,
                 "symbol_recent_window": 50
+            },
+            "migration_status": {
+                "switch_wave": "v1_operational_params",
+                "partially_migrated": false,
+                "unified_config_available": true,
+                "migrated_count": 0,
+                "fallback_count": 0,
+                "first_wave_total": 0,
+                "switched_params": [
+                    "live_trading_enabled",
+                    "live_max_positions",
+                    "live_signal_selection_mode",
+                    "live_one_trade_per_symbol",
+                    "live_entry_policy",
+                    "live_reverse_side_enabled",
+                    "leverage_mode",
+                    "manual_leverage",
+                    "max_budget_per_coin",
+                    "stop_control_mode",
+                    "stop_loss_from_entry_roi",
+                    "trailing_enabled",
+                    "trailing_mode",
+                    "trailing_activation_roi",
+                    "trailing_activation_floor_roi",
+                    "break_even_enabled",
+                    "break_even_activation_roi",
+                    "execution_profile"
+                ],
+                "fallback_params": [
+                    "trailing_floor_lock_roi"
+                ],
+                "source": "unified_config_operational_draft",
+                "recorded_at": "2026-04-13T04:19:13+00:00"
             }
         },
         "trading_bot": {
@@ -324,11 +357,30 @@
             }
         },
         "profit_manager": {
-            "module": null,
-            "execution": null
+            "module": {
+                "enabled": true,
+                "mode": "dry",
+                "phase": "profit_manager_v1",
+                "account_id": "trading_bot"
+            },
+            "execution": {
+                "trailing_owner": "profit_manager",
+                "trailing_activation_roi": "3.5",
+                "trailing_drawdown_factor": "0.49",
+                "step_trailing_step_roi_pct": 2,
+                "step_trailing_lock_buffer_roi_pct": 0.5,
+                "step_trailing_cooldown_sec": 30,
+                "step_trailing_min_distance_to_price_pct": 1,
+                "step_trailing_lock_floor_roi_pct": 0
+            }
         },
         "coin_passport": {
-            "note": "Coin Passport has no dedicated config file. Operational params come from Smart Brain and Trading Bot."
+            "module": {
+                "enabled": true,
+                "rebuild_all_enabled": true,
+                "rebuild_recent_enabled": true,
+                "cycle_profiles_enabled": true
+            }
         }
     }
 }

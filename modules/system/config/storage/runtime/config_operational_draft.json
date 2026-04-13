@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-04-13T04:19:04+00:00",
+    "generated_at": "2026-04-13T12:10:07+00:00",
     "params": {
         "live_trading_enabled": {
             "key": "live_trading_enabled",
@@ -442,6 +442,32 @@
             },
             "notes": "Max live opens attempted per cron tick"
         },
+        "max_concurrent_positions": {
+            "key": "max_concurrent_positions",
+            "label": "Max Concurrent Positions",
+            "type": "operational",
+            "value": 50,
+            "source": "bot_runtime",
+            "source_path": "max_positions",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": 50
+            },
+            "notes": "Bot-side concurrent position cap (0 = unlimited)"
+        },
+        "bot_brain_controlled": {
+            "key": "bot_brain_controlled",
+            "label": "Brain-Controlled Mode",
+            "type": "operational",
+            "value": true,
+            "source": "bot_runtime",
+            "source_path": "sources.brain_source_enabled",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": true
+            },
+            "notes": "Whether bot operates exclusively on Brain-issued live intents"
+        },
         "pm_trailing_owner": {
             "key": "pm_trailing_owner",
             "label": "Trailing Owner",
@@ -467,6 +493,58 @@
                 "bot_config": true
             },
             "notes": "PM on/off (reads from bot config profit_manager block)"
+        },
+        "cp_enabled": {
+            "key": "cp_enabled",
+            "label": "Coin Passport Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Master on/off switch for the Coin Passport module"
+        },
+        "cp_rebuild_all_enabled": {
+            "key": "cp_rebuild_all_enabled",
+            "label": "CP: Full Rebuild Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.rebuild_all_enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Enable/disable the rebuildAll cron task"
+        },
+        "cp_rebuild_recent_enabled": {
+            "key": "cp_rebuild_recent_enabled",
+            "label": "CP: Rebuild Recent Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.rebuild_recent_enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Enable/disable the rebuildRecentSymbols cron task"
+        },
+        "cp_cycle_profiles_enabled": {
+            "key": "cp_cycle_profiles_enabled",
+            "label": "CP: Cycle Profiles Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.cycle_profiles_enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Enable/disable the buildCycleProfiles cron task"
         }
     }
 }

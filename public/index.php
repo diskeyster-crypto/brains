@@ -1573,6 +1573,16 @@ Router::post('/admin/smart_brain/config_all/api/extract', function () {
     $controller->apiExtract();
 });
 
+Router::post('/admin/smart_brain/config_all/api/save', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiSave();
+});
+
+Router::post('/admin/smart_brain/config_all/api/save_and_reextract', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiSaveAndReextract();
+});
+
 // ============================================================
 // DISPATCH
 // ============================================================

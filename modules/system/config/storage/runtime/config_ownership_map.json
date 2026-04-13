@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-04-13T04:19:04+00:00",
+    "generated_at": "2026-04-13T12:10:07+00:00",
     "parameters": [
         {
             "key": "live_trading_enabled",
@@ -561,6 +561,74 @@
                 }
             ],
             "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_enabled",
+            "type": "operational",
+            "notes": "Coin Passport master on/off switch",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_rebuild_all_enabled",
+            "type": "operational",
+            "notes": "Full rebuildAll cron task enabled",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.rebuild_all_enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_rebuild_recent_enabled",
+            "type": "operational",
+            "notes": "rebuildRecentSymbols cron task enabled",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.rebuild_recent_enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_cycle_profiles_enabled",
+            "type": "operational",
+            "notes": "buildCycleProfiles cron task enabled",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.cycle_profiles_enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
             "conflict": false,
             "unused": false,
             "migration_readiness": "blocked_by_legacy_dependency"

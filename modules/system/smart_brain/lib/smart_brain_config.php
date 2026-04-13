@@ -1943,6 +1943,17 @@ final class SmartBrainConfig
     }
 
     /**
+     * Return the config migration status recorded during the last applyUserConfig() call.
+     * Always call after construction (applyUserConfig runs in __construct).
+     *
+     * @return array<string,mixed>
+     */
+    public function getMigrationStatus(): array
+    {
+        return $this->configMigrationStatus;
+    }
+
+    /**
      * Overlay first-wave Smart Brain operational parameters from the unified
      * Config Module operational draft (shadow artifact).
      *
@@ -1953,6 +1964,13 @@ final class SmartBrainConfig
      * Smart Brain behaviour is NOT changed — values are identical to user_config.json
      * because the Config Module extracts them from user_config.json.  The overlay
      * establishes the unified Config Module as the tracked source for these params.
+     *
+     * Each param in the returned status includes:
+     *   switched_params_detail[$key]:
+     *     value, original_source, original_source_file, via,
+     *     source_layer, unified_config_used, legacy_fallback_used
+     *   fallback_params_detail[$key]:
+     *     value, source_layer, unified_config_used, legacy_fallback_used, fallback_reason
      *
      * @return array<string,mixed> migration status record
      */
@@ -1988,9 +2006,14 @@ final class SmartBrainConfig
             'unified_config_available'     => false,
             'unified_config_draft_path'    => '',
             'source'                       => 'legacy_user_config',
+            'partially_migrated'           => false,
+            'first_wave_total'             => count($firstWaveParams),
+            'migrated_count'               => 0,
+            'fallback_count'               => 0,
             'switched_params'              => [],
             'fallback_params'              => [],
             'switched_params_detail'       => [],
+            'fallback_params_detail'       => [],
             'recorded_at'                  => date('c'),
         ];
 
@@ -1999,20 +2022,43 @@ final class SmartBrainConfig
         $draftPath = $systemDir . '/config/storage/runtime/config_operational_draft.json';
         $status['unified_config_draft_path'] = $draftPath;
 
+        /** Build fallback detail for all first-wave params using legacy user_limits values. */
+        $buildFallbackDetail = function (string $fallbackReason) use ($firstWaveParams): array {
+            $detail = [];
+            $userLimits = $this->config['risk_engine']['user_limits'] ?? [];
+            foreach ($firstWaveParams as $key) {
+                $detail[$key] = [
+                    'value'               => $userLimits[$key] ?? null,
+                    'source_layer'        => 'legacy_user_config',
+                    'unified_config_used' => false,
+                    'legacy_fallback_used'=> true,
+                    'fallback_reason'     => $fallbackReason,
+                    'fallback_source'     => 'brain_user_config (runtime/user_config.json)',
+                ];
+            }
+            return $detail;
+        };
+
         if (!is_file($draftPath)) {
-            $status['fallback_params'] = $firstWaveParams;
+            $status['fallback_params']        = $firstWaveParams;
+            $status['fallback_count']         = count($firstWaveParams);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_not_found');
             return $status;
         }
 
         $raw = @file_get_contents($draftPath);
         if ($raw === false) {
-            $status['fallback_params'] = $firstWaveParams;
+            $status['fallback_params']        = $firstWaveParams;
+            $status['fallback_count']         = count($firstWaveParams);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_unreadable');
             return $status;
         }
 
         $draft = @json_decode($raw, true);
         if (!is_array($draft) || empty($draft['params'])) {
-            $status['fallback_params'] = $firstWaveParams;
+            $status['fallback_params']        = $firstWaveParams;
+            $status['fallback_count']         = count($firstWaveParams);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_draft_invalid_or_empty');
             return $status;
         }
 
@@ -2024,6 +2070,15 @@ final class SmartBrainConfig
         foreach ($firstWaveParams as $key) {
             if (!isset($allParams[$key]) || ($allParams[$key]['value'] ?? null) === null) {
                 $status['fallback_params'][] = $key;
+                $userLimits = $this->config['risk_engine']['user_limits'] ?? [];
+                $status['fallback_params_detail'][$key] = [
+                    'value'               => $userLimits[$key] ?? null,
+                    'source_layer'        => 'legacy_user_config',
+                    'unified_config_used' => false,
+                    'legacy_fallback_used'=> true,
+                    'fallback_reason'     => 'param_not_in_unified_config_draft',
+                    'fallback_source'     => 'brain_user_config (runtime/user_config.json)',
+                ];
                 continue;
             }
             $entry = $allParams[$key];
@@ -2038,10 +2093,19 @@ final class SmartBrainConfig
                 'original_source'     => $entry['source']      ?? 'unknown',
                 'original_source_file'=> $entry['source_file'] ?? null,
                 'via'                 => 'unified_config_operational_draft',
+                'source_layer'        => 'unified_config',
+                'unified_config_used' => true,
+                'legacy_fallback_used'=> false,
             ];
         }
 
-        $status['source'] = empty($status['switched_params'])
+        $migratedCount = count($status['switched_params']);
+        $fallbackCount = count($status['fallback_params']);
+        $status['migrated_count']    = $migratedCount;
+        $status['fallback_count']    = $fallbackCount;
+        $status['partially_migrated']= $migratedCount > 0 && $fallbackCount > 0;
+
+        $status['source'] = $migratedCount === 0
             ? 'legacy_user_config'
             : 'unified_config_operational_draft';
 

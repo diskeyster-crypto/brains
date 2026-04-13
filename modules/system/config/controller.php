@@ -59,12 +59,13 @@ final class UnifiedConfigController
     public function smartBrain(): void
     {
         $this->requireAuth();
-        $tab     = 'smart_brain';
-        $title   = 'Config — Smart Brain';
-        $summary = $this->service->getSummary();
-        $data    = $this->service->getOperationalDraft();
-        $preview = $this->service->getEffectivePreview();
-        $baseUrl = $this->baseUrl;
+        $tab             = 'smart_brain';
+        $title           = 'Config — Smart Brain';
+        $summary         = $this->service->getSummary();
+        $data            = $this->service->getOperationalDraft();
+        $preview         = $this->service->getEffectivePreview();
+        $migrationStatus = $this->service->getSmartBrainMigrationStatus();
+        $baseUrl         = $this->baseUrl;
         include __DIR__ . '/views/smart_brain.php';
     }
 

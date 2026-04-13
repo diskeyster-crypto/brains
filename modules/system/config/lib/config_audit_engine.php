@@ -480,6 +480,21 @@ final class ConfigAuditEngine
         $botRt    = $sources['bot_runtime']     ?? [];
         $botCfg   = $sources['bot_config']      ?? [];
 
+        // Smart Brain migration status — read live from brain runtime artifact.
+        // This is separate from rawSources (which are captured at extract time);
+        // config_source_status.json is written on every Smart Brain run.
+        $migrationStatus = [];
+        $migStatusPath   = $this->brainBase . '/runtime/config_source_status.json';
+        if (is_file($migStatusPath)) {
+            $raw = @file_get_contents($migStatusPath);
+            if ($raw !== false) {
+                $decoded = @json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $migrationStatus = $decoded;
+                }
+            }
+        }
+
         // Smart Brain effective config block
         $brainPreview = [
             'live_trading'      => $brainEff['live_trading']       ?? null,
@@ -489,6 +504,18 @@ final class ConfigAuditEngine
             'pattern_selection' => $brainEff['pattern_selection']   ?? null,
             'execution_profile' => $brainEff['execution_profile']   ?? null,
             'symbol_intelligence'=> $brainEff['symbol_intelligence'] ?? null,
+            'migration_status'  => empty($migrationStatus) ? null : [
+                'switch_wave'              => $migrationStatus['switch_wave']              ?? null,
+                'partially_migrated'       => $migrationStatus['partially_migrated']       ?? false,
+                'unified_config_available' => $migrationStatus['unified_config_available'] ?? false,
+                'migrated_count'           => $migrationStatus['migrated_count']           ?? 0,
+                'fallback_count'           => $migrationStatus['fallback_count']           ?? 0,
+                'first_wave_total'         => $migrationStatus['first_wave_total']         ?? 0,
+                'switched_params'          => $migrationStatus['switched_params']          ?? [],
+                'fallback_params'          => $migrationStatus['fallback_params']          ?? [],
+                'source'                   => $migrationStatus['source']                   ?? 'legacy_user_config',
+                'recorded_at'              => $migrationStatus['recorded_at']              ?? null,
+            ],
         ];
 
         // Trading Bot effective (merge static config.php with bot.json overrides)

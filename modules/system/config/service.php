@@ -141,6 +141,31 @@ final class UnifiedConfigService
     }
 
     /**
+     * Load Smart Brain config migration status from its runtime artifact.
+     * Returns the contents of smart_brain/runtime/config_source_status.json,
+     * or an array with available=false on any failure.
+     *
+     * @return array<string,mixed>
+     */
+    public function getSmartBrainMigrationStatus(): array
+    {
+        $brainBase = dirname($this->moduleBase) . '/smart_brain';
+        $path = $brainBase . '/runtime/config_source_status.json';
+        if (!is_file($path)) {
+            return ['available' => false, 'reason' => 'file_not_found'];
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
+            return ['available' => false, 'reason' => 'read_failed'];
+        }
+        $data = @json_decode($raw, true);
+        if (!is_array($data)) {
+            return ['available' => false, 'reason' => 'invalid_json'];
+        }
+        return array_merge(['available' => true], $data);
+    }
+
+    /**
      * Return a summary for the UI header (quick status).
      */
     public function getSummary(): array

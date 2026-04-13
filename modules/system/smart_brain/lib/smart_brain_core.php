@@ -871,6 +871,25 @@ final class SmartBrainCore
             'restrictive_si_skip_reason' => $restrictiveSiSkipReason,
             // Config Conflict Guard warnings
             'config_warnings' => $this->config->detectConfigConflicts(),
+            // Config Module migration proof — first-wave soft-switch runtime evidence
+            'config_source_proof' => (static function (array $ms): array {
+                $migratedCount = $ms['migrated_count'] ?? count($ms['switched_params'] ?? []);
+                $fallbackCount = $ms['fallback_count'] ?? count($ms['fallback_params'] ?? []);
+                return [
+                    'migration_wave'           => $ms['switch_wave']                ?? 'v1_operational_params',
+                    'partially_migrated'       => (bool)($ms['partially_migrated']  ?? ($migratedCount > 0 && $fallbackCount > 0)),
+                    'unified_config_available' => (bool)($ms['unified_config_available'] ?? false),
+                    'unified_config_used'      => $migratedCount > 0,
+                    'legacy_fallback_used'     => $fallbackCount > 0,
+                    'migrated_count'           => $migratedCount,
+                    'fallback_count'           => $fallbackCount,
+                    'first_wave_total'         => $ms['first_wave_total'] ?? ($migratedCount + $fallbackCount),
+                    'switched_params'          => $ms['switched_params']  ?? [],
+                    'fallback_params'          => $ms['fallback_params']  ?? [],
+                    'source'                   => $ms['source']           ?? 'legacy_user_config',
+                    'recorded_at'              => $ms['recorded_at']      ?? null,
+                ];
+            })($this->config->getMigrationStatus()),
             // Manual Symbol Universe
             'manual_symbol_universe_enabled' => $manualUniverseEnabled,
             'manual_symbol_mode' => $manualSymbolMode,
@@ -3538,6 +3557,7 @@ final class SmartBrainCore
             'live_intents' => $this->state->readJson('storage/live_intents.json', []),
             'config_warnings' => $this->config->detectConfigConflicts(),
             'bot_execution_mirror' => $this->readBotExecutionMirror(),
+            'config_source_status' => $this->state->readJson('runtime/config_source_status.json', []),
         ];
     }
 

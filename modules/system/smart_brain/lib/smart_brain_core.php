@@ -2064,11 +2064,12 @@ final class SmartBrainCore
                     $eqFreshnessState = 'stale';
                 }
 
-                // Stretch state from corridor_width (for observability and rule use)
+                // Stretch state from corridor_width (for observability and rule use).
+                // Thresholds align with Rule 2 (overstretched = >= 0.25, wide = >= 0.15).
                 $eqCorridorWidth = (float)($signal['corridor_width'] ?? 0.0);
-                if ($eqCorridorWidth >= 0.35) {
+                if ($eqCorridorWidth >= 0.25) {
                     $eqStretchState = 'overstretched';
-                } elseif ($eqCorridorWidth >= 0.20) {
+                } elseif ($eqCorridorWidth >= 0.15) {
                     $eqStretchState = 'wide';
                 } else {
                     $eqStretchState = 'normal';
@@ -2082,53 +2083,60 @@ final class SmartBrainCore
                     $eqCmAvailable  = ($cycleDecisionDebug['available'] ?? false) === true;
                     $eqCmState      = $eqCmAvailable ? (string)($cycleDecisionDebug['model_state']        ?? '') : '';
                     $eqCmRisk       = $eqCmAvailable ? (string)($cycleDecisionDebug['model_risk_posture'] ?? '') : '';
+                    // Soft-demote flag: when true the filter outcome is counted as demo_total
+                    // (conceptually "would go to demo") rather than a hard reject.
+                    $eqIsDemote     = false;
 
                     $result['entry_quality_filter_total']++;
 
-                    // Rule 1: entry_quality_late_pressure
-                    // enter_now signals that are aging/stale with low pattern confidence —
-                    // the confirmation window has effectively closed.
+                    // Rule 1: entry_quality_late_pressure (HARD reject)
+                    // enter_now signals past the confirmation window are always late —
+                    // removing the secondary confidence gate so this fires reliably.
                     $eqLateEnterNowMaxSec = max(120, (int)($userLimits['entry_quality_late_enter_now_max_minutes'] ?? 8) * 60);
                     if (!$eqFilterApplied
                         && $eqEntryAction === 'enter_now'
                         && $eqSignalAge > $eqLateEnterNowMaxSec
-                        && $eqPatternConf < 0.65
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_late_pressure';
                     }
 
-                    // Rule 2: entry_quality_overstretched
-                    // Very wide corridor + low entry quality → market moved too far from zone.
+                    // Rule 2: entry_quality_overstretched (HARD reject)
+                    // Wide corridor (>= 0.25) + mediocre entry quality → market moved too far
+                    // from zone to justify entry. Threshold lowered from 0.35 to 0.25 so that
+                    // clearly-stretched signals are caught before they reach the bot.
                     if (!$eqFilterApplied
-                        && $eqStretchState === 'overstretched'
-                        && $eqEntryQuality < 0.45
+                        && $eqCorridorWidth >= 0.25
+                        && $eqEntryQuality < 0.65
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_overstretched';
                     }
 
-                    // Rule 3: entry_quality_weak_structure
+                    // Rule 3: entry_quality_weak_structure (HARD reject)
                     // Both hold quality and pattern confidence are low — structural basis too weak.
                     if (!$eqFilterApplied
-                        && $eqHoldQuality < 0.25
-                        && $eqPatternConf < 0.45
+                        && $eqHoldQuality < 0.35
+                        && $eqPatternConf < 0.55
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_weak_structure';
                     }
 
-                    // Rule 4: entry_quality_low_quality_freshness
-                    // Low entry quality + aging/stale signal — neither compensates for the other.
+                    // Rule 4: entry_quality_weak_stale (soft demote → demo)
+                    // Below-average entry quality + signal not fresh — neither compensates.
+                    // Threshold raised from 0.35 to 0.55 to catch more borderline signals.
+                    // Counted as filter_demo_total (soft demote) rather than a hard reject.
                     if (!$eqFilterApplied
-                        && $eqEntryQuality < 0.35
+                        && $eqEntryQuality < 0.55
                         && $eqFreshnessState !== 'fresh'
                     ) {
                         $eqFilterApplied = true;
-                        $eqFilterReason  = 'entry_quality_low_quality_freshness';
+                        $eqIsDemote      = true;
+                        $eqFilterReason  = 'entry_quality_weak_stale';
                     }
 
-                    // Rule 5: entry_quality_poor_actionability
+                    // Rule 5: entry_quality_poor_actionability (soft demote → demo)
                     // Cycle model: weak/unavailable state + medium_risk + below-average entry quality.
                     if (!$eqFilterApplied
                         && $eqCmAvailable
@@ -2137,17 +2145,23 @@ final class SmartBrainCore
                         && $eqEntryQuality < 0.50
                     ) {
                         $eqFilterApplied = true;
+                        $eqIsDemote      = true;
                         $eqFilterReason  = 'entry_quality_poor_actionability';
                     }
 
                     if ($eqFilterApplied) {
-                        $result['entry_quality_filter_reject_total']++;
+                        if ($eqIsDemote) {
+                            $result['entry_quality_filter_demo_total']++;
+                        } else {
+                            $result['entry_quality_filter_reject_total']++;
+                        }
                         if (count($result['entry_quality_filter_rejected_preview']) < 10) {
                             $result['entry_quality_filter_rejected_preview'][] = [
                                 'symbol'              => $symbol,
                                 'side'                => $side,
                                 'pattern_algorithm'   => (string)($signal['pattern_algorithm'] ?? ''),
                                 'filter_reason'       => $eqFilterReason,
+                                'filter_outcome'      => $eqIsDemote ? 'demote' : 'reject',
                                 'entry_quality_score' => $eqEntryQuality,
                                 'hold_quality_score'  => $eqHoldQuality,
                                 'pattern_confidence'  => $eqPatternConf,

@@ -1035,6 +1035,11 @@ final class SmartBrainCore
             'entry_quality_filter_demo_total'      => (int)($liveIntentResult['entry_quality_filter_demo_total']      ?? 0),
             'entry_quality_filter_no_effect_total' => (int)($liveIntentResult['entry_quality_filter_no_effect_total'] ?? 0),
             'entry_quality_filter_rejected_preview' => $liveIntentResult['entry_quality_filter_rejected_preview']     ?? [],
+            // Wave Filter diagnostics (bounded wave amplitude/speed improvement layer)
+            'wave_filter_total'           => (int)($liveIntentResult['wave_filter_total']           ?? 0),
+            'wave_filter_reject_total'    => (int)($liveIntentResult['wave_filter_reject_total']    ?? 0),
+            'wave_filter_demo_total'      => (int)($liveIntentResult['wave_filter_demo_total']      ?? 0),
+            'wave_filter_no_effect_total' => (int)($liveIntentResult['wave_filter_no_effect_total'] ?? 0),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1186,6 +1191,11 @@ final class SmartBrainCore
             'entry_quality_filter_demo_total'     => 0,
             'entry_quality_filter_no_effect_total' => 0,
             'entry_quality_filter_rejected_preview' => [],
+            // Wave filter diagnostics (bounded wave amplitude/speed improvement layer)
+            'wave_filter_total'          => 0,
+            'wave_filter_reject_total'   => 0,
+            'wave_filter_demo_total'     => 0,
+            'wave_filter_no_effect_total' => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2089,25 +2099,32 @@ final class SmartBrainCore
 
                     $result['entry_quality_filter_total']++;
 
-                    // Rule 1: entry_quality_late_pressure (HARD reject)
-                    // Fires for: (a) enter_now signals past the confirmation window, OR
-                    // (b) any signal in stale freshness state (age > 66% of late limit).
-                    // Only strong signals (quality >= 0.72 AND conf >= 0.62) are exempt.
+                    // Rule 1: entry_quality_late_pressure (HARD reject / soft demote)
+                    // Hard late: enter_now past the confirmation window OR stale freshness.
+                    // Only clearly strong signals are exempt (quality >= 0.78 AND conf >= 0.70).
+                    // Soft late: aging non-strong signals are demoted to demo (partial-late treatment).
+                    // Late signals must be rare in live — default action is reject or demo, not pass.
                     $eqLateEnterNowMaxSec = max(120, (int)($userLimits['entry_quality_late_enter_now_max_minutes'] ?? 8) * 60);
-                    $eqIsStrongSignal     = ($eqEntryQuality >= 0.72 && $eqPatternConf >= 0.62);
-                    $eqIsLate             = ($eqEntryAction === 'enter_now' && $eqSignalAge > $eqLateEnterNowMaxSec)
+                    $eqIsStrongSignal     = ($eqEntryQuality >= 0.78 && $eqPatternConf >= 0.70);
+                    $eqIsHardLate         = ($eqEntryAction === 'enter_now' && $eqSignalAge > $eqLateEnterNowMaxSec)
                                         || ($eqFreshnessState === 'stale');
-                    if (!$eqFilterApplied && $eqIsLate && !$eqIsStrongSignal) {
+                    $eqIsSoftLate         = ($eqFreshnessState === 'aging' && !$eqIsStrongSignal);
+                    if (!$eqFilterApplied && $eqIsHardLate && !$eqIsStrongSignal) {
                         $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_late_pressure';
+                    } elseif (!$eqFilterApplied && $eqIsSoftLate) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = true;
                         $eqFilterReason  = 'entry_quality_late_pressure';
                     }
 
                     // Rule 2: entry_quality_overstretched (HARD reject)
-                    // Price too far from zone (corridor >= 0.25). To pass, signal must be BOTH
-                    // strong (quality >= 0.72) AND fresh — any other overstretched signal is rejected.
+                    // Price too far from zone (corridor >= 0.25). Overstretch is a dominant reject reason.
+                    // To pass, signal must be ALL three: strong quality (>= 0.75), strong confidence
+                    // (>= 0.68), AND fresh. Any other overstretched signal is rejected.
                     if (!$eqFilterApplied
                         && $eqCorridorWidth >= 0.25
-                        && !($eqEntryQuality >= 0.72 && $eqFreshnessState === 'fresh')
+                        && !($eqEntryQuality >= 0.75 && $eqPatternConf >= 0.68 && $eqFreshnessState === 'fresh')
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_overstretched';
@@ -2123,25 +2140,27 @@ final class SmartBrainCore
                         $eqFilterReason  = 'entry_quality_weak_structure';
                     }
 
-                    // Rule 4: entry_quality_weak_stale
-                    // Threshold raised from 0.55 to 0.62 to catch more borderline signals.
-                    // Stale + weak → hard reject; aging + weak → soft demote to demo.
+                    // Rule 4: entry_quality_weak_stale (decisive reject)
+                    // Both stale and aging non-fresh signals with weak quality → hard reject.
+                    // Threshold raised to 0.65. Both aging and stale result in reject (not demo)
+                    // so that the weak+stale combination is decisive and triggers frequently.
                     if (!$eqFilterApplied
-                        && $eqEntryQuality < 0.62
+                        && $eqEntryQuality < 0.65
                         && $eqFreshnessState !== 'fresh'
                     ) {
                         $eqFilterApplied = true;
-                        $eqIsDemote      = ($eqFreshnessState === 'aging');
+                        $eqIsDemote      = false;
                         $eqFilterReason  = 'entry_quality_weak_stale';
                     }
 
                     // Rule 5: entry_quality_poor_actionability (soft demote → demo)
-                    // Cycle model: weak/unavailable state + medium_risk + below-average entry quality.
+                    // Cycle model: weak/unavailable state + below-average entry quality.
+                    // Medium-risk restriction removed so this fires for any risk posture.
+                    // Quality threshold raised to 0.55 to catch more borderline signals.
                     if (!$eqFilterApplied
                         && $eqCmAvailable
                         && in_array($eqCmState, ['weak', 'unavailable'], true)
-                        && $eqCmRisk === 'medium_risk'
-                        && $eqEntryQuality < 0.50
+                        && $eqEntryQuality < 0.55
                     ) {
                         $eqFilterApplied = true;
                         $eqIsDemote      = true;
@@ -2188,6 +2207,94 @@ final class SmartBrainCore
                 ];
             }
             // === END ENTRY QUALITY FILTER ===
+
+            // === WAVE FILTER (Bounded Wave Amplitude/Speed Layer) ===
+            // Runs after entry quality filter. Targets narrow low-amplitude / slow-wave candidates.
+            // Uses existing signal data only. Does NOT bypass passport/cycle/slot gates.
+            // Conservative first version: a few clear amplitude + speed rules only.
+            {
+                $wfEnabled  = (bool)($userLimits['wave_filter_enabled'] ?? true);
+                $wfApplied  = false;
+                $wfReason   = null;
+                $wfIsDemote = false;
+
+                // Wave amplitude: derived from initial_roi / entry_roi (expected move size)
+                // and corridor_width (price range span). Higher = bigger wave = more ROI potential.
+                $wfInitialRoi = (float)($signal['initial_roi'] ?? $signal['entry_roi'] ?? 0.0);
+                if ($wfInitialRoi >= 0.015 || $eqCorridorWidth >= 0.10) {
+                    $wfAmplitudeState = 'strong';
+                } elseif ($wfInitialRoi >= 0.007 || $eqCorridorWidth >= 0.05) {
+                    $wfAmplitudeState = 'acceptable';
+                } else {
+                    $wfAmplitudeState = 'weak';
+                }
+
+                // Wave speed: derived from confirmation_score (60%) + analyzer_score (40%).
+                // Higher combined proxy = more decisive / faster wave development.
+                $wfConfScore     = (float)($signal['confirmation_score'] ?? 0.0);
+                $wfAnalyzerScore = (float)($signal['analyzer_score']     ?? 0.0);
+                $wfSpeedProxy    = ($wfConfScore * 0.6 + $wfAnalyzerScore * 0.4);
+                if ($wfSpeedProxy >= 0.60) {
+                    $wfSpeedState = 'fast';
+                } elseif ($wfSpeedProxy >= 0.38) {
+                    $wfSpeedState = 'normal';
+                } else {
+                    $wfSpeedState = 'slow';
+                }
+
+                if ($wfEnabled) {
+                    $result['wave_filter_total']++;
+
+                    // Rule: weak amplitude + slow speed → reject (worst combination)
+                    if (!$wfApplied
+                        && $wfAmplitudeState === 'weak'
+                        && $wfSpeedState === 'slow'
+                    ) {
+                        $wfApplied  = true;
+                        $wfIsDemote = false;
+                        $wfReason   = 'wave_filter_low_amplitude_slow_wave';
+                    }
+
+                    // Rule: weak amplitude (any speed) → demote to demo
+                    if (!$wfApplied && $wfAmplitudeState === 'weak') {
+                        $wfApplied  = true;
+                        $wfIsDemote = true;
+                        $wfReason   = 'wave_filter_low_amplitude';
+                    }
+
+                    // Rule: slow speed + non-strong amplitude → demote to demo
+                    if (!$wfApplied
+                        && $wfSpeedState === 'slow'
+                        && $wfAmplitudeState !== 'strong'
+                    ) {
+                        $wfApplied  = true;
+                        $wfIsDemote = true;
+                        $wfReason   = 'wave_filter_slow_wave';
+                    }
+
+                    if ($wfApplied) {
+                        if ($wfIsDemote) {
+                            $result['wave_filter_demo_total']++;
+                        } else {
+                            $result['wave_filter_reject_total']++;
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $wfReason, $selectionMode);
+                        continue;
+                    }
+
+                    $result['wave_filter_no_effect_total']++;
+                }
+
+                // Capture filter state for intent-level observability
+                $wfFilterResult = [
+                    'wave_filter_used'      => $wfEnabled,
+                    'wave_filter_applied'   => $wfApplied,
+                    'wave_filter_reason'    => $wfReason,
+                    'wave_amplitude_state'  => $wfAmplitudeState,
+                    'wave_speed_state'      => $wfSpeedState,
+                ];
+            }
+            // === END WAVE FILTER ===
 
             // === APPROVED: build bot-ready live intent ===
 
@@ -2390,6 +2497,13 @@ final class SmartBrainCore
             $intent['entry_quality_freshness_state'] = $eqFilterResult['entry_quality_freshness_state'];
             $intent['entry_quality_stretch_state']   = $eqFilterResult['entry_quality_stretch_state'];
 
+            // Attach wave filter observability fields
+            $intent['wave_filter_used']      = $wfFilterResult['wave_filter_used'];
+            $intent['wave_filter_applied']   = $wfFilterResult['wave_filter_applied'];
+            $intent['wave_filter_reason']    = $wfFilterResult['wave_filter_reason'];
+            $intent['wave_amplitude_state']  = $wfFilterResult['wave_amplitude_state'];
+            $intent['wave_speed_state']      = $wfFilterResult['wave_speed_state'];
+
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
                 $intent['symbol_hints'] = $symbolHints;
@@ -2438,6 +2552,10 @@ final class SmartBrainCore
                     'entry_quality_filter_used'     => $eqFilterResult['entry_quality_filter_used'],
                     'entry_quality_freshness_state' => $eqFilterResult['entry_quality_freshness_state'],
                     'entry_quality_stretch_state'   => $eqFilterResult['entry_quality_stretch_state'],
+                    // Wave filter observability
+                    'wave_filter_used'      => $wfFilterResult['wave_filter_used'],
+                    'wave_amplitude_state'  => $wfFilterResult['wave_amplitude_state'],
+                    'wave_speed_state'      => $wfFilterResult['wave_speed_state'],
                 ];
             }
         }

@@ -197,6 +197,9 @@ final class CoinPassportService
             // non-fatal
         }
 
+        // CFG-8: attach runtime config source proof so callers/cron logs can see the authority.
+        $result['coin_passport_config_source_proof'] = $this->buildCpMigrationSummary();
+
         return $result;
     }
 
@@ -306,6 +309,9 @@ final class CoinPassportService
         } catch (\Throwable $e) {
             // non-fatal
         }
+
+        // CFG-8: attach runtime config source proof so callers/cron logs can see the authority.
+        $result['coin_passport_config_source_proof'] = $this->buildCpMigrationSummary();
 
         return $result;
     }
@@ -783,6 +789,8 @@ final class CoinPassportService
                 'refinement_no_effect_total'      => $refinementResult['no_effect_total'] ?? 0,
                 'refinement_unavailable_total'    => $refinementResult['unavailable_total'] ?? 0,
                 'refinement_error_total'          => $refinementResult['error_total']     ?? 0,
+                // CFG-8: runtime config source proof.
+                'coin_passport_config_source_proof' => $this->buildCpMigrationSummary(),
             ];
         } catch (\Throwable $e) {
             return [

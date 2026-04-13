@@ -128,7 +128,8 @@ $flash   = $flash   ?? [];
                     Единый Config —
                     <span class="text-success">Smart Brain</span>,
                     <span class="text-success">Trading Bot</span>,
-                    <span class="text-warning">Менеджер Прибыли</span>: частично мигрированы (волна 1)
+                    <span class="text-warning">Менеджер Прибыли</span>,
+                    <span class="text-warning">Coin Passport</span>: частично мигрированы (волна 1)
                 </small>
             </div>
             <?php if (!empty($summary['master_saved_at'])): ?>
@@ -165,10 +166,10 @@ $flash   = $flash   ?? [];
         <i class="bi bi-shuffle text-primary mt-1 flex-shrink-0"></i>
         <div>
             <strong>Миграция в процессе — мягкое переключение активно.</strong>
-            <span class="text-success">Smart Brain</span>, <span class="text-success">Trading Bot</span>
-            и <span class="text-warning">Менеджер Прибыли</span>
-            используют Центр Конфигурации как основной источник параметров (волна 1).
-            <span style="color:#94a3b8;">Coin Passport пока читает собственный конфиг (не мигрирован).</span>
+            <span class="text-success">Smart Brain</span>, <span class="text-success">Trading Bot</span>,
+            <span class="text-warning">Менеджер Прибыли</span>
+            и <span class="text-warning">Coin Passport</span>
+            используют Центр Конфигурации как основной источник операционных параметров (волна 1).
             Редактируемые параметры сохраняются в <code>config_operational_master.json</code> и применяются при следующем цикле.
         </div>
     </div>

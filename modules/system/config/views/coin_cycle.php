@@ -44,6 +44,15 @@ $labels = [
 ];
 
 ob_start();
+
+// Russian labels for fallback reasons shown in the UI.
+$fallbackReasonLabels = [
+    'missing_in_unified'          => 'параметр отсутствует в едином конфиге',
+    'invalid_value'               => 'значение в едином конфиге недействительно (null)',
+    'read_error'                  => 'ошибка чтения файла единого конфига',
+    'unified_config_not_found'    => 'файлы единого конфига не найдены',
+    'param_not_in_unified_config' => 'параметр не найден в едином конфиге',
+];
 ?>
 <div class="row g-3">
 
@@ -114,15 +123,18 @@ ob_start();
                         $valStr     = is_bool($val) ? ($val ? 'true' : 'false') : ($val === null ? '—' : (string)$val);
                         $layer      = $detail['source_layer'] ?? ($isSwitched ? 'unified_config_master' : 'legacy_cp_config');
                         $label      = $labels[$k] ?? $k;
+                        $rawReason  = $detail['fallback_reason'] ?? '';
+                        $ruReason   = $fallbackReasonLabels[$rawReason] ?? $rawReason;
+                        $rowClass   = $isFallback ? 'table-warning' : '';
                     ?>
-                    <tr class="param-row">
+                    <tr class="param-row <?= $rowClass ?>">
                         <td class="fw-medium"><?= htmlspecialchars($label) ?></td>
                         <td class="font-monospace"><?= htmlspecialchars($valStr) ?></td>
                         <td class="source-tag">
                             <?php if ($isSwitched): ?>
                                 <span class="badge badge-master" title="<?= htmlspecialchars($detail['via'] ?? '') ?>">мастер</span>
                             <?php elseif ($isFallback): ?>
-                                <span class="badge bg-secondary" title="<?= htmlspecialchars($detail['fallback_reason'] ?? '') ?>">fallback</span>
+                                <span class="badge bg-warning text-dark" title="<?= htmlspecialchars($rawReason) ?>">fallback</span>
                             <?php else: ?>
                                 <span class="badge bg-dark text-secondary">—</span>
                             <?php endif; ?>
@@ -132,7 +144,12 @@ ob_start();
                             <?php if ($isSwitched): ?>
                                 <span class="badge badge-ok" style="font-size:0.7rem;"><i class="bi bi-check-circle me-1"></i>мигрирован</span>
                             <?php elseif ($isFallback): ?>
-                                <span class="badge badge-shadow" style="font-size:0.7rem;"><i class="bi bi-arrow-return-right me-1"></i>legacy</span>
+                                <span class="badge bg-warning text-dark" style="font-size:0.7rem;" title="<?= htmlspecialchars($rawReason) ?>">
+                                    <i class="bi bi-arrow-return-right me-1"></i>legacy
+                                </span>
+                                <?php if ($ruReason): ?>
+                                    <br><small class="text-warning" style="font-size:0.65rem;"><?= htmlspecialchars($ruReason) ?></small>
+                                <?php endif; ?>
                             <?php else: ?>
                                 <span class="badge bg-secondary" style="font-size:0.7rem;">ожидание</span>
                             <?php endif; ?>

@@ -474,39 +474,62 @@ final class CoinPassportService
         };
 
         // ── Load master (preferred) ─────────────────────────────────────────
-        $masterParams = [];
-        $masterAvail  = false;
+        $masterParams    = [];
+        $masterAvail     = false;
+        $masterReadError = false;
         if (is_file($masterPath)) {
             $rawMaster = @file_get_contents($masterPath);
-            if ($rawMaster !== false) {
+            if ($rawMaster === false) {
+                $masterReadError = true;
+            } else {
                 $masterData = @json_decode($rawMaster, true);
                 if (is_array($masterData) && !empty($masterData['params'])) {
                     $masterParams = $masterData['params'];
                     $masterAvail  = true;
                     $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                } elseif ($rawMaster !== '') {
+                    // File exists and is non-empty but JSON is invalid or missing params key.
+                    $masterReadError = true;
                 }
             }
         }
 
         // ── Load draft (fallback source) ────────────────────────────────────
-        $draftParams = [];
-        $draftAvail  = false;
+        $draftParams    = [];
+        $draftAvail     = false;
+        $draftReadError = false;
         if (is_file($draftPath)) {
             $rawDraft = @file_get_contents($draftPath);
-            if ($rawDraft !== false) {
+            if ($rawDraft === false) {
+                $draftReadError = true;
+            } else {
                 $draftData = @json_decode($rawDraft, true);
                 if (is_array($draftData) && !empty($draftData['params'])) {
                     $draftParams = $draftData['params'];
                     $draftAvail  = true;
                     $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                } elseif ($rawDraft !== '') {
+                    $draftReadError = true;
                 }
             }
         }
 
+        // Propagate read error flags into status so the UI can surface them.
+        if ($masterReadError) {
+            $status['unified_config_master_read_error'] = true;
+        }
+        if ($draftReadError) {
+            $status['unified_config_draft_read_error'] = true;
+        }
+
         if (!$masterAvail && !$draftAvail) {
+            // Distinguish: files existed but were unreadable/invalid vs. simply absent.
+            $globalReason = ($masterReadError || $draftReadError)
+                ? 'read_error'
+                : 'unified_config_not_found';
             $status['fallback_params']        = array_keys($firstWave);
             $status['fallback_count']         = count($firstWave);
-            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_not_found');
+            $status['fallback_params_detail'] = $buildFallbackDetail($globalReason);
             return $status;
         }
 
@@ -516,18 +539,43 @@ final class CoinPassportService
             $entry       = null;
             $sourceLayer = 'legacy_cp_config';
             $via         = '';
+            // Track whether the key was found in a source but had a null/invalid value.
+            $foundButInvalid = false;
 
-            if ($masterAvail && isset($masterParams[$key]) && ($masterParams[$key]['value'] ?? null) !== null) {
-                $entry       = $masterParams[$key];
-                $sourceLayer = 'unified_config_master';
-                $via         = 'unified_config_operational_master';
-            } elseif ($draftAvail && isset($draftParams[$key]) && ($draftParams[$key]['value'] ?? null) !== null) {
-                $entry       = $draftParams[$key];
-                $sourceLayer = 'unified_config';
-                $via         = 'unified_config_operational_draft';
+            if ($masterAvail && array_key_exists($key, $masterParams)) {
+                $rawEntryVal = $masterParams[$key]['value'] ?? null;
+                if ($rawEntryVal !== null) {
+                    $entry       = $masterParams[$key];
+                    $sourceLayer = 'unified_config_master';
+                    $via         = 'unified_config_operational_master';
+                } else {
+                    $foundButInvalid = true;
+                }
+            }
+
+            if ($entry === null && $draftAvail && array_key_exists($key, $draftParams)) {
+                $rawEntryVal = $draftParams[$key]['value'] ?? null;
+                if ($rawEntryVal !== null) {
+                    $entry       = $draftParams[$key];
+                    $sourceLayer = 'unified_config';
+                    $via         = 'unified_config_operational_draft';
+                } else {
+                    $foundButInvalid = true;
+                }
             }
 
             if ($entry === null) {
+                // Determine the most precise fallback reason:
+                // - key was present but value was null/invalid → invalid_value
+                // - unified source had a read error and key was absent → read_error
+                // - key simply absent from all available unified sources → missing_in_unified
+                if ($foundButInvalid) {
+                    $fallbackReason = 'invalid_value';
+                } elseif ($masterReadError || $draftReadError) {
+                    $fallbackReason = 'read_error';
+                } else {
+                    $fallbackReason = 'missing_in_unified';
+                }
                 $status['fallback_params'][] = $key;
                 $status['fallback_params_detail'][$key] = [
                     'value'                => $dotGet($config, $def['path']),
@@ -535,7 +583,7 @@ final class CoinPassportService
                     'source_owner'         => 'coin_passport',
                     'unified_config_used'  => false,
                     'legacy_fallback_used' => true,
-                    'fallback_reason'      => 'param_not_in_unified_config',
+                    'fallback_reason'      => $fallbackReason,
                     'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
                 ];
                 continue;

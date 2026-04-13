@@ -2213,44 +2213,58 @@ final class SmartBrainCore
             // === WAVE FILTER (Bounded Wave Amplitude/Speed Layer) ===
             // Runs after entry quality filter. Targets narrow low-amplitude / slow-wave candidates.
             // Uses existing signal data only. Does NOT bypass passport/cycle/slot gates.
-            // v2: amplitude thresholds tightened; speed proxy replaced with trend_match_score +
-            //     volatility_norm (better real-market spread than confirmation/analyzer proxy).
+            // v3: amplitude + speed thresholds tightened further; explicit signal-quality exception
+            //     gates added for weak amplitude (pass only for strong+high quality+fresh+fast);
+            //     new rule covers slow-speed + strong amplitude to prevent silent pass on slow moves.
             {
                 $wfEnabled  = (bool)($userLimits['wave_filter_enabled'] ?? true);
                 $wfApplied  = false;
                 $wfReason   = null;
                 $wfIsDemote = false;
 
-                // Wave amplitude: corridor_width is the primary signal (initial_roi is rarely set).
-                // Thresholds raised vs v1 so narrow-corridor candidates become 'weak'.
+                // Wave amplitude: tightened thresholds vs v2 so more narrow-corridor signals
+                // are classified as 'weak'. strong requires corridor >= 0.18 or roi >= 0.018.
                 $wfInitialRoi = (float)($signal['initial_roi'] ?? $signal['entry_roi'] ?? 0.0);
-                if ($wfInitialRoi >= 0.015 || $eqCorridorWidth >= 0.15) {
+                if ($wfInitialRoi >= 0.018 || $eqCorridorWidth >= 0.18) {
                     $wfAmplitudeState = 'strong';
-                } elseif ($wfInitialRoi >= 0.007 || $eqCorridorWidth >= 0.08) {
+                } elseif ($wfInitialRoi >= 0.009 || $eqCorridorWidth >= 0.10) {
                     $wfAmplitudeState = 'acceptable';
                 } else {
                     $wfAmplitudeState = 'weak';
                 }
 
-                // Wave speed: trend_match_score (trend momentum, 70%) +
-                //             volatility normalized to [0,1] via cap at 0.005 (30%).
-                // This proxy has much better real-market spread than confirmation/analyzer scores.
+                // Wave speed: tightened thresholds vs v2 so more slow-moving candidates are
+                // classified as 'slow'. fast requires speedProxy >= 0.68 (was 0.65), normal >= 0.50.
                 $wfTrendScore = (float)($signal['trend_match_score'] ?? 0.0);
                 $wfVolatility = (float)($signal['volatility']        ?? 0.0);
                 $wfVolNorm    = min(1.0, $wfVolatility / 0.005);
                 $wfSpeedProxy = ($wfTrendScore * 0.7 + $wfVolNorm * 0.3);
-                if ($wfSpeedProxy >= 0.65) {
+                if ($wfSpeedProxy >= 0.68) {
                     $wfSpeedState = 'fast';
-                } elseif ($wfSpeedProxy >= 0.45) {
+                } elseif ($wfSpeedProxy >= 0.50) {
                     $wfSpeedState = 'normal';
                 } else {
                     $wfSpeedState = 'slow';
                 }
 
+                // Signal quality helpers for exception gates.
+                // $eqFreshnessState is always computed above (outside the eq-filter enabled block).
+                $wfEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                $wfPatternConf  = (float)($signal['pattern_confidence']  ?? $signal['confirmation_score'] ?? 0.0);
+                // Strong-fresh exception: weak amplitude CAN pass only when signal is strong,
+                // high quality, fresh, AND the speed is fast (all four conditions required).
+                $wfStrongFreshExcept     = ($wfEntryQuality >= 0.75 && $wfPatternConf >= 0.68
+                                            && $eqFreshnessState === 'fresh' && $wfSpeedState === 'fast');
+                // High-quality-fresh exception: slow speed + strong amplitude can pass only when
+                // truly high quality AND fresh (rare cases — strong breakout in a slow market).
+                $wfHighQualityFreshExcept = ($wfEntryQuality >= 0.78 && $wfPatternConf >= 0.70
+                                            && $eqFreshnessState === 'fresh');
+
                 if ($wfEnabled) {
                     $result['wave_filter_total']++;
 
-                    // Rule: weak amplitude + slow speed → hard reject (worst combination)
+                    // Rule 1: weak amplitude + slow speed → HARD reject (critical combined condition).
+                    // No exception: this is the primary reject source for narrow+slow candidates.
                     if (!$wfApplied
                         && $wfAmplitudeState === 'weak'
                         && $wfSpeedState === 'slow'
@@ -2260,21 +2274,38 @@ final class SmartBrainCore
                         $wfReason   = 'wave_filter_low_amplitude_slow_wave';
                     }
 
-                    // Rule: weak amplitude (any speed) → demote to demo
+                    // Rule 2: weak amplitude (normal or fast speed) → default to demote.
+                    // Exception: strong signal + high quality + fresh + fast speed → allow pass.
                     if (!$wfApplied && $wfAmplitudeState === 'weak') {
-                        $wfApplied  = true;
-                        $wfIsDemote = true;
-                        $wfReason   = 'wave_filter_low_amplitude';
+                        if (!$wfStrongFreshExcept) {
+                            $wfApplied  = true;
+                            $wfIsDemote = true;
+                            $wfReason   = 'wave_filter_low_amplitude';
+                        }
+                        // else: strong+high quality+fresh+fast exception — pass (no filter)
                     }
 
-                    // Rule: slow speed + non-strong amplitude → demote to demo
+                    // Rule 3: slow speed + acceptable amplitude → demote.
+                    // No exception — acceptable amplitude + slow speed is weak market structure.
                     if (!$wfApplied
                         && $wfSpeedState === 'slow'
-                        && $wfAmplitudeState !== 'strong'
+                        && $wfAmplitudeState === 'acceptable'
                     ) {
                         $wfApplied  = true;
                         $wfIsDemote = true;
                         $wfReason   = 'wave_filter_slow_wave';
+                    }
+
+                    // Rule 4: slow speed + strong amplitude → demote unless truly high quality + fresh.
+                    // Prevents silent pass on slow-moving markets even when amplitude looks strong.
+                    if (!$wfApplied
+                        && $wfSpeedState === 'slow'
+                        && $wfAmplitudeState === 'strong'
+                        && !$wfHighQualityFreshExcept
+                    ) {
+                        $wfApplied  = true;
+                        $wfIsDemote = true;
+                        $wfReason   = 'wave_filter_slow_wave_strong_amp';
                     }
 
                     if ($wfApplied) {

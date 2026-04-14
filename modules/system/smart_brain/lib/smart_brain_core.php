@@ -2212,38 +2212,38 @@ final class SmartBrainCore
             }
             // === END ENTRY QUALITY FILTER ===
 
-            // === WAVE FILTER (Bounded Wave Amplitude/Speed Layer) ===
+            // === WAVE FILTER (Bounded Wave Amplitude/Speed Layer — soft mode) ===
             // Runs after entry quality filter. Targets narrow low-amplitude / slow-wave candidates.
             // Uses existing signal data only. Does NOT bypass passport/cycle/slot gates.
-            // v3: amplitude + speed thresholds tightened further; explicit signal-quality exception
-            //     gates added for weak amplitude (pass only for strong+high quality+fresh+fast);
-            //     new rule covers slow-speed + strong amplitude to prevent silent pass on slow moves.
+            // soft mode: thresholds relaxed so filter is a secondary quality layer, not a primary
+            //   blocker. Hard reject reserved ONLY for weak+slow without quality bypass. All other
+            //   cases demote to demo or pass (no_effect). Strong/fresh signals always survive.
             {
                 $wfEnabled  = (bool)($userLimits['wave_filter_enabled'] ?? true);
                 $wfApplied  = false;
                 $wfReason   = null;
                 $wfIsDemote = false;
 
-                // Wave amplitude: tightened thresholds vs v2 so more narrow-corridor signals
-                // are classified as 'weak'. strong requires corridor >= 0.18 or roi >= 0.018.
+                // Wave amplitude: soft-mode thresholds — fewer signals classified as 'weak'.
+                // strong requires corridor >= 0.14 or roi >= 0.015 (was 0.18/0.018).
                 $wfInitialRoi = (float)($signal['initial_roi'] ?? $signal['entry_roi'] ?? 0.0);
-                if ($wfInitialRoi >= 0.018 || $eqCorridorWidth >= 0.18) {
+                if ($wfInitialRoi >= 0.015 || $eqCorridorWidth >= 0.14) {
                     $wfAmplitudeState = 'strong';
-                } elseif ($wfInitialRoi >= 0.009 || $eqCorridorWidth >= 0.10) {
+                } elseif ($wfInitialRoi >= 0.007 || $eqCorridorWidth >= 0.08) {
                     $wfAmplitudeState = 'acceptable';
                 } else {
                     $wfAmplitudeState = 'weak';
                 }
 
-                // Wave speed: tightened thresholds vs v2 so more slow-moving candidates are
-                // classified as 'slow'. fast requires speedProxy >= 0.68 (was 0.65), normal >= 0.50.
+                // Wave speed: soft-mode lower bound for 'normal' raised to 0.38 (was 0.50)
+                // so fewer signals fall into 'slow'. fast threshold unchanged at 0.68.
                 $wfTrendScore = (float)($signal['trend_match_score'] ?? 0.0);
                 $wfVolatility = (float)($signal['volatility']        ?? 0.0);
                 $wfVolNorm    = min(1.0, $wfVolatility / 0.005);
                 $wfSpeedProxy = ($wfTrendScore * 0.7 + $wfVolNorm * 0.3);
                 if ($wfSpeedProxy >= 0.68) {
                     $wfSpeedState = 'fast';
-                } elseif ($wfSpeedProxy >= 0.50) {
+                } elseif ($wfSpeedProxy >= 0.38) {
                     $wfSpeedState = 'normal';
                 } else {
                     $wfSpeedState = 'slow';
@@ -2253,22 +2253,24 @@ final class SmartBrainCore
                 // $eqFreshnessState is always computed above (outside the eq-filter enabled block).
                 $wfEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
                 $wfPatternConf  = (float)($signal['pattern_confidence']  ?? $signal['confirmation_score'] ?? 0.0);
-                // Strong-fresh exception: weak amplitude CAN pass only when signal is strong,
-                // high quality, fresh, AND the speed is fast (all four conditions required).
-                $wfStrongFreshExcept     = ($wfEntryQuality >= 0.75 && $wfPatternConf >= 0.68
-                                            && $eqFreshnessState === 'fresh' && $wfSpeedState === 'fast');
-                // High-quality-fresh exception: slow speed + strong amplitude can pass only when
-                // truly high quality AND fresh (rare cases — strong breakout in a slow market).
-                $wfHighQualityFreshExcept = ($wfEntryQuality >= 0.78 && $wfPatternConf >= 0.70
+                // Strong-fresh exception: weak amplitude CAN pass when signal is high quality + fresh.
+                // Speed restriction removed (was also requiring fast) — high quality fresh signals
+                // must always survive wave filter regardless of speed state.
+                $wfStrongFreshExcept     = ($wfEntryQuality >= 0.68 && $wfPatternConf >= 0.60
                                             && $eqFreshnessState === 'fresh');
-                // Rule 1 excellent escape: weak+slow signal with excellent quality + fresh → pass entirely.
+                // High-quality-fresh exception: slow speed + strong amplitude can pass when
+                // high quality AND fresh (strong breakout in a slow market).
+                $wfHighQualityFreshExcept = ($wfEntryQuality >= 0.68 && $wfPatternConf >= 0.62
+                                            && $eqFreshnessState === 'fresh');
+                // Rule 1 excellent escape: weak+slow signal with good quality + fresh → pass entirely.
                 // Prevents over-rejection when the entire pool is classified as weak+slow.
-                $wfRule1ExcellentEscape = ($wfEntryQuality >= 0.80 && $wfPatternConf >= 0.72
+                $wfRule1ExcellentEscape = ($wfEntryQuality >= 0.72 && $wfPatternConf >= 0.64
                                            && $eqFreshnessState === 'fresh');
-                // Rule 1 soft escape: weak+slow signal with good quality + fresh → demote, not reject.
-                // Shifts hard rejects toward demo when signal quality justifies it.
-                $wfRule1SoftEscape = ($wfEntryQuality >= 0.72 && $wfPatternConf >= 0.65
-                                      && $eqFreshnessState === 'fresh');
+                // Rule 1 soft escape: weak+slow signal → demote, not reject, when signal has
+                // reasonable quality OR is fresh with acceptable confidence.
+                // OR logic ensures most weak+slow signals demote instead of hard-reject.
+                $wfRule1SoftEscape = ($wfEntryQuality >= 0.60
+                                      || ($wfPatternConf >= 0.55 && $eqFreshnessState === 'fresh'));
 
                 if ($wfEnabled) {
                     $result['wave_filter_total']++;
@@ -2289,14 +2291,15 @@ final class SmartBrainCore
                     // else: $wfRule1ExcellentEscape → pass through (wfApplied stays false)
 
                     // Rule 2: weak amplitude (normal or fast speed) → default to demote.
-                    // Exception: strong signal + high quality + fresh + fast speed → allow pass.
+                    // Exception: strong signal + high quality + fresh → allow pass (no_effect).
+                    // Speed requirement removed from exception: high quality fresh signals survive.
                     if (!$wfApplied && $wfAmplitudeState === 'weak') {
                         if (!$wfStrongFreshExcept) {
                             $wfApplied  = true;
                             $wfIsDemote = true;
                             $wfReason   = 'wave_filter_low_amplitude';
                         }
-                        // else: strong+high quality+fresh+fast exception — pass (no filter)
+                        // else: strong+high quality+fresh exception — pass (no filter)
                     }
 
                     // Rule 3: slow speed + acceptable amplitude → demote.
@@ -2371,11 +2374,12 @@ final class SmartBrainCore
 
                 // Capture filter state for intent-level observability
                 $wfFilterResult = [
-                    'wave_filter_used'      => $wfEnabled,
-                    'wave_filter_applied'   => $wfApplied,
-                    'wave_filter_reason'    => $wfReason,
-                    'wave_amplitude_state'  => $wfAmplitudeState,
-                    'wave_speed_state'      => $wfSpeedState,
+                    'wave_filter_used'        => $wfEnabled,
+                    'wave_filter_applied'     => $wfApplied,
+                    'wave_filter_reason'      => $wfReason,
+                    'wave_amplitude_state'    => $wfAmplitudeState,
+                    'wave_speed_state'        => $wfSpeedState,
+                    'wave_filter_soft_mode'   => true,
                 ];
             }
             // === END WAVE FILTER ===
@@ -2582,11 +2586,12 @@ final class SmartBrainCore
             $intent['entry_quality_stretch_state']   = $eqFilterResult['entry_quality_stretch_state'];
 
             // Attach wave filter observability fields
-            $intent['wave_filter_used']      = $wfFilterResult['wave_filter_used'];
-            $intent['wave_filter_applied']   = $wfFilterResult['wave_filter_applied'];
-            $intent['wave_filter_reason']    = $wfFilterResult['wave_filter_reason'];
-            $intent['wave_amplitude_state']  = $wfFilterResult['wave_amplitude_state'];
-            $intent['wave_speed_state']      = $wfFilterResult['wave_speed_state'];
+            $intent['wave_filter_used']        = $wfFilterResult['wave_filter_used'];
+            $intent['wave_filter_applied']     = $wfFilterResult['wave_filter_applied'];
+            $intent['wave_filter_reason']      = $wfFilterResult['wave_filter_reason'];
+            $intent['wave_amplitude_state']    = $wfFilterResult['wave_amplitude_state'];
+            $intent['wave_speed_state']        = $wfFilterResult['wave_speed_state'];
+            $intent['wave_filter_soft_mode']   = $wfFilterResult['wave_filter_soft_mode'];
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
@@ -2637,9 +2642,10 @@ final class SmartBrainCore
                     'entry_quality_freshness_state' => $eqFilterResult['entry_quality_freshness_state'],
                     'entry_quality_stretch_state'   => $eqFilterResult['entry_quality_stretch_state'],
                     // Wave filter observability
-                    'wave_filter_used'      => $wfFilterResult['wave_filter_used'],
-                    'wave_amplitude_state'  => $wfFilterResult['wave_amplitude_state'],
-                    'wave_speed_state'      => $wfFilterResult['wave_speed_state'],
+                    'wave_filter_used'        => $wfFilterResult['wave_filter_used'],
+                    'wave_amplitude_state'    => $wfFilterResult['wave_amplitude_state'],
+                    'wave_speed_state'        => $wfFilterResult['wave_speed_state'],
+                    'wave_filter_soft_mode'   => $wfFilterResult['wave_filter_soft_mode'],
                 ];
             }
         }

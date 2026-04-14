@@ -2322,31 +2322,51 @@ final class SmartBrainCore
                         $wfReason   = 'wave_filter_slow_wave_strong_amp';
                     }
 
-                    if ($wfApplied) {
-                        if ($wfIsDemote) {
-                            $result['wave_filter_demo_total']++;
-                        } else {
-                            $result['wave_filter_reject_total']++;
-                        }
+                    if ($wfApplied && !$wfIsDemote) {
+                        // Hard reject: only triggered when BOTH weak amplitude AND slow speed
+                        // (Rule 1 without a quality escape). Signal is removed from the live pool.
+                        $result['wave_filter_reject_total']++;
                         if (count($result['wave_filter_rejected_preview']) < 10) {
                             $result['wave_filter_rejected_preview'][] = [
-                                'symbol'              => $symbol,
-                                'side'                => $side,
-                                'pattern_algorithm'   => (string)($signal['pattern_algorithm'] ?? ''),
-                                'filter_reason'       => $wfReason,
-                                'filter_outcome'      => $wfIsDemote ? 'demote' : 'reject',
+                                'symbol'               => $symbol,
+                                'side'                 => $side,
+                                'pattern_algorithm'    => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'        => $wfReason,
+                                'filter_outcome'       => 'reject',
                                 'wave_amplitude_state' => $wfAmplitudeState,
-                                'wave_speed_state'    => $wfSpeedState,
-                                'corridor_width'      => $eqCorridorWidth,
-                                'trend_match_score'   => $wfTrendScore,
-                                'volatility'          => $wfVolatility,
+                                'wave_speed_state'     => $wfSpeedState,
+                                'corridor_width'       => $eqCorridorWidth,
+                                'trend_match_score'    => $wfTrendScore,
+                                'volatility'           => $wfVolatility,
                             ];
                         }
                         $this->rejectLiveSignal($result, $symbol, $signalId, $wfReason, $selectionMode);
                         continue;
                     }
 
-                    $result['wave_filter_no_effect_total']++;
+                    if ($wfApplied && $wfIsDemote) {
+                        // Soft demote: single-condition cases (only-weak OR only-slow) and
+                        // Rule 1 quality escapes. Signal is tagged for observability but is
+                        // NOT removed from the live pool — it proceeds as a live candidate.
+                        $result['wave_filter_demo_total']++;
+                        if (count($result['wave_filter_rejected_preview']) < 10) {
+                            $result['wave_filter_rejected_preview'][] = [
+                                'symbol'               => $symbol,
+                                'side'                 => $side,
+                                'pattern_algorithm'    => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'        => $wfReason,
+                                'filter_outcome'       => 'demote',
+                                'wave_amplitude_state' => $wfAmplitudeState,
+                                'wave_speed_state'     => $wfSpeedState,
+                                'corridor_width'       => $eqCorridorWidth,
+                                'trend_match_score'    => $wfTrendScore,
+                                'volatility'           => $wfVolatility,
+                            ];
+                        }
+                        // fall through — signal continues to approved list
+                    } else {
+                        $result['wave_filter_no_effect_total']++;
+                    }
                 }
 
                 // Capture filter state for intent-level observability

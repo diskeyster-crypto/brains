@@ -284,7 +284,8 @@ class ProfitManager
             // Never loosens stops or widens risk; only holds (shallow pullback) or releases
             // hold (growth zone, protection zone) to let step trailing proceed.
             $pmRefineFields = $this->computePmRefine(
-                $peakRoi, $currentRoi, $activationRoiPct, $trailingArmed, isset($ctx['pm10_hold'])
+                $peakRoi, $currentRoi, $activationRoiPct, $trailingArmed, isset($ctx['pm10_hold']),
+                (bool)($pm17Fields['pm17_applied'] ?? false)
             );
             // Apply pm_refine hold override (true=set hold, false=release hold, null=no change)
             if ($pmRefineFields['pm_refine_override_hold'] === true) {
@@ -749,13 +750,14 @@ class ProfitManager
             $itemResult['pm17_applied']              = $pm17Fields['pm17_applied'];
 
             // PM-18 (pm_refine): Peak-drawdown refinement v2 observability fields
-            $itemResult['pm_refine_used']              = $pmRefineFields['pm_refine_used'];
-            $itemResult['pm_refine_applied']           = $pmRefineFields['pm_refine_applied'];
-            $itemResult['pm_refine_reason']            = $pmRefineFields['pm_refine_reason'];
-            $itemResult['pm_refine_peak_roi']          = $pmRefineFields['pm_refine_peak_roi'];
-            $itemResult['pm_refine_current_roi']       = $pmRefineFields['pm_refine_current_roi'];
-            $itemResult['pm_refine_drawdown_from_peak']= $pmRefineFields['pm_refine_drawdown_from_peak'];
-            $itemResult['pm_refine_pullback_state']    = $pmRefineFields['pm_refine_pullback_state'];
+            $itemResult['pm_refine_used']                = $pmRefineFields['pm_refine_used'];
+            $itemResult['pm_refine_applied']             = $pmRefineFields['pm_refine_applied'];
+            $itemResult['pm_refine_reason']              = $pmRefineFields['pm_refine_reason'];
+            $itemResult['pm_refine_peak_roi']            = $pmRefineFields['pm_refine_peak_roi'];
+            $itemResult['pm_refine_current_roi']         = $pmRefineFields['pm_refine_current_roi'];
+            $itemResult['pm_refine_drawdown_from_peak']  = $pmRefineFields['pm_refine_drawdown_from_peak'];
+            $itemResult['pm_refine_pullback_state']      = $pmRefineFields['pm_refine_pullback_state'];
+            $itemResult['pm_refine_profit_capture_sync'] = $pmRefineFields['pm_refine_profit_capture_sync'];
 
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
@@ -1634,13 +1636,14 @@ class ProfitManager
                 'pm17_peak_meaningful'   => $result['pm17_peak_meaningful']   ?? false,
                 'pm17_applied'           => $result['pm17_applied']           ?? false,
                 // PM-18 (pm_refine): Peak-drawdown refinement v2 evidence — always updated
-                'pm_refine_used'               => $result['pm_refine_used']               ?? false,
-                'pm_refine_applied'            => $result['pm_refine_applied']            ?? false,
-                'pm_refine_reason'             => $result['pm_refine_reason']             ?? null,
-                'pm_refine_peak_roi'           => $result['pm_refine_peak_roi']           ?? null,
-                'pm_refine_current_roi'        => $result['pm_refine_current_roi']        ?? null,
-                'pm_refine_drawdown_from_peak' => $result['pm_refine_drawdown_from_peak'] ?? null,
-                'pm_refine_pullback_state'     => $result['pm_refine_pullback_state']     ?? null,
+                'pm_refine_used'                => $result['pm_refine_used']               ?? false,
+                'pm_refine_applied'             => $result['pm_refine_applied']            ?? false,
+                'pm_refine_reason'              => $result['pm_refine_reason']             ?? null,
+                'pm_refine_peak_roi'            => $result['pm_refine_peak_roi']           ?? null,
+                'pm_refine_current_roi'         => $result['pm_refine_current_roi']        ?? null,
+                'pm_refine_drawdown_from_peak'  => $result['pm_refine_drawdown_from_peak'] ?? null,
+                'pm_refine_pullback_state'      => $result['pm_refine_pullback_state']     ?? null,
+                'pm_refine_profit_capture_sync' => $result['pm_refine_profit_capture_sync'] ?? false,
                 'updated_at'                           => date('c'),
             ];
             if (!empty($result['cycle_pm_support_applied'])) {
@@ -2065,7 +2068,8 @@ class ProfitManager
         float $currentRoi,
         float $activationRoiPct,
         bool  $trailingArmed,
-        bool  $holdActive
+        bool  $holdActive,
+        bool  $profitCaptureApplied = false
     ): array {
         $pmRefineCfg = is_array($this->config['pm_refine'] ?? null) ? $this->config['pm_refine'] : [];
         $enabled         = (bool)($pmRefineCfg['pm_refine_enabled']          ?? true);
@@ -2083,24 +2087,34 @@ class ProfitManager
         $drawdown = round($peakRoi - $currentRoi, 4);
 
         $base = [
-            'pm_refine_used'              => false,
-            'pm_refine_applied'           => false,
-            'pm_refine_reason'            => null,
-            'pm_refine_peak_roi'          => round($peakRoi, 4),
-            'pm_refine_current_roi'       => round($currentRoi, 4),
-            'pm_refine_drawdown_from_peak'=> $drawdown,
-            'pm_refine_pullback_state'    => 'no_peak',
-            'pm_refine_override_hold'     => null,
+            'pm_refine_used'                => false,
+            'pm_refine_applied'             => false,
+            'pm_refine_reason'              => null,
+            'pm_refine_peak_roi'            => round($peakRoi, 4),
+            'pm_refine_current_roi'         => round($currentRoi, 4),
+            'pm_refine_drawdown_from_peak'  => $drawdown,
+            'pm_refine_pullback_state'      => 'no_peak',
+            'pm_refine_override_hold'       => null,
+            'pm_refine_profit_capture_sync' => $profitCaptureApplied,
         ];
 
         if (!$enabled) {
             return $base;
         }
 
-        // Gate: peak must be meaningful (armed and above activation + headroom)
-        $peakMeaningful = $trailingArmed && ($peakRoi >= ($activationRoiPct + $peakHeadroomMin));
-        if (!$peakMeaningful) {
-            // no_peak: peak has not reached a meaningful level; no refinement action
+        // Gate: trailing must be armed for refinement to apply
+        if (!$trailingArmed) {
+            return $base;
+        }
+
+        // Drawdown-first gate: if drawdown is decisive (>= protect threshold), ALWAYS evaluate
+        // regardless of peakRoi headroom — this is the primary trigger for reducing no_effect.
+        // For other zones (shallow pullback, growth) we still require peak to be meaningful.
+        $peakMeaningful  = ($peakRoi >= ($activationRoiPct + $peakHeadroomMin));
+        $drawdownDecisive = ($drawdown >= $protectMinAbs);
+
+        if (!$peakMeaningful && !$drawdownDecisive) {
+            // Peak not yet meaningful AND drawdown not decisive → no refinement action
             return $base;
         }
 
@@ -2109,12 +2123,24 @@ class ProfitManager
         // --- Zone: protection (meaningful drawdown) ---
         // Drawdown >= protect_min_abs ROI points — significant profit is being given back.
         // DECISIVE: always release hold so step trailing fires and locks in remaining profit.
+        // Fires even when peakMeaningful gate is not met — drawdown alone is sufficient trigger.
         if ($drawdown >= $protectMinAbs) {
             $base['pm_refine_pullback_state'] = 'protection';
             $base['pm_refine_applied']        = true;
-            $base['pm_refine_reason']         = 'pm_refine_peak_drawdown_protect';
+            // When profit capture already applied and drawdown is still growing, strengthen further
+            if ($profitCaptureApplied) {
+                $base['pm_refine_reason']     = 'pm_refine_lock_strengthen';
+            } else {
+                $base['pm_refine_reason']     = 'pm_refine_peak_drawdown_protect';
+            }
             // Release hold unconditionally — step trailing must fire to protect remaining profit
             $base['pm_refine_override_hold']  = false;
+            return $base;
+        }
+
+        // Below here we only evaluate when peak is meaningful (shallow pullback + growth zones)
+        if (!$peakMeaningful) {
+            // Drawdown was decisive but already handled above; this branch is unreachable
             return $base;
         }
 
@@ -2137,10 +2163,10 @@ class ProfitManager
         $base['pm_refine_applied']        = true;
         if ($drawdown <= 0.0) {
             // New peak or exactly at peak — lock strengthen
-            $base['pm_refine_reason']       = 'pm_refine_lock_strengthen';
+            $base['pm_refine_reason']      = 'pm_refine_lock_strengthen';
         } else {
-            // Just below peak — support continuation
-            $base['pm_refine_reason']       = 'pm_refine_continue_support';
+            // Just below peak — allow continuation (hold the position open, not the stop)
+            $base['pm_refine_reason']      = 'pm_refine_growth_hold';
         }
         // Release hold so step trailing can proceed and lock in gains at or near peak
         $base['pm_refine_override_hold'] = false;

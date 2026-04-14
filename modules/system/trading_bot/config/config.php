@@ -492,6 +492,43 @@ return [
                 'aggressive_drawdown_fraction' => 0.35,
             ],
 
+            // PM-18 (pm_refine): Peak-drawdown refinement v2 — decisive zone-based layer.
+            // Runs after PM-17. Uses ABSOLUTE drawdown (ROI points, not fraction) from peak
+            // to classify each position into a clear zone and apply a decisive hold override.
+            //
+            // Zones:
+            //   growth       — drawdown <= shallow_max_abs  → release hold, support continuation
+            //   shallow_pullback — shallow_max < drawdown < protect_min → set hold, avoid tightening
+            //   protection   — drawdown >= protect_min_abs  → ALWAYS release hold, force step trailing
+            //
+            // In protection zone pm_refine is DECISIVE: it always fires when peak is meaningful,
+            // ensuring the position gives back as little as possible after a meaningful drawdown.
+            'pm_refine' => [
+                // pm_refine_enabled: master toggle for the pm_refine layer (true = active).
+                'pm_refine_enabled' => true,
+
+                // peak_headroom_min: peak must exceed activation_roi_pct by at least this many
+                // ROI points for pm_refine to evaluate the position.
+                // Same gate as PM-17 — prevents action on barely-armed positions.
+                'peak_headroom_min' => 0.5,
+
+                // shallow_drawdown_max_abs: absolute drawdown (ROI points) at or below which
+                // the position is classified as growth zone (at or near peak).
+                // In growth zone pm_refine releases any hold so step trailing can lock in gains.
+                'shallow_drawdown_max_abs' => 0.30,
+
+                // protect_drawdown_min_abs: absolute drawdown (ROI points) at or above which
+                // the position is classified as protection zone.
+                // In protection zone pm_refine ALWAYS releases hold so step trailing fires.
+                // Complements PM-17 which uses fraction; pm_refine fires sooner on absolute distance.
+                'protect_drawdown_min_abs' => 1.0,
+
+                // pm_refine_drawdown_strictness: normal | strict.
+                // In strict mode thresholds are tightened (both multiplied by 0.7) so protection
+                // triggers sooner and growth window is narrower.
+                'pm_refine_drawdown_strictness' => 'normal',
+            ],
+
             /* ======================================================
                ANTI-SPAM / RATE LIMITS
                ====================================================== */

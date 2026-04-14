@@ -112,6 +112,14 @@ class ProfitManager
         $pm17IntermediateTotal         = 0; // positions classified as intermediate_giveback (between thresholds)
         $pm17NoEffectTotal             = 0; // positions where peak was not yet meaningful
 
+        // PM-18 (pm_refine): Per-run peak-drawdown refinement v2 counters
+        // Merged into cumulative pm_refine_counters.json at end of run.
+        $pmRefTotal         = 0; // positions where peak was meaningful (evaluated actively)
+        $pmRefApplyTotal    = 0; // positions where refinement applied an action (any zone)
+        $pmRefNoEffectTotal = 0; // positions where peak not yet meaningful (no action possible)
+        $pmRefProtectTotal  = 0; // positions classified into protection zone
+        $pmRefContinueTotal = 0; // positions classified into growth zone (continuation support)
+
         // Build bot-trade lookup by canonical "symbol_side" key
         $botTradeByKey = [];
         foreach ($botTrades as $bt) {
@@ -268,6 +276,36 @@ class ProfitManager
                 } elseif ($pm17CaptureMode === 'intermediate_giveback') {
                     $pm17IntermediateTotal++;
                 }
+            }
+
+            // PM-18 (pm_refine): Peak-drawdown refinement v2 — runs AFTER PM-17.
+            // Uses absolute drawdown (ROI points) from peak to classify the position into a
+            // clear zone and apply a decisive hold override on the real PM action paths.
+            // Never loosens stops or widens risk; only holds (shallow pullback) or releases
+            // hold (growth zone, protection zone) to let step trailing proceed.
+            $pmRefineFields = $this->computePmRefine(
+                $peakRoi, $currentRoi, $activationRoiPct, $trailingArmed, isset($ctx['pm10_hold'])
+            );
+            // Apply pm_refine hold override (true=set hold, false=release hold, null=no change)
+            if ($pmRefineFields['pm_refine_override_hold'] === true) {
+                $ctx['pm10_hold']        = true;
+                $ctx['pm10_hold_reason'] = $pmRefineFields['pm_refine_reason'];
+            } elseif ($pmRefineFields['pm_refine_override_hold'] === false) {
+                unset($ctx['pm10_hold'], $ctx['pm10_hold_reason']);
+            }
+            // Count pm_refine zones
+            if ($pmRefineFields['pm_refine_used']) {
+                $pmRefTotal++;
+                if ($pmRefineFields['pm_refine_applied']) {
+                    $pmRefApplyTotal++;
+                    if ($pmRefineFields['pm_refine_pullback_state'] === 'protection') {
+                        $pmRefProtectTotal++;
+                    } elseif ($pmRefineFields['pm_refine_pullback_state'] === 'growth') {
+                        $pmRefContinueTotal++;
+                    }
+                }
+            } else {
+                $pmRefNoEffectTotal++;
             }
 
             // PM-15: Bounded cycle caution layer — read coin_cycle_decision_model from passport.
@@ -710,6 +748,15 @@ class ProfitManager
             $itemResult['pm17_override_hold']        = $pm17Fields['pm17_override_hold'];
             $itemResult['pm17_applied']              = $pm17Fields['pm17_applied'];
 
+            // PM-18 (pm_refine): Peak-drawdown refinement v2 observability fields
+            $itemResult['pm_refine_used']              = $pmRefineFields['pm_refine_used'];
+            $itemResult['pm_refine_applied']           = $pmRefineFields['pm_refine_applied'];
+            $itemResult['pm_refine_reason']            = $pmRefineFields['pm_refine_reason'];
+            $itemResult['pm_refine_peak_roi']          = $pmRefineFields['pm_refine_peak_roi'];
+            $itemResult['pm_refine_current_roi']       = $pmRefineFields['pm_refine_current_roi'];
+            $itemResult['pm_refine_drawdown_from_peak']= $pmRefineFields['pm_refine_drawdown_from_peak'];
+            $itemResult['pm_refine_pullback_state']    = $pmRefineFields['pm_refine_pullback_state'];
+
             // Bot trade context or unavailability reason
             if ($botTrade !== null) {
                 $itemResult['bot_context'] = [
@@ -866,6 +913,18 @@ class ProfitManager
         ];
         $this->store->savePm17Counters($pm17Totals);
 
+        // PM-18 (pm_refine): Merge this-run peak-drawdown refinement v2 counts into pm_refine_counters.json
+        $prevPmRef   = $this->store->loadPmRefineCounters();
+        $pmRefTotals = [
+            'pm_refine_total'          => ((int)($prevPmRef['pm_refine_total']          ?? 0)) + $pmRefTotal,
+            'pm_refine_apply_total'    => ((int)($prevPmRef['pm_refine_apply_total']    ?? 0)) + $pmRefApplyTotal,
+            'pm_refine_no_effect_total'=> ((int)($prevPmRef['pm_refine_no_effect_total']?? 0)) + $pmRefNoEffectTotal,
+            'pm_refine_protect_total'  => ((int)($prevPmRef['pm_refine_protect_total']  ?? 0)) + $pmRefProtectTotal,
+            'pm_refine_continue_total' => ((int)($prevPmRef['pm_refine_continue_total'] ?? 0)) + $pmRefContinueTotal,
+            'updated_at'               => $ts,
+        ];
+        $this->store->savePmRefineCounters($pmRefTotals);
+
         return [
             'positions_total'   => $positionsTotal,
             'positions_managed' => $positionsManaged,
@@ -983,6 +1042,21 @@ class ProfitManager
                 'pm_profit_capture_lock_strengthen_total' => $pm17Totals['pm_profit_capture_lock_strengthen_total'],
                 'pm_profit_capture_intermediate_total' => $pm17Totals['pm_profit_capture_intermediate_total'],
                 'pm_profit_capture_no_effect_total'    => $pm17Totals['pm_profit_capture_no_effect_total'],
+            ],
+            // PM-18 (pm_refine): peak-drawdown refinement v2 counters (both this-run and cumulative)
+            'pm_refine_counters' => [
+                // This-run deltas
+                'this_run_total'          => $pmRefTotal,
+                'this_run_apply_total'    => $pmRefApplyTotal,
+                'this_run_no_effect_total'=> $pmRefNoEffectTotal,
+                'this_run_protect_total'  => $pmRefProtectTotal,
+                'this_run_continue_total' => $pmRefContinueTotal,
+                // Cumulative totals
+                'pm_refine_total'          => $pmRefTotals['pm_refine_total'],
+                'pm_refine_apply_total'    => $pmRefTotals['pm_refine_apply_total'],
+                'pm_refine_no_effect_total'=> $pmRefTotals['pm_refine_no_effect_total'],
+                'pm_refine_protect_total'  => $pmRefTotals['pm_refine_protect_total'],
+                'pm_refine_continue_total' => $pmRefTotals['pm_refine_continue_total'],
             ],
         ];
     }
@@ -1559,6 +1633,14 @@ class ProfitManager
                 'pm17_drawdown_fraction' => $result['pm17_drawdown_fraction'] ?? null,
                 'pm17_peak_meaningful'   => $result['pm17_peak_meaningful']   ?? false,
                 'pm17_applied'           => $result['pm17_applied']           ?? false,
+                // PM-18 (pm_refine): Peak-drawdown refinement v2 evidence — always updated
+                'pm_refine_used'               => $result['pm_refine_used']               ?? false,
+                'pm_refine_applied'            => $result['pm_refine_applied']            ?? false,
+                'pm_refine_reason'             => $result['pm_refine_reason']             ?? null,
+                'pm_refine_peak_roi'           => $result['pm_refine_peak_roi']           ?? null,
+                'pm_refine_current_roi'        => $result['pm_refine_current_roi']        ?? null,
+                'pm_refine_drawdown_from_peak' => $result['pm_refine_drawdown_from_peak'] ?? null,
+                'pm_refine_pullback_state'     => $result['pm_refine_pullback_state']     ?? null,
                 'updated_at'                           => date('c'),
             ];
             if (!empty($result['cycle_pm_support_applied'])) {
@@ -1940,6 +2022,128 @@ class ProfitManager
         // Observe and record; no hold override in this band.
         $base['pm17_capture_mode']   = 'intermediate_giveback';
         $base['pm17_capture_reason'] = 'pm_profit_capture_intermediate_giveback';
+        return $base;
+    }
+
+    // =========================================================================
+    // PM-18 (pm_refine): Peak-drawdown refinement v2
+    // =========================================================================
+
+    /**
+     * Compute PM-18 (pm_refine) peak-drawdown refinement v2 for a single position.
+     *
+     * Runs AFTER computePm17ProfitCapture() in runActive(). Uses absolute drawdown
+     * (ROI points, not fraction) from peak to classify the position into one of three
+     * clear zones and apply a decisive hold override on the real PM action paths.
+     *
+     * Zones (using absolute drawdown = peak_roi - current_roi):
+     *   no_peak      — peak not yet meaningful; skip evaluation entirely
+     *   growth       — low drawdown (at or near peak); release any hold, support continuation
+     *   shallow_pullback — small drawdown; set hold to avoid premature tightening
+     *   protection   — meaningful drawdown; release hold unconditionally so step trailing fires
+     *
+     * pm_refine_override_hold:
+     *   null  — no change (peak not meaningful)
+     *   true  — set hold (shallow_pullback zone)
+     *   false — release hold (growth or protection zone; decisive for protection)
+     *
+     * Constraints:
+     *   - NEVER loosens stops or reduces existing lock
+     *   - NEVER overrides PM caution blocks
+     *   - Only affects pm10_hold gate; step trailing ratchet remains fully active
+     *   - pm_refine_applied=true for all zones where peak is meaningful
+     *
+     * @param float $peakRoi          Monotonic peak ROI for this position
+     * @param float $currentRoi       Current ROI this tick
+     * @param float $activationRoiPct Arm threshold from config
+     * @param bool  $trailingArmed    Whether trailing is armed this tick
+     * @param bool  $holdActive       Whether pm10_hold is currently set (post PM-17)
+     * @return array PM-18 fields (safe to spread into item result)
+     */
+    private function computePmRefine(
+        float $peakRoi,
+        float $currentRoi,
+        float $activationRoiPct,
+        bool  $trailingArmed,
+        bool  $holdActive
+    ): array {
+        $pmRefineCfg = is_array($this->config['pm_refine'] ?? null) ? $this->config['pm_refine'] : [];
+        $enabled         = (bool)($pmRefineCfg['pm_refine_enabled']          ?? true);
+        $peakHeadroomMin = (float)($pmRefineCfg['peak_headroom_min']         ?? 0.5);
+        $shallowMaxAbs   = (float)($pmRefineCfg['shallow_drawdown_max_abs']  ?? 0.30);
+        $protectMinAbs   = (float)($pmRefineCfg['protect_drawdown_min_abs']  ?? 1.0);
+        $strictness      = (string)($pmRefineCfg['pm_refine_drawdown_strictness'] ?? 'normal');
+
+        // Strict mode: tighten thresholds so protection triggers sooner
+        if ($strictness === 'strict') {
+            $shallowMaxAbs *= 0.7;
+            $protectMinAbs *= 0.7;
+        }
+
+        $drawdown = round($peakRoi - $currentRoi, 4);
+
+        $base = [
+            'pm_refine_used'              => false,
+            'pm_refine_applied'           => false,
+            'pm_refine_reason'            => null,
+            'pm_refine_peak_roi'          => round($peakRoi, 4),
+            'pm_refine_current_roi'       => round($currentRoi, 4),
+            'pm_refine_drawdown_from_peak'=> $drawdown,
+            'pm_refine_pullback_state'    => 'no_peak',
+            'pm_refine_override_hold'     => null,
+        ];
+
+        if (!$enabled) {
+            return $base;
+        }
+
+        // Gate: peak must be meaningful (armed and above activation + headroom)
+        $peakMeaningful = $trailingArmed && ($peakRoi >= ($activationRoiPct + $peakHeadroomMin));
+        if (!$peakMeaningful) {
+            // no_peak: peak has not reached a meaningful level; no refinement action
+            return $base;
+        }
+
+        $base['pm_refine_used'] = true;
+
+        // --- Zone: protection (meaningful drawdown) ---
+        // Drawdown >= protect_min_abs ROI points — significant profit is being given back.
+        // DECISIVE: always release hold so step trailing fires and locks in remaining profit.
+        if ($drawdown >= $protectMinAbs) {
+            $base['pm_refine_pullback_state'] = 'protection';
+            $base['pm_refine_applied']        = true;
+            $base['pm_refine_reason']         = 'pm_refine_peak_drawdown_protect';
+            // Release hold unconditionally — step trailing must fire to protect remaining profit
+            $base['pm_refine_override_hold']  = false;
+            return $base;
+        }
+
+        // --- Zone: shallow_pullback (small drawdown) ---
+        // Drawdown between shallow_max_abs and protect_min_abs — moderate giveback.
+        // Hold tightening: the position may recover to new highs; avoid locking in a pullback.
+        if ($drawdown > $shallowMaxAbs) {
+            $base['pm_refine_pullback_state'] = 'shallow_pullback';
+            $base['pm_refine_applied']        = true;
+            $base['pm_refine_reason']         = 'pm_refine_shallow_pullback_hold';
+            // Set hold to avoid premature tightening during pullback
+            $base['pm_refine_override_hold']  = true;
+            return $base;
+        }
+
+        // --- Zone: growth (at or near peak, low drawdown) ---
+        // Drawdown <= shallow_max_abs — position is at or very close to its peak.
+        // Support continuation: release any hold so step trailing can lock in gains.
+        $base['pm_refine_pullback_state'] = 'growth';
+        $base['pm_refine_applied']        = true;
+        if ($drawdown <= 0.0) {
+            // New peak or exactly at peak — lock strengthen
+            $base['pm_refine_reason']       = 'pm_refine_lock_strengthen';
+        } else {
+            // Just below peak — support continuation
+            $base['pm_refine_reason']       = 'pm_refine_continue_support';
+        }
+        // Release hold so step trailing can proceed and lock in gains at or near peak
+        $base['pm_refine_override_hold'] = false;
         return $base;
     }
 

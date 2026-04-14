@@ -1503,6 +1503,32 @@ class Store
         $path = $this->storageDir . '/runtime/pm17_profit_capture_counters.json';
         $this->writeJson($path, $counters);
     }
+
+    // =========================================================================
+    // PM-18 (pm_refine): Peak-drawdown refinement v2 counters
+    // =========================================================================
+
+    /**
+     * Load cumulative PM-18 (pm_refine) peak-drawdown refinement v2 counters.
+     *
+     * @return array Counters (empty array when file does not yet exist)
+     */
+    public function loadPmRefineCounters(): array
+    {
+        $path = $this->storageDir . '/runtime/pm_refine_counters.json';
+        return $this->readJson($path);
+    }
+
+    /**
+     * Save cumulative PM-18 (pm_refine) peak-drawdown refinement v2 counters.
+     *
+     * @param array $counters
+     */
+    public function savePmRefineCounters(array $counters): void
+    {
+        $path = $this->storageDir . '/runtime/pm_refine_counters.json';
+        $this->writeJson($path, $counters);
+    }
 }
 
 /* RULES

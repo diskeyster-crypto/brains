@@ -304,6 +304,7 @@ final class ProfitManagerService
             $pm15Counters = $runResult['pm15_counters'] ?? [];
             $pm16Counters = $runResult['pm16_counters'] ?? [];
             $pm17Counters = $runResult['pm17_counters'] ?? [];
+            $pmRefineCounters = $runResult['pm_refine_counters'] ?? [];
             $activationRoiThreshold = $pm8Counters['activation_roi_threshold'] ?? null;
 
             // Build compact journal entries (one per managed position).
@@ -390,6 +391,14 @@ final class ProfitManagerService
                     'pm17_drawdown_fraction' => $item['pm17_drawdown_fraction'] ?? null,
                     'pm17_peak_meaningful'   => $item['pm17_peak_meaningful']   ?? false,
                     'pm17_applied'           => $item['pm17_applied']           ?? false,
+                    // PM-18 (pm_refine): peak-drawdown refinement v2 evidence per position
+                    'pm_refine_used'               => $item['pm_refine_used']               ?? false,
+                    'pm_refine_applied'            => $item['pm_refine_applied']            ?? false,
+                    'pm_refine_reason'             => $item['pm_refine_reason']             ?? null,
+                    'pm_refine_peak_roi'           => $item['pm_refine_peak_roi']           ?? null,
+                    'pm_refine_current_roi'        => $item['pm_refine_current_roi']        ?? null,
+                    'pm_refine_drawdown_from_peak' => $item['pm_refine_drawdown_from_peak'] ?? null,
+                    'pm_refine_pullback_state'     => $item['pm_refine_pullback_state']     ?? null,
                     // Timestamp
                     'updated_at'                            => $ts,
                 ];
@@ -892,6 +901,14 @@ final class ProfitManagerService
                 // PM-17: this-run profit capture deltas
                 'this_run_pm_profit_capture_total'     => $pm17Counters['this_run_capture_total']              ?? 0,
                 'this_run_pm_profit_capture_apply'     => $pm17Counters['this_run_capture_apply_total']        ?? 0,
+                // PM-18 (pm_refine): peak-drawdown refinement v2 counters
+                'pm_refine_total'           => $pmRefineCounters['pm_refine_total']           ?? 0,
+                'pm_refine_apply_total'     => $pmRefineCounters['pm_refine_apply_total']     ?? 0,
+                'pm_refine_no_effect_total' => $pmRefineCounters['pm_refine_no_effect_total'] ?? 0,
+                'pm_refine_protect_total'   => $pmRefineCounters['pm_refine_protect_total']   ?? 0,
+                'pm_refine_continue_total'  => $pmRefineCounters['pm_refine_continue_total']  ?? 0,
+                'this_run_pm_refine_total'  => $pmRefineCounters['this_run_total']            ?? 0,
+                'this_run_pm_refine_apply'  => $pmRefineCounters['this_run_apply_total']      ?? 0,
                 'items'                                  => array_slice($journalItems, 0, 50),
             ];
             if ($ineligibilitySummary !== null) {
@@ -911,15 +928,16 @@ final class ProfitManagerService
             $pm15BlockThisRun  = (int)($pm15Counters['this_run_caution_block_total']  ?? 0);
             $pm16SupportThisRun = (int)($pm16Counters['this_run_support_apply_total'] ?? 0);
             $pm17ApplyThisRun   = (int)($pm17Counters['this_run_capture_apply_total'] ?? 0);
-            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0 || $pm17ApplyThisRun > 0) {
+            $pmRefineApplyThisRun = (int)($pmRefineCounters['this_run_apply_total']   ?? 0);
+            if ($pm8EligibleTotal > 0 || $pm8AttemptedTotal > 0 || $pm8SuccessTotal > 0 || $pm8BlockedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0 || $pm17ApplyThisRun > 0 || $pmRefineApplyThisRun > 0) {
                 $proofItems = [];
                 foreach ($journalItems as $ji) {
-                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied']) || !empty($ji['cycle_pm_caution_applied']) || !empty($ji['cycle_pm_support_applied']) || !empty($ji['pm17_applied'])) {
+                    if (!empty($ji['eligible_for_pm_management']) || !empty($ji['apply_attempted']) || !empty($ji['apply_applied']) || !empty($ji['cycle_pm_caution_applied']) || !empty($ji['cycle_pm_support_applied']) || !empty($ji['pm17_applied']) || !empty($ji['pm_refine_applied'])) {
                         $proofItems[] = $ji;
                     }
                 }
                 // Fallback: if nothing filtered but counters say something happened, include all items.
-                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0 || $pm17ApplyThisRun > 0)) {
+                if (empty($proofItems) && ($pm8SuccessTotal > 0 || $pm8AttemptedTotal > 0 || $pm15BlockThisRun > 0 || $pm16SupportThisRun > 0 || $pm17ApplyThisRun > 0 || $pmRefineApplyThisRun > 0)) {
                     $proofItems = $journalItems;
                 }
                 // PM-16: Carry-forward — if the cumulative counter confirms support was applied in a
@@ -993,6 +1011,12 @@ final class ProfitManagerService
                     'pm_profit_capture_peak_drawdown_total' => $pm17Counters['pm_profit_capture_peak_drawdown_total']?? 0,
                     'pm_profit_capture_lock_strengthen_total' => $pm17Counters['pm_profit_capture_lock_strengthen_total'] ?? 0,
                     'pm_profit_capture_no_effect_total'     => $pm17Counters['pm_profit_capture_no_effect_total']    ?? 0,
+                    // PM-18 (pm_refine): peak-drawdown refinement v2 counters in proof artifact
+                    'pm_refine_total'           => $pmRefineCounters['pm_refine_total']           ?? 0,
+                    'pm_refine_apply_total'     => $pmRefineCounters['pm_refine_apply_total']     ?? 0,
+                    'pm_refine_no_effect_total' => $pmRefineCounters['pm_refine_no_effect_total'] ?? 0,
+                    'pm_refine_protect_total'   => $pmRefineCounters['pm_refine_protect_total']   ?? 0,
+                    'pm_refine_continue_total'  => $pmRefineCounters['pm_refine_continue_total']  ?? 0,
                     'items'                                 => array_slice($proofItems, 0, 50),
                 ];
                 $this->store->saveLastActiveOwnerProof($proofPayload);
@@ -1009,7 +1033,9 @@ final class ProfitManagerService
                     || ($pm16Counters['cycle_pm_support_apply_total'] ?? 0) > 0;
                 $pm17HasData = ($pm17Counters['pm_profit_capture_total'] ?? 0) > 0
                     || ($pm17Counters['pm_profit_capture_apply_total'] ?? 0) > 0;
-                if ($pm14HasData || $pm15HasData || $pm16HasData || $pm17HasData) {
+                $pmRefineHasData = ($pmRefineCounters['pm_refine_total'] ?? 0) > 0
+                    || ($pmRefineCounters['pm_refine_apply_total'] ?? 0) > 0;
+                if ($pm14HasData || $pm15HasData || $pm16HasData || $pm17HasData || $pmRefineHasData) {
                     try {
                         $existingProof = $this->store->loadLastActiveOwnerProof();
                         if (!empty($existingProof)) {
@@ -1040,10 +1066,17 @@ final class ProfitManagerService
                                 $existingProof['pm_profit_capture_lock_strengthen_total'] = $pm17Counters['pm_profit_capture_lock_strengthen_total'] ?? 0;
                                 $existingProof['pm_profit_capture_no_effect_total']     = $pm17Counters['pm_profit_capture_no_effect_total']    ?? 0;
                             }
+                            if ($pmRefineHasData) {
+                                $existingProof['pm_refine_total']           = $pmRefineCounters['pm_refine_total']           ?? 0;
+                                $existingProof['pm_refine_apply_total']     = $pmRefineCounters['pm_refine_apply_total']     ?? 0;
+                                $existingProof['pm_refine_no_effect_total'] = $pmRefineCounters['pm_refine_no_effect_total'] ?? 0;
+                                $existingProof['pm_refine_protect_total']   = $pmRefineCounters['pm_refine_protect_total']   ?? 0;
+                                $existingProof['pm_refine_continue_total']  = $pmRefineCounters['pm_refine_continue_total']  ?? 0;
+                            }
                             $this->store->saveLastActiveOwnerProof($existingProof);
                         }
                     } catch (\Throwable $ignored) {
-                        // non-fatal; PM-14/15/16/17 mirror into proof is best-effort
+                        // non-fatal; PM-14/15/16/17/pm_refine mirror into proof is best-effort
                     }
                 }
             }
@@ -1157,6 +1190,12 @@ final class ProfitManagerService
                 'pm_profit_capture_lock_strengthen_total' => $pm17Counters['pm_profit_capture_lock_strengthen_total'] ?? 0,
                 'pm_profit_capture_intermediate_total' => $pm17Counters['pm_profit_capture_intermediate_total'] ?? 0,
                 'pm_profit_capture_no_effect_total'    => $pm17Counters['pm_profit_capture_no_effect_total']    ?? 0,
+                // PM-18 (pm_refine): peak-drawdown refinement v2 counters (cumulative)
+                'pm_refine_total'           => $pmRefineCounters['pm_refine_total']           ?? 0,
+                'pm_refine_apply_total'     => $pmRefineCounters['pm_refine_apply_total']     ?? 0,
+                'pm_refine_no_effect_total' => $pmRefineCounters['pm_refine_no_effect_total'] ?? 0,
+                'pm_refine_protect_total'   => $pmRefineCounters['pm_refine_protect_total']   ?? 0,
+                'pm_refine_continue_total'  => $pmRefineCounters['pm_refine_continue_total']  ?? 0,
                 'items'                                   => array_slice($itemsWithCycleDebug, 0, 50),
                 'errors'                                  => $runResult['errors'] ?? [],
                 'warnings'                                => $runResult['warnings'] ?? [],

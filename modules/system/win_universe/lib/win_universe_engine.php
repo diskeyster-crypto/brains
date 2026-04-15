@@ -887,10 +887,31 @@ final class WinUniverseEngine
         $meetsWinsAboveTarget  = !$targetRoiGateEnabled || ($winsAboveTarget >= $minWinsAboveTarget);
 
         // Gate 6: speed-to-target (only active if maxTimeToTargetMinutes > 0)
-        $speedGateEnabled  = $maxTimeToTargetMinutes > 0;
-        $meetsSpeedToTarget = !$speedGateEnabled
-            || ($avgTimeToTarget === null) // no speed data — gate passes (insufficient data)
-            || ($avgTimeToTarget <= $maxTimeToTargetMinutes);
+        // When the gate is active:
+        //   - null avg_time means no valid duration samples for target hits → FAIL (not a pass)
+        //   - avg_time > max → FAIL too_slow_to_target
+        //   - avg_time <= max → PASS
+        $speedGateEnabled    = $maxTimeToTargetMinutes > 0;
+        $meetsSpeedToTarget  = true;
+        $speedToTargetStatus = 'not_evaluated';
+        $speedToTargetReason = null;
+        if ($speedGateEnabled) {
+            if ($avgTimeToTarget === null) {
+                // Gate is on but no valid duration data for target-hitting trades.
+                // Cannot verify speed compliance — treat as a failure so this is explicit.
+                $meetsSpeedToTarget  = false;
+                $speedToTargetStatus = 'no_valid_samples';
+                $speedToTargetReason = 'no_valid_time_to_target_samples';
+            } elseif ($avgTimeToTarget > $maxTimeToTargetMinutes) {
+                $meetsSpeedToTarget  = false;
+                $speedToTargetStatus = 'too_slow';
+                $speedToTargetReason = 'too_slow_to_target';
+            } else {
+                $speedToTargetStatus = 'fast_enough';
+            }
+        } else {
+            $speedToTargetStatus = 'gate_disabled';
+        }
 
         $qualified = $meetsTradeCount
             && $meetsRoi
@@ -936,7 +957,7 @@ final class WinUniverseEngine
             $failureCodes[] = 'insufficient_target_wins';
         }
         if ($speedGateEnabled && !$meetsSpeedToTarget) {
-            $failureCodes[] = 'too_slow_to_target';
+            $failureCodes[] = $speedToTargetReason ?? 'too_slow_to_target';
         }
 
         // ── Distance-to-qualify metrics ──────────────────────────────────────
@@ -1005,12 +1026,18 @@ final class WinUniverseEngine
             );
         }
         if ($speedGateEnabled && !$meetsSpeedToTarget) {
-            $speedDisplay = $avgTimeToTarget !== null ? number_format($avgTimeToTarget, 1) . ' мин.' : 'н/д';
-            $missing[] = sprintf(
-                'max_time_to_target: нужно <= %d мин., avg %.1f мин.',
-                $maxTimeToTargetMinutes,
-                $avgTimeToTarget ?? 0.0
-            );
+            if ($speedToTargetStatus === 'no_valid_samples') {
+                $missing[] = sprintf(
+                    'max_time_to_target: нет данных длительности для целевых побед (побед выше цели: %d, но длительность не определена — нет закрытых сделок с временными метками)',
+                    $winsAboveTarget
+                );
+            } else {
+                $missing[] = sprintf(
+                    'max_time_to_target: нужно <= %d мин., avg %.1f мин.',
+                    $maxTimeToTargetMinutes,
+                    $avgTimeToTarget ?? 0.0
+                );
+            }
         }
 
         // ── Reason string (Russian) ───────────────────────────────────────────
@@ -1053,6 +1080,8 @@ final class WinUniverseEngine
             'avg_time_to_target_minutes'     => $avgTimeToTarget,
             'median_time_to_target_minutes'  => $medianTimeToTarget,
             'fastest_time_to_target_minutes' => $fastestTimeToTarget,
+            'speed_to_target_status'         => $speedToTargetStatus,
+            'speed_to_target_reason'         => $speedToTargetReason,
             'recent_trade_count'             => $windowCount,
             'closed_trades_count'            => (int)($stats['closed_trades_count'] ?? 0),
             'closed_trades_window'           => $windowCount,
@@ -1109,6 +1138,7 @@ final class WinUniverseEngine
         $failByWinrate         = 0;
         $failByTargetWins      = 0;
         $failBySpeedToTarget   = 0;
+        $failByMissingTimeSamples = 0;
         $failByTradeCountOnly  = 0;
         $failByRoiOnly         = 0;
         $failByAvgRoiOnly      = 0;
@@ -1138,8 +1168,12 @@ final class WinUniverseEngine
             if (in_array('insufficient_target_wins', $codes, true)) {
                 $failByTargetWins++;
             }
-            if (in_array('too_slow_to_target', $codes, true)) {
+            // Both too_slow_to_target and no_valid_time_to_target_samples are speed failures
+            if (in_array('too_slow_to_target', $codes, true) || in_array('no_valid_time_to_target_samples', $codes, true)) {
                 $failBySpeedToTarget++;
+            }
+            if (in_array('no_valid_time_to_target_samples', $codes, true)) {
+                $failByMissingTimeSamples++;
             }
 
             // "only" counts: fails exactly that criterion
@@ -1148,7 +1182,8 @@ final class WinUniverseEngine
             $failAvg = in_array('below_min_avg_roi', $codes, true);
             $failWr  = in_array('below_min_winrate', $codes, true);
             $otherFails = in_array('insufficient_target_wins', $codes, true)
-                || in_array('too_slow_to_target', $codes, true);
+                || in_array('too_slow_to_target', $codes, true)
+                || in_array('no_valid_time_to_target_samples', $codes, true);
 
             if ($failTC && !$failRoi && !$failAvg && !$failWr && !$otherFails) {
                 $failByTradeCountOnly++;
@@ -1177,6 +1212,7 @@ final class WinUniverseEngine
             'fail_by_winrate'               => $failByWinrate,
             'fail_by_target_wins'           => $failByTargetWins,
             'fail_by_speed_to_target'       => $failBySpeedToTarget,
+            'fail_by_missing_time_samples'  => $failByMissingTimeSamples,
             'fail_by_trade_count_only'      => $failByTradeCountOnly,
             'fail_by_roi_only'              => $failByRoiOnly,
             'fail_by_avg_roi_only'          => $failByAvgRoiOnly,
@@ -1190,6 +1226,7 @@ final class WinUniverseEngine
             'failed_by_winrate_count'       => $failByWinrate,
             'failed_by_target_wins_count'   => $failByTargetWins,
             'failed_by_speed_count'         => $failBySpeedToTarget,
+            'failed_by_missing_time_count'  => $failByMissingTimeSamples,
         ];
     }
 

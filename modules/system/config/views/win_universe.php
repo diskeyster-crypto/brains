@@ -335,10 +335,13 @@ ob_start();
                 <div class="row g-2 mb-2">
                     <?php
                     $diagItems = [
-                        ['label' => 'Мало сделок',  'key' => 'failed_by_min_trades_count',    'color' => '#f87171'],
-                        ['label' => 'Мало ROI',      'key' => 'failed_by_roi_threshold_count', 'color' => '#fb923c'],
-                        ['label' => 'Мало avg ROI',  'key' => 'failed_by_avg_roi_count',       'color' => '#facc15'],
-                        ['label' => 'Мало winrate',  'key' => 'failed_by_winrate_count',       'color' => '#a78bfa'],
+                        ['label' => 'Мало сделок',      'key' => 'failed_by_min_trades_count',    'color' => '#f87171'],
+                        ['label' => 'Мало ROI',          'key' => 'failed_by_roi_threshold_count', 'color' => '#fb923c'],
+                        ['label' => 'Мало avg ROI',      'key' => 'failed_by_avg_roi_count',       'color' => '#facc15'],
+                        ['label' => 'Мало winrate',      'key' => 'failed_by_winrate_count',       'color' => '#a78bfa'],
+                        ['label' => 'Мало цел.побед',    'key' => 'failed_by_target_wins_count',   'color' => '#f472b6'],
+                        ['label' => 'Медленно к цели',   'key' => 'failed_by_speed_count',         'color' => '#94a3b8'],
+                        ['label' => 'Нет данных скорости', 'key' => 'failed_by_missing_time_count','color' => '#64748b'],
                     ];
                     foreach ($diagItems as $di):
                         $val = (int)($sensitivity[$di['key']] ?? 0);
@@ -408,7 +411,8 @@ ob_start();
                                 $ar = $entry['last_avg_roi'] ?? null;
                                 if ($ar !== null) {
                                     $cls = (float)$ar >= 0 ? 'text-success' : 'text-danger';
-                                    echo '<span class="' . $cls . '">' . number_format((float)$ar, 2) . '%</span>';
+                                    // last_avg_roi is stored as decimal fraction (0.01 = 1%)
+                                    echo '<span class="' . $cls . '">' . number_format((float)$ar * 100, 2) . '%</span>';
                                 } else { echo '—'; }
                             ?></td>
                             <td><small class="text-secondary"><?= htmlspecialchars(substr((string)($entry['promotion_reason'] ?? ''), 0, 60)) ?></small></td>

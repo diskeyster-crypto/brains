@@ -97,8 +97,23 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         $lastT  = $rec['last_trade_time'] ? htmlspecialchars(substr($rec['last_trade_time'], 0, 10)) : '—';
         $codes  = $rec['qualification_failure_codes'] ?? [];
         $codesStr = !empty($codes) ? '<small style="color:#f87171; display:block;">' . htmlspecialchars(implode(', ', $codes)) . '</small>' : '';
-        $avgSpeed = $rec['avg_time_to_target_minutes'] ?? null;
-        $speedStr = $avgSpeed !== null ? number_format((float)$avgSpeed, 0) . ' мин.' : '—';
+        $avgSpeed    = $rec['avg_time_to_target_minutes']     ?? null;
+        $fastestSpeed = $rec['fastest_time_to_target_minutes'] ?? null;
+        $speedStatus = $rec['speed_to_target_status'] ?? 'not_evaluated';
+        // Build speed cell: show avg and fastest, color-code by status
+        if ($avgSpeed !== null) {
+            $speedColor = ($speedStatus === 'fast_enough') ? '#34d399' : '#f87171';
+            $speedStr   = '<span style="color:' . $speedColor . ';">' . number_format((float)$avgSpeed, 0) . ' мин.</span>';
+            if ($fastestSpeed !== null) {
+                $speedStr .= '<small style="color:#64748b;"> (быстрейшая: ' . number_format((float)$fastestSpeed, 0) . ')</small>';
+            }
+        } elseif ($speedStatus === 'no_valid_samples') {
+            $speedStr = '<small style="color:#f87171;">нет данных</small>';
+        } elseif ($speedStatus === 'gate_disabled') {
+            $speedStr = '<small style="color:#475569;">выкл.</small>';
+        } else {
+            $speedStr = '—';
+        }
         $winsAboveTarget = $rec['wins_above_target'] ?? null;
         echo '<tr data-symbol="' . htmlspecialchars($sym) . '" class="' . $rowClass . '">';
         echo '<td><strong>' . htmlspecialchars($sym) . '</strong></td>';
@@ -125,8 +140,22 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         $missT   = (int)($rec['missing_trade_count']     ?? 0);
         $winsNd  = (int)($rec['wins_needed_above_threshold'] ?? 0);
         $tgtWinsNd = (int)($rec['target_wins_needed'] ?? 0);
-        $avgSpeed = $rec['avg_time_to_target_minutes'] ?? null;
-        $speedStr = $avgSpeed !== null ? number_format((float)$avgSpeed, 0) . ' мин.' : '—';
+        $avgSpeed    = $rec['avg_time_to_target_minutes']     ?? null;
+        $fastestSpeed = $rec['fastest_time_to_target_minutes'] ?? null;
+        $speedStatus = $rec['speed_to_target_status'] ?? 'not_evaluated';
+        if ($avgSpeed !== null) {
+            $speedColor = ($speedStatus === 'fast_enough') ? '#34d399' : '#f87171';
+            $speedStr   = '<span style="color:' . $speedColor . ';">' . number_format((float)$avgSpeed, 0) . ' мин.</span>';
+            if ($fastestSpeed !== null) {
+                $speedStr .= '<small style="color:#64748b;"> (быстрейшая: ' . number_format((float)$fastestSpeed, 0) . ')</small>';
+            }
+        } elseif ($speedStatus === 'no_valid_samples') {
+            $speedStr = '<small style="color:#f87171;">нет данных</small>';
+        } elseif ($speedStatus === 'gate_disabled') {
+            $speedStr = '<small style="color:#475569;">выкл.</small>';
+        } else {
+            $speedStr = '—';
+        }
         $winsAboveTarget = $rec['wins_above_target'] ?? null;
         $codes = $rec['qualification_failure_codes'] ?? [];
         $codesStr = !empty($codes) ? '<small style="color:#fbbf24; display:block;">' . htmlspecialchars(implode(', ', $codes)) . '</small>' : '';

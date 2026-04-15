@@ -66,8 +66,11 @@ return [
          * min_target_roi. If a symbol reaches target ROI too slowly it does not qualify.
          * Set to 0 to disable the speed-to-target gate.
          * Example: 1440 = max 24 hours average time to target.
+         *
+         * NOTE: When this gate is active and a symbol has target wins but no duration
+         * data available, it fails with no_valid_time_to_target_samples.
          */
-        'max_time_to_target_minutes' => 0,
+        'max_time_to_target_minutes' => 1440,
 
         /**
          * Lookback window in days for recent trade statistics.

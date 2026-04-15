@@ -1,0 +1,9 @@
+{
+    "win_universe": {
+        "win_universe_mode": "priority",
+        "priority_bonus_enabled": true,
+        "priority_bonus_strength": 0.5
+    },
+    "updated_at": "2026-04-15T15:00:00+00:00",
+    "_note": "Canonical user config — priority mode active. Managed via config_all Win Universe page."
+}

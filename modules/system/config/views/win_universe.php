@@ -48,6 +48,8 @@ $poolCount  = count($wuPool['win_pool'] ?? ($wuUniverse['win_pool'] ?? []));
 $winPool    = $wuPool['win_pool'] ?? ($wuUniverse['win_pool'] ?? []);
 $lastRun    = $wuStatus['run_at'] ?? null;
 $lastOk     = $wuStatus['ok']    ?? null;
+$statusMode = $wuStatus['mode']  ?? null; // mode used in last WU run
+$modeSynced = ($statusMode === null || $statusMode === $cfgMode);
 $sensitivity    = $wuStatus['threshold_sensitivity']         ?? $wuUniverse['threshold_sensitivity']         ?? [];
 $candPreview    = $wuStatus['candidate_sensitivity_preview'] ?? $wuUniverse['candidate_sensitivity_preview'] ?? [];
 
@@ -64,14 +66,32 @@ ob_start();
 </div>
 <?php endif; ?>
 
-<!-- Priority mode notice -->
+<!-- Mode notice -->
+<?php if ($cfgMode === 'priority'): ?>
 <div class="alert py-2 mb-4" style="background:rgba(99,102,241,0.08); border-color:rgba(99,102,241,0.25); font-size:0.85rem;">
     <i class="bi bi-trophy text-primary me-1"></i>
     <strong class="text-primary">Режим: priority</strong> —
     Квалифицированные win-pool монеты получают бонус приоритета в ранжировании Smart Brain.
     Это мягкое предпочтение — не жёсткий фильтр. Монеты вне пула остаются кандидатами.
     Торговое поведение изменяется только через soft ranking influence.
+    <?php if (!$modeSynced && $statusMode !== null): ?>
+    <span class="ms-2 badge bg-warning text-dark" style="font-size:0.75rem;">
+        <i class="bi bi-exclamation-triangle me-1"></i>Последний запуск WU: <?= htmlspecialchars($statusMode) ?> — запустите Win Universe для синхронизации
+    </span>
+    <?php endif; ?>
 </div>
+<?php elseif ($cfgMode === 'shadow'): ?>
+<div class="alert py-2 mb-4" style="background:rgba(100,116,139,0.08); border-color:rgba(100,116,139,0.25); font-size:0.85rem;">
+    <i class="bi bi-eye text-secondary me-1"></i>
+    <strong class="text-secondary">Режим: shadow</strong> —
+    Только аналитика. Влияние на ранжирование отключено. Торговое поведение не изменяется.
+</div>
+<?php else: ?>
+<div class="alert py-2 mb-4" style="background:rgba(100,116,139,0.06); border-color:rgba(100,116,139,0.2); font-size:0.85rem;">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>Режим: <?= htmlspecialchars($cfgMode) ?></strong>
+</div>
+<?php endif; ?>
 
 <div class="row g-4">
 

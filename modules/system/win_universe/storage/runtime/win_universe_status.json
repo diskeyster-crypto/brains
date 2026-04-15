@@ -1,7 +1,7 @@
 {
     "ok": true,
     "skipped": false,
-    "run_at": "2026-04-15T14:00:51+00:00",
+    "run_at": "2026-04-15T15:20:03+00:00",
     "elapsed_sec": 0.001,
     "symbols_seen": 2,
     "qualified_count": 0,
@@ -22,9 +22,9 @@
         "min_winrate": 0,
         "qualification_expiry_days": 90,
         "demotion_loss_streak": 0,
-        "win_universe_mode": "shadow",
-        "priority_bonus_enabled": false,
-        "priority_bonus_strength": 0.1,
+        "win_universe_mode": "priority",
+        "priority_bonus_enabled": true,
+        "priority_bonus_strength": 0.5,
         "min_roi_threshold_pct": 5,
         "min_avg_roi_pct": 0.5
     },
@@ -78,5 +78,6 @@
     },
     "excessive_qualification_warning": false,
     "excessive_qualification_note": null,
-    "mode": "shadow"
+    "mode": "priority",
+    "mode_source": "user_config"
 }

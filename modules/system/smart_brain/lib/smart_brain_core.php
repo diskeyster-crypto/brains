@@ -1061,7 +1061,11 @@ final class SmartBrainCore
             'win_universe_bonus_applied_total' => (int)($liveIntentResult['win_universe_bonus_applied_total'] ?? 0),
             'win_universe_bonus_no_effect_total' => (int)($liveIntentResult['win_universe_bonus_no_effect_total'] ?? 0),
             'win_universe_mode'                => (string)($liveIntentResult['win_universe_mode']             ?? 'shadow'),
+            'win_universe_mode_source'         => (string)($liveIntentResult['win_universe_mode_source']      ?? 'config_defaults'),
+            'win_universe_mode_sync_ok'        => (bool)($liveIntentResult['win_universe_mode_sync_ok']       ?? true),
+            'win_universe_last_run_mode'       => $liveIntentResult['win_universe_last_run_mode']             ?? null,
             'win_universe_pool_size'           => (int)($liveIntentResult['win_universe_pool_size']           ?? 0),
+            'win_universe_bonus_preview'       => $liveIntentResult['win_universe_bonus_preview']             ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1239,7 +1243,11 @@ final class SmartBrainCore
             'win_universe_bonus_applied_total' => 0,
             'win_universe_bonus_no_effect_total' => 0,
             'win_universe_mode'                => 'shadow',
+            'win_universe_mode_source'         => 'config_defaults',
+            'win_universe_mode_sync_ok'        => true,
+            'win_universe_last_run_mode'       => null,
             'win_universe_pool_size'           => 0,
+            'win_universe_bonus_preview'       => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1354,6 +1362,8 @@ final class SmartBrainCore
         $wuBonusStrength     = 0.5;
         $wuPoolSize          = 0;
         $wuMaxQualifiedRatio = 0.30; // safety cap: ignore bonus when >30% of seen qualifies
+        $wuModeSource        = 'config_defaults';
+        $wuLastRunMode       = null;
         try {
             $wuModuleBase = dirname($this->moduleBase) . '/win_universe';
             // Load pool
@@ -1370,15 +1380,18 @@ final class SmartBrainCore
                     }
                 }
             }
-            // Load config (user overlay first, then defaults)
-            $wuCfg = [];
+            // Load config: same resolution order as WinUniverseService::loadConfig()
+            // Priority: win_universe_user_config.json → config/config.php defaults
+            $wuCfg        = [];
+            $wuModeSource = 'config_defaults';
             $wuUserCfgPath = $wuModuleBase . '/storage/runtime/win_universe_user_config.json';
             if (is_file($wuUserCfgPath)) {
                 $wuUserCfgRaw = @file_get_contents($wuUserCfgPath);
                 if ($wuUserCfgRaw !== false && $wuUserCfgRaw !== '') {
                     $wuUserCfgData = @json_decode($wuUserCfgRaw, true);
                     if (is_array($wuUserCfgData) && isset($wuUserCfgData['win_universe'])) {
-                        $wuCfg = $wuUserCfgData['win_universe'];
+                        $wuCfg        = $wuUserCfgData['win_universe'];
+                        $wuModeSource = 'user_config';
                     }
                 }
             }
@@ -1394,23 +1407,30 @@ final class SmartBrainCore
             $wuMode         = (string)($wuCfg['win_universe_mode']      ?? 'shadow');
             $wuBonusEnabled = (bool)($wuCfg['priority_bonus_enabled']   ?? false);
             $wuBonusStrength = min(1.0, max(0.0, (float)($wuCfg['priority_bonus_strength'] ?? 0.5)));
-            // Safety cap: if excessive_qualification_warning is set in win_universe.json, deactivate bonus
+            // Safety cap: if excessive_qualification_warning is set in win_universe_status.json, deactivate bonus
             $wuStatusPath = $wuModuleBase . '/storage/runtime/win_universe_status.json';
+            $wuLastRunMode = null; // mode from Win Universe's last run (for sync check)
             if (is_file($wuStatusPath)) {
                 $wuStatusRaw = @file_get_contents($wuStatusPath);
                 if ($wuStatusRaw !== false && $wuStatusRaw !== '') {
                     $wuStatusData = @json_decode($wuStatusRaw, true);
-                    if (is_array($wuStatusData) && !empty($wuStatusData['excessive_qualification_warning'])) {
-                        // Pool qualifies >30% of universe — treat bonus as inactive for safety
-                        $wuBonusEnabled = false;
+                    if (is_array($wuStatusData)) {
+                        if (!empty($wuStatusData['excessive_qualification_warning'])) {
+                            // Pool qualifies >30% of universe — treat bonus as inactive for safety
+                            $wuBonusEnabled = false;
+                        }
+                        $wuLastRunMode = $wuStatusData['mode'] ?? null;
                     }
                 }
             }
         } catch (\Throwable $wuLoadEx) {
             // non-fatal — bonus stays inactive
         }
-        $result['win_universe_mode']      = $wuMode;
-        $result['win_universe_pool_size'] = $wuPoolSize;
+        $result['win_universe_mode']            = $wuMode;
+        $result['win_universe_mode_source']     = $wuModeSource;
+        $result['win_universe_mode_sync_ok']    = ($wuLastRunMode === null || $wuLastRunMode === $wuMode);
+        $result['win_universe_last_run_mode']   = $wuLastRunMode;
+        $result['win_universe_pool_size']       = $wuPoolSize;
 
         $intents = [];
 
@@ -3038,7 +3058,14 @@ final class SmartBrainCore
                 } else {
                     $result['win_universe_bonus_no_effect_total']++;
                     if (!$wuBonusActive) {
-                        $wuStatus = ($wuMode !== 'priority') ? 'shadow_mode' : 'bonus_disabled';
+                        if ($wuMode !== 'priority') {
+                            $wuStatus = 'shadow_mode';
+                        } elseif (!$wuBonusEnabled) {
+                            $wuStatus = 'bonus_disabled';
+                        } else {
+                            // mode=priority, bonus_enabled=true, but pool is empty
+                            $wuStatus = 'pool_empty';
+                        }
                     }
                 }
 
@@ -3049,6 +3076,24 @@ final class SmartBrainCore
                 $wuIntent['win_universe_bonus_reason']    = $wuReason;
             }
             unset($wuIntent);
+
+            // Build win_universe_bonus_preview (first 10 intents) for observability in last_run.json
+            $wuPreview = [];
+            foreach ($intents as $wuPrevIntent) {
+                if (count($wuPreview) >= 10) {
+                    break;
+                }
+                $wuPreview[] = [
+                    'symbol'                      => $wuPrevIntent['symbol']                 ?? '',
+                    'side'                        => $wuPrevIntent['side']                   ?? '',
+                    'in_win_pool'                 => $wuPrevIntent['in_win_pool']             ?? false,
+                    'win_universe_status_at_eval' => $wuPrevIntent['win_universe_status_at_eval'] ?? 'not_in_pool',
+                    'win_universe_bonus_used'     => $wuPrevIntent['win_universe_bonus_used'] ?? false,
+                    'win_universe_bonus_value'    => $wuPrevIntent['win_universe_bonus_value'] ?? 0.0,
+                    'win_universe_bonus_reason'   => $wuPrevIntent['win_universe_bonus_reason'] ?? null,
+                ];
+            }
+            $result['win_universe_bonus_preview'] = $wuPreview;
         }
         // ── End Win Universe Bonus Layer ────────────────────────────────────
 

@@ -196,7 +196,14 @@ final class UnifiedConfigController
         }
 
         if ($result['ok']) {
-            $this->setFlash('success', 'Настройки Win Universe сохранены (' . date('H:i:s') . ')');
+            // Re-run Win Universe immediately so status.json reflects the new mode.
+            // This keeps win_universe_status.json in sync with the saved config (no stale shadow/priority mismatch).
+            try {
+                $wuService->run();
+            } catch (\Throwable $ignored) {
+                // Non-fatal — config is saved; next scheduled run will pick it up.
+            }
+            $this->setFlash('success', 'Настройки Win Universe сохранены и применены (' . date('H:i:s') . ')');
         } else {
             $this->setFlash('error', 'Ошибка сохранения: ' . implode('; ', $result['errors']));
         }

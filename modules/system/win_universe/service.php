@@ -113,6 +113,7 @@ final class WinUniverseService
                 'excessive_qualification_warning'       => $result['excessive_qualification_warning'] ?? false,
                 'excessive_qualification_note'          => $result['excessive_qualification_note'] ?? null,
                 'mode'                                  => $result['config_used']['win_universe_mode'] ?? 'shadow',
+                'mode_source'                           => $this->config['_meta']['mode_source'] ?? 'config_defaults',
             ];
 
             $this->saveJson('win_universe_status.json', $status);
@@ -437,6 +438,7 @@ final class WinUniverseService
 
         // Load user config overlay
         $userConfigPath = $moduleBase . '/storage/runtime/win_universe_user_config.json';
+        $userCfgLoaded  = false;
         if (is_file($userConfigPath)) {
             try {
                 $content = @file_get_contents($userConfigPath);
@@ -448,12 +450,16 @@ final class WinUniverseService
                             $defaults['win_universe'] ?? [],
                             $userCfg['win_universe']
                         );
+                        $userCfgLoaded = true;
                     }
                 }
             } catch (\Throwable $e) {
                 // keep defaults
             }
         }
+
+        // Track where the mode was resolved from for observability
+        $defaults['_meta']['mode_source'] = $userCfgLoaded ? 'user_config' : 'config_defaults';
 
         return $defaults;
     }

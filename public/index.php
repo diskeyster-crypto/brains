@@ -1548,6 +1548,16 @@ Router::get('/admin/smart_brain/config_all/coin_cycle', function () {
     $controller->coinCycle();
 });
 
+Router::get('/admin/smart_brain/config_all/win_universe', function () {
+    $controller = new UnifiedConfigController();
+    $controller->winUniverse();
+});
+
+Router::post('/admin/smart_brain/config_all/win_universe/save', function () {
+    $controller = new UnifiedConfigController();
+    $controller->winUniverseSaveConfig();
+});
+
 Router::get('/admin/smart_brain/config_all/advanced', function () {
     $controller = new UnifiedConfigController();
     $controller->advanced();

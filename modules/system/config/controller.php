@@ -118,6 +118,97 @@ final class UnifiedConfigController
         include __DIR__ . '/views/coin_cycle.php';
     }
 
+    public function winUniverse(): void
+    {
+        $this->requireAuth();
+
+        $tab     = 'win_universe';
+        $title   = 'Центр Конфигурации — Выигрышные монеты';
+        $summary = $this->service->getSummary();
+        $baseUrl = $this->baseUrl;
+        $flash   = $this->consumeFlash();
+
+        // Load win universe data from the standalone module
+        $wuServicePath = dirname(__DIR__, 2) . '/win_universe/service.php';
+        $wuConfig     = [];
+        $wuUniverse   = null;
+        $wuStatus     = null;
+        $wuPool       = null;
+        $wuPromotions = null;
+        $wuDemotions  = null;
+
+        if (is_file($wuServicePath)) {
+            try {
+                require_once $wuServicePath;
+                $wuService   = new \WinUniverseService();
+                $wuConfig    = $wuService->getConfig();
+                $wuUniverse  = $wuService->getUniverse();
+                $wuStatus    = $wuService->getStatus();
+                $wuPool      = $wuService->getPool();
+                $wuPromotions = $wuService->getPromotions();
+                $wuDemotions  = $wuService->getDemotions();
+            } catch (\Throwable $e) {
+                // Non-fatal — page renders without runtime data
+            }
+        }
+
+        include __DIR__ . '/views/win_universe.php';
+    }
+
+    /**
+     * POST /admin/smart_brain/config_all/win_universe/save
+     *
+     * Save Win Universe operational settings to the module's user config overlay.
+     * Accepts HTML form POST. Redirects back with flash.
+     */
+    public function winUniverseSaveConfig(): void
+    {
+        $this->requireAuth();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: ' . $this->baseUrl . '/win_universe');
+            exit;
+        }
+
+        $wuServicePath = dirname(__DIR__, 2) . '/win_universe/service.php';
+
+        if (!is_file($wuServicePath)) {
+            $this->setFlash('error', 'Win Universe module not found');
+            header('Location: ' . $this->baseUrl . '/win_universe');
+            exit;
+        }
+
+        require_once $wuServicePath;
+
+        $post = $_POST;
+
+        // Normalise checkboxes (not sent when unchecked)
+        $post['win_universe_enabled']   = !empty($_POST['win_universe_enabled']);
+        $post['priority_bonus_enabled'] = !empty($_POST['priority_bonus_enabled']);
+
+        try {
+            $wuService = new \WinUniverseService();
+            $result    = $wuService->saveUserConfig($post);
+        } catch (\Throwable $e) {
+            $this->setFlash('error', 'Ошибка: ' . $e->getMessage());
+            header('Location: ' . $this->baseUrl . '/win_universe');
+            exit;
+        }
+
+        if ($result['ok']) {
+            $this->setFlash('success', 'Настройки Win Universe сохранены (' . date('H:i:s') . ')');
+        } else {
+            $this->setFlash('error', 'Ошибка сохранения: ' . implode('; ', $result['errors']));
+        }
+
+        $redirect = (string)($_POST['_redirect'] ?? $this->baseUrl . '/win_universe');
+        if (!str_starts_with($redirect, $this->baseUrl)) {
+            $redirect = $this->baseUrl . '/win_universe';
+        }
+        header('Location: ' . $redirect);
+        exit;
+    }
+
     public function advanced(): void
     {
         $this->requireAuth();

@@ -1,12 +1,19 @@
 {
-    "computed_at": "2026-04-15T10:31:42+00:00",
+    "computed_at": "2026-04-15T12:12:18+00:00",
     "symbols": {
         "HOOKUSDT": {
             "symbol": "HOOKUSDT",
             "qualification_status": "rejected",
             "qualified": false,
             "near_qualified": false,
+            "in_win_pool": false,
+            "promotion_eligible": false,
+            "demotion_eligible": false,
             "qualification_reason": "недостаточно сделок: 1 из 3 в окне 30д.",
+            "promotion_reason": null,
+            "demotion_reason": null,
+            "last_promotion_time": null,
+            "last_demotion_time": null,
             "missing_requirements": [
                 "min_closed_trades: нужно 3, есть 1 в окне 30д.",
                 "min_roi_threshold: нужно >= 1.50%, есть -0.01%"
@@ -32,7 +39,14 @@
             "qualification_status": "rejected",
             "qualified": false,
             "near_qualified": false,
+            "in_win_pool": false,
+            "promotion_eligible": false,
+            "demotion_eligible": false,
             "qualification_reason": "недостаточно сделок: 1 из 3 в окне 30д.",
+            "promotion_reason": null,
+            "demotion_reason": null,
+            "last_promotion_time": null,
+            "last_demotion_time": null,
             "missing_requirements": [
                 "min_closed_trades: нужно 3, есть 1 в окне 30д.",
                 "min_roi_threshold: нужно >= 1.50%, есть -0.01%"

@@ -67,6 +67,45 @@ return [
          * Set to 0.0 to disable (any positive average passes).
          */
         'min_avg_roi' => 0.0,
+
+        /**
+         * Days after which a win-pool symbol must be re-validated.
+         * If a symbol was promoted more than this many days ago and is no longer
+         * currently qualified, it is demoted.
+         * Set to 0 to disable expiry-based demotion.
+         */
+        'qualification_expiry_days' => 90,
+
+        /**
+         * Number of consecutive recent losing trades (roi < min_roi_threshold)
+         * required to trigger demotion from win pool.
+         * Set to 0 to disable loss-streak demotion.
+         */
+        'demotion_loss_streak' => 0,
+
+        /**
+         * Operating mode for Win Universe.
+         * Allowed values:
+         *   shadow   — analytics only, no influence on trading (current phase)
+         *   priority — (future) qualified symbols get a priority bonus in Smart Brain ranking
+         *   win_only — (future) Smart Brain considers only win-pool symbols
+         *
+         * Even when set to 'priority' or 'win_only', trading behavior is NOT changed
+         * until that integration step is explicitly implemented.
+         */
+        'win_universe_mode' => 'shadow',
+
+        /**
+         * Whether the priority bonus is active (future use only).
+         * Has no effect in the current shadow-only step.
+         */
+        'priority_bonus_enabled' => false,
+
+        /**
+         * Strength of priority bonus (0.0–1.0) for future integration.
+         * Has no effect in the current shadow-only step.
+         */
+        'priority_bonus_strength' => 0.1,
     ],
 
 ];

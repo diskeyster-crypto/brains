@@ -37,29 +37,35 @@ final class WinUniverseEngine
     // =========================================================================
 
     /**
-     * Compute per-symbol statistics and qualification results.
+     * Compute per-symbol statistics, qualification results, and win-pool lifecycle.
      *
-     * @param array<string,mixed> $config  Merged module config (win_universe block)
+     * @param array<string,mixed> $config      Merged module config (win_universe block)
+     * @param array<string,mixed> $prevPool    Previously persisted win pool state (from win_universe_pool.json)
      * @return array{
      *   symbols: array<string,array<string,mixed>>,
      *   qualified: string[],
      *   near_qualified: string[],
      *   rejected: string[],
+     *   win_pool: array<string,array<string,mixed>>,
+     *   promotions: array<int,array<string,mixed>>,
+     *   demotions: array<int,array<string,mixed>>,
      *   config_used: array<string,mixed>,
      *   sources_used: string[],
      *   computed_at: string,
      *   trade_count_total: int,
      * }
      */
-    public function compute(array $config): array
+    public function compute(array $config, array $prevPool = []): array
     {
         $ts = date('c');
 
-        $minRoi        = (float)($config['min_roi_threshold'] ?? 1.5);
-        $minAvgRoi     = (float)($config['min_avg_roi']       ?? 0.0);
-        $lookbackDays  = max(1, (int)($config['lookback_days']    ?? 30));
-        $minTrades     = max(1, (int)($config['min_closed_trades'] ?? 3));
-        $minWinrate    = (float)($config['min_winrate'] ?? 0.0);
+        $minRoi           = (float)($config['min_roi_threshold']      ?? 1.5);
+        $minAvgRoi        = (float)($config['min_avg_roi']            ?? 0.0);
+        $lookbackDays     = max(1, (int)($config['lookback_days']     ?? 30));
+        $minTrades        = max(1, (int)($config['min_closed_trades'] ?? 3));
+        $minWinrate       = (float)($config['min_winrate']            ?? 0.0);
+        $expiryDays       = (int)($config['qualification_expiry_days'] ?? 90);
+        $demotionStreak   = (int)($config['demotion_loss_streak']     ?? 0);
 
         $cutoff = time() - ($lookbackDays * 86400);
 
@@ -101,23 +107,237 @@ final class WinUniverseEngine
         // Threshold sensitivity: count how many symbols fail by each criterion
         $sensitivity = $this->buildSensitivityBreakdown($results, $minTrades, $minRoi, $minAvgRoi, $minWinrate);
 
+        // Two-pool lifecycle: compute promotions, demotions, new win pool state
+        [$newPool, $promotions, $demotions] = $this->computeLifecycle(
+            $results,
+            $prevPool,
+            $ts,
+            $expiryDays,
+            $demotionStreak,
+            $minRoi,
+            $rawTrades,
+            $cutoff
+        );
+
+        // Annotate each symbol with pool membership and eligibility
+        foreach ($results as $sym => &$rec) {
+            $inPool                   = isset($newPool[$sym]);
+            $rec['in_win_pool']       = $inPool;
+            $rec['promotion_eligible'] = !$inPool && $rec['qualified'];
+            $rec['demotion_eligible']  = false;
+            $rec['win_pool_entry']     = $inPool ? $newPool[$sym] : null;
+            // promotion_reason / demotion_reason added by lifecycle if applicable
+            if ($inPool) {
+                $rec['promotion_reason'] = $newPool[$sym]['promotion_reason'] ?? null;
+                $rec['last_promotion_time'] = $newPool[$sym]['promoted_at'] ?? null;
+            }
+        }
+        unset($rec);
+
         return [
-            'symbols'           => $results,
-            'qualified'         => $qualified,
-            'near_qualified'    => $nearQualified,
-            'rejected'          => $rejected,
-            'config_used'       => [
-                'min_roi_threshold'  => $minRoi,
-                'min_avg_roi'        => $minAvgRoi,
-                'lookback_days'      => $lookbackDays,
-                'min_closed_trades'  => $minTrades,
-                'min_winrate'        => $minWinrate,
+            'symbols'               => $results,
+            'qualified'             => $qualified,
+            'near_qualified'        => $nearQualified,
+            'rejected'              => $rejected,
+            'win_pool'              => $newPool,
+            'promotions'            => $promotions,
+            'demotions'             => $demotions,
+            'config_used'           => [
+                'min_roi_threshold'         => $minRoi,
+                'min_avg_roi'               => $minAvgRoi,
+                'lookback_days'             => $lookbackDays,
+                'min_closed_trades'         => $minTrades,
+                'min_winrate'               => $minWinrate,
+                'qualification_expiry_days' => $expiryDays,
+                'demotion_loss_streak'      => $demotionStreak,
+                'win_universe_mode'         => (string)($config['win_universe_mode'] ?? 'shadow'),
+                'priority_bonus_enabled'    => (bool)($config['priority_bonus_enabled'] ?? false),
+                'priority_bonus_strength'   => (float)($config['priority_bonus_strength'] ?? 0.1),
             ],
             'sources_used'          => $sourcesUsed,
             'computed_at'           => $ts,
             'trade_count_total'     => (int)$tradeCountTotal,
             'threshold_sensitivity' => $sensitivity,
         ];
+    }
+
+    // =========================================================================
+    // Two-pool lifecycle
+    // =========================================================================
+
+    /**
+     * Compute promotion/demotion events and update the win pool state.
+     *
+     * Promotion rules (general → win):
+     *   - Symbol is currently qualified AND is NOT already in the win pool.
+     *
+     * Demotion rules (win → general, any one triggers):
+     *   1. Symbol is no longer qualified in the current window.
+     *   2. qualification_expiry_days > 0 AND the promotion timestamp is older
+     *      than expiry days AND symbol is not currently qualified.
+     *   3. demotion_loss_streak > 0 AND the symbol's last N trades within the
+     *      lookback window are all losses (roi < min_roi_threshold).
+     *
+     * @param array<string,array<string,mixed>> $results      Current qualification results
+     * @param array<string,array<string,mixed>> $prevPool     Previous win pool state
+     * @param string  $ts            ISO timestamp for this run
+     * @param int     $expiryDays   Days before expiry demotion triggers (0 = off)
+     * @param int     $demotionStreak Consecutive losses to trigger demotion (0 = off)
+     * @param float   $minRoi       ROI threshold (defines a "loss")
+     * @param array<int,array<string,mixed>> $rawTrades All raw trades (for streak check)
+     * @param int     $cutoff       Unix timestamp for lookback window start
+     * @return array{0: array<string,array<string,mixed>>, 1: list<array<string,mixed>>, 2: list<array<string,mixed>>}
+     */
+    private function computeLifecycle(
+        array $results,
+        array $prevPool,
+        string $ts,
+        int $expiryDays,
+        int $demotionStreak,
+        float $minRoi,
+        array $rawTrades,
+        int $cutoff
+    ): array {
+        $newPool    = $prevPool;
+        $promotions = [];
+        $demotions  = [];
+        $nowTs      = time();
+
+        // ── Promotions ─────────────────────────────────────────────────────────
+        foreach ($results as $sym => $rec) {
+            if (!$rec['qualified']) {
+                continue;
+            }
+            if (isset($newPool[$sym])) {
+                // Already in pool — update last_revalidated_at
+                $newPool[$sym]['last_revalidated_at'] = $ts;
+                $newPool[$sym]['last_avg_roi']         = $rec['recent_avg_roi'];
+                continue;
+            }
+            // Promote
+            $reason = sprintf(
+                'квалифицирован: %d сделок в окне, avg ROI %.2f%%, winrate %.1f%%',
+                (int)($rec['closed_trades_window'] ?? 0),
+                (float)($rec['recent_avg_roi'] ?? 0),
+                (float)($rec['recent_winrate'] ?? 0) * 100
+            );
+            $newPool[$sym] = [
+                'symbol'              => $sym,
+                'promoted_at'         => $ts,
+                'last_revalidated_at' => $ts,
+                'promotion_reason'    => $reason,
+                'last_avg_roi'        => $rec['recent_avg_roi'],
+            ];
+            $promotions[] = [
+                'symbol'    => $sym,
+                'event'     => 'promoted',
+                'timestamp' => $ts,
+                'reason'    => $reason,
+                'avg_roi'   => $rec['recent_avg_roi'],
+            ];
+        }
+
+        // ── Demotions ──────────────────────────────────────────────────────────
+        foreach (array_keys($newPool) as $sym) {
+            $rec         = $results[$sym] ?? null;
+            $poolEntry   = $newPool[$sym];
+            $demoteWhy   = null;
+
+            // Rule 1: no longer qualified
+            if ($rec === null || !$rec['qualified']) {
+                $demoteWhy = $rec !== null
+                    ? ('не квалифицирован: ' . ($rec['qualification_reason'] ?? 'критерии не выполнены'))
+                    : 'символ не найден в текущем расчёте';
+            }
+
+            // Rule 2: expiry
+            if ($demoteWhy === null && $expiryDays > 0) {
+                $promotedTs = strtotime((string)($poolEntry['promoted_at'] ?? ''));
+                if ($promotedTs !== false && $promotedTs > 0) {
+                    $ageSeconds = $nowTs - $promotedTs;
+                    if ($ageSeconds > ($expiryDays * 86400)) {
+                        $demoteWhy = sprintf(
+                            'истёк срок квалификации: в пуле %d дн. (лимит %d дн.)',
+                            (int)($ageSeconds / 86400),
+                            $expiryDays
+                        );
+                    }
+                }
+            }
+
+            // Rule 3: loss streak
+            if ($demoteWhy === null && $demotionStreak > 0 && $rec !== null) {
+                $streak = $this->computeLossStreak($sym, $rawTrades, $cutoff, $minRoi);
+                if ($streak >= $demotionStreak) {
+                    $demoteWhy = sprintf(
+                        '%d убыточных сделок подряд (порог: %d)',
+                        $streak,
+                        $demotionStreak
+                    );
+                }
+            }
+
+            if ($demoteWhy !== null) {
+                $demotions[] = [
+                    'symbol'             => $sym,
+                    'event'              => 'demoted',
+                    'timestamp'          => $ts,
+                    'reason'             => $demoteWhy,
+                    'was_in_pool_since'  => $poolEntry['promoted_at'] ?? null,
+                    'last_avg_roi'       => $poolEntry['last_avg_roi'] ?? null,
+                ];
+                // Remove from pool
+                if (isset($results[$sym])) {
+                    $results[$sym]['demotion_eligible'] = true;
+                    $results[$sym]['demotion_reason']   = $demoteWhy;
+                    $results[$sym]['last_demotion_time'] = $ts;
+                }
+                unset($newPool[$sym]);
+            }
+        }
+
+        return [$newPool, $promotions, $demotions];
+    }
+
+    /**
+     * Compute the trailing loss streak for a symbol within the lookback window.
+     * Trades are sorted most-recent-first; streak ends when a winning trade is found.
+     */
+    private function computeLossStreak(string $sym, array $rawTrades, int $cutoff, float $minRoi): int
+    {
+        $windowTrades = [];
+        foreach ($rawTrades as $trade) {
+            if (strtoupper((string)($trade['symbol'] ?? '')) !== $sym) {
+                continue;
+            }
+            $closedAt = (int)($trade['closed_at'] ?? 0);
+            if ($closedAt < $cutoff) {
+                continue;
+            }
+            $roi = is_numeric($trade['roi'] ?? null) ? (float)$trade['roi'] : null;
+            $windowTrades[] = ['closed_at' => $closedAt, 'roi' => $roi];
+        }
+
+        if (empty($windowTrades)) {
+            return 0;
+        }
+
+        // Sort most-recent-first
+        usort($windowTrades, static function (array $a, array $b): int {
+            return $b['closed_at'] <=> $a['closed_at'];
+        });
+
+        $streak = 0;
+        foreach ($windowTrades as $t) {
+            $roi = $t['roi'];
+            if ($roi === null || $roi < $minRoi) {
+                $streak++;
+            } else {
+                break;
+            }
+        }
+
+        return $streak;
     }
 
     // =========================================================================

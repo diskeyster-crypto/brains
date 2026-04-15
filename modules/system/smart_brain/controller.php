@@ -706,10 +706,13 @@ final class SmartBrainController
     {
         require_once dirname(__DIR__) . '/win_universe/service.php';
 
-        $wuService = new WinUniverseService();
-        $universe  = $wuService->getUniverse();
-        $status    = $wuService->getStatus();
-        $config    = $wuService->getConfig();
+        $wuService  = new WinUniverseService();
+        $universe   = $wuService->getUniverse();
+        $status     = $wuService->getStatus();
+        $config     = $wuService->getConfig();
+        $pool       = $wuService->getPool();
+        $promotions = $wuService->getPromotions();
+        $demotions  = $wuService->getDemotions();
 
         $smartBrainUrl = $this->smartBrainUrl;
 

@@ -1,12 +1,15 @@
 {
     "ok": true,
     "skipped": false,
-    "run_at": "2026-04-15T10:31:42+00:00",
-    "elapsed_sec": 0,
+    "run_at": "2026-04-15T12:12:18+00:00",
+    "elapsed_sec": 0.001,
     "symbols_seen": 2,
     "qualified_count": 0,
     "near_qualified_count": 0,
     "rejected_count": 2,
+    "win_pool_count": 0,
+    "promotions_this_run": 0,
+    "demotions_this_run": 0,
     "trade_count_total": 2,
     "sources_used": [
         "simulator_closed"
@@ -16,7 +19,12 @@
         "min_avg_roi": 0,
         "lookback_days": 30,
         "min_closed_trades": 3,
-        "min_winrate": 0
+        "min_winrate": 0,
+        "qualification_expiry_days": 90,
+        "demotion_loss_streak": 0,
+        "win_universe_mode": "shadow",
+        "priority_bonus_enabled": false,
+        "priority_bonus_strength": 0.1
     },
     "threshold_sensitivity": {
         "fail_by_trade_count": 2,

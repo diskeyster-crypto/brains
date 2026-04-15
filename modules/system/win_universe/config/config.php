@@ -33,24 +33,34 @@ return [
         'win_universe_enabled' => true,
 
         /**
-         * Minimum average ROI (%) a symbol must show in the lookback window
-         * to qualify as a winning coin.
-         * A trade ROI above this threshold counts as a "win above threshold".
+         * Minimum per-trade ROI required for a trade to count as a "win above threshold".
+         *
+         * UNIT NOTE: ROI values from closed trade sources are stored as decimal fractions
+         * where 0.01 = 1% price return. This threshold must be expressed in the same unit.
+         *   0.05  → 5% ROI threshold
+         *   0.02  → 2% ROI threshold
+         *   0.005 → 0.5% ROI threshold
+         *
+         * Calibrated value: 0.05 (5% ROI). This is the per-trade bar a symbol must
+         * consistently exceed on average to qualify for the win pool.
+         * Softer than the previous 1.5 (150% in decimal units — an impossible bar).
          */
-        'min_roi_threshold' => 1.5,
+        'min_roi_threshold' => 0.05,
 
         /**
          * Lookback window in days for recent trade statistics.
          * Trades older than this are excluded from the qualification pass.
+         * Extended to 60 days to capture enough trade history for meaningful statistics.
          */
-        'lookback_days' => 30,
+        'lookback_days' => 60,
 
         /**
          * Minimum number of closed trades within the lookback window
          * required before a symbol can qualify.
-         * Prevents single-trade flukes from inflating the universe.
+         * Lowered to 2 to allow bootstrapping qualification on limited trade data.
+         * Prevents single-trade flukes: at least 2 trades required for any signal.
          */
-        'min_closed_trades' => 3,
+        'min_closed_trades' => 2,
 
         /**
          * Minimum win-rate (0.0–1.0) required for qualification.
@@ -60,13 +70,13 @@ return [
         'min_winrate' => 0.0,
 
         /**
-         * Minimum average ROI (%) across all trades in the lookback window.
-         * This is independent of min_roi_threshold (which defines per-trade wins).
-         * min_avg_roi ensures the symbol is consistently profitable on average,
-         * not just in a few lucky trades.
+         * Minimum average ROI across all trades in the lookback window.
+         * UNIT: same decimal fraction as min_roi_threshold (0.01 = 1%).
+         * Set to a small positive value to ensure the symbol is net-profitable on average.
+         * 0.005 = 0.5% average ROI floor (filters pure break-even symbols).
          * Set to 0.0 to disable (any positive average passes).
          */
-        'min_avg_roi' => 0.0,
+        'min_avg_roi' => 0.005,
 
         /**
          * Days after which a win-pool symbol must be re-validated.

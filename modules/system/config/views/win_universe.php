@@ -30,11 +30,11 @@ $wuDemotions  = $wuDemotions  ?? null;
 // Current values for form
 $cfgEnabled    = (bool)($wuCfg['win_universe_enabled'] ?? true);
 $cfgMode       = (string)($wuCfg['win_universe_mode']  ?? 'shadow');
-$cfgMinRoi     = (float)($wuCfg['min_roi_threshold']   ?? 1.5);
-$cfgLookback   = (int)($wuCfg['lookback_days']         ?? 30);
-$cfgMinTrades  = (int)($wuCfg['min_closed_trades']     ?? 3);
+$cfgMinRoi     = (float)($wuCfg['min_roi_threshold']   ?? 0.05);
+$cfgLookback   = (int)($wuCfg['lookback_days']         ?? 60);
+$cfgMinTrades  = (int)($wuCfg['min_closed_trades']     ?? 2);
 $cfgMinWinrate = (float)($wuCfg['min_winrate']         ?? 0.0);
-$cfgMinAvgRoi  = (float)($wuCfg['min_avg_roi']         ?? 0.0);
+$cfgMinAvgRoi  = (float)($wuCfg['min_avg_roi']         ?? 0.005);
 $cfgExpiry     = (int)($wuCfg['qualification_expiry_days'] ?? 90);
 $cfgStreak     = (int)($wuCfg['demotion_loss_streak']  ?? 0);
 $cfgPrioEnabled = (bool)($wuCfg['priority_bonus_enabled'] ?? false);
@@ -116,16 +116,22 @@ ob_start();
 
                     <div class="row g-3 mb-3">
                         <div class="col-6">
-                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Мин. ROI на сделку (%)</label>
-                            <input type="number" step="0.01" class="form-control form-control-sm" name="min_roi_threshold"
+                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">
+                                Мин. ROI на сделку
+                                <span style="color:#64748b;">(≈<?= number_format($cfgMinRoi * 100, 2) ?>%)</span>
+                            </label>
+                            <input type="number" step="0.001" class="form-control form-control-sm" name="min_roi_threshold"
                                    value="<?= htmlspecialchars((string)$cfgMinRoi) ?>">
-                            <div class="form-text text-secondary">Минимальный ROI, считающийся победой</div>
+                            <div class="form-text text-secondary">Дробное значение: 0.05 = 5%. Победа засчитывается при ROI ≥ этого порога.</div>
                         </div>
                         <div class="col-6">
-                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Мин. средний ROI (%)</label>
-                            <input type="number" step="0.01" class="form-control form-control-sm" name="min_avg_roi"
+                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">
+                                Мин. средний ROI
+                                <span style="color:#64748b;">(≈<?= number_format($cfgMinAvgRoi * 100, 2) ?>%)</span>
+                            </label>
+                            <input type="number" step="0.001" class="form-control form-control-sm" name="min_avg_roi"
                                    value="<?= htmlspecialchars((string)$cfgMinAvgRoi) ?>">
-                            <div class="form-text text-secondary">0 = отключено</div>
+                            <div class="form-text text-secondary">Дробное значение: 0.005 = 0.5%. 0 = отключено.</div>
                         </div>
                         <div class="col-6">
                             <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Окно (дней)</label>
@@ -232,10 +238,39 @@ ob_start();
                     Перейдите на страницу <a href="/admin/smart_brain/win_universe" class="text-primary">Win Universe</a> и нажмите «Запустить».
                 </p>
                 <?php endif; ?>
+                <?php
+                $activeCfg = $wuStatus['config_used'] ?? [];
+                if (!empty($activeCfg)):
+                    $activeRoiPct    = isset($activeCfg['min_roi_threshold_pct'])
+                        ? $activeCfg['min_roi_threshold_pct']
+                        : round((float)($activeCfg['min_roi_threshold'] ?? 0) * 100, 2);
+                    $activeAvgRoiPct = isset($activeCfg['min_avg_roi_pct'])
+                        ? $activeCfg['min_avg_roi_pct']
+                        : round((float)($activeCfg['min_avg_roi'] ?? 0) * 100, 2);
+                ?>
+                <div class="mt-3" style="font-size:0.76rem; color:#64748b; border-top:1px solid #1e293b; padding-top:8px;">
+                    Активные пороги: ROI≥<?= $activeRoiPct ?>%,
+                    avgROI≥<?= $activeAvgRoiPct ?>%,
+                    сделок≥<?= (int)($activeCfg['min_closed_trades'] ?? 0) ?>,
+                    winrate≥<?= (int)(($activeCfg['min_winrate'] ?? 0) * 100) ?>%,
+                    окно=<?= (int)($activeCfg['lookback_days'] ?? 0) ?>д.
+                </div>
+                <?php endif; ?>
             </div>
         </div>
 
         <!-- Threshold diagnostics (read-only) -->
+        <?php
+        $excessiveWarn = $wuStatus['excessive_qualification_warning'] ?? ($wuUniverse['excessive_qualification_warning'] ?? false);
+        $excessiveNote = $wuStatus['excessive_qualification_note']    ?? ($wuUniverse['excessive_qualification_note']    ?? null);
+        ?>
+        <?php if ($excessiveWarn && $excessiveNote): ?>
+        <div class="alert py-2 mb-3" style="background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.3); font-size:0.83rem;">
+            <i class="bi bi-exclamation-triangle text-danger me-1"></i>
+            <strong class="text-danger">Предупреждение:</strong>
+            <?= htmlspecialchars($excessiveNote) ?>
+        </div>
+        <?php endif; ?>
         <?php if (!empty($sensitivity) || !empty($candPreview)): ?>
         <div class="card mb-4">
             <div class="card-header" style="font-size:0.82rem;">
@@ -255,11 +290,10 @@ ob_start();
                     ];
                     foreach ($diagItems as $di):
                         $val = (int)($sensitivity[$di['key']] ?? 0);
-                        if ($val === 0) continue;
                     ?>
                     <div class="col-auto">
                         <div style="background:rgba(30,41,59,0.8); border:1px solid #334155; border-radius:6px; padding:5px 10px; text-align:center;">
-                            <div style="font-size:1.1rem; font-weight:700; color:<?= $di['color'] ?>;"><?= $val ?></div>
+                            <div style="font-size:1.1rem; font-weight:700; color:<?= $val > 0 ? $di['color'] : '#475569' ?>;"><?= $val ?></div>
                             <div style="font-size:0.7rem; color:#94a3b8;"><?= htmlspecialchars($di['label']) ?></div>
                         </div>
                     </div>
@@ -281,12 +315,16 @@ ob_start();
                 <div style="font-size:0.78rem; color:#94a3b8;" class="mb-1">Предварительный просмотр чувствительности:</div>
                 <div class="d-flex flex-wrap gap-2">
                 <?php foreach ($candPreview as $key => $sc): ?>
+                    <?php
+                    // ROI thresholds stored as decimal fractions (0.01 = 1%); multiply by 100 for display.
+                    $scRoiPct = number_format((float)($sc['min_roi_threshold'] ?? 0) * 100, 2);
+                    ?>
                     <span class="badge" style="background:rgba(51,65,85,0.9); border:1px solid #475569; font-size:0.73rem; padding:4px 8px; font-weight:400;">
                         <?= htmlspecialchars($sc['label'] ?? $key) ?>:
                         <strong style="color:<?= ((int)($sc['qualified_count'] ?? 0)) > 0 ? '#34d399' : '#f87171' ?>;">
                             <?= (int)($sc['qualified_count'] ?? 0) ?>
                         </strong>
-                        <span style="color:#64748b;">(ROI≥<?= number_format((float)($sc['min_roi_threshold'] ?? 0), 2) ?>%, ≥<?= (int)($sc['min_closed_trades'] ?? 0) ?> сд.)</span>
+                        <span style="color:#64748b;">(ROI≥<?= $scRoiPct ?>%, ≥<?= (int)($sc['min_closed_trades'] ?? 0) ?> сд.)</span>
                     </span>
                 <?php endforeach; ?>
                 </div>

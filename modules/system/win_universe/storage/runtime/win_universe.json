@@ -1,6 +1,6 @@
 {
     "mode": "shadow",
-    "computed_at": "2026-04-15T12:12:18+00:00",
+    "computed_at": "2026-04-15T14:00:51+00:00",
     "qualified": [],
     "near_qualified": [],
     "rejected": [
@@ -13,10 +13,11 @@
             "qualification_status": "rejected",
             "qualified": false,
             "near_qualified": false,
-            "qualification_reason": "недостаточно сделок: 1 из 3 в окне 30д.",
+            "qualification_reason": "недостаточно сделок: 1 из 2 в окне 60д.",
             "missing_requirements": [
-                "min_closed_trades: нужно 3, есть 1 в окне 30д.",
-                "min_roi_threshold: нужно >= 1.50%, есть -0.01%"
+                "min_closed_trades: нужно 2, есть 1 в окне 60д.",
+                "min_roi_threshold: нужно >= 5.00%, есть -1.12%",
+                "min_avg_roi: нужно >= 0.50%, есть -1.12%"
             ],
             "wins_above_threshold": 0,
             "recent_trade_count": 1,
@@ -26,16 +27,21 @@
             "best_roi": -0.011206,
             "recent_winrate": 0,
             "last_trade_time": "2026-03-21T10:54:05+00:00",
-            "lookback_window_used": 30,
+            "lookback_window_used": 60,
             "thresholds_used": {
-                "min_roi_threshold": 1.5,
-                "min_avg_roi": 0,
+                "min_roi_threshold": 0.05,
+                "min_avg_roi": 0.005,
                 "min_winrate": 0,
-                "min_closed_trades": 3
+                "min_closed_trades": 2
             },
-            "threshold_used": 1.5,
+            "distance_to_min_roi_threshold": 0.0612,
+            "distance_to_min_avg_roi": 0.0162,
+            "distance_to_min_winrate": null,
+            "missing_trade_count": 1,
+            "wins_needed_above_threshold": 0,
+            "threshold_used": 0.05,
             "winrate_threshold_used": 0,
-            "min_trades_required": 3,
+            "min_trades_required": 2,
             "in_win_pool": false,
             "promotion_eligible": false,
             "demotion_eligible": false,
@@ -46,10 +52,11 @@
             "qualification_status": "rejected",
             "qualified": false,
             "near_qualified": false,
-            "qualification_reason": "недостаточно сделок: 1 из 3 в окне 30д.",
+            "qualification_reason": "недостаточно сделок: 1 из 2 в окне 60д.",
             "missing_requirements": [
-                "min_closed_trades: нужно 3, есть 1 в окне 30д.",
-                "min_roi_threshold: нужно >= 1.50%, есть -0.01%"
+                "min_closed_trades: нужно 2, есть 1 в окне 60д.",
+                "min_roi_threshold: нужно >= 5.00%, есть -1.02%",
+                "min_avg_roi: нужно >= 0.50%, есть -1.02%"
             ],
             "wins_above_threshold": 0,
             "recent_trade_count": 1,
@@ -59,16 +66,21 @@
             "best_roi": -0.010234,
             "recent_winrate": 0,
             "last_trade_time": "2026-03-21T10:57:06+00:00",
-            "lookback_window_used": 30,
+            "lookback_window_used": 60,
             "thresholds_used": {
-                "min_roi_threshold": 1.5,
-                "min_avg_roi": 0,
+                "min_roi_threshold": 0.05,
+                "min_avg_roi": 0.005,
                 "min_winrate": 0,
-                "min_closed_trades": 3
+                "min_closed_trades": 2
             },
-            "threshold_used": 1.5,
+            "distance_to_min_roi_threshold": 0.0602,
+            "distance_to_min_avg_roi": 0.0152,
+            "distance_to_min_winrate": null,
+            "missing_trade_count": 1,
+            "wins_needed_above_threshold": 0,
+            "threshold_used": 0.05,
             "winrate_threshold_used": 0,
-            "min_trades_required": 3,
+            "min_trades_required": 2,
             "in_win_pool": false,
             "promotion_eligible": false,
             "demotion_eligible": false,
@@ -77,16 +89,18 @@
     },
     "win_pool": [],
     "config_used": {
-        "min_roi_threshold": 1.5,
-        "min_avg_roi": 0,
-        "lookback_days": 30,
-        "min_closed_trades": 3,
+        "min_roi_threshold": 0.05,
+        "min_avg_roi": 0.005,
+        "lookback_days": 60,
+        "min_closed_trades": 2,
         "min_winrate": 0,
         "qualification_expiry_days": 90,
         "demotion_loss_streak": 0,
         "win_universe_mode": "shadow",
         "priority_bonus_enabled": false,
-        "priority_bonus_strength": 0.1
+        "priority_bonus_strength": 0.1,
+        "min_roi_threshold_pct": 5,
+        "min_avg_roi_pct": 0.5
     },
     "sources_used": [
         "simulator_closed"
@@ -95,13 +109,45 @@
     "threshold_sensitivity": {
         "fail_by_trade_count": 2,
         "fail_by_roi_threshold": 2,
-        "fail_by_avg_roi": 0,
+        "fail_by_avg_roi": 2,
         "fail_by_winrate": 0,
         "fail_by_trade_count_only": 0,
         "fail_by_roi_only": 0,
         "fail_by_avg_roi_only": 0,
         "fail_by_winrate_only": 0,
         "near_qualified_total": 0,
-        "rejected_total": 2
-    }
+        "rejected_total": 2,
+        "failed_by_min_trades_count": 2,
+        "failed_by_roi_threshold_count": 2,
+        "failed_by_avg_roi_count": 2,
+        "failed_by_winrate_count": 0
+    },
+    "candidate_sensitivity_preview": {
+        "current": {
+            "label": "текущие пороги",
+            "min_roi_threshold": 0.05,
+            "min_avg_roi": 0.005,
+            "min_closed_trades": 2,
+            "min_winrate": 0,
+            "qualified_count": 0
+        },
+        "softer_1": {
+            "label": "мягче: ROI×0.75, сделок-1",
+            "min_roi_threshold": 0.04,
+            "min_avg_roi": 0,
+            "min_closed_trades": 1,
+            "min_winrate": 0,
+            "qualified_count": 0
+        },
+        "softer_2": {
+            "label": "мягче: ROI×0.50",
+            "min_roi_threshold": 0.03,
+            "min_avg_roi": 0,
+            "min_closed_trades": 1,
+            "min_winrate": 0,
+            "qualified_count": 0
+        }
+    },
+    "excessive_qualification_warning": false,
+    "excessive_qualification_note": null
 }

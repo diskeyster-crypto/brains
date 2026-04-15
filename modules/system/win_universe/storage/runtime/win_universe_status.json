@@ -1,7 +1,7 @@
 {
     "ok": true,
     "skipped": false,
-    "run_at": "2026-04-15T12:12:18+00:00",
+    "run_at": "2026-04-15T14:00:51+00:00",
     "elapsed_sec": 0.001,
     "symbols_seen": 2,
     "qualified_count": 0,
@@ -15,28 +15,68 @@
         "simulator_closed"
     ],
     "config_used": {
-        "min_roi_threshold": 1.5,
-        "min_avg_roi": 0,
-        "lookback_days": 30,
-        "min_closed_trades": 3,
+        "min_roi_threshold": 0.05,
+        "min_avg_roi": 0.005,
+        "lookback_days": 60,
+        "min_closed_trades": 2,
         "min_winrate": 0,
         "qualification_expiry_days": 90,
         "demotion_loss_streak": 0,
         "win_universe_mode": "shadow",
         "priority_bonus_enabled": false,
-        "priority_bonus_strength": 0.1
+        "priority_bonus_strength": 0.1,
+        "min_roi_threshold_pct": 5,
+        "min_avg_roi_pct": 0.5
     },
     "threshold_sensitivity": {
         "fail_by_trade_count": 2,
         "fail_by_roi_threshold": 2,
-        "fail_by_avg_roi": 0,
+        "fail_by_avg_roi": 2,
         "fail_by_winrate": 0,
         "fail_by_trade_count_only": 0,
         "fail_by_roi_only": 0,
         "fail_by_avg_roi_only": 0,
         "fail_by_winrate_only": 0,
         "near_qualified_total": 0,
-        "rejected_total": 2
+        "rejected_total": 2,
+        "failed_by_min_trades_count": 2,
+        "failed_by_roi_threshold_count": 2,
+        "failed_by_avg_roi_count": 2,
+        "failed_by_winrate_count": 0
     },
+    "threshold_diagnostics": {
+        "failed_by_min_trades_count": 2,
+        "failed_by_roi_threshold_count": 2,
+        "failed_by_avg_roi_count": 2,
+        "failed_by_winrate_count": 0
+    },
+    "candidate_sensitivity_preview": {
+        "current": {
+            "label": "текущие пороги",
+            "min_roi_threshold": 0.05,
+            "min_avg_roi": 0.005,
+            "min_closed_trades": 2,
+            "min_winrate": 0,
+            "qualified_count": 0
+        },
+        "softer_1": {
+            "label": "мягче: ROI×0.75, сделок-1",
+            "min_roi_threshold": 0.04,
+            "min_avg_roi": 0,
+            "min_closed_trades": 1,
+            "min_winrate": 0,
+            "qualified_count": 0
+        },
+        "softer_2": {
+            "label": "мягче: ROI×0.50",
+            "min_roi_threshold": 0.03,
+            "min_avg_roi": 0,
+            "min_closed_trades": 1,
+            "min_winrate": 0,
+            "qualified_count": 0
+        }
+    },
+    "excessive_qualification_warning": false,
+    "excessive_qualification_note": null,
     "mode": "shadow"
 }

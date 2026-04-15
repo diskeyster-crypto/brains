@@ -154,6 +154,27 @@ final class WinUniverseEngine
         }
         unset($rec);
 
+        // Safety cap diagnostic: warn if an excessive fraction of the universe qualifies.
+        // This is purely observational — it does NOT block qualification or change thresholds.
+        $totalSeen          = count($results);
+        $qualifiedCount     = count($qualified);
+        $excessiveThreshold = 0.30; // warn if >30% of seen symbols qualify
+        $excessiveQualificationWarning = false;
+        $excessiveQualificationNote    = null;
+        if ($totalSeen > 0 && $qualifiedCount > 0) {
+            $qualifiedFraction = $qualifiedCount / $totalSeen;
+            if ($qualifiedFraction > $excessiveThreshold) {
+                $excessiveQualificationWarning = true;
+                $excessiveQualificationNote = sprintf(
+                    'предупреждение: %d из %d символов квалифицированы (%.0f%% > %.0f%% порога) — проверьте пороги',
+                    $qualifiedCount,
+                    $totalSeen,
+                    $qualifiedFraction * 100,
+                    $excessiveThreshold * 100
+                );
+            }
+        }
+
         return [
             'symbols'               => $results,
             'qualified'             => $qualified,
@@ -173,12 +194,17 @@ final class WinUniverseEngine
                 'win_universe_mode'         => (string)($config['win_universe_mode'] ?? 'shadow'),
                 'priority_bonus_enabled'    => (bool)($config['priority_bonus_enabled'] ?? false),
                 'priority_bonus_strength'   => (float)($config['priority_bonus_strength'] ?? 0.1),
+                // Human-readable display values (ROI thresholds × 100 → %)
+                'min_roi_threshold_pct'     => round($minRoi * 100, 2),
+                'min_avg_roi_pct'           => round($minAvgRoi * 100, 2),
             ],
-            'sources_used'                  => $sourcesUsed,
-            'computed_at'                   => $ts,
-            'trade_count_total'             => (int)$tradeCountTotal,
-            'threshold_sensitivity'         => $sensitivity,
-            'candidate_sensitivity_preview' => $candidatePreview,
+            'sources_used'                         => $sourcesUsed,
+            'computed_at'                          => $ts,
+            'trade_count_total'                    => (int)$tradeCountTotal,
+            'threshold_sensitivity'                => $sensitivity,
+            'candidate_sensitivity_preview'        => $candidatePreview,
+            'excessive_qualification_warning'      => $excessiveQualificationWarning,
+            'excessive_qualification_note'         => $excessiveQualificationNote,
         ];
     }
 
@@ -239,7 +265,7 @@ final class WinUniverseEngine
             $reason = sprintf(
                 'квалифицирован: %d сделок в окне, avg ROI %.2f%%, winrate %.1f%%',
                 (int)($rec['closed_trades_window'] ?? 0),
-                (float)($rec['recent_avg_roi'] ?? 0),
+                (float)($rec['recent_avg_roi'] ?? 0) * 100,
                 (float)($rec['recent_winrate'] ?? 0) * 100
             );
             $newPool[$sym] = [
@@ -735,18 +761,19 @@ final class WinUniverseEngine
             );
         }
         if (!$meetsRoi) {
-            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi, 2) . '%' : 'н/д';
+            // ROI values are stored as decimal fractions (0.01 = 1%). Multiply by 100 for % display.
+            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi * 100, 2) . '%' : 'н/д';
             $missing[] = sprintf(
                 'min_roi_threshold: нужно >= %.2f%%, есть %s',
-                $minRoi,
+                $minRoi * 100,
                 $roiDisplay
             );
         }
         if ($avgRoiGateEnabled && !$meetsAvgRoi) {
-            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi, 2) . '%' : 'н/д';
+            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi * 100, 2) . '%' : 'н/д';
             $missing[] = sprintf(
                 'min_avg_roi: нужно >= %.2f%%, есть %s',
-                $minAvgRoi,
+                $minAvgRoi * 100,
                 $roiDisplay
             );
         }
@@ -802,6 +829,7 @@ final class WinUniverseEngine
                 'min_closed_trades'   => $minTrades,
             ],
             // Distance-to-qualify metrics (positive = still needs this much more to pass)
+            // Stored in the same decimal units as the raw ROI values (0.01 = 1%).
             'distance_to_min_roi_threshold' => $distToMinRoi,
             'distance_to_min_avg_roi'       => $distToMinAvgRoi,
             'distance_to_min_winrate'       => $distToMinWr,

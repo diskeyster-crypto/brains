@@ -109,8 +109,10 @@ final class WinUniverseService
                     'failed_by_avg_roi_count'       => $result['threshold_sensitivity']['failed_by_avg_roi_count']       ?? 0,
                     'failed_by_winrate_count'       => $result['threshold_sensitivity']['failed_by_winrate_count']       ?? 0,
                 ],
-                'candidate_sensitivity_preview' => $result['candidate_sensitivity_preview'] ?? [],
-                'mode'                          => $result['config_used']['win_universe_mode'] ?? 'shadow',
+                'candidate_sensitivity_preview'         => $result['candidate_sensitivity_preview'] ?? [],
+                'excessive_qualification_warning'       => $result['excessive_qualification_warning'] ?? false,
+                'excessive_qualification_note'          => $result['excessive_qualification_note'] ?? null,
+                'mode'                                  => $result['config_used']['win_universe_mode'] ?? 'shadow',
             ];
 
             $this->saveJson('win_universe_status.json', $status);
@@ -296,18 +298,20 @@ final class WinUniverseService
     {
         // win_universe.json — qualified/near-qualified/rejected lists + per-symbol details
         $universe = [
-            'mode'                          => $result['config_used']['win_universe_mode'] ?? 'shadow',
-            'computed_at'                   => $ts,
-            'qualified'                     => $result['qualified'],
-            'near_qualified'                => $result['near_qualified'],
-            'rejected'                      => $result['rejected'],
-            'symbols'                       => $result['symbols'],
-            'win_pool'                      => $result['win_pool'],
-            'config_used'                   => $result['config_used'],
-            'sources_used'                  => $result['sources_used'],
-            'trade_count_total'             => $result['trade_count_total'],
-            'threshold_sensitivity'         => $result['threshold_sensitivity'],
-            'candidate_sensitivity_preview' => $result['candidate_sensitivity_preview'] ?? [],
+            'mode'                                  => $result['config_used']['win_universe_mode'] ?? 'shadow',
+            'computed_at'                           => $ts,
+            'qualified'                             => $result['qualified'],
+            'near_qualified'                        => $result['near_qualified'],
+            'rejected'                              => $result['rejected'],
+            'symbols'                               => $result['symbols'],
+            'win_pool'                              => $result['win_pool'],
+            'config_used'                           => $result['config_used'],
+            'sources_used'                          => $result['sources_used'],
+            'trade_count_total'                     => $result['trade_count_total'],
+            'threshold_sensitivity'                 => $result['threshold_sensitivity'],
+            'candidate_sensitivity_preview'         => $result['candidate_sensitivity_preview'] ?? [],
+            'excessive_qualification_warning'       => $result['excessive_qualification_warning'] ?? false,
+            'excessive_qualification_note'          => $result['excessive_qualification_note'] ?? null,
         ];
         $this->saveJson('win_universe.json', $universe);
 

@@ -1060,15 +1060,16 @@ final class SmartBrainCore
             'ranking_boost_applied_total'      => (int)($liveIntentResult['ranking_boost_applied_total']      ?? 0),
             'ranking_boost_no_effect_total'    => (int)($liveIntentResult['ranking_boost_no_effect_total']    ?? 0),
             // Win Universe bonus layer diagnostics (soft priority bonus for qualified win-pool symbols)
-            'win_universe_bonus_total'         => (int)($liveIntentResult['win_universe_bonus_total']         ?? 0),
-            'win_universe_bonus_applied_total' => (int)($liveIntentResult['win_universe_bonus_applied_total'] ?? 0),
-            'win_universe_bonus_no_effect_total' => (int)($liveIntentResult['win_universe_bonus_no_effect_total'] ?? 0),
-            'win_universe_mode'                => (string)($liveIntentResult['win_universe_mode']             ?? 'shadow'),
-            'win_universe_mode_source'         => (string)($liveIntentResult['win_universe_mode_source']      ?? 'config_defaults'),
-            'win_universe_mode_sync_ok'        => (bool)($liveIntentResult['win_universe_mode_sync_ok']       ?? true),
-            'win_universe_last_run_mode'       => $liveIntentResult['win_universe_last_run_mode']             ?? null,
-            'win_universe_pool_size'           => (int)($liveIntentResult['win_universe_pool_size']           ?? 0),
-            'win_universe_bonus_preview'       => $liveIntentResult['win_universe_bonus_preview']             ?? [],
+            'win_universe_bonus_total'                 => (int)($liveIntentResult['win_universe_bonus_total']                  ?? 0),
+            'win_universe_bonus_applied_total'         => (int)($liveIntentResult['win_universe_bonus_applied_total']          ?? 0),
+            'win_universe_bonus_no_effect_total'       => (int)($liveIntentResult['win_universe_bonus_no_effect_total']        ?? 0),
+            'win_universe_bonus_ranking_changed_total' => (int)($liveIntentResult['win_universe_bonus_ranking_changed_total']  ?? 0),
+            'win_universe_mode'                        => (string)($liveIntentResult['win_universe_mode']                     ?? 'shadow'),
+            'win_universe_mode_source'                 => (string)($liveIntentResult['win_universe_mode_source']              ?? 'config_defaults'),
+            'win_universe_mode_sync_ok'                => (bool)($liveIntentResult['win_universe_mode_sync_ok']               ?? true),
+            'win_universe_last_run_mode'               => $liveIntentResult['win_universe_last_run_mode']                     ?? null,
+            'win_universe_pool_size'                   => (int)($liveIntentResult['win_universe_pool_size']                   ?? 0),
+            'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1245,15 +1246,16 @@ final class SmartBrainCore
             'ranking_boost_applied_total'      => 0,
             'ranking_boost_no_effect_total'    => 0,
             // Win Universe bonus layer diagnostics (soft priority bonus for qualified win-pool symbols)
-            'win_universe_bonus_total'         => 0,
-            'win_universe_bonus_applied_total' => 0,
-            'win_universe_bonus_no_effect_total' => 0,
-            'win_universe_mode'                => 'shadow',
-            'win_universe_mode_source'         => 'config_defaults',
-            'win_universe_mode_sync_ok'        => true,
-            'win_universe_last_run_mode'       => null,
-            'win_universe_pool_size'           => 0,
-            'win_universe_bonus_preview'       => [],
+            'win_universe_bonus_total'              => 0,
+            'win_universe_bonus_applied_total'      => 0,
+            'win_universe_bonus_no_effect_total'    => 0,
+            'win_universe_bonus_ranking_changed_total' => 0,
+            'win_universe_mode'                     => 'shadow',
+            'win_universe_mode_source'              => 'config_defaults',
+            'win_universe_mode_sync_ok'             => true,
+            'win_universe_last_run_mode'            => null,
+            'win_universe_pool_size'                => 0,
+            'win_universe_bonus_preview'            => [],
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -3054,6 +3056,17 @@ final class SmartBrainCore
         // while clearly stronger non-pool signals still win.
         // Side-neutral: bonus applies identically to long and short.
         // Safety: inactive when excessive_qualification_warning is set (>30% of universe qualified).
+        //
+        // Per-intent observability fields set here:
+        //   in_win_pool                  = true|false — symbol is currently in win pool
+        //   win_universe_status_at_eval  = 'qualified'|'not_in_pool'|'shadow_mode'|'bonus_disabled'|'pool_empty'
+        //   win_universe_bonus_applied   = true|false — bonus was applied to THIS candidate
+        //   win_universe_bonus_used      = same as win_universe_bonus_applied (alias for backward compat)
+        //   win_universe_bonus_value     = bonus points pre-loaded into intent for slot priority scoring
+        //   win_universe_bonus_reason    = human-readable reason string
+        //   ranking_changed_by_bonus     = false here; may be set true in Slot Priority competition branch
+        //   effective_priority_before_bonus = null here; set in Slot Priority layer
+        //   effective_priority_after_bonus  = null here; set in Slot Priority layer
         {
             $wuBonusActive = ($wuMode === 'priority' && $wuBonusEnabled && $wuPoolSize > 0);
 
@@ -3086,31 +3099,22 @@ final class SmartBrainCore
                     }
                 }
 
-                $wuIntent['in_win_pool']                  = $wuInPool;
-                $wuIntent['win_universe_status_at_eval']  = $wuStatus;
-                $wuIntent['win_universe_bonus_used']      = $wuBonusActive;
-                $wuIntent['win_universe_bonus_value']     = $wuBonusVal;
-                $wuIntent['win_universe_bonus_reason']    = $wuReason;
+                // win_universe_bonus_applied = true when THIS candidate received the bonus (per-intent flag).
+                // win_universe_bonus_used is kept as an alias for backward compatibility.
+                $wuBonusApplied = ($wuBonusActive && $wuInPool);
+
+                $wuIntent['in_win_pool']                       = $wuInPool;
+                $wuIntent['win_universe_status_at_eval']       = $wuStatus;
+                $wuIntent['win_universe_bonus_applied']        = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_used']           = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_value']          = $wuBonusVal;
+                $wuIntent['win_universe_bonus_reason']         = $wuReason;
+                // These fields are populated by the Slot Priority layer below.
+                $wuIntent['effective_priority_before_bonus']   = null;
+                $wuIntent['effective_priority_after_bonus']    = null;
+                $wuIntent['ranking_changed_by_bonus']          = false;
             }
             unset($wuIntent);
-
-            // Build win_universe_bonus_preview (first 10 intents) for observability in last_run.json
-            $wuPreview = [];
-            foreach ($intents as $wuPrevIntent) {
-                if (count($wuPreview) >= 10) {
-                    break;
-                }
-                $wuPreview[] = [
-                    'symbol'                      => $wuPrevIntent['symbol']                 ?? '',
-                    'side'                        => $wuPrevIntent['side']                   ?? '',
-                    'in_win_pool'                 => $wuPrevIntent['in_win_pool']             ?? false,
-                    'win_universe_status_at_eval' => $wuPrevIntent['win_universe_status_at_eval'] ?? 'not_in_pool',
-                    'win_universe_bonus_used'     => $wuPrevIntent['win_universe_bonus_used'] ?? false,
-                    'win_universe_bonus_value'    => $wuPrevIntent['win_universe_bonus_value'] ?? 0.0,
-                    'win_universe_bonus_reason'   => $wuPrevIntent['win_universe_bonus_reason'] ?? null,
-                ];
-            }
-            $result['win_universe_bonus_preview'] = $wuPreview;
         }
         // ── End Win Universe Bonus Layer ────────────────────────────────────
 
@@ -3203,6 +3207,12 @@ final class SmartBrainCore
                     $spIntentRef['slot_competition_reason']       = $slotPriorityEnabled
                         ? 'slots_available'
                         : 'slot_priority_disabled';
+                    // Win Universe bonus observability: before/after scores.
+                    // No competition — bonus increased score but did not change ranking outcome.
+                    $spWuBonusOnThis = (float)($spIntentRef['win_universe_bonus_value'] ?? 0.0);
+                    $spIntentRef['effective_priority_before_bonus'] = round($priorityData['score'] - $spWuBonusOnThis, 2);
+                    $spIntentRef['effective_priority_after_bonus']  = $priorityData['score'];
+                    $spIntentRef['ranking_changed_by_bonus']        = false;
                     $spNoCompIdx++;
                 }
                 unset($spIntentRef);
@@ -3211,17 +3221,22 @@ final class SmartBrainCore
                 $result['slot_priority_used'] = true;
 
                 // Score every candidate.
+                // Also compute score-without-wu-bonus for ranking_changed_by_bonus detection.
                 $scoredCandidates = [];
                 foreach ($intents as $spIdx => $spIntent) {
                     $priorityData = $this->computeSlotPriorityScore($spIntent, $freshnessDecayEnabled, $freshnessWindowMinutes);
+                    $spWuBonusThis = (float)($spIntent['win_universe_bonus_value'] ?? 0.0);
+                    $scoreWithoutWuBonus = round($priorityData['score'] - $spWuBonusThis, 2);
                     $scoredCandidates[] = [
-                        'idx'       => $spIdx,
-                        'intent'    => $spIntent,
-                        'score'     => $priorityData['score'],
-                        'bucket'    => $priorityData['bucket'],
-                        'reason'    => $priorityData['reason'],
-                        'created_ts' => (int)($spIntent['created_ts'] ?? 0),
-                        'quality_score' => (float)($spIntent['quality_score'] ?? 0.0),
+                        'idx'                    => $spIdx,
+                        'intent'                 => $spIntent,
+                        'score'                  => $priorityData['score'],
+                        'score_without_wu_bonus' => $scoreWithoutWuBonus,
+                        'wu_bonus_value'         => $spWuBonusThis,
+                        'bucket'                 => $priorityData['bucket'],
+                        'reason'                 => $priorityData['reason'],
+                        'created_ts'             => (int)($spIntent['created_ts'] ?? 0),
+                        'quality_score'          => (float)($spIntent['quality_score'] ?? 0.0),
                     ];
                 }
 
@@ -3241,6 +3256,11 @@ final class SmartBrainCore
                 $winners = array_slice($scoredCandidates, 0, $slotsAvailable);
                 $losers  = array_slice($scoredCandidates, $slotsAvailable);
 
+                // Cutoff score = lowest winning score (used for ranking_changed_by_bonus detection).
+                // A pool-bonus winner whose score-without-bonus would fall below this cutoff
+                // would have lost without the bonus, so ranking_changed_by_bonus = true.
+                $cutoffScore = !empty($winners) ? (float)end($winners)['score'] : 0.0;
+
                 $winnerIdxSet = [];
                 foreach ($winners as $wRank => $w) {
                     $winnerIdxSet[$w['idx']] = ['data' => $w, 'rank' => $wRank];
@@ -3252,13 +3272,24 @@ final class SmartBrainCore
                     if (isset($winnerIdxSet[$spIdx])) {
                         $wEntry = $winnerIdxSet[$spIdx];
                         $w      = $wEntry['data'];
-                        $spIntent['slot_priority_score']            = $w['score'];
-                        $spIntent['slot_priority_bucket']           = $w['bucket'];
-                        $spIntent['slot_priority_reason']           = $w['reason'];
-                        $spIntent['slot_priority_ranking_index']    = $wEntry['rank'];
+                        $spIntent['slot_priority_score']             = $w['score'];
+                        $spIntent['slot_priority_bucket']            = $w['bucket'];
+                        $spIntent['slot_priority_reason']            = $w['reason'];
+                        $spIntent['slot_priority_ranking_index']     = $wEntry['rank'];
                         $spIntent['slot_priority_total_competitors'] = $totalCompetitors;
-                        $spIntent['slot_competition_result']        = 'won';
-                        $spIntent['slot_competition_reason']        = 'higher_priority_won';
+                        $spIntent['slot_competition_result']         = 'won';
+                        $spIntent['slot_competition_reason']         = 'higher_priority_won';
+                        // Win Universe bonus observability for competition winners.
+                        $spIntent['effective_priority_after_bonus']  = $w['score'];
+                        $spIntent['effective_priority_before_bonus'] = $w['score_without_wu_bonus'];
+                        // ranking_changed_by_bonus: true when the bonus caused this win
+                        // (without bonus the candidate would have fallen to the loser set).
+                        $wuBonusHere = $w['wu_bonus_value'];
+                        $rankChangedHere = ($wuBonusHere > 0.0 && $w['score_without_wu_bonus'] < $cutoffScore);
+                        $spIntent['ranking_changed_by_bonus'] = $rankChangedHere;
+                        if ($rankChangedHere) {
+                            $result['win_universe_bonus_ranking_changed_total']++;
+                        }
                         $priorityFilteredIntents[] = $spIntent;
                         $result['slot_priority_won_total']++;
                     }
@@ -3267,13 +3298,16 @@ final class SmartBrainCore
                 // Record losers in rejection_reasons and preview (observability only).
                 foreach ($losers as $lRank => $l) {
                     $lIntent = $l['intent'];
-                    $lIntent['slot_priority_score']            = $l['score'];
-                    $lIntent['slot_priority_bucket']           = $l['bucket'];
-                    $lIntent['slot_priority_reason']           = $l['reason'];
-                    $lIntent['slot_priority_ranking_index']    = $slotsAvailable + $lRank;
-                    $lIntent['slot_priority_total_competitors'] = $totalCompetitors;
-                    $lIntent['slot_competition_result']        = 'lost';
-                    $lIntent['slot_competition_reason']        = 'low_priority_lost';
+                    $lIntent['slot_priority_score']              = $l['score'];
+                    $lIntent['slot_priority_bucket']             = $l['bucket'];
+                    $lIntent['slot_priority_reason']             = $l['reason'];
+                    $lIntent['slot_priority_ranking_index']      = $slotsAvailable + $lRank;
+                    $lIntent['slot_priority_total_competitors']  = $totalCompetitors;
+                    $lIntent['slot_competition_result']          = 'lost';
+                    $lIntent['slot_competition_reason']          = 'low_priority_lost';
+                    $lIntent['effective_priority_after_bonus']   = $l['score'];
+                    $lIntent['effective_priority_before_bonus']  = $l['score_without_wu_bonus'];
+                    $lIntent['ranking_changed_by_bonus']         = false;
                     $this->rejectLiveSignal(
                         $result,
                         (string)($lIntent['symbol'] ?? ''),
@@ -3305,6 +3339,33 @@ final class SmartBrainCore
             }
         }
         // ── End Slot Priority Layer ─────────────────────────────────────────
+
+        // Build win_universe_bonus_preview AFTER slot priority so it includes
+        // effective_priority_before_bonus, effective_priority_after_bonus, and ranking_changed_by_bonus.
+        {
+            $wuPreview = [];
+            foreach ($intents as $wuPrevIntent) {
+                if (count($wuPreview) >= 10) {
+                    break;
+                }
+                $wuPreview[] = [
+                    'symbol'                          => $wuPrevIntent['symbol']                         ?? '',
+                    'side'                            => $wuPrevIntent['side']                           ?? '',
+                    'in_win_pool'                     => $wuPrevIntent['in_win_pool']                    ?? false,
+                    'win_universe_status_at_eval'     => $wuPrevIntent['win_universe_status_at_eval']    ?? 'not_in_pool',
+                    'win_universe_bonus_applied'      => $wuPrevIntent['win_universe_bonus_applied']     ?? false,
+                    'win_universe_bonus_used'         => $wuPrevIntent['win_universe_bonus_used']        ?? false,
+                    'win_universe_bonus_value'        => $wuPrevIntent['win_universe_bonus_value']       ?? 0.0,
+                    'win_universe_bonus_reason'       => $wuPrevIntent['win_universe_bonus_reason']      ?? null,
+                    'effective_priority_before_bonus' => $wuPrevIntent['effective_priority_before_bonus'] ?? null,
+                    'effective_priority_after_bonus'  => $wuPrevIntent['effective_priority_after_bonus']  ?? null,
+                    'ranking_changed_by_bonus'        => $wuPrevIntent['ranking_changed_by_bonus']        ?? false,
+                    'slot_competition_result'         => $wuPrevIntent['slot_competition_result']         ?? null,
+                    'slot_priority_score'             => $wuPrevIntent['slot_priority_score']             ?? null,
+                ];
+            }
+            $result['win_universe_bonus_preview'] = $wuPreview;
+        }
 
         // Rebuild rejection_reason_stats to include any slot_priority_lost rejections added above.
         $reasonStats = [];

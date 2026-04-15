@@ -73,6 +73,8 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
     $tradeTotal    = $universe['trade_count_total']   ?? 0;
     $sensitivity   = $universe['threshold_sensitivity']         ?? [];
     $candPreview   = $universe['candidate_sensitivity_preview'] ?? [];
+    $diagConsistent     = $universe['diagnostics_consistent']         ?? null;
+    $previewMatchActive = $universe['preview_current_matches_active'] ?? null;
 
     $lastRun  = $status['run_at']  ?? null;
     $lastOk   = $status['ok']      ?? null;
@@ -355,9 +357,18 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
             <?php if (!empty($candPreview)): ?>
             <div class="mt-2">
                 <small class="fw-semibold" style="color:#94a3b8;">Чувствительность порогов:</small>
+                <?php if ($previewMatchActive === false): ?>
+                <span class="badge bg-danger ms-2" style="font-size:0.7rem;" title="preview.current.qualified_count не совпадает с активным qualified_count">⚠ диагностика несогласована</span>
+                <?php elseif ($previewMatchActive === true): ?>
+                <span class="badge ms-2" style="background:#166534; font-size:0.7rem;">✓ диагностика согласована</span>
+                <?php endif; ?>
                 <div class="d-flex flex-wrap gap-2 mt-1">
-                <?php foreach ($candPreview as $key => $sc): ?>
-                    <span class="badge" style="background:rgba(51,65,85,0.9); border:1px solid #475569; font-size:0.75rem; padding:4px 8px;">
+                <?php foreach ($candPreview as $key => $sc):
+                    $isCurrent = ($key === 'current');
+                    $borderStyle = $isCurrent ? '2px solid #34d399' : '1px solid #475569';
+                    $bgStyle     = $isCurrent ? 'background:rgba(20,83,45,0.5);' : 'background:rgba(51,65,85,0.9);';
+                ?>
+                    <span class="badge" style="<?= $bgStyle ?> border:<?= $borderStyle ?>; border-radius:6px; font-size:0.75rem; padding:4px 8px;">
                         <?= htmlspecialchars($sc['label'] ?? $key) ?>:
                         <strong style="color:<?= ((int)($sc['qualified_count'] ?? 0)) > 0 ? '#34d399' : '#f87171' ?>;">
                             <?= (int)($sc['qualified_count'] ?? 0) ?>

@@ -113,6 +113,8 @@ final class WinUniverseService
                     'failed_by_missing_time_count'    => $result['threshold_sensitivity']['failed_by_missing_time_count']  ?? 0,
                 ],
                 'candidate_sensitivity_preview'         => $result['candidate_sensitivity_preview'] ?? [],
+                'diagnostics_consistent'                => $result['diagnostics_consistent'] ?? true,
+                'preview_current_matches_active'        => $result['preview_current_matches_active'] ?? true,
                 'excessive_qualification_warning'       => $result['excessive_qualification_warning'] ?? false,
                 'excessive_qualification_note'          => $result['excessive_qualification_note'] ?? null,
                 'mode'                                  => $result['config_used']['win_universe_mode'] ?? 'shadow',

@@ -115,9 +115,10 @@ final class WinUniverseEngine
         // Threshold sensitivity: count how many symbols fail by each criterion
         $sensitivity = $this->buildSensitivityBreakdown($results, $minTrades, $minRoi, $minAvgRoi, $minWinrate);
 
-        // Candidate sensitivity preview: how many would qualify under softer thresholds
+        // Candidate sensitivity preview: how many would qualify under active and softer thresholds
         $candidatePreview = $this->buildCandidateSensitivityPreview(
-            $symbolStats, $minRoi, $minAvgRoi, $minTrades, $minWinrate, $lookbackDays
+            $symbolStats, $minRoi, $minAvgRoi, $minTrades, $minWinrate, $lookbackDays,
+            $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes
         );
 
         // Two-pool lifecycle: compute promotions, demotions, new win pool state
@@ -161,6 +162,13 @@ final class WinUniverseEngine
             }
         }
         unset($rec);
+
+        // Sanity check: preview.current.qualified_count must match active qualified_count.
+        // If they differ it means the preview used different gates than the active qualification.
+        $previewCurrentCount      = (int)($candidatePreview['current']['qualified_count'] ?? -1);
+        $activeQualifiedCount     = count($qualified);
+        $previewMatchesActive     = ($previewCurrentCount === $activeQualifiedCount);
+        $diagnosticsConsistent    = $previewMatchesActive;
 
         // Safety cap diagnostic: warn if an excessive fraction of the universe qualifies.
         // This is purely observational — it does NOT block qualification or change thresholds.
@@ -215,6 +223,8 @@ final class WinUniverseEngine
             'trade_count_total'                    => (int)$tradeCountTotal,
             'threshold_sensitivity'                => $sensitivity,
             'candidate_sensitivity_preview'        => $candidatePreview,
+            'diagnostics_consistent'               => $diagnosticsConsistent,
+            'preview_current_matches_active'       => $previewMatchesActive,
             'excessive_qualification_warning'      => $excessiveQualificationWarning,
             'excessive_qualification_note'         => $excessiveQualificationNote,
         ];
@@ -1240,12 +1250,22 @@ final class WinUniverseEngine
      *
      * This is SHADOW-ONLY diagnostic data — it does NOT change active thresholds.
      *
+     * The "current" scenario applies ALL active gates including target ROI and speed-to-target,
+     * so its qualified_count exactly matches the active qualification result.
+     *
+     * The "softer" scenarios simplify by disabling target-ROI and speed gates (those gates
+     * are threshold-dependent and their purpose is to show volume sensitivity to ROI/trade-count
+     * thresholds, not the compound gate logic).
+     *
      * @param array<string,array<string,mixed>> $symbolStats  Output of aggregateBySymbol()
      * @param float $minRoi          Active min_roi_threshold
      * @param float $minAvgRoi       Active min_avg_roi
      * @param int   $minTrades       Active min_closed_trades
      * @param float $minWinrate      Active min_winrate
      * @param int   $lookbackDays    Active lookback_days
+     * @param float $minTargetRoi    Active min_target_roi
+     * @param int   $minWinsAboveTarget Active min_wins_above_target
+     * @param int   $maxTimeToTargetMinutes Active max_time_to_target_minutes
      * @return array<string,array<string,mixed>>
      */
     private function buildCandidateSensitivityPreview(
@@ -1254,14 +1274,18 @@ final class WinUniverseEngine
         float $minAvgRoi,
         int $minTrades,
         float $minWinrate,
-        int $lookbackDays
+        int $lookbackDays,
+        float $minTargetRoi = 0.0,
+        int $minWinsAboveTarget = 0,
+        int $maxTimeToTargetMinutes = 0
     ): array {
-        // Helper: count how many symbols qualify under given thresholds
-        // New gates (target ROI, speed) are disabled here to keep the sensitivity scenarios simple.
-        $countQ = function (float $roi, float $avgRoi, int $trades, float $wr) use ($symbolStats, $lookbackDays): int {
+        // Helper: count how many symbols qualify under given thresholds.
+        // $targetRoi / $winsAboveTarget / $maxSpeed are passed explicitly so
+        // the "current" scenario can use the full active gate set.
+        $countQ = function (float $roi, float $avgRoi, int $trades, float $wr, float $targetRoi = 0.0, int $winsAboveTarget = 0, int $maxSpeed = 0) use ($symbolStats, $lookbackDays): int {
             $n = 0;
             foreach ($symbolStats as $sym => $stats) {
-                $rec = $this->qualify($sym, $stats, $roi, $avgRoi, $trades, $wr, $lookbackDays, 0.0, 0, 0);
+                $rec = $this->qualify($sym, $stats, $roi, $avgRoi, $trades, $wr, $lookbackDays, $targetRoi, $winsAboveTarget, $maxSpeed);
                 if ($rec['qualified']) {
                     $n++;
                 }
@@ -1269,23 +1293,28 @@ final class WinUniverseEngine
             return $n;
         };
 
-        // Scenario A — current active thresholds
+        // Scenario A — current active thresholds (ALL gates, including target ROI and speed).
+        // qualified_count here MUST equal the active qualified_count.
         $scenarios['current'] = [
-            'label'               => 'текущие пороги',
-            'min_roi_threshold'   => $minRoi,
-            'min_avg_roi'         => $minAvgRoi,
-            'min_closed_trades'   => $minTrades,
-            'min_winrate'         => $minWinrate,
-            'qualified_count'     => $countQ($minRoi, $minAvgRoi, $minTrades, $minWinrate),
+            'label'                      => 'текущие пороги (активные)',
+            'min_roi_threshold'          => $minRoi,
+            'min_avg_roi'                => $minAvgRoi,
+            'min_closed_trades'          => $minTrades,
+            'min_winrate'                => $minWinrate,
+            'min_target_roi'             => $minTargetRoi,
+            'min_wins_above_target'      => $minWinsAboveTarget,
+            'max_time_to_target_minutes' => $maxTimeToTargetMinutes,
+            'qualified_count'            => $countQ($minRoi, $minAvgRoi, $minTrades, $minWinrate, $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes),
         ];
 
-        // Scenario B — softer: ROI threshold ×0.75, min_trades −1 (min 1)
+        // Scenario B — softer: ROI threshold ×0.75, min_trades −1 (min 1).
+        // Speed/target-ROI gates disabled for simplicity in this sensitivity preview.
         $roi1    = round($minRoi * 0.75, 2);
         $trades1 = max(1, $minTrades - 1);
         $avg1    = $minAvgRoi > 0.0 ? round($minAvgRoi * 0.75, 2) : 0.0;
         $wr1     = $minWinrate > 0.0 ? round($minWinrate * 0.8, 2) : 0.0;
         $scenarios['softer_1'] = [
-            'label'               => 'мягче: ROI×0.75, сделок-1',
+            'label'               => 'мягче: ROI×0.75, сделок-1 (без цел.ворот)',
             'min_roi_threshold'   => $roi1,
             'min_avg_roi'         => $avg1,
             'min_closed_trades'   => $trades1,
@@ -1293,13 +1322,14 @@ final class WinUniverseEngine
             'qualified_count'     => $countQ($roi1, $avg1, $trades1, $wr1),
         ];
 
-        // Scenario C — softer: ROI threshold ×0.50, min_trades max(1, ×0.5)
+        // Scenario C — softer: ROI threshold ×0.50, min_trades max(1, ×0.5).
+        // Speed/target-ROI gates disabled for simplicity in this sensitivity preview.
         $roi2    = round($minRoi * 0.50, 2);
         $trades2 = max(1, (int)floor($minTrades * 0.5));
         $avg2    = $minAvgRoi > 0.0 ? round($minAvgRoi * 0.50, 2) : 0.0;
         $wr2     = $minWinrate > 0.0 ? round($minWinrate * 0.6, 2) : 0.0;
         $scenarios['softer_2'] = [
-            'label'               => 'мягче: ROI×0.50',
+            'label'               => 'мягче: ROI×0.50 (без цел.ворот)',
             'min_roi_threshold'   => $roi2,
             'min_avg_roi'         => $avg2,
             'min_closed_trades'   => $trades2,

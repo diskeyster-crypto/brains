@@ -1056,6 +1056,12 @@ final class SmartBrainCore
             'ranking_boost_total'              => (int)($liveIntentResult['ranking_boost_total']              ?? 0),
             'ranking_boost_applied_total'      => (int)($liveIntentResult['ranking_boost_applied_total']      ?? 0),
             'ranking_boost_no_effect_total'    => (int)($liveIntentResult['ranking_boost_no_effect_total']    ?? 0),
+            // Win Universe bonus layer diagnostics (soft priority bonus for qualified win-pool symbols)
+            'win_universe_bonus_total'         => (int)($liveIntentResult['win_universe_bonus_total']         ?? 0),
+            'win_universe_bonus_applied_total' => (int)($liveIntentResult['win_universe_bonus_applied_total'] ?? 0),
+            'win_universe_bonus_no_effect_total' => (int)($liveIntentResult['win_universe_bonus_no_effect_total'] ?? 0),
+            'win_universe_mode'                => (string)($liveIntentResult['win_universe_mode']             ?? 'shadow'),
+            'win_universe_pool_size'           => (int)($liveIntentResult['win_universe_pool_size']           ?? 0),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1228,6 +1234,12 @@ final class SmartBrainCore
             'ranking_boost_total'              => 0,
             'ranking_boost_applied_total'      => 0,
             'ranking_boost_no_effect_total'    => 0,
+            // Win Universe bonus layer diagnostics (soft priority bonus for qualified win-pool symbols)
+            'win_universe_bonus_total'         => 0,
+            'win_universe_bonus_applied_total' => 0,
+            'win_universe_bonus_no_effect_total' => 0,
+            'win_universe_mode'                => 'shadow',
+            'win_universe_pool_size'           => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1331,6 +1343,74 @@ final class SmartBrainCore
                 }
             }
         }
+
+        // ── Win Universe pool pre-load (best-effort, non-fatal) ───────────────
+        // Reads win_universe_pool.json to support the Win Universe Bonus Layer below.
+        // Mode + bonus strength come from win_universe/storage/runtime/win_universe_user_config.json
+        // with fallback to win_universe/config/config.php defaults.
+        $wuWinPool           = [];
+        $wuMode              = 'shadow';
+        $wuBonusEnabled      = false;
+        $wuBonusStrength     = 0.5;
+        $wuPoolSize          = 0;
+        $wuMaxQualifiedRatio = 0.30; // safety cap: ignore bonus when >30% of seen qualifies
+        try {
+            $wuModuleBase = dirname($this->moduleBase) . '/win_universe';
+            // Load pool
+            $wuPoolPath = $wuModuleBase . '/storage/runtime/win_universe_pool.json';
+            if (is_file($wuPoolPath)) {
+                $wuPoolRaw = @file_get_contents($wuPoolPath);
+                if ($wuPoolRaw !== false && $wuPoolRaw !== '') {
+                    $wuPoolData = @json_decode($wuPoolRaw, true);
+                    if (is_array($wuPoolData) && isset($wuPoolData['win_pool']) && is_array($wuPoolData['win_pool'])) {
+                        foreach (array_keys($wuPoolData['win_pool']) as $wuSym) {
+                            $wuWinPool[strtoupper((string)$wuSym)] = true;
+                        }
+                        $wuPoolSize = count($wuWinPool);
+                    }
+                }
+            }
+            // Load config (user overlay first, then defaults)
+            $wuCfg = [];
+            $wuUserCfgPath = $wuModuleBase . '/storage/runtime/win_universe_user_config.json';
+            if (is_file($wuUserCfgPath)) {
+                $wuUserCfgRaw = @file_get_contents($wuUserCfgPath);
+                if ($wuUserCfgRaw !== false && $wuUserCfgRaw !== '') {
+                    $wuUserCfgData = @json_decode($wuUserCfgRaw, true);
+                    if (is_array($wuUserCfgData) && isset($wuUserCfgData['win_universe'])) {
+                        $wuCfg = $wuUserCfgData['win_universe'];
+                    }
+                }
+            }
+            if (empty($wuCfg)) {
+                $wuDefaultCfgPath = $wuModuleBase . '/config/config.php';
+                if (is_file($wuDefaultCfgPath)) {
+                    $wuDefaultCfgLoaded = @include $wuDefaultCfgPath;
+                    if (is_array($wuDefaultCfgLoaded) && isset($wuDefaultCfgLoaded['win_universe'])) {
+                        $wuCfg = $wuDefaultCfgLoaded['win_universe'];
+                    }
+                }
+            }
+            $wuMode         = (string)($wuCfg['win_universe_mode']      ?? 'shadow');
+            $wuBonusEnabled = (bool)($wuCfg['priority_bonus_enabled']   ?? false);
+            $wuBonusStrength = min(1.0, max(0.0, (float)($wuCfg['priority_bonus_strength'] ?? 0.5)));
+            // Safety cap: if excessive_qualification_warning is set in win_universe.json, deactivate bonus
+            $wuStatusPath = $wuModuleBase . '/storage/runtime/win_universe_status.json';
+            if (is_file($wuStatusPath)) {
+                $wuStatusRaw = @file_get_contents($wuStatusPath);
+                if ($wuStatusRaw !== false && $wuStatusRaw !== '') {
+                    $wuStatusData = @json_decode($wuStatusRaw, true);
+                    if (is_array($wuStatusData) && !empty($wuStatusData['excessive_qualification_warning'])) {
+                        // Pool qualifies >30% of universe — treat bonus as inactive for safety
+                        $wuBonusEnabled = false;
+                    }
+                }
+            }
+        } catch (\Throwable $wuLoadEx) {
+            // non-fatal — bonus stays inactive
+        }
+        $result['win_universe_mode']      = $wuMode;
+        $result['win_universe_pool_size'] = $wuPoolSize;
 
         $intents = [];
 
@@ -2928,6 +3008,50 @@ final class SmartBrainCore
         }
         // ── End Ranking Boost Layer ─────────────────────────────────────────
 
+        // ── Win Universe Bonus Layer ────────────────────────────────────────
+        // Soft ranking bonus for qualified win-pool symbols.
+        // Only active when win_universe_mode = 'priority' AND priority_bonus_enabled = true.
+        // Runs AFTER all hard gates and ranking layers, BEFORE Slot Priority scoring.
+        // Does NOT filter or reject — adds a bounded positive bonus to slot_priority_score
+        // so win-pool symbols more often beat similar non-pool candidates in slot competition,
+        // while clearly stronger non-pool signals still win.
+        // Side-neutral: bonus applies identically to long and short.
+        // Safety: inactive when excessive_qualification_warning is set (>30% of universe qualified).
+        {
+            $wuBonusActive = ($wuMode === 'priority' && $wuBonusEnabled && $wuPoolSize > 0);
+
+            foreach ($intents as &$wuIntent) {
+                $wuSym      = strtoupper((string)($wuIntent['symbol'] ?? ''));
+                $wuInPool   = isset($wuWinPool[$wuSym]);
+                $wuBonusVal = 0.0;
+                $wuReason   = null;
+                $wuStatus   = 'not_in_pool';
+
+                $result['win_universe_bonus_total']++;
+
+                if ($wuBonusActive && $wuInPool) {
+                    // Bonus = strength × 10 pts, bounded [0, 10]
+                    $wuBonusVal = round(min(10.0, max(0.0, $wuBonusStrength * 10.0)), 2);
+                    $wuReason   = 'win_pool_qualified+' . $wuBonusVal;
+                    $wuStatus   = 'qualified';
+                    $result['win_universe_bonus_applied_total']++;
+                } else {
+                    $result['win_universe_bonus_no_effect_total']++;
+                    if (!$wuBonusActive) {
+                        $wuStatus = ($wuMode !== 'priority') ? 'shadow_mode' : 'bonus_disabled';
+                    }
+                }
+
+                $wuIntent['in_win_pool']                  = $wuInPool;
+                $wuIntent['win_universe_status_at_eval']  = $wuStatus;
+                $wuIntent['win_universe_bonus_used']      = $wuBonusActive;
+                $wuIntent['win_universe_bonus_value']     = $wuBonusVal;
+                $wuIntent['win_universe_bonus_reason']    = $wuReason;
+            }
+            unset($wuIntent);
+        }
+        // ── End Win Universe Bonus Layer ────────────────────────────────────
+
         // ── Slot Priority Layer ─────────────────────────────────────────────
         // Time-aware candidate ranking for limited live slots.
         // Applied AFTER all existing gates, BEFORE lifecycle merge.
@@ -3424,6 +3548,16 @@ final class SmartBrainCore
         if ($rankingBoost > 0.0) {
             $score    += $rankingBoost;
             $factors[] = 'ranking_boost+' . $rankingBoost . '(' . ($intent['ranking_boost_reason'] ?? 'ranking_boost') . ')';
+        }
+
+        // ── Win Universe bonus (soft priority for qualified win-pool symbols) ──
+        // Pre-computed by the Win Universe Bonus Layer. Only non-zero when
+        // win_universe_mode=priority, priority_bonus_enabled=true, and symbol is in pool.
+        // Bounded to [0, 10]. Does NOT bypass any hard gates.
+        $wuBonus = min(10.0, max(0.0, (float)($intent['win_universe_bonus_value'] ?? 0.0)));
+        if ($wuBonus > 0.0) {
+            $score    += $wuBonus;
+            $factors[] = 'win_universe_bonus+' . $wuBonus . '(' . ($intent['win_universe_bonus_reason'] ?? 'win_pool') . ')';
         }
 
         // ── Cap and bucket ────────────────────────────────────────────────

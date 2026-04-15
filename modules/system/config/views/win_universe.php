@@ -64,13 +64,13 @@ ob_start();
 </div>
 <?php endif; ?>
 
-<!-- Shadow-only notice -->
-<div class="alert py-2 mb-4" style="background:rgba(245,158,11,0.08); border-color:rgba(245,158,11,0.25); font-size:0.85rem;">
-    <i class="bi bi-shield-check text-warning me-1"></i>
-    <strong class="text-warning">Только теневой режим</strong> —
-    Win Universe является аналитическим модулем. Настройки режима сохраняются, но
-    <strong>не влияют на торговлю</strong> в текущем шаге.
-    Интеграция приоритетов будет добавлена в следующем шаге.
+<!-- Priority mode notice -->
+<div class="alert py-2 mb-4" style="background:rgba(99,102,241,0.08); border-color:rgba(99,102,241,0.25); font-size:0.85rem;">
+    <i class="bi bi-trophy text-primary me-1"></i>
+    <strong class="text-primary">Режим: priority</strong> —
+    Квалифицированные win-pool монеты получают бонус приоритета в ранжировании Smart Brain.
+    Это мягкое предпочтение — не жёсткий фильтр. Монеты вне пула остаются кандидатами.
+    Торговое поведение изменяется только через soft ranking influence.
 </div>
 
 <div class="row g-4">
@@ -102,12 +102,13 @@ ob_start();
                     <div class="mb-3">
                         <label class="form-label fw-semibold" style="color:#cbd5e1;">Режим работы</label>
                         <select class="form-select form-select-sm" name="win_universe_mode">
-                            <option value="shadow"   <?= $cfgMode === 'shadow'   ? 'selected' : '' ?>>shadow — только аналитика (текущий)</option>
-                            <option value="priority" <?= $cfgMode === 'priority' ? 'selected' : '' ?>>priority — приоритет в ранжировании (будущее)</option>
-                            <option value="win_only" <?= $cfgMode === 'win_only' ? 'selected' : '' ?>>win_only — только win-pool монеты (будущее)</option>
+                            <option value="shadow"   <?= $cfgMode === 'shadow'   ? 'selected' : '' ?>>shadow — только аналитика</option>
+                            <option value="priority" <?= $cfgMode === 'priority' ? 'selected' : '' ?>>priority — приоритет в ранжировании (активно)</option>
+                            <option value="win_only" <?= $cfgMode === 'win_only' ? 'selected' : '' ?>>win_only — только win-pool монеты (не реализовано)</option>
                         </select>
                         <div class="form-text text-secondary">
-                            Режимы <code>priority</code> и <code>win_only</code> сохраняются, но не влияют на торговлю до следующего шага интеграции.
+                            <code>priority</code>: квалифицированные монеты получают бонус <code>strength×10</code> пт в slot_priority_score.
+                            Жёстких фильтров не добавляется. <code>win_only</code> не влияет на торговлю.
                         </div>
                     </div>
 
@@ -170,7 +171,7 @@ ob_start();
                     </div>
 
                     <hr style="border-color:#334155;">
-                    <p class="fw-semibold mb-2" style="font-size:0.82rem; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em;">Приоритетный бонус (будущее)</p>
+                    <p class="fw-semibold mb-2" style="font-size:0.82rem; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em;">Приоритетный бонус</p>
 
                     <div class="row g-3 mb-4">
                         <div class="col-6">
@@ -179,7 +180,7 @@ ob_start();
                                        id="wuPrioEnabled" value="1" <?= $cfgPrioEnabled ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="wuPrioEnabled" style="font-size:0.85rem;">
                                     Бонус приоритета включён
-                                    <small class="text-secondary d-block">Не влияет на торговлю в текущем шаге</small>
+                                    <small class="text-secondary d-block">Активен в режиме priority. Формула: strength × 10 пт в slot_priority_score.</small>
                                 </label>
                             </div>
                         </div>
@@ -187,6 +188,7 @@ ob_start();
                             <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Сила бонуса (0–1)</label>
                             <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" name="priority_bonus_strength"
                                    value="<?= htmlspecialchars((string)$cfgPrioStr) ?>">
+                            <div class="form-text text-secondary">0.5 → бонус 5 пт. Макс. 1.0 → 10 пт. Не обходит жёсткие фильтры.</div>
                         </div>
                     </div>
 

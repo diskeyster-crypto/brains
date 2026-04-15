@@ -96,26 +96,32 @@ return [
         /**
          * Operating mode for Win Universe.
          * Allowed values:
-         *   shadow   — analytics only, no influence on trading (current phase)
-         *   priority — (future) qualified symbols get a priority bonus in Smart Brain ranking
+         *   shadow   — analytics only, no influence on trading
+         *   priority — qualified win-pool symbols receive a bounded ranking bonus in Smart Brain
+         *              slot competition (soft preference, NOT a hard gate)
          *   win_only — (future) Smart Brain considers only win-pool symbols
          *
-         * Even when set to 'priority' or 'win_only', trading behavior is NOT changed
-         * until that integration step is explicitly implemented.
+         * Priority mode: qualified symbols earn up to priority_bonus_strength × 10 pts added to
+         * their slot_priority_score. All hard gates (passport, cycle, entry filter, wave) still apply.
+         * Non-win candidates remain eligible and can still win if clearly stronger.
          */
-        'win_universe_mode' => 'shadow',
+        'win_universe_mode' => 'priority',
 
         /**
-         * Whether the priority bonus is active (future use only).
-         * Has no effect in the current shadow-only step.
+         * Whether the priority bonus is active.
+         * When true and win_universe_mode = 'priority', qualified win-pool symbols receive
+         * a bounded ranking bonus in Smart Brain slot competition.
+         * Has no effect in shadow mode.
          */
-        'priority_bonus_enabled' => false,
+        'priority_bonus_enabled' => true,
 
         /**
-         * Strength of priority bonus (0.0–1.0) for future integration.
-         * Has no effect in the current shadow-only step.
+         * Strength of priority bonus (0.0–1.0).
+         * Final bonus = priority_bonus_strength × 10 pts (bounded to [0, 10]).
+         * Default 0.5 → 5 pts bonus for qualified win-pool symbols.
+         * This keeps the bonus meaningful but does not overwhelm signal quality.
          */
-        'priority_bonus_strength' => 0.1,
+        'priority_bonus_strength' => 0.5,
     ],
 
 ];

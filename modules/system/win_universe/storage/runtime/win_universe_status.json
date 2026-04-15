@@ -1,0 +1,21 @@
+{
+    "ok": true,
+    "skipped": false,
+    "run_at": "2026-04-15T07:30:46+00:00",
+    "elapsed_sec": 0.001,
+    "symbols_seen": 2,
+    "qualified_count": 0,
+    "near_qualified_count": 0,
+    "rejected_count": 2,
+    "trade_count_total": 2,
+    "sources_used": [
+        "simulator_closed"
+    ],
+    "config_used": {
+        "min_roi_threshold": 1.5,
+        "lookback_days": 30,
+        "min_closed_trades": 3,
+        "min_winrate": 0
+    },
+    "mode": "shadow"
+}

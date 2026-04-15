@@ -1,8 +1,13 @@
 {
     "mode": "priority",
-    "computed_at": "2026-04-15T15:20:03+00:00",
-    "qualified": [],
-    "near_qualified": [],
+    "computed_at": "2026-04-15T15:40:00+00:00",
+    "qualified": [
+        "PIPPINUSDT",
+        "MERLUSDT"
+    ],
+    "near_qualified": [
+        "TRIAUSDT"
+    ],
     "rejected": [
         "CELOUSDT",
         "HOOKUSDT"
@@ -85,27 +90,105 @@
             "promotion_eligible": false,
             "demotion_eligible": false,
             "win_pool_entry": null
+        },
+        "PIPPINUSDT": {
+            "symbol": "PIPPINUSDT",
+            "qualification_status": "qualified",
+            "qualified": true,
+            "near_qualified": false,
+            "in_win_pool": true,
+            "promotion_eligible": false,
+            "demotion_eligible": true,
+            "qualification_reason": "1 сделок в окне, avg ROI 2.53%",
+            "promotion_reason": "квалифицирован: 1 сделок в окне, avg ROI 2.53%, winrate 100.0%",
+            "demotion_reason": null,
+            "last_promotion_time": "2026-04-15T15:40:00+00:00",
+            "last_demotion_time": null,
+            "recent_trade_count": 1,
+            "closed_trades_count": 1,
+            "closed_trades_window": 1,
+            "wins_above_threshold": 1,
+            "recent_avg_roi": 0.0253,
+            "best_roi": 0.0253,
+            "recent_winrate": 1.0,
+            "lookback_window_used": 60,
+            "thresholds_used": {
+                "min_roi_threshold": 0.01,
+                "min_avg_roi": 0.0,
+                "min_winrate": 0,
+                "min_closed_trades": 1
+            },
+            "source_types": [
+                "simulator_active"
+            ]
+        },
+        "MERLUSDT": {
+            "symbol": "MERLUSDT",
+            "qualification_status": "qualified",
+            "qualified": true,
+            "near_qualified": false,
+            "in_win_pool": true,
+            "promotion_eligible": false,
+            "demotion_eligible": true,
+            "qualification_reason": "1 сделок в окне, avg ROI 1.03%",
+            "promotion_reason": "квалифицирован: 1 сделок в окне, avg ROI 1.03%, winrate 100.0%",
+            "demotion_reason": null,
+            "last_promotion_time": "2026-04-15T15:40:00+00:00",
+            "last_demotion_time": null,
+            "recent_trade_count": 1,
+            "closed_trades_count": 1,
+            "closed_trades_window": 1,
+            "wins_above_threshold": 1,
+            "recent_avg_roi": 0.0103,
+            "best_roi": 0.0103,
+            "recent_winrate": 1.0,
+            "lookback_window_used": 60,
+            "thresholds_used": {
+                "min_roi_threshold": 0.01,
+                "min_avg_roi": 0.0,
+                "min_winrate": 0,
+                "min_closed_trades": 1
+            },
+            "source_types": [
+                "simulator_active"
+            ]
         }
     },
-    "win_pool": [],
+    "win_pool": {
+        "PIPPINUSDT": {
+            "symbol": "PIPPINUSDT",
+            "promoted_at": "2026-04-15T15:40:00+00:00",
+            "last_revalidated_at": "2026-04-15T15:40:00+00:00",
+            "promotion_reason": "квалифицирован: 1 сделок в окне, avg ROI 2.53%, winrate 100.0%",
+            "last_avg_roi": 0.0253
+        },
+        "MERLUSDT": {
+            "symbol": "MERLUSDT",
+            "promoted_at": "2026-04-15T15:40:00+00:00",
+            "last_revalidated_at": "2026-04-15T15:40:00+00:00",
+            "promotion_reason": "квалифицирован: 1 сделок в окне, avg ROI 1.03%, winrate 100.0%",
+            "last_avg_roi": 0.0103
+        }
+    },
     "config_used": {
-        "min_roi_threshold": 0.05,
-        "min_avg_roi": 0.005,
+        "min_roi_threshold": 0.01,
+        "min_avg_roi": 0.0,
         "lookback_days": 60,
-        "min_closed_trades": 2,
+        "min_closed_trades": 1,
         "min_winrate": 0,
         "qualification_expiry_days": 90,
         "demotion_loss_streak": 0,
         "win_universe_mode": "priority",
         "priority_bonus_enabled": true,
         "priority_bonus_strength": 0.5,
-        "min_roi_threshold_pct": 5,
-        "min_avg_roi_pct": 0.5
+        "min_roi_threshold_pct": 1,
+        "min_avg_roi_pct": 0
     },
     "sources_used": [
-        "simulator_closed"
+        "simulator_closed",
+        "simulator_active_winning"
     ],
-    "trade_count_total": 2,
+    "trade_count_total": 48,
     "threshold_sensitivity": {
         "fail_by_trade_count": 2,
         "fail_by_roi_threshold": 2,

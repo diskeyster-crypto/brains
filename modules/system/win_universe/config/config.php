@@ -39,13 +39,14 @@ return [
          * where 0.01 = 1% price return. This threshold must be expressed in the same unit.
          *   0.05  → 5% ROI threshold
          *   0.02  → 2% ROI threshold
-         *   0.005 → 0.5% ROI threshold
+         *   0.01  → 1% ROI threshold
          *
-         * Calibrated value: 0.05 (5% ROI). This is the per-trade bar a symbol must
+         * Calibrated value: 0.01 (1% ROI). This is the per-trade bar a symbol must
          * consistently exceed on average to qualify for the win pool.
-         * Softer than the previous 1.5 (150% in decimal units — an impossible bar).
+         * Realistic for the early bootstrap phase where trade history is limited.
+         * Symbols with simulator active positions at 1%+ unrealised ROI qualify.
          */
-        'min_roi_threshold' => 0.05,
+        'min_roi_threshold' => 0.01,
 
         /**
          * Lookback window in days for recent trade statistics.
@@ -57,10 +58,11 @@ return [
         /**
          * Minimum number of closed trades within the lookback window
          * required before a symbol can qualify.
-         * Lowered to 2 to allow bootstrapping qualification on limited trade data.
-         * Prevents single-trade flukes: at least 2 trades required for any signal.
+         * Set to 1 to allow qualification from a single trade record (including
+         * simulator active positions during the bootstrap phase). Prevents
+         * zero-evidence promotion while allowing early qualification.
          */
-        'min_closed_trades' => 2,
+        'min_closed_trades' => 1,
 
         /**
          * Minimum win-rate (0.0–1.0) required for qualification.
@@ -72,11 +74,11 @@ return [
         /**
          * Minimum average ROI across all trades in the lookback window.
          * UNIT: same decimal fraction as min_roi_threshold (0.01 = 1%).
-         * Set to a small positive value to ensure the symbol is net-profitable on average.
-         * 0.005 = 0.5% average ROI floor (filters pure break-even symbols).
-         * Set to 0.0 to disable (any positive average passes).
+         * Set to 0.0 to rely solely on min_roi_threshold for the quality gate.
+         * This avoids double-gating in bootstrap environments where the average
+         * is already constrained by the per-trade threshold check.
          */
-        'min_avg_roi' => 0.005,
+        'min_avg_roi' => 0.0,
 
         /**
          * Days after which a win-pool symbol must be re-validated.

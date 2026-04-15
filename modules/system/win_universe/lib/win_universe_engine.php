@@ -476,6 +476,36 @@ final class WinUniverseEngine
             // non-fatal
         }
 
+        // ── Source 4: Smart Brain simulator active trades (positive unrealised ROI) ─
+        // Active positions with positive unrealised ROI are current evidence of a winning
+        // symbol. Including them allows the win pool to reflect live simulator performance
+        // even in bootstrap environments where closed-trade history is sparse.
+        // Only positive-ROI active positions are included to keep the pool meaningful.
+        try {
+            $activeSimPath = $this->brainModuleBase . '/storage/simulator/active.json';
+            if (is_file($activeSimPath)) {
+                $content = @file_get_contents($activeSimPath);
+                if ($content !== false && $content !== '') {
+                    $decoded = json_decode($content, true);
+                    if (is_array($decoded) && !empty($decoded)) {
+                        $added = 0;
+                        foreach ($decoded as $trade) {
+                            $normalised = $this->normaliseSimulatorActiveTrade($trade);
+                            if ($normalised !== null) {
+                                $trades[] = $normalised;
+                                $added++;
+                            }
+                        }
+                        if ($added > 0) {
+                            $sourcesUsed[] = 'simulator_active_winning';
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
         return [$trades, $sourcesUsed];
     }
 
@@ -558,6 +588,50 @@ final class WinUniverseEngine
             'roi'       => $roi,
             'closed_at' => $closedAt,
             'source'    => 'simulator',
+        ];
+    }
+
+    /**
+     * Normalise a Smart Brain simulator active trade record for win-universe evidence.
+     *
+     * Only active positions with positive unrealised ROI are included. The current
+     * timestamp is used as the "closed_at" anchor so the record always falls within
+     * the lookback window. This represents current winning performance rather than
+     * realised profit, and is intentionally a secondary source behind closed trades.
+     *
+     * @param array<string,mixed> $trade
+     * @return array<string,mixed>|null  null if record is unusable or ROI is non-positive
+     */
+    private function normaliseSimulatorActiveTrade(array $trade): ?array
+    {
+        if (!is_array($trade)) {
+            return null;
+        }
+        // Must be an active position, not closed/cancelled
+        $status = (string)($trade['status'] ?? '');
+        if ($status !== 'active' && $status !== '') {
+            // Accept both explicit 'active' and records with no status field
+        }
+        if ($status !== '' && $status !== 'active') {
+            return null;
+        }
+
+        $sym = (string)($trade['symbol'] ?? '');
+        if ($sym === '') {
+            return null;
+        }
+
+        $roi = isset($trade['roi']) && is_numeric($trade['roi']) ? (float)$trade['roi'] : null;
+        // Only include positions currently winning (positive unrealised ROI)
+        if ($roi === null || $roi <= 0.0) {
+            return null;
+        }
+
+        return [
+            'symbol'    => strtoupper($sym),
+            'roi'       => $roi,
+            'closed_at' => time(), // Use current timestamp — always within lookback window
+            'source'    => 'simulator_active',
         ];
     }
 

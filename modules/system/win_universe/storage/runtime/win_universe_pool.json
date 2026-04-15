@@ -1,5 +1,20 @@
 {
-    "win_pool": [],
-    "last_updated": "2026-04-15T15:20:03+00:00",
-    "pool_count": 0
+    "win_pool": {
+        "PIPPINUSDT": {
+            "symbol": "PIPPINUSDT",
+            "promoted_at": "2026-04-15T15:40:00+00:00",
+            "last_revalidated_at": "2026-04-15T15:40:00+00:00",
+            "promotion_reason": "квалифицирован: 1 сделок в окне, avg ROI 2.53%, winrate 100.0%",
+            "last_avg_roi": 0.0253
+        },
+        "MERLUSDT": {
+            "symbol": "MERLUSDT",
+            "promoted_at": "2026-04-15T15:40:00+00:00",
+            "last_revalidated_at": "2026-04-15T15:40:00+00:00",
+            "promotion_reason": "квалифицирован: 1 сделок в окне, avg ROI 1.03%, winrate 100.0%",
+            "last_avg_roi": 0.0103
+        }
+    },
+    "last_updated": "2026-04-15T15:40:00+00:00",
+    "pool_count": 2
 }

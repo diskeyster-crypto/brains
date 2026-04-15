@@ -938,6 +938,9 @@ final class SmartBrainCore
             'live_missing_risk_count' => $liveIntentResult['live_missing_risk_count'],
             'live_missing_entry_count' => $liveIntentResult['live_missing_entry_count'],
             'live_mode_filter_rejected_count' => $liveIntentResult['live_mode_filter_rejected_count'],
+            // Live mode filter observability (req. WU-5 §7)
+            'live_mode_filter_used' => (bool)($liveIntentResult['live_mode_filter_used'] ?? true),
+            'live_mode_filter_mode' => (string)($liveIntentResult['live_mode_filter_mode'] ?? 'unknown'),
             'live_invalid_risk_contract_count' => $liveIntentResult['live_invalid_risk_contract_count'],
             'late_entry_rejected_count' => $liveIntentResult['late_entry_rejected_count'] ?? 0,
             'late_entry_rejected_distribution' => $liveIntentResult['late_entry_rejected_distribution'] ?? [],
@@ -1115,6 +1118,9 @@ final class SmartBrainCore
             'live_missing_risk_count' => 0,
             'live_missing_entry_count' => 0,
             'live_mode_filter_rejected_count' => 0,
+            // Live mode filter observability (req. WU-5 §7)
+            'live_mode_filter_used' => true,  // filter is always evaluated when live trading is enabled
+            'live_mode_filter_mode' => 'unknown', // updated below once selectionMode is resolved
             'live_invalid_risk_contract_count' => 0,
             'live_debug_preview' => [],
             // MAE adaptive stop runtime proof counters
@@ -1266,6 +1272,9 @@ final class SmartBrainCore
         $selectionMode = (string)($liveConfig['live_signal_selection_mode'] ?? 'whitelist_only');
         $entryPolicy = (string)($liveConfig['live_entry_policy'] ?? 'enter_now');
         $reverseEnabled = (bool)($liveConfig['live_reverse_side_enabled'] ?? false);
+
+        // Update live_mode_filter_mode now that selectionMode is resolved
+        $result['live_mode_filter_mode'] = $selectionMode;
 
         // Load symbol intelligence lists for live selection filtering
         $whitelist = $this->loadSymbolList('whitelist.json');
@@ -1582,6 +1591,11 @@ final class SmartBrainCore
                 $result['live_mode_filter_rejected_count']++;
                 continue;
             }
+
+            // Record live_mode_filter outcome on the signal for downstream observability.
+            // live_mode_filter_passed = true means the candidate survived this gate.
+            $signal['live_mode_filter_passed'] = true;
+            $signal['live_mode_filter_mode']   = $selectionMode;
 
             // === VALIDATION GATE 5: Weak Entry Quality Filter (P3) ===
             // Reject late entries (signal age > threshold) with nuanced sub-reasons
@@ -2822,6 +2836,9 @@ final class SmartBrainCore
                     'signal_id_source' => $signalIdSource,
                     'outcome' => 'approved',
                     'reason' => $approvalReason,
+                    // Live mode filter observability (req. WU-5 §7)
+                    'live_mode_filter_passed' => true,
+                    'live_mode_filter_mode'   => $selectionMode,
                     'profile_id' => $botReadyRisk['profile_id'] ?? null,
                     'budget_usdt_per_trade' => $botReadyRisk['budget_usdt_per_trade'] ?? null,
                     'order_type' => $botReadyRisk['order_type'] ?? null,
@@ -3487,6 +3504,9 @@ final class SmartBrainCore
                 'signal_id_source' => $signalId !== '' ? 'present' : 'missing',
                 'outcome' => 'rejected',
                 'reason' => $reason,
+                // Live mode filter observability (req. WU-5 §7)
+                'live_mode_filter_passed' => false,
+                'live_mode_filter_mode'   => ($reason === 'live_mode_filter_rejected') ? $selectionMode : null,
             ];
         }
     }

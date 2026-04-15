@@ -2,8 +2,11 @@
     "win_universe": {
         "win_universe_mode": "priority",
         "priority_bonus_enabled": true,
-        "priority_bonus_strength": 0.5
+        "priority_bonus_strength": 0.5,
+        "min_roi_threshold": 0.01,
+        "min_avg_roi": 0.0,
+        "min_closed_trades": 1
     },
-    "updated_at": "2026-04-15T15:00:00+00:00",
-    "_note": "Canonical user config — priority mode active. Managed via config_all Win Universe page."
+    "updated_at": "2026-04-15T15:40:00+00:00",
+    "_note": "Canonical user config — priority mode active. Thresholds lowered for bootstrap phase (1 trade, 1% ROI). Managed via config_all Win Universe page."
 }

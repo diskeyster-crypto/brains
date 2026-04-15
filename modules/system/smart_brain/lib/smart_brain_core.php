@@ -1052,6 +1052,10 @@ final class SmartBrainCore
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
             'wave_penalty_no_effect_total'     => (int)($liveIntentResult['wave_penalty_no_effect_total']     ?? 0),
+            // Ranking Boost layer diagnostics (bounded positive boost for strong/fresh/clean candidates)
+            'ranking_boost_total'              => (int)($liveIntentResult['ranking_boost_total']              ?? 0),
+            'ranking_boost_applied_total'      => (int)($liveIntentResult['ranking_boost_applied_total']      ?? 0),
+            'ranking_boost_no_effect_total'    => (int)($liveIntentResult['ranking_boost_no_effect_total']    ?? 0),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1220,6 +1224,10 @@ final class SmartBrainCore
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
             'wave_penalty_no_effect_total'     => 0,
+            // Ranking boost layer diagnostics (bounded positive boost for strong/fresh/clean candidates)
+            'ranking_boost_total'              => 0,
+            'ranking_boost_applied_total'      => 0,
+            'ranking_boost_no_effect_total'    => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2839,6 +2847,87 @@ final class SmartBrainCore
         }
         // ── End Wave Penalty Layer ──────────────────────────────────────────
 
+        // ── Ranking Boost Layer ─────────────────────────────────────────────
+        // Runs AFTER all filters and wave penalty. Does NOT filter or reject.
+        // Computes a bounded positive boost (0–10 pts) per intent so that
+        // clearly strong/fresh/clean candidates earn a higher slot priority score
+        // and beat merely acceptable ones more often under slot competition.
+        // Components: quality (0–4), freshness (0–3), cycle support (0–2), wave clean (0–1).
+        // Side-neutral: boost applies identically to long and short.
+        {
+            $rbEnabled = (bool)($userLimits['ranking_boost_enabled'] ?? true);
+
+            foreach ($intents as &$rbIntent) {
+                $rbBoost     = 0.0;
+                $rbReasons   = [];
+                $rbQComp     = 0.0;
+                $rbFComp     = 0.0;
+                $rbCComp     = 0.0;
+                $rbWComp     = 0.0;
+
+                if ($rbEnabled) {
+                    $result['ranking_boost_total']++;
+
+                    // Quality component: reward clearly strong entry quality.
+                    $rbQuality = (float)($rbIntent['quality_score'] ?? 0.0);
+                    if ($rbQuality >= 0.75) {
+                        $rbQComp   = 4.0;
+                        $rbReasons[] = 'quality_strong+4';
+                    } elseif ($rbQuality >= 0.65) {
+                        $rbQComp   = 2.0;
+                        $rbReasons[] = 'quality_good+2';
+                    }
+
+                    // Freshness component: reward fresh signals over aging/stale ones.
+                    $rbFreshnessState = (string)($rbIntent['entry_quality_freshness_state'] ?? 'stale');
+                    if ($rbFreshnessState === 'fresh') {
+                        $rbFComp   = 3.0;
+                        $rbReasons[] = 'freshness_fresh+3';
+                    } elseif ($rbFreshnessState === 'aging') {
+                        $rbFComp   = 1.0;
+                        $rbReasons[] = 'freshness_aging+1';
+                    }
+
+                    // Cycle support component: reward cycle-confirmed candidates.
+                    if ((bool)($rbIntent['cycle_model_support_applied'] ?? false)) {
+                        $rbCComp   = 2.0;
+                        $rbReasons[] = 'cycle_support+2';
+                    } elseif (!(bool)($rbIntent['cycle_model_veto_applied'] ?? false)) {
+                        $rbCComp   = 1.0;
+                        $rbReasons[] = 'no_cycle_veto+1';
+                    }
+
+                    // Wave cleanliness component: reward candidates with zero wave penalty
+                    // that also passed the wave filter without a soft-mode override.
+                    $rbWavePenalty      = (float)($rbIntent['wave_penalty_value']   ?? 0.0);
+                    $rbWaveFilterApplied = (bool)($rbIntent['wave_filter_applied']  ?? false);
+                    if ($rbWavePenalty === 0.0 && !$rbWaveFilterApplied) {
+                        $rbWComp   = 1.0;
+                        $rbReasons[] = 'wave_clean+1';
+                    }
+
+                    $rbBoost = $rbQComp + $rbFComp + $rbCComp + $rbWComp;
+                    $rbBoost = min(10.0, max(0.0, $rbBoost));
+
+                    if ($rbBoost > 0.0) {
+                        $result['ranking_boost_applied_total']++;
+                    } else {
+                        $result['ranking_boost_no_effect_total']++;
+                    }
+                }
+
+                $rbIntent['ranking_boost_used']               = $rbEnabled;
+                $rbIntent['ranking_boost_value']              = $rbBoost;
+                $rbIntent['ranking_boost_reason']             = $rbEnabled && !empty($rbReasons) ? implode(', ', $rbReasons) : null;
+                $rbIntent['ranking_boost_quality_component']  = $rbQComp;
+                $rbIntent['ranking_boost_freshness_component'] = $rbFComp;
+                $rbIntent['ranking_boost_cycle_component']    = $rbCComp;
+                $rbIntent['ranking_boost_wave_component']     = $rbWComp;
+            }
+            unset($rbIntent);
+        }
+        // ── End Ranking Boost Layer ─────────────────────────────────────────
+
         // ── Slot Priority Layer ─────────────────────────────────────────────
         // Time-aware candidate ranking for limited live slots.
         // Applied AFTER all existing gates, BEFORE lifecycle merge.
@@ -3326,6 +3415,15 @@ final class SmartBrainCore
         if ($wavePenalty > 0.0) {
             $score    -= $wavePenalty;
             $factors[] = 'wave_penalty-' . $wavePenalty . '(' . ($intent['wave_penalty_reason'] ?? 'wave_penalty') . ')';
+        }
+
+        // ── Ranking boost (bounded positive boost for strong/fresh/clean candidates) ──
+        // Pre-computed by the Ranking Boost Layer. Rewards quality, freshness, cycle
+        // support, and wave cleanliness. Bounded to [0, 10].
+        $rankingBoost = min(10.0, max(0.0, (float)($intent['ranking_boost_value'] ?? 0.0)));
+        if ($rankingBoost > 0.0) {
+            $score    += $rankingBoost;
+            $factors[] = 'ranking_boost+' . $rankingBoost . '(' . ($intent['ranking_boost_reason'] ?? 'ranking_boost') . ')';
         }
 
         // ── Cap and bucket ────────────────────────────────────────────────

@@ -48,6 +48,8 @@ $poolCount  = count($wuPool['win_pool'] ?? ($wuUniverse['win_pool'] ?? []));
 $winPool    = $wuPool['win_pool'] ?? ($wuUniverse['win_pool'] ?? []);
 $lastRun    = $wuStatus['run_at'] ?? null;
 $lastOk     = $wuStatus['ok']    ?? null;
+$sensitivity    = $wuStatus['threshold_sensitivity']         ?? $wuUniverse['threshold_sensitivity']         ?? [];
+$candPreview    = $wuStatus['candidate_sensitivity_preview'] ?? $wuUniverse['candidate_sensitivity_preview'] ?? [];
 
 $promoEvents = $wuPromotions['events'] ?? [];
 $demoEvents  = $wuDemotions['events']  ?? [];
@@ -233,9 +235,68 @@ ob_start();
             </div>
         </div>
 
-        <!-- Win Pool table -->
-        <?php if (!empty($winPool)): ?>
+        <!-- Threshold diagnostics (read-only) -->
+        <?php if (!empty($sensitivity) || !empty($candPreview)): ?>
         <div class="card mb-4">
+            <div class="card-header" style="font-size:0.82rem;">
+                <i class="bi bi-bar-chart-fill text-info me-1"></i>
+                <strong>Диагностика порогов</strong>
+                <small class="text-secondary ms-2">— только чтение</small>
+            </div>
+            <div class="card-body py-2">
+                <?php if (!empty($sensitivity)): ?>
+                <div class="row g-2 mb-2">
+                    <?php
+                    $diagItems = [
+                        ['label' => 'Мало сделок',  'key' => 'failed_by_min_trades_count',    'color' => '#f87171'],
+                        ['label' => 'Мало ROI',      'key' => 'failed_by_roi_threshold_count', 'color' => '#fb923c'],
+                        ['label' => 'Мало avg ROI',  'key' => 'failed_by_avg_roi_count',       'color' => '#facc15'],
+                        ['label' => 'Мало winrate',  'key' => 'failed_by_winrate_count',       'color' => '#a78bfa'],
+                    ];
+                    foreach ($diagItems as $di):
+                        $val = (int)($sensitivity[$di['key']] ?? 0);
+                        if ($val === 0) continue;
+                    ?>
+                    <div class="col-auto">
+                        <div style="background:rgba(30,41,59,0.8); border:1px solid #334155; border-radius:6px; padding:5px 10px; text-align:center;">
+                            <div style="font-size:1.1rem; font-weight:700; color:<?= $di['color'] ?>;"><?= $val ?></div>
+                            <div style="font-size:0.7rem; color:#94a3b8;"><?= htmlspecialchars($di['label']) ?></div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php
+                    $onlyRoi = (int)($sensitivity['fail_by_roi_only'] ?? 0);
+                    if ($onlyRoi > 0):
+                    ?>
+                    <div class="col-auto">
+                        <div style="background:rgba(30,41,59,0.8); border:1px solid #334155; border-radius:6px; padding:5px 10px; text-align:center;">
+                            <div style="font-size:1.1rem; font-weight:700; color:#34d399;"><?= $onlyRoi ?></div>
+                            <div style="font-size:0.7rem; color:#94a3b8;">Только ROI мешает</div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                <?php if (!empty($candPreview)): ?>
+                <div style="font-size:0.78rem; color:#94a3b8;" class="mb-1">Предварительный просмотр чувствительности:</div>
+                <div class="d-flex flex-wrap gap-2">
+                <?php foreach ($candPreview as $key => $sc): ?>
+                    <span class="badge" style="background:rgba(51,65,85,0.9); border:1px solid #475569; font-size:0.73rem; padding:4px 8px; font-weight:400;">
+                        <?= htmlspecialchars($sc['label'] ?? $key) ?>:
+                        <strong style="color:<?= ((int)($sc['qualified_count'] ?? 0)) > 0 ? '#34d399' : '#f87171' ?>;">
+                            <?= (int)($sc['qualified_count'] ?? 0) ?>
+                        </strong>
+                        <span style="color:#64748b;">(ROI≥<?= number_format((float)($sc['min_roi_threshold'] ?? 0), 2) ?>%, ≥<?= (int)($sc['min_closed_trades'] ?? 0) ?> сд.)</span>
+                    </span>
+                <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Win Pool table -->
+        <?php if (!empty($winPool)): ?>        <div class="card mb-4">
             <div class="card-header">
                 <i class="bi bi-trophy-fill text-warning me-1"></i>
                 <strong>Win Pool — монеты в пуле (<?= count($winPool) ?>)</strong>

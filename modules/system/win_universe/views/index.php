@@ -68,6 +68,8 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
     $symbols       = $universe['symbols']             ?? [];
     $sourcesUsed   = $universe['sources_used']        ?? [];
     $tradeTotal    = $universe['trade_count_total']   ?? 0;
+    $sensitivity   = $universe['threshold_sensitivity']         ?? [];
+    $candPreview   = $universe['candidate_sensitivity_preview'] ?? [];
 
     $lastRun  = $status['run_at']  ?? null;
     $lastOk   = $status['ok']      ?? null;
@@ -97,6 +99,48 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         echo '<td>' . (int)($rec['wins_above_threshold'] ?? 0) . '</td>';
         echo '<td>' . $lastT . '</td>';
         echo '<td><small class="text-muted">' . $reason . '</small></td>';
+        echo '</tr>';
+    };
+
+    // Near-qualified row includes distance-to-qualify fields
+    $nearRow = static function (string $sym, array $rec) use ($roiFmt, $wrFmt): void {
+        $reason = htmlspecialchars($rec['qualification_reason'] ?? '');
+        $lastT  = $rec['last_trade_time'] ? htmlspecialchars(substr($rec['last_trade_time'], 0, 10)) : '—';
+
+        $distRoi = $rec['distance_to_min_roi_threshold'] ?? null;
+        $distWr  = $rec['distance_to_min_winrate']       ?? null;
+        $distAvg = $rec['distance_to_min_avg_roi']       ?? null;
+        $missT   = (int)($rec['missing_trade_count']     ?? 0);
+        $winsNd  = (int)($rec['wins_needed_above_threshold'] ?? 0);
+
+        $distParts = [];
+        if ($distRoi !== null && $distRoi > 0) {
+            $distParts[] = 'ROI+' . number_format((float)$distRoi, 2) . '%';
+        }
+        if ($distAvg !== null && $distAvg > 0) {
+            $distParts[] = 'avgROI+' . number_format((float)$distAvg, 2) . '%';
+        }
+        if ($distWr !== null && $distWr > 0) {
+            $distParts[] = 'WR+' . number_format((float)($distWr * 100), 1) . '%';
+        }
+        if ($missT > 0) {
+            $distParts[] = '+' . $missT . ' сд.';
+        }
+        if ($winsNd > 0) {
+            $distParts[] = '+' . $winsNd . ' побед';
+        }
+        $distStr = empty($distParts) ? '—' : implode(', ', $distParts);
+
+        echo '<tr data-symbol="' . htmlspecialchars($sym) . '">';
+        echo '<td><strong>' . htmlspecialchars($sym) . '</strong></td>';
+        echo '<td>' . (int)($rec['closed_trades_window'] ?? 0) . '</td>';
+        echo '<td>' . $roiFmt($rec['recent_avg_roi']) . '</td>';
+        echo '<td>' . $roiFmt($rec['best_roi']) . '</td>';
+        echo '<td>' . $wrFmt($rec['recent_winrate']) . '</td>';
+        echo '<td>' . (int)($rec['wins_above_threshold'] ?? 0) . '</td>';
+        echo '<td>' . $lastT . '</td>';
+        echo '<td><small class="text-muted">' . $reason . '</small></td>';
+        echo '<td><small style="color:#fbbf24;">' . htmlspecialchars($distStr) . '</small></td>';
         echo '</tr>';
     };
 
@@ -199,6 +243,67 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
     </div>
     <?php else: ?>
 
+    <!-- Threshold diagnostics panel -->
+    <?php if (!empty($sensitivity)): ?>
+    <div class="card mb-4">
+        <div class="card-header py-2">
+            <small class="fw-semibold" style="color:#94a3b8; text-transform:uppercase; letter-spacing:.05em;">
+                <i class="bi bi-bar-chart-fill me-1 text-info"></i>Диагностика порогов — почему квалифицировано = <?= count($qualified) ?>
+            </small>
+        </div>
+        <div class="card-body py-2">
+            <div class="row g-2 mb-2">
+                <?php
+                $diagItems = [
+                    ['label' => 'Мало сделок',      'key' => 'failed_by_min_trades_count',    'color' => '#f87171'],
+                    ['label' => 'Мало ROI',          'key' => 'failed_by_roi_threshold_count', 'color' => '#fb923c'],
+                    ['label' => 'Мало avg ROI',      'key' => 'failed_by_avg_roi_count',       'color' => '#facc15'],
+                    ['label' => 'Мало winrate',      'key' => 'failed_by_winrate_count',       'color' => '#a78bfa'],
+                ];
+                foreach ($diagItems as $di):
+                    $val = (int)($sensitivity[$di['key']] ?? 0);
+                    if ($val === 0) continue;
+                ?>
+                <div class="col-auto">
+                    <div style="background:rgba(30,41,59,0.7); border:1px solid #334155; border-radius:6px; padding:6px 12px; text-align:center;">
+                        <div style="font-size:1.3rem; font-weight:700; color:<?= $di['color'] ?>;"><?= $val ?></div>
+                        <div style="font-size:0.72rem; color:#94a3b8;"><?= htmlspecialchars($di['label']) ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php
+                $onlyRoi = (int)($sensitivity['fail_by_roi_only'] ?? 0);
+                if ($onlyRoi > 0):
+                ?>
+                <div class="col-auto">
+                    <div style="background:rgba(30,41,59,0.7); border:1px solid #334155; border-radius:6px; padding:6px 12px; text-align:center;">
+                        <div style="font-size:1.3rem; font-weight:700; color:#34d399;"><?= $onlyRoi ?></div>
+                        <div style="font-size:0.72rem; color:#94a3b8;">Только ROI мешает</div>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php if (!empty($candPreview)): ?>
+            <div class="mt-2">
+                <small class="fw-semibold" style="color:#94a3b8;">Чувствительность порогов:</small>
+                <div class="d-flex flex-wrap gap-2 mt-1">
+                <?php foreach ($candPreview as $key => $sc): ?>
+                    <span class="badge" style="background:rgba(51,65,85,0.9); border:1px solid #475569; font-size:0.75rem; padding:4px 8px;">
+                        <?= htmlspecialchars($sc['label'] ?? $key) ?>:
+                        <strong style="color:<?= ((int)($sc['qualified_count'] ?? 0)) > 0 ? '#34d399' : '#f87171' ?>;">
+                            <?= (int)($sc['qualified_count'] ?? 0) ?>
+                        </strong> квал.
+                        (ROI≥<?= number_format((float)($sc['min_roi_threshold'] ?? 0), 2) ?>%,
+                         ≥<?= (int)($sc['min_closed_trades'] ?? 0) ?> сд.)
+                    </span>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; // sensitivity ?>
+
     <!-- Symbol search -->
     <div class="mb-3">
         <input type="text" id="symbolSearch" class="form-control form-control-sm w-auto d-inline-block"
@@ -207,7 +312,7 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
 
     <!-- Table header helper -->
     <?php
-    $tableHeader = static function (): void {
+    $tableHeader = static function (bool $withDist = false): void {
         echo '<thead><tr class="table-dark">';
         echo '<th>Монета</th>';
         echo '<th>Сделок (окно)</th>';
@@ -217,6 +322,9 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         echo '<th>Побед &gt; порога</th>';
         echo '<th>Последняя сделка</th>';
         echo '<th>Причина</th>';
+        if ($withDist) {
+            echo '<th style="color:#fbbf24;">До порога</th>';
+        }
         echo '</tr></thead>';
     };
     ?>
@@ -255,10 +363,10 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         </div>
         <div class="table-responsive">
             <table class="table table-dark table-sm table-hover mb-0">
-                <?php $tableHeader(); ?>
+                <?php $tableHeader(true); ?>
                 <tbody>
                     <?php foreach ($nearQualified as $sym): ?>
-                        <?php $symbolRow($sym, $symbols[$sym] ?? []); ?>
+                        <?php $nearRow($sym, $symbols[$sym] ?? []); ?>
                     <?php endforeach; ?>
                 </tbody>
             </table>

@@ -85,4 +85,9 @@ $activeTab = $activeTab ?? 'dashboard';
             <i class="bi bi-puzzle me-1"></i> Module Configs
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'win_universe' ? 'active' : '' ?>" href="<?= $smartBrainUrl ?>/win_universe">
+            <i class="bi bi-trophy me-1"></i> Выигрышные монеты
+        </a>
+    </li>
 </ul>

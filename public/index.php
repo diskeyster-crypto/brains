@@ -1202,6 +1202,16 @@ Router::get('/admin/smart_brain/ai_shadow/journal', function () {
     $controller->aiShadowJournal();
 });
 
+Router::get('/admin/smart_brain/win_universe', function () {
+    $controller = new SmartBrainController();
+    $controller->winUniverse();
+});
+
+Router::post('/admin/smart_brain/win_universe/run', function () {
+    $controller = new SmartBrainController();
+    $controller->winUniverseRun();
+});
+
 // ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================

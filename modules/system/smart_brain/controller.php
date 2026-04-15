@@ -690,4 +690,46 @@ final class SmartBrainController
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
+
+    // =========================================================================
+    // Win Universe — shadow analytics (read-only mount from standalone module)
+    // =========================================================================
+
+    /**
+     * GET /admin/smart_brain/win_universe
+     *
+     * Win Universe shadow analytics page.
+     * Reads runtime data from the standalone win_universe module.
+     * SHADOW ONLY — does not affect trading, routing, or ranking.
+     */
+    public function winUniverse(): void
+    {
+        require_once dirname(__DIR__) . '/win_universe/service.php';
+
+        $wuService = new WinUniverseService();
+        $universe  = $wuService->getUniverse();
+        $status    = $wuService->getStatus();
+        $config    = $wuService->getConfig();
+
+        $smartBrainUrl = $this->smartBrainUrl;
+
+        include __DIR__ . '/views/win_universe.php';
+    }
+
+    /**
+     * POST /admin/smart_brain/win_universe/run
+     *
+     * Trigger a Win Universe computation run. Returns JSON.
+     * SHADOW ONLY — no effect on trading.
+     */
+    public function winUniverseRun(): void
+    {
+        require_once dirname(__DIR__) . '/win_universe/service.php';
+
+        $wuService = new WinUniverseService();
+        $result    = $wuService->run();
+
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
 }

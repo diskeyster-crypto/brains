@@ -1,4 +1,22 @@
 {
-    "events": [],
-    "last_updated": "2026-04-15T12:12:18+00:00"
+    "events": [
+        {
+            "symbol": "MERLUSDT",
+            "event": "demoted",
+            "timestamp": "2026-04-15T17:01:35+00:00",
+            "reason": "не квалифицирован: недостаточно сделок: 1 из 3 в окне 60д.",
+            "was_in_pool_since": "2026-04-15T15:40:00+00:00",
+            "last_avg_roi": 0.0103
+        },
+        {
+            "symbol": "PIPPINUSDT",
+            "event": "demoted",
+            "timestamp": "2026-04-15T17:01:35+00:00",
+            "reason": "не квалифицирован: недостаточно сделок: 1 из 3 в окне 60д.",
+            "was_in_pool_since": "2026-04-15T15:40:00+00:00",
+            "last_avg_roi": 0.0253
+        }
+    ],
+    "total_events": 2,
+    "last_updated": "2026-04-15T17:01:35+00:00"
 }

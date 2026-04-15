@@ -30,15 +30,18 @@ $wuDemotions  = $wuDemotions  ?? null;
 // Current values for form
 $cfgEnabled    = (bool)($wuCfg['win_universe_enabled'] ?? true);
 $cfgMode       = (string)($wuCfg['win_universe_mode']  ?? 'shadow');
-$cfgMinRoi     = (float)($wuCfg['min_roi_threshold']   ?? 0.05);
+$cfgMinRoi     = (float)($wuCfg['min_roi_threshold']   ?? 0.01);
 $cfgLookback   = (int)($wuCfg['lookback_days']         ?? 60);
-$cfgMinTrades  = (int)($wuCfg['min_closed_trades']     ?? 2);
-$cfgMinWinrate = (float)($wuCfg['min_winrate']         ?? 0.0);
-$cfgMinAvgRoi  = (float)($wuCfg['min_avg_roi']         ?? 0.005);
+$cfgMinTrades  = (int)($wuCfg['min_closed_trades']     ?? 3);
+$cfgMinWinrate = (float)($wuCfg['min_winrate']         ?? 0.5);
+$cfgMinAvgRoi  = (float)($wuCfg['min_avg_roi']         ?? 0.02);
+$cfgMinTargetRoi       = (float)($wuCfg['min_target_roi']              ?? 0.05);
+$cfgMinWinsAboveTarget = (int)($wuCfg['min_wins_above_target']         ?? 1);
+$cfgMaxTimeToTarget    = (int)($wuCfg['max_time_to_target_minutes']    ?? 0);
 $cfgExpiry     = (int)($wuCfg['qualification_expiry_days'] ?? 90);
 $cfgStreak     = (int)($wuCfg['demotion_loss_streak']  ?? 0);
 $cfgPrioEnabled = (bool)($wuCfg['priority_bonus_enabled'] ?? false);
-$cfgPrioStr    = (float)($wuCfg['priority_bonus_strength'] ?? 0.1);
+$cfgPrioStr    = (float)($wuCfg['priority_bonus_strength'] ?? 0.5);
 
 // Runtime summary
 $qualCount  = count($wuUniverse['qualified']    ?? []);
@@ -152,7 +155,7 @@ ob_start();
                             </label>
                             <input type="number" step="0.001" class="form-control form-control-sm" name="min_avg_roi"
                                    value="<?= htmlspecialchars((string)$cfgMinAvgRoi) ?>">
-                            <div class="form-text text-secondary">Дробное значение: 0.005 = 0.5%. 0 = отключено.</div>
+                            <div class="form-text text-secondary">Дробное значение: 0.02 = 2%. 0 = отключено.</div>
                         </div>
                         <div class="col-6">
                             <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Окно (дней)</label>
@@ -169,6 +172,33 @@ ob_start();
                             <input type="number" step="0.01" min="0" max="1" class="form-control form-control-sm" name="min_winrate"
                                    value="<?= htmlspecialchars((string)$cfgMinWinrate) ?>">
                             <div class="form-text text-secondary">0 = отключено</div>
+                        </div>
+                    </div>
+
+                    <hr style="border-color:#334155;">
+                    <p class="fw-semibold mb-2" style="font-size:0.82rem; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em;">Целевой ROI и скорость</p>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">
+                                Целевой ROI
+                                <span style="color:#64748b;">(≈<?= number_format($cfgMinTargetRoi * 100, 2) ?>%)</span>
+                            </label>
+                            <input type="number" step="0.001" min="0" class="form-control form-control-sm" name="min_target_roi"
+                                   value="<?= htmlspecialchars((string)$cfgMinTargetRoi) ?>">
+                            <div class="form-text text-secondary">Значимый порог ROI: 0.05 = 5%. 0 = отключено.</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Мин. побед выше цели</label>
+                            <input type="number" step="1" min="0" class="form-control form-control-sm" name="min_wins_above_target"
+                                   value="<?= htmlspecialchars((string)$cfgMinWinsAboveTarget) ?>">
+                            <div class="form-text text-secondary">Мин. сделок с ROI ≥ целевой ROI. 0 = отключено.</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" style="font-size:0.82rem; color:#cbd5e1;">Макс. время до цели (мин.)</label>
+                            <input type="number" step="1" min="0" class="form-control form-control-sm" name="max_time_to_target_minutes"
+                                   value="<?= htmlspecialchars((string)$cfgMaxTimeToTarget) ?>">
+                            <div class="form-text text-secondary">0 = отключено. 1440 = 24ч. Avg время достижения целевого ROI.</div>
                         </div>
                     </div>
 

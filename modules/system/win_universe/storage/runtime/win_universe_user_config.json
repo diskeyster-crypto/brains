@@ -4,9 +4,13 @@
         "priority_bonus_enabled": true,
         "priority_bonus_strength": 0.5,
         "min_roi_threshold": 0.01,
-        "min_avg_roi": 0.0,
-        "min_closed_trades": 1
+        "min_avg_roi": 0.02,
+        "min_closed_trades": 3,
+        "min_winrate": 0.5,
+        "min_target_roi": 0.05,
+        "min_wins_above_target": 1,
+        "max_time_to_target_minutes": 0
     },
-    "updated_at": "2026-04-15T15:40:00+00:00",
-    "_note": "Canonical user config — priority mode active. Thresholds lowered for bootstrap phase (1 trade, 1% ROI). Managed via config_all Win Universe page."
+    "updated_at": "2026-04-15T16:43:00+00:00",
+    "_note": "Hard qualification semantics: min 3 trades, 50% winrate, avg ROI >= 2%, target ROI 5% with min 1 qualifying win. Bootstrap permissive overrides removed."
 }

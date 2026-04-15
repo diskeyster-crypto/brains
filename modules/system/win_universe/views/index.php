@@ -56,10 +56,13 @@ JS;
 $pageContent = function () use ($universe, $status, $config, $baseUrl) {
 
     $wuCfg       = $config['win_universe'] ?? [];
-    $minRoi      = $wuCfg['min_roi_threshold'] ?? 1.5;
-    $lookback    = $wuCfg['lookback_days']     ?? 30;
-    $minTrades   = $wuCfg['min_closed_trades'] ?? 3;
-    $minWinrate  = $wuCfg['min_winrate']       ?? 0.0;
+    $minRoi      = $wuCfg['min_roi_threshold']        ?? 1.5;
+    $lookback    = $wuCfg['lookback_days']             ?? 30;
+    $minTrades   = $wuCfg['min_closed_trades']         ?? 3;
+    $minWinrate  = $wuCfg['min_winrate']               ?? 0.0;
+    $minTargetRoi = $wuCfg['min_target_roi']           ?? 0.0;
+    $minWinsAboveTarget  = (int)($wuCfg['min_wins_above_target']      ?? 0);
+    $maxTimeToTarget     = (int)($wuCfg['max_time_to_target_minutes'] ?? 0);
 
     $computedAt    = $universe['computed_at']        ?? null;
     $qualified     = $universe['qualified']           ?? [];
@@ -77,8 +80,10 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
 
     $roiFmt = static function ($v): string {
         if ($v === null) return '<span class="neutral">—</span>';
-        $cls = $v >= 0 ? 'positive' : 'negative';
-        return '<span class="' . $cls . '">' . number_format((float)$v, 2) . '%</span>';
+        // ROI values are stored as decimal fractions (0.01 = 1%). Multiply by 100 for display.
+        $pct = (float)$v * 100;
+        $cls = $pct >= 0 ? 'positive' : 'negative';
+        return '<span class="' . $cls . '">' . number_format($pct, 2) . '%</span>';
     };
 
     $wrFmt = static function ($v): string {
@@ -90,6 +95,11 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
     $symbolRow = static function (string $sym, array $rec, string $rowClass = '') use ($roiFmt, $wrFmt): void {
         $reason = htmlspecialchars($rec['qualification_reason'] ?? '');
         $lastT  = $rec['last_trade_time'] ? htmlspecialchars(substr($rec['last_trade_time'], 0, 10)) : '—';
+        $codes  = $rec['qualification_failure_codes'] ?? [];
+        $codesStr = !empty($codes) ? '<small style="color:#f87171; display:block;">' . htmlspecialchars(implode(', ', $codes)) . '</small>' : '';
+        $avgSpeed = $rec['avg_time_to_target_minutes'] ?? null;
+        $speedStr = $avgSpeed !== null ? number_format((float)$avgSpeed, 0) . ' мин.' : '—';
+        $winsAboveTarget = $rec['wins_above_target'] ?? null;
         echo '<tr data-symbol="' . htmlspecialchars($sym) . '" class="' . $rowClass . '">';
         echo '<td><strong>' . htmlspecialchars($sym) . '</strong></td>';
         echo '<td>' . (int)($rec['closed_trades_window'] ?? 0) . '</td>';
@@ -97,8 +107,10 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         echo '<td>' . $roiFmt($rec['best_roi']) . '</td>';
         echo '<td>' . $wrFmt($rec['recent_winrate']) . '</td>';
         echo '<td>' . (int)($rec['wins_above_threshold'] ?? 0) . '</td>';
+        echo '<td>' . ($winsAboveTarget !== null ? (int)$winsAboveTarget : '—') . '</td>';
+        echo '<td>' . $speedStr . '</td>';
         echo '<td>' . $lastT . '</td>';
-        echo '<td><small class="text-muted">' . $reason . '</small></td>';
+        echo '<td><small class="text-muted">' . $reason . '</small>' . $codesStr . '</td>';
         echo '</tr>';
     };
 
@@ -112,13 +124,19 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         $distAvg = $rec['distance_to_min_avg_roi']       ?? null;
         $missT   = (int)($rec['missing_trade_count']     ?? 0);
         $winsNd  = (int)($rec['wins_needed_above_threshold'] ?? 0);
+        $tgtWinsNd = (int)($rec['target_wins_needed'] ?? 0);
+        $avgSpeed = $rec['avg_time_to_target_minutes'] ?? null;
+        $speedStr = $avgSpeed !== null ? number_format((float)$avgSpeed, 0) . ' мин.' : '—';
+        $winsAboveTarget = $rec['wins_above_target'] ?? null;
+        $codes = $rec['qualification_failure_codes'] ?? [];
+        $codesStr = !empty($codes) ? '<small style="color:#fbbf24; display:block;">' . htmlspecialchars(implode(', ', $codes)) . '</small>' : '';
 
         $distParts = [];
         if ($distRoi !== null && $distRoi > 0) {
-            $distParts[] = 'ROI+' . number_format((float)$distRoi, 2) . '%';
+            $distParts[] = 'ROI+' . number_format((float)$distRoi * 100, 2) . '%';
         }
         if ($distAvg !== null && $distAvg > 0) {
-            $distParts[] = 'avgROI+' . number_format((float)$distAvg, 2) . '%';
+            $distParts[] = 'avgROI+' . number_format((float)$distAvg * 100, 2) . '%';
         }
         if ($distWr !== null && $distWr > 0) {
             $distParts[] = 'WR+' . number_format((float)($distWr * 100), 1) . '%';
@@ -129,6 +147,9 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         if ($winsNd > 0) {
             $distParts[] = '+' . $winsNd . ' побед';
         }
+        if ($tgtWinsNd > 0) {
+            $distParts[] = '+' . $tgtWinsNd . ' цел.побед';
+        }
         $distStr = empty($distParts) ? '—' : implode(', ', $distParts);
 
         echo '<tr data-symbol="' . htmlspecialchars($sym) . '">';
@@ -138,8 +159,10 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         echo '<td>' . $roiFmt($rec['best_roi']) . '</td>';
         echo '<td>' . $wrFmt($rec['recent_winrate']) . '</td>';
         echo '<td>' . (int)($rec['wins_above_threshold'] ?? 0) . '</td>';
+        echo '<td>' . ($winsAboveTarget !== null ? (int)$winsAboveTarget : '—') . '</td>';
+        echo '<td>' . $speedStr . '</td>';
         echo '<td>' . $lastT . '</td>';
-        echo '<td><small class="text-muted">' . $reason . '</small></td>';
+        echo '<td><small class="text-muted">' . $reason . '</small>' . $codesStr . '</td>';
         echo '<td><small style="color:#fbbf24;">' . htmlspecialchars($distStr) . '</small></td>';
         echo '</tr>';
     };
@@ -191,7 +214,7 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
             <div class="row g-3">
                 <div class="col-auto">
                     <span class="text-muted">Мин. ROI:</span>
-                    <strong><?= number_format((float)$minRoi, 2) ?>%</strong>
+                    <strong><?= number_format((float)$minRoi * 100, 2) ?>%</strong>
                 </div>
                 <div class="col-auto">
                     <span class="text-muted">Окно:</span>
@@ -205,6 +228,21 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
                     <span class="text-muted">Мин. winrate:</span>
                     <strong><?= $minWinrate > 0 ? number_format((float)$minWinrate * 100, 1) . '%' : 'выкл.' ?></strong>
                 </div>
+                <?php if ($minTargetRoi > 0): ?>
+                <div class="col-auto">
+                    <span class="text-muted">Цель ROI:</span>
+                    <strong><?= number_format((float)$minTargetRoi * 100, 2) ?>%</strong>
+                    <?php if ($minWinsAboveTarget > 0): ?>
+                    <span class="text-secondary">(мин. <?= $minWinsAboveTarget ?> побед)</span>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                <?php if ($maxTimeToTarget > 0): ?>
+                <div class="col-auto">
+                    <span class="text-muted">Макс. скорость:</span>
+                    <strong><?= $maxTimeToTarget ?> мин.</strong>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -259,6 +297,8 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
                     ['label' => 'Мало ROI',          'key' => 'failed_by_roi_threshold_count', 'color' => '#fb923c'],
                     ['label' => 'Мало avg ROI',      'key' => 'failed_by_avg_roi_count',       'color' => '#facc15'],
                     ['label' => 'Мало winrate',      'key' => 'failed_by_winrate_count',       'color' => '#a78bfa'],
+                    ['label' => 'Мало цел.побед',    'key' => 'failed_by_target_wins_count',   'color' => '#f472b6'],
+                    ['label' => 'Медленно к цели',   'key' => 'failed_by_speed_count',         'color' => '#94a3b8'],
                 ];
                 foreach ($diagItems as $di):
                     $val = (int)($sensitivity[$di['key']] ?? 0);
@@ -293,7 +333,7 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
                         <strong style="color:<?= ((int)($sc['qualified_count'] ?? 0)) > 0 ? '#34d399' : '#f87171' ?>;">
                             <?= (int)($sc['qualified_count'] ?? 0) ?>
                         </strong> квал.
-                        (ROI≥<?= number_format((float)($sc['min_roi_threshold'] ?? 0), 2) ?>%,
+                        (ROI≥<?= number_format((float)($sc['min_roi_threshold'] ?? 0) * 100, 2) ?>%,
                          ≥<?= (int)($sc['min_closed_trades'] ?? 0) ?> сд.)
                     </span>
                 <?php endforeach; ?>
@@ -320,6 +360,8 @@ $pageContent = function () use ($universe, $status, $config, $baseUrl) {
         echo '<th>Лучший ROI</th>';
         echo '<th>Winrate</th>';
         echo '<th>Побед &gt; порога</th>';
+        echo '<th>Побед &gt; цели</th>';
+        echo '<th>Avg скорость</th>';
         echo '<th>Последняя сделка</th>';
         echo '<th>Причина</th>';
         if ($withDist) {

@@ -59,13 +59,16 @@ final class WinUniverseEngine
     {
         $ts = date('c');
 
-        $minRoi           = (float)($config['min_roi_threshold']      ?? 1.5);
-        $minAvgRoi        = (float)($config['min_avg_roi']            ?? 0.0);
-        $lookbackDays     = max(1, (int)($config['lookback_days']     ?? 30));
-        $minTrades        = max(1, (int)($config['min_closed_trades'] ?? 3));
-        $minWinrate       = (float)($config['min_winrate']            ?? 0.0);
-        $expiryDays       = (int)($config['qualification_expiry_days'] ?? 90);
-        $demotionStreak   = (int)($config['demotion_loss_streak']     ?? 0);
+        $minRoi                  = (float)($config['min_roi_threshold']           ?? 1.5);
+        $minAvgRoi               = (float)($config['min_avg_roi']                 ?? 0.0);
+        $lookbackDays            = max(1, (int)($config['lookback_days']          ?? 30));
+        $minTrades               = max(1, (int)($config['min_closed_trades']      ?? 3));
+        $minWinrate              = (float)($config['min_winrate']                 ?? 0.0);
+        $expiryDays              = (int)($config['qualification_expiry_days']      ?? 90);
+        $demotionStreak          = (int)($config['demotion_loss_streak']          ?? 0);
+        $minTargetRoi            = (float)($config['min_target_roi']              ?? 0.0);
+        $minWinsAboveTarget      = (int)($config['min_wins_above_target']         ?? 0);
+        $maxTimeToTargetMinutes  = (int)($config['max_time_to_target_minutes']    ?? 0);
 
         $cutoff = time() - ($lookbackDays * 86400);
 
@@ -73,7 +76,7 @@ final class WinUniverseEngine
         [$rawTrades, $sourcesUsed] = $this->loadAllClosedTrades();
 
         // Compute per-symbol stats from trades within lookback window
-        $symbolStats = $this->aggregateBySymbol($rawTrades, $cutoff, $minRoi);
+        $symbolStats = $this->aggregateBySymbol($rawTrades, $cutoff, $minRoi, $minTargetRoi);
 
         // Run qualification engine on each symbol
         $results       = [];
@@ -82,7 +85,12 @@ final class WinUniverseEngine
         $rejected      = [];
 
         foreach ($symbolStats as $symbol => $stats) {
-            $rec = $this->qualify($symbol, $stats, $minRoi, $minAvgRoi, $minTrades, $minWinrate, $lookbackDays);
+            $rec = $this->qualify(
+                $symbol, $stats,
+                $minRoi, $minAvgRoi, $minTrades, $minWinrate,
+                $lookbackDays,
+                $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes
+            );
             $results[$symbol] = $rec;
             if ($rec['qualified']) {
                 $qualified[] = $symbol;
@@ -184,19 +192,23 @@ final class WinUniverseEngine
             'promotions'            => $promotions,
             'demotions'             => $demotions,
             'config_used'           => [
-                'min_roi_threshold'         => $minRoi,
-                'min_avg_roi'               => $minAvgRoi,
-                'lookback_days'             => $lookbackDays,
-                'min_closed_trades'         => $minTrades,
-                'min_winrate'               => $minWinrate,
-                'qualification_expiry_days' => $expiryDays,
-                'demotion_loss_streak'      => $demotionStreak,
-                'win_universe_mode'         => (string)($config['win_universe_mode'] ?? 'shadow'),
-                'priority_bonus_enabled'    => (bool)($config['priority_bonus_enabled'] ?? false),
-                'priority_bonus_strength'   => (float)($config['priority_bonus_strength'] ?? 0.1),
+                'min_roi_threshold'           => $minRoi,
+                'min_avg_roi'                 => $minAvgRoi,
+                'lookback_days'               => $lookbackDays,
+                'min_closed_trades'           => $minTrades,
+                'min_winrate'                 => $minWinrate,
+                'min_target_roi'              => $minTargetRoi,
+                'min_wins_above_target'       => $minWinsAboveTarget,
+                'max_time_to_target_minutes'  => $maxTimeToTargetMinutes,
+                'qualification_expiry_days'   => $expiryDays,
+                'demotion_loss_streak'        => $demotionStreak,
+                'win_universe_mode'           => (string)($config['win_universe_mode'] ?? 'shadow'),
+                'priority_bonus_enabled'      => (bool)($config['priority_bonus_enabled'] ?? false),
+                'priority_bonus_strength'     => (float)($config['priority_bonus_strength'] ?? 0.1),
                 // Human-readable display values (ROI thresholds × 100 → %)
-                'min_roi_threshold_pct'     => round($minRoi * 100, 2),
-                'min_avg_roi_pct'           => round($minAvgRoi * 100, 2),
+                'min_roi_threshold_pct'       => round($minRoi * 100, 2),
+                'min_avg_roi_pct'             => round($minAvgRoi * 100, 2),
+                'min_target_roi_pct'          => round($minTargetRoi * 100, 2),
             ],
             'sources_used'                         => $sourcesUsed,
             'computed_at'                          => $ts,
@@ -543,11 +555,32 @@ final class WinUniverseEngine
 
         $roi = isset($trade['roi']) && is_numeric($trade['roi']) ? (float)$trade['roi'] : null;
 
+        // Extract trade duration in minutes from bot trade record.
+        $durationMinutes = null;
+        if (isset($trade['duration_minutes']) && is_numeric($trade['duration_minutes'])) {
+            $durationMinutes = max(0.0, (float)$trade['duration_minutes']);
+        } elseif (isset($trade['duration']) && is_numeric($trade['duration'])) {
+            $durationMinutes = max(0.0, (float)$trade['duration']);
+        } elseif (isset($trade['opened_at']) || isset($trade['opened_ts'])) {
+            $openedTs = 0;
+            if (isset($trade['opened_ts']) && is_numeric($trade['opened_ts'])) {
+                $openedTs = (int)$trade['opened_ts'];
+            } elseif (isset($trade['opened_at'])) {
+                $openedTs = is_numeric($trade['opened_at'])
+                    ? (int)$trade['opened_at']
+                    : (int)strtotime((string)$trade['opened_at']);
+            }
+            if ($openedTs > 0 && $closedAt > $openedTs) {
+                $durationMinutes = round(($closedAt - $openedTs) / 60.0, 1);
+            }
+        }
+
         return [
-            'symbol'    => strtoupper($sym),
-            'roi'       => $roi,
-            'closed_at' => $closedAt,
-            'source'    => $source,
+            'symbol'           => strtoupper($sym),
+            'roi'              => $roi,
+            'closed_at'        => $closedAt,
+            'duration_minutes' => $durationMinutes,
+            'source'           => $source,
         ];
     }
 
@@ -583,11 +616,26 @@ final class WinUniverseEngine
 
         $roi = isset($trade['roi']) && is_numeric($trade['roi']) ? (float)$trade['roi'] : null;
 
+        // Extract trade duration in minutes.
+        // The simulator stores 'duration' as integer minutes; fall back to timestamp diff.
+        $durationMinutes = null;
+        if (isset($trade['duration']) && is_numeric($trade['duration'])) {
+            $durationMinutes = max(0.0, (float)$trade['duration']);
+        } elseif (isset($trade['opened_at'])) {
+            $openedTs = is_numeric($trade['opened_at'])
+                ? (int)$trade['opened_at']
+                : (int)strtotime((string)$trade['opened_at']);
+            if ($openedTs > 0 && $closedAt > $openedTs) {
+                $durationMinutes = round(($closedAt - $openedTs) / 60.0, 1);
+            }
+        }
+
         return [
-            'symbol'    => strtoupper($sym),
-            'roi'       => $roi,
-            'closed_at' => $closedAt,
-            'source'    => 'simulator',
+            'symbol'           => strtoupper($sym),
+            'roi'              => $roi,
+            'closed_at'        => $closedAt,
+            'duration_minutes' => $durationMinutes,
+            'source'           => 'simulator',
         ];
     }
 
@@ -628,10 +676,11 @@ final class WinUniverseEngine
         }
 
         return [
-            'symbol'    => strtoupper($sym),
-            'roi'       => $roi,
-            'closed_at' => time(), // Use current timestamp — always within lookback window
-            'source'    => 'simulator_active',
+            'symbol'           => strtoupper($sym),
+            'roi'              => $roi,
+            'closed_at'        => time(), // Use current timestamp — always within lookback window
+            'duration_minutes' => null,   // Active trades have no closed duration
+            'source'           => 'simulator_active',
         ];
     }
 
@@ -647,7 +696,7 @@ final class WinUniverseEngine
      * @param float $minRoi  ROI threshold used to count "wins above threshold"
      * @return array<string,array<string,mixed>>
      */
-    private function aggregateBySymbol(array $trades, int $cutoff, float $minRoi): array
+    private function aggregateBySymbol(array $trades, int $cutoff, float $minRoi, float $minTargetRoi = 0.0): array
     {
         $bySymbol = [];
 
@@ -668,6 +717,8 @@ final class WinUniverseEngine
                     'wins_count'                 => 0,
                     'losses_count'               => 0,
                     'wins_above_threshold'        => 0,
+                    'wins_above_target'           => 0,
+                    'target_roi_durations'        => [],  // duration_minutes for target-winning trades
                     'roi_sum'                    => 0.0,
                     'roi_values'                 => [],
                     'best_roi'                   => null,
@@ -702,6 +753,15 @@ final class WinUniverseEngine
                 } else {
                     $bySymbol[$sym]['losses_count']++;
                 }
+
+                // Track wins above the target ROI (higher bar than min_roi_threshold)
+                if ($minTargetRoi > 0.0 && $roi >= $minTargetRoi) {
+                    $bySymbol[$sym]['wins_above_target']++;
+                    $durationMin = $trade['duration_minutes'] ?? null;
+                    if ($durationMin !== null && $durationMin > 0) {
+                        $bySymbol[$sym]['target_roi_durations'][] = (float)$durationMin;
+                    }
+                }
             }
         }
 
@@ -722,22 +782,42 @@ final class WinUniverseEngine
                 ? date('c', $raw['last_trade_time'])
                 : null;
 
+            // Time-to-target metrics (only available when target ROI durations were tracked)
+            $durations = $raw['target_roi_durations'];
+            $avgTimeToTarget    = null;
+            $medianTimeToTarget = null;
+            $fastestTimeToTarget = null;
+            if (!empty($durations)) {
+                $avgTimeToTarget     = round(array_sum($durations) / count($durations), 1);
+                sort($durations);
+                $mid = (int)(count($durations) / 2);
+                $medianTimeToTarget  = count($durations) % 2 === 0
+                    ? round(($durations[$mid - 1] + $durations[$mid]) / 2.0, 1)
+                    : round($durations[$mid], 1);
+                $fastestTimeToTarget = round($durations[0], 1);
+            }
+
             $result[$sym] = [
-                'symbol'                     => $sym,
-                'closed_trades_count'        => $raw['closed_trades_count'],
-                'closed_trades_count_window' => $windowCount,
-                'wins_count'                 => $raw['wins_count'],
-                'losses_count'               => $raw['losses_count'],
-                'wins_above_threshold'       => $raw['wins_above_threshold'],
-                'recent_avg_roi'             => $recentAvgRoi,
-                'best_roi'                   => $raw['best_roi'],
-                'recent_winrate'             => $recentWinrate,
-                'last_trade_time'            => $lastTradeTime,
+                'symbol'                       => $sym,
+                'closed_trades_count'          => $raw['closed_trades_count'],
+                'closed_trades_count_window'   => $windowCount,
+                'wins_count'                   => $raw['wins_count'],
+                'losses_count'                 => $raw['losses_count'],
+                'wins_above_threshold'         => $raw['wins_above_threshold'],
+                'wins_above_target'            => $raw['wins_above_target'],
+                'avg_time_to_target_minutes'   => $avgTimeToTarget,
+                'median_time_to_target_minutes' => $medianTimeToTarget,
+                'fastest_time_to_target_minutes' => $fastestTimeToTarget,
+                'recent_avg_roi'               => $recentAvgRoi,
+                'best_roi'                     => $raw['best_roi'],
+                'recent_winrate'               => $recentWinrate,
+                'last_trade_time'              => $lastTradeTime,
             ];
         }
 
         return $result;
     }
+
 
     // =========================================================================
     // Qualification engine
@@ -746,20 +826,25 @@ final class WinUniverseEngine
     /**
      * Determine whether a symbol qualifies for the Win Universe.
      *
-     * Qualification criteria (all must pass):
-     *   1. min_closed_trades : symbol must have >= min_closed_trades in the window
-     *   2. min_roi_threshold : recent_avg_roi must be >= min_roi_threshold
-     *   3. min_avg_roi       : recent_avg_roi must be >= min_avg_roi (0 = gate off)
-     *   4. min_winrate       : recent_winrate must be >= min_winrate  (0 = gate off)
+     * Qualification criteria (ALL must pass — hard AND logic):
+     *   1. min_closed_trades           : symbol must have >= min_closed_trades in the window
+     *   2. min_roi_threshold           : recent_avg_roi must be >= min_roi_threshold
+     *   3. min_avg_roi                 : recent_avg_roi must be >= min_avg_roi (0 = gate off)
+     *   4. min_winrate                 : recent_winrate must be >= min_winrate  (0 = gate off)
+     *   5. min_target_roi + min_wins_above_target : wins_above_target >= min_wins_above_target (0 = gate off)
+     *   6. max_time_to_target_minutes  : avg time to reach target ROI <= max (0 = gate off)
      *
-     * Near-qualified: meets trade count but fails exactly one of the soft criteria.
+     * Near-qualified: meets trade count but fails exactly one soft criterion.
      *
-     * @param array<string,mixed> $stats        Aggregated stats for the symbol
-     * @param float               $minRoi       Per-trade win threshold (defines what counts as a win)
-     * @param float               $minAvgRoi    Minimum required average ROI (0 = off)
-     * @param int                 $minTrades    Min closed trades in window
-     * @param float               $minWinrate   Min win-rate (0 = disabled)
+     * @param array<string,mixed> $stats
+     * @param float               $minRoi                 Per-trade win threshold (defines "win")
+     * @param float               $minAvgRoi              Minimum average ROI (0 = off)
+     * @param int                 $minTrades              Min closed trades in window
+     * @param float               $minWinrate             Min win-rate (0 = disabled)
      * @param int                 $lookbackDays
+     * @param float               $minTargetRoi           Target ROI threshold (0 = off)
+     * @param int                 $minWinsAboveTarget     Min wins above target (0 = off)
+     * @param int                 $maxTimeToTargetMinutes Max avg minutes to reach target (0 = off)
      * @return array<string,mixed>
      */
     private function qualify(
@@ -769,12 +854,19 @@ final class WinUniverseEngine
         float $minAvgRoi,
         int $minTrades,
         float $minWinrate,
-        int $lookbackDays
+        int $lookbackDays,
+        float $minTargetRoi = 0.0,
+        int $minWinsAboveTarget = 0,
+        int $maxTimeToTargetMinutes = 0
     ): array {
-        $windowCount   = (int)($stats['closed_trades_count_window'] ?? 0);
-        $recentAvgRoi  = $stats['recent_avg_roi'];
-        $recentWinrate = $stats['recent_winrate'];
-        $winsAbove     = (int)($stats['wins_above_threshold'] ?? 0);
+        $windowCount          = (int)($stats['closed_trades_count_window'] ?? 0);
+        $recentAvgRoi         = $stats['recent_avg_roi'];
+        $recentWinrate        = $stats['recent_winrate'];
+        $winsAbove            = (int)($stats['wins_above_threshold'] ?? 0);
+        $winsAboveTarget      = (int)($stats['wins_above_target'] ?? 0);
+        $avgTimeToTarget      = $stats['avg_time_to_target_minutes'] ?? null;
+        $medianTimeToTarget   = $stats['median_time_to_target_minutes'] ?? null;
+        $fastestTimeToTarget  = $stats['fastest_time_to_target_minutes'] ?? null;
 
         // Gate 1: sufficient trade count (hard gate — must pass to be near-qualified)
         $meetsTradeCount = $windowCount >= $minTrades;
@@ -790,7 +882,22 @@ final class WinUniverseEngine
         $winrateGateEnabled = $minWinrate > 0.0;
         $meetsWinrate       = !$winrateGateEnabled || (($recentWinrate !== null) && ($recentWinrate >= $minWinrate));
 
-        $qualified = $meetsTradeCount && $meetsRoi && $meetsAvgRoi && $meetsWinrate;
+        // Gate 5: wins above target ROI (only active if minTargetRoi > 0 AND minWinsAboveTarget > 0)
+        $targetRoiGateEnabled  = $minTargetRoi > 0.0 && $minWinsAboveTarget > 0;
+        $meetsWinsAboveTarget  = !$targetRoiGateEnabled || ($winsAboveTarget >= $minWinsAboveTarget);
+
+        // Gate 6: speed-to-target (only active if maxTimeToTargetMinutes > 0)
+        $speedGateEnabled  = $maxTimeToTargetMinutes > 0;
+        $meetsSpeedToTarget = !$speedGateEnabled
+            || ($avgTimeToTarget === null) // no speed data — gate passes (insufficient data)
+            || ($avgTimeToTarget <= $maxTimeToTargetMinutes);
+
+        $qualified = $meetsTradeCount
+            && $meetsRoi
+            && $meetsAvgRoi
+            && $meetsWinrate
+            && $meetsWinsAboveTarget
+            && $meetsSpeedToTarget;
 
         // Near-qualified: meets trade count but fails exactly one soft criterion
         $softFailCount = 0;
@@ -803,7 +910,34 @@ final class WinUniverseEngine
         if ($winrateGateEnabled && !$meetsWinrate) {
             $softFailCount++;
         }
+        if ($targetRoiGateEnabled && !$meetsWinsAboveTarget) {
+            $softFailCount++;
+        }
+        if ($speedGateEnabled && !$meetsSpeedToTarget) {
+            $softFailCount++;
+        }
         $nearQualified = !$qualified && $meetsTradeCount && $softFailCount === 1;
+
+        // ── Machine-readable failure codes ───────────────────────────────────
+        $failureCodes = [];
+        if (!$meetsTradeCount) {
+            $failureCodes[] = 'insufficient_trade_count';
+        }
+        if (!$meetsRoi) {
+            $failureCodes[] = 'below_min_roi_threshold';
+        }
+        if ($avgRoiGateEnabled && !$meetsAvgRoi) {
+            $failureCodes[] = 'below_min_avg_roi';
+        }
+        if ($winrateGateEnabled && !$meetsWinrate) {
+            $failureCodes[] = 'below_min_winrate';
+        }
+        if ($targetRoiGateEnabled && !$meetsWinsAboveTarget) {
+            $failureCodes[] = 'insufficient_target_wins';
+        }
+        if ($speedGateEnabled && !$meetsSpeedToTarget) {
+            $failureCodes[] = 'too_slow_to_target';
+        }
 
         // ── Distance-to-qualify metrics ──────────────────────────────────────
         // Positive value = still needs this much more to pass gate.
@@ -818,13 +952,17 @@ final class WinUniverseEngine
         $missingTrades = max(0, $minTrades - $windowCount);
 
         // Wins needed to satisfy min_winrate given current trade count.
-        // Assumes no new trades; based on current window count.
         $winsNeeded = 0;
         if ($winrateGateEnabled && $windowCount > 0 && !$meetsWinrate) {
             $winsNeeded = max(0, (int)ceil($minWinrate * $windowCount) - $winsAbove);
         }
 
-        // Build missing_requirements list
+        // Additional target wins still needed
+        $targetWinsNeeded = $targetRoiGateEnabled
+            ? max(0, $minWinsAboveTarget - $winsAboveTarget)
+            : 0;
+
+        // ── Human-readable missing requirements (Russian) ──────────────────────
         $missing = [];
         if (!$meetsTradeCount) {
             $missing[] = sprintf(
@@ -835,7 +973,6 @@ final class WinUniverseEngine
             );
         }
         if (!$meetsRoi) {
-            // ROI values are stored as decimal fractions (0.01 = 1%). Multiply by 100 for % display.
             $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi * 100, 2) . '%' : 'н/д';
             $missing[] = sprintf(
                 'min_roi_threshold: нужно >= %.2f%%, есть %s',
@@ -859,10 +996,33 @@ final class WinUniverseEngine
                 $wrDisplay
             );
         }
+        if ($targetRoiGateEnabled && !$meetsWinsAboveTarget) {
+            $missing[] = sprintf(
+                'min_wins_above_target: нужно >= %d побед ROI>= %.2f%%, есть %d',
+                $minWinsAboveTarget,
+                $minTargetRoi * 100,
+                $winsAboveTarget
+            );
+        }
+        if ($speedGateEnabled && !$meetsSpeedToTarget) {
+            $speedDisplay = $avgTimeToTarget !== null ? number_format($avgTimeToTarget, 1) . ' мин.' : 'н/д';
+            $missing[] = sprintf(
+                'max_time_to_target: нужно <= %d мин., avg %.1f мин.',
+                $maxTimeToTargetMinutes,
+                $avgTimeToTarget ?? 0.0
+            );
+        }
 
-        // Build reason string (Russian)
+        // ── Reason string (Russian) ───────────────────────────────────────────
         if ($qualified) {
-            $reason = 'квалифицирован: все критерии выполнены';
+            $reason = sprintf(
+                'квалифицирован: %d сд., avg ROI %.2f%%, winrate %.0f%%%s%s',
+                $windowCount,
+                ($recentAvgRoi ?? 0.0) * 100,
+                ($recentWinrate ?? 0.0) * 100,
+                $targetRoiGateEnabled ? sprintf(', побед>цели: %d', $winsAboveTarget) : '',
+                ($speedGateEnabled && $avgTimeToTarget !== null) ? sprintf(', avg скорость: %.0f мин.', $avgTimeToTarget) : ''
+            );
             $status = 'qualified';
         } elseif ($nearQualified) {
             $reason = 'почти квалифицирован: ' . implode('; ', $missing);
@@ -881,38 +1041,47 @@ final class WinUniverseEngine
         }
 
         return [
-            'symbol'                        => $symbol,
-            'qualification_status'          => $status,
-            'qualified'                     => $qualified,
-            'near_qualified'                => $nearQualified,
-            'qualification_reason'          => $reason,
-            'missing_requirements'          => $missing,
-            'wins_above_threshold'          => $winsAbove,
-            'recent_trade_count'            => $windowCount,
-            'closed_trades_count'           => (int)($stats['closed_trades_count'] ?? 0),
-            'closed_trades_window'          => $windowCount,
-            'recent_avg_roi'                => $recentAvgRoi,
-            'best_roi'                      => $stats['best_roi'],
-            'recent_winrate'                => $recentWinrate,
-            'last_trade_time'               => $stats['last_trade_time'],
-            'lookback_window_used'          => $lookbackDays,
-            'thresholds_used'               => [
-                'min_roi_threshold'   => $minRoi,
-                'min_avg_roi'         => $minAvgRoi,
-                'min_winrate'         => $minWinrate,
-                'min_closed_trades'   => $minTrades,
+            'symbol'                         => $symbol,
+            'qualification_status'           => $status,
+            'qualified'                      => $qualified,
+            'near_qualified'                 => $nearQualified,
+            'qualification_reason'           => $reason,
+            'missing_requirements'           => $missing,
+            'qualification_failure_codes'    => $failureCodes,
+            'wins_above_threshold'           => $winsAbove,
+            'wins_above_target'              => $winsAboveTarget,
+            'avg_time_to_target_minutes'     => $avgTimeToTarget,
+            'median_time_to_target_minutes'  => $medianTimeToTarget,
+            'fastest_time_to_target_minutes' => $fastestTimeToTarget,
+            'recent_trade_count'             => $windowCount,
+            'closed_trades_count'            => (int)($stats['closed_trades_count'] ?? 0),
+            'closed_trades_window'           => $windowCount,
+            'recent_avg_roi'                 => $recentAvgRoi,
+            'best_roi'                       => $stats['best_roi'],
+            'recent_winrate'                 => $recentWinrate,
+            'last_trade_time'                => $stats['last_trade_time'],
+            'lookback_window_used'           => $lookbackDays,
+            'thresholds_used'                => [
+                'min_roi_threshold'          => $minRoi,
+                'min_avg_roi'                => $minAvgRoi,
+                'min_winrate'                => $minWinrate,
+                'min_closed_trades'          => $minTrades,
+                'min_target_roi'             => $minTargetRoi,
+                'min_wins_above_target'      => $minWinsAboveTarget,
+                'max_time_to_target_minutes' => $maxTimeToTargetMinutes,
             ],
             // Distance-to-qualify metrics (positive = still needs this much more to pass)
-            // Stored in the same decimal units as the raw ROI values (0.01 = 1%).
-            'distance_to_min_roi_threshold' => $distToMinRoi,
-            'distance_to_min_avg_roi'       => $distToMinAvgRoi,
-            'distance_to_min_winrate'       => $distToMinWr,
-            'missing_trade_count'           => $missingTrades,
-            'wins_needed_above_threshold'   => $winsNeeded,
-            // legacy flat fields (kept for backwards compatibility)
-            'threshold_used'                => $minRoi,
-            'winrate_threshold_used'        => $minWinrate,
-            'min_trades_required'           => $minTrades,
+            // ROI distances are in decimal fraction units (0.01 = 1%).
+            'distance_to_min_roi_threshold'  => $distToMinRoi,
+            'distance_to_min_avg_roi'        => $distToMinAvgRoi,
+            'distance_to_min_winrate'        => $distToMinWr,
+            'missing_trade_count'            => $missingTrades,
+            'wins_needed_above_threshold'    => $winsNeeded,
+            'target_wins_needed'             => $targetWinsNeeded,
+            // Legacy flat fields (kept for backwards compatibility)
+            'threshold_used'                 => $minRoi,
+            'winrate_threshold_used'         => $minWinrate,
+            'min_trades_required'            => $minTrades,
         ];
     }
 
@@ -934,55 +1103,63 @@ final class WinUniverseEngine
         float $minAvgRoi,
         float $minWinrate
     ): array {
-        $failByTradeCount = 0;
-        $failByRoi        = 0;
-        $failByAvgRoi     = 0;
-        $failByWinrate    = 0;
-        $failByTradeCountOnly = 0;
-        $failByRoiOnly        = 0;
-        $failByAvgRoiOnly     = 0;
-        $failByWinrateOnly    = 0;
-        $totalRejected    = 0;
-        $totalNear        = 0;
+        $failByTradeCount      = 0;
+        $failByRoi             = 0;
+        $failByAvgRoi          = 0;
+        $failByWinrate         = 0;
+        $failByTargetWins      = 0;
+        $failBySpeedToTarget   = 0;
+        $failByTradeCountOnly  = 0;
+        $failByRoiOnly         = 0;
+        $failByAvgRoiOnly      = 0;
+        $failByWinrateOnly     = 0;
+        $totalRejected         = 0;
+        $totalNear             = 0;
 
         foreach ($results as $rec) {
             if ($rec['qualified']) {
                 continue;
             }
 
-            $windowCount   = (int)($rec['recent_trade_count'] ?? 0);
-            $recentAvgRoi  = $rec['recent_avg_roi'];
-            $recentWinrate = $rec['recent_winrate'];
+            $codes = $rec['qualification_failure_codes'] ?? [];
 
-            $failTC  = $windowCount < $minTrades;
-            $failRoi = !($recentAvgRoi !== null && $recentAvgRoi >= $minRoi);
-            $failAvg = $minAvgRoi > 0.0 && !($recentAvgRoi !== null && $recentAvgRoi >= $minAvgRoi);
-            $failWr  = $minWinrate > 0.0 && !($recentWinrate !== null && $recentWinrate >= $minWinrate);
-
-            if ($failTC) {
+            if (in_array('insufficient_trade_count', $codes, true)) {
                 $failByTradeCount++;
             }
-            if ($failRoi) {
+            if (in_array('below_min_roi_threshold', $codes, true)) {
                 $failByRoi++;
             }
-            if ($failAvg) {
+            if (in_array('below_min_avg_roi', $codes, true)) {
                 $failByAvgRoi++;
             }
-            if ($failWr) {
+            if (in_array('below_min_winrate', $codes, true)) {
                 $failByWinrate++;
             }
+            if (in_array('insufficient_target_wins', $codes, true)) {
+                $failByTargetWins++;
+            }
+            if (in_array('too_slow_to_target', $codes, true)) {
+                $failBySpeedToTarget++;
+            }
 
-            // "only" counts: fails exactly that criterion (and meets all others)
-            if ($failTC && !$failRoi && !$failAvg && !$failWr) {
+            // "only" counts: fails exactly that criterion
+            $failTC  = in_array('insufficient_trade_count', $codes, true);
+            $failRoi = in_array('below_min_roi_threshold', $codes, true);
+            $failAvg = in_array('below_min_avg_roi', $codes, true);
+            $failWr  = in_array('below_min_winrate', $codes, true);
+            $otherFails = in_array('insufficient_target_wins', $codes, true)
+                || in_array('too_slow_to_target', $codes, true);
+
+            if ($failTC && !$failRoi && !$failAvg && !$failWr && !$otherFails) {
                 $failByTradeCountOnly++;
             }
-            if (!$failTC && $failRoi && !$failAvg && !$failWr) {
+            if (!$failTC && $failRoi && !$failAvg && !$failWr && !$otherFails) {
                 $failByRoiOnly++;
             }
-            if (!$failTC && !$failRoi && $failAvg && !$failWr) {
+            if (!$failTC && !$failRoi && $failAvg && !$failWr && !$otherFails) {
                 $failByAvgRoiOnly++;
             }
-            if (!$failTC && !$failRoi && !$failAvg && $failWr) {
+            if (!$failTC && !$failRoi && !$failAvg && $failWr && !$otherFails) {
                 $failByWinrateOnly++;
             }
 
@@ -994,21 +1171,25 @@ final class WinUniverseEngine
         }
 
         return [
-            'fail_by_trade_count'      => $failByTradeCount,
-            'fail_by_roi_threshold'    => $failByRoi,
-            'fail_by_avg_roi'          => $failByAvgRoi,
-            'fail_by_winrate'          => $failByWinrate,
-            'fail_by_trade_count_only' => $failByTradeCountOnly,
-            'fail_by_roi_only'         => $failByRoiOnly,
-            'fail_by_avg_roi_only'     => $failByAvgRoiOnly,
-            'fail_by_winrate_only'     => $failByWinrateOnly,
-            'near_qualified_total'     => $totalNear,
-            'rejected_total'           => $totalRejected,
+            'fail_by_trade_count'           => $failByTradeCount,
+            'fail_by_roi_threshold'         => $failByRoi,
+            'fail_by_avg_roi'               => $failByAvgRoi,
+            'fail_by_winrate'               => $failByWinrate,
+            'fail_by_target_wins'           => $failByTargetWins,
+            'fail_by_speed_to_target'       => $failBySpeedToTarget,
+            'fail_by_trade_count_only'      => $failByTradeCountOnly,
+            'fail_by_roi_only'              => $failByRoiOnly,
+            'fail_by_avg_roi_only'          => $failByAvgRoiOnly,
+            'fail_by_winrate_only'          => $failByWinrateOnly,
+            'near_qualified_total'          => $totalNear,
+            'rejected_total'                => $totalRejected,
             // Standardized naming convention (problem-statement aligned)
             'failed_by_min_trades_count'    => $failByTradeCount,
             'failed_by_roi_threshold_count' => $failByRoi,
             'failed_by_avg_roi_count'       => $failByAvgRoi,
             'failed_by_winrate_count'       => $failByWinrate,
+            'failed_by_target_wins_count'   => $failByTargetWins,
+            'failed_by_speed_count'         => $failBySpeedToTarget,
         ];
     }
 
@@ -1039,10 +1220,11 @@ final class WinUniverseEngine
         int $lookbackDays
     ): array {
         // Helper: count how many symbols qualify under given thresholds
+        // New gates (target ROI, speed) are disabled here to keep the sensitivity scenarios simple.
         $countQ = function (float $roi, float $avgRoi, int $trades, float $wr) use ($symbolStats, $lookbackDays): int {
             $n = 0;
             foreach ($symbolStats as $sym => $stats) {
-                $rec = $this->qualify($sym, $stats, $roi, $avgRoi, $trades, $wr, $lookbackDays);
+                $rec = $this->qualify($sym, $stats, $roi, $avgRoi, $trades, $wr, $lookbackDays, 0.0, 0, 0);
                 if ($rec['qualified']) {
                     $n++;
                 }

@@ -114,7 +114,8 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
             return '<span class="neutral">—</span>';
         }
         $cls = (float)$v >= 0 ? 'positive' : 'negative';
-        return '<span class="' . $cls . '">' . number_format((float)$v, 2) . '%</span>';
+        // ROI values are stored as decimal fractions (0.01 = 1%). Multiply by 100 for display.
+        return '<span class="' . $cls . '">' . number_format((float)$v * 100, 2) . '%</span>';
     };
 
     $wrFmt = static function ($v): string {
@@ -210,11 +211,11 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
             <div class="d-flex flex-wrap gap-4">
                 <div>
                     <span class="text-secondary">Мин. ROI (порог):</span>
-                    <strong><?= number_format((float)$minRoi, 2) ?>%</strong>
+                    <strong><?= number_format((float)$minRoi * 100, 2) ?>%</strong>
                 </div>
                 <div>
                     <span class="text-secondary">Мин. средний ROI:</span>
-                    <strong><?= $minAvgRoi > 0.0 ? number_format((float)$minAvgRoi, 2) . '%' : 'выкл.' ?></strong>
+                    <strong><?= $minAvgRoi > 0.0 ? number_format((float)$minAvgRoi * 100, 2) . '%' : 'выкл.' ?></strong>
                 </div>
                 <div>
                     <span class="text-secondary">Окно:</span>
@@ -315,7 +316,7 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
                             $ar = $entry['last_avg_roi'] ?? null;
                             if ($ar !== null) {
                                 $cls = (float)$ar >= 0 ? 'positive' : 'negative';
-                                echo '<span class="' . $cls . '">' . number_format((float)$ar, 2) . '%</span>';
+                                echo '<span class="' . $cls . '">' . number_format((float)$ar * 100, 2) . '%</span>';
                             } else { echo '—'; }
                         ?></td>
                         <td><small class="text-secondary"><?= htmlspecialchars($entry['promotion_reason'] ?? '') ?></small></td>
@@ -620,7 +621,8 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl) {
             return '<span class="neutral">—</span>';
         }
         $cls = (float)$v >= 0 ? 'positive' : 'negative';
-        return '<span class="' . $cls . '">' . number_format((float)$v, 2) . '%</span>';
+        // ROI values are stored as decimal fractions (0.01 = 1%). Multiply by 100 for display.
+        return '<span class="' . $cls . '">' . number_format((float)$v * 100, 2) . '%</span>';
     };
 
     $wrFmt = static function ($v): string {
@@ -707,11 +709,11 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl) {
             <div class="d-flex flex-wrap gap-4">
                 <div>
                     <span class="text-secondary">Мин. ROI (порог):</span>
-                    <strong><?= number_format((float)$minRoi, 2) ?>%</strong>
+                    <strong><?= number_format((float)$minRoi * 100, 2) ?>%</strong>
                 </div>
                 <div>
                     <span class="text-secondary">Мин. средний ROI:</span>
-                    <strong><?= $minAvgRoi > 0.0 ? number_format((float)$minAvgRoi, 2) . '%' : 'выкл.' ?></strong>
+                    <strong><?= $minAvgRoi > 0.0 ? number_format((float)$minAvgRoi * 100, 2) . '%' : 'выкл.' ?></strong>
                 </div>
                 <div>
                     <span class="text-secondary">Окно:</span>

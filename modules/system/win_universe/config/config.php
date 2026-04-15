@@ -41,44 +41,60 @@ return [
          *   0.02  → 2% ROI threshold
          *   0.01  → 1% ROI threshold
          *
-         * Calibrated value: 0.01 (1% ROI). This is the per-trade bar a symbol must
-         * consistently exceed on average to qualify for the win pool.
-         * Realistic for the early bootstrap phase where trade history is limited.
-         * Symbols with simulator active positions at 1%+ unrealised ROI qualify.
+         * Calibrated value: 0.01 (1% ROI). Used to count wins for winrate/wins_above_threshold.
          */
         'min_roi_threshold' => 0.01,
 
         /**
+         * Minimum target ROI a trade must reach to count as a "meaningful win".
+         * This is a higher bar than min_roi_threshold.
+         * A symbol must have at least min_wins_above_target trades reaching this ROI.
+         * UNIT: decimal fraction (0.05 = 5%).
+         * Set to 0.0 to disable the target-ROI gate entirely.
+         */
+        'min_target_roi' => 0.05,
+
+        /**
+         * Minimum number of trades within the lookback window that must have reached
+         * min_target_roi. Only active when min_target_roi > 0.
+         * Set to 0 to disable this gate.
+         */
+        'min_wins_above_target' => 1,
+
+        /**
+         * Maximum allowed average trade duration (in minutes) for trades that reached
+         * min_target_roi. If a symbol reaches target ROI too slowly it does not qualify.
+         * Set to 0 to disable the speed-to-target gate.
+         * Example: 1440 = max 24 hours average time to target.
+         */
+        'max_time_to_target_minutes' => 0,
+
+        /**
          * Lookback window in days for recent trade statistics.
          * Trades older than this are excluded from the qualification pass.
-         * Extended to 60 days to capture enough trade history for meaningful statistics.
          */
         'lookback_days' => 60,
 
         /**
          * Minimum number of closed trades within the lookback window
          * required before a symbol can qualify.
-         * Set to 1 to allow qualification from a single trade record (including
-         * simulator active positions during the bootstrap phase). Prevents
-         * zero-evidence promotion while allowing early qualification.
+         * Set to 3 to require meaningful evidence before qualification.
          */
-        'min_closed_trades' => 1,
+        'min_closed_trades' => 3,
 
         /**
          * Minimum win-rate (0.0–1.0) required for qualification.
          * A "win" is defined as roi >= min_roi_threshold.
          * Set to 0.0 to disable the win-rate gate.
          */
-        'min_winrate' => 0.0,
+        'min_winrate' => 0.5,
 
         /**
          * Minimum average ROI across all trades in the lookback window.
          * UNIT: same decimal fraction as min_roi_threshold (0.01 = 1%).
          * Set to 0.0 to rely solely on min_roi_threshold for the quality gate.
-         * This avoids double-gating in bootstrap environments where the average
-         * is already constrained by the per-trade threshold check.
          */
-        'min_avg_roi' => 0.0,
+        'min_avg_roi' => 0.02,
 
         /**
          * Days after which a win-pool symbol must be re-validated.

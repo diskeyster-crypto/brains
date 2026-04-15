@@ -1035,6 +1035,11 @@ final class SmartBrainCore
             'entry_quality_filter_demo_total'      => (int)($liveIntentResult['entry_quality_filter_demo_total']      ?? 0),
             'entry_quality_filter_no_effect_total' => (int)($liveIntentResult['entry_quality_filter_no_effect_total'] ?? 0),
             'entry_quality_filter_rejected_preview' => $liveIntentResult['entry_quality_filter_rejected_preview']     ?? [],
+            // Per-rule entry quality filter counters
+            'entry_filter_weak_stale_reject_total'     => (int)($liveIntentResult['entry_filter_weak_stale_reject_total']     ?? 0),
+            'entry_filter_weak_structure_reject_total' => (int)($liveIntentResult['entry_filter_weak_structure_reject_total'] ?? 0),
+            'entry_filter_weak_structure_demo_total'   => (int)($liveIntentResult['entry_filter_weak_structure_demo_total']   ?? 0),
+            'entry_filter_late_pressure_reject_total'  => (int)($liveIntentResult['entry_filter_late_pressure_reject_total']  ?? 0),
             // Wave Filter diagnostics (bounded wave amplitude/speed improvement layer)
             'wave_filter_total'                => (int)($liveIntentResult['wave_filter_total']                ?? 0),
             'wave_filter_reject_total'         => (int)($liveIntentResult['wave_filter_reject_total']         ?? 0),
@@ -1197,6 +1202,11 @@ final class SmartBrainCore
             'entry_quality_filter_demo_total'     => 0,
             'entry_quality_filter_no_effect_total' => 0,
             'entry_quality_filter_rejected_preview' => [],
+            // Per-rule entry quality filter counters
+            'entry_filter_weak_stale_reject_total'     => 0,
+            'entry_filter_weak_structure_reject_total' => 0,
+            'entry_filter_weak_structure_demo_total'   => 0,
+            'entry_filter_late_pressure_reject_total'  => 0,
             // Wave filter diagnostics (bounded wave amplitude/speed improvement layer)
             'wave_filter_total'                => 0,
             'wave_filter_reject_total'         => 0,
@@ -2124,6 +2134,7 @@ final class SmartBrainCore
                     if (!$eqFilterApplied && $eqIsHardLate && !$eqIsStrongSignal) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_late_pressure';
+                        $result['entry_filter_late_pressure_reject_total']++;
                     } elseif (!$eqFilterApplied && $eqIsSoftLate) {
                         $eqFilterApplied = true;
                         $eqIsDemote      = true;
@@ -2150,6 +2161,20 @@ final class SmartBrainCore
                     ) {
                         $eqFilterApplied = true;
                         $eqFilterReason  = 'entry_quality_weak_structure';
+                        $result['entry_filter_weak_structure_reject_total']++;
+                    }
+
+                    // Rule 3b: entry_quality_weak_structure borderline (soft demote → demo)
+                    // Pattern exists but hold/confidence are borderline weak — above hard-reject floor
+                    // but still too weak for live. Demote to demo; never allow live.
+                    if (!$eqFilterApplied
+                        && $eqHoldQuality < 0.50
+                        && $eqPatternConf < 0.65
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = true;
+                        $eqFilterReason  = 'entry_quality_weak_structure';
+                        $result['entry_filter_weak_structure_demo_total']++;
                     }
 
                     // Rule 4: entry_quality_weak_stale (decisive reject)
@@ -2163,6 +2188,7 @@ final class SmartBrainCore
                         $eqFilterApplied = true;
                         $eqIsDemote      = false;
                         $eqFilterReason  = 'entry_quality_weak_stale';
+                        $result['entry_filter_weak_stale_reject_total']++;
                     }
 
                     // Rule 5: entry_quality_poor_actionability (soft demote → demo)
@@ -2200,6 +2226,19 @@ final class SmartBrainCore
                                 'stretch_state'       => $eqStretchState,
                                 'corridor_width'      => $eqCorridorWidth,
                                 'entry_action'        => $eqEntryAction,
+                            ];
+                        }
+                        if (count($result['live_debug_preview']) < 10) {
+                            $result['live_debug_preview'][] = [
+                                'symbol'              => $symbol,
+                                'side'                => $side,
+                                'outcome'             => $eqIsDemote ? 'entry_filter_demote' : 'entry_filter_reject',
+                                'reason'              => $eqFilterReason,
+                                'entry_quality_score' => $eqEntryQuality,
+                                'hold_quality_score'  => $eqHoldQuality,
+                                'pattern_confidence'  => $eqPatternConf,
+                                'freshness_state'     => $eqFreshnessState,
+                                'signal_age_seconds'  => $eqSignalAge,
                             ];
                         }
                         $this->rejectLiveSignal($result, $symbol, $signalId, $eqFilterReason, $selectionMode);

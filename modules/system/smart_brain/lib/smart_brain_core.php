@@ -1042,6 +1042,10 @@ final class SmartBrainCore
             'wave_filter_no_effect_total'      => (int)($liveIntentResult['wave_filter_no_effect_total']      ?? 0),
             'wave_filter_rejected_preview'     => $liveIntentResult['wave_filter_rejected_preview']           ?? [],
             'wave_filter_release_valve_used'   => (bool)($liveIntentResult['wave_filter_release_valve_used']  ?? false),
+            // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
+            'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
+            'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
+            'wave_penalty_no_effect_total'     => (int)($liveIntentResult['wave_penalty_no_effect_total']     ?? 0),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -1200,6 +1204,10 @@ final class SmartBrainCore
             'wave_filter_no_effect_total'      => 0,
             'wave_filter_rejected_preview'     => [],
             'wave_filter_release_valve_used'   => false,
+            // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
+            'wave_penalty_total'               => 0,
+            'wave_penalty_applied_total'       => 0,
+            'wave_penalty_no_effect_total'     => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -2688,6 +2696,60 @@ final class SmartBrainCore
         }
         unset($intentRef);
 
+        // ── Wave Penalty Layer ──────────────────────────────────────────────
+        // Additive ranking penalty for candidates with weak/slow wave conditions.
+        // Runs AFTER all hard gates (entry filter, passport, cycle, wave filter).
+        // Does NOT add filtering — reduces effective slot priority score so that
+        // weak/slow candidates more often lose slot competition to stronger ones,
+        // while still surviving when the pool is weak and slots are available.
+        // Side-neutral: penalty applies identically to long and short.
+        {
+            $wpEnabled = (bool)($userLimits['wave_penalty_enabled'] ?? true);
+
+            foreach ($intents as &$wpIntent) {
+                $wpAmpState   = (string)($wpIntent['wave_amplitude_state'] ?? 'acceptable');
+                $wpSpeedState = (string)($wpIntent['wave_speed_state']     ?? 'normal');
+
+                $wpPenalty = 0.0;
+                $wpReason  = null;
+
+                if ($wpEnabled) {
+                    $result['wave_penalty_total']++;
+                    $wpIsWeakAmp  = ($wpAmpState  === 'weak');
+                    $wpIsSlowWave = ($wpSpeedState === 'slow');
+
+                    if ($wpIsWeakAmp && $wpIsSlowWave) {
+                        // Both weak amplitude AND slow wave → larger combined penalty.
+                        // These candidates survived only via a quality escape in Rule 1.
+                        $wpPenalty = 10.0;
+                        $wpReason  = 'wave_penalty_weak_amplitude_slow_wave';
+                    } elseif ($wpIsWeakAmp) {
+                        // Weak amplitude only → small penalty.
+                        $wpPenalty = 5.0;
+                        $wpReason  = 'wave_penalty_weak_amplitude';
+                    } elseif ($wpIsSlowWave) {
+                        // Slow wave only → small penalty.
+                        $wpPenalty = 5.0;
+                        $wpReason  = 'wave_penalty_slow_wave';
+                    }
+
+                    if ($wpPenalty > 0.0) {
+                        $result['wave_penalty_applied_total']++;
+                    } else {
+                        $result['wave_penalty_no_effect_total']++;
+                    }
+                }
+
+                $wpIntent['wave_penalty_used']            = $wpEnabled;
+                $wpIntent['wave_penalty_value']           = $wpPenalty;
+                $wpIntent['wave_penalty_reason']          = $wpReason;
+                $wpIntent['wave_penalty_amplitude_state'] = $wpAmpState;
+                $wpIntent['wave_penalty_speed_state']     = $wpSpeedState;
+            }
+            unset($wpIntent);
+        }
+        // ── End Wave Penalty Layer ──────────────────────────────────────────
+
         // ── Slot Priority Layer ─────────────────────────────────────────────
         // Time-aware candidate ranking for limited live slots.
         // Applied AFTER all existing gates, BEFORE lifecycle merge.
@@ -3165,6 +3227,16 @@ final class SmartBrainCore
             } else {
                 $factors[] = 'freshness:stale(age=' . $ageSeconds . 's)';
             }
+        }
+
+        // ── Wave penalty (bounded deduction for weak/slow wave candidates) ──
+        // Pre-computed by the Wave Penalty Layer before this scoring call.
+        // weak amplitude only: -5 pts, slow wave only: -5 pts,
+        // weak amplitude + slow wave: -10 pts. Bounded to [0, 10].
+        $wavePenalty = min(10.0, max(0.0, (float)($intent['wave_penalty_value'] ?? 0.0)));
+        if ($wavePenalty > 0.0) {
+            $score    -= $wavePenalty;
+            $factors[] = 'wave_penalty-' . $wavePenalty . '(' . ($intent['wave_penalty_reason'] ?? 'wave_penalty') . ')';
         }
 
         // ── Cap and bucket ────────────────────────────────────────────────

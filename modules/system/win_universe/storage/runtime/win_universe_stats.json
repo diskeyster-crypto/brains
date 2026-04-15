@@ -1,39 +1,73 @@
 {
-    "computed_at": "2026-04-15T07:30:46+00:00",
+    "computed_at": "2026-04-15T10:31:42+00:00",
     "symbols": {
         "HOOKUSDT": {
             "symbol": "HOOKUSDT",
+            "qualification_status": "rejected",
+            "qualified": false,
+            "near_qualified": false,
+            "qualification_reason": "недостаточно сделок: 1 из 3 в окне 30д.",
+            "missing_requirements": [
+                "min_closed_trades: нужно 3, есть 1 в окне 30д.",
+                "min_roi_threshold: нужно >= 1.50%, есть -0.01%"
+            ],
+            "recent_trade_count": 1,
             "closed_trades_count": 1,
             "closed_trades_window": 1,
-            "wins_count": 0,
-            "losses_count": 0,
             "wins_above_threshold": 0,
             "recent_avg_roi": -0.0112,
             "best_roi": -0.011206,
             "recent_winrate": 0,
             "last_trade_time": "2026-03-21T10:54:05+00:00",
-            "qualified": false,
-            "near_qualified": false,
-            "qualification_reason": "insufficient_trades: 1/3 в окне 30 дн."
+            "lookback_window_used": 30,
+            "thresholds_used": {
+                "min_roi_threshold": 1.5,
+                "min_avg_roi": 0,
+                "min_winrate": 0,
+                "min_closed_trades": 3
+            }
         },
         "CELOUSDT": {
             "symbol": "CELOUSDT",
+            "qualification_status": "rejected",
+            "qualified": false,
+            "near_qualified": false,
+            "qualification_reason": "недостаточно сделок: 1 из 3 в окне 30д.",
+            "missing_requirements": [
+                "min_closed_trades: нужно 3, есть 1 в окне 30д.",
+                "min_roi_threshold: нужно >= 1.50%, есть -0.01%"
+            ],
+            "recent_trade_count": 1,
             "closed_trades_count": 1,
             "closed_trades_window": 1,
-            "wins_count": 0,
-            "losses_count": 0,
             "wins_above_threshold": 0,
             "recent_avg_roi": -0.0102,
             "best_roi": -0.010234,
             "recent_winrate": 0,
             "last_trade_time": "2026-03-21T10:57:06+00:00",
-            "qualified": false,
-            "near_qualified": false,
-            "qualification_reason": "insufficient_trades: 1/3 в окне 30 дн."
+            "lookback_window_used": 30,
+            "thresholds_used": {
+                "min_roi_threshold": 1.5,
+                "min_avg_roi": 0,
+                "min_winrate": 0,
+                "min_closed_trades": 3
+            }
         }
     },
     "sources_used": [
         "simulator_closed"
     ],
-    "trade_count_total": 2
+    "trade_count_total": 2,
+    "threshold_sensitivity": {
+        "fail_by_trade_count": 2,
+        "fail_by_roi_threshold": 2,
+        "fail_by_avg_roi": 0,
+        "fail_by_winrate": 0,
+        "fail_by_trade_count_only": 0,
+        "fail_by_roi_only": 0,
+        "fail_by_avg_roi_only": 0,
+        "fail_by_winrate_only": 0,
+        "near_qualified_total": 0,
+        "rejected_total": 2
+    }
 }

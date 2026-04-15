@@ -1,8 +1,8 @@
 {
     "ok": true,
     "skipped": false,
-    "run_at": "2026-04-15T07:30:46+00:00",
-    "elapsed_sec": 0.001,
+    "run_at": "2026-04-15T10:31:42+00:00",
+    "elapsed_sec": 0,
     "symbols_seen": 2,
     "qualified_count": 0,
     "near_qualified_count": 0,
@@ -13,9 +13,22 @@
     ],
     "config_used": {
         "min_roi_threshold": 1.5,
+        "min_avg_roi": 0,
         "lookback_days": 30,
         "min_closed_trades": 3,
         "min_winrate": 0
+    },
+    "threshold_sensitivity": {
+        "fail_by_trade_count": 2,
+        "fail_by_roi_threshold": 2,
+        "fail_by_avg_roi": 0,
+        "fail_by_winrate": 0,
+        "fail_by_trade_count_only": 0,
+        "fail_by_roi_only": 0,
+        "fail_by_avg_roi_only": 0,
+        "fail_by_winrate_only": 0,
+        "near_qualified_total": 0,
+        "rejected_total": 2
     },
     "mode": "shadow"
 }

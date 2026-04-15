@@ -78,18 +78,19 @@ final class WinUniverseService
             $elapsed = round(microtime(true) - $startTime, 3);
 
             $status = [
-                'ok'                  => true,
-                'skipped'             => false,
-                'run_at'              => $ts,
-                'elapsed_sec'         => $elapsed,
-                'symbols_seen'        => count($result['symbols']),
-                'qualified_count'     => count($result['qualified']),
-                'near_qualified_count'=> count($result['near_qualified']),
-                'rejected_count'      => count($result['rejected']),
-                'trade_count_total'   => $result['trade_count_total'],
-                'sources_used'        => $result['sources_used'],
-                'config_used'         => $result['config_used'],
-                'mode'                => 'shadow',
+                'ok'                    => true,
+                'skipped'               => false,
+                'run_at'                => $ts,
+                'elapsed_sec'           => $elapsed,
+                'symbols_seen'          => count($result['symbols']),
+                'qualified_count'       => count($result['qualified']),
+                'near_qualified_count'  => count($result['near_qualified']),
+                'rejected_count'        => count($result['rejected']),
+                'trade_count_total'     => $result['trade_count_total'],
+                'sources_used'          => $result['sources_used'],
+                'config_used'           => $result['config_used'],
+                'threshold_sensitivity' => $result['threshold_sensitivity'],
+                'mode'                  => 'shadow',
             ];
 
             $this->saveJson('win_universe_status.json', $status);
@@ -168,40 +169,45 @@ final class WinUniverseService
     {
         // win_universe.json — qualified/near-qualified/rejected lists + per-symbol details
         $universe = [
-            'mode'              => 'shadow',
-            'computed_at'       => $ts,
-            'qualified'         => $result['qualified'],
-            'near_qualified'    => $result['near_qualified'],
-            'rejected'          => $result['rejected'],
-            'symbols'           => $result['symbols'],
-            'config_used'       => $result['config_used'],
-            'sources_used'      => $result['sources_used'],
-            'trade_count_total' => $result['trade_count_total'],
+            'mode'                  => 'shadow',
+            'computed_at'           => $ts,
+            'qualified'             => $result['qualified'],
+            'near_qualified'        => $result['near_qualified'],
+            'rejected'              => $result['rejected'],
+            'symbols'               => $result['symbols'],
+            'config_used'           => $result['config_used'],
+            'sources_used'          => $result['sources_used'],
+            'trade_count_total'     => $result['trade_count_total'],
+            'threshold_sensitivity' => $result['threshold_sensitivity'],
         ];
         $this->saveJson('win_universe.json', $universe);
 
-        // win_universe_stats.json — raw per-symbol statistics (flat map)
+        // win_universe_stats.json — raw per-symbol statistics with full diagnostics
         $stats = [
-            'computed_at'       => $ts,
-            'symbols'           => array_map(static function (array $rec): array {
+            'computed_at'           => $ts,
+            'symbols'               => array_map(static function (array $rec): array {
                 return [
-                    'symbol'                     => $rec['symbol'],
-                    'closed_trades_count'        => $rec['closed_trades_count'],
-                    'closed_trades_window'       => $rec['closed_trades_window'],
-                    'wins_count'                 => $rec['wins_count'] ?? 0,
-                    'losses_count'               => $rec['losses_count'] ?? 0,
-                    'wins_above_threshold'       => $rec['wins_above_threshold'],
-                    'recent_avg_roi'             => $rec['recent_avg_roi'],
-                    'best_roi'                   => $rec['best_roi'],
-                    'recent_winrate'             => $rec['recent_winrate'],
-                    'last_trade_time'            => $rec['last_trade_time'],
-                    'qualified'                  => $rec['qualified'],
-                    'near_qualified'             => $rec['near_qualified'],
-                    'qualification_reason'       => $rec['qualification_reason'],
+                    'symbol'                  => $rec['symbol'],
+                    'qualification_status'    => $rec['qualification_status'],
+                    'qualified'               => $rec['qualified'],
+                    'near_qualified'          => $rec['near_qualified'],
+                    'qualification_reason'    => $rec['qualification_reason'],
+                    'missing_requirements'    => $rec['missing_requirements'],
+                    'recent_trade_count'      => $rec['recent_trade_count'],
+                    'closed_trades_count'     => $rec['closed_trades_count'],
+                    'closed_trades_window'    => $rec['closed_trades_window'],
+                    'wins_above_threshold'    => $rec['wins_above_threshold'],
+                    'recent_avg_roi'          => $rec['recent_avg_roi'],
+                    'best_roi'                => $rec['best_roi'],
+                    'recent_winrate'          => $rec['recent_winrate'],
+                    'last_trade_time'         => $rec['last_trade_time'],
+                    'lookback_window_used'    => $rec['lookback_window_used'],
+                    'thresholds_used'         => $rec['thresholds_used'],
                 ];
             }, $result['symbols']),
-            'sources_used'      => $result['sources_used'],
-            'trade_count_total' => $result['trade_count_total'],
+            'sources_used'          => $result['sources_used'],
+            'trade_count_total'     => $result['trade_count_total'],
+            'threshold_sensitivity' => $result['threshold_sensitivity'],
         ];
         $this->saveJson('win_universe_stats.json', $stats);
     }

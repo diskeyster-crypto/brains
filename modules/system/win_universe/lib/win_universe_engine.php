@@ -56,6 +56,7 @@ final class WinUniverseEngine
         $ts = date('c');
 
         $minRoi        = (float)($config['min_roi_threshold'] ?? 1.5);
+        $minAvgRoi     = (float)($config['min_avg_roi']       ?? 0.0);
         $lookbackDays  = max(1, (int)($config['lookback_days']    ?? 30));
         $minTrades     = max(1, (int)($config['min_closed_trades'] ?? 3));
         $minWinrate    = (float)($config['min_winrate'] ?? 0.0);
@@ -75,7 +76,7 @@ final class WinUniverseEngine
         $rejected      = [];
 
         foreach ($symbolStats as $symbol => $stats) {
-            $rec = $this->qualify($symbol, $stats, $minRoi, $minTrades, $minWinrate, $lookbackDays);
+            $rec = $this->qualify($symbol, $stats, $minRoi, $minAvgRoi, $minTrades, $minWinrate, $lookbackDays);
             $results[$symbol] = $rec;
             if ($rec['qualified']) {
                 $qualified[] = $symbol;
@@ -97,6 +98,9 @@ final class WinUniverseEngine
 
         $tradeCountTotal = array_sum(array_column($symbolStats, 'closed_trades_count_window'));
 
+        // Threshold sensitivity: count how many symbols fail by each criterion
+        $sensitivity = $this->buildSensitivityBreakdown($results, $minTrades, $minRoi, $minAvgRoi, $minWinrate);
+
         return [
             'symbols'           => $results,
             'qualified'         => $qualified,
@@ -104,13 +108,15 @@ final class WinUniverseEngine
             'rejected'          => $rejected,
             'config_used'       => [
                 'min_roi_threshold'  => $minRoi,
+                'min_avg_roi'        => $minAvgRoi,
                 'lookback_days'      => $lookbackDays,
                 'min_closed_trades'  => $minTrades,
                 'min_winrate'        => $minWinrate,
             ],
-            'sources_used'      => $sourcesUsed,
-            'computed_at'       => $ts,
-            'trade_count_total' => (int)$tradeCountTotal,
+            'sources_used'          => $sourcesUsed,
+            'computed_at'           => $ts,
+            'trade_count_total'     => (int)$tradeCountTotal,
+            'threshold_sensitivity' => $sensitivity,
         ];
     }
 
@@ -406,16 +412,18 @@ final class WinUniverseEngine
      * Determine whether a symbol qualifies for the Win Universe.
      *
      * Qualification criteria (all must pass):
-     *   1. min_closed_trades: symbol must have >= min_closed_trades in the window
-     *   2. min_roi_threshold: recent_avg_roi must be >= min_roi_threshold
-     *   3. min_winrate (if > 0): recent_winrate must be >= min_winrate
+     *   1. min_closed_trades : symbol must have >= min_closed_trades in the window
+     *   2. min_roi_threshold : recent_avg_roi must be >= min_roi_threshold
+     *   3. min_avg_roi       : recent_avg_roi must be >= min_avg_roi (0 = gate off)
+     *   4. min_winrate       : recent_winrate must be >= min_winrate  (0 = gate off)
      *
-     * Near-qualified: fails one soft criterion (roi or winrate) but meets trade count.
+     * Near-qualified: meets trade count but fails exactly one of the soft criteria.
      *
-     * @param array<string,mixed> $stats       Aggregated stats for the symbol
-     * @param float               $minRoi      Min average ROI threshold
-     * @param int                 $minTrades   Min closed trades in window
-     * @param float               $minWinrate  Min win-rate (0 = disabled)
+     * @param array<string,mixed> $stats        Aggregated stats for the symbol
+     * @param float               $minRoi       Per-trade win threshold (defines what counts as a win)
+     * @param float               $minAvgRoi    Minimum required average ROI (0 = off)
+     * @param int                 $minTrades    Min closed trades in window
+     * @param float               $minWinrate   Min win-rate (0 = disabled)
      * @param int                 $lookbackDays
      * @return array<string,mixed>
      */
@@ -423,6 +431,7 @@ final class WinUniverseEngine
         string $symbol,
         array $stats,
         float $minRoi,
+        float $minAvgRoi,
         int $minTrades,
         float $minWinrate,
         int $lookbackDays
@@ -432,72 +441,207 @@ final class WinUniverseEngine
         $recentWinrate = $stats['recent_winrate'];
         $winsAbove     = (int)($stats['wins_above_threshold'] ?? 0);
 
-        // Gate 1: sufficient trade count
+        // Gate 1: sufficient trade count (hard gate — must pass to be near-qualified)
         $meetsTradeCount = $windowCount >= $minTrades;
 
-        // Gate 2: average ROI
+        // Gate 2: average ROI >= per-trade win threshold (main quality gate)
         $meetsRoi = ($recentAvgRoi !== null) && ($recentAvgRoi >= $minRoi);
 
-        // Gate 3: win-rate (optional gate, only active if minWinrate > 0)
+        // Gate 3: average ROI >= separate min_avg_roi threshold (0 = gate off)
+        $avgRoiGateEnabled = $minAvgRoi > 0.0;
+        $meetsAvgRoi       = !$avgRoiGateEnabled || (($recentAvgRoi !== null) && ($recentAvgRoi >= $minAvgRoi));
+
+        // Gate 4: win-rate (optional gate, only active if minWinrate > 0)
         $winrateGateEnabled = $minWinrate > 0.0;
         $meetsWinrate       = !$winrateGateEnabled || (($recentWinrate !== null) && ($recentWinrate >= $minWinrate));
 
-        $qualified = $meetsTradeCount && $meetsRoi && $meetsWinrate;
+        $qualified = $meetsTradeCount && $meetsRoi && $meetsAvgRoi && $meetsWinrate;
 
-        // Near-qualified: meets trade count but fails at most one of roi/winrate
-        $failCount = 0;
+        // Near-qualified: meets trade count but fails exactly one soft criterion
+        $softFailCount = 0;
         if (!$meetsRoi) {
-            $failCount++;
+            $softFailCount++;
+        }
+        if ($avgRoiGateEnabled && !$meetsAvgRoi) {
+            $softFailCount++;
         }
         if ($winrateGateEnabled && !$meetsWinrate) {
-            $failCount++;
+            $softFailCount++;
         }
-        $nearQualified = !$qualified && $meetsTradeCount && $failCount === 1;
+        $nearQualified = !$qualified && $meetsTradeCount && $softFailCount === 1;
 
-        // Build reason string
+        // Build missing_requirements list
+        $missing = [];
+        if (!$meetsTradeCount) {
+            $missing[] = sprintf(
+                'min_closed_trades: нужно %d, есть %d в окне %dд.',
+                $minTrades,
+                $windowCount,
+                $lookbackDays
+            );
+        }
+        if (!$meetsRoi) {
+            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi, 2) . '%' : 'н/д';
+            $missing[] = sprintf(
+                'min_roi_threshold: нужно >= %.2f%%, есть %s',
+                $minRoi,
+                $roiDisplay
+            );
+        }
+        if ($avgRoiGateEnabled && !$meetsAvgRoi) {
+            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi, 2) . '%' : 'н/д';
+            $missing[] = sprintf(
+                'min_avg_roi: нужно >= %.2f%%, есть %s',
+                $minAvgRoi,
+                $roiDisplay
+            );
+        }
+        if ($winrateGateEnabled && !$meetsWinrate) {
+            $wrDisplay = $recentWinrate !== null ? number_format($recentWinrate * 100, 1) . '%' : 'н/д';
+            $missing[] = sprintf(
+                'min_winrate: нужно >= %.1f%%, есть %s',
+                $minWinrate * 100,
+                $wrDisplay
+            );
+        }
+
+        // Build reason string (Russian)
         if ($qualified) {
-            $reason = 'qualified';
+            $reason = 'квалифицирован: все критерии выполнены';
+            $status = 'qualified';
+        } elseif ($nearQualified) {
+            $reason = 'почти квалифицирован: ' . implode('; ', $missing);
+            $status = 'near_qualified';
         } elseif (!$meetsTradeCount) {
             $reason = sprintf(
-                'insufficient_trades: %d/%d в окне %d дн.',
+                'недостаточно сделок: %d из %d в окне %dд.',
                 $windowCount,
                 $minTrades,
                 $lookbackDays
             );
-        } elseif (!$meetsRoi) {
-            $roiDisplay = $recentAvgRoi !== null ? number_format($recentAvgRoi, 2) . '%' : 'n/a';
-            $reason = sprintf(
-                'avg_roi_below_threshold: %s < %.2f%%',
-                $roiDisplay,
-                $minRoi
-            );
-        } elseif (!$meetsWinrate) {
-            $wrDisplay = $recentWinrate !== null ? number_format($recentWinrate * 100, 1) . '%' : 'n/a';
-            $reason = sprintf(
-                'winrate_below_threshold: %s < %.1f%%',
-                $wrDisplay,
-                $minWinrate * 100
-            );
+            $status = 'rejected';
         } else {
-            $reason = 'not_qualified';
+            $reason = 'отклонён: ' . implode('; ', $missing);
+            $status = 'rejected';
         }
 
         return [
-            'symbol'              => $symbol,
-            'qualified'           => $qualified,
-            'near_qualified'      => $nearQualified,
-            'qualification_reason'=> $reason,
-            'wins_above_threshold'=> $winsAbove,
-            'closed_trades_count' => (int)($stats['closed_trades_count'] ?? 0),
-            'closed_trades_window'=> $windowCount,
-            'recent_avg_roi'      => $recentAvgRoi,
-            'best_roi'            => $stats['best_roi'],
-            'recent_winrate'      => $recentWinrate,
-            'last_trade_time'     => $stats['last_trade_time'],
-            'lookback_window_used'=> $lookbackDays,
-            'threshold_used'      => $minRoi,
-            'winrate_threshold_used' => $minWinrate,
-            'min_trades_required' => $minTrades,
+            'symbol'                  => $symbol,
+            'qualification_status'    => $status,
+            'qualified'               => $qualified,
+            'near_qualified'          => $nearQualified,
+            'qualification_reason'    => $reason,
+            'missing_requirements'    => $missing,
+            'wins_above_threshold'    => $winsAbove,
+            'recent_trade_count'      => $windowCount,
+            'closed_trades_count'     => (int)($stats['closed_trades_count'] ?? 0),
+            'closed_trades_window'    => $windowCount,
+            'recent_avg_roi'          => $recentAvgRoi,
+            'best_roi'                => $stats['best_roi'],
+            'recent_winrate'          => $recentWinrate,
+            'last_trade_time'         => $stats['last_trade_time'],
+            'lookback_window_used'    => $lookbackDays,
+            'thresholds_used'         => [
+                'min_roi_threshold'   => $minRoi,
+                'min_avg_roi'         => $minAvgRoi,
+                'min_winrate'         => $minWinrate,
+                'min_closed_trades'   => $minTrades,
+            ],
+            // legacy flat fields (kept for backwards compatibility)
+            'threshold_used'          => $minRoi,
+            'winrate_threshold_used'  => $minWinrate,
+            'min_trades_required'     => $minTrades,
+        ];
+    }
+
+    // =========================================================================
+    // Threshold sensitivity breakdown
+    // =========================================================================
+
+    /**
+     * Build a summary of how many symbols fail by each individual criterion.
+     *
+     * Useful for diagnosing why qualified_count may be zero.
+     *
+     * @param array<string,array<string,mixed>> $results
+     */
+    private function buildSensitivityBreakdown(
+        array $results,
+        int $minTrades,
+        float $minRoi,
+        float $minAvgRoi,
+        float $minWinrate
+    ): array {
+        $failByTradeCount = 0;
+        $failByRoi        = 0;
+        $failByAvgRoi     = 0;
+        $failByWinrate    = 0;
+        $failByTradeCountOnly = 0;
+        $failByRoiOnly        = 0;
+        $failByAvgRoiOnly     = 0;
+        $failByWinrateOnly    = 0;
+        $totalRejected    = 0;
+        $totalNear        = 0;
+
+        foreach ($results as $rec) {
+            if ($rec['qualified']) {
+                continue;
+            }
+
+            $windowCount   = (int)($rec['recent_trade_count'] ?? 0);
+            $recentAvgRoi  = $rec['recent_avg_roi'];
+            $recentWinrate = $rec['recent_winrate'];
+
+            $failTC  = $windowCount < $minTrades;
+            $failRoi = !($recentAvgRoi !== null && $recentAvgRoi >= $minRoi);
+            $failAvg = $minAvgRoi > 0.0 && !($recentAvgRoi !== null && $recentAvgRoi >= $minAvgRoi);
+            $failWr  = $minWinrate > 0.0 && !($recentWinrate !== null && $recentWinrate >= $minWinrate);
+
+            if ($failTC) {
+                $failByTradeCount++;
+            }
+            if ($failRoi) {
+                $failByRoi++;
+            }
+            if ($failAvg) {
+                $failByAvgRoi++;
+            }
+            if ($failWr) {
+                $failByWinrate++;
+            }
+
+            // "only" counts: fails exactly that criterion (and meets all others)
+            if ($failTC && !$failRoi && !$failAvg && !$failWr) {
+                $failByTradeCountOnly++;
+            }
+            if (!$failTC && $failRoi && !$failAvg && !$failWr) {
+                $failByRoiOnly++;
+            }
+            if (!$failTC && !$failRoi && $failAvg && !$failWr) {
+                $failByAvgRoiOnly++;
+            }
+            if (!$failTC && !$failRoi && !$failAvg && $failWr) {
+                $failByWinrateOnly++;
+            }
+
+            if ($rec['near_qualified']) {
+                $totalNear++;
+            } else {
+                $totalRejected++;
+            }
+        }
+
+        return [
+            'fail_by_trade_count'      => $failByTradeCount,
+            'fail_by_roi_threshold'    => $failByRoi,
+            'fail_by_avg_roi'          => $failByAvgRoi,
+            'fail_by_winrate'          => $failByWinrate,
+            'fail_by_trade_count_only' => $failByTradeCountOnly,
+            'fail_by_roi_only'         => $failByRoiOnly,
+            'fail_by_avg_roi_only'     => $failByAvgRoiOnly,
+            'fail_by_winrate_only'     => $failByWinrateOnly,
+            'near_qualified_total'     => $totalNear,
+            'rejected_total'           => $totalRejected,
         ];
     }
 

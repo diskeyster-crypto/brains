@@ -58,6 +58,15 @@ return [
          * Set to 0.0 to disable the win-rate gate.
          */
         'min_winrate' => 0.0,
+
+        /**
+         * Minimum average ROI (%) across all trades in the lookback window.
+         * This is independent of min_roi_threshold (which defines per-trade wins).
+         * min_avg_roi ensures the symbol is consistently profitable on average,
+         * not just in a few lucky trades.
+         * Set to 0.0 to disable (any positive average passes).
+         */
+        'min_avg_roi' => 0.0,
     ],
 
 ];

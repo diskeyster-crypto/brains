@@ -1040,6 +1040,7 @@ final class SmartBrainCore
             'entry_filter_weak_structure_reject_total' => (int)($liveIntentResult['entry_filter_weak_structure_reject_total'] ?? 0),
             'entry_filter_weak_structure_demo_total'   => (int)($liveIntentResult['entry_filter_weak_structure_demo_total']   ?? 0),
             'entry_filter_late_pressure_reject_total'  => (int)($liveIntentResult['entry_filter_late_pressure_reject_total']  ?? 0),
+            'entry_filter_weak_tail_reject_total'      => (int)($liveIntentResult['entry_filter_weak_tail_reject_total']      ?? 0),
             // Wave Filter diagnostics (bounded wave amplitude/speed improvement layer)
             'wave_filter_total'                => (int)($liveIntentResult['wave_filter_total']                ?? 0),
             'wave_filter_reject_total'         => (int)($liveIntentResult['wave_filter_reject_total']         ?? 0),
@@ -1207,6 +1208,7 @@ final class SmartBrainCore
             'entry_filter_weak_structure_reject_total' => 0,
             'entry_filter_weak_structure_demo_total'   => 0,
             'entry_filter_late_pressure_reject_total'  => 0,
+            'entry_filter_weak_tail_reject_total'      => 0,
             // Wave filter diagnostics (bounded wave amplitude/speed improvement layer)
             'wave_filter_total'                => 0,
             'wave_filter_reject_total'         => 0,
@@ -2111,6 +2113,8 @@ final class SmartBrainCore
                     $eqEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
                     $eqHoldQuality  = (float)($signal['hold_quality_score']  ?? 0.0);
                     $eqPatternConf  = (float)($signal['pattern_confidence']  ?? $signal['confirmation_score'] ?? 0.0);
+                    // confidence_score: confirmation_score with pattern_confidence as fallback
+                    $eqConfScore    = (float)($signal['confirmation_score']  ?? $signal['pattern_confidence'] ?? 0.0);
                     $eqEntryAction  = (string)($signal['entry_action']       ?? 'wait_retrace');
                     $eqCmAvailable  = ($cycleDecisionDebug['available'] ?? false) === true;
                     $eqCmState      = $eqCmAvailable ? (string)($cycleDecisionDebug['model_state']        ?? '') : '';
@@ -2121,11 +2125,65 @@ final class SmartBrainCore
 
                     $result['entry_quality_filter_total']++;
 
-                    // Rule 1: entry_quality_late_pressure (HARD reject / soft demote)
+                    // Rule 1: weak_structure_reject (HARD reject — quality floor)
+                    // Any signal whose entry quality falls below 0.40 has insufficient
+                    // structural basis regardless of other metrics. Hard reject.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.40
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'weak_structure_reject';
+                        $result['entry_filter_weak_structure_reject_total']++;
+                    }
+
+                    // Rule 1b: weak_structure_demo (soft demote → demo)
+                    // Pattern detected but structure is borderline weak:
+                    // quality < 0.50 AND confidence < 0.55. Too weak for live, but not
+                    // a complete reject — send to demo for learning.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.50
+                        && $eqConfScore    < 0.55
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = true;
+                        $eqFilterReason  = 'weak_structure_demo';
+                        $result['entry_filter_weak_structure_demo_total']++;
+                    }
+
+                    // Rule 2: weak_stale_reject (HARD reject)
+                    // Signal is BOTH weak (low quality + low signal/confidence strength)
+                    // AND stale/aging. Low learning value → hard reject, not demo.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.45
+                        && ($eqPatternConf < 0.50 || $eqConfScore < 0.50)
+                        && $eqFreshnessState !== 'fresh'
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = false;
+                        $eqFilterReason  = 'weak_stale_reject';
+                        $result['entry_filter_weak_stale_reject_total']++;
+                    }
+
+                    // Rule 3: late_pressure_reject — metric-based, fires even when signal is fresh.
+                    // Targets signals where signal_strength and confidence are both sub-threshold
+                    // while quality is not high enough to compensate. Must trigger BEFORE live
+                    // intent creation. No staleness requirement — catches late/degraded candidates
+                    // regardless of age.
+                    if (!$eqFilterApplied
+                        && $eqPatternConf  < 0.55   // signal_strength weak
+                        && $eqConfScore    < 0.60   // confidence weak
+                        && $eqEntryQuality < 0.60   // quality not high enough to compensate
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = false;
+                        $eqFilterReason  = 'late_pressure_reject';
+                        $result['entry_filter_late_pressure_reject_total']++;
+                    }
+
+                    // Rule 3b: staleness-based late pressure (HARD reject / soft demote)
                     // Hard late: enter_now past the confirmation window OR stale freshness.
                     // Only clearly strong signals are exempt (quality >= 0.78 AND conf >= 0.70).
-                    // Soft late: aging non-strong signals are demoted to demo (partial-late treatment).
-                    // Late signals must be rare in live — default action is reject or demo, not pass.
+                    // Soft late: aging non-strong signals are demoted to demo.
                     $eqLateEnterNowMaxSec = max(120, (int)($userLimits['entry_quality_late_enter_now_max_minutes'] ?? 8) * 60);
                     $eqIsStrongSignal     = ($eqEntryQuality >= 0.78 && $eqPatternConf >= 0.70);
                     $eqIsHardLate         = ($eqEntryAction === 'enter_now' && $eqSignalAge > $eqLateEnterNowMaxSec)
@@ -2133,15 +2191,15 @@ final class SmartBrainCore
                     $eqIsSoftLate         = ($eqFreshnessState === 'aging' && !$eqIsStrongSignal);
                     if (!$eqFilterApplied && $eqIsHardLate && !$eqIsStrongSignal) {
                         $eqFilterApplied = true;
-                        $eqFilterReason  = 'entry_quality_late_pressure';
+                        $eqFilterReason  = 'late_pressure_reject';
                         $result['entry_filter_late_pressure_reject_total']++;
                     } elseif (!$eqFilterApplied && $eqIsSoftLate) {
                         $eqFilterApplied = true;
                         $eqIsDemote      = true;
-                        $eqFilterReason  = 'entry_quality_late_pressure';
+                        $eqFilterReason  = 'late_pressure_reject';
                     }
 
-                    // Rule 2: entry_quality_overstretched (HARD reject)
+                    // Rule 4: entry_quality_overstretched (HARD reject)
                     // Price too far from zone (corridor >= 0.25). Overstretch is a dominant reject reason.
                     // To pass, signal must be ALL three: strong quality (>= 0.75), strong confidence
                     // (>= 0.68), AND fresh. Any other overstretched signal is rejected.
@@ -2153,48 +2211,8 @@ final class SmartBrainCore
                         $eqFilterReason  = 'entry_quality_overstretched';
                     }
 
-                    // Rule 3: entry_quality_weak_structure (HARD reject)
-                    // Both hold quality and pattern confidence are low — structural basis too weak.
-                    if (!$eqFilterApplied
-                        && $eqHoldQuality < 0.40
-                        && $eqPatternConf < 0.60
-                    ) {
-                        $eqFilterApplied = true;
-                        $eqFilterReason  = 'entry_quality_weak_structure';
-                        $result['entry_filter_weak_structure_reject_total']++;
-                    }
-
-                    // Rule 3b: entry_quality_weak_structure borderline (soft demote → demo)
-                    // Pattern exists but hold/confidence are borderline weak — above hard-reject floor
-                    // but still too weak for live. Demote to demo; never allow live.
-                    if (!$eqFilterApplied
-                        && $eqHoldQuality < 0.50
-                        && $eqPatternConf < 0.65
-                    ) {
-                        $eqFilterApplied = true;
-                        $eqIsDemote      = true;
-                        $eqFilterReason  = 'entry_quality_weak_structure';
-                        $result['entry_filter_weak_structure_demo_total']++;
-                    }
-
-                    // Rule 4: entry_quality_weak_stale (decisive reject)
-                    // Both stale and aging non-fresh signals with weak quality → hard reject.
-                    // Threshold raised to 0.65. Both aging and stale result in reject (not demo)
-                    // so that the weak+stale combination is decisive and triggers frequently.
-                    if (!$eqFilterApplied
-                        && $eqEntryQuality < 0.65
-                        && $eqFreshnessState !== 'fresh'
-                    ) {
-                        $eqFilterApplied = true;
-                        $eqIsDemote      = false;
-                        $eqFilterReason  = 'entry_quality_weak_stale';
-                        $result['entry_filter_weak_stale_reject_total']++;
-                    }
-
                     // Rule 5: entry_quality_poor_actionability (soft demote → demo)
                     // Cycle model: weak/unavailable state + below-average entry quality.
-                    // Medium-risk restriction removed so this fires for any risk posture.
-                    // Quality threshold raised to 0.55 to catch more borderline signals.
                     if (!$eqFilterApplied
                         && $eqCmAvailable
                         && in_array($eqCmState, ['weak', 'unavailable'], true)
@@ -2203,6 +2221,19 @@ final class SmartBrainCore
                         $eqFilterApplied = true;
                         $eqIsDemote      = true;
                         $eqFilterReason  = 'entry_quality_poor_actionability';
+                    }
+
+                    // Rule 6: weak_tail_reject — fallback to guarantee minimum filter effect.
+                    // If no other rule fired, reject the absolute lowest quality tail signals.
+                    // Threshold (< 0.38) targets the bottom 10–20% of candidates without
+                    // collapsing live flow. Prevents "no-op filter" runs.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.38
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = false;
+                        $eqFilterReason  = 'weak_tail_reject';
+                        $result['entry_filter_weak_tail_reject_total']++;
                     }
 
                     if ($eqFilterApplied) {
@@ -2221,6 +2252,7 @@ final class SmartBrainCore
                                 'entry_quality_score' => $eqEntryQuality,
                                 'hold_quality_score'  => $eqHoldQuality,
                                 'pattern_confidence'  => $eqPatternConf,
+                                'confidence_score'    => $eqConfScore,
                                 'signal_age_seconds'  => $eqSignalAge,
                                 'freshness_state'     => $eqFreshnessState,
                                 'stretch_state'       => $eqStretchState,
@@ -2237,6 +2269,7 @@ final class SmartBrainCore
                                 'entry_quality_score' => $eqEntryQuality,
                                 'hold_quality_score'  => $eqHoldQuality,
                                 'pattern_confidence'  => $eqPatternConf,
+                                'confidence_score'    => $eqConfScore,
                                 'freshness_state'     => $eqFreshnessState,
                                 'signal_age_seconds'  => $eqSignalAge,
                             ];

@@ -36,6 +36,7 @@ return [
         '/admin/smart_brain/config_all/trading_bot'        => 'UnifiedConfigController@tradingBot',
         '/admin/smart_brain/config_all/profit_manager'     => 'UnifiedConfigController@profitManager',
         '/admin/smart_brain/config_all/coin_cycle'         => 'UnifiedConfigController@coinCycle',
+        '/admin/smart_brain/config_all/win_universe'       => 'UnifiedConfigController@winUniverse',
         '/admin/smart_brain/config_all/advanced'           => 'UnifiedConfigController@advanced',
 
         // API endpoints (read)
@@ -52,6 +53,9 @@ return [
         // Action: save operational master config
         'POST /admin/smart_brain/config_all/api/save'               => 'UnifiedConfigController@apiSave',
         'POST /admin/smart_brain/config_all/api/save_and_reextract' => 'UnifiedConfigController@apiSaveAndReextract',
+
+        // Win Universe config save
+        'POST /admin/smart_brain/config_all/win_universe/save' => 'UnifiedConfigController@winUniverseSaveConfig',
     ],
 ];
 

@@ -119,17 +119,32 @@ final class WinUniverseEngine
             $cutoff
         );
 
-        // Annotate each symbol with pool membership and eligibility
+        // Build demotion metadata map from this run's events (symbol → event record)
+        $demotionMap = [];
+        foreach ($demotions as $ev) {
+            $demotionMap[(string)($ev['symbol'] ?? '')] = $ev;
+        }
+
+        // Annotate each symbol with pool membership, eligibility, and lifecycle metadata
         foreach ($results as $sym => &$rec) {
-            $inPool                   = isset($newPool[$sym]);
-            $rec['in_win_pool']       = $inPool;
+            $inPool                    = isset($newPool[$sym]);
+            $rec['in_win_pool']        = $inPool;
             $rec['promotion_eligible'] = !$inPool && $rec['qualified'];
-            $rec['demotion_eligible']  = false;
+            // demotion_eligible = true when the symbol currently sits in the win pool
+            // (it is by definition eligible to be demoted if it fails maintenance rules)
+            $rec['demotion_eligible']  = $inPool;
             $rec['win_pool_entry']     = $inPool ? $newPool[$sym] : null;
-            // promotion_reason / demotion_reason added by lifecycle if applicable
+
+            // Promotion metadata comes from the pool entry (written on promotion)
             if ($inPool) {
-                $rec['promotion_reason'] = $newPool[$sym]['promotion_reason'] ?? null;
+                $rec['promotion_reason']    = $newPool[$sym]['promotion_reason'] ?? null;
                 $rec['last_promotion_time'] = $newPool[$sym]['promoted_at'] ?? null;
+            }
+
+            // Demotion metadata for symbols demoted in this run
+            if (isset($demotionMap[$sym])) {
+                $rec['demotion_reason']    = $demotionMap[$sym]['reason'];
+                $rec['last_demotion_time'] = $demotionMap[$sym]['timestamp'];
             }
         }
         unset($rec);
@@ -286,12 +301,6 @@ final class WinUniverseEngine
                     'was_in_pool_since'  => $poolEntry['promoted_at'] ?? null,
                     'last_avg_roi'       => $poolEntry['last_avg_roi'] ?? null,
                 ];
-                // Remove from pool
-                if (isset($results[$sym])) {
-                    $results[$sym]['demotion_eligible'] = true;
-                    $results[$sym]['demotion_reason']   = $demoteWhy;
-                    $results[$sym]['last_demotion_time'] = $ts;
-                }
                 unset($newPool[$sym]);
             }
         }

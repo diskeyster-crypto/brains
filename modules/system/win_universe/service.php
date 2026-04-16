@@ -500,8 +500,10 @@ final class WinUniverseService
 
         return [
             'computed_at'                    => $ts,
-            'attribution_note'               => 'Атрибуция по текущему статусу квалификации символа. '
-                . 'Статус на момент открытия сделки не фиксируется — используется приближение.',
+            'attribution_note'               => 'Оценка по ТЕКУЩЕМУ статусу квалификации символа (приближение). '
+                . 'Статус на момент открытия конкретной сделки НЕ фиксируется — используется текущее состояние. '
+                . 'Для оценки по статусу на момент входа см. win_universe_eval_at_entry.json.',
+            'attribution_basis'              => 'current_qualification_state',
             'min_eval_sample_warning_threshold' => $minEvalTrades,
             'total_symbols_evaluated'        => count($symbols),
             'groups'                         => $finalGroups,
@@ -592,20 +594,34 @@ final class WinUniverseService
         };
 
         return [
-            'eval_at_entry_computed_at'             => $evalAtEntry['computed_at'] ?? null,
-            'eval_at_entry_intent_log_size'         => $evalAtEntry['intent_log_size'] ?? 0,
-            'qualified_at_entry_trade_count'        => $pick('qualified_at_entry', 'trade_count'),
-            'qualified_at_entry_winrate'            => $pick('qualified_at_entry', 'winrate'),
-            'qualified_at_entry_avg_roi'            => $pick('qualified_at_entry', 'avg_roi'),
-            'qualified_at_entry_small_sample'       => $pick('qualified_at_entry', 'small_sample_warning'),
-            'nonqualified_at_entry_trade_count'     => $pick('nonqualified_at_entry', 'trade_count'),
-            'nonqualified_at_entry_winrate'         => $pick('nonqualified_at_entry', 'winrate'),
-            'nonqualified_at_entry_avg_roi'         => $pick('nonqualified_at_entry', 'avg_roi'),
-            'nonqualified_at_entry_small_sample'    => $pick('nonqualified_at_entry', 'small_sample_warning'),
-            'bonus_applied_at_entry_trade_count'    => $pickB('bonus_applied', 'trade_count'),
-            'bonus_applied_at_entry_winrate'        => $pickB('bonus_applied', 'winrate'),
-            'bonus_applied_at_entry_avg_roi'        => $pickB('bonus_applied', 'avg_roi'),
-            'bonus_applied_at_entry_small_sample'   => $pickB('bonus_applied', 'small_sample_warning'),
+            'eval_at_entry_computed_at'                 => $evalAtEntry['computed_at'] ?? null,
+            'eval_at_entry_attribution_method'          => $evalAtEntry['attribution_method'] ?? null,
+            'eval_at_entry_intent_log_size'             => $evalAtEntry['intent_log_size'] ?? 0,
+            'eval_at_entry_symbols_attributed'          => $evalAtEntry['symbols_attributed'] ?? 0,
+            'eval_at_entry_trades_attributed'           => $evalAtEntry['trades_attributed'] ?? 0,
+            'eval_at_entry_trades_no_attr'              => $evalAtEntry['trades_no_attr'] ?? 0,
+            // Aggregate qualified vs nonqualified
+            'qualified_at_entry_trade_count'            => $pick('qualified_at_entry', 'trade_count'),
+            'qualified_at_entry_winrate'                => $pick('qualified_at_entry', 'winrate'),
+            'qualified_at_entry_avg_roi'                => $pick('qualified_at_entry', 'avg_roi'),
+            'qualified_at_entry_median_roi'             => $pick('qualified_at_entry', 'median_roi'),
+            'qualified_at_entry_small_sample'           => $pick('qualified_at_entry', 'small_sample_warning'),
+            'nonqualified_at_entry_trade_count'         => $pick('nonqualified_at_entry', 'trade_count'),
+            'nonqualified_at_entry_winrate'             => $pick('nonqualified_at_entry', 'winrate'),
+            'nonqualified_at_entry_avg_roi'             => $pick('nonqualified_at_entry', 'avg_roi'),
+            'nonqualified_at_entry_median_roi'          => $pick('nonqualified_at_entry', 'median_roi'),
+            'nonqualified_at_entry_small_sample'        => $pick('nonqualified_at_entry', 'small_sample_warning'),
+            // Granular nonqualified sub-buckets
+            'not_in_pool_at_entry_trade_count'          => $pick('not_in_pool_at_entry', 'trade_count'),
+            'not_in_pool_at_entry_winrate'              => $pick('not_in_pool_at_entry', 'winrate'),
+            'pool_empty_at_entry_trade_count'           => $pick('pool_empty_at_entry', 'trade_count'),
+            'pool_empty_at_entry_winrate'               => $pick('pool_empty_at_entry', 'winrate'),
+            // Bonus attribution
+            'bonus_applied_at_entry_trade_count'        => $pickB('bonus_applied', 'trade_count'),
+            'bonus_applied_at_entry_winrate'            => $pickB('bonus_applied', 'winrate'),
+            'bonus_applied_at_entry_avg_roi'            => $pickB('bonus_applied', 'avg_roi'),
+            'bonus_applied_at_entry_small_sample'       => $pickB('bonus_applied', 'small_sample_warning'),
+            'bonus_used_not_applied_at_entry_trade_count' => $pickB('bonus_used_not_applied', 'trade_count'),
         ];
     }
 
@@ -807,6 +823,19 @@ final class WinUniverseService
             $durationMinutes = round(($closedAt - $openedAt) / 60.0, 1);
         }
 
+        // Carry embedded Win Universe status-at-entry fields if the trade record already has them.
+        // Bot-executed trades may have these fields if the intent was persisted with WU attribution.
+        $wuStatusAtEntry    = isset($trade['win_universe_status_at_entry'])
+            ? (string)$trade['win_universe_status_at_entry'] : null;
+        $wuInPoolAtEntry    = isset($trade['in_win_pool_at_entry'])
+            ? (bool)$trade['in_win_pool_at_entry'] : null;
+        $wuBonusApplied     = isset($trade['bonus_applied_at_entry'])
+            ? (bool)$trade['bonus_applied_at_entry']
+            : (isset($trade['win_universe_bonus_applied_at_entry']) ? (bool)$trade['win_universe_bonus_applied_at_entry'] : null);
+        $wuBonusValue       = isset($trade['bonus_value_at_entry'])
+            ? (float)$trade['bonus_value_at_entry']
+            : (isset($trade['win_universe_bonus_value_at_entry']) ? (float)$trade['win_universe_bonus_value_at_entry'] : null);
+
         return [
             'symbol'                          => $sym,
             'side'                            => strtolower((string)($trade['side'] ?? '')),
@@ -815,6 +844,11 @@ final class WinUniverseService
             'opened_at'                       => $openedAt,
             'duration_minutes'                => $durationMinutes,
             'source'                          => $source,
+            // Embedded WU fields (null if not present in trade record)
+            'wu_status_at_entry'              => $wuStatusAtEntry,
+            'wu_in_pool_at_entry'             => $wuInPoolAtEntry,
+            'wu_bonus_applied_at_entry'       => $wuBonusApplied,
+            'wu_bonus_value_at_entry'         => $wuBonusValue,
         ];
     }
 
@@ -846,83 +880,193 @@ final class WinUniverseService
         $attrRecords = $this->loadAttributionLog();
         $logSize     = count($attrRecords);
 
-        // Build symbol → latest attribution record map
-        // Also build symbol+side → attribution for more precise matching
-        $attrBySymbol = [];
+        // ── Build per-symbol SORTED TIMELINE of attribution records ────────────
+        // The log is prepended (newest first), so we reverse to sort chronologically.
+        // For each trade we will find the attribution record whose created_at_ts is
+        // closest to (and at most 1 hour after) the trade's opened_at timestamp.
+        // This ensures we use the symbol's status AT THE TIME OF ENTRY, not its
+        // most recent known status.
+        $attrTimeline = []; // [symbol => [[ts, record], ...]] sorted asc by ts
         foreach ($attrRecords as $rec) {
             $sym = strtoupper((string)($rec['symbol'] ?? ''));
-            if ($sym === '') {
+            $recTs = (int)($rec['created_at_ts'] ?? 0);
+            if ($sym === '' || $recTs <= 0) {
                 continue;
             }
-            // Newest records come first — only record first occurrence per symbol
-            if (!isset($attrBySymbol[$sym])) {
-                $attrBySymbol[$sym] = $rec;
-            }
+            $attrTimeline[$sym][] = [$recTs, $rec];
         }
+        // Sort each symbol's records chronologically (ascending)
+        foreach ($attrTimeline as &$tl) {
+            usort($tl, static fn($a, $b) => $a[0] <=> $b[0]);
+        }
+        unset($tl);
+
+        // Count unique symbols in log for diagnostics
+        $symbolsAttributed = count($attrTimeline);
+
+        /**
+         * Find attribution record for a given symbol and opened_at timestamp.
+         * Returns the record whose created_at_ts is closest to opened_at (±1h tolerance).
+         * If opened_at is 0, returns the most recent record for the symbol.
+         *
+         * @param string $sym
+         * @param int    $openedAt Unix timestamp of trade open (0 = unknown)
+         * @return array<string,mixed>|null
+         */
+        $findAttrRecord = static function (string $sym, int $openedAt) use ($attrTimeline): ?array {
+            $timeline = $attrTimeline[$sym] ?? null;
+            if ($timeline === null) {
+                return null;
+            }
+            if ($openedAt <= 0) {
+                // Unknown open time — use the most recent attribution record
+                return end($timeline)[1];
+            }
+            // Walk backward from the end to find the most recent record that was
+            // created at most 1 hour AFTER the trade open (grace window handles
+            // the fact that intents are created slightly before orders fill).
+            $best    = null;
+            $bestDiff = PHP_INT_MAX;
+            $graceSec = 3600; // 1 hour tolerance
+            foreach ($timeline as [$recTs, $rec]) {
+                $diff = abs($recTs - $openedAt);
+                // Accept records within grace window; prefer smallest diff
+                if ($diff <= $graceSec && $diff < $bestDiff) {
+                    $bestDiff = $diff;
+                    $best = $rec;
+                }
+            }
+            // Fallback: if no record within grace window, use the closest one overall
+            if ($best === null) {
+                foreach ($timeline as [$recTs, $rec]) {
+                    $diff = abs($recTs - $openedAt);
+                    if ($diff < $bestDiff) {
+                        $bestDiff = $diff;
+                        $best = $rec;
+                    }
+                }
+            }
+            return $best;
+        };
 
         // Load closed trades
         $closedTrades = $this->loadClosedTradesForEval();
 
         // ── Main entry-status groups ──────────────────────────────────────────
-        $groupKeys = ['qualified_at_entry', 'nonqualified_at_entry', 'no_attribution'];
-        $groups    = [];
+        // qualified_at_entry     — status_at_entry === 'qualified'
+        // nonqualified_at_entry  — all other attributed (aggregate)
+        // not_in_pool_at_entry   — status_at_entry === 'not_in_pool'
+        // pool_empty_at_entry    — status_at_entry === 'pool_empty'
+        // shadow_mode_at_entry   — status_at_entry === 'shadow_mode' or 'bonus_disabled'
+        // no_attribution         — no matching record in log
+        $groupKeys = [
+            'qualified_at_entry',
+            'nonqualified_at_entry',
+            'not_in_pool_at_entry',
+            'pool_empty_at_entry',
+            'shadow_mode_at_entry',
+            'no_attribution',
+        ];
+        $groups = [];
         foreach ($groupKeys as $gk) {
             $groups[$gk] = [
-                'trade_count'         => 0,
-                'win_count'           => 0,
-                '_roi_values'         => [],
-                '_duration_values'    => [],
+                'trade_count'      => 0,
+                'win_count'        => 0,
+                '_roi_values'      => [],
+                '_duration_values' => [],
             ];
         }
 
         // ── Bonus groups ──────────────────────────────────────────────────────
-        $bonusGroupKeys = ['bonus_applied', 'bonus_not_applied', 'no_attribution'];
+        $bonusGroupKeys = ['bonus_applied', 'bonus_not_applied', 'bonus_used_not_applied', 'no_attribution'];
         $bonusGroups    = [];
         foreach ($bonusGroupKeys as $bk) {
             $bonusGroups[$bk] = [
-                'trade_count'      => 0,
-                'win_count'        => 0,
-                '_roi_values'      => [],
+                'trade_count' => 0,
+                'win_count'   => 0,
+                '_roi_values' => [],
             ];
         }
 
-        $wuConfig    = $this->config['win_universe'] ?? [];
-        $minRoi      = (float)($wuConfig['min_roi_threshold'] ?? 0.01);
+        $wuConfig = $this->config['win_universe'] ?? [];
+        $minRoi   = (float)($wuConfig['min_roi_threshold'] ?? 0.01);
 
         foreach ($closedTrades as $trade) {
-            $sym = (string)($trade['symbol'] ?? '');
-            $roi = $trade['roi'];
+            $sym      = (string)($trade['symbol'] ?? '');
+            $roi      = $trade['roi'];
+            $openedAt = (int)($trade['opened_at'] ?? 0);
             if ($sym === '' || $roi === null) {
                 continue;
             }
 
-            $isWin   = $roi >= $minRoi;
-            $attrRec = $attrBySymbol[$sym] ?? null;
+            $isWin = $roi >= $minRoi;
 
-            if ($attrRec === null) {
-                // No attribution record for this symbol
-                $entryStatus  = 'no_attribution';
-                $bonusApplied = null; // unknown
+            // ── Resolve attribution ───────────────────────────────────────────
+            // Priority 1: trade record itself has embedded WU fields (best-quality)
+            // Priority 2: look up attribution log by time proximity
+            $statusAtEntry = null;
+            $bonusApplied  = null;
+            $bonusUsed     = null;
+
+            if ($trade['wu_status_at_entry'] !== null) {
+                // Trade has embedded WU fields (from bot-persisted intent data)
+                $statusAtEntry = $trade['wu_status_at_entry'];
+                $bonusApplied  = $trade['wu_bonus_applied_at_entry'];
+                $bonusUsed     = $bonusApplied; // same for now
             } else {
-                $statusAtEntry = (string)($attrRec['win_universe_status_at_entry'] ?? 'not_in_pool');
-                $entryStatus   = ($statusAtEntry === 'qualified') ? 'qualified_at_entry' : 'nonqualified_at_entry';
-                $bonusApplied  = (bool)($attrRec['bonus_applied_at_entry'] ?? false);
+                // Look up attribution log for this symbol at this opened_at time
+                $attrRec = $findAttrRecord($sym, $openedAt);
+                if ($attrRec !== null) {
+                    $statusAtEntry = (string)($attrRec['win_universe_status_at_entry'] ?? 'not_in_pool');
+                    $bonusApplied  = (bool)($attrRec['bonus_applied_at_entry'] ?? false);
+                    $bonusUsed     = $bonusApplied; // currently same; future code may differ
+                }
             }
 
-            // Accumulate main group
-            if (isset($groups[$entryStatus])) {
-                $groups[$entryStatus]['trade_count']++;
+            // ── Main group classification ─────────────────────────────────────
+            if ($statusAtEntry === null) {
+                $mainGroup = 'no_attribution';
+            } elseif ($statusAtEntry === 'qualified') {
+                $mainGroup = 'qualified_at_entry';
+            } elseif ($statusAtEntry === 'pool_empty') {
+                $mainGroup = 'pool_empty_at_entry';
+            } elseif (in_array($statusAtEntry, ['shadow_mode', 'bonus_disabled'], true)) {
+                $mainGroup = 'shadow_mode_at_entry';
+            } else {
+                // 'not_in_pool' and any unknown values → not_in_pool_at_entry
+                $mainGroup = 'not_in_pool_at_entry';
+            }
+
+            // Also accumulate the aggregate nonqualified_at_entry bucket
+            // (all attributed trades that are not qualified)
+            $isAttributed = ($statusAtEntry !== null);
+            $isQualified  = ($statusAtEntry === 'qualified');
+
+            if (isset($groups[$mainGroup])) {
+                $groups[$mainGroup]['trade_count']++;
                 if ($isWin) {
-                    $groups[$entryStatus]['win_count']++;
+                    $groups[$mainGroup]['win_count']++;
                 }
-                $groups[$entryStatus]['_roi_values'][] = $roi;
-                if (($trade['duration_minutes'] ?? null) !== null) {
-                    $groups[$entryStatus]['_duration_values'][] = (float)$trade['duration_minutes'];
+                $groups[$mainGroup]['_roi_values'][] = $roi;
+                if ($trade['duration_minutes'] !== null) {
+                    $groups[$mainGroup]['_duration_values'][] = (float)$trade['duration_minutes'];
                 }
             }
 
-            // Accumulate bonus group
-            if ($bonusApplied === null) {
+            // Populate aggregate nonqualified bucket from granular groups
+            if ($isAttributed && !$isQualified) {
+                $groups['nonqualified_at_entry']['trade_count']++;
+                if ($isWin) {
+                    $groups['nonqualified_at_entry']['win_count']++;
+                }
+                $groups['nonqualified_at_entry']['_roi_values'][] = $roi;
+                if ($trade['duration_minutes'] !== null) {
+                    $groups['nonqualified_at_entry']['_duration_values'][] = (float)$trade['duration_minutes'];
+                }
+            }
+
+            // ── Bonus group classification ────────────────────────────────────
+            if ($statusAtEntry === null) {
                 $bonusGroups['no_attribution']['trade_count']++;
                 if ($isWin) {
                     $bonusGroups['no_attribution']['win_count']++;
@@ -934,6 +1078,13 @@ final class WinUniverseService
                     $bonusGroups['bonus_applied']['win_count']++;
                 }
                 $bonusGroups['bonus_applied']['_roi_values'][] = $roi;
+            } elseif ($bonusUsed && !$bonusApplied) {
+                // Bonus was considered but not applied (e.g. candidate lost slot competition)
+                $bonusGroups['bonus_used_not_applied']['trade_count']++;
+                if ($isWin) {
+                    $bonusGroups['bonus_used_not_applied']['win_count']++;
+                }
+                $bonusGroups['bonus_used_not_applied']['_roi_values'][] = $roi;
             } else {
                 $bonusGroups['bonus_not_applied']['trade_count']++;
                 if ($isWin) {
@@ -960,16 +1111,18 @@ final class WinUniverseService
             $finalBonusGroups[$key] = $this->buildGroupStats($g, $tc, $wc, $lc, $minEvalTrades);
         }
 
-        $totalAttributed = ($finalGroups['qualified_at_entry']['trade_count']   ?? 0)
-                         + ($finalGroups['nonqualified_at_entry']['trade_count'] ?? 0);
-        $noAttrCount     = $finalGroups['no_attribution']['trade_count'] ?? 0;
+        $totalAttributed = ($finalGroups['qualified_at_entry']['trade_count']    ?? 0)
+                         + ($finalGroups['nonqualified_at_entry']['trade_count']  ?? 0);
+        $noAttrCount     = $finalGroups['no_attribution']['trade_count']          ?? 0;
 
         return [
             'computed_at'        => $ts,
-            'attribution_note'   => 'Атрибуция по статусу Win Universe НА МОМЕНТ создания интента. '
-                . 'Символы без записи в журнале атрибуции отображаются как «no_attribution».',
+            'attribution_note'   => 'Атрибуция по статусу Win Universe НА МОМЕНТ ВХОДА в сделку. '
+                . 'Для каждой сделки находится запись в журнале атрибуции, ближайшая по времени '
+                . 'к открытию позиции. Сделки без записи — «no_attribution».',
+            'attribution_method' => 'time_proximity', // time-based matching, not latest-per-symbol
             'intent_log_size'    => $logSize,
-            'symbols_attributed' => count($attrBySymbol),
+            'symbols_attributed' => $symbolsAttributed,
             'trades_attributed'  => $totalAttributed,
             'trades_no_attr'     => $noAttrCount,
             'min_eval_sample_warning_threshold' => $minEvalTrades,

@@ -335,7 +335,8 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
         <div class="card-header py-2 d-flex align-items-center justify-content-between">
             <span class="fw-semibold text-info">
                 <i class="bi bi-bar-chart-line me-1"></i>
-                Оценка эффективности по классам
+                Оценка по <strong>текущему</strong> статусу квалификации
+                <span class="badge bg-secondary ms-1" style="font-size:0.65rem; font-weight:400;">ПРИБЛИЖЕНИЕ</span>
             </span>
             <?php if ($evalTs): ?>
             <small class="text-secondary"><?= htmlspecialchars($evalTs) ?></small>
@@ -463,7 +464,39 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
                     </thead>
                     <tbody>
                         <tr><?php $renderEntryGroup('qualified_at_entry',    '✅ Квалифицирован при входе',    'text-success',   $entryGroups); ?></tr>
-                        <tr><?php $renderEntryGroup('nonqualified_at_entry', '❌ Не квалифицирован при входе', 'text-secondary', $entryGroups); ?></tr>
+                        <tr style="border-top:1px solid #334155;">
+                            <?php $renderEntryGroup('nonqualified_at_entry', '❌ Не квалифицирован (итого)', 'text-secondary', $entryGroups); ?>
+                        </tr>
+                        <?php
+                        // Granular sub-buckets (shown only if present and non-zero)
+                        $subBuckets = [
+                            'not_in_pool_at_entry'  => '&nbsp;&nbsp;↳ Вне пула',
+                            'pool_empty_at_entry'   => '&nbsp;&nbsp;↳ Пул пуст при входе',
+                            'shadow_mode_at_entry'  => '&nbsp;&nbsp;↳ Теневой режим / бонус выкл.',
+                        ];
+                        foreach ($subBuckets as $bKey => $bLabel):
+                            $bG = $entryGroups[$bKey] ?? null;
+                            if ($bG === null || ($bG['trade_count'] ?? 0) === 0) continue;
+                        ?>
+                        <tr style="opacity:0.75;">
+                            <?php
+                            $bTc  = (int)($bG['trade_count'] ?? 0);
+                            $bWc  = (int)($bG['win_count']   ?? 0);
+                            $bLc  = (int)($bG['loss_count']  ?? 0);
+                            $bWr  = $bG['winrate']    ?? null;
+                            $bAr  = $bG['avg_roi']    ?? null;
+                            $bMr  = $bG['median_roi'] ?? null;
+                            $bWarn = (bool)($bG['small_sample_warning'] ?? ($bTc < 10));
+                            echo '<td class="text-secondary" style="padding-left:1.2rem;">' . $bLabel . '</td>';
+                            echo '<td>' . $bTc . ($bWarn ? ' <span class="badge bg-warning text-dark" title="Мало данных">!</span>' : '') . '</td>';
+                            echo '<td>' . $bWc . '</td>';
+                            echo '<td>' . $bLc . '</td>';
+                            echo '<td>' . $entryWrFmt($bWr) . '</td>';
+                            echo '<td>' . $entryRoiFmt($bAr) . '</td>';
+                            echo '<td>' . $entryRoiFmt($bMr) . '</td>';
+                            ?>
+                        </tr>
+                        <?php endforeach; ?>
                         <tr style="border-top:2px solid #334155;">
                             <?php $renderEntryGroup('no_attribution', '❓ Без атрибуции', 'text-secondary', $entryGroups); ?>
                         </tr>
@@ -488,10 +521,16 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><?php $renderEntryGroup('bonus_applied',     '🎯 Бонус применён',       'text-purple', $entryBonusGroups); ?></tr>
-                        <tr><?php $renderEntryGroup('bonus_not_applied', '— Бонус не применён',     'text-secondary', $entryBonusGroups); ?></tr>
+                        <tr><?php $renderEntryGroup('bonus_applied',          '🎯 Бонус применён',               'text-purple',    $entryBonusGroups); ?></tr>
+                        <tr><?php $renderEntryGroup('bonus_not_applied',      '— Бонус не применён',             'text-secondary', $entryBonusGroups); ?></tr>
+                        <?php
+                        $bUnG = $entryBonusGroups['bonus_used_not_applied'] ?? null;
+                        if ($bUnG !== null && ($bUnG['trade_count'] ?? 0) > 0):
+                        ?>
+                        <tr><?php $renderEntryGroup('bonus_used_not_applied', '⚡ Бонус рассчитан, не применён', 'text-warning',   $entryBonusGroups); ?></tr>
+                        <?php endif; ?>
                         <tr style="border-top:2px solid #334155;">
-                            <?php $renderEntryGroup('no_attribution',   '❓ Без атрибуции',         'text-secondary', $entryBonusGroups); ?>
+                            <?php $renderEntryGroup('no_attribution',         '❓ Без атрибуции',                'text-secondary', $entryBonusGroups); ?>
                         </tr>
                     </tbody>
                 </table>

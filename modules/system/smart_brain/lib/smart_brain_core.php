@@ -3387,6 +3387,31 @@ final class SmartBrainCore
                 if (!is_dir($wuAttrDir)) {
                     @mkdir($wuAttrDir, 0755, true);
                 }
+
+                // Load per-symbol WU engine qualification_status (qualified/near_qualified/rejected)
+                // from win_universe.json. This allows evaluation to distinguish near_qualified from
+                // rejected at the time of entry — a finer distinction than win-pool membership alone.
+                $wuSymQualStatus = [];
+                try {
+                    $wuUnivPath = $wuModBaseForLog . '/storage/runtime/win_universe.json';
+                    if (is_file($wuUnivPath)) {
+                        $wuUnivRaw = @file_get_contents($wuUnivPath);
+                        if ($wuUnivRaw !== false && $wuUnivRaw !== '') {
+                            $wuUnivData = @json_decode($wuUnivRaw, true);
+                            if (is_array($wuUnivData) && isset($wuUnivData['symbols']) && is_array($wuUnivData['symbols'])) {
+                                foreach ($wuUnivData['symbols'] as $wuQSym => $wuQRec) {
+                                    $wuQStatus = (string)($wuQRec['qualification_status'] ?? '');
+                                    if ($wuQStatus !== '') {
+                                        $wuSymQualStatus[strtoupper((string)$wuQSym)] = $wuQStatus;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (\Throwable $_wuQEx) {
+                    // non-fatal — qualification_status_at_entry will be null for this run
+                }
+
                 $wuNowTs  = time();
                 $wuLines  = [];
                 foreach ($intents as $wuAttrIntent) {
@@ -3394,15 +3419,19 @@ final class SmartBrainCore
                     if ($wuAttrSym === '') {
                         continue;
                     }
+                    // wu_qualification_status_at_entry: WU engine's assessment (qualified/near_qualified/rejected).
+                    // Distinct from win_universe_status_at_entry which reflects pool membership + bonus state.
+                    $wuQualStatusAtEntry = $wuSymQualStatus[$wuAttrSym] ?? null;
                     $wuLines[] = json_encode([
-                        'intent_id'                      => $wuAttrIntent['intent_id']                      ?? null,
-                        'symbol'                         => $wuAttrSym,
-                        'side'                           => (string)($wuAttrIntent['side'] ?? ''),
-                        'created_at_ts'                  => $wuNowTs,
-                        'win_universe_status_at_entry'   => $wuAttrIntent['win_universe_status_at_entry']   ?? 'not_in_pool',
-                        'in_win_pool_at_entry'           => (bool)($wuAttrIntent['in_win_pool_at_entry']   ?? false),
-                        'bonus_applied_at_entry'         => (bool)($wuAttrIntent['win_universe_bonus_applied_at_entry'] ?? false),
-                        'bonus_value_at_entry'           => (float)($wuAttrIntent['win_universe_bonus_value_at_entry']  ?? 0.0),
+                        'intent_id'                        => $wuAttrIntent['intent_id']                      ?? null,
+                        'symbol'                           => $wuAttrSym,
+                        'side'                             => (string)($wuAttrIntent['side'] ?? ''),
+                        'created_at_ts'                    => $wuNowTs,
+                        'win_universe_status_at_entry'     => $wuAttrIntent['win_universe_status_at_entry']   ?? 'not_in_pool',
+                        'in_win_pool_at_entry'             => (bool)($wuAttrIntent['in_win_pool_at_entry']   ?? false),
+                        'bonus_applied_at_entry'           => (bool)($wuAttrIntent['win_universe_bonus_applied_at_entry'] ?? false),
+                        'bonus_value_at_entry'             => (float)($wuAttrIntent['win_universe_bonus_value_at_entry']  ?? 0.0),
+                        'wu_qualification_status_at_entry' => $wuQualStatusAtEntry,
                     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 }
                 if (!empty($wuLines)) {

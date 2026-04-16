@@ -296,8 +296,9 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
     <?php
     $evalGroups = $evalData['groups'] ?? null;
     if ($evalGroups !== null):
-        $evalAttr = $evalData['attribution_note'] ?? '';
-        $evalTs   = $evalData['computed_at'] ?? null;
+        $evalAttr  = $evalData['attribution_note'] ?? '';
+        $evalBasis = $evalData['attribution_basis'] ?? '';
+        $evalTs    = $evalData['computed_at'] ?? null;
 
         $evalRoiFmt = static function ($v): string {
             if ($v === null) return '<span class="neutral">—</span>';
@@ -333,10 +334,10 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
     ?>
     <div class="card mb-4">
         <div class="card-header py-2 d-flex align-items-center justify-content-between">
-            <span class="fw-semibold text-info">
+            <span class="fw-semibold text-secondary">
                 <i class="bi bi-bar-chart-line me-1"></i>
                 Оценка по <strong>текущему</strong> статусу квалификации
-                <span class="badge bg-secondary ms-1" style="font-size:0.65rem; font-weight:400;">ПРИБЛИЖЕНИЕ</span>
+                <span class="badge bg-secondary ms-1" style="font-size:0.65rem; font-weight:400;">ВТОРИЧНАЯ / ПРИБЛИЖЕНИЕ</span>
             </span>
             <?php if ($evalTs): ?>
             <small class="text-secondary"><?= htmlspecialchars($evalTs) ?></small>
@@ -377,7 +378,7 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
     </div>
     <?php endif; // evalGroups ?>
 
-    <!-- Оценка по статусу НА МОМЕНТ ВХОДА (entry-status attribution) -->
+    <!-- Оценка по статусу НА МОМЕНТ ВХОДА (entry-status attribution) — ПЕРВИЧНАЯ -->
     <?php
     $entryGroups      = $evalByEntryStatus['groups']       ?? null;
     $entryBonusGroups = $bonusEvalAtEntry['bonus_groups']  ?? null;
@@ -422,7 +423,8 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
         <div class="card-header py-2 d-flex align-items-center justify-content-between">
             <span class="fw-semibold" style="color:#7dd3fc;">
                 <i class="bi bi-pin-angle me-1"></i>
-                Оценка по статусу <strong>на момент входа</strong> (entry-time attribution)
+                Оценка по статусу <strong>на момент входа</strong>
+                <span class="badge bg-info text-dark ms-1" style="font-size:0.65rem; font-weight:500;">ПЕРВИЧНАЯ</span>
             </span>
             <div class="d-flex align-items-center gap-3">
                 <?php if ($entryLogSize > 0): ?>
@@ -463,16 +465,19 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><?php $renderEntryGroup('qualified_at_entry',    '✅ Квалифицирован при входе',    'text-success',   $entryGroups); ?></tr>
+                        <tr><?php $renderEntryGroup('qualified_at_entry',      '✅ Квалифицирован при входе',         'text-success',   $entryGroups); ?></tr>
                         <tr style="border-top:1px solid #334155;">
-                            <?php $renderEntryGroup('nonqualified_at_entry', '❌ Не квалифицирован (итого)', 'text-secondary', $entryGroups); ?>
+                            <?php $renderEntryGroup('nonqualified_at_entry',   '❌ Не квалифицирован (итого)',         'text-secondary', $entryGroups); ?>
                         </tr>
                         <?php
                         // Granular sub-buckets (shown only if present and non-zero)
+                        // WU-engine qualification status sub-buckets (need wu_qualification_status_at_entry in log)
                         $subBuckets = [
-                            'not_in_pool_at_entry'  => '&nbsp;&nbsp;↳ Вне пула',
-                            'pool_empty_at_entry'   => '&nbsp;&nbsp;↳ Пул пуст при входе',
-                            'shadow_mode_at_entry'  => '&nbsp;&nbsp;↳ Теневой режим / бонус выкл.',
+                            'near_qualified_at_entry' => '&nbsp;&nbsp;↳ 🔶 Почти квалифицирован',
+                            'rejected_at_entry'       => '&nbsp;&nbsp;↳ ❌ Отклонён (rejected)',
+                            'not_in_pool_at_entry'    => '&nbsp;&nbsp;↳ Вне пула (нет данных о квалификации)',
+                            'pool_empty_at_entry'     => '&nbsp;&nbsp;↳ Пул пуст при входе',
+                            'shadow_mode_at_entry'    => '&nbsp;&nbsp;↳ Теневой режим / бонус выкл.',
                         ];
                         foreach ($subBuckets as $bKey => $bLabel):
                             $bG = $entryGroups[$bKey] ?? null;

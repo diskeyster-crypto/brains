@@ -500,10 +500,11 @@ final class WinUniverseService
 
         return [
             'computed_at'                    => $ts,
-            'attribution_note'               => 'Оценка по ТЕКУЩЕМУ статусу квалификации символа (приближение). '
-                . 'Статус на момент открытия конкретной сделки НЕ фиксируется — используется текущее состояние. '
-                . 'Для оценки по статусу на момент входа см. win_universe_eval_at_entry.json.',
-            'attribution_basis'              => 'current_qualification_state',
+            'attribution_note'               => 'ВТОРИЧНАЯ ОЦЕНКА (приближение). Атрибуция по ТЕКУЩЕМУ статусу квалификации символа. '
+                . 'Статус на момент открытия конкретной сделки НЕ фиксируется. '
+                . 'Первичная оценка (по статусу НА МОМЕНТ ВХОДА) — в win_universe_eval_at_entry.json.',
+            'attribution_basis'              => 'current_qualification_state_approximation',
+            'evaluation_method'              => 'secondary_current_state',
             'min_eval_sample_warning_threshold' => $minEvalTrades,
             'total_symbols_evaluated'        => count($symbols),
             'groups'                         => $finalGroups,
@@ -596,6 +597,7 @@ final class WinUniverseService
         return [
             'eval_at_entry_computed_at'                 => $evalAtEntry['computed_at'] ?? null,
             'eval_at_entry_attribution_method'          => $evalAtEntry['attribution_method'] ?? null,
+            'eval_at_entry_evaluation_method'           => $evalAtEntry['evaluation_method'] ?? null,
             'eval_at_entry_intent_log_size'             => $evalAtEntry['intent_log_size'] ?? 0,
             'eval_at_entry_symbols_attributed'          => $evalAtEntry['symbols_attributed'] ?? 0,
             'eval_at_entry_trades_attributed'           => $evalAtEntry['trades_attributed'] ?? 0,
@@ -606,12 +608,21 @@ final class WinUniverseService
             'qualified_at_entry_avg_roi'                => $pick('qualified_at_entry', 'avg_roi'),
             'qualified_at_entry_median_roi'             => $pick('qualified_at_entry', 'median_roi'),
             'qualified_at_entry_small_sample'           => $pick('qualified_at_entry', 'small_sample_warning'),
+            // Granular WU-engine qualification buckets
+            'near_qualified_at_entry_trade_count'       => $pick('near_qualified_at_entry', 'trade_count'),
+            'near_qualified_at_entry_winrate'           => $pick('near_qualified_at_entry', 'winrate'),
+            'near_qualified_at_entry_avg_roi'           => $pick('near_qualified_at_entry', 'avg_roi'),
+            'near_qualified_at_entry_small_sample'      => $pick('near_qualified_at_entry', 'small_sample_warning'),
+            'rejected_at_entry_trade_count'             => $pick('rejected_at_entry', 'trade_count'),
+            'rejected_at_entry_winrate'                 => $pick('rejected_at_entry', 'winrate'),
+            'rejected_at_entry_avg_roi'                 => $pick('rejected_at_entry', 'avg_roi'),
+            'rejected_at_entry_small_sample'            => $pick('rejected_at_entry', 'small_sample_warning'),
             'nonqualified_at_entry_trade_count'         => $pick('nonqualified_at_entry', 'trade_count'),
             'nonqualified_at_entry_winrate'             => $pick('nonqualified_at_entry', 'winrate'),
             'nonqualified_at_entry_avg_roi'             => $pick('nonqualified_at_entry', 'avg_roi'),
             'nonqualified_at_entry_median_roi'          => $pick('nonqualified_at_entry', 'median_roi'),
             'nonqualified_at_entry_small_sample'        => $pick('nonqualified_at_entry', 'small_sample_warning'),
-            // Granular nonqualified sub-buckets
+            // Granular pool-state sub-buckets
             'not_in_pool_at_entry_trade_count'          => $pick('not_in_pool_at_entry', 'trade_count'),
             'not_in_pool_at_entry_winrate'              => $pick('not_in_pool_at_entry', 'winrate'),
             'pool_empty_at_entry_trade_count'           => $pick('pool_empty_at_entry', 'trade_count'),
@@ -953,14 +964,18 @@ final class WinUniverseService
         $closedTrades = $this->loadClosedTradesForEval();
 
         // ── Main entry-status groups ──────────────────────────────────────────
-        // qualified_at_entry     — status_at_entry === 'qualified'
-        // nonqualified_at_entry  — all other attributed (aggregate)
-        // not_in_pool_at_entry   — status_at_entry === 'not_in_pool'
-        // pool_empty_at_entry    — status_at_entry === 'pool_empty'
-        // shadow_mode_at_entry   — status_at_entry === 'shadow_mode' or 'bonus_disabled'
-        // no_attribution         — no matching record in log
+        // qualified_at_entry        — WU engine qualified at entry
+        // near_qualified_at_entry   — WU engine near-qualified at entry
+        // rejected_at_entry         — WU engine rejected at entry
+        // nonqualified_at_entry     — all non-qualified attributed (aggregate: near + rejected + pool_empty + shadow)
+        // not_in_pool_at_entry      — win_universe_status_at_entry === 'not_in_pool' (no qual_status info)
+        // pool_empty_at_entry       — win_universe_status_at_entry === 'pool_empty'
+        // shadow_mode_at_entry      — win_universe_status_at_entry === 'shadow_mode' or 'bonus_disabled'
+        // no_attribution            — no matching record in log
         $groupKeys = [
             'qualified_at_entry',
+            'near_qualified_at_entry',
+            'rejected_at_entry',
             'nonqualified_at_entry',
             'not_in_pool_at_entry',
             'pool_empty_at_entry',
@@ -1004,30 +1019,46 @@ final class WinUniverseService
             // ── Resolve attribution ───────────────────────────────────────────
             // Priority 1: trade record itself has embedded WU fields (best-quality)
             // Priority 2: look up attribution log by time proximity
-            $statusAtEntry = null;
-            $bonusApplied  = null;
-            $bonusUsed     = null;
+            $statusAtEntry       = null;
+            $qualStatusAtEntry   = null; // qualified/near_qualified/rejected from WU engine
+            $bonusApplied        = null;
+            $bonusUsed           = null;
 
             if ($trade['wu_status_at_entry'] !== null) {
                 // Trade has embedded WU fields (from bot-persisted intent data)
                 $statusAtEntry = $trade['wu_status_at_entry'];
                 $bonusApplied  = $trade['wu_bonus_applied_at_entry'];
                 $bonusUsed     = $bonusApplied; // same for now
+                // Derive qualification status from pool membership when embedded
+                if ($statusAtEntry === 'qualified') {
+                    $qualStatusAtEntry = 'qualified';
+                }
             } else {
                 // Look up attribution log for this symbol at this opened_at time
                 $attrRec = $findAttrRecord($sym, $openedAt);
                 if ($attrRec !== null) {
-                    $statusAtEntry = (string)($attrRec['win_universe_status_at_entry'] ?? 'not_in_pool');
-                    $bonusApplied  = (bool)($attrRec['bonus_applied_at_entry'] ?? false);
-                    $bonusUsed     = $bonusApplied; // currently same; future code may differ
+                    $statusAtEntry     = (string)($attrRec['win_universe_status_at_entry'] ?? 'not_in_pool');
+                    $bonusApplied      = (bool)($attrRec['bonus_applied_at_entry'] ?? false);
+                    $bonusUsed         = $bonusApplied; // currently same; future code may differ
+                    // Prefer the richer wu_qualification_status_at_entry field if present
+                    // (added by smart_brain_core.php WU-8 update)
+                    $qualStatusAtEntry = isset($attrRec['wu_qualification_status_at_entry'])
+                        ? (string)$attrRec['wu_qualification_status_at_entry']
+                        : null;
                 }
             }
 
             // ── Main group classification ─────────────────────────────────────
+            // Use the WU engine's qualification status (qualified/near_qualified/rejected) when
+            // available for precise bucketing. Fall back to pool-membership status otherwise.
             if ($statusAtEntry === null) {
                 $mainGroup = 'no_attribution';
-            } elseif ($statusAtEntry === 'qualified') {
+            } elseif ($qualStatusAtEntry === 'qualified' || $statusAtEntry === 'qualified') {
                 $mainGroup = 'qualified_at_entry';
+            } elseif ($qualStatusAtEntry === 'near_qualified') {
+                $mainGroup = 'near_qualified_at_entry';
+            } elseif ($qualStatusAtEntry === 'rejected') {
+                $mainGroup = 'rejected_at_entry';
             } elseif ($statusAtEntry === 'pool_empty') {
                 $mainGroup = 'pool_empty_at_entry';
             } elseif (in_array($statusAtEntry, ['shadow_mode', 'bonus_disabled'], true)) {
@@ -1040,7 +1071,7 @@ final class WinUniverseService
             // Also accumulate the aggregate nonqualified_at_entry bucket
             // (all attributed trades that are not qualified)
             $isAttributed = ($statusAtEntry !== null);
-            $isQualified  = ($statusAtEntry === 'qualified');
+            $isQualified  = ($mainGroup === 'qualified_at_entry');
 
             if (isset($groups[$mainGroup])) {
                 $groups[$mainGroup]['trade_count']++;
@@ -1117,9 +1148,12 @@ final class WinUniverseService
 
         return [
             'computed_at'        => $ts,
-            'attribution_note'   => 'Атрибуция по статусу Win Universe НА МОМЕНТ ВХОДА в сделку. '
+            'attribution_note'   => 'ПЕРВИЧНАЯ ОЦЕНКА. Атрибуция по статусу Win Universe НА МОМЕНТ ВХОДА в сделку. '
                 . 'Для каждой сделки находится запись в журнале атрибуции, ближайшая по времени '
-                . 'к открытию позиции. Сделки без записи — «no_attribution».',
+                . 'к открытию позиции. Сделки без записи — «no_attribution». '
+                . 'Вторичная оценка (по текущему статусу) — в win_universe_eval.json.',
+            'attribution_basis'  => 'status_at_entry',
+            'evaluation_method'  => 'primary_entry_based',
             'attribution_method' => 'time_proximity', // time-based matching, not latest-per-symbol
             'intent_log_size'    => $logSize,
             'symbols_attributed' => $symbolsAttributed,

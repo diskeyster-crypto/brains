@@ -1056,6 +1056,13 @@ final class SmartBrainCore
             'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
             'v2_cleanup_demo_total'            => (int)($liveIntentResult['v2_cleanup_demo_total']            ?? 0),
             'v2_cleanup_no_effect_total'       => (int)($liveIntentResult['v2_cleanup_no_effect_total']       ?? 0),
+            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
+            'confirmation_total'               => (int)($liveIntentResult['confirmation_total']               ?? 0),
+            'confirmation_confirmed_total'     => (int)($liveIntentResult['confirmation_confirmed_total']     ?? 0),
+            'confirmation_demo_total'          => (int)($liveIntentResult['confirmation_demo_total']          ?? 0),
+            'confirmation_reject_total'        => (int)($liveIntentResult['confirmation_reject_total']        ?? 0),
+            'confirmation_fakeout_total'       => (int)($liveIntentResult['confirmation_fakeout_total']       ?? 0),
+            'confirmation_expired_total'       => (int)($liveIntentResult['confirmation_expired_total']       ?? 0),
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1283,6 +1290,13 @@ final class SmartBrainCore
             'v2_cleanup_reject_total'          => 0,
             'v2_cleanup_demo_total'            => 0,
             'v2_cleanup_no_effect_total'       => 0,
+            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
+            'confirmation_total'               => 0,
+            'confirmation_confirmed_total'     => 0,
+            'confirmation_demo_total'          => 0,
+            'confirmation_reject_total'        => 0,
+            'confirmation_fakeout_total'       => 0,
+            'confirmation_expired_total'       => 0,
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -1488,6 +1502,16 @@ final class SmartBrainCore
         $result['win_universe_mode_sync_ok']    = ($wuLastRunMode === null || $wuLastRunMode === $wuMode);
         $result['win_universe_last_run_mode']   = $wuLastRunMode;
         $result['win_universe_pool_size']       = $wuPoolSize;
+
+        // ── Confirmation Layer pre-load ──────────────────────────────────────────
+        // Load persistent confirmation pending store (survives across cron cycles).
+        $confLayerEnabled        = (bool)($userLimits['confirmation_layer_enabled']         ?? false);
+        $confWaitCycles          = max(1, (int)($userLimits['confirmation_wait_cycles']      ?? 3));
+        $confReclaimTolPct       = max(0.0, (float)($userLimits['confirmation_reclaim_tolerance_pct'] ?? 0.005));
+        $confTargetPatterns      = (array)($userLimits['confirmation_target_patterns']       ?? ['double_top_contextual_v2']);
+        $confMaxAgeSeconds       = max(60, (int)($userLimits['confirmation_max_age_seconds'] ?? 480));
+        $confPending             = $this->state->readJson('storage/confirmation_pending.json', []);
+        $confNow                 = time();
 
         $intents = [];
 
@@ -2754,6 +2778,88 @@ final class SmartBrainCore
             }
             // === END V2 CLEANUP FILTER ===
 
+            // === CONFIRMATION LAYER ===
+            // Post-pattern wait window for targeted patterns before allowing live entry.
+            // First rollout scope: double_top_contextual_v2 short only.
+            // Does NOT touch V3, long-side V2, or any other pattern.
+            $confLayerResult = [
+                'confirmation_layer_used'       => false,
+                'confirmation_setup_detected'   => false,
+                'confirmation_wait_cycles_used' => 0,
+                'confirmation_result'           => 'not_applicable',
+                'confirmation_reason'           => '',
+            ];
+
+            if ($confLayerEnabled
+                && in_array((string)($signal['pattern_algorithm'] ?? ''), $confTargetPatterns, true)
+                && $side === 'short'
+            ) {
+                $confLayerResult['confirmation_layer_used'] = true;
+                $result['confirmation_total']++;
+
+                $confKey = $symbol . '_' . (string)($signal['pattern_algorithm'] ?? '') . '_short';
+
+                // Reference zone for fakeout check (upper edge of short entry zone at setup).
+                $confZoneHigh = (float)($signal['entry_zone_high'] ?? 0.0);
+
+                if (!isset($confPending[$confKey])) {
+                    // First time seeing this symbol+pattern+side → record setup, hold this cycle.
+                    $confPending[$confKey] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                        'side'              => 'short',
+                        'setup_detected_at' => date('c'),
+                        'setup_ts'          => $confNow,
+                        'cycles_seen'       => 1,
+                        'setup_zone_high'   => $confZoneHigh,
+                    ];
+                    $confLayerResult['confirmation_setup_detected'] = true;
+                    $confLayerResult['confirmation_result']         = 'setup_detected';
+                    $confLayerResult['confirmation_reason']         = 'first_detection_hold';
+                    $confLayerResult['confirmation_wait_cycles_used'] = 1;
+                    // Skip to next signal — do not create a live intent this cycle.
+                    continue;
+                }
+
+                // Seen before: increment cycle count and check fakeout / confirmation.
+                $confPending[$confKey]['cycles_seen']++;
+                $cyclesSeen = (int)$confPending[$confKey]['cycles_seen'];
+                $confLayerResult['confirmation_wait_cycles_used'] = $cyclesSeen;
+
+                // Fakeout check for short: if current entry_zone_high has drifted significantly
+                // above the setup zone high, the top was reclaimed → fakeout, reject.
+                $setupZoneHigh = (float)($confPending[$confKey]['setup_zone_high'] ?? 0.0);
+                $fakeoutThreshold = $setupZoneHigh > 0.0
+                    ? $setupZoneHigh * (1.0 + $confReclaimTolPct)
+                    : 0.0;
+
+                if ($fakeoutThreshold > 0.0 && $confZoneHigh > $fakeoutThreshold) {
+                    // Fakeout detected — remove from pending, reject as demo.
+                    unset($confPending[$confKey]);
+                    $confLayerResult['confirmation_result'] = 'fakeout';
+                    $confLayerResult['confirmation_reason'] = 'zone_high_reclaimed_above_setup';
+                    $result['confirmation_fakeout_total']++;
+                    $result['confirmation_demo_total']++;
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_fakeout', $selectionMode);
+                    continue;
+                }
+
+                if ($cyclesSeen >= $confWaitCycles) {
+                    // Enough cycles elapsed without fakeout → confirmed.
+                    unset($confPending[$confKey]);
+                    $confLayerResult['confirmation_result'] = 'confirmed';
+                    $confLayerResult['confirmation_reason'] = 'wait_cycles_satisfied';
+                    $result['confirmation_confirmed_total']++;
+                    // Fall through — signal proceeds to live intent.
+                } else {
+                    // Still waiting: hold this cycle.
+                    $confLayerResult['confirmation_result'] = 'waiting';
+                    $confLayerResult['confirmation_reason'] = 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen);
+                    continue;
+                }
+            }
+            // === END CONFIRMATION LAYER ===
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -2969,6 +3075,13 @@ final class SmartBrainCore
             $intent['v2_cleanup_reason']       = $v2cFilterResult['v2_cleanup_reason'];
             $intent['v2_cleanup_wave_state']   = $v2cFilterResult['v2_cleanup_wave_state'];
             $intent['v2_cleanup_quality_band'] = $v2cFilterResult['v2_cleanup_quality_band'];
+
+            // Attach confirmation layer observability fields
+            $intent['confirmation_layer_used']       = $confLayerResult['confirmation_layer_used'];
+            $intent['confirmation_setup_detected']   = $confLayerResult['confirmation_setup_detected'];
+            $intent['confirmation_wait_cycles_used'] = $confLayerResult['confirmation_wait_cycles_used'];
+            $intent['confirmation_result']           = $confLayerResult['confirmation_result'];
+            $intent['confirmation_reason']           = $confLayerResult['confirmation_reason'];
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
@@ -3290,6 +3403,20 @@ final class SmartBrainCore
             unset($wuIntent);
         }
         // ── End Win Universe Bonus Layer ────────────────────────────────────
+
+        // ── Confirmation Layer: expire stale pending entries and persist ──────
+        // Remove entries that have exceeded the max age window (no update in too long).
+        if ($confLayerEnabled) {
+            foreach ($confPending as $ck => $ce) {
+                $setupTs = (int)($ce['setup_ts'] ?? 0);
+                if ($setupTs > 0 && ($confNow - $setupTs) > $confMaxAgeSeconds) {
+                    unset($confPending[$ck]);
+                    $result['confirmation_expired_total']++;
+                }
+            }
+            $this->state->writeJson('storage/confirmation_pending.json', $confPending);
+        }
+        // ── End Confirmation Layer persist ───────────────────────────────────
 
         // ── Slot Priority Layer ─────────────────────────────────────────────
         // Time-aware candidate ranking for limited live slots.

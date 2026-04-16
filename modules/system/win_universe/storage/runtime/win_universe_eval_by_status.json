@@ -1,0 +1,61 @@
+{
+    "computed_at": "2026-04-16T09:38:07+00:00",
+    "attribution_note": "Атрибуция по текущему статусу квалификации символа. Статус на момент открытия сделки не фиксируется — используется приближение.",
+    "groups": {
+        "qualified": {
+            "symbol_count": 0,
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "winrate": null,
+            "avg_roi": null,
+            "median_roi": null,
+            "small_sample_warning": true,
+            "sample_note": "Мало данных (0 сделок) — статистика ненадёжна"
+        },
+        "near_qualified": {
+            "symbol_count": 0,
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "winrate": null,
+            "avg_roi": null,
+            "median_roi": null,
+            "small_sample_warning": true,
+            "sample_note": "Мало данных (0 сделок) — статистика ненадёжна"
+        },
+        "rejected": {
+            "symbol_count": 47,
+            "trade_count": 48,
+            "win_count": 6,
+            "loss_count": 42,
+            "winrate": 0.125,
+            "avg_roi": 0.0034,
+            "median_roi": 0.0017,
+            "small_sample_warning": false,
+            "sample_note": null
+        },
+        "in_win_pool": {
+            "symbol_count": 0,
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "winrate": null,
+            "avg_roi": null,
+            "median_roi": null,
+            "small_sample_warning": true,
+            "sample_note": "Мало данных (0 сделок) — статистика ненадёжна"
+        },
+        "not_in_pool": {
+            "symbol_count": 47,
+            "trade_count": 48,
+            "win_count": 6,
+            "loss_count": 42,
+            "winrate": 0.125,
+            "avg_roi": 0.0034,
+            "median_roi": 0.0017,
+            "small_sample_warning": false,
+            "sample_note": null
+        }
+    }
+}

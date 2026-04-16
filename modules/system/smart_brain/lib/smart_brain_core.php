@@ -3109,6 +3109,13 @@ final class SmartBrainCore
                 $wuIntent['win_universe_bonus_used']           = $wuBonusApplied;
                 $wuIntent['win_universe_bonus_value']          = $wuBonusVal;
                 $wuIntent['win_universe_bonus_reason']         = $wuReason;
+                // Explicit at-entry fields for causal evaluation attribution.
+                // These are stamped at evaluation time and must NOT be recomputed later.
+                $wuIntent['win_universe_status_at_entry']       = $wuStatus;
+                $wuIntent['in_win_pool_at_entry']               = $wuInPool;
+                $wuIntent['win_universe_bonus_applied_at_entry'] = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_used_at_entry']   = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_value_at_entry']  = $wuBonusVal;
                 // These fields are populated by the Slot Priority layer below.
                 $wuIntent['effective_priority_before_bonus']   = null;
                 $wuIntent['effective_priority_after_bonus']    = null;
@@ -3353,6 +3360,7 @@ final class SmartBrainCore
                     'side'                            => $wuPrevIntent['side']                           ?? '',
                     'in_win_pool'                     => $wuPrevIntent['in_win_pool']                    ?? false,
                     'win_universe_status_at_eval'     => $wuPrevIntent['win_universe_status_at_eval']    ?? 'not_in_pool',
+                    'win_universe_status_at_entry'    => $wuPrevIntent['win_universe_status_at_entry']   ?? 'not_in_pool',
                     'win_universe_bonus_applied'      => $wuPrevIntent['win_universe_bonus_applied']     ?? false,
                     'win_universe_bonus_used'         => $wuPrevIntent['win_universe_bonus_used']        ?? false,
                     'win_universe_bonus_value'        => $wuPrevIntent['win_universe_bonus_value']       ?? 0.0,
@@ -3366,6 +3374,57 @@ final class SmartBrainCore
             }
             $result['win_universe_bonus_preview'] = $wuPreview;
         }
+
+        // ── Win Universe entry-attribution log (best-effort, non-fatal) ─────
+        // Append one record per new intent to win_universe/storage/runtime/win_universe_intent_attribution.ndjson.
+        // This log is consumed by WinUniverseService::computeEvalAtEntry() to build causal
+        // entry-status evaluation. Bounded to 2000 records to prevent unbounded growth.
+        if (!empty($intents)) {
+            try {
+                $wuModBaseForLog = dirname($this->moduleBase) . '/win_universe';
+                $wuAttrLogPath   = $wuModBaseForLog . '/storage/runtime/win_universe_intent_attribution.ndjson';
+                $wuAttrDir       = dirname($wuAttrLogPath);
+                if (!is_dir($wuAttrDir)) {
+                    @mkdir($wuAttrDir, 0755, true);
+                }
+                $wuNowTs  = time();
+                $wuLines  = [];
+                foreach ($intents as $wuAttrIntent) {
+                    $wuAttrSym = strtoupper((string)($wuAttrIntent['symbol'] ?? ''));
+                    if ($wuAttrSym === '') {
+                        continue;
+                    }
+                    $wuLines[] = json_encode([
+                        'intent_id'                      => $wuAttrIntent['intent_id']                      ?? null,
+                        'symbol'                         => $wuAttrSym,
+                        'side'                           => (string)($wuAttrIntent['side'] ?? ''),
+                        'created_at_ts'                  => $wuNowTs,
+                        'win_universe_status_at_entry'   => $wuAttrIntent['win_universe_status_at_entry']   ?? 'not_in_pool',
+                        'in_win_pool_at_entry'           => (bool)($wuAttrIntent['in_win_pool_at_entry']   ?? false),
+                        'bonus_applied_at_entry'         => (bool)($wuAttrIntent['win_universe_bonus_applied_at_entry'] ?? false),
+                        'bonus_value_at_entry'           => (float)($wuAttrIntent['win_universe_bonus_value_at_entry']  ?? 0.0),
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (!empty($wuLines)) {
+                    // Read existing lines, prepend new, bound to 2000
+                    $wuExistingLines = [];
+                    if (is_file($wuAttrLogPath)) {
+                        $wuRawLog = @file_get_contents($wuAttrLogPath);
+                        if ($wuRawLog !== false && $wuRawLog !== '') {
+                            $wuExistingLines = array_filter(explode("\n", trim($wuRawLog)));
+                        }
+                    }
+                    $wuAllLines = array_merge($wuLines, array_values($wuExistingLines));
+                    if (count($wuAllLines) > 2000) {
+                        $wuAllLines = array_slice($wuAllLines, 0, 2000);
+                    }
+                    @file_put_contents($wuAttrLogPath, implode("\n", $wuAllLines) . "\n", LOCK_EX);
+                }
+            } catch (\Throwable $wuAttrEx) {
+                // non-fatal
+            }
+        }
+        // ── End Win Universe entry-attribution log ──────────────────────────
 
         // Rebuild rejection_reason_stats to include any slot_priority_lost rejections added above.
         $reasonStats = [];

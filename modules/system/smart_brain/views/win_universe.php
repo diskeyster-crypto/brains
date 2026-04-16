@@ -7,23 +7,27 @@
  * SHADOW ONLY — no trading influence.
  *
  * @var string                   $smartBrainUrl
- * @var array<string,mixed>|null $universe   win_universe.json or null
- * @var array<string,mixed>|null $status     win_universe_status.json or null
- * @var array<string,mixed>|null $pool       win_universe_pool.json or null
- * @var array<string,mixed>|null $promotions win_universe_promotions.json or null
- * @var array<string,mixed>|null $demotions  win_universe_demotions.json or null
- * @var array<string,mixed>      $config     win_universe module config
- * @var array<string,mixed>|null $evalData   win_universe_eval.json or null
+ * @var array<string,mixed>|null $universe          win_universe.json or null
+ * @var array<string,mixed>|null $status            win_universe_status.json or null
+ * @var array<string,mixed>|null $pool              win_universe_pool.json or null
+ * @var array<string,mixed>|null $promotions        win_universe_promotions.json or null
+ * @var array<string,mixed>|null $demotions         win_universe_demotions.json or null
+ * @var array<string,mixed>      $config            win_universe module config
+ * @var array<string,mixed>|null $evalData          win_universe_eval.json or null
+ * @var array<string,mixed>|null $evalByEntryStatus win_universe_eval_by_entry_status.json or null
+ * @var array<string,mixed>|null $bonusEvalAtEntry  win_universe_bonus_eval_at_entry.json or null
  */
 
 $pageTitle = 'Win Universe — Выигрышные монеты';
 $activeTab = 'win_universe';
 
 // Null-safe initialization for variables that may not be set in older controller versions
-$pool       ??= null;
-$promotions ??= null;
-$demotions  ??= null;
-$evalData   ??= null;
+$pool              ??= null;
+$promotions        ??= null;
+$demotions         ??= null;
+$evalData          ??= null;
+$evalByEntryStatus ??= null;
+$bonusEvalAtEntry  ??= null;
 
 $extraStyles = '
 .wu-stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px;
@@ -84,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 JS;
 
-$pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $pool, $promotions, $demotions, $evalData) {
+$pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $pool, $promotions, $demotions, $evalData, $evalByEntryStatus, $bonusEvalAtEntry) {
 
     $wuCfg      = $config['win_universe'] ?? [];
     $minRoi     = $wuCfg['min_roi_threshold'] ?? 1.5;
@@ -372,6 +376,131 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
     </div>
     <?php endif; // evalGroups ?>
 
+    <!-- Оценка по статусу НА МОМЕНТ ВХОДА (entry-status attribution) -->
+    <?php
+    $entryGroups      = $evalByEntryStatus['groups']       ?? null;
+    $entryBonusGroups = $bonusEvalAtEntry['bonus_groups']  ?? null;
+    $entryAttrNote    = $evalByEntryStatus['attribution_note']
+                     ?? ($bonusEvalAtEntry['attribution_note'] ?? '');
+    $entryTs          = $evalByEntryStatus['computed_at']
+                     ?? ($bonusEvalAtEntry['computed_at'] ?? null);
+    $entryLogSize     = (int)($bonusEvalAtEntry['intent_log_size']
+                     ?? ($evalByEntryStatus['intent_log_size'] ?? 0));
+
+    if ($entryGroups !== null || $entryBonusGroups !== null):
+        $entryRoiFmt = static function ($v): string {
+            if ($v === null) return '<span class="neutral">—</span>';
+            $cls = (float)$v >= 0 ? 'positive' : 'negative';
+            return '<span class="' . $cls . '">' . number_format((float)$v * 100, 2) . '%</span>';
+        };
+        $entryWrFmt = static function ($v): string {
+            if ($v === null) return '<span class="neutral">—</span>';
+            $cls = (float)$v >= 0.5 ? 'positive' : 'negative';
+            return '<span class="' . $cls . '">' . number_format((float)$v * 100, 1) . '%</span>';
+        };
+        $renderEntryGroup = static function (string $key, string $label, string $colorClass, array $groups) use ($entryRoiFmt, $entryWrFmt): void {
+            $g = $groups[$key] ?? null;
+            if ($g === null) return;
+            $tc   = (int)($g['trade_count'] ?? 0);
+            $wc   = (int)($g['win_count']   ?? 0);
+            $lc   = (int)($g['loss_count']  ?? 0);
+            $wr   = $g['winrate']   ?? null;
+            $ar   = $g['avg_roi']   ?? null;
+            $mr   = $g['median_roi'] ?? null;
+            $warn = (bool)($g['small_sample_warning'] ?? ($tc < 10));
+            echo '<td class="' . $colorClass . ' fw-semibold">' . htmlspecialchars($label) . '</td>';
+            echo '<td>' . $tc . ($warn ? ' <span class="badge bg-warning text-dark" title="' . htmlspecialchars($g['sample_note'] ?? 'Мало данных') . '">!</span>' : '') . '</td>';
+            echo '<td>' . $wc . '</td>';
+            echo '<td>' . $lc . '</td>';
+            echo '<td>' . $entryWrFmt($wr) . '</td>';
+            echo '<td>' . $entryRoiFmt($ar) . '</td>';
+            echo '<td>' . $entryRoiFmt($mr) . '</td>';
+        };
+    ?>
+    <div class="card mb-4">
+        <div class="card-header py-2 d-flex align-items-center justify-content-between">
+            <span class="fw-semibold" style="color:#7dd3fc;">
+                <i class="bi bi-pin-angle me-1"></i>
+                Оценка по статусу <strong>на момент входа</strong> (entry-time attribution)
+            </span>
+            <div class="d-flex align-items-center gap-3">
+                <?php if ($entryLogSize > 0): ?>
+                <small class="text-secondary">Журнал атрибуции: <?= $entryLogSize ?> записей</small>
+                <?php endif; ?>
+                <?php if ($entryTs): ?>
+                <small class="text-secondary"><?= htmlspecialchars($entryTs) ?></small>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="card-body pb-2 pt-2">
+            <p class="text-secondary mb-2" style="font-size:0.78rem;">
+                <i class="bi bi-info-circle me-1"></i>
+                <?= htmlspecialchars($entryAttrNote) ?>
+                Значок <span class="badge bg-warning text-dark">!</span> — &lt;10 сделок, данные ненадёжны.
+            </p>
+
+            <?php if ($entryLogSize === 0): ?>
+            <div class="alert alert-warning py-2 mb-2" style="font-size:0.82rem;">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Журнал атрибуции пуст. Данные появятся после следующего запуска Smart Brain с новой версией кода.
+            </div>
+            <?php endif; ?>
+
+            <?php if ($entryGroups !== null): ?>
+            <p class="fw-semibold mb-1" style="font-size:0.82rem; color:#7dd3fc;">По статусу квалификации на момент входа:</p>
+            <div class="table-responsive mb-3">
+                <table class="table table-dark table-sm mb-0">
+                    <thead>
+                        <tr class="table-dark">
+                            <th>Статус при входе</th>
+                            <th>Сделок</th>
+                            <th>Побед</th>
+                            <th>Потерь</th>
+                            <th>Winrate</th>
+                            <th>Ср. ROI</th>
+                            <th>Медиан. ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><?php $renderEntryGroup('qualified_at_entry',    '✅ Квалифицирован при входе',    'text-success',   $entryGroups); ?></tr>
+                        <tr><?php $renderEntryGroup('nonqualified_at_entry', '❌ Не квалифицирован при входе', 'text-secondary', $entryGroups); ?></tr>
+                        <tr style="border-top:2px solid #334155;">
+                            <?php $renderEntryGroup('no_attribution', '❓ Без атрибуции', 'text-secondary', $entryGroups); ?>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($entryBonusGroups !== null): ?>
+            <p class="fw-semibold mb-1" style="font-size:0.82rem; color:#c084fc;">По применению бонуса при входе:</p>
+            <div class="table-responsive">
+                <table class="table table-dark table-sm mb-0">
+                    <thead>
+                        <tr class="table-dark">
+                            <th>Бонус при входе</th>
+                            <th>Сделок</th>
+                            <th>Побед</th>
+                            <th>Потерь</th>
+                            <th>Winrate</th>
+                            <th>Ср. ROI</th>
+                            <th>Медиан. ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><?php $renderEntryGroup('bonus_applied',     '🎯 Бонус применён',       'text-purple', $entryBonusGroups); ?></tr>
+                        <tr><?php $renderEntryGroup('bonus_not_applied', '— Бонус не применён',     'text-secondary', $entryBonusGroups); ?></tr>
+                        <tr style="border-top:2px solid #334155;">
+                            <?php $renderEntryGroup('no_attribution',   '❓ Без атрибуции',         'text-secondary', $entryBonusGroups); ?>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; // entryGroups or entryBonusGroups ?>
+
     <!-- Win Pool -->
     <?php if (!empty($winPool)): ?>
     <div class="card mb-4">
@@ -506,384 +635,6 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
                     <strong class="text-warning"><?= (int)$sensitivity['fail_by_winrate'] ?></strong>
                 </div>
                 <?php endif; ?>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <?php if (empty($symbols)): ?>
-    <div class="alert alert-secondary">
-        <i class="bi bi-info-circle me-1"></i>
-        Нет данных. Нажмите <strong>Запустить</strong>, чтобы выполнить первое вычисление.
-        Данные берутся из закрытых сделок Trading Bot и симулятора Smart Brain.
-    </div>
-    <?php else: ?>
-
-    <!-- Symbol search -->
-    <div class="mb-3">
-        <input type="text" id="wuSearch" class="form-control form-control-sm d-inline-block"
-               style="max-width:220px;" placeholder="Поиск монеты…">
-    </div>
-
-    <?php
-    $tableHeader = static function (): void {
-        echo '<thead><tr class="table-dark">';
-        echo '<th>Монета</th>';
-        echo '<th>Статус</th>';
-        echo '<th>Сделок (окно)</th>';
-        echo '<th>Ср. ROI</th>';
-        echo '<th>Лучший ROI</th>';
-        echo '<th>Winrate</th>';
-        echo '<th>Побед &gt; порога</th>';
-        echo '<th>Посл. сделка</th>';
-        echo '<th>Причина</th>';
-        echo '</tr></thead>';
-    };
-
-    // Qualified
-    if (!empty($qualified)): ?>
-    <div class="card mb-4">
-        <div class="card-header py-2">
-            <span class="fw-semibold" style="color:#34d399;">
-                <i class="bi bi-check-circle-fill me-1"></i>
-                Квалифицированные монеты (<?= count($qualified) ?>)
-            </span>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-dark table-sm table-hover mb-0">
-                <?php $tableHeader(); ?>
-                <tbody>
-                    <?php foreach ($qualified as $sym): ?>
-                        <?php $symbolRow($sym, $symbols[$sym] ?? []); ?>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <?php endif;
-
-    // Near-qualified
-    if (!empty($nearQualified)): ?>
-    <div class="card mb-4">
-        <div class="card-header py-2">
-            <span class="fw-semibold" style="color:#fbbf24;">
-                <i class="bi bi-exclamation-circle-fill me-1"></i>
-                Почти квалифицировано (<?= count($nearQualified) ?>)
-            </span>
-            <small class="text-secondary ms-2">— не прошли один мягкий критерий</small>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-dark table-sm table-hover mb-0">
-                <?php $tableHeader(); ?>
-                <tbody>
-                    <?php foreach ($nearQualified as $sym): ?>
-                        <?php $symbolRow($sym, $symbols[$sym] ?? []); ?>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <?php endif;
-
-    // Rejected
-    if (!empty($rejected)): ?>
-    <div class="card mb-4">
-        <div class="card-header py-2">
-            <span class="fw-semibold text-secondary">
-                <i class="bi bi-x-circle-fill me-1"></i>
-                Отклонённые монеты (<?= count($rejected) ?>)
-            </span>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-dark table-sm table-hover mb-0" style="opacity:0.85;">
-                <?php $tableHeader(); ?>
-                <tbody>
-                    <?php foreach ($rejected as $sym): ?>
-                        <?php $symbolRow($sym, $symbols[$sym] ?? []); ?>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <?php endif; // empty($symbols) ?>
-
-    <?php if ($computedAt): ?>
-    <p class="text-secondary mt-2" style="font-size:0.8rem;">
-        <i class="bi bi-info-circle me-1"></i>
-        Данные вычислены: <?= htmlspecialchars($computedAt) ?>.
-        Модуль работает в теневом режиме — торговля не затронута.
-    </p>
-    <?php endif; ?>
-
-    <?php
-};
-
-require __DIR__ . '/_layout.php';
-
-
-$pageTitle = 'Win Universe — Выигрышные монеты';
-$activeTab = 'win_universe';
-
-$extraStyles = '
-.wu-stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px;
-                padding: 1rem; text-align: center; }
-.wu-stat-value { font-size: 1.6rem; font-weight: 700; }
-.wu-stat-label { font-size: 0.75rem; color: #94a3b8; margin-top: 0.2rem; }
-.positive { color: #4ade80; }
-.negative { color: #f87171; }
-.neutral  { color: #94a3b8; }
-.badge-qualified    { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
-.badge-near         { background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
-.badge-rejected     { background: rgba(100,116,139,0.2); color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
-.shadow-banner { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.3);
-                 border-radius: 6px; padding: 0.5rem 0.9rem; font-size: 0.82rem; color: #fbbf24; }
-';
-
-$extraScripts = <<<'JS'
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const runBtn = document.getElementById('wuRunBtn');
-    if (runBtn) {
-        runBtn.addEventListener('click', function () {
-            runBtn.disabled = true;
-            runBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Вычисление…';
-            fetch('/admin/smart_brain/win_universe/run', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    runBtn.disabled = false;
-                    runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Запустить';
-                    if (data.ok) {
-                        location.reload();
-                    } else {
-                        alert('Ошибка: ' + (data.error || 'unknown'));
-                    }
-                })
-                .catch(() => {
-                    runBtn.disabled = false;
-                    runBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Запустить';
-                    alert('Ошибка запроса.');
-                });
-        });
-    }
-
-    const searchInput = document.getElementById('wuSearch');
-    if (searchInput) {
-        searchInput.addEventListener('input', function () {
-            const q = this.value.toLowerCase();
-            document.querySelectorAll('tr[data-symbol]').forEach(function (row) {
-                row.style.display = row.dataset.symbol.toLowerCase().includes(q) ? '' : 'none';
-            });
-        });
-    }
-});
-</script>
-JS;
-
-$pageContent = function () use ($universe, $status, $config, $smartBrainUrl) {
-
-    $wuCfg      = $config['win_universe'] ?? [];
-    $minRoi     = $wuCfg['min_roi_threshold'] ?? 1.5;
-    $minAvgRoi  = $wuCfg['min_avg_roi']       ?? 0.0;
-    $lookback   = $wuCfg['lookback_days']      ?? 30;
-    $minTrades  = $wuCfg['min_closed_trades']  ?? 3;
-    $minWinrate = $wuCfg['min_winrate']        ?? 0.0;
-
-    $qualified     = $universe['qualified']         ?? [];
-    $nearQualified = $universe['near_qualified']    ?? [];
-    $rejected      = $universe['rejected']          ?? [];
-    $symbols       = $universe['symbols']           ?? [];
-    $sourcesUsed   = $universe['sources_used']      ?? [];
-    $tradeTotal    = $universe['trade_count_total'] ?? 0;
-    $computedAt    = $universe['computed_at']       ?? null;
-    $sensitivity   = $universe['threshold_sensitivity'] ?? ($status['threshold_sensitivity'] ?? []);
-
-    $lastRun = $status['run_at']  ?? null;
-    $lastOk  = $status['ok']      ?? null;
-    $mode    = $status['mode']    ?? 'shadow';
-
-    $roiFmt = static function ($v): string {
-        if ($v === null) {
-            return '<span class="neutral">—</span>';
-        }
-        $cls = (float)$v >= 0 ? 'positive' : 'negative';
-        // ROI values are stored as decimal fractions (0.01 = 1%). Multiply by 100 for display.
-        return '<span class="' . $cls . '">' . number_format((float)$v * 100, 2) . '%</span>';
-    };
-
-    $wrFmt = static function ($v): string {
-        if ($v === null) {
-            return '<span class="neutral">—</span>';
-        }
-        $cls = (float)$v >= 0.5 ? 'positive' : 'negative';
-        return '<span class="' . $cls . '">' . number_format((float)$v * 100, 1) . '%</span>';
-    };
-
-    $statusBadge = static function (string $status): string {
-        return match ($status) {
-            'qualified'     => '<span class="badge badge-qualified">✅ Квалифицирован</span>',
-            'near_qualified' => '<span class="badge badge-near">🔶 Почти</span>',
-            default         => '<span class="badge badge-rejected">❌ Отклонён</span>',
-        };
-    };
-
-    $symbolRow = static function (string $sym, array $rec) use ($roiFmt, $wrFmt, $statusBadge): void {
-        $reason  = htmlspecialchars($rec['qualification_reason'] ?? '');
-        $lastT   = ($rec['last_trade_time'] ?? '') ? htmlspecialchars(substr((string)$rec['last_trade_time'], 0, 10)) : '—';
-        $qStatus = (string)($rec['qualification_status'] ?? 'rejected');
-        echo '<tr data-symbol="' . htmlspecialchars($sym) . '">';
-        echo '<td><strong>' . htmlspecialchars($sym) . '</strong></td>';
-        echo '<td>' . $statusBadge($qStatus) . '</td>';
-        echo '<td>' . (int)($rec['closed_trades_window'] ?? 0) . '</td>';
-        echo '<td>' . $roiFmt($rec['recent_avg_roi'] ?? null) . '</td>';
-        echo '<td>' . $roiFmt($rec['best_roi'] ?? null) . '</td>';
-        echo '<td>' . $wrFmt($rec['recent_winrate'] ?? null) . '</td>';
-        echo '<td>' . (int)($rec['wins_above_threshold'] ?? 0) . '</td>';
-        echo '<td>' . $lastT . '</td>';
-        echo '<td><small class="text-secondary">' . $reason . '</small></td>';
-        echo '</tr>';
-    };
-
-    ?>
-
-    <!-- Shadow-mode banner -->
-    <div class="shadow-banner mb-4">
-        <i class="bi bi-shield-check me-1"></i>
-        <strong>Теневой режим (Shadow Only)</strong> — Win Universe работает только для наблюдения.
-        Данный модуль не влияет на торговлю, приоритеты монет и маршрутизацию сигналов.
-    </div>
-
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h4 class="mb-1">
-                <i class="bi bi-trophy text-warning me-2"></i>Win Universe
-                <span class="badge bg-warning text-dark ms-2" style="font-size:0.65rem;">SHADOW</span>
-            </h4>
-            <p class="text-secondary mb-0">
-                Квалификация монет по историческим сделкам — только аналитика, без влияния на торговлю
-            </p>
-        </div>
-        <div>
-            <button id="wuRunBtn" class="btn btn-primary btn-sm">
-                <i class="bi bi-play-fill me-1"></i>Запустить
-            </button>
-        </div>
-    </div>
-
-    <!-- Last run status bar -->
-    <?php if ($lastRun): ?>
-    <div class="alert alert-secondary py-2 mb-3" style="font-size:0.82rem;">
-        <i class="bi bi-clock me-1"></i>
-        Последний запуск: <strong><?= htmlspecialchars($lastRun) ?></strong>
-        <?php if ($lastOk === true): ?>
-            <span class="badge bg-success ms-2">OK</span>
-        <?php elseif ($lastOk === false): ?>
-            <span class="badge bg-danger ms-2">Ошибка</span>
-        <?php endif; ?>
-        &nbsp;|&nbsp; Источники: <?= htmlspecialchars(implode(', ', $sourcesUsed) ?: '—') ?>
-        &nbsp;|&nbsp; Сделок в окне: <strong><?= (int)$tradeTotal ?></strong>
-    </div>
-    <?php endif; ?>
-
-    <!-- Thresholds card -->
-    <div class="card mb-4">
-        <div class="card-header py-2">
-            <small class="fw-semibold text-secondary">Текущие пороги квалификации</small>
-        </div>
-        <div class="card-body py-2">
-            <div class="d-flex flex-wrap gap-4">
-                <div>
-                    <span class="text-secondary">Мин. ROI (порог):</span>
-                    <strong><?= number_format((float)$minRoi * 100, 2) ?>%</strong>
-                </div>
-                <div>
-                    <span class="text-secondary">Мин. средний ROI:</span>
-                    <strong><?= $minAvgRoi > 0.0 ? number_format((float)$minAvgRoi * 100, 2) . '%' : 'выкл.' ?></strong>
-                </div>
-                <div>
-                    <span class="text-secondary">Окно:</span>
-                    <strong><?= (int)$lookback ?> дн.</strong>
-                </div>
-                <div>
-                    <span class="text-secondary">Мин. сделок:</span>
-                    <strong><?= (int)$minTrades ?></strong>
-                </div>
-                <div>
-                    <span class="text-secondary">Мин. winrate:</span>
-                    <strong><?= $minWinrate > 0.0 ? number_format((float)$minWinrate * 100, 1) . '%' : 'выкл.' ?></strong>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Summary stat cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="wu-stat-card">
-                <div class="wu-stat-value text-success"><?= count($qualified) ?></div>
-                <div class="wu-stat-label">✅ Квалифицировано</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="wu-stat-card">
-                <div class="wu-stat-value text-warning"><?= count($nearQualified) ?></div>
-                <div class="wu-stat-label">🔶 Почти квалифицировано</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="wu-stat-card">
-                <div class="wu-stat-value text-secondary"><?= count($rejected) ?></div>
-                <div class="wu-stat-label">❌ Отклонено</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="wu-stat-card">
-                <div class="wu-stat-value"><?= count($symbols) ?></div>
-                <div class="wu-stat-label">Монет проанализировано</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Threshold sensitivity breakdown -->
-    <?php if (!empty($sensitivity)): ?>
-    <div class="card mb-4">
-        <div class="card-header py-2">
-            <small class="fw-semibold text-secondary">
-                <i class="bi bi-bar-chart me-1"></i>Почему qualified_count может быть 0 — разбивка по критериям
-            </small>
-        </div>
-        <div class="card-body py-2">
-            <div class="row g-3" style="font-size:0.85rem;">
-                <div class="col-auto">
-                    <span class="text-secondary">Не прошли по кол-ву сделок:</span>
-                    <strong class="text-warning"><?= (int)($sensitivity['fail_by_trade_count'] ?? 0) ?></strong>
-                </div>
-                <div class="col-auto">
-                    <span class="text-secondary">Не прошли по ROI:</span>
-                    <strong class="text-warning"><?= (int)($sensitivity['fail_by_roi_threshold'] ?? 0) ?></strong>
-                </div>
-                <?php if (($sensitivity['fail_by_avg_roi'] ?? 0) > 0): ?>
-                <div class="col-auto">
-                    <span class="text-secondary">Не прошли по ср. ROI:</span>
-                    <strong class="text-warning"><?= (int)$sensitivity['fail_by_avg_roi'] ?></strong>
-                </div>
-                <?php endif; ?>
-                <?php if (($sensitivity['fail_by_winrate'] ?? 0) > 0): ?>
-                <div class="col-auto">
-                    <span class="text-secondary">Не прошли по winrate:</span>
-                    <strong class="text-warning"><?= (int)$sensitivity['fail_by_winrate'] ?></strong>
-                </div>
-                <?php endif; ?>
-                <div class="col-auto">
-                    <span class="text-secondary">Только по сделкам:</span>
-                    <strong><?= (int)($sensitivity['fail_by_trade_count_only'] ?? 0) ?></strong>
-                </div>
-                <div class="col-auto">
-                    <span class="text-secondary">Только по ROI:</span>
-                    <strong><?= (int)($sensitivity['fail_by_roi_only'] ?? 0) ?></strong>
-                </div>
             </div>
         </div>
     </div>

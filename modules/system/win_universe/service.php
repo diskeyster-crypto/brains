@@ -99,10 +99,31 @@ final class WinUniverseService
                 // non-fatal — evaluation failure must not break the main run
             }
 
+            // Entry-status attribution evaluation (best-effort, non-fatal)
+            $evalAtEntry = null;
+            try {
+                $evalAtEntry = $this->computeEvalAtEntry($ts);
+                $this->saveJson('win_universe_eval_at_entry.json', $evalAtEntry);
+                $this->saveJson('win_universe_eval_by_entry_status.json', [
+                    'computed_at'      => $ts,
+                    'attribution_note' => $evalAtEntry['attribution_note'],
+                    'groups'           => $evalAtEntry['groups'],
+                ]);
+                $this->saveJson('win_universe_bonus_eval_at_entry.json', [
+                    'computed_at'      => $ts,
+                    'attribution_note' => $evalAtEntry['attribution_note'],
+                    'bonus_groups'     => $evalAtEntry['bonus_groups'],
+                    'intent_log_size'  => $evalAtEntry['intent_log_size'],
+                ]);
+            } catch (\Throwable $ignored) {
+                // non-fatal
+            }
+
             $elapsed = round(microtime(true) - $startTime, 3);
 
             // Build eval summary for status.json
-            $evalSummary = $this->buildEvalSummary($evalData);
+            $evalSummary        = $this->buildEvalSummary($evalData);
+            $evalAtEntrySummary = $this->buildEvalAtEntrySummary($evalAtEntry);
 
             $status = [
                 'ok'                            => true,
@@ -136,7 +157,7 @@ final class WinUniverseService
                 'excessive_qualification_note'          => $result['excessive_qualification_note'] ?? null,
                 'mode'                                  => $result['config_used']['win_universe_mode'] ?? 'shadow',
                 'mode_source'                           => $this->config['_meta']['mode_source'] ?? 'config_defaults',
-            ] + $evalSummary;
+            ] + $evalSummary + $evalAtEntrySummary;
 
             $this->saveJson('win_universe_status.json', $status);
 
@@ -238,6 +259,36 @@ final class WinUniverseService
     public function getEvalByStatus(): ?array
     {
         return $this->loadJson('win_universe_eval_by_status.json');
+    }
+
+    /**
+     * Return entry-status-based evaluation (win_universe_eval_at_entry.json) or null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function getEvalAtEntry(): ?array
+    {
+        return $this->loadJson('win_universe_eval_at_entry.json');
+    }
+
+    /**
+     * Return evaluation by entry status (win_universe_eval_by_entry_status.json) or null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function getEvalByEntryStatus(): ?array
+    {
+        return $this->loadJson('win_universe_eval_by_entry_status.json');
+    }
+
+    /**
+     * Return bonus evaluation at entry (win_universe_bonus_eval_at_entry.json) or null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function getBonusEvalAtEntry(): ?array
+    {
+        return $this->loadJson('win_universe_bonus_eval_at_entry.json');
     }
 
     /**
@@ -516,6 +567,461 @@ final class WinUniverseService
                 (bool)($groups['qualified']['small_sample_warning'] ?? true)
                 && (bool)($groups['in_win_pool']['small_sample_warning'] ?? true)
             ),
+        ];
+    }
+
+    /**
+     * Build a compact at-entry eval summary for win_universe_status.json.
+     *
+     * @param array<string,mixed>|null $evalAtEntry Return value of computeEvalAtEntry(), or null on error
+     * @return array<string,mixed>
+     */
+    private function buildEvalAtEntrySummary(?array $evalAtEntry): array
+    {
+        if ($evalAtEntry === null) {
+            return [];
+        }
+        $groups      = $evalAtEntry['groups']      ?? [];
+        $bonusGroups = $evalAtEntry['bonus_groups'] ?? [];
+
+        $pick = static function (string $group, string $field) use ($groups) {
+            return $groups[$group][$field] ?? null;
+        };
+        $pickB = static function (string $group, string $field) use ($bonusGroups) {
+            return $bonusGroups[$group][$field] ?? null;
+        };
+
+        return [
+            'eval_at_entry_computed_at'             => $evalAtEntry['computed_at'] ?? null,
+            'eval_at_entry_intent_log_size'         => $evalAtEntry['intent_log_size'] ?? 0,
+            'qualified_at_entry_trade_count'        => $pick('qualified_at_entry', 'trade_count'),
+            'qualified_at_entry_winrate'            => $pick('qualified_at_entry', 'winrate'),
+            'qualified_at_entry_avg_roi'            => $pick('qualified_at_entry', 'avg_roi'),
+            'qualified_at_entry_small_sample'       => $pick('qualified_at_entry', 'small_sample_warning'),
+            'nonqualified_at_entry_trade_count'     => $pick('nonqualified_at_entry', 'trade_count'),
+            'nonqualified_at_entry_winrate'         => $pick('nonqualified_at_entry', 'winrate'),
+            'nonqualified_at_entry_avg_roi'         => $pick('nonqualified_at_entry', 'avg_roi'),
+            'nonqualified_at_entry_small_sample'    => $pick('nonqualified_at_entry', 'small_sample_warning'),
+            'bonus_applied_at_entry_trade_count'    => $pickB('bonus_applied', 'trade_count'),
+            'bonus_applied_at_entry_winrate'        => $pickB('bonus_applied', 'winrate'),
+            'bonus_applied_at_entry_avg_roi'        => $pickB('bonus_applied', 'avg_roi'),
+            'bonus_applied_at_entry_small_sample'   => $pickB('bonus_applied', 'small_sample_warning'),
+        ];
+    }
+
+    /**
+     * Load and parse the intent attribution NDJSON log.
+     *
+     * Returns list of attribution records: each record has
+     * symbol, side, created_at_ts, win_universe_status_at_entry, in_win_pool_at_entry,
+     * bonus_applied_at_entry, bonus_value_at_entry.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function loadAttributionLog(): array
+    {
+        $path = $this->runtimeDir . '/win_universe_intent_attribution.ndjson';
+        if (!is_file($path)) {
+            return [];
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return [];
+        }
+        $records = [];
+        foreach (explode("\n", trim($raw)) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $decoded = json_decode($line, true);
+            if (is_array($decoded) && isset($decoded['symbol'])) {
+                $records[] = $decoded;
+            }
+        }
+        return $records;
+    }
+
+    /**
+     * Load all closed trades for evaluation (mirrors WinUniverseEngine logic).
+     * Reads bot closed trades and simulator closed trades.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function loadClosedTradesForEval(): array
+    {
+        $moduleBase    = __DIR__;
+        $botBase       = dirname($moduleBase) . '/trading_bot';
+        $brainBase     = dirname($moduleBase) . '/smart_brain';
+        $trades        = [];
+
+        // ── Bot storage resolution ────────────────────────────────────────────
+        $botMode = 'demo';
+        try {
+            $botCfgPath = $botBase . '/config/bot.json';
+            if (is_file($botCfgPath)) {
+                $j = @file_get_contents($botCfgPath);
+                if ($j !== false && $j !== '') {
+                    $d = json_decode($j, true);
+                    if (is_array($d)) {
+                        $botMode = (string)($d['module']['mode'] ?? $d['mode'] ?? 'demo');
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // keep 'demo'
+        }
+        $modeMap   = ['live' => 'storage_live', 'demo' => 'storage_demo', 'paper' => 'storage_paper'];
+        $preferred = $modeMap[$botMode] ?? 'storage_demo';
+        $botStorageDirs = [$botBase . '/' . $preferred];
+        foreach ($modeMap as $sfx) {
+            if ($sfx !== $preferred) {
+                $botStorageDirs[] = $botBase . '/' . $sfx;
+            }
+        }
+        $botStorageDirs[] = $botBase . '/storage';
+        $botStorageDir = null;
+        foreach ($botStorageDirs as $sd) {
+            if (is_dir($sd)) {
+                $botStorageDir = $sd;
+                break;
+            }
+        }
+
+        // ── Bot closed trades ─────────────────────────────────────────────────
+        if ($botStorageDir !== null) {
+            try {
+                $raw = [];
+                $aggPath = $botStorageDir . '/trades/closed_trades.json';
+                if (is_file($aggPath)) {
+                    $c = @file_get_contents($aggPath);
+                    if ($c !== false && $c !== '') {
+                        $dec = json_decode($c, true);
+                        if (is_array($dec) && !empty($dec)) {
+                            $raw = $dec;
+                        }
+                    }
+                }
+                if (empty($raw)) {
+                    $closedDir = $botStorageDir . '/trades/closed';
+                    if (is_dir($closedDir)) {
+                        foreach (glob($closedDir . '/*.json') ?: [] as $p) {
+                            $c = @file_get_contents($p);
+                            if ($c === false || $c === '') {
+                                continue;
+                            }
+                            $t = json_decode($c, true);
+                            if (is_array($t) && !empty($t)) {
+                                $raw[] = $t;
+                            }
+                        }
+                    }
+                }
+                foreach ($raw as $trade) {
+                    $n = $this->normaliseTrade($trade, 'bot');
+                    if ($n !== null) {
+                        $trades[] = $n;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // non-fatal
+            }
+        }
+
+        // ── Simulator closed trades ───────────────────────────────────────────
+        try {
+            $simPath = $brainBase . '/storage/simulator/closed.json';
+            if (is_file($simPath)) {
+                $c = @file_get_contents($simPath);
+                if ($c !== false && $c !== '') {
+                    $dec = json_decode($c, true);
+                    if (is_array($dec)) {
+                        foreach ($dec as $trade) {
+                            if (!is_array($trade) || ($trade['status'] ?? '') !== 'closed') {
+                                continue;
+                            }
+                            $n = $this->normaliseTrade($trade, 'simulator');
+                            if ($n !== null) {
+                                $trades[] = $n;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        return $trades;
+    }
+
+    /**
+     * Normalise a raw trade record for evaluation purposes.
+     *
+     * @param array<string,mixed> $trade
+     * @param string              $source 'bot' or 'simulator'
+     * @return array<string,mixed>|null
+     */
+    private function normaliseTrade(array $trade, string $source): ?array
+    {
+        $sym = strtoupper((string)($trade['symbol'] ?? ''));
+        if ($sym === '') {
+            return null;
+        }
+
+        // Closed timestamp
+        $closedAt = 0;
+        foreach (['closed_ts', 'closed_at'] as $fld) {
+            if (isset($trade[$fld])) {
+                $v = $trade[$fld];
+                $closedAt = is_numeric($v) ? (int)$v : (int)strtotime((string)$v);
+                if ($closedAt > 0) {
+                    break;
+                }
+            }
+        }
+        if ($closedAt <= 0) {
+            return null;
+        }
+
+        // Opened timestamp
+        $openedAt = 0;
+        foreach (['opened_ts', 'opened_at'] as $fld) {
+            if (isset($trade[$fld])) {
+                $v = $trade[$fld];
+                $openedAt = is_numeric($v) ? (int)$v : (int)strtotime((string)$v);
+                if ($openedAt > 0) {
+                    break;
+                }
+            }
+        }
+
+        $roi = isset($trade['roi']) && is_numeric($trade['roi']) ? (float)$trade['roi'] : null;
+
+        $durationMinutes = null;
+        if (isset($trade['duration_minutes']) && is_numeric($trade['duration_minutes'])) {
+            $durationMinutes = (float)$trade['duration_minutes'];
+        } elseif (isset($trade['duration']) && is_numeric($trade['duration'])) {
+            $durationMinutes = (float)$trade['duration'];
+        } elseif ($openedAt > 0 && $closedAt > $openedAt) {
+            $durationMinutes = round(($closedAt - $openedAt) / 60.0, 1);
+        }
+
+        return [
+            'symbol'                          => $sym,
+            'side'                            => strtolower((string)($trade['side'] ?? '')),
+            'roi'                             => $roi,
+            'closed_at'                       => $closedAt,
+            'opened_at'                       => $openedAt,
+            'duration_minutes'                => $durationMinutes,
+            'source'                          => $source,
+        ];
+    }
+
+    /**
+     * Compute entry-status-based evaluation.
+     *
+     * Algorithm:
+     *   1. Load the intent attribution log (NDJSON).
+     *   2. Build per-symbol "last known entry status" from the log.
+     *      For each symbol, find the most recent attribution record.
+     *   3. Load closed trades (bot + simulator).
+     *   4. For each trade, assign entry status from the attribution map.
+     *      Trades whose symbols have no attribution record get status 'no_attribution'.
+     *   5. Compute per-group performance metrics.
+     *   6. Also compute bonus_applied vs bonus_not_applied performance.
+     *
+     * Important: this is best-effort attribution. Attribution log only covers
+     * intents created since the attribution feature was deployed. Trades without
+     * attribution are explicitly shown as 'no_attribution' — not hidden.
+     *
+     * @param string $ts ISO timestamp
+     * @return array<string,mixed>
+     */
+    private function computeEvalAtEntry(string $ts): array
+    {
+        $minEvalTrades = 10;
+
+        // Load attribution log (newest first due to prepend-on-write)
+        $attrRecords = $this->loadAttributionLog();
+        $logSize     = count($attrRecords);
+
+        // Build symbol → latest attribution record map
+        // Also build symbol+side → attribution for more precise matching
+        $attrBySymbol = [];
+        foreach ($attrRecords as $rec) {
+            $sym = strtoupper((string)($rec['symbol'] ?? ''));
+            if ($sym === '') {
+                continue;
+            }
+            // Newest records come first — only record first occurrence per symbol
+            if (!isset($attrBySymbol[$sym])) {
+                $attrBySymbol[$sym] = $rec;
+            }
+        }
+
+        // Load closed trades
+        $closedTrades = $this->loadClosedTradesForEval();
+
+        // ── Main entry-status groups ──────────────────────────────────────────
+        $groupKeys = ['qualified_at_entry', 'nonqualified_at_entry', 'no_attribution'];
+        $groups    = [];
+        foreach ($groupKeys as $gk) {
+            $groups[$gk] = [
+                'trade_count'         => 0,
+                'win_count'           => 0,
+                '_roi_values'         => [],
+                '_duration_values'    => [],
+            ];
+        }
+
+        // ── Bonus groups ──────────────────────────────────────────────────────
+        $bonusGroupKeys = ['bonus_applied', 'bonus_not_applied', 'no_attribution'];
+        $bonusGroups    = [];
+        foreach ($bonusGroupKeys as $bk) {
+            $bonusGroups[$bk] = [
+                'trade_count'      => 0,
+                'win_count'        => 0,
+                '_roi_values'      => [],
+            ];
+        }
+
+        $wuConfig    = $this->config['win_universe'] ?? [];
+        $minRoi      = (float)($wuConfig['min_roi_threshold'] ?? 0.01);
+
+        foreach ($closedTrades as $trade) {
+            $sym = (string)($trade['symbol'] ?? '');
+            $roi = $trade['roi'];
+            if ($sym === '' || $roi === null) {
+                continue;
+            }
+
+            $isWin   = $roi >= $minRoi;
+            $attrRec = $attrBySymbol[$sym] ?? null;
+
+            if ($attrRec === null) {
+                // No attribution record for this symbol
+                $entryStatus  = 'no_attribution';
+                $bonusApplied = null; // unknown
+            } else {
+                $statusAtEntry = (string)($attrRec['win_universe_status_at_entry'] ?? 'not_in_pool');
+                $entryStatus   = ($statusAtEntry === 'qualified') ? 'qualified_at_entry' : 'nonqualified_at_entry';
+                $bonusApplied  = (bool)($attrRec['bonus_applied_at_entry'] ?? false);
+            }
+
+            // Accumulate main group
+            if (isset($groups[$entryStatus])) {
+                $groups[$entryStatus]['trade_count']++;
+                if ($isWin) {
+                    $groups[$entryStatus]['win_count']++;
+                }
+                $groups[$entryStatus]['_roi_values'][] = $roi;
+                if (($trade['duration_minutes'] ?? null) !== null) {
+                    $groups[$entryStatus]['_duration_values'][] = (float)$trade['duration_minutes'];
+                }
+            }
+
+            // Accumulate bonus group
+            if ($bonusApplied === null) {
+                $bonusGroups['no_attribution']['trade_count']++;
+                if ($isWin) {
+                    $bonusGroups['no_attribution']['win_count']++;
+                }
+                $bonusGroups['no_attribution']['_roi_values'][] = $roi;
+            } elseif ($bonusApplied) {
+                $bonusGroups['bonus_applied']['trade_count']++;
+                if ($isWin) {
+                    $bonusGroups['bonus_applied']['win_count']++;
+                }
+                $bonusGroups['bonus_applied']['_roi_values'][] = $roi;
+            } else {
+                $bonusGroups['bonus_not_applied']['trade_count']++;
+                if ($isWin) {
+                    $bonusGroups['bonus_not_applied']['win_count']++;
+                }
+                $bonusGroups['bonus_not_applied']['_roi_values'][] = $roi;
+            }
+        }
+
+        // ── Finalize groups ───────────────────────────────────────────────────
+        $finalGroups = [];
+        foreach ($groups as $key => $g) {
+            $tc = $g['trade_count'];
+            $wc = $g['win_count'];
+            $lc = max(0, $tc - $wc);
+            $finalGroups[$key] = $this->buildGroupStats($g, $tc, $wc, $lc, $minEvalTrades);
+        }
+
+        $finalBonusGroups = [];
+        foreach ($bonusGroups as $key => $g) {
+            $tc = $g['trade_count'];
+            $wc = $g['win_count'];
+            $lc = max(0, $tc - $wc);
+            $finalBonusGroups[$key] = $this->buildGroupStats($g, $tc, $wc, $lc, $minEvalTrades);
+        }
+
+        $totalAttributed = ($finalGroups['qualified_at_entry']['trade_count']   ?? 0)
+                         + ($finalGroups['nonqualified_at_entry']['trade_count'] ?? 0);
+        $noAttrCount     = $finalGroups['no_attribution']['trade_count'] ?? 0;
+
+        return [
+            'computed_at'        => $ts,
+            'attribution_note'   => 'Атрибуция по статусу Win Universe НА МОМЕНТ создания интента. '
+                . 'Символы без записи в журнале атрибуции отображаются как «no_attribution».',
+            'intent_log_size'    => $logSize,
+            'symbols_attributed' => count($attrBySymbol),
+            'trades_attributed'  => $totalAttributed,
+            'trades_no_attr'     => $noAttrCount,
+            'min_eval_sample_warning_threshold' => $minEvalTrades,
+            'groups'             => $finalGroups,
+            'bonus_groups'       => $finalBonusGroups,
+        ];
+    }
+
+    /**
+     * Compute standard performance statistics for an accumulated trade group.
+     *
+     * @param array<string,mixed> $g             Raw accumulated group data
+     * @param int                 $tc            Trade count
+     * @param int                 $wc            Win count
+     * @param int                 $lc            Loss count
+     * @param int                 $minEvalTrades Small-sample threshold
+     * @return array<string,mixed>
+     */
+    private function buildGroupStats(array $g, int $tc, int $wc, int $lc, int $minEvalTrades): array
+    {
+        $winrate = $tc > 0 ? round($wc / $tc, 4) : null;
+
+        $rois      = $g['_roi_values'] ?? [];
+        $avgRoi    = null;
+        $medianRoi = null;
+        if (!empty($rois)) {
+            $avgRoi = round(array_sum($rois) / count($rois), 4);
+            sort($rois);
+            $mid       = (int)(count($rois) / 2);
+            $medianRoi = count($rois) % 2 === 0
+                ? round(($rois[$mid - 1] + $rois[$mid]) / 2.0, 4)
+                : round($rois[$mid], 4);
+        }
+
+        $durations = $g['_duration_values'] ?? [];
+        $avgDuration = null;
+        if (!empty($durations)) {
+            $avgDuration = round(array_sum($durations) / count($durations), 1);
+        }
+
+        return [
+            'trade_count'           => $tc,
+            'win_count'             => $wc,
+            'loss_count'            => $lc,
+            'winrate'               => $winrate,
+            'avg_roi'               => $avgRoi,
+            'median_roi'            => $medianRoi,
+            'avg_time_to_close_min' => $avgDuration,
+            'small_sample_warning'  => $tc < $minEvalTrades,
+            'sample_note'           => $tc < $minEvalTrades
+                ? 'Мало данных (' . $tc . ' сд.) — статистика ненадёжна'
+                : null,
         ];
     }
 

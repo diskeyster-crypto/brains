@@ -69,6 +69,7 @@ final class WinUniverseEngine
         $minTargetRoi            = (float)($config['min_target_roi']              ?? 0.0);
         $minWinsAboveTarget      = (int)($config['min_wins_above_target']         ?? 0);
         $maxTimeToTargetMinutes  = (int)($config['max_time_to_target_minutes']    ?? 0);
+        $minSpeedSamples         = max(0, (int)($config['speed_to_target_min_samples'] ?? 2));
 
         $cutoff = time() - ($lookbackDays * 86400);
 
@@ -89,7 +90,7 @@ final class WinUniverseEngine
                 $symbol, $stats,
                 $minRoi, $minAvgRoi, $minTrades, $minWinrate,
                 $lookbackDays,
-                $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes
+                $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes, $minSpeedSamples
             );
             $results[$symbol] = $rec;
             if ($rec['qualified']) {
@@ -118,7 +119,7 @@ final class WinUniverseEngine
         // Candidate sensitivity preview: how many would qualify under active and softer thresholds
         $candidatePreview = $this->buildCandidateSensitivityPreview(
             $symbolStats, $minRoi, $minAvgRoi, $minTrades, $minWinrate, $lookbackDays,
-            $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes
+            $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes, $minSpeedSamples
         );
 
         // Two-pool lifecycle: compute promotions, demotions, new win pool state
@@ -208,6 +209,7 @@ final class WinUniverseEngine
                 'min_target_roi'              => $minTargetRoi,
                 'min_wins_above_target'       => $minWinsAboveTarget,
                 'max_time_to_target_minutes'  => $maxTimeToTargetMinutes,
+                'speed_to_target_min_samples' => $minSpeedSamples,
                 'qualification_expiry_days'   => $expiryDays,
                 'demotion_loss_streak'        => $demotionStreak,
                 'win_universe_mode'           => (string)($config['win_universe_mode'] ?? 'shadow'),
@@ -808,15 +810,16 @@ final class WinUniverseEngine
             }
 
             $result[$sym] = [
-                'symbol'                       => $sym,
-                'closed_trades_count'          => $raw['closed_trades_count'],
-                'closed_trades_count_window'   => $windowCount,
-                'wins_count'                   => $raw['wins_count'],
-                'losses_count'                 => $raw['losses_count'],
-                'wins_above_threshold'         => $raw['wins_above_threshold'],
-                'wins_above_target'            => $raw['wins_above_target'],
-                'avg_time_to_target_minutes'   => $avgTimeToTarget,
-                'median_time_to_target_minutes' => $medianTimeToTarget,
+                'symbol'                         => $sym,
+                'closed_trades_count'            => $raw['closed_trades_count'],
+                'closed_trades_count_window'     => $windowCount,
+                'wins_count'                     => $raw['wins_count'],
+                'losses_count'                   => $raw['losses_count'],
+                'wins_above_threshold'           => $raw['wins_above_threshold'],
+                'wins_above_target'              => $raw['wins_above_target'],
+                'target_roi_duration_samples_count' => count($durations),
+                'avg_time_to_target_minutes'     => $avgTimeToTarget,
+                'median_time_to_target_minutes'  => $medianTimeToTarget,
                 'fastest_time_to_target_minutes' => $fastestTimeToTarget,
                 'recent_avg_roi'               => $recentAvgRoi,
                 'best_roi'                     => $raw['best_roi'],
@@ -867,7 +870,8 @@ final class WinUniverseEngine
         int $lookbackDays,
         float $minTargetRoi = 0.0,
         int $minWinsAboveTarget = 0,
-        int $maxTimeToTargetMinutes = 0
+        int $maxTimeToTargetMinutes = 0,
+        int $minSpeedSamples = 2
     ): array {
         $windowCount          = (int)($stats['closed_trades_count_window'] ?? 0);
         $recentAvgRoi         = $stats['recent_avg_roi'];
@@ -877,6 +881,7 @@ final class WinUniverseEngine
         $avgTimeToTarget      = $stats['avg_time_to_target_minutes'] ?? null;
         $medianTimeToTarget   = $stats['median_time_to_target_minutes'] ?? null;
         $fastestTimeToTarget  = $stats['fastest_time_to_target_minutes'] ?? null;
+        $durationSamplesCount = (int)($stats['target_roi_duration_samples_count'] ?? 0);
 
         // Gate 1: sufficient trade count (hard gate — must pass to be near-qualified)
         $meetsTradeCount = $windowCount >= $minTrades;
@@ -897,27 +902,48 @@ final class WinUniverseEngine
         $meetsWinsAboveTarget  = !$targetRoiGateEnabled || ($winsAboveTarget >= $minWinsAboveTarget);
 
         // Gate 6: speed-to-target (only active if maxTimeToTargetMinutes > 0)
-        // When the gate is active:
-        //   - null avg_time means no valid duration samples for target hits → FAIL (not a pass)
-        //   - avg_time > max → FAIL too_slow_to_target
-        //   - avg_time <= max → PASS
+        // Bounded relaxation rules (applied in order):
+        //   A. Insufficient samples guard: when fewer than minSpeedSamples timed entries
+        //      exist for target wins, pass with 'unverified_insufficient_samples' rather than
+        //      hard-failing — prevents symbols from being permanently blocked by missing
+        //      trade-duration timestamps (common with simulator_active source).
+        //   B. When enough samples exist, prefer median over average — median is resistant
+        //      to single slow-outlier trades that inflate the average.
+        //   C. If median is unavailable, fall back to avg.
+        //   Gate remains a real gate: 'too_slow_to_target' still triggers when the effective
+        //   speed (median or avg) genuinely exceeds max_time_to_target_minutes.
         $speedGateEnabled    = $maxTimeToTargetMinutes > 0;
         $meetsSpeedToTarget  = true;
         $speedToTargetStatus = 'not_evaluated';
         $speedToTargetReason = null;
         if ($speedGateEnabled) {
             if ($avgTimeToTarget === null) {
-                // Gate is on but no valid duration data for target-hitting trades.
-                // Cannot verify speed compliance — treat as a failure so this is explicit.
-                $meetsSpeedToTarget  = false;
-                $speedToTargetStatus = 'no_valid_samples';
-                $speedToTargetReason = 'no_valid_time_to_target_samples';
-            } elseif ($avgTimeToTarget > $maxTimeToTargetMinutes) {
-                $meetsSpeedToTarget  = false;
-                $speedToTargetStatus = 'too_slow';
-                $speedToTargetReason = 'too_slow_to_target';
+                // No duration data at all for target-hitting trades.
+                if ($minSpeedSamples > 0) {
+                    // Sample guard active — pass without speed verification.
+                    $meetsSpeedToTarget  = true;
+                    $speedToTargetStatus = 'unverified_insufficient_samples';
+                } else {
+                    // No sample guard configured — null data is a hard failure.
+                    $meetsSpeedToTarget  = false;
+                    $speedToTargetStatus = 'no_valid_samples';
+                    $speedToTargetReason = 'no_valid_time_to_target_samples';
+                }
+            } elseif ($minSpeedSamples > 0 && $durationSamplesCount < $minSpeedSamples) {
+                // Have some duration data but below minimum sample count — pass as unverified.
+                $meetsSpeedToTarget  = true;
+                $speedToTargetStatus = 'unverified_insufficient_samples';
             } else {
-                $speedToTargetStatus = 'fast_enough';
+                // Enough samples to evaluate. Prefer median (resistant to outliers);
+                // fall back to avg when median is unavailable.
+                $effectiveSpeed = ($medianTimeToTarget !== null) ? $medianTimeToTarget : $avgTimeToTarget;
+                if ($effectiveSpeed > $maxTimeToTargetMinutes) {
+                    $meetsSpeedToTarget  = false;
+                    $speedToTargetStatus = 'too_slow';
+                    $speedToTargetReason = 'too_slow_to_target';
+                } else {
+                    $speedToTargetStatus = ($medianTimeToTarget !== null) ? 'fast_enough_by_median' : 'fast_enough';
+                }
             }
         } else {
             $speedToTargetStatus = 'gate_disabled';
@@ -1087,6 +1113,7 @@ final class WinUniverseEngine
             'qualification_failure_codes'    => $failureCodes,
             'wins_above_threshold'           => $winsAbove,
             'wins_above_target'              => $winsAboveTarget,
+            'target_roi_duration_samples_count' => $durationSamplesCount,
             'avg_time_to_target_minutes'     => $avgTimeToTarget,
             'median_time_to_target_minutes'  => $medianTimeToTarget,
             'fastest_time_to_target_minutes' => $fastestTimeToTarget,
@@ -1101,13 +1128,14 @@ final class WinUniverseEngine
             'last_trade_time'                => $stats['last_trade_time'],
             'lookback_window_used'           => $lookbackDays,
             'thresholds_used'                => [
-                'min_roi_threshold'          => $minRoi,
-                'min_avg_roi'                => $minAvgRoi,
-                'min_winrate'                => $minWinrate,
-                'min_closed_trades'          => $minTrades,
-                'min_target_roi'             => $minTargetRoi,
-                'min_wins_above_target'      => $minWinsAboveTarget,
-                'max_time_to_target_minutes' => $maxTimeToTargetMinutes,
+                'min_roi_threshold'           => $minRoi,
+                'min_avg_roi'                 => $minAvgRoi,
+                'min_winrate'                 => $minWinrate,
+                'min_closed_trades'           => $minTrades,
+                'min_target_roi'              => $minTargetRoi,
+                'min_wins_above_target'       => $minWinsAboveTarget,
+                'max_time_to_target_minutes'  => $maxTimeToTargetMinutes,
+                'speed_to_target_min_samples' => $minSpeedSamples,
             ],
             // Distance-to-qualify metrics (positive = still needs this much more to pass)
             // ROI distances are in decimal fraction units (0.01 = 1%).
@@ -1277,15 +1305,16 @@ final class WinUniverseEngine
         int $lookbackDays,
         float $minTargetRoi = 0.0,
         int $minWinsAboveTarget = 0,
-        int $maxTimeToTargetMinutes = 0
+        int $maxTimeToTargetMinutes = 0,
+        int $minSpeedSamples = 2
     ): array {
         // Helper: count how many symbols qualify under given thresholds.
-        // $targetRoi / $winsAboveTarget / $maxSpeed are passed explicitly so
+        // $targetRoi / $winsAboveTarget / $maxSpeed / $minSpeedSamp are passed explicitly so
         // the "current" scenario can use the full active gate set.
-        $countQ = function (float $roi, float $avgRoi, int $trades, float $wr, float $targetRoi = 0.0, int $winsAboveTarget = 0, int $maxSpeed = 0) use ($symbolStats, $lookbackDays): int {
+        $countQ = function (float $roi, float $avgRoi, int $trades, float $wr, float $targetRoi = 0.0, int $winsAboveTarget = 0, int $maxSpeed = 0, int $minSpeedSamp = 2) use ($symbolStats, $lookbackDays): int {
             $n = 0;
             foreach ($symbolStats as $sym => $stats) {
-                $rec = $this->qualify($sym, $stats, $roi, $avgRoi, $trades, $wr, $lookbackDays, $targetRoi, $winsAboveTarget, $maxSpeed);
+                $rec = $this->qualify($sym, $stats, $roi, $avgRoi, $trades, $wr, $lookbackDays, $targetRoi, $winsAboveTarget, $maxSpeed, $minSpeedSamp);
                 if ($rec['qualified']) {
                     $n++;
                 }
@@ -1304,7 +1333,8 @@ final class WinUniverseEngine
             'min_target_roi'             => $minTargetRoi,
             'min_wins_above_target'      => $minWinsAboveTarget,
             'max_time_to_target_minutes' => $maxTimeToTargetMinutes,
-            'qualified_count'            => $countQ($minRoi, $minAvgRoi, $minTrades, $minWinrate, $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes),
+            'speed_to_target_min_samples' => $minSpeedSamples,
+            'qualified_count'            => $countQ($minRoi, $minAvgRoi, $minTrades, $minWinrate, $minTargetRoi, $minWinsAboveTarget, $maxTimeToTargetMinutes, $minSpeedSamples),
         ];
 
         // Scenario B — softer: ROI threshold ×0.75, min_trades −1 (min 1).

@@ -67,10 +67,29 @@ return [
          * Set to 0 to disable the speed-to-target gate.
          * Example: 1440 = max 24 hours average time to target.
          *
-         * NOTE: When this gate is active and a symbol has target wins but no duration
-         * data available, it fails with no_valid_time_to_target_samples.
+         * NOTE: When the gate is active, the effective speed is taken as the median
+         * of timed target-winning trades (resistant to slow-outlier distortion).
+         * Average is used as fallback when median is unavailable.
+         * When fewer than speed_to_target_min_samples timed entries exist the gate
+         * passes without strict enforcement (see speed_to_target_min_samples).
          */
         'max_time_to_target_minutes' => 1440,
+
+        /**
+         * Minimum number of target-ROI wins with valid duration data required before
+         * the speed-to-target gate is strictly enforced.
+         *
+         * When a symbol has wins above min_target_roi but fewer than this many of them
+         * include trade-duration timestamps, the speed gate passes with status
+         * 'unverified_insufficient_samples' rather than blocking qualification.
+         *
+         * This prevents symbols from being permanently excluded simply because their
+         * trade sources (e.g. simulator_active) do not carry closed-trade durations.
+         *
+         * Recommended: 2 (require at least 2 timed samples before judging speed).
+         * Set to 0 to always apply strict speed enforcement regardless of sample count.
+         */
+        'speed_to_target_min_samples' => 2,
 
         /**
          * Lookback window in days for recent trade statistics.

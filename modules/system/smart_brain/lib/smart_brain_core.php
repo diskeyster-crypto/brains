@@ -368,7 +368,7 @@ final class SmartBrainCore
         // and produces live_intents.json for the Trading Bot executor.
         // ================================================================
         $liveConfig = $this->config->buildLiveConfig();
-        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits);
+        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits, $prices);
 
         // Simulator uses real prices for entry trigger / ROI / MAE / MFE / SL / TP
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
@@ -1063,6 +1063,7 @@ final class SmartBrainCore
             'confirmation_reject_total'        => (int)($liveIntentResult['confirmation_reject_total']        ?? 0),
             'confirmation_fakeout_total'       => (int)($liveIntentResult['confirmation_fakeout_total']       ?? 0),
             'confirmation_expired_total'       => (int)($liveIntentResult['confirmation_expired_total']       ?? 0),
+            'confirmation_state_preview'       => $liveIntentResult['confirmation_state_preview']             ?? [],
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1148,7 +1149,7 @@ final class SmartBrainCore
      * @param array  $userLimits User limits from config
      * @return array Live stage audit result
      */
-    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits): array
+    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits, array $prices = []): array
     {
         $result = [
             'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
@@ -1297,6 +1298,9 @@ final class SmartBrainCore
             'confirmation_reject_total'        => 0,
             'confirmation_fakeout_total'       => 0,
             'confirmation_expired_total'       => 0,
+            // Confirmation Layer observability: preview of all pending entries and their current state.
+            // Includes setup_detected, waiting, confirmed, fakeout, expired events this cycle.
+            'confirmation_state_preview'       => [],
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -2797,64 +2801,142 @@ final class SmartBrainCore
                 $confLayerResult['confirmation_layer_used'] = true;
                 $result['confirmation_total']++;
 
-                $confKey = $symbol . '_' . (string)($signal['pattern_algorithm'] ?? '') . '_short';
-
-                // Reference zone for fakeout check (upper edge of short entry zone at setup).
+                // Build a precise lineage key: prefer signal_id (stable identity) when it is
+                // a real upstream ID (not a fallback we generated ourselves this run).
+                // Fallback: stable zone-hash anchored to the setup geometry so a new setup
+                // at a different price level gets its own slot.
                 $confZoneHigh = (float)($signal['entry_zone_high'] ?? 0.0);
+                $confZoneLow  = (float)($signal['entry_zone_low']  ?? 0.0);
+                $patternAlgoConf = (string)($signal['pattern_algorithm'] ?? '');
+                if ($signalIdSource === 'original' && $signalId !== '') {
+                    $confKey = 'sid_' . $signalId;
+                } else {
+                    $zoneHash = substr(md5($symbol . '|' . $patternAlgoConf . '|short|' . $confZoneHigh . '|' . $confZoneLow), 0, 12);
+                    $confKey = $symbol . '_' . $patternAlgoConf . '_short_' . $zoneHash;
+                }
+
+                // Current live price for continuation proof.
+                $currentLivePrice = (float)($prices[$symbol] ?? 0.0);
 
                 if (!isset($confPending[$confKey])) {
-                    // First time seeing this symbol+pattern+side → record setup, hold this cycle.
+                    // First time seeing this lineage → record setup, hold this cycle.
                     $confPending[$confKey] = [
                         'symbol'            => $symbol,
-                        'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                        'pattern_algorithm' => $patternAlgoConf,
                         'side'              => 'short',
+                        'conf_key'          => $confKey,
                         'setup_detected_at' => date('c'),
                         'setup_ts'          => $confNow,
                         'cycles_seen'       => 1,
                         'setup_zone_high'   => $confZoneHigh,
+                        'setup_zone_low'    => $confZoneLow,
+                        'setup_live_price'  => $currentLivePrice,
                     ];
                     $confLayerResult['confirmation_setup_detected'] = true;
                     $confLayerResult['confirmation_result']         = 'setup_detected';
                     $confLayerResult['confirmation_reason']         = 'first_detection_hold';
                     $confLayerResult['confirmation_wait_cycles_used'] = 1;
+                    $result['confirmation_state_preview'][] = [
+                        'conf_key'   => $confKey,
+                        'symbol'     => $symbol,
+                        'state'      => 'setup_detected',
+                        'cycles'     => 1,
+                        'setup_zone_high' => $confZoneHigh,
+                        'live_price' => $currentLivePrice,
+                    ];
                     // Skip to next signal — do not create a live intent this cycle.
                     continue;
                 }
 
-                // Seen before: increment cycle count and check fakeout / confirmation.
+                // Seen before: increment cycle count and check fakeout / continuation / confirmation.
                 $confPending[$confKey]['cycles_seen']++;
                 $cyclesSeen = (int)$confPending[$confKey]['cycles_seen'];
                 $confLayerResult['confirmation_wait_cycles_used'] = $cyclesSeen;
 
                 // Fakeout check for short: if current entry_zone_high has drifted significantly
-                // above the setup zone high, the top was reclaimed → fakeout, reject.
+                // above the setup zone high, the top was reclaimed → fakeout, route to demo.
                 $setupZoneHigh = (float)($confPending[$confKey]['setup_zone_high'] ?? 0.0);
                 $fakeoutThreshold = $setupZoneHigh > 0.0
                     ? $setupZoneHigh * (1.0 + $confReclaimTolPct)
                     : 0.0;
 
                 if ($fakeoutThreshold > 0.0 && $confZoneHigh > $fakeoutThreshold) {
-                    // Fakeout detected — remove from pending, reject as demo.
+                    // Fakeout detected — remove from pending, route to demo.
                     unset($confPending[$confKey]);
                     $confLayerResult['confirmation_result'] = 'fakeout';
                     $confLayerResult['confirmation_reason'] = 'zone_high_reclaimed_above_setup';
                     $result['confirmation_fakeout_total']++;
                     $result['confirmation_demo_total']++;
+                    $result['confirmation_state_preview'][] = [
+                        'conf_key'   => $confKey,
+                        'symbol'     => $symbol,
+                        'state'      => 'fakeout',
+                        'cycles'     => $cyclesSeen,
+                        'setup_zone_high' => $setupZoneHigh,
+                        'current_zone_high' => $confZoneHigh,
+                        'live_price' => $currentLivePrice,
+                    ];
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_fakeout', $selectionMode);
                     continue;
                 }
 
                 if ($cyclesSeen >= $confWaitCycles) {
-                    // Enough cycles elapsed without fakeout → confirmed.
-                    unset($confPending[$confKey]);
-                    $confLayerResult['confirmation_result'] = 'confirmed';
-                    $confLayerResult['confirmation_reason'] = 'wait_cycles_satisfied';
-                    $result['confirmation_confirmed_total']++;
-                    // Fall through — signal proceeds to live intent.
+                    // Enough cycles elapsed without fakeout — now require explicit downside
+                    // continuation proof: the live price must be strictly below the setup zone high.
+                    // This ensures we do not auto-confirm on mere wait-cycle expiry when price
+                    // has drifted sideways or back up toward the trigger level.
+                    $hasDownsideContinuation = ($currentLivePrice > 0.0 && $setupZoneHigh > 0.0)
+                        ? ($currentLivePrice < $setupZoneHigh)
+                        : false;
+
+                    if ($hasDownsideContinuation) {
+                        // Confirmed: wait elapsed AND price below trigger level.
+                        unset($confPending[$confKey]);
+                        $confLayerResult['confirmation_result'] = 'confirmed';
+                        $confLayerResult['confirmation_reason'] = 'wait_cycles_and_downside_continuation';
+                        $result['confirmation_confirmed_total']++;
+                        $result['confirmation_state_preview'][] = [
+                            'conf_key'   => $confKey,
+                            'symbol'     => $symbol,
+                            'state'      => 'confirmed',
+                            'cycles'     => $cyclesSeen,
+                            'setup_zone_high' => $setupZoneHigh,
+                            'live_price' => $currentLivePrice,
+                        ];
+                        // Fall through — signal proceeds to live intent.
+                    } else {
+                        // Wait elapsed but no downside continuation proof — reject (not fakeout).
+                        // Prefer demo on soft rollout; remove from pending to unblock next fresh setup.
+                        unset($confPending[$confKey]);
+                        $confLayerResult['confirmation_result'] = 'reject';
+                        $confLayerResult['confirmation_reason'] = 'no_downside_continuation_at_expiry';
+                        $result['confirmation_reject_total']++;
+                        $result['confirmation_demo_total']++;
+                        $result['confirmation_state_preview'][] = [
+                            'conf_key'   => $confKey,
+                            'symbol'     => $symbol,
+                            'state'      => 'reject',
+                            'cycles'     => $cyclesSeen,
+                            'setup_zone_high' => $setupZoneHigh,
+                            'live_price' => $currentLivePrice,
+                            'reason'     => 'no_downside_continuation_at_expiry',
+                        ];
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_no_continuation', $selectionMode);
+                        continue;
+                    }
                 } else {
                     // Still waiting: hold this cycle.
                     $confLayerResult['confirmation_result'] = 'waiting';
                     $confLayerResult['confirmation_reason'] = 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen);
+                    $result['confirmation_state_preview'][] = [
+                        'conf_key'   => $confKey,
+                        'symbol'     => $symbol,
+                        'state'      => 'waiting',
+                        'cycles'     => $cyclesSeen,
+                        'cycles_needed' => $confWaitCycles,
+                        'setup_zone_high' => $setupZoneHigh,
+                        'live_price' => $currentLivePrice,
+                    ];
                     continue;
                 }
             }
@@ -3410,6 +3492,14 @@ final class SmartBrainCore
             foreach ($confPending as $ck => $ce) {
                 $setupTs = (int)($ce['setup_ts'] ?? 0);
                 if ($setupTs > 0 && ($confNow - $setupTs) > $confMaxAgeSeconds) {
+                    $result['confirmation_state_preview'][] = [
+                        'conf_key'        => $ck,
+                        'symbol'          => (string)($ce['symbol'] ?? ''),
+                        'state'           => 'expired',
+                        'cycles'          => (int)($ce['cycles_seen'] ?? 0),
+                        'setup_zone_high' => (float)($ce['setup_zone_high'] ?? 0.0),
+                        'age_seconds'     => $confNow - $setupTs,
+                    ];
                     unset($confPending[$ck]);
                     $result['confirmation_expired_total']++;
                 }

@@ -1117,6 +1117,7 @@ final class SmartBrainConfig
             'leverage_control' => [
                 'leverage_mode' => (string)($userLimits['leverage_mode'] ?? 'auto'),
                 'manual_leverage' => (int)($userLimits['manual_leverage'] ?? 3),
+                'max_leverage' => (int)($userLimits['max_leverage'] ?? 15),
             ],
             'stop_control' => [
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
@@ -1987,6 +1988,7 @@ final class SmartBrainConfig
             'live_reverse_side_enabled',
             'leverage_mode',
             'manual_leverage',
+            'max_leverage',
             'max_budget_per_coin',
             'stop_control_mode',
             'stop_loss_from_entry_roi',

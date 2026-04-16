@@ -2139,6 +2139,35 @@ final class SmartBrainConfig
             ? 'legacy_user_config'
             : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
 
+        // Leverage chain config proof — effective values after overlay, for operator diagnostics
+        $userLimitsAfter  = $this->config['risk_engine']['user_limits'] ?? [];
+        $profilesCfgAfter = $this->config['profiles']['settings'] ?? (array)($this->config['profiles'] ?? []);
+        $profileKeyAfter  = (string)($profilesCfgAfter['default_profile'] ?? '111');
+        $profileAfter     = (array)($profilesCfgAfter['profiles'][$profileKeyAfter] ?? []);
+        $leverageModeAfter    = (string)($userLimitsAfter['leverage_mode'] ?? 'auto');
+        $requestedManualAfter = (int)($userLimitsAfter['manual_leverage'] ?? 3);
+        $requestedMaxAfter    = (int)($userLimitsAfter['max_leverage'] ?? 15);
+        $bootstrapMaxAfter    = (int)($userLimitsAfter['bootstrap_max_leverage'] ?? 3);
+        $profileMaxAfter      = (int)($profileAfter['max_leverage'] ?? 5);
+        if ($leverageModeAfter === 'manual') {
+            $effectiveCapAfter      = $requestedMaxAfter;
+            $effectiveCapLabelAfter = 'max_leverage';
+        } else {
+            $effectiveCapAfter      = min($profileMaxAfter, $requestedMaxAfter);
+            $effectiveCapLabelAfter = ($profileMaxAfter <= $requestedMaxAfter) ? 'profile_max' : 'max_leverage';
+        }
+        $status['leverage_chain_config'] = [
+            'leverage_mode'           => $leverageModeAfter,
+            'requested_manual'        => $requestedManualAfter,
+            'requested_max'           => $requestedMaxAfter,
+            'bootstrap_max'           => $bootstrapMaxAfter,
+            'profile_max'             => $profileMaxAfter,
+            'effective_cap'           => $effectiveCapAfter,
+            'effective_cap_label'     => $effectiveCapLabelAfter,
+            'manual_would_be_crushed' => ($leverageModeAfter === 'manual' && $requestedManualAfter > $requestedMaxAfter),
+            'auto_crushed_by_profile' => ($leverageModeAfter !== 'manual' && $profileMaxAfter < $requestedMaxAfter),
+        ];
+
         return $status;
     }
 

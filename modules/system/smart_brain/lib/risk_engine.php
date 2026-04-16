@@ -275,6 +275,13 @@ final class RiskEngine
                     $leverageReason = 'manual=' . $leverage;
                 }
 
+                // Leverage chain — full audit trail of every cap applied
+                $leverageChain = $this->computeLeverageChain(
+                    $leverageMode, $manualLeverage, $maxLeverage,
+                    $bootstrapMaxLeverage, 'bootstrap_max',
+                    $leverage, $leverageResult['reason']
+                );
+
                 $budget = round($maxBudgetPerCoin * $bootstrapBudgetFactor, 2);
                 $stopLoss = round($corridorWidth * $stopLossRange, 6);
                 $takeProfit = round($corridorWidth * $takeProfitRoi, 6);
@@ -329,6 +336,12 @@ final class RiskEngine
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
                     'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
+                    'leverage_chain_requested_manual' => $leverageChain['requested_manual'],
+                    'leverage_chain_requested_max'    => $leverageChain['requested_max'],
+                    'leverage_chain_mode_cap'         => $leverageChain['mode_cap'],
+                    'leverage_chain_mode_cap_label'   => $leverageChain['mode_cap_label'],
+                    'leverage_chain_final'             => $leverageChain['final'],
+                    'leverage_chain_reason'            => $leverageChain['reason'],
                     'risk' => [
                         'leverage' => $leverage,
                         'budget' => $budget,
@@ -373,6 +386,13 @@ final class RiskEngine
                     $leverage = max(1, min($manualLeverage, $maxLeverage));
                     $leverageReason = 'manual=' . $leverage;
                 }
+
+                // Leverage chain — full audit trail of every cap applied
+                $leverageChain = $this->computeLeverageChain(
+                    $leverageMode, $manualLeverage, $maxLeverage,
+                    $profileMaxLeverage, 'profile_max',
+                    $leverage, $leverageResult['reason']
+                );
 
                 // Calculate budget: profile.budget × reliability_score, clamped ≤ max_budget_per_coin
                 $budget = round($profileBudget * $reliabilityScore, 2);
@@ -434,6 +454,12 @@ final class RiskEngine
                     'stop_control_mode' => $stopControlMode,
                     'manual_stop_loss_roi' => $manualStopLossRoi,
                     'stop_loss_from_entry_roi' => (float)($userLimits['stop_loss_from_entry_roi'] ?? 0.10),
+                    'leverage_chain_requested_manual' => $leverageChain['requested_manual'],
+                    'leverage_chain_requested_max'    => $leverageChain['requested_max'],
+                    'leverage_chain_mode_cap'         => $leverageChain['mode_cap'],
+                    'leverage_chain_mode_cap_label'   => $leverageChain['mode_cap_label'],
+                    'leverage_chain_final'             => $leverageChain['final'],
+                    'leverage_chain_reason'            => $leverageChain['reason'],
                     'risk' => [
                         'leverage' => $leverage,
                         'budget' => $budget,
@@ -791,6 +817,69 @@ final class RiskEngine
         return [
             'leverage' => $leverage,
             'reason' => implode(' + ', $reasons),
+        ];
+    }
+
+    /**
+     * Compute the full leverage chain for observability.
+     *
+     * Returns a record that shows every layer that participated in the final
+     * leverage decision — so that callers can detect silent crushing and expose
+     * the reason in runtime artifacts (live_intents.json, last_run.json, etc.).
+     *
+     * @param string $leverageMode      'manual' or 'auto'
+     * @param int    $requestedManual   manual_leverage from user/Config Center
+     * @param int    $requestedMax      max_leverage from user/Config Center
+     * @param int    $modeCap           bootstrap_max_leverage (bootstrap) or profile max_leverage (normal)
+     * @param string $modeCapLabel      label for the mode cap ('bootstrap_max' or 'profile_max')
+     * @param int    $finalLeverage     actual leverage that will be used
+     * @param string $dynamicReason     reason string from computeDynamicLeverage (auto mode) or ''
+     * @return array<string,mixed>
+     */
+    private function computeLeverageChain(
+        string $leverageMode,
+        int    $requestedManual,
+        int    $requestedMax,
+        int    $modeCap,
+        string $modeCapLabel,
+        int    $finalLeverage,
+        string $dynamicReason
+    ): array {
+        $reason = '';
+
+        if ($leverageMode === 'manual') {
+            if ($finalLeverage < $requestedManual) {
+                // Crushed — show why
+                $caps = [];
+                if ($modeCap > 0 && $finalLeverage <= $modeCap && $requestedManual > $modeCap) {
+                    $caps[] = 'capped_by_' . $modeCapLabel . '(' . $modeCap . ')';
+                }
+                if ($finalLeverage <= $requestedMax && $requestedManual > $requestedMax) {
+                    $caps[] = 'capped_by_max_leverage(' . $requestedMax . ')';
+                }
+                $reason = 'manual_crushed:' . implode('+', $caps ?: ['unknown']);
+            } else {
+                $reason = 'manual_applied(' . $finalLeverage . ')';
+            }
+        } else {
+            // auto mode
+            $parts = ['auto_dynamic(' . $dynamicReason . ')'];
+            if ($modeCap > 0) {
+                $parts[] = 'capped_by_' . $modeCapLabel . '(' . $modeCap . ')';
+            }
+            if ($finalLeverage < $requestedMax) {
+                $parts[] = 'below_requested_max(' . $requestedMax . ')';
+            }
+            $reason = implode('+', $parts);
+        }
+
+        return [
+            'requested_manual' => $requestedManual,
+            'requested_max'    => $requestedMax,
+            'mode_cap'         => $modeCap,
+            'mode_cap_label'   => $modeCapLabel,
+            'final'            => $finalLeverage,
+            'reason'           => $reason,
         ];
     }
 }

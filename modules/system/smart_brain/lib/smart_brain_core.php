@@ -1070,6 +1070,38 @@ final class SmartBrainCore
             'win_universe_last_run_mode'               => $liveIntentResult['win_universe_last_run_mode']                     ?? null,
             'win_universe_pool_size'                   => (int)($liveIntentResult['win_universe_pool_size']                   ?? 0),
             'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
+            // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
+            'leverage_chain_config' => (static function (
+                array $userLimits,
+                array $profilesCfg
+            ): array {
+                $profileKey = (string)($profilesCfg['default_profile'] ?? '111');
+                $profile = (array)($profilesCfg['profiles'][$profileKey] ?? []);
+                $leverageMode   = (string)($userLimits['leverage_mode'] ?? 'auto');
+                $requestedManual = (int)($userLimits['manual_leverage'] ?? 3);
+                $requestedMax    = (int)($userLimits['max_leverage'] ?? 15);
+                $bootstrapMax    = (int)($userLimits['bootstrap_max_leverage'] ?? 3);
+                $profileMax      = (int)($profile['max_leverage'] ?? 5);
+                // Effective cap = whichever layer is most restrictive for the active mode
+                if ($leverageMode === 'manual') {
+                    $effectiveCap = $requestedMax;
+                    $effectiveCapLabel = 'max_leverage';
+                } else {
+                    $effectiveCap = min($profileMax, $requestedMax);
+                    $effectiveCapLabel = ($profileMax <= $requestedMax) ? 'profile_max' : 'max_leverage';
+                }
+                return [
+                    'leverage_mode'          => $leverageMode,
+                    'requested_manual'       => $requestedManual,
+                    'requested_max'          => $requestedMax,
+                    'bootstrap_max'          => $bootstrapMax,
+                    'profile_max'            => $profileMax,
+                    'effective_cap'          => $effectiveCap,
+                    'effective_cap_label'    => $effectiveCapLabel,
+                    'manual_would_be_crushed' => ($leverageMode === 'manual' && $requestedManual > $requestedMax),
+                    'auto_crushed_by_profile' => ($leverageMode !== 'manual' && $profileMax < $requestedMax),
+                ];
+            })($userLimits, $profilesCfg),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -2822,6 +2854,14 @@ final class SmartBrainCore
             if (isset($signal['schema_version'])) {
                 $intent['source_schema_version'] = $signal['schema_version'];
             }
+
+            // Leverage chain — expose every cap applied so operators can diagnose silent crushing
+            $intent['leverage_chain_requested_manual'] = (int)($signal['leverage_chain_requested_manual'] ?? $userLimits['manual_leverage'] ?? 0);
+            $intent['leverage_chain_requested_max']    = (int)($signal['leverage_chain_requested_max'] ?? $userLimits['max_leverage'] ?? 0);
+            $intent['leverage_chain_mode_cap']         = (int)($signal['leverage_chain_mode_cap'] ?? 0);
+            $intent['leverage_chain_mode_cap_label']   = (string)($signal['leverage_chain_mode_cap_label'] ?? '');
+            $intent['leverage_chain_final']            = (int)($signal['leverage_chain_final'] ?? $botReadyRisk['leverage'] ?? 0);
+            $intent['leverage_chain_reason']           = (string)($signal['leverage_chain_reason'] ?? '');
 
             $intents[] = $intent;
             $result['approvals'][] = [

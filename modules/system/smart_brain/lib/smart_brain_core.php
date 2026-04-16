@@ -1051,6 +1051,11 @@ final class SmartBrainCore
             'wave_filter_no_effect_total'      => (int)($liveIntentResult['wave_filter_no_effect_total']      ?? 0),
             'wave_filter_rejected_preview'     => $liveIntentResult['wave_filter_rejected_preview']           ?? [],
             'wave_filter_release_valve_used'   => (bool)($liveIntentResult['wave_filter_release_valve_used']  ?? false),
+            // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
+            'v2_cleanup_total'                 => (int)($liveIntentResult['v2_cleanup_total']                 ?? 0),
+            'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
+            'v2_cleanup_demo_total'            => (int)($liveIntentResult['v2_cleanup_demo_total']            ?? 0),
+            'v2_cleanup_no_effect_total'       => (int)($liveIntentResult['v2_cleanup_no_effect_total']       ?? 0),
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1090,12 +1095,16 @@ final class SmartBrainCore
                     $effectiveCap = min($profileMax, $requestedMax);
                     $effectiveCapLabel = ($profileMax <= $requestedMax) ? 'profile_max' : 'max_leverage';
                 }
+                // risk_engine_cap: highest leverage the dynamic algorithm can return in normal mode
+                // (profile_max × 1, before volatility/corridor/reliability adjustments)
+                $riskEngineCap = ($leverageMode === 'manual') ? $requestedMax : $effectiveCap;
                 return [
                     'leverage_mode'          => $leverageMode,
                     'requested_manual'       => $requestedManual,
                     'requested_max'          => $requestedMax,
                     'bootstrap_max'          => $bootstrapMax,
                     'profile_max'            => $profileMax,
+                    'risk_engine_cap'        => $riskEngineCap,
                     'effective_cap'          => $effectiveCap,
                     'effective_cap_label'    => $effectiveCapLabel,
                     'manual_would_be_crushed' => ($leverageMode === 'manual' && $requestedManual > $requestedMax),
@@ -1269,6 +1278,11 @@ final class SmartBrainCore
             'wave_filter_no_effect_total'      => 0,
             'wave_filter_rejected_preview'     => [],
             'wave_filter_release_valve_used'   => false,
+            // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
+            'v2_cleanup_total'                 => 0,
+            'v2_cleanup_reject_total'          => 0,
+            'v2_cleanup_demo_total'            => 0,
+            'v2_cleanup_no_effect_total'       => 0,
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -2637,6 +2651,109 @@ final class SmartBrainCore
             }
             // === END WAVE FILTER ===
 
+            // === V2 CLEANUP FILTER ===
+            // Stricter quality tightening for V2 contextual patterns only.
+            // Runs after the general wave filter. Targets weak+slow V2 candidates that
+            // the wave filter's soft-mode demote still lets through, as well as
+            // medium-quality V2 signals that fall below V2-specific tighter floors.
+            // Does NOT touch V3, non-V2 patterns, or global wave filter logic.
+            {
+                $v2cPatternAlgo = (string)($signal['pattern_algorithm'] ?? '');
+                $isV2Pattern    = ($v2cPatternAlgo === 'double_bottom_contextual_v2'
+                                   || $v2cPatternAlgo === 'double_top_contextual_v2');
+
+                $v2cApplied     = false;
+                $v2cReason      = '';
+                $v2cQualityBand = 'none';
+                $v2cWaveState   = '';
+
+                if ($isV2Pattern) {
+                    $result['v2_cleanup_total']++;
+
+                    // Wave states already computed by wave filter block above (always available).
+                    $v2cAmpState   = $wfAmplitudeState;
+                    $v2cSpeedState = $wfSpeedState;
+                    $v2cWaveState  = $v2cAmpState . '+' . $v2cSpeedState;
+
+                    // Quality metrics for V2 cleanup exception gate.
+                    $v2cEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                    $v2cPatternConf  = (float)($signal['pattern_confidence'] ?? 0.0);
+                    $v2cConfScore    = (float)($signal['confirmation_score'] ?? 0.0);
+                    $v2cSignalStr    = (float)($signal['reclaim_strength_score'] ?? 0.0);
+
+                    // Classify quality band for V2 (tighter than wave filter exception thresholds).
+                    if ($v2cEntryQuality >= 0.72 && $v2cPatternConf >= 0.64 && $v2cConfScore >= 0.68) {
+                        $v2cQualityBand = 'high';
+                    } elseif ($v2cEntryQuality >= 0.58 && $v2cPatternConf >= 0.52) {
+                        $v2cQualityBand = 'medium';
+                    } else {
+                        $v2cQualityBand = 'low';
+                    }
+
+                    // Strong exception: a V2 weak+slow may survive only when signal is clearly
+                    // strong across entry quality, pattern confidence, confirmation, AND signal strength.
+                    $v2cStrongException = ($v2cEntryQuality >= 0.72
+                                          && $v2cPatternConf >= 0.64
+                                          && $v2cConfScore   >= 0.68
+                                          && $v2cSignalStr   >= 0.60);
+
+                    // Rule A: V2 weak+slow → reject unless strong exception passes.
+                    if ($v2cAmpState === 'weak' && $v2cSpeedState === 'slow') {
+                        $v2cApplied = true;
+                        if ($v2cStrongException) {
+                            // Passes with strong exception — tag as demo-tier, allow through.
+                            $v2cReason = 'v2_cleanup_weak_slow_strong_exception';
+                            $result['v2_cleanup_demo_total']++;
+                        } else {
+                            // No exception — reject from live pool.
+                            $v2cReason = 'v2_cleanup_weak_slow_rejected';
+                            $result['v2_cleanup_reject_total']++;
+                            $this->rejectLiveSignal($result, $symbol, $signalId, $v2cReason, $selectionMode);
+                            continue;
+                        }
+                    }
+
+                    // Rule B: V2 medium quality band → apply V2-specific tighter live floor.
+                    // Reject only when BOTH entry quality AND pattern confidence are below V2 floor.
+                    // AND logic keeps this bounded — a strong confidence OR strong EQ rescues the signal.
+                    // Only applies when Rule A did not already fire.
+                    if (!$v2cApplied && $v2cQualityBand === 'medium') {
+                        $v2cMediumLiveFloorConf = (float)($userLimits['v2_cleanup_medium_min_conf'] ?? 0.57);
+                        $v2cMediumLiveFloorEq   = (float)($userLimits['v2_cleanup_medium_min_eq']   ?? 0.60);
+                        if ($v2cPatternConf < $v2cMediumLiveFloorConf && $v2cEntryQuality < $v2cMediumLiveFloorEq) {
+                            $v2cApplied = true;
+                            $v2cReason  = 'v2_cleanup_medium_quality_tightened';
+                            $result['v2_cleanup_reject_total']++;
+                            $this->rejectLiveSignal($result, $symbol, $signalId, $v2cReason, $selectionMode);
+                            continue;
+                        }
+                    }
+
+                    // Rule C: V2 low quality band → reject unconditionally.
+                    if (!$v2cApplied && $v2cQualityBand === 'low') {
+                        $v2cApplied = true;
+                        $v2cReason  = 'v2_cleanup_low_quality_rejected';
+                        $result['v2_cleanup_reject_total']++;
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $v2cReason, $selectionMode);
+                        continue;
+                    }
+
+                    if (!$v2cApplied) {
+                        $result['v2_cleanup_no_effect_total']++;
+                    }
+                }
+
+                // Capture V2 cleanup state for intent-level observability.
+                $v2cFilterResult = [
+                    'v2_cleanup_used'         => $isV2Pattern,
+                    'v2_cleanup_applied'      => $v2cApplied,
+                    'v2_cleanup_reason'       => $v2cReason,
+                    'v2_cleanup_wave_state'   => $v2cWaveState,
+                    'v2_cleanup_quality_band' => $v2cQualityBand,
+                ];
+            }
+            // === END V2 CLEANUP FILTER ===
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -2846,6 +2963,13 @@ final class SmartBrainCore
             $intent['wave_speed_state']        = $wfFilterResult['wave_speed_state'];
             $intent['wave_filter_soft_mode']   = $wfFilterResult['wave_filter_soft_mode'];
 
+            // Attach V2 cleanup filter observability fields
+            $intent['v2_cleanup_used']         = $v2cFilterResult['v2_cleanup_used'];
+            $intent['v2_cleanup_applied']      = $v2cFilterResult['v2_cleanup_applied'];
+            $intent['v2_cleanup_reason']       = $v2cFilterResult['v2_cleanup_reason'];
+            $intent['v2_cleanup_wave_state']   = $v2cFilterResult['v2_cleanup_wave_state'];
+            $intent['v2_cleanup_quality_band'] = $v2cFilterResult['v2_cleanup_quality_band'];
+
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
                 $intent['symbol_hints'] = $symbolHints;
@@ -2860,6 +2984,8 @@ final class SmartBrainCore
             $intent['leverage_chain_requested_max']    = (int)($signal['leverage_chain_requested_max'] ?? $userLimits['max_leverage'] ?? 0);
             $intent['leverage_chain_mode_cap']         = (int)($signal['leverage_chain_mode_cap'] ?? 0);
             $intent['leverage_chain_mode_cap_label']   = (string)($signal['leverage_chain_mode_cap_label'] ?? '');
+            $intent['leverage_chain_profile_cap']      = (int)($signal['leverage_chain_profile_cap'] ?? 0);
+            $intent['leverage_chain_risk_cap']         = (int)($signal['leverage_chain_risk_cap'] ?? 0);
             $intent['leverage_chain_final']            = (int)($signal['leverage_chain_final'] ?? $botReadyRisk['leverage'] ?? 0);
             $intent['leverage_chain_reason']           = (string)($signal['leverage_chain_reason'] ?? '');
 

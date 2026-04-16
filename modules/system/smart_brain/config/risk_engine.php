@@ -85,6 +85,9 @@ return [
         'v2_live_min_confirmation_score' => 0.55,
         'v2_live_min_pattern_confidence' => 0.50,
         'v2_live_min_trend_match_score' => 0.40,
+        // V2 Cleanup filter — stricter weak+slow and medium-quality tightening for V2 only
+        'v2_cleanup_medium_min_conf' => 0.57,
+        'v2_cleanup_medium_min_eq'   => 0.60,
         // Sniper V3 Live Filters — applied ONLY when execution_profile = sniper_75_attempt AND pattern = V3
         'sniper_v3_live_filter_enabled' => true,
         'sniper_v3_min_confirmation_score' => 0.80,

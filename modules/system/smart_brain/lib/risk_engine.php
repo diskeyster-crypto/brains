@@ -279,6 +279,7 @@ final class RiskEngine
                 $leverageChain = $this->computeLeverageChain(
                     $leverageMode, $manualLeverage, $maxLeverage,
                     $bootstrapMaxLeverage, 'bootstrap_max',
+                    $profileMaxLeverage, $leverageResult['leverage'],
                     $leverage, $leverageResult['reason']
                 );
 
@@ -340,6 +341,8 @@ final class RiskEngine
                     'leverage_chain_requested_max'    => $leverageChain['requested_max'],
                     'leverage_chain_mode_cap'         => $leverageChain['mode_cap'],
                     'leverage_chain_mode_cap_label'   => $leverageChain['mode_cap_label'],
+                    'leverage_chain_profile_cap'      => $leverageChain['profile_cap'],
+                    'leverage_chain_risk_cap'         => $leverageChain['risk_engine_auto'],
                     'leverage_chain_final'             => $leverageChain['final'],
                     'leverage_chain_reason'            => $leverageChain['reason'],
                     'risk' => [
@@ -391,6 +394,7 @@ final class RiskEngine
                 $leverageChain = $this->computeLeverageChain(
                     $leverageMode, $manualLeverage, $maxLeverage,
                     $profileMaxLeverage, 'profile_max',
+                    $profileMaxLeverage, $leverageResult['leverage'],
                     $leverage, $leverageResult['reason']
                 );
 
@@ -458,6 +462,8 @@ final class RiskEngine
                     'leverage_chain_requested_max'    => $leverageChain['requested_max'],
                     'leverage_chain_mode_cap'         => $leverageChain['mode_cap'],
                     'leverage_chain_mode_cap_label'   => $leverageChain['mode_cap_label'],
+                    'leverage_chain_profile_cap'      => $leverageChain['profile_cap'],
+                    'leverage_chain_risk_cap'         => $leverageChain['risk_engine_auto'],
                     'leverage_chain_final'             => $leverageChain['final'],
                     'leverage_chain_reason'            => $leverageChain['reason'],
                     'risk' => [
@@ -832,6 +838,8 @@ final class RiskEngine
      * @param int    $requestedMax      max_leverage from user/Config Center
      * @param int    $modeCap           bootstrap_max_leverage (bootstrap) or profile max_leverage (normal)
      * @param string $modeCapLabel      label for the mode cap ('bootstrap_max' or 'profile_max')
+     * @param int    $profileCap        always the profile's max_leverage (separate from bootstrap_max)
+     * @param int    $riskEngineAuto    leverage computed by computeDynamicLeverage before any manual override
      * @param int    $finalLeverage     actual leverage that will be used
      * @param string $dynamicReason     reason string from computeDynamicLeverage (auto mode) or ''
      * @return array<string,mixed>
@@ -842,6 +850,8 @@ final class RiskEngine
         int    $requestedMax,
         int    $modeCap,
         string $modeCapLabel,
+        int    $profileCap,
+        int    $riskEngineAuto,
         int    $finalLeverage,
         string $dynamicReason
     ): array {
@@ -849,12 +859,17 @@ final class RiskEngine
 
         if ($leverageMode === 'manual') {
             if ($finalLeverage < $requestedManual) {
-                // Crushed — show why
+                // Crushed — show why explicitly
                 $caps = [];
                 if ($modeCap > 0 && $finalLeverage <= $modeCap && $requestedManual > $modeCap) {
                     $caps[] = 'capped_by_' . $modeCapLabel . '(' . $modeCap . ')';
                 }
-                if ($finalLeverage <= $requestedMax && $requestedManual > $requestedMax) {
+                if ($profileCap > 0 && $finalLeverage <= $profileCap && $requestedManual > $profileCap
+                    && $modeCapLabel !== 'profile_max') {
+                    // profile cap applies on top of bootstrap cap (both active)
+                    $caps[] = 'capped_by_profile_max(' . $profileCap . ')';
+                }
+                if ($requestedManual > $requestedMax) {
                     $caps[] = 'capped_by_max_leverage(' . $requestedMax . ')';
                 }
                 $reason = 'manual_crushed:' . implode('+', $caps ?: ['unknown']);
@@ -874,12 +889,14 @@ final class RiskEngine
         }
 
         return [
-            'requested_manual' => $requestedManual,
-            'requested_max'    => $requestedMax,
-            'mode_cap'         => $modeCap,
-            'mode_cap_label'   => $modeCapLabel,
-            'final'            => $finalLeverage,
-            'reason'           => $reason,
+            'requested_manual'  => $requestedManual,
+            'requested_max'     => $requestedMax,
+            'mode_cap'          => $modeCap,
+            'mode_cap_label'    => $modeCapLabel,
+            'profile_cap'       => $profileCap,
+            'risk_engine_auto'  => $riskEngineAuto,
+            'final'             => $finalLeverage,
+            'reason'            => $reason,
         ];
     }
 }

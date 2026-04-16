@@ -13,6 +13,7 @@
  * @var array<string,mixed>|null $promotions win_universe_promotions.json or null
  * @var array<string,mixed>|null $demotions  win_universe_demotions.json or null
  * @var array<string,mixed>      $config     win_universe module config
+ * @var array<string,mixed>|null $evalData   win_universe_eval.json or null
  */
 
 $pageTitle = 'Win Universe — Выигрышные монеты';
@@ -22,6 +23,7 @@ $activeTab = 'win_universe';
 $pool       ??= null;
 $promotions ??= null;
 $demotions  ??= null;
+$evalData   ??= null;
 
 $extraStyles = '
 .wu-stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px;
@@ -31,6 +33,7 @@ $extraStyles = '
 .positive { color: #4ade80; }
 .negative { color: #f87171; }
 .neutral  { color: #94a3b8; }
+.text-purple { color: #a78bfa; }
 .badge-qualified    { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
 .badge-near         { background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
 .badge-rejected     { background: rgba(100,116,139,0.2); color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
@@ -81,7 +84,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 JS;
 
-$pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $pool, $promotions, $demotions) {
+$pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $pool, $promotions, $demotions, $evalData) {
 
     $wuCfg      = $config['win_universe'] ?? [];
     $minRoi     = $wuCfg['min_roi_threshold'] ?? 1.5;
@@ -284,6 +287,90 @@ $pageContent = function () use ($universe, $status, $config, $smartBrainUrl, $po
             </div>
         </div>
     </div>
+
+    <!-- Evaluation / Attribution Panel -->
+    <?php
+    $evalGroups = $evalData['groups'] ?? null;
+    if ($evalGroups !== null):
+        $evalAttr = $evalData['attribution_note'] ?? '';
+        $evalTs   = $evalData['computed_at'] ?? null;
+
+        $evalRoiFmt = static function ($v): string {
+            if ($v === null) return '<span class="neutral">—</span>';
+            $cls = (float)$v >= 0 ? 'positive' : 'negative';
+            return '<span class="' . $cls . '">' . number_format((float)$v * 100, 2) . '%</span>';
+        };
+        $evalWrFmt = static function ($v): string {
+            if ($v === null) return '<span class="neutral">—</span>';
+            $cls = (float)$v >= 0.5 ? 'positive' : 'negative';
+            return '<span class="' . $cls . '">' . number_format((float)$v * 100, 1) . '%</span>';
+        };
+
+        $renderGroup = static function (string $key, string $label, string $colorClass) use ($evalGroups, $evalRoiFmt, $evalWrFmt): void {
+            $g = $evalGroups[$key] ?? null;
+            if ($g === null) return;
+            $tc  = (int)($g['trade_count'] ?? 0);
+            $wc  = (int)($g['win_count']   ?? 0);
+            $lc  = (int)($g['loss_count']  ?? 0);
+            $wr  = $g['winrate']   ?? null;
+            $ar  = $g['avg_roi']   ?? null;
+            $mr  = $g['median_roi'] ?? null;
+            $sym = (int)($g['symbol_count'] ?? 0);
+            $warn = (bool)($g['small_sample_warning'] ?? false);
+            echo '<td class="' . $colorClass . ' fw-semibold">' . htmlspecialchars($label) . '</td>';
+            echo '<td>' . $sym . '</td>';
+            echo '<td>' . $tc . ($warn ? ' <span class="badge bg-warning text-dark" title="Мало данных">!</span>' : '') . '</td>';
+            echo '<td>' . $wc . '</td>';
+            echo '<td>' . $lc . '</td>';
+            echo '<td>' . $evalWrFmt($wr) . '</td>';
+            echo '<td>' . $evalRoiFmt($ar) . '</td>';
+            echo '<td>' . $evalRoiFmt($mr) . '</td>';
+        };
+    ?>
+    <div class="card mb-4">
+        <div class="card-header py-2 d-flex align-items-center justify-content-between">
+            <span class="fw-semibold text-info">
+                <i class="bi bi-bar-chart-line me-1"></i>
+                Оценка эффективности по классам
+            </span>
+            <?php if ($evalTs): ?>
+            <small class="text-secondary"><?= htmlspecialchars($evalTs) ?></small>
+            <?php endif; ?>
+        </div>
+        <div class="card-body pb-2 pt-2">
+            <p class="text-secondary mb-2" style="font-size:0.78rem;">
+                <i class="bi bi-info-circle me-1"></i>
+                <?= htmlspecialchars($evalAttr) ?>
+                Значок <span class="badge bg-warning text-dark">!</span> означает &lt;10 сделок — данные ненадёжны.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-dark table-sm mb-0">
+                    <thead>
+                        <tr class="table-dark">
+                            <th>Класс</th>
+                            <th>Монет</th>
+                            <th>Сделок</th>
+                            <th>Побед</th>
+                            <th>Потерь</th>
+                            <th>Winrate</th>
+                            <th>Ср. ROI</th>
+                            <th>Медиан. ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><?php $renderGroup('qualified',      '✅ Квалифицированные', 'text-success'); ?></tr>
+                        <tr><?php $renderGroup('near_qualified', '🔶 Почти', 'text-warning'); ?></tr>
+                        <tr><?php $renderGroup('rejected',       '❌ Отклонённые', 'text-secondary'); ?></tr>
+                        <tr style="border-top:2px solid #334155;">
+                            <?php $renderGroup('in_win_pool', '🏆 Win Pool', 'text-purple'); ?>
+                        </tr>
+                        <tr><?php $renderGroup('not_in_pool',    '— Вне пула', 'text-secondary'); ?></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <?php endif; // evalGroups ?>
 
     <!-- Win Pool -->
     <?php if (!empty($winPool)): ?>

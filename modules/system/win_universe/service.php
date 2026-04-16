@@ -85,7 +85,24 @@ final class WinUniverseService
             $this->ensureRuntimeDir();
             $this->persistOutputs($result, $ts);
 
+            // Evaluation / attribution layer (best-effort, non-fatal)
+            $evalData = null;
+            try {
+                $evalData = $this->computeEval($result, $ts);
+                $this->saveJson('win_universe_eval.json', $evalData);
+                $this->saveJson('win_universe_eval_by_status.json', [
+                    'computed_at'    => $ts,
+                    'attribution_note' => $evalData['attribution_note'],
+                    'groups'         => $evalData['groups'],
+                ]);
+            } catch (\Throwable $ignored) {
+                // non-fatal — evaluation failure must not break the main run
+            }
+
             $elapsed = round(microtime(true) - $startTime, 3);
+
+            // Build eval summary for status.json
+            $evalSummary = $this->buildEvalSummary($evalData);
 
             $status = [
                 'ok'                            => true,
@@ -119,7 +136,7 @@ final class WinUniverseService
                 'excessive_qualification_note'          => $result['excessive_qualification_note'] ?? null,
                 'mode'                                  => $result['config_used']['win_universe_mode'] ?? 'shadow',
                 'mode_source'                           => $this->config['_meta']['mode_source'] ?? 'config_defaults',
-            ];
+            ] + $evalSummary;
 
             $this->saveJson('win_universe_status.json', $status);
 
@@ -201,6 +218,26 @@ final class WinUniverseService
     public function getDemotions(): ?array
     {
         return $this->loadJson('win_universe_demotions.json');
+    }
+
+    /**
+     * Return evaluation data (win_universe_eval.json) or null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function getEval(): ?array
+    {
+        return $this->loadJson('win_universe_eval.json');
+    }
+
+    /**
+     * Return evaluation by status (win_universe_eval_by_status.json) or null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function getEvalByStatus(): ?array
+    {
+        return $this->loadJson('win_universe_eval_by_status.json');
     }
 
     /**
@@ -296,6 +333,191 @@ final class WinUniverseService
     // =========================================================================
     // Output persistence
     // =========================================================================
+
+    // =========================================================================
+    // Evaluation / attribution layer
+    // =========================================================================
+
+    /**
+     * Compute evaluation stats grouped by qualification status and win-pool membership.
+     *
+     * Attribution note: trade counts are aggregated from current qualification
+     * results (symbols' most recent window stats). Attribution is by current
+     * qualification status, not historical status at trade entry time.
+     *
+     * Groups computed:
+     *   qualified        — symbols currently qualified
+     *   near_qualified   — symbols near-qualified
+     *   rejected         — symbols currently rejected
+     *   in_win_pool      — symbols currently in the win pool
+     *   not_in_pool      — symbols not in the win pool
+     *
+     * @param array<string,mixed> $result Engine compute() result
+     * @param string $ts ISO timestamp
+     * @return array<string,mixed>
+     */
+    private function computeEval(array $result, string $ts): array
+    {
+        $symbols = $result['symbols'] ?? [];
+        $winPool = $result['win_pool'] ?? [];
+
+        /** @var array<string,array<string,mixed>> $groups */
+        $groups = [];
+        foreach (['qualified', 'near_qualified', 'rejected', 'in_win_pool', 'not_in_pool'] as $key) {
+            $groups[$key] = [
+                'symbol_count'         => 0,
+                'trade_count'          => 0,
+                'win_count'            => 0,
+                '_roi_values'          => [],
+                '_weighted_roi_sum'    => 0.0,
+                '_weighted_roi_count'  => 0,
+            ];
+        }
+
+        foreach ($symbols as $sym => $rec) {
+            $qStatus    = (string)($rec['qualification_status'] ?? 'rejected');
+            $inPool     = isset($winPool[(string)$sym]);
+            $tradeCount = (int)($rec['closed_trades_window'] ?? $rec['recent_trade_count'] ?? 0);
+            $winCount   = (int)($rec['wins_above_threshold'] ?? 0);
+            $avgRoi     = isset($rec['recent_avg_roi']) && $rec['recent_avg_roi'] !== null
+                ? (float)$rec['recent_avg_roi']
+                : null;
+
+            // Status group (qualified / near_qualified / rejected)
+            if (isset($groups[$qStatus])) {
+                $groups[$qStatus]['symbol_count']++;
+                $groups[$qStatus]['trade_count']  += $tradeCount;
+                $groups[$qStatus]['win_count']    += $winCount;
+                if ($avgRoi !== null) {
+                    $groups[$qStatus]['_roi_values'][]         = $avgRoi;
+                    $groups[$qStatus]['_weighted_roi_sum']    += $avgRoi * max(1, $tradeCount);
+                    $groups[$qStatus]['_weighted_roi_count']  += max(1, $tradeCount);
+                }
+            }
+
+            // Pool group
+            $poolKey = $inPool ? 'in_win_pool' : 'not_in_pool';
+            $groups[$poolKey]['symbol_count']++;
+            $groups[$poolKey]['trade_count']  += $tradeCount;
+            $groups[$poolKey]['win_count']    += $winCount;
+            if ($avgRoi !== null) {
+                $groups[$poolKey]['_roi_values'][]         = $avgRoi;
+                $groups[$poolKey]['_weighted_roi_sum']    += $avgRoi * max(1, $tradeCount);
+                $groups[$poolKey]['_weighted_roi_count']  += max(1, $tradeCount);
+            }
+        }
+
+        // Finalize each group
+        $minEvalTrades = 10;
+        $finalGroups   = [];
+        foreach ($groups as $key => $g) {
+            $tc = (int)$g['trade_count'];
+            $wc = (int)$g['win_count'];
+            $lc = max(0, $tc - $wc);
+
+            $winrate = $tc > 0 ? round($wc / $tc, 4) : null;
+
+            $avgRoi = null;
+            if ($g['_weighted_roi_count'] > 0) {
+                $avgRoi = round($g['_weighted_roi_sum'] / $g['_weighted_roi_count'], 4);
+            }
+
+            $medianRoi = null;
+            $rois = $g['_roi_values'];
+            if (!empty($rois)) {
+                sort($rois);
+                $mid       = (int)(count($rois) / 2);
+                $medianRoi = count($rois) % 2 === 0
+                    ? round(($rois[$mid - 1] + $rois[$mid]) / 2.0, 4)
+                    : round($rois[$mid], 4);
+            }
+
+            $finalGroups[$key] = [
+                'symbol_count'          => (int)$g['symbol_count'],
+                'trade_count'           => $tc,
+                'win_count'             => $wc,
+                'loss_count'            => $lc,
+                'winrate'               => $winrate,
+                'avg_roi'               => $avgRoi,
+                'median_roi'            => $medianRoi,
+                'small_sample_warning'  => $tc < $minEvalTrades,
+                'sample_note'           => $tc < $minEvalTrades
+                    ? 'Мало данных (' . $tc . ' сделок) — статистика ненадёжна'
+                    : null,
+            ];
+        }
+
+        return [
+            'computed_at'                    => $ts,
+            'attribution_note'               => 'Атрибуция по текущему статусу квалификации символа. '
+                . 'Статус на момент открытия сделки не фиксируется — используется приближение.',
+            'min_eval_sample_warning_threshold' => $minEvalTrades,
+            'total_symbols_evaluated'        => count($symbols),
+            'groups'                         => $finalGroups,
+        ];
+    }
+
+    /**
+     * Build a compact eval summary suitable for inclusion in win_universe_status.json.
+     *
+     * @param array<string,mixed>|null $evalData Return value of computeEval(), or null on error
+     * @return array<string,mixed>
+     */
+    private function buildEvalSummary(?array $evalData): array
+    {
+        if ($evalData === null) {
+            return [];
+        }
+        $groups = $evalData['groups'] ?? [];
+
+        $pick = static function (string $group, string $field) use ($groups) {
+            return $groups[$group][$field] ?? null;
+        };
+
+        $nonQualTradeCount = (int)($groups['near_qualified']['trade_count'] ?? 0)
+            + (int)($groups['rejected']['trade_count'] ?? 0);
+        $nonQualWinCount   = (int)($groups['near_qualified']['win_count']   ?? 0)
+            + (int)($groups['rejected']['win_count']   ?? 0);
+
+        $nonQualWinrate = $nonQualTradeCount > 0
+            ? round($nonQualWinCount / $nonQualTradeCount, 4)
+            : null;
+
+        // Weighted avg ROI across near_qualified + rejected
+        $nqAvgRoi = null;
+        $nqRoiSum = 0.0;
+        $nqCount  = 0;
+        foreach (['near_qualified', 'rejected'] as $gk) {
+            $tc  = (int)($groups[$gk]['trade_count'] ?? 0);
+            $roi = $groups[$gk]['avg_roi'] ?? null;
+            if ($roi !== null && $tc > 0) {
+                $nqRoiSum += $roi * $tc;
+                $nqCount  += $tc;
+            }
+        }
+        if ($nqCount > 0) {
+            $nqAvgRoi = round($nqRoiSum / $nqCount, 4);
+        }
+
+        return [
+            'eval_computed_at'              => $evalData['computed_at'] ?? null,
+            'qualified_trade_count'         => $pick('qualified', 'trade_count'),
+            'qualified_winrate'             => $pick('qualified', 'winrate'),
+            'qualified_avg_roi'             => $pick('qualified', 'avg_roi'),
+            'qualified_small_sample'        => $pick('qualified', 'small_sample_warning'),
+            'nonqualified_trade_count'      => $nonQualTradeCount ?: null,
+            'nonqualified_winrate'          => $nonQualWinrate,
+            'nonqualified_avg_roi'          => $nqAvgRoi,
+            'in_win_pool_trade_count'       => $pick('in_win_pool', 'trade_count'),
+            'in_win_pool_winrate'           => $pick('in_win_pool', 'winrate'),
+            'in_win_pool_avg_roi'           => $pick('in_win_pool', 'avg_roi'),
+            'in_win_pool_small_sample'      => $pick('in_win_pool', 'small_sample_warning'),
+            'eval_sample_warning'           => (
+                (bool)($groups['qualified']['small_sample_warning'] ?? true)
+                && (bool)($groups['in_win_pool']['small_sample_warning'] ?? true)
+            ),
+        ];
+    }
 
     /**
      * Persist all runtime artifacts from a compute result.

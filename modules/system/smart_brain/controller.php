@@ -713,6 +713,7 @@ final class SmartBrainController
         $pool       = $wuService->getPool();
         $promotions = $wuService->getPromotions();
         $demotions  = $wuService->getDemotions();
+        $evalData   = $wuService->getEval();
 
         $smartBrainUrl = $this->smartBrainUrl;
 

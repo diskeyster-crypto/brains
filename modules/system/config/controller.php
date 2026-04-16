@@ -129,7 +129,7 @@ final class UnifiedConfigController
         $flash   = $this->consumeFlash();
 
         // Load win universe data from the standalone module
-        $wuServicePath = dirname(__DIR__, 2) . '/win_universe/service.php';
+        $wuServicePath = dirname(__DIR__) . '/win_universe/service.php';
         $wuConfig     = [];
         $wuUniverse   = null;
         $wuStatus     = null;
@@ -170,7 +170,7 @@ final class UnifiedConfigController
             exit;
         }
 
-        $wuServicePath = dirname(__DIR__, 2) . '/win_universe/service.php';
+        $wuServicePath = dirname(__DIR__) . '/win_universe/service.php';
 
         if (!is_file($wuServicePath)) {
             $this->setFlash('error', 'Win Universe module not found');

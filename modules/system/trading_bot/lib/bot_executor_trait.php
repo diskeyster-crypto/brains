@@ -477,24 +477,50 @@ trait BotExecutorTrait
                     // If gateway could not fetch balance (auth/config/network), we must NOT label it as insufficient.
                     $rejectStatus = 'rejected_insufficient_balance';
                     $reason = (string)($balanceCheck['reason'] ?? 'unknown');
-                    if ($reason === 'balance_fetch_failed' || $reason === 'wallet_balance_failed' || $reason === 'wallet_balance_auth_missing' || $reason === 'gateway_not_ready' || $reason === 'client_not_initialized') {
+                    $isFetchFailed = in_array($reason, [
+                        'balance_fetch_failed', 'wallet_balance_failed', 'wallet_balance_auth_missing',
+                        'gateway_not_ready', 'client_not_initialized',
+                    ], true);
+                    $isBelowMinimum    = ($reason === 'balance_below_minimum_threshold');
+                    $isInsufficientMargin = ($reason === 'insufficient_margin');
+                    if ($isFetchFailed) {
                         $rejectStatus = 'rejected_balance_unavailable';
-                    } elseif ($reason === 'balance_below_minimum_threshold') {
+                    } elseif ($isBelowMinimum) {
                         $rejectStatus = 'rejected_balance_below_minimum';
                     }
+
+                    // Derive structured blocker fields for clear per-case diagnostics.
+                    $balanceBlockerType = $isFetchFailed ? 'balance_unavailable'
+                        : ($isBelowMinimum ? 'balance_below_minimum' : 'balance_insufficient_margin');
+                    $balanceRecoveryNeeded = $isFetchFailed || $isBelowMinimum;
+                    $balanceRecoveryAction = $isFetchFailed
+                        ? 'check_gateway_auth_and_connectivity'
+                        : ($isBelowMinimum ? 'add_funds_above_reject_threshold' : 'reduce_budget_or_add_funds');
+                    $budgetRequested = (float)($balanceCheck['budget']   ?? 0.0);
+                    $budgetAfterBuf  = (float)($balanceCheck['required'] ?? 0.0); // budget * (1 + buffer%)
 
                     // P6.8.1: Pass full context with required/available/snapshot for debugging
                     $balanceCtx = [
                         'context' => [
-                            'required_usdt' => (float)($balanceCheck['required'] ?? 0.0),
-                            'available_usdt' => (float)($balanceCheck['available'] ?? 0.0),
-                            'buffer_pct' => (int)($balanceCheck['buffer_pct'] ?? 5),
-                            'budget_usdt_per_trade' => (float)($balanceCheck['budget'] ?? 0.0),
-                            'account_type' => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),
-                            'balance_snapshot' => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
-                            'coin' => $balanceCheck['coin'] ?? 'USDT',
-                            'shortfall' => $balanceCheck['shortfall'] ?? null,
-                            'balance_diagnostics' => $balanceCheck['balance_diagnostics'] ?? null,
+                            'blocker_type'          => $balanceBlockerType,
+                            'blocker_reason'        => $reason,
+                            'balance_case'          => $isFetchFailed ? 'fetch_failed'
+                                : ($isBelowMinimum ? 'below_minimum_threshold'
+                                : ($isInsufficientMargin ? 'insufficient_margin' : 'other')),
+                            'available_usdt'        => (float)($balanceCheck['available'] ?? 0.0),
+                            'required_usdt'         => $budgetAfterBuf,
+                            'budget_requested_usdt' => $budgetRequested,
+                            'budget_after_limits_usdt' => $budgetAfterBuf,
+                            'buffer_pct'            => (int)($balanceCheck['buffer_pct'] ?? 5),
+                            'budget_usdt_per_trade' => $budgetRequested,
+                            'reject_below_usdt'     => $balanceCheck['reject_below_usdt'] ?? null,
+                            'shortfall'             => $balanceCheck['shortfall'] ?? null,
+                            'recovery_needed'       => $balanceRecoveryNeeded,
+                            'recovery_action'       => $balanceRecoveryAction,
+                            'account_type'          => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),
+                            'coin'                  => $balanceCheck['coin'] ?? 'USDT',
+                            'balance_snapshot'      => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
+                            'balance_diagnostics'   => $balanceCheck['balance_diagnostics'] ?? null,
                         ],
                         'balance_check' => $balanceCheck, // Keep full result for backward compat
                     ];

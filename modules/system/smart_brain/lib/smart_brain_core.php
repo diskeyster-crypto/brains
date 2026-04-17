@@ -3072,6 +3072,8 @@ final class SmartBrainCore
                     'post_confirm_quality_gate_applied' => false,
                     'post_confirm_quality_gate_reason'  => '',
                     'post_confirm_quality_gate_outcome' => 'not_applicable',
+                    'post_confirm_quality_gate_result'  => 'not_applicable',
+                    'post_confirm_quality_gate_inputs'  => null,
                 ];
 
                 $pcIsTarget = ($pcGateEnabled
@@ -3084,11 +3086,11 @@ final class SmartBrainCore
                     && $wfSpeedState === 'normal'
                 );
 
-                // Increment total for every signal that reaches this gate so that
-                // no_effect_total never exceeds total (both count gate evaluations).
-                $result['post_confirm_quality_gate_total']++;
-
+                // total / no_effect only count when the gate actually evaluates a signal
+                // (pcIsTarget = true). Non-targeted signals do not update any gate counter,
+                // which prevents no_effect > 0 while total stays 0.
                 if ($pcIsTarget) {
+                    $result['post_confirm_quality_gate_total']++;
                     $result['post_confirm_quality_gate_used'] = true;
                     $pcGateResult['post_confirm_quality_gate_used'] = true;
 
@@ -3111,6 +3113,21 @@ final class SmartBrainCore
                     $pcPatternConfPass = ($pcPc >= $pcMinPc);
                     $pcGateFail = ($pcPass < $pcMinPass || !$pcPatternConfPass);
 
+                    // Compact inputs snapshot for per-intent diagnostics.
+                    $pcGateResult['post_confirm_quality_gate_inputs'] = [
+                        'entry_quality_score'    => $pcEq,
+                        'corridor_fit_score'     => $pcCf,
+                        'trend_match_score'      => $pcTm,
+                        'pattern_confidence'     => $pcPc,
+                        'min_entry_quality'      => $pcMinEq,
+                        'min_corridor_fit'       => $pcMinCf,
+                        'min_trend_match'        => $pcMinTm,
+                        'min_pattern_confidence' => $pcMinPc,
+                        'signals_passed'         => $pcPass,
+                        'min_signals_pass'       => $pcMinPass,
+                        'pattern_conf_pass'      => $pcPatternConfPass,
+                    ];
+
                     if ($pcGateFail) {
                         $pcFailReason = !$pcPatternConfPass
                             ? 'post_confirm_wn_long_v2_pattern_confidence_below_floor'
@@ -3120,6 +3137,7 @@ final class SmartBrainCore
                         $pcGateResult['post_confirm_quality_gate_applied'] = true;
                         $pcGateResult['post_confirm_quality_gate_reason']  = $pcFailReason;
                         $pcGateResult['post_confirm_quality_gate_outcome'] = 'demo';
+                        $pcGateResult['post_confirm_quality_gate_result']  = 'demoted_to_demo';
                         // Prefer demo (not hard reject) as safe fallback.
                         // Signal is tagged for observability and removed from live flow.
                         $this->rejectLiveSignal($result, $symbol, $signalId, $pcFailReason, $selectionMode);
@@ -3127,11 +3145,15 @@ final class SmartBrainCore
                     }
 
                     // Gate passed — strong enough to proceed as live.
+                    // no_effect increments here (gate evaluated, routing unchanged).
                     $result['post_confirm_quality_gate_live_pass_total']++;
-                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'live_pass';
-                } else {
                     $result['post_confirm_quality_gate_no_effect_total']++;
-                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'no_effect';
+                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'live_pass';
+                    $pcGateResult['post_confirm_quality_gate_result']  = 'live_pass';
+                } else {
+                    // Gate not applicable for this signal — no counter updates.
+                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'not_applicable';
+                    $pcGateResult['post_confirm_quality_gate_result']  = 'not_applicable';
                 }
             }
             // === END POST-CONFIRM QUALITY GATE ===
@@ -3365,6 +3387,10 @@ final class SmartBrainCore
             $intent['post_confirm_quality_gate_applied'] = $pcGateResult['post_confirm_quality_gate_applied'];
             $intent['post_confirm_quality_gate_reason']  = $pcGateResult['post_confirm_quality_gate_reason'];
             $intent['post_confirm_quality_gate_outcome'] = $pcGateResult['post_confirm_quality_gate_outcome'];
+            $intent['post_confirm_quality_gate_result']  = $pcGateResult['post_confirm_quality_gate_result']  ?? $pcGateResult['post_confirm_quality_gate_outcome'];
+            if (isset($pcGateResult['post_confirm_quality_gate_inputs'])) {
+                $intent['post_confirm_quality_gate_inputs'] = $pcGateResult['post_confirm_quality_gate_inputs'];
+            }
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {

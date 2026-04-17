@@ -646,6 +646,60 @@ final class TradingBotService
             $result['intents_loaded'] = $intentsResult['count'] ?? 0;
             $result['input_source'] = $inputSource;
             $result['controlled_by_brain'] = $brainControlled;
+
+            // Brain -> Bot handoff observability: timestamps, lag, and intent ingestion counters.
+            if ($brainControlled) {
+                $brainGeneratedAt = $intentsResult['brain_intents_generated_at'] ?? null;
+                $botRunTs         = $ts;
+                $brainGeneratedTs = ($brainGeneratedAt !== null) ? strtotime($brainGeneratedAt) : null;
+                $lagSeconds       = ($brainGeneratedTs !== null && $brainGeneratedTs > 0)
+                    ? max(0, $botRunTs - $brainGeneratedTs) : null;
+
+                $loadedCount  = (int)($intentsResult['count'] ?? 0);
+                $staleCnt     = (int)($intentsResult['lifecycle_skipped']['expired'] ?? 0);
+                $handoffState = 'unknown';
+                if (in_array($sourceStatus, ['loaded', 'empty', 'expired_only'], true)) {
+                    if ($loadedCount > 0) {
+                        $handoffState = ($lagSeconds !== null && $lagSeconds > 120) ? 'bot_behind_brain' : 'synced';
+                    } elseif ($staleCnt > 0) {
+                        $handoffState = 'stale_intents_only';
+                    } else {
+                        $handoffState = 'no_new_intents';
+                    }
+                } elseif ($sourceStatus === 'missing') {
+                    $handoffState = 'brain_file_missing';
+                } elseif ($sourceStatus === 'disabled') {
+                    $handoffState = 'brain_disabled';
+                } elseif ($sourceStatus === 'invalid') {
+                    $handoffState = 'brain_file_invalid';
+                }
+
+                $result['brain_bot_handoff'] = [
+                    'bot_run_ts'                          => $botRunTs,
+                    'bot_run_at'                          => date('c', $botRunTs),
+                    'brain_intents_generated_at'          => $brainGeneratedAt,
+                    'brain_intents_generated_ts'          => $brainGeneratedTs,
+                    'latest_intent_created_at'            => $intentsResult['latest_intent_created_at'] ?? null,
+                    'latest_intent_created_ts'            => $intentsResult['latest_intent_created_ts'] ?? null,
+                    'brain_bot_snapshot_lag_seconds'      => $lagSeconds,
+                    'handoff_state'                       => $handoffState,
+                    'live_intents_available_total'        => (int)($intentsResult['live_intents_total_in_file'] ?? 0),
+                    'live_intents_loaded_total'           => $loadedCount,
+                    'live_intents_skipped_stale_total'    => $staleCnt,
+                    'live_intents_skipped_claimed_total'  => (int)($intentsResult['lifecycle_skipped']['claimed']          ?? 0),
+                    'live_intents_skipped_executed_total' => (int)($intentsResult['lifecycle_skipped']['already_executed'] ?? 0),
+                    'live_intents_skipped_rejected_total' => (int)($intentsResult['lifecycle_skipped']['rejected']         ?? 0),
+                    'live_intents_skipped_duplicate_total'=> (int)($intentsResult['duplicate_skipped'] ?? 0),
+                ];
+                // Flatten key summary fields for top-level visibility in last_run.
+                $result['brain_bot_snapshot_lag_seconds']      = $lagSeconds;
+                $result['brain_intents_generated_at']          = $brainGeneratedAt;
+                $result['handoff_state']                       = $handoffState;
+                $result['live_intents_available_total']        = (int)($intentsResult['live_intents_total_in_file'] ?? 0);
+                $result['live_intents_loaded_total']           = $loadedCount;
+                $result['live_intents_skipped_stale_total']    = $staleCnt;
+                $result['live_intents_skipped_duplicate_total']= (int)($intentsResult['duplicate_skipped'] ?? 0);
+            }
             $result['effective_selection_mode_from_brain'] = (string)($effectiveLiveConfig['live_signal_selection_mode'] ?? 'n/a');
             $result['strategy_overrides_disabled_or_overridden'] = $brainControlled;
             $result['legacy_fallback_allowed'] = $legacyFallbackAllowed;

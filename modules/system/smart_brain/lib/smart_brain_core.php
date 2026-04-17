@@ -821,6 +821,25 @@ final class SmartBrainCore
             'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
             'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
             'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
+            // Fast-coin gate diagnostics
+            'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
+            'fast_coin_symbols'              => (string)($userLimits['fast_coin_symbols']              ?? ''),
+            'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
+            'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
+            'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
+            'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
+            'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
+            'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
+            'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
+            'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
+            'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
+            // Fast-confirmed-slow exception path diagnostics
+            'fast_confirmed_slow_exception_used'            => (bool)($liveIntentResult['fast_confirmed_slow_exception_used']            ?? false),
+            'fast_confirmed_slow_exception_applied'         => (int)($liveIntentResult['fast_confirmed_slow_exception_applied']          ?? 0),
+            'fast_confirmed_slow_exception_live_pass_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_live_pass_total']   ?? 0),
+            'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
+            'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
+            'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1106,6 +1125,7 @@ final class SmartBrainCore
             'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
             // Fast-coin long entry gate diagnostics
             'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
+            'fast_coin_symbols'              => (string)($userLimits['fast_coin_symbols']              ?? ''),
             'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
             'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
             'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
@@ -1116,6 +1136,13 @@ final class SmartBrainCore
             'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
             'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
             'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
+            // Fast-confirmed-slow exception path diagnostics
+            'fast_confirmed_slow_exception_used'            => (bool)($liveIntentResult['fast_confirmed_slow_exception_used']            ?? false),
+            'fast_confirmed_slow_exception_applied'         => (int)($liveIntentResult['fast_confirmed_slow_exception_applied']          ?? 0),
+            'fast_confirmed_slow_exception_live_pass_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_live_pass_total']   ?? 0),
+            'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
+            'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
+            'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
             // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
             'leverage_chain_config' => (static function (
                 array $userLimits,
@@ -1387,6 +1414,14 @@ final class SmartBrainCore
             'fast_coin_gate_no_effect_total'   => 0,
             'fast_coin_breakout_hold_ok_total' => 0,
             'fast_coin_micro_accel_ok_total'   => 0,
+            // Fast-confirmed-slow exception path (narrow v2 quality-floor bypass for strong
+            // confirmed slow fast-coin long setups; fast_coin_gate still evaluates afterward)
+            'fast_confirmed_slow_exception_used'            => false,
+            'fast_confirmed_slow_exception_applied'         => 0,
+            'fast_confirmed_slow_exception_live_pass_total' => 0,
+            'fast_confirmed_slow_exception_demo_total'      => 0,
+            'fast_confirmed_slow_exception_reject_total'    => 0,
+            'fast_confirmed_slow_exception_no_effect_total' => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1808,6 +1843,94 @@ final class SmartBrainCore
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
             $v2QualityFloorEnabled = (bool)($userLimits['v2_live_quality_floor_enabled'] ?? true);
 
+            // ── Per-signal fast-coin diagnostics (initialised once per iteration) ──────
+            // Carried through to intent construction for audit trail.
+            $fcgDiagnostic = [
+                'fast_coin_gate_used'        => false,
+                'fast_coin_gate_applied'     => false,
+                'fast_coin_gate_result'      => null,
+                'fast_coin_gate_reason'      => [],
+                'fast_coin_breakout_hold_ok' => null,
+                'fast_coin_micro_accel_ok'   => null,
+            ];
+            $fastConfSlowExcDiagnostic = [
+                'fast_confirmed_slow_exception_used'    => false,
+                'fast_confirmed_slow_exception_applied' => false,
+                'fast_confirmed_slow_exception_reason'  => null,
+            ];
+
+            // ── Fast-confirmed-slow exception eligibility check ───────────────────────
+            // Evaluated BEFORE the v2 quality floor so that a clean confirmed-slow fast-coin
+            // long V2 setup can bypass an overly-broad floor rejection.
+            // Conditions (ALL must be true):
+            //   symbol in fast_coin_symbols, pattern = double_bottom_contextual_v2, side = long,
+            //   confirmation_result = confirmed, wave_speed_state = slow,
+            //   breakout hold ok (live price above breakout ref − buffer),
+            //   micro-acceleration ok (live price above breakout ref + micro_accel_min_pct).
+            // Bounded support thresholds (quality_score, signal_strength, scenario_score) are
+            // checked here; the fast_coin_gate will run its own quality check afterward.
+            $fastConfSlowExcWasApplied = false;
+            $fastCoinGateEnabledHere   = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
+            $fastConfSlowExcEnabled    = (bool)($userLimits['fast_confirmed_slow_exception_enabled'] ?? false);
+            // Internal: tracks whether exception conditions are met, so the v2 floor bypass can
+            // activate. Set separately from $fastConfSlowExcWasApplied (which only becomes true
+            // when the bypass is actually needed and used).
+            $fastConfSlowExcEligible   = false;
+
+            if ($fastCoinGateEnabledHere && $fastConfSlowExcEnabled
+                && $patternAlgo === 'double_bottom_contextual_v2'
+                && $side === 'long'
+                && (string)($signal['confirmation_result'] ?? '') === 'confirmed'
+                && (string)($signal['wave_speed_state'] ?? '') === 'slow'
+            ) {
+                $rawFastSymsExc    = (string)($userLimits['fast_coin_symbols'] ?? '');
+                $fastSymListExc    = array_filter(array_map('trim', explode(',', strtoupper($rawFastSymsExc))));
+                $isFastCoinExcSym  = !empty($fastSymListExc) && in_array(strtoupper($symbol), $fastSymListExc, true);
+
+                if ($isFastCoinExcSym) {
+                    $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'] = true;
+                    $result['fast_confirmed_slow_exception_used'] = true;
+
+                    // Compute breakout hold and micro-acceleration inline
+                    $fcExcPrice        = isset($prices[$symbol]) && $prices[$symbol] > 0.0 ? (float)$prices[$symbol] : 0.0;
+                    $fcExcZoneHigh     = (float)($signal['entry_zone_high'] ?? $signal['corridor_high'] ?? 0.0);
+                    $fcExcHoldBufPct   = max(0.0, (float)($userLimits['fast_coin_breakout_hold_buffer_pct'] ?? 0.002));
+                    $fcExcMicroAccPct  = max(0.0, (float)($userLimits['fast_coin_micro_accel_min_pct'] ?? 0.003));
+                    $fcExcBrkHoldOk    = true;
+                    $fcExcMicroAccOk   = true;
+                    if ($fcExcPrice > 0.0 && $fcExcZoneHigh > 0.0) {
+                        $fcExcBrkHoldOk  = ($fcExcPrice >= $fcExcZoneHigh * (1.0 - $fcExcHoldBufPct));
+                        $fcExcMicroAccOk = ($fcExcPrice >= $fcExcZoneHigh * (1.0 + $fcExcMicroAccPct));
+                    }
+
+                    if ($fcExcBrkHoldOk && $fcExcMicroAccOk) {
+                        // Breakout and micro-accel satisfied — check bounded support thresholds
+                        $excMinQuality  = (float)($userLimits['fast_confirmed_slow_v2_min_quality_score']   ?? 0.68);
+                        $excMinStrength = (float)($userLimits['fast_confirmed_slow_v2_min_signal_strength'] ?? 0.58);
+                        $excMinScenario = (float)($userLimits['fast_confirmed_slow_v2_min_scenario_score']  ?? 0.65);
+                        $excQuality     = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                        $excStrength    = (float)($signal['pattern_confidence'] ?? 0.0);
+                        $excScenario    = (float)($signal['v2_priority_score'] ?? 0.0);
+
+                        if ($excQuality >= $excMinQuality && $excStrength >= $excMinStrength && $excScenario >= $excMinScenario) {
+                            // All conditions met — eligible to bypass v2 floor if it would reject
+                            $fastConfSlowExcEligible = true;
+                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                'fast_confirmed_slow_v2_exception_eligible';
+                        } else {
+                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                'fast_confirmed_slow_v2_exc_thresholds_not_met';
+                            $result['fast_confirmed_slow_exception_no_effect_total']++;
+                        }
+                    } else {
+                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] = !$fcExcBrkHoldOk
+                            ? 'fast_confirmed_slow_exc_breakout_not_held'
+                            : 'fast_confirmed_slow_exc_micro_accel_missing';
+                        $result['fast_confirmed_slow_exception_no_effect_total']++;
+                    }
+                }
+            }
+
             if (($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') && $v2QualityFloorEnabled) {
                 $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
 
@@ -1825,48 +1948,65 @@ final class SmartBrainCore
 
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
                 if (!$v2FloorResult['eligible']) {
-                    $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
-                    // Track reject reasons in result
-                    foreach ($v2FloorResult['reject_reasons'] as $vr) {
-                        $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
-                            ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
-                    }
-                    // Record preview for diagnostics (first 10)
-                    if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
-                        $result['v2_live_quality_floor_rejected_preview'][] = [
-                            'symbol' => $symbol,
-                            'reject_reasons' => $v2FloorResult['reject_reasons'],
-                            'checked_values' => $v2FloorResult['checked_values'],
-                        ];
-                    }
-                    // Track short/long enter_now rejection with explicit reason
-                    if ($isShortEnterNow) {
-                        $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
+                    if ($fastConfSlowExcEligible) {
+                        // === FAST-CONFIRMED-SLOW EXCEPTION: bypass v2 floor rejection ===
+                        // The fast_coin_gate runs next and will apply its own quality check.
+                        $fastConfSlowExcWasApplied = true;
+                        $result['fast_confirmed_slow_exception_applied']++;
+                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'] = true;
+                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason']  =
+                            'fast_confirmed_slow_v2_exception_bypassed_floor';
+                        // Count as a floor pass so downstream diagnostics are correct
+                        $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                        if ($isLongEnterNow) {
+                            $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
+                        }
+                        // Fall through — do NOT rejectLiveSignal, do NOT continue
+                    } else {
+                        $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
+                        // Track reject reasons in result
                         foreach ($v2FloorResult['reject_reasons'] as $vr) {
-                            $result['short_enter_now_live_reject_reasons'][$vr] =
-                                ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
+                            $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
+                                ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
+                        }
+                        // Record preview for diagnostics (first 10)
+                        if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
+                            $result['v2_live_quality_floor_rejected_preview'][] = [
+                                'symbol' => $symbol,
+                                'reject_reasons' => $v2FloorResult['reject_reasons'],
+                                'checked_values' => $v2FloorResult['checked_values'],
+                            ];
+                        }
+                        // Track short/long enter_now rejection with explicit reason
+                        if ($isShortEnterNow) {
+                            $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
+                            foreach ($v2FloorResult['reject_reasons'] as $vr) {
+                                $result['short_enter_now_live_reject_reasons'][$vr] =
+                                    ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
+                            }
+                        }
+                        if ($isLongEnterNow) {
+                            $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
+                        }
+                        // Long-path funnel observability
+                        if ($signalSide === 'long') {
+                            $result['long_quality_floor_reject_total']++;
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
+                        continue;
+                    }
+                } else {
+                    $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                    // Track short/long enter_now quality floor pass
+                    if ($isShortEnterNow) {
+                        $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
+                        if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
+                            $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
                         }
                     }
                     if ($isLongEnterNow) {
-                        $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
+                        $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
                     }
-                    // Long-path funnel observability
-                    if ($signalSide === 'long') {
-                        $result['long_quality_floor_reject_total']++;
-                    }
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
-                    continue;
-                }
-                $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
-                // Track short/long enter_now quality floor pass
-                if ($isShortEnterNow) {
-                    $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
-                    if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
-                        $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
-                    }
-                }
-                if ($isLongEnterNow) {
-                    $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
                 }
             }
 
@@ -1973,6 +2113,11 @@ final class SmartBrainCore
                                 'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
                                 'checked'          => $fcgResult['checked_values'] ?? [],
                             ];
+                            if ($fastConfSlowExcWasApplied) {
+                                $result['fast_confirmed_slow_exception_reject_total']++;
+                                $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                    'fast_confirmed_slow_exc_gate_rejected';
+                            }
                             $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_reject', $selectionMode);
                             continue;
                         }
@@ -1987,15 +2132,35 @@ final class SmartBrainCore
                                 'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
                                 'checked'          => $fcgResult['checked_values'] ?? [],
                             ];
+                            if ($fastConfSlowExcWasApplied) {
+                                $result['fast_confirmed_slow_exception_demo_total']++;
+                                $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                    'fast_confirmed_slow_exc_gate_demoted';
+                            }
                             $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_demo', $selectionMode);
                             continue;
                         }
 
                         // live_pass — gate satisfied, signal proceeds normally
                         $result['fast_coin_gate_live_pass_total']++;
+                        if ($fastConfSlowExcWasApplied) {
+                            $result['fast_confirmed_slow_exception_live_pass_total']++;
+                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                'fast_confirmed_slow_exc_gate_live_pass';
+                        }
+                        // Capture gate result for intent-level diagnostics
+                        $fcgDiagnostic = [
+                            'fast_coin_gate_used'        => true,
+                            'fast_coin_gate_applied'     => true,
+                            'fast_coin_gate_result'      => 'live_pass',
+                            'fast_coin_gate_reason'      => [],
+                            'fast_coin_breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
+                            'fast_coin_micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                        ];
                     } else {
                         // gate_applied = false: non-V2/V3 long on a fast coin — no effect
                         $result['fast_coin_gate_no_effect_total']++;
+                        $fcgDiagnostic['fast_coin_gate_used'] = true;
                     }
                 }
             }
@@ -3486,6 +3651,19 @@ final class SmartBrainCore
             if (isset($pcGateResult['post_confirm_quality_gate_inputs'])) {
                 $intent['post_confirm_quality_gate_inputs'] = $pcGateResult['post_confirm_quality_gate_inputs'];
             }
+
+            // Attach fast-coin gate observability fields
+            $intent['fast_coin_gate_used']        = $fcgDiagnostic['fast_coin_gate_used'];
+            $intent['fast_coin_gate_applied']     = $fcgDiagnostic['fast_coin_gate_applied'];
+            $intent['fast_coin_gate_result']      = $fcgDiagnostic['fast_coin_gate_result'];
+            $intent['fast_coin_gate_reason']      = $fcgDiagnostic['fast_coin_gate_reason'];
+            $intent['fast_coin_breakout_hold_ok'] = $fcgDiagnostic['fast_coin_breakout_hold_ok'];
+            $intent['fast_coin_micro_accel_ok']   = $fcgDiagnostic['fast_coin_micro_accel_ok'];
+
+            // Attach fast-confirmed-slow exception path observability fields
+            $intent['fast_confirmed_slow_exception_used']    = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'];
+            $intent['fast_confirmed_slow_exception_applied'] = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'];
+            $intent['fast_confirmed_slow_exception_reason']  = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'];
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {

@@ -160,5 +160,17 @@ return [
         'fast_coin_gate_v3_min_quality_score'           => 0.85,
         'fast_coin_gate_v3_min_signal_strength'         => 0.60,
         'fast_coin_gate_v3_min_slot_priority_score'     => 71.0,
+        // Fast-confirmed-slow exception — narrow bypass of v2_live_quality_floor for strong confirmed
+        // slow long V2 setups on configured fast-coin symbols.
+        // Applies only when ALL of these are true:
+        //   symbol in fast_coin_symbols, pattern = double_bottom_contextual_v2, side = long,
+        //   confirmation_result = confirmed, wave_speed_state = slow,
+        //   fast_coin_breakout_hold_ok = true, fast_coin_micro_accel_ok = true.
+        // Support thresholds are strict; the fast_coin_gate still evaluates the signal afterward.
+        // This is NOT a broad bypass — it only rescues clean confirmed slow fast-coin setups.
+        'fast_confirmed_slow_exception_enabled'         => true,
+        'fast_confirmed_slow_v2_min_quality_score'      => 0.68,
+        'fast_confirmed_slow_v2_min_signal_strength'    => 0.58,
+        'fast_confirmed_slow_v2_min_scenario_score'     => 0.65,
     ],
 ];

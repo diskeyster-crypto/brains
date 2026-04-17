@@ -3084,8 +3084,11 @@ final class SmartBrainCore
                     && $wfSpeedState === 'normal'
                 );
 
+                // Increment total for every signal that reaches this gate so that
+                // no_effect_total never exceeds total (both count gate evaluations).
+                $result['post_confirm_quality_gate_total']++;
+
                 if ($pcIsTarget) {
-                    $result['post_confirm_quality_gate_total']++;
                     $result['post_confirm_quality_gate_used'] = true;
                     $pcGateResult['post_confirm_quality_gate_used'] = true;
 

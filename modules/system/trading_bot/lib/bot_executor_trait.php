@@ -200,21 +200,34 @@ trait BotExecutorTrait
                                 $result['orphan_size']           = $exSize;
                                 $result['deferred_to_reconcile'] = true;
                             } else {
+                                // Live mode: exchange has a position for this symbol but no local
+                                // trade owns it — this is a true orphan with no valid local live
+                                // owner.  Surface as recoverable (not opaque hard block) so the
+                                // next reconcile cycle can adopt and resolve it.
                                 $orphanReason = 'skipped_exchange_position_exists';
                             }
                             return $this->rejectIntent($intent, $orphanReason,
                                 ($mode === 'demo')
                                     ? "Exchange orphan detected for {$symbol} (size={$exSize}) — deferred to reconcile"
-                                    : "Orphan position on exchange for {$symbol} (size={$exSize})",
+                                    : "Orphan position on exchange for {$symbol} (size={$exSize}) — no local owner, recovery needed",
                                 $result, [
-                                    'blocked_symbol'        => $symbol,
-                                    'orphan_reason'         => $orphanReason,
-                                    'orphan_detected'       => $mode === 'demo',
-                                    'orphan_symbol'         => $exSymbol,
-                                    'orphan_side'           => $exPos['side'] ?? 'unknown',
-                                    'orphan_size'           => $exSize,
-                                    'deferred_to_reconcile' => $mode === 'demo',
-                                    'exchange_position'     => [
+                                    'blocked_symbol'             => $symbol,
+                                    'orphan_reason'              => $orphanReason,
+                                    'orphan_detected'            => true,
+                                    'orphan_symbol'              => $exSymbol,
+                                    'orphan_side'                => $exPos['side'] ?? 'unknown',
+                                    'orphan_size'                => $exSize,
+                                    'deferred_to_reconcile'      => $mode === 'demo',
+                                    'exchange_position_detected' => true,
+                                    'local_trade_detected'       => false,
+                                    'blocker_type'               => 'exchange_orphan_no_local_owner',
+                                    'blocker_reason'             => 'exchange_has_open_position_symbol_not_in_local_trades',
+                                    'symbol_busy_source'         => 'exchange_orphan',
+                                    'recovery_needed'            => true,
+                                    'recovery_action'            => $mode === 'demo'
+                                        ? 'deferred_to_reconcile_for_adoption'
+                                        : 'reconcile_required_to_adopt_or_close_orphan',
+                                    'exchange_position'          => [
                                         'symbol'   => $exSymbol,
                                         'side'     => $exPos['side'] ?? 'unknown',
                                         'size'     => $exSize,
@@ -251,14 +264,30 @@ trait BotExecutorTrait
                                         'related_active_trade_id'         => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
                                         'related_position_symbol'         => $symbol,
                                         'open_since'                      => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                        'exchange_position_detected'      => true,
+                                        'local_trade_detected'            => true,
+                                        'orphan_detected'                 => false,
+                                        'blocker_type'                    => 'true_active_local_owner',
+                                        'blocker_reason'                  => 'adopted_orphan_local_trade_active',
+                                        'symbol_busy_source'              => 'local_adopted_trade',
+                                        'recovery_needed'                 => false,
+                                        'recovery_action'                 => 'none_local_owner_active',
                                     ]);
                             }
                             return $this->rejectIntent($intent, 'skipped_symbol_busy',
                                 "symbol_busy:{$symbol} — already has active exchange position and local trade", $result, [
-                                    'blocked_symbol'          => $symbol,
-                                    'related_active_trade_id' => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
-                                    'related_position_symbol' => $symbol,
-                                    'open_since'              => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                    'blocked_symbol'             => $symbol,
+                                    'related_active_trade_id'    => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
+                                    'related_position_symbol'    => $symbol,
+                                    'open_since'                 => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                    'exchange_position_detected' => true,
+                                    'local_trade_detected'       => true,
+                                    'orphan_detected'            => false,
+                                    'blocker_type'               => 'true_active_local_owner',
+                                    'blocker_reason'             => 'symbol_has_exchange_and_local_active_trade',
+                                    'symbol_busy_source'         => 'local_active_trade',
+                                    'recovery_needed'            => false,
+                                    'recovery_action'            => 'none_local_owner_active',
                                 ]);
                         }
                     }

@@ -1064,6 +1064,19 @@ final class SmartBrainCore
             'confirmation_fakeout_total'       => (int)($liveIntentResult['confirmation_fakeout_total']       ?? 0),
             'confirmation_expired_total'       => (int)($liveIntentResult['confirmation_expired_total']       ?? 0),
             'confirmation_state_preview'       => $liveIntentResult['confirmation_state_preview']             ?? [],
+            // Side-separated V2 confirmation counters
+            'short_v2_confirmation_total'           => (int)($liveIntentResult['short_v2_confirmation_total']           ?? 0),
+            'short_v2_confirmation_confirmed_total'  => (int)($liveIntentResult['short_v2_confirmation_confirmed_total']  ?? 0),
+            'short_v2_confirmation_demo_total'       => (int)($liveIntentResult['short_v2_confirmation_demo_total']       ?? 0),
+            'short_v2_confirmation_reject_total'     => (int)($liveIntentResult['short_v2_confirmation_reject_total']     ?? 0),
+            'short_v2_confirmation_fakeout_total'    => (int)($liveIntentResult['short_v2_confirmation_fakeout_total']    ?? 0),
+            'short_v2_confirmation_expired_total'    => (int)($liveIntentResult['short_v2_confirmation_expired_total']    ?? 0),
+            'long_v2_confirmation_total'            => (int)($liveIntentResult['long_v2_confirmation_total']            ?? 0),
+            'long_v2_confirmation_confirmed_total'   => (int)($liveIntentResult['long_v2_confirmation_confirmed_total']   ?? 0),
+            'long_v2_confirmation_demo_total'        => (int)($liveIntentResult['long_v2_confirmation_demo_total']        ?? 0),
+            'long_v2_confirmation_reject_total'      => (int)($liveIntentResult['long_v2_confirmation_reject_total']      ?? 0),
+            'long_v2_confirmation_fakeout_total'     => (int)($liveIntentResult['long_v2_confirmation_fakeout_total']     ?? 0),
+            'long_v2_confirmation_expired_total'     => (int)($liveIntentResult['long_v2_confirmation_expired_total']     ?? 0),
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1301,6 +1314,19 @@ final class SmartBrainCore
             // Confirmation Layer observability: preview of all pending entries and their current state.
             // Includes setup_detected, waiting, confirmed, fakeout, expired events this cycle.
             'confirmation_state_preview'       => [],
+            // Side-separated V2 confirmation counters (short V2 = double_top_contextual_v2, long V2 = double_bottom_contextual_v2)
+            'short_v2_confirmation_total'          => 0,
+            'short_v2_confirmation_confirmed_total' => 0,
+            'short_v2_confirmation_demo_total'      => 0,
+            'short_v2_confirmation_reject_total'    => 0,
+            'short_v2_confirmation_fakeout_total'   => 0,
+            'short_v2_confirmation_expired_total'   => 0,
+            'long_v2_confirmation_total'           => 0,
+            'long_v2_confirmation_confirmed_total'  => 0,
+            'long_v2_confirmation_demo_total'       => 0,
+            'long_v2_confirmation_reject_total'     => 0,
+            'long_v2_confirmation_fakeout_total'    => 0,
+            'long_v2_confirmation_expired_total'    => 0,
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -2810,6 +2836,13 @@ final class SmartBrainCore
                 $confLayerResult['confirmation_layer_used'] = true;
                 $result['confirmation_total']++;
 
+                // Side-separated counter key: short_v2 for double_top short, long_v2 for double_bottom long.
+                $confSideCounterKey = ($confPatternAlgoKey === 'double_top_contextual_v2'    && $side === 'short') ? 'short_v2'
+                    : (($confPatternAlgoKey === 'double_bottom_contextual_v2' && $side === 'long')  ? 'long_v2' : '');
+                if ($confSideCounterKey !== '') {
+                    $result[$confSideCounterKey . '_confirmation_total']++;
+                }
+
                 // Build a precise lineage key: prefer signal_id (stable identity) when it is
                 // a real upstream ID (not a fallback we generated ourselves this run).
                 // Fallback: stable zone-hash anchored to setup geometry + side so a new setup
@@ -2846,14 +2879,16 @@ final class SmartBrainCore
                     $confLayerResult['confirmation_reason']         = 'first_detection_hold';
                     $confLayerResult['confirmation_wait_cycles_used'] = 1;
                     $result['confirmation_state_preview'][] = [
-                        'conf_key'        => $confKey,
-                        'symbol'          => $symbol,
-                        'side'            => $side,
-                        'state'           => 'setup_detected',
-                        'cycles'          => 1,
-                        'setup_zone_high' => $confZoneHigh,
-                        'setup_zone_low'  => $confZoneLow,
-                        'live_price'      => $currentLivePrice,
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'setup_detected',
+                        'result'            => 'setup_detected',
+                        'reason'            => 'first_detection_hold',
+                        'wait_cycles_used'  => 1,
+                        'setup_zone_high'   => $confZoneHigh,
+                        'setup_zone_low'    => $confZoneLow,
+                        'live_price'        => $currentLivePrice,
                     ];
                     // Skip to next signal — do not create a live intent this cycle.
                     continue;
@@ -2906,18 +2941,23 @@ final class SmartBrainCore
                     $confLayerResult['confirmation_reason'] = $fakeoutReason;
                     $result['confirmation_fakeout_total']++;
                     $result['confirmation_demo_total']++;
+                    if ($confSideCounterKey !== '') {
+                        $result[$confSideCounterKey . '_confirmation_fakeout_total']++;
+                        $result[$confSideCounterKey . '_confirmation_demo_total']++;
+                    }
                     $result['confirmation_state_preview'][] = [
-                        'conf_key'          => $confKey,
                         'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
                         'side'              => $side,
                         'state'             => 'fakeout',
-                        'cycles'            => $cyclesSeen,
+                        'result'            => 'fakeout',
+                        'reason'            => $fakeoutReason,
+                        'wait_cycles_used'  => $cyclesSeen,
                         'setup_zone_high'   => $setupZoneHigh,
                         'setup_zone_low'    => $setupZoneLow,
                         'current_zone_high' => $confZoneHigh,
                         'current_zone_low'  => $confZoneLow,
                         'live_price'        => $currentLivePrice,
-                        'reason'            => $fakeoutReason,
                     ];
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_fakeout', $selectionMode);
                     continue;
@@ -2932,15 +2972,20 @@ final class SmartBrainCore
                         $confLayerResult['confirmation_result'] = 'confirmed';
                         $confLayerResult['confirmation_reason'] = $continuationReason;
                         $result['confirmation_confirmed_total']++;
+                        if ($confSideCounterKey !== '') {
+                            $result[$confSideCounterKey . '_confirmation_confirmed_total']++;
+                        }
                         $result['confirmation_state_preview'][] = [
-                            'conf_key'        => $confKey,
-                            'symbol'          => $symbol,
-                            'side'            => $side,
-                            'state'           => 'confirmed',
-                            'cycles'          => $cyclesSeen,
-                            'setup_zone_high' => $setupZoneHigh,
-                            'setup_zone_low'  => $setupZoneLow,
-                            'live_price'      => $currentLivePrice,
+                            'symbol'            => $symbol,
+                            'pattern_algorithm' => $patternAlgoConf,
+                            'side'              => $side,
+                            'state'             => 'confirmed',
+                            'result'            => 'confirmed',
+                            'reason'            => $continuationReason,
+                            'wait_cycles_used'  => $cyclesSeen,
+                            'setup_zone_high'   => $setupZoneHigh,
+                            'setup_zone_low'    => $setupZoneLow,
+                            'live_price'        => $currentLivePrice,
                         ];
                         // Fall through — signal proceeds to live intent.
                     } else {
@@ -2951,16 +2996,21 @@ final class SmartBrainCore
                         $confLayerResult['confirmation_reason'] = $noContinuationReason;
                         $result['confirmation_reject_total']++;
                         $result['confirmation_demo_total']++;
+                        if ($confSideCounterKey !== '') {
+                            $result[$confSideCounterKey . '_confirmation_reject_total']++;
+                            $result[$confSideCounterKey . '_confirmation_demo_total']++;
+                        }
                         $result['confirmation_state_preview'][] = [
-                            'conf_key'        => $confKey,
-                            'symbol'          => $symbol,
-                            'side'            => $side,
-                            'state'           => 'reject',
-                            'cycles'          => $cyclesSeen,
-                            'setup_zone_high' => $setupZoneHigh,
-                            'setup_zone_low'  => $setupZoneLow,
-                            'live_price'      => $currentLivePrice,
-                            'reason'          => $noContinuationReason,
+                            'symbol'            => $symbol,
+                            'pattern_algorithm' => $patternAlgoConf,
+                            'side'              => $side,
+                            'state'             => 'reject',
+                            'result'            => 'reject',
+                            'reason'            => $noContinuationReason,
+                            'wait_cycles_used'  => $cyclesSeen,
+                            'setup_zone_high'   => $setupZoneHigh,
+                            'setup_zone_low'    => $setupZoneLow,
+                            'live_price'        => $currentLivePrice,
                         ];
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_no_continuation', $selectionMode);
                         continue;
@@ -2970,15 +3020,17 @@ final class SmartBrainCore
                     $confLayerResult['confirmation_result'] = 'waiting';
                     $confLayerResult['confirmation_reason'] = 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen);
                     $result['confirmation_state_preview'][] = [
-                        'conf_key'        => $confKey,
-                        'symbol'          => $symbol,
-                        'side'            => $side,
-                        'state'           => 'waiting',
-                        'cycles'          => $cyclesSeen,
-                        'cycles_needed'   => $confWaitCycles,
-                        'setup_zone_high' => $setupZoneHigh,
-                        'setup_zone_low'  => $setupZoneLow,
-                        'live_price'      => $currentLivePrice,
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'waiting',
+                        'result'            => 'waiting',
+                        'reason'            => 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen),
+                        'wait_cycles_used'  => $cyclesSeen,
+                        'cycles_needed'     => $confWaitCycles,
+                        'setup_zone_high'   => $setupZoneHigh,
+                        'setup_zone_low'    => $setupZoneLow,
+                        'live_price'        => $currentLivePrice,
                     ];
                     continue;
                 }
@@ -3536,18 +3588,27 @@ final class SmartBrainCore
             foreach ($confPending as $ck => $ce) {
                 $setupTs = (int)($ce['setup_ts'] ?? 0);
                 if ($setupTs > 0 && ($confNow - $setupTs) > $confMaxAgeSeconds) {
+                    $cePattern = (string)($ce['pattern_algorithm'] ?? '');
+                    $ceSide    = (string)($ce['side'] ?? '');
+                    $ceSideKey = ($cePattern === 'double_top_contextual_v2'    && $ceSide === 'short') ? 'short_v2'
+                        : (($cePattern === 'double_bottom_contextual_v2' && $ceSide === 'long')  ? 'long_v2' : '');
                     $result['confirmation_state_preview'][] = [
-                        'conf_key'        => $ck,
-                        'symbol'          => (string)($ce['symbol'] ?? ''),
-                        'side'            => (string)($ce['side'] ?? ''),
-                        'state'           => 'expired',
-                        'cycles'          => (int)($ce['cycles_seen'] ?? 0),
-                        'setup_zone_high' => (float)($ce['setup_zone_high'] ?? 0.0),
-                        'setup_zone_low'  => (float)($ce['setup_zone_low']  ?? 0.0),
-                        'age_seconds'     => $confNow - $setupTs,
+                        'symbol'            => (string)($ce['symbol'] ?? ''),
+                        'pattern_algorithm' => $cePattern,
+                        'side'              => $ceSide,
+                        'state'             => 'expired',
+                        'result'            => 'expired',
+                        'reason'            => 'max_age_exceeded',
+                        'wait_cycles_used'  => (int)($ce['cycles_seen'] ?? 0),
+                        'setup_zone_high'   => (float)($ce['setup_zone_high'] ?? 0.0),
+                        'setup_zone_low'    => (float)($ce['setup_zone_low']  ?? 0.0),
+                        'age_seconds'       => $confNow - $setupTs,
                     ];
                     unset($confPending[$ck]);
                     $result['confirmation_expired_total']++;
+                    if ($ceSideKey !== '') {
+                        $result[$ceSideKey . '_confirmation_expired_total']++;
+                    }
                 }
             }
             $this->state->writeJson('storage/confirmation_pending.json', $confPending);

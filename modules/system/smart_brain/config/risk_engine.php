@@ -114,7 +114,7 @@ return [
         // Only applies to patterns listed in confirmation_target_patterns.
         // V2 rollout scope: double_top_contextual_v2 short, double_bottom_contextual_v2 long.
         // Default: disabled — enable via user config to activate.
-        'confirmation_layer_enabled'            => false,
+        'confirmation_layer_enabled'            => true,
         'confirmation_wait_cycles'              => 3,
         'confirmation_reclaim_tolerance_pct'    => 0.005,
         'confirmation_target_patterns'          => ['double_top_contextual_v2', 'double_bottom_contextual_v2'],

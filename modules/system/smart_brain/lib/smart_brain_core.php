@@ -1077,6 +1077,14 @@ final class SmartBrainCore
             'long_v2_confirmation_reject_total'      => (int)($liveIntentResult['long_v2_confirmation_reject_total']      ?? 0),
             'long_v2_confirmation_fakeout_total'     => (int)($liveIntentResult['long_v2_confirmation_fakeout_total']     ?? 0),
             'long_v2_confirmation_expired_total'     => (int)($liveIntentResult['long_v2_confirmation_expired_total']     ?? 0),
+            // Post-confirm quality gate diagnostics (weak+normal long V2 only)
+            'post_confirm_quality_gate_total'           => (int)($liveIntentResult['post_confirm_quality_gate_total']           ?? 0),
+            'post_confirm_quality_gate_applied'         => (int)($liveIntentResult['post_confirm_quality_gate_applied']         ?? 0),
+            'post_confirm_quality_gate_used'            => (bool)($liveIntentResult['post_confirm_quality_gate_used']           ?? false),
+            'post_confirm_quality_gate_live_pass_total' => (int)($liveIntentResult['post_confirm_quality_gate_live_pass_total'] ?? 0),
+            'post_confirm_quality_gate_demo_total'      => (int)($liveIntentResult['post_confirm_quality_gate_demo_total']      ?? 0),
+            'post_confirm_quality_gate_reject_total'    => (int)($liveIntentResult['post_confirm_quality_gate_reject_total']    ?? 0),
+            'post_confirm_quality_gate_no_effect_total' => (int)($liveIntentResult['post_confirm_quality_gate_no_effect_total'] ?? 0),
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1327,6 +1335,16 @@ final class SmartBrainCore
             'long_v2_confirmation_reject_total'     => 0,
             'long_v2_confirmation_fakeout_total'    => 0,
             'long_v2_confirmation_expired_total'    => 0,
+            // Post-confirm quality gate diagnostics (weak+normal long V2 only)
+            // Applied after confirmation_result=confirmed for double_bottom_contextual_v2 long
+            // signals with wave_amplitude_state=weak and wave_speed_state=normal.
+            'post_confirm_quality_gate_total'           => 0,
+            'post_confirm_quality_gate_applied'         => 0,
+            'post_confirm_quality_gate_used'            => false,
+            'post_confirm_quality_gate_live_pass_total' => 0,
+            'post_confirm_quality_gate_demo_total'      => 0,
+            'post_confirm_quality_gate_reject_total'    => 0,
+            'post_confirm_quality_gate_no_effect_total' => 0,
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -3037,6 +3055,84 @@ final class SmartBrainCore
             }
             // === END CONFIRMATION LAYER ===
 
+            // === POST-CONFIRM QUALITY GATE (weak+normal long V2) ===
+            // Runs ONLY when all five conditions are true:
+            //   1. pattern_algorithm = double_bottom_contextual_v2
+            //   2. side = long
+            //   3. confirmation_result = confirmed
+            //   4. wave_amplitude_state = weak
+            //   5. wave_speed_state = normal
+            // Uses a bounded multi-signal gate: at least min_signals_pass of three primary
+            // score checks must pass. Signals that fail are demoted to demo (safe fallback —
+            // not hard reject) so the funnel stays alive for strong confirmed long V2.
+            {
+                $pcGateEnabled = (bool)($userLimits['post_confirm_wn_long_v2_gate_enabled'] ?? true);
+                $pcGateResult  = [
+                    'post_confirm_quality_gate_used'    => false,
+                    'post_confirm_quality_gate_applied' => false,
+                    'post_confirm_quality_gate_reason'  => '',
+                    'post_confirm_quality_gate_outcome' => 'not_applicable',
+                ];
+
+                $pcIsTarget = ($pcGateEnabled
+                    && $confPatternAlgoKey === 'double_bottom_contextual_v2'
+                    && $side === 'long'
+                    && $confLayerResult['confirmation_result'] === 'confirmed'
+                    && isset($wfAmplitudeState)
+                    && $wfAmplitudeState === 'weak'
+                    && isset($wfSpeedState)
+                    && $wfSpeedState === 'normal'
+                );
+
+                if ($pcIsTarget) {
+                    $result['post_confirm_quality_gate_total']++;
+                    $result['post_confirm_quality_gate_used'] = true;
+                    $pcGateResult['post_confirm_quality_gate_used'] = true;
+
+                    $pcMinEq   = (float)($userLimits['post_confirm_wn_long_v2_min_entry_quality']      ?? 0.58);
+                    $pcMinCf   = (float)($userLimits['post_confirm_wn_long_v2_min_corridor_fit']       ?? 0.52);
+                    $pcMinTm   = (float)($userLimits['post_confirm_wn_long_v2_min_trend_match']        ?? 0.48);
+                    $pcMinPc   = (float)($userLimits['post_confirm_wn_long_v2_min_pattern_confidence'] ?? 0.52);
+                    $pcMinPass = (int)($userLimits['post_confirm_wn_long_v2_min_signals_pass']         ?? 2);
+
+                    $pcEq = (float)($signal['entry_quality_score']  ?? 0.0);
+                    $pcCf = (float)($signal['corridor_fit_score']   ?? 0.0);
+                    $pcTm = (float)($signal['trend_match_score']    ?? 0.0);
+                    $pcPc = (float)($signal['pattern_confidence']   ?? 0.0);
+
+                    $pcPass = 0;
+                    if ($pcEq >= $pcMinEq) { $pcPass++; }
+                    if ($pcCf >= $pcMinCf) { $pcPass++; }
+                    if ($pcTm >= $pcMinTm) { $pcPass++; }
+
+                    $pcPatternConfPass = ($pcPc >= $pcMinPc);
+                    $pcGateFail = ($pcPass < $pcMinPass || !$pcPatternConfPass);
+
+                    if ($pcGateFail) {
+                        $pcFailReason = !$pcPatternConfPass
+                            ? 'post_confirm_wn_long_v2_pattern_confidence_below_floor'
+                            : 'post_confirm_wn_long_v2_multi_signal_below_floor';
+                        $result['post_confirm_quality_gate_applied']++;
+                        $result['post_confirm_quality_gate_demo_total']++;
+                        $pcGateResult['post_confirm_quality_gate_applied'] = true;
+                        $pcGateResult['post_confirm_quality_gate_reason']  = $pcFailReason;
+                        $pcGateResult['post_confirm_quality_gate_outcome'] = 'demo';
+                        // Prefer demo (not hard reject) as safe fallback.
+                        // Signal is tagged for observability and removed from live flow.
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $pcFailReason, $selectionMode);
+                        continue;
+                    }
+
+                    // Gate passed — strong enough to proceed as live.
+                    $result['post_confirm_quality_gate_live_pass_total']++;
+                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'live_pass';
+                } else {
+                    $result['post_confirm_quality_gate_no_effect_total']++;
+                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'no_effect';
+                }
+            }
+            // === END POST-CONFIRM QUALITY GATE ===
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -3260,6 +3356,12 @@ final class SmartBrainCore
             $intent['confirmation_result']           = $confLayerResult['confirmation_result'];
             $intent['confirmation_reason']           = $confLayerResult['confirmation_reason'];
             $intent['confirmation_side']             = $confLayerResult['confirmation_side'];
+
+            // Attach post-confirm quality gate observability fields
+            $intent['post_confirm_quality_gate_used']    = $pcGateResult['post_confirm_quality_gate_used'];
+            $intent['post_confirm_quality_gate_applied'] = $pcGateResult['post_confirm_quality_gate_applied'];
+            $intent['post_confirm_quality_gate_reason']  = $pcGateResult['post_confirm_quality_gate_reason'];
+            $intent['post_confirm_quality_gate_outcome'] = $pcGateResult['post_confirm_quality_gate_outcome'];
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {

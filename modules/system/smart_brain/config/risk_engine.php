@@ -118,7 +118,21 @@ return [
         'confirmation_wait_cycles'              => 3,
         'confirmation_reclaim_tolerance_pct'    => 0.005,
         'confirmation_target_patterns'          => ['double_top_contextual_v2', 'double_bottom_contextual_v2'],
-        // Max age for a pending confirmation entry before it expires (cycles × 4 buffer).
-        'confirmation_max_age_seconds'          => 720,
+        // Max age for a pending confirmation entry before it expires.
+        // Raised from 720 to 900 to give valid setups sufficient time to reach confirmation
+        // before expiry (max_age_exceeded) when confirmation_wait_cycles = 3.
+        'confirmation_max_age_seconds'          => 900,
+        // Post-confirm quality gate — weak+normal long V2 only.
+        // Applied ONLY when: pattern=double_bottom_contextual_v2, side=long,
+        // confirmation_result=confirmed, wave_amplitude_state=weak, wave_speed_state=normal.
+        // Uses a bounded multi-signal gate: at least min_signals_pass of the three primary
+        // score checks must pass; pattern_confidence is a hard floor applied in addition.
+        // Signals that fail route to demo (preferred fallback, not hard reject).
+        'post_confirm_wn_long_v2_gate_enabled'          => true,
+        'post_confirm_wn_long_v2_min_entry_quality'     => 0.58,
+        'post_confirm_wn_long_v2_min_corridor_fit'      => 0.52,
+        'post_confirm_wn_long_v2_min_trend_match'       => 0.48,
+        'post_confirm_wn_long_v2_min_pattern_confidence' => 0.52,
+        'post_confirm_wn_long_v2_min_signals_pass'      => 2,
     ],
 ];

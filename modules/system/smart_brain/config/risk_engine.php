@@ -135,11 +135,10 @@ return [
         'post_confirm_wn_long_v2_min_pattern_confidence' => 0.52,
         'post_confirm_wn_long_v2_min_signals_pass'      => 2,
         // Fast-coin long entry gate — prevents raw impulse-chase on fast/impulse-sensitive symbols.
-        // Applies only to symbols in fast_coin_symbols list (comma-separated, e.g. "SOLUSDT,DOTUSDT").
+        // Applies only to symbols in fast_coin_symbols list (comma-separated).
         // Gate targets double_bottom_contextual_v2 long and double_bottom_contextual_v3 long.
-        // Disabled by default — enable via user config when fast symbols are active.
-        'fast_coin_gate_enabled'                        => false,
-        'fast_coin_symbols'                             => '',
+        'fast_coin_gate_enabled'                        => true,
+        'fast_coin_symbols'                             => 'APEUSDT,CRVUSDT,ROSEUSDT,DEGENUSDT,SKRUSDT,NEWTUSDT,BATUSDT,CETUSUSDT',
         // Breakout hold: live price must be at or above entry_zone_high minus this buffer.
         // 0.002 = 0.2% below the breakout reference is still considered "held".
         'fast_coin_breakout_hold_buffer_pct'            => 0.002,

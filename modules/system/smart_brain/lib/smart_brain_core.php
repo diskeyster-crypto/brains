@@ -1105,12 +1105,17 @@ final class SmartBrainCore
             'win_universe_pool_size'                   => (int)($liveIntentResult['win_universe_pool_size']                   ?? 0),
             'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
             // Fast-coin long entry gate diagnostics
+            'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
             'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
             'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
+            'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
             'fast_coin_gate_reason'          => $liveIntentResult['fast_coin_gate_reason']                ?? [],
             'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
             'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
             'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
+            'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
+            'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
+            'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
             // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
             'leverage_chain_config' => (static function (
                 array $userLimits,

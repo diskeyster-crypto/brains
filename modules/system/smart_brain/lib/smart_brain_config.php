@@ -1869,6 +1869,232 @@ final class SmartBrainConfig
     }
 
     /**
+     * Evaluate the fast-coin long entry gate for a single signal/candidate.
+     *
+     * Applied only to fast / impulse-sensitive long setups when the signal's symbol
+     * is in the configured fast_coin_symbols list (or fast_coin_gate_enabled is true
+     * with class-based selection).
+     *
+     * Outcomes:
+     *   live_pass  → signal is high-quality enough to proceed to live as-is
+     *   demo       → signal should be demoted to demo; do NOT silently pass to live
+     *   reject     → signal is blocked by a hard anti-pattern
+     *
+     * V2 long thresholds (double_bottom_contextual_v2):
+     *   entry_action = enter_now, confirmation_result = confirmed,
+     *   wave_speed_state = slow, quality_score >= 0.75, signal_strength >= 0.65,
+     *   scenario_score >= 0.76, slot_priority_score >= 72
+     *
+     * V3 long exception (double_bottom_contextual_v3):
+     *   wave_speed_state = slow, quality_score >= 0.85,
+     *   signal_strength >= 0.60, slot_priority_score >= 71
+     *
+     * Hard anti-patterns that force demo/reject:
+     *   entry_action = wait_retrace, pattern_confidence < 0.60,
+     *   v2_priority_score < 0.60, wave_speed_state = normal
+     *
+     * All numeric thresholds are configurable via userLimits (fast_coin_gate_* keys).
+     *
+     * @param array<string,mixed> $signal     Signal or intent candidate payload
+     * @param array<string,mixed> $userLimits Effective user limits
+     * @return array{outcome:string,gate_applied:bool,reject_reasons:list<string>,anti_patterns:list<string>,checked_values:array<string,mixed>,is_v2_long:bool,is_v3_long:bool}
+     */
+    public static function evaluateFastCoinLongGate(array $signal, array $userLimits): array
+    {
+        $epsilon = 0.005;
+
+        $patternAlgo        = (string)($signal['pattern_algorithm'] ?? '');
+        $side               = strtolower(trim((string)($signal['side'] ?? '')));
+        $entryAction        = (string)($signal['entry_action'] ?? 'wait_retrace');
+        $confirmationResult = (string)($signal['confirmation_result'] ?? '');
+        $waveSpeedState     = (string)($signal['wave_speed_state'] ?? 'normal');
+        $qualityScore       = (float)($signal['quality_score'] ?? $signal['entry_quality_score'] ?? 0.0);
+        $signalStrength     = (float)($signal['signal_strength'] ?? $signal['pattern_confidence'] ?? 0.0);
+        $scenarioScore      = (float)($signal['scenario_score'] ?? $signal['v2_priority_score'] ?? 0.0);
+        $slotPriorityScore  = (float)($signal['slot_priority_score'] ?? 0.0);
+        $patternConfidence  = (float)($signal['pattern_confidence'] ?? 0.0);
+        $v2PriorityScore    = (float)($signal['v2_priority_score'] ?? 0.0);
+
+        $isV2Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v2');
+        $isV3Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v3');
+
+        $checkedValues = [
+            'pattern_algorithm'    => $patternAlgo,
+            'side'                 => $side,
+            'entry_action'         => $entryAction,
+            'confirmation_result'  => $confirmationResult,
+            'wave_speed_state'     => $waveSpeedState,
+            'quality_score'        => round($qualityScore, 4),
+            'signal_strength'      => round($signalStrength, 4),
+            'scenario_score'       => round($scenarioScore, 4),
+            'slot_priority_score'  => round($slotPriorityScore, 4),
+            'pattern_confidence'   => round($patternConfidence, 4),
+            'v2_priority_score'    => round($v2PriorityScore, 4),
+            'is_v2_long'           => $isV2Long,
+            'is_v3_long'           => $isV3Long,
+            'epsilon_used'         => $epsilon,
+        ];
+
+        // ── Hard anti-patterns (override all other gates) ─────────────────
+        $antiPatterns = [];
+
+        if ($entryAction === 'wait_retrace') {
+            $antiPatterns[] = 'fast_coin_anti_wait_retrace';
+        }
+
+        $minPatternConf = (float)($userLimits['fast_coin_gate_min_pattern_confidence'] ?? 0.60);
+        if ($patternConfidence + $epsilon < $minPatternConf) {
+            $antiPatterns[] = 'fast_coin_anti_pattern_confidence_too_low';
+        }
+        $checkedValues['min_pattern_confidence_threshold'] = round($minPatternConf, 4);
+
+        $minV2Priority = (float)($userLimits['fast_coin_gate_min_v2_priority_score'] ?? 0.60);
+        if ($isV2Long && $v2PriorityScore + $epsilon < $minV2Priority) {
+            $antiPatterns[] = 'fast_coin_anti_v2_priority_too_low';
+        }
+        $checkedValues['min_v2_priority_score_threshold'] = round($minV2Priority, 4);
+
+        if ($waveSpeedState === 'normal') {
+            $antiPatterns[] = 'fast_coin_anti_normal_wave_speed_impulse_chase';
+        }
+
+        if (!empty($antiPatterns)) {
+            return [
+                'outcome'        => 'reject',
+                'gate_applied'   => true,
+                'reject_reasons' => $antiPatterns,
+                'anti_patterns'  => $antiPatterns,
+                'checked_values' => $checkedValues,
+                'is_v2_long'     => $isV2Long,
+                'is_v3_long'     => $isV3Long,
+            ];
+        }
+
+        // ── V3 long exception ─────────────────────────────────────────────
+        if ($isV3Long) {
+            $rejectReasons = [];
+
+            if ($waveSpeedState !== 'slow') {
+                $rejectReasons[] = 'fast_coin_v3_reject_wave_speed_not_slow';
+            }
+
+            $minQuality = (float)($userLimits['fast_coin_gate_v3_min_quality_score'] ?? 0.85);
+            if ($qualityScore + $epsilon < $minQuality) {
+                $rejectReasons[] = 'fast_coin_v3_reject_quality_score_too_low';
+            }
+            $checkedValues['v3_min_quality_score_threshold'] = round($minQuality, 4);
+
+            $minStrength = (float)($userLimits['fast_coin_gate_v3_min_signal_strength'] ?? 0.60);
+            if ($signalStrength + $epsilon < $minStrength) {
+                $rejectReasons[] = 'fast_coin_v3_reject_signal_strength_too_low';
+            }
+            $checkedValues['v3_min_signal_strength_threshold'] = round($minStrength, 4);
+
+            $minSlotV3 = (float)($userLimits['fast_coin_gate_v3_min_slot_priority_score'] ?? 71.0);
+            if ($slotPriorityScore + $epsilon < $minSlotV3) {
+                $rejectReasons[] = 'fast_coin_v3_reject_slot_priority_too_low';
+            }
+            $checkedValues['v3_min_slot_priority_threshold'] = round($minSlotV3, 4);
+
+            if (!empty($rejectReasons)) {
+                return [
+                    'outcome'        => 'demo',
+                    'gate_applied'   => true,
+                    'reject_reasons' => $rejectReasons,
+                    'anti_patterns'  => [],
+                    'checked_values' => $checkedValues,
+                    'is_v2_long'     => $isV2Long,
+                    'is_v3_long'     => $isV3Long,
+                ];
+            }
+
+            return [
+                'outcome'        => 'live_pass',
+                'gate_applied'   => true,
+                'reject_reasons' => [],
+                'anti_patterns'  => [],
+                'checked_values' => $checkedValues,
+                'is_v2_long'     => $isV2Long,
+                'is_v3_long'     => $isV3Long,
+            ];
+        }
+
+        // ── V2 long gate ──────────────────────────────────────────────────
+        if ($isV2Long) {
+            $rejectReasons = [];
+
+            if ($entryAction !== 'enter_now') {
+                $rejectReasons[] = 'fast_coin_v2_reject_entry_action_not_enter_now';
+            }
+
+            if ($confirmationResult !== 'confirmed') {
+                $rejectReasons[] = 'fast_coin_v2_reject_confirmation_not_confirmed';
+            }
+
+            if ($waveSpeedState !== 'slow') {
+                $rejectReasons[] = 'fast_coin_v2_reject_wave_speed_not_slow';
+            }
+
+            $minQuality = (float)($userLimits['fast_coin_gate_v2_min_quality_score'] ?? 0.75);
+            if ($qualityScore + $epsilon < $minQuality) {
+                $rejectReasons[] = 'fast_coin_v2_reject_quality_score_too_low';
+            }
+            $checkedValues['v2_min_quality_score_threshold'] = round($minQuality, 4);
+
+            $minStrength = (float)($userLimits['fast_coin_gate_v2_min_signal_strength'] ?? 0.65);
+            if ($signalStrength + $epsilon < $minStrength) {
+                $rejectReasons[] = 'fast_coin_v2_reject_signal_strength_too_low';
+            }
+            $checkedValues['v2_min_signal_strength_threshold'] = round($minStrength, 4);
+
+            $minScenario = (float)($userLimits['fast_coin_gate_v2_min_scenario_score'] ?? 0.76);
+            if ($scenarioScore + $epsilon < $minScenario) {
+                $rejectReasons[] = 'fast_coin_v2_reject_scenario_score_too_low';
+            }
+            $checkedValues['v2_min_scenario_score_threshold'] = round($minScenario, 4);
+
+            $minSlotV2 = (float)($userLimits['fast_coin_gate_v2_min_slot_priority_score'] ?? 72.0);
+            if ($slotPriorityScore + $epsilon < $minSlotV2) {
+                $rejectReasons[] = 'fast_coin_v2_reject_slot_priority_too_low';
+            }
+            $checkedValues['v2_min_slot_priority_threshold'] = round($minSlotV2, 4);
+
+            if (!empty($rejectReasons)) {
+                return [
+                    'outcome'        => 'demo',
+                    'gate_applied'   => true,
+                    'reject_reasons' => $rejectReasons,
+                    'anti_patterns'  => [],
+                    'checked_values' => $checkedValues,
+                    'is_v2_long'     => $isV2Long,
+                    'is_v3_long'     => $isV3Long,
+                ];
+            }
+
+            return [
+                'outcome'        => 'live_pass',
+                'gate_applied'   => true,
+                'reject_reasons' => [],
+                'anti_patterns'  => [],
+                'checked_values' => $checkedValues,
+                'is_v2_long'     => $isV2Long,
+                'is_v3_long'     => $isV3Long,
+            ];
+        }
+
+        // ── Neither V2 long nor V3 long — gate not applicable ────────────
+        return [
+            'outcome'        => 'live_pass',
+            'gate_applied'   => false,
+            'reject_reasons' => [],
+            'anti_patterns'  => [],
+            'checked_values' => $checkedValues,
+            'is_v2_long'     => $isV2Long,
+            'is_v3_long'     => $isV3Long,
+        ];
+    }
+
+    /**
      * Apply runtime overrides from config_overrides/*.json
      */
     private function applyOverrides(): void

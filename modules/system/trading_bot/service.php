@@ -674,7 +674,25 @@ final class TradingBotService
                     $handoffState = 'brain_file_invalid';
                 }
 
+                // Count pending intents that are newer than the bot's previous run snapshot.
+                // Provides "new since last tick" visibility for handoff drift detection.
+                $prevBotRunTs = (int)($prevLastRun['ts'] ?? 0);
+                $newSinceSnapshot = 0;
+                if ($prevBotRunTs > 0 && !empty($intentsResult['intents'])) {
+                    foreach ($intentsResult['intents'] as $_hi) {
+                        if ((int)($_hi['created_ts'] ?? 0) > $prevBotRunTs) {
+                            $newSinceSnapshot++;
+                        }
+                    }
+                }
+
                 $result['brain_bot_handoff'] = [
+                    // Canonical timestamp fields (problem statement §3 requirements)
+                    'bot_snapshot_ts'                     => $botRunTs,
+                    'bot_intents_load_source_ts'          => $botRunTs,
+                    'brain_last_run_ts'                   => $brainGeneratedTs,
+                    'live_intents_generated_at'           => $brainGeneratedAt,
+                    // Existing fields (kept for backward compat)
                     'bot_run_ts'                          => $botRunTs,
                     'bot_run_at'                          => date('c', $botRunTs),
                     'brain_intents_generated_at'          => $brainGeneratedAt,
@@ -683,22 +701,28 @@ final class TradingBotService
                     'latest_intent_created_ts'            => $intentsResult['latest_intent_created_ts'] ?? null,
                     'brain_bot_snapshot_lag_seconds'      => $lagSeconds,
                     'handoff_state'                       => $handoffState,
+                    // Intent ingestion counters (problem statement §4)
                     'live_intents_available_total'        => (int)($intentsResult['live_intents_total_in_file'] ?? 0),
+                    'live_intents_new_since_bot_snapshot' => $newSinceSnapshot,
                     'live_intents_loaded_total'           => $loadedCount,
                     'live_intents_skipped_stale_total'    => $staleCnt,
                     'live_intents_skipped_claimed_total'  => (int)($intentsResult['lifecycle_skipped']['claimed']          ?? 0),
                     'live_intents_skipped_executed_total' => (int)($intentsResult['lifecycle_skipped']['already_executed'] ?? 0),
                     'live_intents_skipped_rejected_total' => (int)($intentsResult['lifecycle_skipped']['rejected']         ?? 0),
                     'live_intents_skipped_duplicate_total'=> (int)($intentsResult['duplicate_skipped'] ?? 0),
+                    // Balance-rejection counter is updated after execution loop (see post-processing block).
+                    'live_intents_skipped_balance_total'  => 0,
                 ];
                 // Flatten key summary fields for top-level visibility in last_run.
                 $result['brain_bot_snapshot_lag_seconds']      = $lagSeconds;
                 $result['brain_intents_generated_at']          = $brainGeneratedAt;
                 $result['handoff_state']                       = $handoffState;
                 $result['live_intents_available_total']        = (int)($intentsResult['live_intents_total_in_file'] ?? 0);
+                $result['live_intents_new_since_bot_snapshot'] = $newSinceSnapshot;
                 $result['live_intents_loaded_total']           = $loadedCount;
                 $result['live_intents_skipped_stale_total']    = $staleCnt;
                 $result['live_intents_skipped_duplicate_total']= (int)($intentsResult['duplicate_skipped'] ?? 0);
+                $result['live_intents_skipped_balance_total']  = 0; // updated after execution loop
             }
             $result['effective_selection_mode_from_brain'] = (string)($effectiveLiveConfig['live_signal_selection_mode'] ?? 'n/a');
             $result['strategy_overrides_disabled_or_overridden'] = $brainControlled;
@@ -2671,6 +2695,23 @@ final class TradingBotService
             // Stale claim counters for telemetry
             $result['intents_claimed_stale_count'] = $staleClaimResult['stale_claimed_found'] ?? 0;
             $result['intents_claimed_finalized_count'] = $staleClaimResult['finalized_count'] ?? 0;
+
+            // Derive live_intents_skipped_balance_total from finalized rejection_reason_stats.
+            // Covers all three distinct balance rejection statuses.
+            if ($brainControlled) {
+                $balanceSkippedTotal = 0;
+                foreach ([
+                    'rejected_balance_below_minimum',
+                    'rejected_insufficient_balance',
+                    'rejected_balance_unavailable',
+                ] as $_brs) {
+                    $balanceSkippedTotal += (int)($result['rejection_reason_stats'][$_brs] ?? 0);
+                }
+                $result['live_intents_skipped_balance_total'] = $balanceSkippedTotal;
+                if (isset($result['brain_bot_handoff'])) {
+                    $result['brain_bot_handoff']['live_intents_skipped_balance_total'] = $balanceSkippedTotal;
+                }
+            }
 
             // ── Claimed-intent lifecycle counters ────────────────────────
             // Canonical counters that prove each claimed intent reached a terminal state.

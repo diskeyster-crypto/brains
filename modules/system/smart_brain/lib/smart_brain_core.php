@@ -1104,6 +1104,13 @@ final class SmartBrainCore
             'win_universe_last_run_mode'               => $liveIntentResult['win_universe_last_run_mode']                     ?? null,
             'win_universe_pool_size'                   => (int)($liveIntentResult['win_universe_pool_size']                   ?? 0),
             'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
+            // Fast-coin long entry gate diagnostics
+            'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
+            'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
+            'fast_coin_gate_reason'          => $liveIntentResult['fast_coin_gate_reason']                ?? [],
+            'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
+            'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
+            'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
             // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
             'leverage_chain_config' => (static function (
                 array $userLimits,
@@ -1364,6 +1371,13 @@ final class SmartBrainCore
             'win_universe_last_run_mode'            => null,
             'win_universe_pool_size'                => 0,
             'win_universe_bonus_preview'            => [],
+            // Fast-coin long entry gate diagnostics
+            'fast_coin_gate_used'              => false,
+            'fast_coin_gate_applied'           => 0,
+            'fast_coin_gate_reason'            => [],
+            'fast_coin_gate_live_pass_total'   => 0,
+            'fast_coin_gate_demo_total'        => 0,
+            'fast_coin_gate_reject_total'      => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1902,6 +1916,61 @@ final class SmartBrainCore
                 }
                 if (!empty($sniperFilterResult['long_v3_threshold_applied'])) {
                     $result['sniper_v3_long_live_eligible_count'] = ($result['sniper_v3_long_live_eligible_count'] ?? 0) + 1;
+                }
+            }
+
+            // === FAST-COIN LONG ENTRY GATE ===
+            // Prevents raw impulse-chase entries on fast / impulse-sensitive long setups.
+            // Applied only when:
+            //   1. fast_coin_gate_enabled = true in userLimits
+            //   2. The signal's symbol is in the configured fast_coin_symbols list
+            //      (comma-separated; stored under userLimits['fast_coin_symbols']).
+            //   3. The signal is a long (double_bottom_contextual_v2 or _v3).
+            //
+            // Outcomes: live_pass → no change; demo → rejectLiveSignal (demoted);
+            //           reject → rejectLiveSignal (hard block).
+            // Gate is a no-op for shorts, non-fast symbols, and other patterns.
+            $fastCoinGateEnabled = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
+            if ($fastCoinGateEnabled && $side === 'long') {
+                $rawFastSymbols = (string)($userLimits['fast_coin_symbols'] ?? '');
+                $fastSymbolList = array_filter(array_map('trim', explode(',', strtoupper($rawFastSymbols))));
+                $isFastCoin = !empty($fastSymbolList) && in_array(strtoupper($symbol), $fastSymbolList, true);
+
+                if ($isFastCoin) {
+                    $fcgResult = SmartBrainConfig::evaluateFastCoinLongGate($signal, $userLimits);
+                    if ($fcgResult['gate_applied']) {
+                        $result['fast_coin_gate_used']  = true;
+                        $result['fast_coin_gate_applied']++;
+                        $fcgOutcome = $fcgResult['outcome'];
+                        $fcgRejectReasons = array_merge($fcgResult['reject_reasons'], $fcgResult['anti_patterns']);
+
+                        if ($fcgOutcome === 'reject') {
+                            $result['fast_coin_gate_reject_total']++;
+                            $result['fast_coin_gate_reason'][] = [
+                                'symbol'   => $symbol,
+                                'outcome'  => 'reject',
+                                'reasons'  => $fcgRejectReasons,
+                                'checked'  => $fcgResult['checked_values'] ?? [],
+                            ];
+                            $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_reject', $selectionMode);
+                            continue;
+                        }
+
+                        if ($fcgOutcome === 'demo') {
+                            $result['fast_coin_gate_demo_total']++;
+                            $result['fast_coin_gate_reason'][] = [
+                                'symbol'   => $symbol,
+                                'outcome'  => 'demo',
+                                'reasons'  => $fcgRejectReasons,
+                                'checked'  => $fcgResult['checked_values'] ?? [],
+                            ];
+                            $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_demo', $selectionMode);
+                            continue;
+                        }
+
+                        // live_pass — gate satisfied, signal proceeds normally
+                        $result['fast_coin_gate_live_pass_total']++;
+                    }
                 }
             }
 

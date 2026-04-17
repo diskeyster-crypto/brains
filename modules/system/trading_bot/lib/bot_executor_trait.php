@@ -499,14 +499,27 @@ trait BotExecutorTrait
                     $budgetRequested = (float)($balanceCheck['budget']   ?? 0.0);
                     $budgetAfterBuf  = (float)($balanceCheck['required'] ?? 0.0); // budget * (1 + buffer%)
 
+                    // Estimate quantity attempted for diagnostics (best-effort, pre-rounding).
+                    // Uses intent entry_price and leverage from risk block; null when price is unavailable.
+                    $balDiagEntryPrice = (float)($intent['entry_price'] ?? 0.0);
+                    $balDiagLeverage   = max(1, (int)($risk['leverage'] ?? 1));
+                    $balDiagQtyAttempted = ($balDiagEntryPrice > 0 && $budgetRequested > 0)
+                        ? round(($budgetRequested * $balDiagLeverage) / $balDiagEntryPrice, 8)
+                        : null;
+
                     // P6.8.1: Pass full context with required/available/snapshot for debugging
                     $balanceCtx = [
                         'context' => [
                             'blocker_type'          => $balanceBlockerType,
                             'blocker_reason'        => $reason,
+                            // Four distinct balance cases (problem statement requirement §2):
+                            //   fetch_failed          → gateway could not retrieve balance
+                            //   below_exchange_minimum → available < exchange reject_below threshold
+                            //   below_budget_target   → available < required (budget * buffer)
+                            //   other                 → any other margin shortfall
                             'balance_case'          => $isFetchFailed ? 'fetch_failed'
-                                : ($isBelowMinimum ? 'below_minimum_threshold'
-                                : ($isInsufficientMargin ? 'insufficient_margin' : 'other')),
+                                : ($isBelowMinimum ? 'below_exchange_minimum'
+                                : ($isInsufficientMargin ? 'below_budget_target' : 'other')),
                             'available_usdt'        => (float)($balanceCheck['available'] ?? 0.0),
                             'required_usdt'         => $budgetAfterBuf,
                             'budget_requested_usdt' => $budgetRequested,
@@ -515,6 +528,13 @@ trait BotExecutorTrait
                             'budget_usdt_per_trade' => $budgetRequested,
                             'reject_below_usdt'     => $balanceCheck['reject_below_usdt'] ?? null,
                             'shortfall'             => $balanceCheck['shortfall'] ?? null,
+                            // Sizing diagnostics: pre-rounding quantity estimate and price used.
+                            // min_notional_required / min_qty_required require exchange instrument
+                            // info not available at balance-check stage; set null as explicit marker.
+                            'symbol_price_used'     => $balDiagEntryPrice > 0 ? $balDiagEntryPrice : null,
+                            'quantity_attempted'    => $balDiagQtyAttempted,
+                            'min_notional_required' => null,
+                            'min_qty_required'      => null,
                             'recovery_needed'       => $balanceRecoveryNeeded,
                             'recovery_action'       => $balanceRecoveryAction,
                             'account_type'          => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),

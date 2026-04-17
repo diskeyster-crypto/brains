@@ -134,5 +134,32 @@ return [
         'post_confirm_wn_long_v2_min_trend_match'       => 0.48,
         'post_confirm_wn_long_v2_min_pattern_confidence' => 0.52,
         'post_confirm_wn_long_v2_min_signals_pass'      => 2,
+        // Fast-coin long entry gate — prevents raw impulse-chase on fast/impulse-sensitive symbols.
+        // Applies only to symbols in fast_coin_symbols list (comma-separated, e.g. "SOLUSDT,DOTUSDT").
+        // Gate targets double_bottom_contextual_v2 long and double_bottom_contextual_v3 long.
+        // Disabled by default — enable via user config when fast symbols are active.
+        'fast_coin_gate_enabled'                        => false,
+        'fast_coin_symbols'                             => '',
+        // Breakout hold: live price must be at or above entry_zone_high minus this buffer.
+        // 0.002 = 0.2% below the breakout reference is still considered "held".
+        'fast_coin_breakout_hold_buffer_pct'            => 0.002,
+        // Micro-acceleration: live price must exceed entry_zone_high by at least this % to
+        // confirm real upward continuation above the breakout reference.
+        'fast_coin_micro_accel_min_pct'                 => 0.003,
+        // Informational: max wait cycles after confirmation before micro-accel is required.
+        // Currently advisory; enforced by the live-intent TTL + gate checks above.
+        'fast_coin_micro_accel_max_wait_cycles'         => 2,
+        // Hard anti-pattern floors (apply regardless of V2/V3 path)
+        'fast_coin_gate_min_pattern_confidence'         => 0.60,
+        'fast_coin_gate_min_v2_priority_score'          => 0.60,
+        // V2 long (double_bottom_contextual_v2) positive gate thresholds
+        'fast_coin_gate_v2_min_quality_score'           => 0.75,
+        'fast_coin_gate_v2_min_signal_strength'         => 0.65,
+        'fast_coin_gate_v2_min_scenario_score'          => 0.76,
+        'fast_coin_gate_v2_min_slot_priority_score'     => 72.0,
+        // V3 long (double_bottom_contextual_v3) exception thresholds (stricter quality)
+        'fast_coin_gate_v3_min_quality_score'           => 0.85,
+        'fast_coin_gate_v3_min_signal_strength'         => 0.60,
+        'fast_coin_gate_v3_min_slot_priority_score'     => 71.0,
     ],
 ];

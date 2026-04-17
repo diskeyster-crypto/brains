@@ -1374,10 +1374,14 @@ final class SmartBrainCore
             // Fast-coin long entry gate diagnostics
             'fast_coin_gate_used'              => false,
             'fast_coin_gate_applied'           => 0,
+            'fast_coin_gate_total'             => 0,
             'fast_coin_gate_reason'            => [],
             'fast_coin_gate_live_pass_total'   => 0,
             'fast_coin_gate_demo_total'        => 0,
             'fast_coin_gate_reject_total'      => 0,
+            'fast_coin_gate_no_effect_total'   => 0,
+            'fast_coin_breakout_hold_ok_total' => 0,
+            'fast_coin_micro_accel_ok_total'   => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1937,20 +1941,32 @@ final class SmartBrainCore
                 $isFastCoin = !empty($fastSymbolList) && in_array(strtoupper($symbol), $fastSymbolList, true);
 
                 if ($isFastCoin) {
-                    $fcgResult = SmartBrainConfig::evaluateFastCoinLongGate($signal, $userLimits);
+                    $fcgLivePrice = isset($prices[$symbol]) && $prices[$symbol] > 0.0 ? (float)$prices[$symbol] : 0.0;
+                    $fcgResult = SmartBrainConfig::evaluateFastCoinLongGate($signal, $userLimits, $fcgLivePrice);
+                    $result['fast_coin_gate_total']++;
                     if ($fcgResult['gate_applied']) {
                         $result['fast_coin_gate_used']  = true;
                         $result['fast_coin_gate_applied']++;
                         $fcgOutcome = $fcgResult['outcome'];
                         $fcgRejectReasons = array_merge($fcgResult['reject_reasons'], $fcgResult['anti_patterns']);
 
+                        // Track per-eval breakout hold and micro-accel results
+                        if (!empty($fcgResult['breakout_hold_ok'])) {
+                            $result['fast_coin_breakout_hold_ok_total']++;
+                        }
+                        if (!empty($fcgResult['micro_accel_ok'])) {
+                            $result['fast_coin_micro_accel_ok_total']++;
+                        }
+
                         if ($fcgOutcome === 'reject') {
                             $result['fast_coin_gate_reject_total']++;
                             $result['fast_coin_gate_reason'][] = [
-                                'symbol'   => $symbol,
-                                'outcome'  => 'reject',
-                                'reasons'  => $fcgRejectReasons,
-                                'checked'  => $fcgResult['checked_values'] ?? [],
+                                'symbol'           => $symbol,
+                                'outcome'          => 'reject',
+                                'reasons'          => $fcgRejectReasons,
+                                'breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
+                                'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                                'checked'          => $fcgResult['checked_values'] ?? [],
                             ];
                             $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_reject', $selectionMode);
                             continue;
@@ -1959,10 +1975,12 @@ final class SmartBrainCore
                         if ($fcgOutcome === 'demo') {
                             $result['fast_coin_gate_demo_total']++;
                             $result['fast_coin_gate_reason'][] = [
-                                'symbol'   => $symbol,
-                                'outcome'  => 'demo',
-                                'reasons'  => $fcgRejectReasons,
-                                'checked'  => $fcgResult['checked_values'] ?? [],
+                                'symbol'           => $symbol,
+                                'outcome'          => 'demo',
+                                'reasons'          => $fcgRejectReasons,
+                                'breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
+                                'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                                'checked'          => $fcgResult['checked_values'] ?? [],
                             ];
                             $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_demo', $selectionMode);
                             continue;
@@ -1970,6 +1988,9 @@ final class SmartBrainCore
 
                         // live_pass — gate satisfied, signal proceeds normally
                         $result['fast_coin_gate_live_pass_total']++;
+                    } else {
+                        // gate_applied = false: non-V2/V3 long on a fast coin — no effect
+                        $result['fast_coin_gate_no_effect_total']++;
                     }
                 }
             }

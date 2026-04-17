@@ -650,8 +650,10 @@ final class TradingBotService
             // Brain -> Bot handoff observability: timestamps, lag, and intent ingestion counters.
             if ($brainControlled) {
                 $brainGeneratedAt = $intentsResult['brain_intents_generated_at'] ?? null;
-                $botRunTs         = $ts;
-                $brainGeneratedTs = ($brainGeneratedAt !== null) ? strtotime($brainGeneratedAt) : null;
+                // Normalize botRunTs to int — date('c') produces a string which cannot be
+                // passed to date() as the second argument (must be ?int in PHP 8+).
+                $botRunTs         = time();
+                $brainGeneratedTs = ($brainGeneratedAt !== null) ? (int)strtotime($brainGeneratedAt) : null;
                 $lagSeconds       = ($brainGeneratedTs !== null && $brainGeneratedTs > 0)
                     ? max(0, $botRunTs - $brainGeneratedTs) : null;
 

@@ -1883,11 +1883,14 @@ final class SmartBrainConfig
      * V2 long thresholds (double_bottom_contextual_v2):
      *   entry_action = enter_now, confirmation_result = confirmed,
      *   wave_speed_state = slow, quality_score >= 0.75, signal_strength >= 0.65,
-     *   scenario_score >= 0.76, slot_priority_score >= 72
+     *   scenario_score >= 0.76, slot_priority_score >= 72,
+     *   breakout hold: livePrice >= entry_zone_high * (1 - breakout_hold_buffer_pct),
+     *   micro-acceleration: livePrice >= entry_zone_high * (1 + micro_accel_min_pct)
      *
      * V3 long exception (double_bottom_contextual_v3):
      *   wave_speed_state = slow, quality_score >= 0.85,
-     *   signal_strength >= 0.60, slot_priority_score >= 71
+     *   signal_strength >= 0.60, slot_priority_score >= 71,
+     *   breakout hold + micro-acceleration (same mechanics as V2)
      *
      * Hard anti-patterns that force demo/reject:
      *   entry_action = wait_retrace, pattern_confidence < 0.60,
@@ -1897,9 +1900,10 @@ final class SmartBrainConfig
      *
      * @param array<string,mixed> $signal     Signal or intent candidate payload
      * @param array<string,mixed> $userLimits Effective user limits
-     * @return array{outcome:string,gate_applied:bool,reject_reasons:list<string>,anti_patterns:list<string>,checked_values:array<string,mixed>,is_v2_long:bool,is_v3_long:bool}
+     * @param float               $livePrice  Current live price for breakout hold / micro-accel checks (0.0 = skip checks)
+     * @return array{outcome:string,gate_applied:bool,reject_reasons:list<string>,anti_patterns:list<string>,checked_values:array<string,mixed>,is_v2_long:bool,is_v3_long:bool,breakout_hold_ok:bool,micro_accel_ok:bool}
      */
-    public static function evaluateFastCoinLongGate(array $signal, array $userLimits): array
+    public static function evaluateFastCoinLongGate(array $signal, array $userLimits, float $livePrice = 0.0): array
     {
         $epsilon = 0.005;
 
@@ -1915,24 +1919,53 @@ final class SmartBrainConfig
         $patternConfidence  = (float)($signal['pattern_confidence'] ?? 0.0);
         $v2PriorityScore    = (float)($signal['v2_priority_score'] ?? 0.0);
 
+        // Breakout reference: upper bound of the long entry zone (= corridor breakout level)
+        $entryZoneHigh = (float)($signal['entry_zone_high'] ?? $signal['corridor_high'] ?? 0.0);
+
         $isV2Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v2');
         $isV3Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v3');
 
+        // ── Breakout hold + micro-acceleration checks ─────────────────────
+        // breakout_hold_ok: live price is not below the breakout reference minus a small buffer
+        // micro_accel_ok: live price has moved at least micro_accel_min_pct above the breakout ref
+        $breakoutHoldBufferPct = max(0.0, (float)($userLimits['fast_coin_breakout_hold_buffer_pct'] ?? 0.002));
+        $microAccelMinPct      = max(0.0, (float)($userLimits['fast_coin_micro_accel_min_pct']      ?? 0.003));
+
+        $breakoutHoldOk = true;  // default: skip check when livePrice or ref unavailable
+        $microAccelOk   = true;
+        $breakoutHoldThreshold = 0.0;
+        $microAccelThreshold   = 0.0;
+
+        if ($livePrice > 0.0 && $entryZoneHigh > 0.0) {
+            $breakoutHoldThreshold = $entryZoneHigh * (1.0 - $breakoutHoldBufferPct);
+            $microAccelThreshold   = $entryZoneHigh * (1.0 + $microAccelMinPct);
+            $breakoutHoldOk = ($livePrice >= $breakoutHoldThreshold);
+            $microAccelOk   = ($livePrice >= $microAccelThreshold);
+        }
+
         $checkedValues = [
-            'pattern_algorithm'    => $patternAlgo,
-            'side'                 => $side,
-            'entry_action'         => $entryAction,
-            'confirmation_result'  => $confirmationResult,
-            'wave_speed_state'     => $waveSpeedState,
-            'quality_score'        => round($qualityScore, 4),
-            'signal_strength'      => round($signalStrength, 4),
-            'scenario_score'       => round($scenarioScore, 4),
-            'slot_priority_score'  => round($slotPriorityScore, 4),
-            'pattern_confidence'   => round($patternConfidence, 4),
-            'v2_priority_score'    => round($v2PriorityScore, 4),
-            'is_v2_long'           => $isV2Long,
-            'is_v3_long'           => $isV3Long,
-            'epsilon_used'         => $epsilon,
+            'pattern_algorithm'           => $patternAlgo,
+            'side'                        => $side,
+            'entry_action'                => $entryAction,
+            'confirmation_result'         => $confirmationResult,
+            'wave_speed_state'            => $waveSpeedState,
+            'quality_score'               => round($qualityScore, 4),
+            'signal_strength'             => round($signalStrength, 4),
+            'scenario_score'              => round($scenarioScore, 4),
+            'slot_priority_score'         => round($slotPriorityScore, 4),
+            'pattern_confidence'          => round($patternConfidence, 4),
+            'v2_priority_score'           => round($v2PriorityScore, 4),
+            'is_v2_long'                  => $isV2Long,
+            'is_v3_long'                  => $isV3Long,
+            'epsilon_used'                => $epsilon,
+            'live_price'                  => $livePrice > 0.0 ? round($livePrice, 8) : null,
+            'entry_zone_high'             => $entryZoneHigh > 0.0 ? round($entryZoneHigh, 8) : null,
+            'breakout_hold_buffer_pct'    => round($breakoutHoldBufferPct, 6),
+            'breakout_hold_threshold'     => $breakoutHoldThreshold > 0.0 ? round($breakoutHoldThreshold, 8) : null,
+            'breakout_hold_ok'            => $breakoutHoldOk,
+            'micro_accel_min_pct'         => round($microAccelMinPct, 6),
+            'micro_accel_threshold'       => $microAccelThreshold > 0.0 ? round($microAccelThreshold, 8) : null,
+            'micro_accel_ok'              => $microAccelOk,
         ];
 
         // ── Hard anti-patterns (override all other gates) ─────────────────
@@ -1958,15 +1991,22 @@ final class SmartBrainConfig
             $antiPatterns[] = 'fast_coin_anti_normal_wave_speed_impulse_chase';
         }
 
+        // Hard anti-pattern: breakout not held (live price below breakout reference minus buffer)
+        if (!$breakoutHoldOk) {
+            $antiPatterns[] = 'fast_coin_anti_breakout_not_held';
+        }
+
         if (!empty($antiPatterns)) {
             return [
-                'outcome'        => 'reject',
-                'gate_applied'   => true,
-                'reject_reasons' => $antiPatterns,
-                'anti_patterns'  => $antiPatterns,
-                'checked_values' => $checkedValues,
-                'is_v2_long'     => $isV2Long,
-                'is_v3_long'     => $isV3Long,
+                'outcome'         => 'reject',
+                'gate_applied'    => true,
+                'reject_reasons'  => $antiPatterns,
+                'anti_patterns'   => $antiPatterns,
+                'checked_values'  => $checkedValues,
+                'is_v2_long'      => $isV2Long,
+                'is_v3_long'      => $isV3Long,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'  => $microAccelOk,
             ];
         }
 
@@ -1996,26 +2036,35 @@ final class SmartBrainConfig
             }
             $checkedValues['v3_min_slot_priority_threshold'] = round($minSlotV3, 4);
 
+            // Micro-acceleration: require at least micro_accel_min_pct above breakout ref
+            if (!$microAccelOk) {
+                $rejectReasons[] = 'fast_coin_v3_reject_micro_accel_missing';
+            }
+
             if (!empty($rejectReasons)) {
                 return [
-                    'outcome'        => 'demo',
-                    'gate_applied'   => true,
-                    'reject_reasons' => $rejectReasons,
-                    'anti_patterns'  => [],
-                    'checked_values' => $checkedValues,
-                    'is_v2_long'     => $isV2Long,
-                    'is_v3_long'     => $isV3Long,
+                    'outcome'         => 'demo',
+                    'gate_applied'    => true,
+                    'reject_reasons'  => $rejectReasons,
+                    'anti_patterns'   => [],
+                    'checked_values'  => $checkedValues,
+                    'is_v2_long'      => $isV2Long,
+                    'is_v3_long'      => $isV3Long,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'  => $microAccelOk,
                 ];
             }
 
             return [
-                'outcome'        => 'live_pass',
-                'gate_applied'   => true,
-                'reject_reasons' => [],
-                'anti_patterns'  => [],
-                'checked_values' => $checkedValues,
-                'is_v2_long'     => $isV2Long,
-                'is_v3_long'     => $isV3Long,
+                'outcome'         => 'live_pass',
+                'gate_applied'    => true,
+                'reject_reasons'  => [],
+                'anti_patterns'   => [],
+                'checked_values'  => $checkedValues,
+                'is_v2_long'      => $isV2Long,
+                'is_v3_long'      => $isV3Long,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'  => $microAccelOk,
             ];
         }
 
@@ -2059,38 +2108,49 @@ final class SmartBrainConfig
             }
             $checkedValues['v2_min_slot_priority_threshold'] = round($minSlotV2, 4);
 
+            // Micro-acceleration: require at least micro_accel_min_pct above breakout ref
+            if (!$microAccelOk) {
+                $rejectReasons[] = 'fast_coin_v2_reject_micro_accel_missing';
+            }
+
             if (!empty($rejectReasons)) {
                 return [
-                    'outcome'        => 'demo',
-                    'gate_applied'   => true,
-                    'reject_reasons' => $rejectReasons,
-                    'anti_patterns'  => [],
-                    'checked_values' => $checkedValues,
-                    'is_v2_long'     => $isV2Long,
-                    'is_v3_long'     => $isV3Long,
+                    'outcome'         => 'demo',
+                    'gate_applied'    => true,
+                    'reject_reasons'  => $rejectReasons,
+                    'anti_patterns'   => [],
+                    'checked_values'  => $checkedValues,
+                    'is_v2_long'      => $isV2Long,
+                    'is_v3_long'      => $isV3Long,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'  => $microAccelOk,
                 ];
             }
 
             return [
-                'outcome'        => 'live_pass',
-                'gate_applied'   => true,
-                'reject_reasons' => [],
-                'anti_patterns'  => [],
-                'checked_values' => $checkedValues,
-                'is_v2_long'     => $isV2Long,
-                'is_v3_long'     => $isV3Long,
+                'outcome'         => 'live_pass',
+                'gate_applied'    => true,
+                'reject_reasons'  => [],
+                'anti_patterns'   => [],
+                'checked_values'  => $checkedValues,
+                'is_v2_long'      => $isV2Long,
+                'is_v3_long'      => $isV3Long,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'  => $microAccelOk,
             ];
         }
 
         // ── Neither V2 long nor V3 long — gate not applicable ────────────
         return [
-            'outcome'        => 'live_pass',
-            'gate_applied'   => false,
-            'reject_reasons' => [],
-            'anti_patterns'  => [],
-            'checked_values' => $checkedValues,
-            'is_v2_long'     => $isV2Long,
-            'is_v3_long'     => $isV3Long,
+            'outcome'          => 'live_pass',
+            'gate_applied'     => false,
+            'reject_reasons'   => [],
+            'anti_patterns'    => [],
+            'checked_values'   => $checkedValues,
+            'is_v2_long'       => $isV2Long,
+            'is_v3_long'       => $isV3Long,
+            'breakout_hold_ok' => $breakoutHoldOk,
+            'micro_accel_ok'   => $microAccelOk,
         ];
     }
 

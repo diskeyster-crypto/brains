@@ -118,7 +118,7 @@ return [
         'confirmation_wait_cycles'              => 3,
         'confirmation_reclaim_tolerance_pct'    => 0.005,
         'confirmation_target_patterns'          => ['double_top_contextual_v2', 'double_bottom_contextual_v2'],
-        // Max age for a pending confirmation entry before it expires (cycles × 2 buffer).
-        'confirmation_max_age_seconds'          => 480,
+        // Max age for a pending confirmation entry before it expires (cycles × 4 buffer).
+        'confirmation_max_age_seconds'          => 720,
     ],
 ];

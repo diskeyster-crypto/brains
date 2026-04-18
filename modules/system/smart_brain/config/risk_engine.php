@@ -131,5 +131,10 @@ return [
         // not high_risk, and without a warning flag. Never rescues hard veto cases.
         // Only fires when stabilized_v2_floor_relaxation_applied is true for the signal.
         'stabilized_cycle_relaxation_enabled'    => true,
+        // Stabilized non-actionable relaxation — very narrow rescue for borderline-clean contextual
+        // V2 signals that are non_actionable with state=weak but otherwise clean (not high_risk,
+        // no warning, no low_confidence). Never rescues high_risk, unavailable, or dirty cases.
+        // Only applies to double_bottom_contextual_v2 long and double_top_contextual_v2 short.
+        'stabilized_non_actionable_relaxation_enabled' => true,
     ],
 ];

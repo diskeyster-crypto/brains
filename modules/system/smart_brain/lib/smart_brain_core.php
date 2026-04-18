@@ -842,6 +842,15 @@ final class SmartBrainCore
             'cycle_non_actionable_audit_clearly_bad_total' => (int)($liveIntentResult['cycle_non_actionable_audit_clearly_bad_total'] ?? 0),
             'cycle_non_actionable_audit_reason_distribution' => $liveIntentResult['cycle_non_actionable_audit_reason_distribution'] ?? [],
             'cycle_non_actionable_audit_preview'           => $liveIntentResult['cycle_non_actionable_audit_preview']           ?? [],
+            // Stabilized non-actionable relaxation diagnostics (narrow rescue for borderline-clean V2 non_actionable)
+            'stabilized_non_actionable_relaxation_used'             => (int)($liveIntentResult['stabilized_non_actionable_relaxation_used']             ?? 0),
+            'stabilized_non_actionable_relaxation_applied'          => (int)($liveIntentResult['stabilized_non_actionable_relaxation_applied']          ?? 0),
+            'stabilized_non_actionable_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_non_actionable_relaxation_live_pass_total']  ?? 0),
+            'stabilized_non_actionable_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_non_actionable_relaxation_demo_total']       ?? 0),
+            'stabilized_non_actionable_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_non_actionable_relaxation_reject_total']     ?? 0),
+            'stabilized_non_actionable_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_non_actionable_relaxation_no_effect_total']  ?? 0),
+            'stabilized_non_actionable_relaxation_reason_distribution' => $liveIntentResult['stabilized_non_actionable_relaxation_reason_distribution'] ?? [],
+            'stabilized_non_actionable_relaxation_preview'          => $liveIntentResult['stabilized_non_actionable_relaxation_preview']          ?? [],
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1058,6 +1067,15 @@ final class SmartBrainCore
             'cycle_non_actionable_audit_clearly_bad_total' => (int)($liveIntentResult['cycle_non_actionable_audit_clearly_bad_total'] ?? 0),
             'cycle_non_actionable_audit_reason_distribution' => $liveIntentResult['cycle_non_actionable_audit_reason_distribution'] ?? [],
             'cycle_non_actionable_audit_preview'           => $liveIntentResult['cycle_non_actionable_audit_preview']           ?? [],
+            // Stabilized non-actionable relaxation diagnostics (narrow rescue for borderline-clean V2 non_actionable)
+            'stabilized_non_actionable_relaxation_used'             => (int)($liveIntentResult['stabilized_non_actionable_relaxation_used']             ?? 0),
+            'stabilized_non_actionable_relaxation_applied'          => (int)($liveIntentResult['stabilized_non_actionable_relaxation_applied']          ?? 0),
+            'stabilized_non_actionable_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_non_actionable_relaxation_live_pass_total']  ?? 0),
+            'stabilized_non_actionable_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_non_actionable_relaxation_demo_total']       ?? 0),
+            'stabilized_non_actionable_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_non_actionable_relaxation_reject_total']     ?? 0),
+            'stabilized_non_actionable_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_non_actionable_relaxation_no_effect_total']  ?? 0),
+            'stabilized_non_actionable_relaxation_reason_distribution' => $liveIntentResult['stabilized_non_actionable_relaxation_reason_distribution'] ?? [],
+            'stabilized_non_actionable_relaxation_preview'          => $liveIntentResult['stabilized_non_actionable_relaxation_preview']          ?? [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => (int)($liveIntentResult['cycle_eligibility_refine_total']      ?? 0),
             'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
@@ -1324,6 +1342,15 @@ final class SmartBrainCore
             'cycle_non_actionable_audit_clearly_bad_total' => 0,
             'cycle_non_actionable_audit_reason_distribution' => [],
             'cycle_non_actionable_audit_preview'           => [],
+            // Stabilized non-actionable relaxation diagnostics (narrow rescue for borderline-clean V2 non_actionable)
+            'stabilized_non_actionable_relaxation_used'             => 0,
+            'stabilized_non_actionable_relaxation_applied'          => 0,
+            'stabilized_non_actionable_relaxation_live_pass_total'  => 0,
+            'stabilized_non_actionable_relaxation_demo_total'       => 0,
+            'stabilized_non_actionable_relaxation_reject_total'     => 0,
+            'stabilized_non_actionable_relaxation_no_effect_total'  => 0,
+            'stabilized_non_actionable_relaxation_reason_distribution' => [],
+            'stabilized_non_actionable_relaxation_preview'          => [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => 0,
             'cycle_eligibility_upgrade_total'     => 0,
@@ -2166,16 +2193,66 @@ final class SmartBrainCore
                 }
 
                 // Hard veto → skip: model explicitly non_actionable with state weak or unavailable
+                // === STABILIZED NON-ACTIONABLE RELAXATION (Coin Core Step 11-NR) ===
+                // Very narrow rescue for borderline-clean contextual V2 signals that are
+                // non_actionable with state=weak (not unavailable — missing data is never rescued)
+                // and otherwise clean: not high_risk, no warning flag, no low_confidence flag.
+                // Signals that are truly dirty (high_risk, unavailable, warn+lowconf) are never
+                // rescued — branch 1 above already guards high_risk.
+                // Feature-flagged. Rescued signals fall through to passport gate normally.
                 if ($cmActionability === 'non_actionable' && in_array($cmState, ['weak', 'unavailable'], true)) {
-                    $cycleModelVetoApplied = true;
-                    $cycleModelVetoReason  = 'cycle_model_veto_non_actionable';
-                    $result['cycle_model_veto_total']++;
-                    $result['cycle_model_demote_skip_total']++;
-                    if ($side === 'long') {
-                        $result['long_cycle_veto_total']++;
+                    $stabNonActRelaxEnabled = (bool)($userLimits['stabilized_non_actionable_relaxation_enabled'] ?? true);
+                    $stabNonActRescued = false;
+                    $isContextualV2 = ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2');
+                    if ($stabNonActRelaxEnabled && $isContextualV2) {
+                        $result['stabilized_non_actionable_relaxation_used']++;
+                        // Rescue only if: state=weak (not unavailable), no risk, no warning, no low_confidence
+                        if ($cmState === 'weak' && $cmRisk !== 'high_risk' && !$cmWarnFlag && !$cmLowConf) {
+                            $stabNonActRescued = true;
+                            $stabNonActRescueReason = 'non_actionable_weak_borderline_v2_rescued';
+                            $result['stabilized_non_actionable_relaxation_applied']++;
+                            $result['stabilized_non_actionable_relaxation_live_pass_total']++;
+                            $result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActRescueReason] =
+                                ($result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActRescueReason] ?? 0) + 1;
+                            if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
+                                $result['stabilized_non_actionable_relaxation_preview'][] = [
+                                    'symbol'                               => $symbol,
+                                    'side'                                 => $side,
+                                    'pattern_algorithm'                    => $patternAlgo,
+                                    'cycle_actionability'                  => $cmActionability,
+                                    'cycle_state'                         => $cmState,
+                                    'cycle_risk'                          => $cmRisk,
+                                    'cycle_warning_flag'                  => $cmWarnFlag,
+                                    'cycle_low_confidence'                => $cmLowConf,
+                                    'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                                    'entry_quality_score'                 => $signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? null,
+                                    'pattern_confidence'                  => $signal['pattern_confidence'] ?? null,
+                                    'scenario_score'                      => $signal['scenario_score'] ?? null,
+                                    'trend_match_score'                   => $signal['trend_match_score'] ?? null,
+                                    'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
+                                    'borderline_candidate'                => true,
+                                    'borderline_reason'                   => $stabNonActRescueReason,
+                                    'rescue_result'                       => 'live_pass',
+                                ];
+                            }
+                            // Do NOT continue — signal falls through to passport gate normally
+                        } else {
+                            $result['stabilized_non_actionable_relaxation_reject_total']++;
+                        }
                     }
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_non_actionable', $selectionMode);
-                    continue;
+                    // === END STABILIZED NON-ACTIONABLE RELAXATION ===
+
+                    if (!$stabNonActRescued) {
+                        $cycleModelVetoApplied = true;
+                        $cycleModelVetoReason  = 'cycle_model_veto_non_actionable';
+                        $result['cycle_model_veto_total']++;
+                        $result['cycle_model_demote_skip_total']++;
+                        if ($side === 'long') {
+                            $result['long_cycle_veto_total']++;
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_non_actionable', $selectionMode);
+                        continue;
+                    }
                 }
 
                 // Soft veto → demo: model has no live bias (would prefer demo/shadow).

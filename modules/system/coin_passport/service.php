@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+use Core\System\SystemPaths;
+
 require_once __DIR__ . '/lib/passport_engine.php';
 
 /**
@@ -20,12 +22,26 @@ final class CoinPassportService
     /** Path to rebuild status file */
     private const STATUS_FILE = 'status.json';
 
+    /** Merged config (local config.php, overridden by unified config overlay) */
+    private array $config = [];
+
+    /** Config migration status (set during construction) */
+    private array $cpMigrationStatus = [];
+
     public function __construct()
     {
-        $this->storageDir   = __DIR__ . '/storage';
-        $passportsDir       = $this->storageDir . '/passports';
-        $tradingBotStorage  = __DIR__ . '/../trading_bot/storage';
-        $aiShadowStorage    = __DIR__ . '/../ai_shadow/storage';
+        $this->storageDir = __DIR__ . '/storage';
+
+        // CFG-8: Load local config and apply unified Config Module overlay for
+        // first-wave CP operational params.  On any failure the local config
+        // defaults remain in effect (safe fallback — all defaults are true).
+        $this->config            = $this->loadConfig();
+        $this->cpMigrationStatus = $this->applyCpUnifiedConfigOverlay($this->config);
+        $this->writeCpMigrationStatus($this->cpMigrationStatus);
+
+        $passportsDir      = $this->storageDir . '/passports';
+        $tradingBotStorage = __DIR__ . '/../trading_bot/storage';
+        $aiShadowStorage   = __DIR__ . '/../ai_shadow/storage';
 
         $this->engine = new CoinPassportEngine($passportsDir, $tradingBotStorage, $aiShadowStorage);
     }
@@ -132,8 +148,58 @@ final class CoinPassportService
      */
     public function rebuildAll(): array
     {
+        if (!($this->config['module']['rebuild_all_enabled'] ?? true)) {
+            return ['updated' => 0, 'symbols' => [], 'errors' => ['rebuild_all_disabled_by_config']];
+        }
         $result = $this->engine->rebuildAll();
         $this->saveStatus('rebuild_all', $result);
+
+        // After passports are rebuilt, project the latest cycle context into them (best-effort).
+        try {
+            $this->projectCycleContextToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Derive passive cycle hints from the projected context (best-effort, non-fatal).
+        try {
+            $this->projectCycleHintsToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
+        try {
+            $this->projectCycleSummaryToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleRoutingProfileToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleDecisionModelToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Apply bounded cycle eligibility refinement from decision model (Coin Core Step 13).
+        // Best-effort, non-fatal — failure leaves recommended_live_eligibility unchanged.
+        try {
+            $this->applyCycleEligibilityRefinement();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // CFG-8: attach runtime config source proof so callers/cron logs can see the authority.
+        $result['coin_passport_config_source_proof'] = $this->buildCpMigrationSummary();
+
         return $result;
     }
 
@@ -146,6 +212,9 @@ final class CoinPassportService
      */
     public function rebuildRecentSymbols(): array
     {
+        if (!($this->config['module']['rebuild_recent_enabled'] ?? true)) {
+            return ['updated' => 0, 'symbols' => [], 'errors' => ['rebuild_recent_disabled_by_config']];
+        }
         $cutoff    = time() - 7 * 86400;
         $recent    = [];
         $botBase   = __DIR__ . '/../trading_bot';
@@ -198,6 +267,52 @@ final class CoinPassportService
         }
 
         $this->saveStatus('rebuild_recent', $result);
+
+        // After passports are rebuilt, project the latest cycle context into them (best-effort).
+        try {
+            $this->projectCycleContextToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Derive passive cycle hints from the projected context (best-effort, non-fatal).
+        try {
+            $this->projectCycleHintsToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
+        try {
+            $this->projectCycleSummaryToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleRoutingProfileToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
+        try {
+            $this->projectCycleDecisionModelToPassports();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // Apply bounded cycle eligibility refinement from decision model (Coin Core Step 13).
+        try {
+            $this->applyCycleEligibilityRefinement();
+        } catch (\Throwable $e) {
+            // non-fatal
+        }
+
+        // CFG-8: attach runtime config source proof so callers/cron logs can see the authority.
+        $result['coin_passport_config_source_proof'] = $this->buildCpMigrationSummary();
+
         return $result;
     }
 
@@ -241,8 +356,352 @@ final class CoinPassportService
         @file_put_contents($path, json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    // =========================================================================
+    // Config helpers — CFG-8: unified config soft-switch
+    // =========================================================================
+
     /**
-     * Return global market health summary across all passports.
+     * Load Coin Passport local config from config/config.php.
+     *
+     * @return array<string,mixed>
+     */
+    private function loadConfig(): array
+    {
+        $cfgPath = __DIR__ . '/config/config.php';
+        if (!is_file($cfgPath)) {
+            return [];
+        }
+        try {
+            $cfg = require $cfgPath;
+            return is_array($cfg) ? $cfg : [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Apply first-wave Config Module unified config overlay to the CP config.
+     *
+     * Priority: config_operational_master.json → config_operational_draft.json → local config.php defaults.
+     * All sources are explicit in the returned status record; no silent fallbacks.
+     *
+     * First-wave params overlaid:
+     *   cp_enabled               → $config['module']['enabled']
+     *   cp_rebuild_all_enabled   → $config['module']['rebuild_all_enabled']
+     *   cp_rebuild_recent_enabled → $config['module']['rebuild_recent_enabled']
+     *   cp_cycle_profiles_enabled → $config['module']['cycle_profiles_enabled']
+     *
+     * @param array<string,mixed> $config Reference to the merged config array (mutated in place)
+     * @return array<string,mixed> Migration status record
+     */
+    private function applyCpUnifiedConfigOverlay(array &$config): array
+    {
+        // First-wave parameters with their config paths, cast types, and safe defaults.
+        // Safe defaults are applied only when the value is not explicitly set by the user
+        // (i.e., source !== 'config_center_save') and the cast value is boolean false.
+        $firstWave = [
+            'cp_enabled'                => ['path' => 'module.enabled',                'cast' => 'bool', 'safe_default' => true],
+            'cp_rebuild_all_enabled'    => ['path' => 'module.rebuild_all_enabled',    'cast' => 'bool', 'safe_default' => true],
+            'cp_rebuild_recent_enabled' => ['path' => 'module.rebuild_recent_enabled', 'cast' => 'bool', 'safe_default' => true],
+            'cp_cycle_profiles_enabled' => ['path' => 'module.cycle_profiles_enabled', 'cast' => 'bool', 'safe_default' => true],
+        ];
+
+        $status = [
+            'module'                     => 'coin_passport',
+            'switch_wave'                => 'v1_operational_params',
+            'unified_config_available'   => false,
+            'unified_config_master_path' => '',
+            'unified_config_draft_path'  => '',
+            'source'                     => 'legacy_cp_config',
+            'partially_migrated'         => false,
+            'first_wave_total'           => count($firstWave),
+            'migrated_count'             => 0,
+            'fallback_count'             => 0,
+            'default_applied_count'      => 0,
+            'switched_params'            => [],
+            'fallback_params'            => [],
+            'switched_params_detail'     => [],
+            'fallback_params_detail'     => [],
+            'recorded_at'                => date('c'),
+        ];
+
+        $systemDir  = __DIR__ . '/..'; // modules/system/
+        $masterPath = $systemDir . '/config/storage/runtime/config_operational_master.json';
+        $draftPath  = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_master_path'] = $masterPath;
+        $status['unified_config_draft_path']  = $draftPath;
+
+        /** Helper: get a value from $config using dot-notation path. */
+        $dotGet = static function (array $cfg, string $path) {
+            $parts   = explode('.', $path);
+            $current = $cfg;
+            foreach ($parts as $part) {
+                if (!is_array($current) || !array_key_exists($part, $current)) {
+                    return null;
+                }
+                $current = $current[$part];
+            }
+            return $current;
+        };
+
+        /** Helper: set a value in $config using dot-notation path. */
+        $dotSet = static function (array &$cfg, string $path, $value): void {
+            $parts   = explode('.', $path);
+            $current = &$cfg;
+            foreach ($parts as $i => $part) {
+                if ($i === count($parts) - 1) {
+                    $current[$part] = $value;
+                } else {
+                    if (!isset($current[$part]) || !is_array($current[$part])) {
+                        $current[$part] = [];
+                    }
+                    $current = &$current[$part];
+                }
+            }
+        };
+
+        /**
+         * Helper: if a boolean param is not user-defined and its value is false,
+         * apply the safe default (true) to $config and record default_applied=true.
+         * Returns [$effectiveValue, $defaultApplied].
+         */
+        $trySafeDefault = function (string $key, array $def, bool $userDefined, $castVal) use (&$config, $dotSet, &$status): array {
+            $defaultApplied = false;
+            if (!$userDefined && $def['cast'] === 'bool' && $castVal === false && isset($def['safe_default'])) {
+                $castVal        = $def['safe_default'];
+                $defaultApplied = true;
+                $dotSet($config, $def['path'], $castVal);
+                $status['default_applied_count']++;
+            }
+            return [$castVal, $defaultApplied];
+        };
+
+        // ── Load master (preferred) ─────────────────────────────────────────
+        $masterParams    = [];
+        $masterAvail     = false;
+        $masterReadError = false;
+        if (is_file($masterPath)) {
+            $rawMaster = @file_get_contents($masterPath);
+            if ($rawMaster === false) {
+                $masterReadError = true;
+            } else {
+                $masterData = @json_decode($rawMaster, true);
+                if (is_array($masterData) && !empty($masterData['params'])) {
+                    $masterParams = $masterData['params'];
+                    $masterAvail  = true;
+                    $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                } elseif ($rawMaster !== '') {
+                    // File exists and is non-empty but JSON is invalid or missing params key.
+                    $masterReadError = true;
+                }
+            }
+        }
+
+        // ── Load draft (fallback source) ────────────────────────────────────
+        $draftParams    = [];
+        $draftAvail     = false;
+        $draftReadError = false;
+        if (is_file($draftPath)) {
+            $rawDraft = @file_get_contents($draftPath);
+            if ($rawDraft === false) {
+                $draftReadError = true;
+            } else {
+                $draftData = @json_decode($rawDraft, true);
+                if (is_array($draftData) && !empty($draftData['params'])) {
+                    $draftParams = $draftData['params'];
+                    $draftAvail  = true;
+                    $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                } elseif ($rawDraft !== '') {
+                    $draftReadError = true;
+                }
+            }
+        }
+
+        // Propagate read error flags into status so the UI can surface them.
+        if ($masterReadError) {
+            $status['unified_config_master_read_error'] = true;
+        }
+        if ($draftReadError) {
+            $status['unified_config_draft_read_error'] = true;
+        }
+
+        if (!$masterAvail && !$draftAvail) {
+            // Distinguish: files existed but were unreadable/invalid vs. simply absent.
+            $globalReason = ($masterReadError || $draftReadError)
+                ? 'read_error'
+                : 'unified_config_not_found';
+            $fallbackDetail = [];
+            foreach ($firstWave as $key => $def) {
+                $legacyVal = $dotGet($config, $def['path']);
+                // user_defined=false — unified config is entirely unavailable.
+                [$legacyVal, $defaultApplied] = $trySafeDefault($key, $def, false, (bool)$legacyVal);
+                $fallbackDetail[$key] = [
+                    'value'                => $legacyVal,
+                    'source_layer'         => 'legacy_cp_config',
+                    'source_owner'         => 'coin_passport',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => $globalReason,
+                    'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
+                    'user_defined'         => false,
+                    'default_applied'      => $defaultApplied,
+                ];
+            }
+            $status['fallback_params']        = array_keys($firstWave);
+            $status['fallback_count']         = count($firstWave);
+            $status['fallback_params_detail'] = $fallbackDetail;
+            return $status;
+        }
+
+        $status['unified_config_available'] = true;
+
+        foreach ($firstWave as $key => $def) {
+            $entry       = null;
+            $sourceLayer = 'legacy_cp_config';
+            $via         = '';
+            // Track whether the key was found in a source but had a null/invalid value.
+            $foundButInvalid = false;
+
+            if ($masterAvail && array_key_exists($key, $masterParams)) {
+                $rawEntryVal = $masterParams[$key]['value'] ?? null;
+                if ($rawEntryVal !== null) {
+                    $entry       = $masterParams[$key];
+                    $sourceLayer = 'unified_config_master';
+                    $via         = 'unified_config_operational_master';
+                } else {
+                    $foundButInvalid = true;
+                }
+            }
+
+            if ($entry === null && $draftAvail && array_key_exists($key, $draftParams)) {
+                $rawEntryVal = $draftParams[$key]['value'] ?? null;
+                if ($rawEntryVal !== null) {
+                    $entry       = $draftParams[$key];
+                    $sourceLayer = 'unified_config';
+                    $via         = 'unified_config_operational_draft';
+                } else {
+                    $foundButInvalid = true;
+                }
+            }
+
+            if ($entry === null) {
+                // Determine the most precise fallback reason:
+                // - key was present but value was null/invalid → invalid_value
+                // - unified source had a read error and key was absent → read_error
+                // - key simply absent from all available unified sources → missing_in_unified
+                if ($foundButInvalid) {
+                    $fallbackReason = 'invalid_value';
+                } elseif ($masterReadError || $draftReadError) {
+                    $fallbackReason = 'read_error';
+                } else {
+                    $fallbackReason = 'missing_in_unified';
+                }
+                $legacyVal = $dotGet($config, $def['path']);
+                // user_defined=false — param absent from unified config; try safe default.
+                [$legacyVal, $defaultApplied] = $trySafeDefault($key, $def, false, (bool)$legacyVal);
+                $status['fallback_params'][] = $key;
+                $status['fallback_params_detail'][$key] = [
+                    'value'                => $legacyVal,
+                    'source_layer'         => 'legacy_cp_config',
+                    'source_owner'         => 'coin_passport',
+                    'unified_config_used'  => false,
+                    'legacy_fallback_used' => true,
+                    'fallback_reason'      => $fallbackReason,
+                    'fallback_source'      => 'cp_config (coin_passport/config/config.php)',
+                    'user_defined'         => false,
+                    'default_applied'      => $defaultApplied,
+                ];
+                continue;
+            }
+
+            $rawVal      = $entry['value'];
+            // A param is user-defined only when explicitly saved via Config Center.
+            $userDefined = ($entry['source'] ?? '') === 'config_center_save';
+            $castVal     = match ($def['cast']) {
+                'bool' => (bool)$rawVal,
+                'int'  => (int)$rawVal,
+                default => (string)$rawVal,
+            };
+
+            // Apply safe default when not user-defined and boolean value is false,
+            // to prevent unintentional disabling by inherited/extracted defaults.
+            [$castVal, $defaultApplied] = $trySafeDefault($key, $def, $userDefined, $castVal);
+
+            $dotSet($config, $def['path'], $castVal);
+
+            $status['switched_params'][] = $key;
+            $status['switched_params_detail'][$key] = [
+                'value'                => $castVal,
+                'original_source'      => $entry['source']      ?? ($sourceLayer === 'unified_config_master' ? 'config_center_save' : 'unknown'),
+                'original_source_file' => $entry['source_file'] ?? null,
+                'via'                  => $via,
+                'source_layer'         => $sourceLayer,
+                'source_owner'         => 'coin_passport',
+                'unified_config_used'  => true,
+                'legacy_fallback_used' => false,
+                'user_defined'         => $userDefined,
+                'default_applied'      => $defaultApplied,
+            ];
+        }
+
+        $migratedCount = count($status['switched_params']);
+        $fallbackCount = count($status['fallback_params']);
+        $status['migrated_count']     = $migratedCount;
+        $status['fallback_count']     = $fallbackCount;
+        $status['partially_migrated'] = $migratedCount > 0;
+        $status['source']             = $migratedCount === 0
+            ? 'legacy_cp_config'
+            : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
+
+        return $status;
+    }
+
+    /**
+     * Write CP config migration status to its runtime storage.
+     *
+     * @param array<string,mixed> $migrationStatus
+     */
+    private function writeCpMigrationStatus(array $migrationStatus): void
+    {
+        $path = $this->storageDir . '/runtime/config_source_status.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($migrationStatus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
+        );
+    }
+
+    /**
+     * Build a concise migration summary for inclusion in runtime result output.
+     *
+     * @return array<string,mixed>
+     */
+    public function buildCpMigrationSummary(): array
+    {
+        $s = $this->cpMigrationStatus;
+        return [
+            'module'                   => 'coin_passport',
+            'migration_wave'           => $s['switch_wave']               ?? 'v1_operational_params',
+            'partially_migrated'       => (bool)($s['partially_migrated'] ?? false),
+            'unified_config_available' => (bool)($s['unified_config_available'] ?? false),
+            'unified_config_used'      => ($s['migrated_count'] ?? 0) > 0,
+            'legacy_fallback_used'     => ($s['fallback_count'] ?? 0) > 0,
+            'migrated_count'           => (int)($s['migrated_count']          ?? 0),
+            'fallback_count'           => (int)($s['fallback_count']          ?? 0),
+            'default_applied_count'    => (int)($s['default_applied_count']   ?? 0),
+            'first_wave_total'         => (int)($s['first_wave_total']        ?? 0),
+            'switched_params'          => $s['switched_params']               ?? [],
+            'fallback_params'          => $s['fallback_params']               ?? [],
+            'source'                   => $s['source']                        ?? 'legacy_cp_config',
+            'recorded_at'              => $s['recorded_at']                   ?? null,
+        ];
+    }
+
+    /**
      * Used by index UI (Phase 6) and Brain to gauge overall market conditions.
      *
      * @return array<string,mixed>
@@ -289,6 +748,395 @@ final class CoinPassportService
     // =========================================================================
 
     /**
+     * Build derived coin behavior cycle profiles from parser2_history_accumulator NDJSON data.
+     * Data-layer only — does NOT feed into live admission or PM decisions yet.
+     * Called by CronManager (coin_passport:buildCycleProfiles).
+     *
+     * @return array<string,mixed>
+     */
+    public function buildCycleProfiles(): array
+    {
+        if (!($this->config['module']['cycle_profiles_enabled'] ?? true)) {
+            return ['built' => 0, 'symbols' => [], 'errors' => ['cycle_profiles_disabled_by_config']];
+        }
+        // Resolve parser2 history storage via SystemPaths (project-standard resolver).
+        // Key 'parser.parser2_history_accumulator.storage' is the canonical key used
+        // by parser4, parser5, parser15, parser6_simulator, and simulator/controller.
+        $parser2StorageDir = '';
+        try {
+            $paths = SystemPaths::instance();
+            $parser2StorageDir = (string)$paths->get('parser.parser2_history_accumulator.storage');
+            if ($parser2StorageDir === '') {
+                // Fallback: base key + /storage
+                $base = (string)$paths->get('parser.parser2_history_accumulator');
+                if ($base !== '') {
+                    $parser2StorageDir = rtrim($base, '/') . '/storage';
+                }
+            }
+        } catch (\Throwable $e) {
+            // SystemPaths not available — best-effort, non-fatal
+        }
+        $runtimeDir        = $this->storageDir . '/runtime';
+        $outputPath        = $runtimeDir . '/coin_cycle_profile.json';
+
+        try {
+            $result = $this->engine->buildCoinCycleProfiles($parser2StorageDir, $outputPath);
+
+            // Immediately derive the read model from the freshly written profile (best-effort, non-fatal).
+            $readModelResult = [];
+            try {
+                $readModelPath   = $runtimeDir . '/coin_cycle_read_model.json';
+                $readModelResult = $this->engine->buildCoinCycleReadModel($outputPath, $readModelPath);
+            } catch (\Throwable $rmEx) {
+                // non-fatal — counters will be zero
+            }
+
+            // Project the cycle context block into each passport (best-effort, non-fatal).
+            $projectionResult = [];
+            try {
+                $projectionResult = $this->projectCycleContextToPassports();
+            } catch (\Throwable $projEx) {
+                // non-fatal
+            }
+
+            // Derive passive cycle hints from the projected context (best-effort, non-fatal).
+            $hintsResult = [];
+            try {
+                $hintsResult = $this->projectCycleHintsToPassports();
+            } catch (\Throwable $hintsEx) {
+                // non-fatal
+            }
+
+            // Build passive cycle decision summary from context + hints (best-effort, non-fatal).
+            $summaryResult = [];
+            try {
+                $summaryResult = $this->projectCycleSummaryToPassports();
+            } catch (\Throwable $summaryEx) {
+                // non-fatal
+            }
+
+            // Build passive cycle routing profile from cycle layers (best-effort, non-fatal).
+            $routingResult = [];
+            try {
+                $routingResult = $this->projectCycleRoutingProfileToPassports();
+            } catch (\Throwable $routingEx) {
+                // non-fatal
+            }
+
+            // Build passive cycle decision model from cycle layers (best-effort, non-fatal).
+            $decisionResult = [];
+            try {
+                $decisionResult = $this->projectCycleDecisionModelToPassports();
+            } catch (\Throwable $decisionEx) {
+                // non-fatal
+            }
+
+            // Apply bounded cycle eligibility refinement from decision model (Coin Core Step 13).
+            $refinementResult = [];
+            try {
+                $refinementResult = $this->applyCycleEligibilityRefinement();
+            } catch (\Throwable $refineEx) {
+                // non-fatal
+            }
+
+            return [
+                'ok'                              => true,
+                'cycle_symbols_total'             => $result['cycle_symbols_total']            ?? 0,
+                'cycle_profiles_generated_total'  => $result['cycle_profiles_generated_total'] ?? 0,
+                'cycle_generation_error_total'    => $result['cycle_generation_error_total']   ?? 0,
+                'generated_at'                    => $result['generated_at']                   ?? date('c'),
+                'read_model_symbols_total'        => $readModelResult['read_model_symbols_total']   ?? 0,
+                'read_model_generated_total'      => $readModelResult['read_model_generated_total'] ?? 0,
+                'read_model_error_total'          => $readModelResult['read_model_error_total']     ?? 0,
+                'projection_symbols_total'        => $projectionResult['symbols_total']    ?? 0,
+                'projection_projected_total'      => $projectionResult['projected_total']  ?? 0,
+                'projection_skipped_total'        => $projectionResult['skipped_total']    ?? 0,
+                'projection_error_total'          => $projectionResult['error_total']      ?? 0,
+                'hints_symbols_total'             => $hintsResult['symbols_total']         ?? 0,
+                'hints_written_total'             => $hintsResult['hints_written_total']   ?? 0,
+                'hints_error_total'               => $hintsResult['error_total']           ?? 0,
+                'summary_symbols_total'           => $summaryResult['symbols_total']           ?? 0,
+                'summary_written_total'           => $summaryResult['summaries_written_total'] ?? 0,
+                'summary_error_total'             => $summaryResult['error_total']             ?? 0,
+                'routing_symbols_total'           => $routingResult['symbols_total']           ?? 0,
+                'routing_written_total'           => $routingResult['profiles_written_total']  ?? 0,
+                'routing_error_total'             => $routingResult['error_total']             ?? 0,
+                'decision_symbols_total'          => $decisionResult['symbols_total']          ?? 0,
+                'decision_written_total'          => $decisionResult['models_written_total']   ?? 0,
+                'decision_error_total'            => $decisionResult['error_total']            ?? 0,
+                'refinement_symbols_total'        => $refinementResult['symbols_total']   ?? 0,
+                'refinement_processed_total'      => $refinementResult['processed_total'] ?? 0,
+                'refinement_upgrade_total'        => $refinementResult['upgrade_total']   ?? 0,
+                'refinement_downgrade_total'      => $refinementResult['downgrade_total'] ?? 0,
+                'refinement_no_effect_total'      => $refinementResult['no_effect_total'] ?? 0,
+                'refinement_unavailable_total'    => $refinementResult['unavailable_total'] ?? 0,
+                'refinement_error_total'          => $refinementResult['error_total']     ?? 0,
+                // CFG-8: runtime config source proof.
+                'coin_passport_config_source_proof' => $this->buildCpMigrationSummary(),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok'                             => false,
+                'cycle_symbols_total'            => 0,
+                'cycle_profiles_generated_total' => 0,
+                'cycle_generation_error_total'   => 1,
+                'error'                          => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build coin_cycle_read_model.json from the existing coin_cycle_profile.json.
+     * Derives compact, decision-friendly per-symbol state summaries.
+     * Data layer only — does NOT feed into live admission or Bot/PM decisions.
+     * Called by CronManager (coin_passport:buildCycleReadModel).
+     *
+     * @return array<string,mixed>
+     */
+    public function buildCycleReadModel(): array
+    {
+        $runtimeDir    = $this->storageDir . '/runtime';
+        $profilePath   = $runtimeDir . '/coin_cycle_profile.json';
+        $readModelPath = $runtimeDir . '/coin_cycle_read_model.json';
+
+        try {
+            $result = $this->engine->buildCoinCycleReadModel($profilePath, $readModelPath);
+            return [
+                'ok'                         => true,
+                'read_model_symbols_total'   => $result['read_model_symbols_total']   ?? 0,
+                'read_model_generated_total' => $result['read_model_generated_total'] ?? 0,
+                'read_model_error_total'     => $result['read_model_error_total']     ?? 0,
+                'generated_at'               => $result['generated_at']               ?? date('c'),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok'                         => false,
+                'read_model_symbols_total'   => 0,
+                'read_model_generated_total' => 0,
+                'read_model_error_total'     => 1,
+                'error'                      => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Project coin_cycle_read_model.json into each passport as a passive
+     * 'coin_cycle_context' namespaced block.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after buildCycleProfiles() and after passport rebuilds.
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleContextToPassports(): array
+    {
+        $runtimeDir   = $this->storageDir . '/runtime';
+        $readModelPath = $runtimeDir . '/coin_cycle_read_model.json';
+        $summaryPath   = $runtimeDir . '/coin_cycle_projection_summary.json';
+
+        try {
+            return $this->engine->projectCycleContextToPassports($readModelPath, $summaryPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'           => date('c'),
+                'source'               => 'coin_cycle_read_model',
+                'symbols_total'        => 0,
+                'projected_total'      => 0,
+                'skipped_total'        => 0,
+                'low_confidence_total' => 0,
+                'error_total'          => 1,
+                'error'                => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Derive and write passive cycle eligibility hints into each passport.
+     * Reads coin_cycle_context already projected into passports, derives coin_cycle_hints.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleContextToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleHintsToPassports(): array
+    {
+        $runtimeDir  = $this->storageDir . '/runtime';
+        $summaryPath = $runtimeDir . '/coin_cycle_hints_summary.json';
+
+        try {
+            return $this->engine->projectCycleHintsToPassports($summaryPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'          => date('c'),
+                'source'              => 'coin_cycle_context',
+                'symbols_total'       => 0,
+                'hints_written_total' => 0,
+                'favorable_total'     => 0,
+                'cautious_total'      => 0,
+                'weak_total'          => 0,
+                'unavailable_total'   => 0,
+                'low_confidence_total' => 0,
+                'error_total'         => 1,
+                'error'               => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build and write a passive cycle decision summary into each passport.
+     * Reads coin_cycle_context + coin_cycle_hints already in passports, derives coin_cycle_summary.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleHintsToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleSummaryToPassports(): array
+    {
+        $runtimeDir  = $this->storageDir . '/runtime';
+        $summaryPath = $runtimeDir . '/coin_cycle_summary_projection.json';
+
+        try {
+            return $this->engine->projectCycleSummaryToPassports($summaryPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'              => date('c'),
+                'source'                  => 'passport coin_cycle_context + coin_cycle_hints',
+                'symbols_total'           => 0,
+                'summaries_written_total' => 0,
+                'favorable_total'         => 0,
+                'cautious_total'          => 0,
+                'weak_total'              => 0,
+                'unavailable_total'       => 0,
+                'actionable_total'        => 0,
+                'non_actionable_total'    => 0,
+                'low_confidence_total'    => 0,
+                'error_total'             => 1,
+                'error'                   => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build and write a passive cycle routing profile into each passport.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary from each passport,
+     * derives coin_cycle_routing_profile, saves back.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleSummaryToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleRoutingProfileToPassports(): array
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $outputPath = $runtimeDir . '/coin_cycle_routing_profile_projection.json';
+
+        try {
+            return $this->engine->projectCycleRoutingProfileToPassports($outputPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'             => date('c'),
+                'source'                 => 'passport cycle layers',
+                'symbols_total'          => 0,
+                'profiles_written_total' => 0,
+                'live_ready_total'       => 0,
+                'demo_only_total'        => 0,
+                'shadow_only_total'      => 0,
+                'skip_total'             => 0,
+                'low_confidence_total'   => 0,
+                'error_total'            => 1,
+                'error'                  => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Build and write a passive cycle decision model into each passport.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary + coin_cycle_routing_profile
+     * from each passport, derives coin_cycle_decision_model, saves back.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     * Called after projectCycleRoutingProfileToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function projectCycleDecisionModelToPassports(): array
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $outputPath = $runtimeDir . '/coin_cycle_decision_model_projection.json';
+
+        try {
+            return $this->engine->projectCycleDecisionModelToPassports($outputPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'           => date('c'),
+                'source'               => 'passport cycle layers',
+                'symbols_total'        => 0,
+                'models_written_total' => 0,
+                'favorable_total'      => 0,
+                'cautious_total'       => 0,
+                'weak_total'           => 0,
+                'unavailable_total'    => 0,
+                'actionable_total'     => 0,
+                'non_actionable_total' => 0,
+                'live_bias_total'      => 0,
+                'demo_bias_total'      => 0,
+                'shadow_bias_total'    => 0,
+                'skip_bias_total'      => 0,
+                'low_confidence_total' => 0,
+                'error_total'          => 1,
+                'error'                => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Apply bounded cycle-aware eligibility refinement to each passport.
+     * Reads coin_cycle_decision_model already in each passport, applies conservative
+     * bounded rules to refine recommended_live_eligibility (Coin Core Step 13).
+     * Called after projectCycleDecisionModelToPassports().
+     *
+     * @return array<string,mixed>
+     */
+    public function applyCycleEligibilityRefinement(): array
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $outputPath = $runtimeDir . '/coin_cycle_eligibility_refinement.json';
+
+        try {
+            return $this->engine->applyCycleEligibilityRefinement($outputPath);
+        } catch (\Throwable $e) {
+            return [
+                'updated_at'      => date('c'),
+                'source'          => 'passport coin_cycle_decision_model',
+                'symbols_total'   => 0,
+                'processed_total' => 0,
+                'upgrade_total'   => 0,
+                'downgrade_total' => 0,
+                'no_effect_total' => 0,
+                'unavailable_total' => 0,
+                'error_total'     => 1,
+                'error'           => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Return coin_cycle_decision_model for a single symbol, or null if unavailable.
+     *
+     * Used by the PM-15 cycle caution layer and any subsystem that needs cycle model
+     * data without loading the full passport or instantiating the engine directly.
+     *
+     * @param  string $symbol
+     * @return array<string,mixed>|null
+     */
+    public function getCycleDecisionModel(string $symbol): ?array
+    {
+        try {
+            return $this->engine->getCycleDecisionModelForSymbol(strtoupper($symbol));
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Return a full guidance block for Brain to consume before signal approval.
      * Authoritative live eligibility gate output.
      *
@@ -313,14 +1161,25 @@ final class CoinPassportService
             'symbol'                                => $passport['symbol'],
             'available'                             => true,
             // Eligibility gate output
+            // States: shadow_only | sim_only | bootstrap_live | allow_live
             'recommended_live_eligibility'          => $passport['recommended_live_eligibility'] ?? 'sim_only',
             'live_block_reason'                     => $passport['live_block_reason'] ?? null,
+            'passport_gate_state'                   => $passport['passport_gate_state'] ?? ($passport['recommended_live_eligibility'] ?? 'sim_only'),
+            'passport_gate_reason_detail'           => $passport['passport_gate_reason_detail'] ?? ($passport['live_block_reason'] ?? null),
             // Data confidence
             'data_confidence'                       => $passport['data_confidence'],
             'insufficient_data_flag'                => $passport['insufficient_data_flag'] ?? false,
             'insufficient_data_reason'              => $passport['insufficient_data_reason'] ?? null,
             'fallback_mode'                         => $passport['fallback_mode'] ?? 'sim_only',
             'current_usable_samples'                => $passport['current_usable_samples'] ?? $passport['sample_size'] ?? 0,
+            // Fresh-window sample counters (primary live gate inputs)
+            'recent_samples_1h'                     => (int)($passport['recent_samples_1h']  ?? 0),
+            'recent_samples_6h'                     => (int)($passport['recent_samples_6h']  ?? 0),
+            'recent_samples_24h'                    => (int)($passport['recent_samples_24h'] ?? 0),
+            'recent_samples_7d'                     => (int)($passport['recent_samples_7d']  ?? 0),
+            // Derived sufficiency booleans
+            'fresh_behavior_window_ok'              => (bool)($passport['fresh_behavior_window_ok'] ?? false),
+            'behavior_context_7d_ok'                => (bool)($passport['behavior_context_7d_ok']   ?? false),
             // Corridor summary
             'corridor_p50_roi'                      => $passport['corridor_p50_roi'] ?? $passport['corridor_mid_roi'] ?? 0,
             'corridor_p75_roi'                      => $passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? 0,

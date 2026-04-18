@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-04-18T08:08:13+01:00",
+    "generated_at": "2026-04-13T12:10:07+00:00",
     "params": {
         "live_trading_enabled": {
             "key": "live_trading_enabled",
@@ -25,7 +25,7 @@
             "source_file": "modules/system/smart_brain/runtime/user_config.json",
             "all_values": {
                 "brain_user_config": 5,
-                "brain_effective": 20
+                "brain_effective": 5
             },
             "notes": "Maximum concurrent live positions"
         },
@@ -108,7 +108,7 @@
             "source_file": "modules/system/smart_brain/runtime/user_config.json",
             "all_values": {
                 "brain_user_config": 5,
-                "brain_effective": 15
+                "brain_effective": 5
             },
             "notes": "Fixed leverage applied when leverage_mode=manual"
         },
@@ -197,12 +197,12 @@
             "key": "trailing_activation_roi",
             "label": "Trailing Activation ROI",
             "type": "operational",
-            "value": 0.070000000000000007,
+            "value": 0.07,
             "source": "brain_user_config",
             "source_path": "trailing_activation_roi",
             "source_file": "modules/system/smart_brain/runtime/user_config.json",
             "all_values": {
-                "brain_user_config": 0.070000000000000007
+                "brain_user_config": 0.07
             },
             "notes": "Position ROI at which trailing stop activates"
         },
@@ -210,12 +210,12 @@
             "key": "trailing_activation_floor_roi",
             "label": "Trailing Floor Activation ROI",
             "type": "operational",
-            "value": 0.089999999999999997,
+            "value": 0.09,
             "source": "brain_user_config",
             "source_path": "trailing_activation_floor_roi",
             "source_file": "modules/system/smart_brain/runtime/user_config.json",
             "all_values": {
-                "brain_user_config": 0.089999999999999997
+                "brain_user_config": 0.09
             },
             "notes": "ROI at which floor-lock activates"
         },
@@ -237,12 +237,12 @@
             "key": "break_even_activation_roi",
             "label": "Break-Even Activation ROI",
             "type": "operational",
-            "value": 0.025000000000000001,
+            "value": 0.025,
             "source": "brain_user_config",
             "source_path": "break_even_activation_roi",
             "source_file": "modules/system/smart_brain/runtime/user_config.json",
             "all_values": {
-                "brain_user_config": 0.025000000000000001
+                "brain_user_config": 0.025
             },
             "notes": "ROI at which break-even stop is placed"
         },
@@ -267,8 +267,6 @@
                     "double_top_contextual_v3"
                 ],
                 "brain_effective": [
-                    "double_bottom_contextual_v2",
-                    "double_bottom_contextual_v3",
                     "double_top_contextual_v2",
                     "double_top_contextual_v3"
                 ]
@@ -335,12 +333,6 @@
                         "sniper_v3_min_hold_quality_score",
                         "sniper_v3_min_post_reclaim_stability_score",
                         "sniper_v3_min_zone_defense_score",
-                        "sniper_v3_min_trend_match_score_short",
-                        "sniper_v3_min_entry_quality_score_short",
-                        "sniper_v3_min_corridor_fit_score_short",
-                        "sniper_v3_min_trend_match_score_long",
-                        "sniper_v3_min_entry_quality_score_long",
-                        "sniper_v3_min_corridor_fit_score_long",
                         "v2_live_quality_floor_enabled",
                         "v2_live_min_confirmation_score",
                         "v2_live_min_pattern_confidence",
@@ -348,53 +340,45 @@
                         "v2_live_min_trend_match_score_short"
                     ],
                     "active_values": {
-                        "v2_confirmation_weak_max": 0.45000000000000001,
-                        "v2_confirmation_strong_min": 0.80000000000000004,
+                        "v2_confirmation_weak_max": 0.45,
+                        "v2_confirmation_strong_min": 0.8,
                         "v2_zone_widen_weak_pct": 0.5,
-                        "v2_zone_widen_medium_pct": 0.59999999999999998,
+                        "v2_zone_widen_medium_pct": 0.6,
                         "v2_zone_widen_strong_pct": 0.75,
                         "v2_zone_widen_max_cap_pct": 0.75,
                         "strong_confirmation_enter_now_enabled": true,
                         "medium_confirmation_wait_retrace_enabled": true,
                         "weak_confirmation_live_enabled": false,
-                        "v2_hold_quality_min": 0.69999999999999996,
-                        "v2_post_reclaim_stability_min": 0.69999999999999996,
-                        "v2_zone_defense_min": 0.34999999999999998,
-                        "v2_trend_match_min": 0.55000000000000004,
+                        "v2_hold_quality_min": 0.7,
+                        "v2_post_reclaim_stability_min": 0.7,
+                        "v2_zone_defense_min": 0.35,
+                        "v2_trend_match_min": 0.55,
                         "v2_price_position_max": 0.88,
                         "v3_strong_enter_now_enabled": true,
-                        "v3_zone_widen_weak_pct": 0.40000000000000002,
-                        "v3_zone_widen_medium_pct": 0.55000000000000004,
-                        "v3_zone_widen_strong_pct": 0.69999999999999996,
+                        "v3_zone_widen_weak_pct": 0.4,
+                        "v3_zone_widen_medium_pct": 0.55,
+                        "v3_zone_widen_strong_pct": 0.7,
                         "v3_zone_widen_max_cap_pct": 0.75,
                         "sniper_v3_live_filter_enabled": true,
-                        "sniper_v3_min_confirmation_score": 0.71999999999999997,
-                        "sniper_v3_min_pattern_confidence": 0.59999999999999998,
+                        "sniper_v3_min_confirmation_score": 0.72,
+                        "sniper_v3_min_pattern_confidence": 0.6,
                         "sniper_v3_min_trend_match_score": 0.5,
                         "sniper_v3_min_entry_quality_score": 0.75,
                         "sniper_v3_min_corridor_fit_score": 0.75,
-                        "sniper_v3_max_price_position": 0.84999999999999998,
-                        "sniper_v3_min_reclaim_strength_score": 0.69999999999999996,
+                        "sniper_v3_max_price_position": 0.85,
+                        "sniper_v3_min_reclaim_strength_score": 0.7,
                         "sniper_v3_min_hold_quality_score": 0.75,
-                        "sniper_v3_min_post_reclaim_stability_score": 0.65000000000000002,
-                        "sniper_v3_min_zone_defense_score": 0.34999999999999998,
-                        "sniper_v3_min_trend_match_score_short": 0.34999999999999998,
-                        "sniper_v3_min_entry_quality_score_short": 0.59999999999999998,
-                        "sniper_v3_min_corridor_fit_score_short": 0.59999999999999998,
-                        "sniper_v3_min_trend_match_score_long": 0.34999999999999998,
-                        "sniper_v3_min_entry_quality_score_long": 0.59999999999999998,
-                        "sniper_v3_min_corridor_fit_score_long": 0.59999999999999998,
+                        "sniper_v3_min_post_reclaim_stability_score": 0.65,
+                        "sniper_v3_min_zone_defense_score": 0.35,
                         "v2_live_quality_floor_enabled": true,
-                        "v2_live_min_confirmation_score": 0.59999999999999998,
-                        "v2_live_min_pattern_confidence": 0.55000000000000004,
-                        "v2_live_min_trend_match_score": 0.45000000000000001,
+                        "v2_live_min_confirmation_score": 0.6,
+                        "v2_live_min_pattern_confidence": 0.55,
+                        "v2_live_min_trend_match_score": 0.45,
                         "v2_live_min_trend_match_score_short": 0.44
                     },
                     "pattern_profile_mode": "manual_override",
                     "pattern_policy": {
                         "live_patterns": [
-                            "double_bottom_contextual_v2",
-                            "double_bottom_contextual_v3",
                             "double_top_contextual_v2",
                             "double_top_contextual_v3"
                         ],
@@ -404,7 +388,9 @@
                             "double_top",
                             "pullback_trend_continue",
                             "double_bottom_confirm_v2",
-                            "double_top_confirm_v2"
+                            "double_top_confirm_v2",
+                            "double_bottom_contextual_v2",
+                            "double_bottom_contextual_v3"
                         ],
                         "canonical_source": "manual_override",
                         "fallback_used": false,

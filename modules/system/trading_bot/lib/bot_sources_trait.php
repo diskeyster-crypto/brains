@@ -9,13 +9,1379 @@ use Core\System\SystemPaths;
  * Bot Sources Trait
  * 
  * Handles loading data from Brain signals and other sources.
+ * BRAIN-CONTROLLED: Prefers Brain-approved live_intents.json over raw signals.
  * CLEAN signals only - risk from signal.risk block.
  */
 trait BotSourcesTrait
 {
     /**
-     * Load intents from Brain signals
-     * 
+     * Runtime marker: proves which version of bot_sources_trait.php actually executed.
+     * If last_run does not show this marker, the server is running a stale/different file.
+     */
+    private const BOT_SOURCES_RUNTIME_MARKER = 'brain_detect_v3_diag_2026_03_19';
+
+    /** @var array Step-by-step diagnostic trace from last detectBrainControlledMode() call */
+    private array $brainDetectionTrace = [];
+
+    /** @var array Resolved Brain/SmartBrain paths from last detection */
+    private array $brainResolvedPaths = [];
+    /**
+     * Load Brain-approved live intents (preferred source).
+     * Brain generates live_intents.json with only approved, filtered intents.
+     * Bot must consume these instead of raw signals when available.
+     *
+     * CRITICAL V2: brain_controlled is determined from Brain effective config,
+     * NOT from whether live_intents.json loaded successfully.
+     * If Brain mode is ON and file is missing/invalid → safe no-trade, NOT legacy fallback.
+     *
+     * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,brain_controlled:bool,effective_live_config:array,source_status:string,source_error:string,fallback_allowed:bool}
+     */
+    protected function loadBrainLiveIntents(): array
+    {
+        $result = [
+            'ok' => true,
+            'count' => 0,
+            'intents' => [],
+            'errors' => [],
+            'source' => 'brain_live_intents',
+            'brain_controlled' => false,
+            'effective_live_config' => [],
+            'source_status' => 'unknown',
+            'source_error' => '',
+            'fallback_allowed' => true,
+        ];
+
+        try {
+            $paths = SystemPaths::instance();
+
+            // Brain storage key (same as signals_key — they share the same storage root)
+            $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+            if (!$paths->has($brainKey)) {
+                $result['ok'] = false;
+                $result['errors'][] = "Brain storage path key not found: {$brainKey}";
+                $result['source_status'] = 'missing';
+                $result['source_error'] = "Brain storage path key not found: {$brainKey}";
+                return $result;
+            }
+
+            $brainBase = $paths->get($brainKey);
+
+            // V3: Use resolveLiveIntentsPath() to check Smart Brain storage first,
+            // then Brain module storage. This fixes the path mismatch where Smart Brain
+            // writes live_intents.json to smart_brain/storage/ but bot was only
+            // checking brain/storage/.
+            $liveIntentsPath = $this->resolveLiveIntentsPath() ?? ($brainBase . '/live_intents.json');
+
+            // ================================================================
+            // Determine brain_controlled mode from EFFECTIVE CONFIG,
+            // not from file load success. detectBrainControlledMode() reads
+            // effective_config.json / user_config.json independently.
+            // ================================================================
+            $brainControlledMode = $this->detectBrainControlledMode();
+
+            if ($brainControlledMode) {
+                $result['brain_controlled'] = true;
+                $result['fallback_allowed'] = false;
+            }
+
+            if (!is_file($liveIntentsPath)) {
+                // No live intents file — source not available
+                if ($brainControlledMode) {
+                    // V2: Brain mode is ON but file missing → safe no-trade
+                    $result['source'] = 'none';
+                    $result['source_status'] = 'missing';
+                    $result['source_error'] = 'Brain-controlled mode active: Brain live intents source is missing. No trades executed. Legacy fallback disabled.';
+                } else {
+                    $result['source'] = 'no_brain_intents_file';
+                    $result['source_status'] = 'missing';
+                }
+                return $result;
+            }
+
+            $content = @file_get_contents($liveIntentsPath);
+            if ($content === false) {
+                $result['ok'] = false;
+                $result['errors'][] = "Failed to read live_intents.json";
+                $result['source_status'] = 'invalid';
+                $result['source_error'] = 'Failed to read live_intents.json';
+                return $result;
+            }
+
+            $data = @json_decode($content, true);
+            if (!is_array($data)) {
+                $result['ok'] = false;
+                $result['errors'][] = "Invalid JSON in live_intents.json";
+                $result['source_status'] = 'invalid';
+                $result['source_error'] = 'Invalid JSON in live_intents.json';
+                return $result;
+            }
+
+            // Validate schema
+            $schemaVersion = $data['schema_version'] ?? '';
+            if ($schemaVersion !== 'live_intents_v1') {
+                $result['ok'] = false;
+                $result['errors'][] = "Unexpected schema_version in live_intents.json: {$schemaVersion}";
+                $result['source_status'] = 'invalid';
+                $result['source_error'] = "Unexpected schema_version: {$schemaVersion}";
+                return $result;
+            }
+
+            // V2: Also check brain_controlled_live_mode from the file itself
+            if (!empty($data['brain_controlled_live_mode'])) {
+                $result['brain_controlled'] = true;
+                $result['fallback_allowed'] = false;
+            }
+
+            $result['effective_live_config'] = $data['effective_live_config'] ?? [];
+            $result['source_status'] = 'loaded';
+
+            // If live trading is not enabled in Brain config, return empty intents
+            if (!($data['live_trading_enabled'] ?? false)) {
+                $result['source'] = 'brain_live_intents_disabled';
+                $result['source_status'] = 'disabled';
+                return $result;
+            }
+
+            $intents = $data['intents'] ?? [];
+            if (!is_array($intents)) {
+                $intents = [];
+            }
+
+            $executedIndex = $this->loadExecutedIndex();
+            $validIntents = [];
+            $duplicateSkipped = 0;
+            $duplicateSkippedRecords = [];
+            $lifecycleSkipped = [
+                'expired' => 0,
+                'claimed' => 0,
+                'already_executed' => 0,
+                'rejected' => 0,
+                'invalid_status' => 0,
+            ];
+
+            foreach ($intents as $intent) {
+                // V2 FIX: Use intent_id as the authoritative identity key for Brain intents
+                $intentId = $intent['intent_id'] ?? null;
+                $signalId = $intent['signal_id'] ?? null;
+                $executionKey = $intentId ?? $signalId ?? null;
+                if (empty($executionKey)) {
+                    continue;
+                }
+
+                // ── Lifecycle status gate ────────────────────────────────
+                // Only process intents with status = pending (or missing status for backward compat)
+                $intentStatus = $intent['status'] ?? 'pending';
+                if ($intentStatus === 'claimed') {
+                    $lifecycleSkipped['claimed']++;
+                    continue;
+                }
+                if ($intentStatus === 'executed') {
+                    $lifecycleSkipped['already_executed']++;
+                    continue;
+                }
+                if ($intentStatus === 'rejected') {
+                    $lifecycleSkipped['rejected']++;
+                    continue;
+                }
+                if ($intentStatus === 'expired') {
+                    $lifecycleSkipped['expired']++;
+                    continue;
+                }
+                if ($intentStatus !== 'pending') {
+                    $lifecycleSkipped['invalid_status']++;
+                    continue;
+                }
+
+                // Skip if already executed (idempotency).
+                // A true duplicate is ONLY when a prior real live open (opened_protected) exists in
+                // the executed_index for this execution key. Rejected/failed/error prior attempts
+                // must allow fresh re-tries — the identity key can be reused across re-emissions.
+                $isDuplicate = false;
+                $priorEntry = null;
+                if (isset($executedIndex[$executionKey])) {
+                    $priorEntry = $executedIndex[$executionKey];
+                    // Only a genuine duplicate when the previous run produced a real live open.
+                    if (($priorEntry['result'] ?? '') === 'opened_protected') {
+                        $isDuplicate = true;
+                    }
+                }
+                // Also check signal_id separately for backward compat with old executed_index entries
+                if (!$isDuplicate && $intentId !== null && $signalId !== null && $intentId !== $signalId && isset($executedIndex[$signalId])) {
+                    $sigEntry = $executedIndex[$signalId];
+                    if (($sigEntry['result'] ?? '') === 'opened_protected') {
+                        $isDuplicate = true;
+                        $priorEntry = $sigEntry;
+                    }
+                }
+
+                if ($isDuplicate) {
+                    $duplicateSkipped++;
+                    // Build explicit result record for duplicate-skipped intent
+                    $duplicateSkippedRecords[] = [
+                        'intent_id' => $intentId ?? $executionKey,
+                        'signal_id' => $signalId,
+                        'symbol' => (string)($intent['symbol'] ?? ''),
+                        'side' => (string)($intent['side'] ?? ''),
+                        'brain_controlled' => true,
+                        'execution_identity_key' => $executionKey,
+                        'lifecycle_state' => 'skipped',
+                        'processed_at' => date('c'),
+                        'execution_result' => 'skipped',
+                        'rejection_reason' => 'rejected_duplicate_execution_key',
+                        'close_reason' => null,
+                        'order_id' => null,
+                        'position_id' => null,
+                        'protection_status' => 'none',
+                        'trailing_status' => 'disabled',
+                        'source_status' => 'brain_live_intent',
+                        'debug_message' => 'Already processed (execution key exists in executed_index with opened_protected result)',
+                        'execution_stage' => 'duplicate_skipped',
+                        'exchange_submit_attempted' => false,
+                        'exchange_response_code' => null,
+                        'exchange_response_message' => null,
+                        'validation_error_summary' => null,
+                        'missing_fields_preview' => [],
+                        'duplicate_key_checked' => true,
+                        'duplicate_key_reason' => 'prior_live_open_found',
+                        'duplicate_key_existing_terminal_state' => $priorEntry['result'] ?? null,
+                        'duplicate_key_allowed_fresh_attempt' => false,
+                    ];
+                    continue;
+                }
+
+                // Skip if expired by TTL
+                $expiresAt = $intent['expires_at'] ?? 0;
+                if ($expiresAt > 0 && $expiresAt < time()) {
+                    $lifecycleSkipped['expired']++;
+                    continue;
+                }
+
+                // V2: Normalize Brain trailing_contract into risk.trailing for bot execution engines
+                $risk = $intent['risk'] ?? [];
+                $brainTrailing = $intent['trailing'] ?? [];
+                $risk = $this->normalizeBrainTrailingIntoRisk($risk, $brainTrailing);
+
+                // Normalize intent for bot execution
+                $normalized = [
+                    'id' => $executionKey,
+                    'signal_id' => $signalId ?? $executionKey,
+                    'intent_id' => $intentId ?? $executionKey,
+                    'schema_version' => 'intent_live_v1',
+                    'symbol' => (string)($intent['symbol'] ?? ''),
+                    'side' => (string)($intent['side'] ?? ''),
+                    'entry_price' => (float)($intent['entry_price_reference'] ?? 0),
+                    'entry_action' => (string)($intent['entry_action'] ?? 'enter_now'),
+                    'entry_timeout_minutes' => $intent['entry_timeout_minutes'] ?? null,
+                    'late_threshold_pct' => $this->config['execution']['default_late_threshold_pct'] ?? 0.5,
+                    'created_ts' => $intent['created_ts'] ?? time(),
+                    'created_at' => $intent['created_at'] ?? (($intent['created_ts'] ?? 0) ? date('c', (int)$intent['created_ts']) : date('c')),
+                    'expires_at' => $intent['expires_at'] ?? 0,
+                    'risk' => $risk,
+                    'trailing' => $brainTrailing,
+                    'brain' => [],
+                    'source' => 'brain_live_intent',
+                    'intent_created_at' => $intent['created_at'] ?? (($intent['created_ts'] ?? 0) ? date('c', (int)$intent['created_ts']) : date('c')),
+                    'brain_controlled' => true,
+                    'selection_mode_used' => $intent['selection_mode_used'] ?? '',
+                    'approval_reason' => $intent['approval_reason'] ?? '',
+                    'execution_limits_snapshot' => $intent['execution_limits_snapshot'] ?? [],
+                    'effective_trailing_contract_source' => !empty($brainTrailing) ? 'brain_intent' : 'risk_block',
+                    'trailing_contract_normalized' => !empty($brainTrailing),
+                    // V2: Execution identity and trailing debug visibility
+                    'execution_identity_key' => $intentId ?? $executionKey,
+                    'dedupe_basis' => 'intent_id',
+                    'normalized_drawdown_factor_source' => $risk['trailing']['drawdown_factor_source'] ?? 'n/a',
+                    // Pass-through for late-entry diagnostics
+                    'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
+                    'source_schema_version' => (string)($intent['source_schema_version'] ?? ''),
+                    // Signal quality fields — forwarded from Brain live intent to decision engine.
+                    'signal_strength'  => (float)($intent['signal_strength']  ?? 0.0),
+                    'quality_score'    => (float)($intent['quality_score']    ?? 0.0),
+                    'scenario_id'      => (string)($intent['scenario_id']     ?? ''),
+                    'scenario_score'   => (float)($intent['scenario_score']   ?? 0.0),
+                    'pattern_version'  => (string)($intent['pattern_version'] ?? ''),
+                ];
+
+                if (isset($intent['side_original'])) {
+                    $normalized['side_original'] = $intent['side_original'];
+                }
+
+                // If a prior non-live-open entry existed for this key, stamp observability fields
+                // so archives can trace that this was a deliberate fresh-attempt allowance.
+                if ($priorEntry !== null) {
+                    $normalized['duplicate_key_checked'] = true;
+                    $normalized['duplicate_key_existing_terminal_state'] = $priorEntry['result'] ?? null;
+                    $normalized['duplicate_key_allowed_fresh_attempt'] = true;
+                    $normalized['duplicate_key_reason'] = 'prior_result_not_live_open';
+                }
+
+                $validIntents[] = $normalized;
+            }
+
+            $result['count'] = count($validIntents);
+            $result['intents'] = $validIntents;
+            $result['duplicate_skipped'] = $duplicateSkipped;
+            $result['duplicate_skipped_records'] = $duplicateSkippedRecords;
+            $result['lifecycle_skipped'] = $lifecycleSkipped;
+            $result['live_intents_path'] = $liveIntentsPath;
+            // Handoff observability: timestamps and total counts from the Brain-written file.
+            $result['brain_intents_generated_at']  = $data['generated_at'] ?? null;
+            $result['live_intents_total_in_file']  = count($intents); // all intents before lifecycle filter
+            // Derive latest_intent_created_at from the newest created_ts in valid intents.
+            $latestTs = 0;
+            foreach ($validIntents as $_vi) {
+                $viTs = (int)($_vi['created_ts'] ?? 0);
+                if ($viTs > $latestTs) { $latestTs = $viTs; }
+            }
+            $result['latest_intent_created_at'] = $latestTs > 0 ? date('c', $latestTs) : null;
+            $result['latest_intent_created_ts']  = $latestTs > 0 ? $latestTs : null;
+
+            if (count($validIntents) === 0) {
+                if (($lifecycleSkipped['expired'] ?? 0) > 0 && $duplicateSkipped === 0) {
+                    $result['source_status'] = 'expired_only';
+                } else {
+                    $result['source_status'] = 'empty';
+                }
+            }
+
+        } catch (\Throwable $e) {
+            $result['ok'] = false;
+            $result['errors'][] = 'Exception: ' . $e->getMessage();
+            $result['source_status'] = 'invalid';
+            $result['source_error'] = 'Exception: ' . $e->getMessage();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Claim live intents by atomically updating their status to 'claimed'.
+     *
+     * @param array  $intentIds  List of intent_ids to claim
+     * @param string $liveIntentsPath Absolute path to live_intents.json
+     * @param string $claimedBy  Identifier of the claiming consumer (e.g. 'trading_bot')
+     * @return array{claimed_count:int, already_claimed:int, not_found:int, errors:list<string>}
+     */
+    protected function claimLiveIntents(array $intentIds, string $liveIntentsPath, string $claimedBy = 'trading_bot'): array
+    {
+        $claimResult = [
+            'claimed_count' => 0,
+            'already_claimed' => 0,
+            'not_found' => 0,
+            'expired_skipped' => 0,
+            'errors' => [],
+        ];
+
+        if (empty($intentIds) || empty($liveIntentsPath)) {
+            return $claimResult;
+        }
+
+        $intentIdSet = array_flip($intentIds);
+        $now = time();
+
+        $ok = $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($intentIdSet, $now, $claimedBy, &$claimResult) {
+            $intents = &$data['intents'];
+            if (!is_array($intents)) {
+                return;
+            }
+
+            $foundIds = [];
+            foreach ($intents as &$intent) {
+                $iid = $intent['intent_id'] ?? '';
+                if ($iid === '' || !isset($intentIdSet[$iid])) {
+                    continue;
+                }
+                $foundIds[$iid] = true;
+
+                $status = $intent['status'] ?? 'pending';
+                if ($status !== 'pending') {
+                    $claimResult['already_claimed']++;
+                    continue;
+                }
+
+                // Check expiry
+                $expiresAt = (int)($intent['expires_at'] ?? 0);
+                if ($expiresAt > 0 && $expiresAt <= $now) {
+                    $claimResult['expired_skipped']++;
+                    continue;
+                }
+
+                $intent['status'] = 'claimed';
+                $intent['claimed_at'] = date('c');
+                $intent['claimed_at_ts'] = $now;
+                $intent['claimed_by'] = $claimedBy;
+                $claimResult['claimed_count']++;
+            }
+            unset($intent);
+
+            $claimResult['not_found'] = count($intentIdSet) - count($foundIds);
+        });
+
+        if (!$ok) {
+            $claimResult['errors'][] = 'Failed to acquire lock on live_intents.json for claim';
+        }
+
+        return $claimResult;
+    }
+
+    /**
+     * Update an intent's status in live_intents.json to a terminal state.
+     *
+     * @param string $intentId        Intent to update
+     * @param string $liveIntentsPath Absolute path to live_intents.json
+     * @param string $newStatus       New status (executed, rejected)
+     * @param array  $metadata        Additional fields (reject_reason, execution_result, etc.)
+     * @return bool True on success
+     */
+    protected function updateLiveIntentStatus(string $intentId, string $liveIntentsPath, string $newStatus, array $metadata = []): bool
+    {
+        if (empty($intentId) || empty($liveIntentsPath)) {
+            return false;
+        }
+
+        $now = time();
+        return $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($intentId, $newStatus, $metadata, $now) {
+            $intents = &$data['intents'];
+            if (!is_array($intents)) {
+                return;
+            }
+
+            foreach ($intents as &$intent) {
+                if (($intent['intent_id'] ?? '') !== $intentId) {
+                    continue;
+                }
+
+                $intent['status'] = $newStatus;
+                if ($newStatus === 'executed') {
+                    $intent['executed_at'] = date('c');
+                    $intent['executed_at_ts'] = $now;
+                    $intent['execution_result'] = $metadata['execution_result'] ?? null;
+                } elseif ($newStatus === 'rejected') {
+                    $intent['rejected_at'] = date('c');
+                    $intent['rejected_at_ts'] = $now;
+                    $intent['reject_reason'] = $metadata['reject_reason'] ?? null;
+                    $intent['reject_context'] = $metadata['reject_context'] ?? null;
+                }
+                break;
+            }
+            unset($intent);
+        });
+    }
+
+    /**
+     * Finalize stale claimed intents that have exceeded the claim timeout.
+     *
+     * Claimed intents that have not been resolved (executed/rejected) within
+     * the timeout window are finalized as rejected to prevent zombie records.
+     *
+     * @param string $liveIntentsPath  Absolute path to live_intents.json
+     * @param int    $claimTimeoutMin  Maximum minutes a claimed intent can stay unresolved
+     * @return array Result with counts: finalized_count, stale_claimed_preview
+     */
+    protected function finalizeStaleClaimedIntents(string $liveIntentsPath, int $claimTimeoutMin = 10): array
+    {
+        $finalizeResult = [
+            'finalized_count' => 0,
+            'stale_claimed_found' => 0,
+            'stale_claimed_preview' => [],
+            'errors' => [],
+        ];
+
+        if (empty($liveIntentsPath) || !is_file($liveIntentsPath)) {
+            return $finalizeResult;
+        }
+
+        $now = time();
+        $cutoff = $now - ($claimTimeoutMin * 60);
+
+        $ok = $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) use ($cutoff, $now, $claimTimeoutMin, &$finalizeResult) {
+            $intents = &$data['intents'];
+            if (!is_array($intents)) {
+                return;
+            }
+
+            foreach ($intents as &$intent) {
+                $status = $intent['status'] ?? 'pending';
+                if ($status !== 'claimed') {
+                    continue;
+                }
+
+                $claimedTs = (int)($intent['claimed_at_ts'] ?? 0);
+                if ($claimedTs <= 0 || $claimedTs > $cutoff) {
+                    continue; // Not yet stale
+                }
+
+                $finalizeResult['stale_claimed_found']++;
+
+                // Finalize as rejected with explicit stale-claim reason
+                $intent['status'] = 'rejected';
+                $intent['rejected_at'] = date('c');
+                $intent['rejected_at_ts'] = $now;
+                $intent['reject_reason'] = 'rejected_claim_stale_timeout';
+                $intent['reject_context'] = sprintf(
+                    'Claimed at %s (%ds ago), timeout %dmin exceeded',
+                    $intent['claimed_at'] ?? 'unknown',
+                    $now - $claimedTs,
+                    $claimTimeoutMin
+                );
+
+                $finalizeResult['finalized_count']++;
+
+                // Build preview (first 10)
+                if (count($finalizeResult['stale_claimed_preview']) < 10) {
+                    $finalizeResult['stale_claimed_preview'][] = [
+                        'intent_id' => $intent['intent_id'] ?? '',
+                        'symbol' => $intent['symbol'] ?? '',
+                        'side' => $intent['side'] ?? '',
+                        'claimed_at' => $intent['claimed_at'] ?? null,
+                        'claimed_at_ts' => $claimedTs,
+                        'stale_seconds' => $now - $claimedTs,
+                        'finalized_as' => 'rejected_claim_stale_timeout',
+                    ];
+                }
+            }
+            unset($intent);
+        });
+
+        if (!$ok) {
+            $finalizeResult['errors'][] = 'Failed to acquire lock on live_intents.json for stale claim finalization';
+        }
+
+        return $finalizeResult;
+    }
+
+    /**
+     * Atomically read-modify-write live_intents.json with flock.
+     *
+     * @param string   $path     Absolute path to live_intents.json
+     * @param callable $modifier fn(array &$data): void — modifies data in-place
+     * @return bool True on success
+     */
+    private function atomicUpdateLiveIntentsFile(string $path, callable $modifier): bool
+    {
+        if (!is_file($path)) {
+            return false;
+        }
+
+        $fp = @fopen($path, 'c+');
+        if ($fp === false) {
+            return false;
+        }
+
+        if (!flock($fp, LOCK_EX)) {
+            fclose($fp);
+            return false;
+        }
+
+        try {
+            $content = '';
+            while (!feof($fp)) {
+                $content .= fread($fp, 8192);
+            }
+
+            $data = @json_decode($content, true);
+            if (!is_array($data)) {
+                $data = ['schema_version' => 'live_intents_v1', 'intents' => []];
+            }
+
+            $modifier($data);
+
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            fflush($fp);
+
+            return true;
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
+    }
+
+    /**
+     * Detect Brain-controlled live mode from Brain effective/user config.
+     *
+     * CRITICAL: This is determined from Brain config files (effective_config.json
+     * or user_config.json), NOT from whether live_intents.json loaded successfully.
+     * If Brain mode is active, it stays true even if the intents file is
+     * missing, invalid, or empty — resulting in safe no-trade, NOT legacy fallback.
+     *
+     * Must be called BEFORE any source loading so service.php can branch
+     * the execution flow explicitly.
+     *
+     * V3 DIAGNOSTIC: Also checks Smart Brain module paths (smart_brain/) in addition
+     * to the Brain module paths (brain/). Smart Brain writes effective_config.json
+     * to its own runtime/ directory and live_intents.json to its own storage/.
+     * Previous versions only checked the brain/ module path, missing Smart Brain output.
+     *
+     * Stores step-by-step diagnostic trace in $this->brainDetectionTrace.
+     *
+     * @return bool true when Brain-controlled live mode is active
+     */
+    protected function detectBrainControlledMode(): bool
+    {
+        $trace = [];
+        $resolvedPaths = [];
+        $flagsFound = [];
+        $result = false;
+
+        try {
+            $paths = SystemPaths::instance();
+            $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+
+            if (!$paths->has($brainKey)) {
+                $trace[] = ['step' => 'resolve_brain_key', 'key' => $brainKey, 'exists' => false, 'error' => 'Brain storage path key not registered'];
+                $this->brainDetectionTrace = $trace;
+                $this->brainResolvedPaths = $resolvedPaths;
+                return false;
+            }
+
+            $brainBase = $paths->get($brainKey);
+            $resolvedPaths['brain_storage_base'] = $brainBase;
+            $trace[] = ['step' => 'resolve_brain_key', 'key' => $brainKey, 'exists' => true, 'resolved' => $brainBase];
+
+            // Derive Smart Brain paths: smart_brain module is a sibling of brain module
+            // brain/storage → ../../smart_brain/ for the smart_brain module root
+            $smartBrainBase = realpath($brainBase . '/../../smart_brain') ?: ($brainBase . '/../../smart_brain');
+            $resolvedPaths['smart_brain_base_derived'] = $smartBrainBase;
+            $resolvedPaths['smart_brain_base_exists'] = is_dir($smartBrainBase);
+
+            // Also try SystemPaths for smart_brain if registered
+            $smartBrainStorageFromPaths = null;
+            if ($paths->has('system.smart_brain.storage')) {
+                $smartBrainStorageFromPaths = $paths->get('system.smart_brain.storage');
+                $resolvedPaths['smart_brain_storage_from_systempaths'] = $smartBrainStorageFromPaths;
+            }
+
+            // Build list of candidate directories to check for config/intents files
+            // Priority: Smart Brain paths first (where current Smart Brain actually writes),
+            // then Brain module paths (legacy/fallback).
+            $configSearchPaths = [];
+            $intentsSearchPaths = [];
+
+            // Smart Brain runtime (derived)
+            $configSearchPaths[] = $smartBrainBase . '/runtime';
+            // Smart Brain storage (derived) for live_intents.json
+            $intentsSearchPaths[] = $smartBrainBase . '/storage';
+            // Smart Brain storage from SystemPaths
+            if ($smartBrainStorageFromPaths !== null) {
+                $intentsSearchPaths[] = $smartBrainStorageFromPaths;
+            }
+
+            // Brain module paths (original/legacy)
+            $configSearchPaths[] = $brainBase . '/../runtime';
+            $intentsSearchPaths[] = $brainBase;
+
+            $resolvedPaths['config_search_paths'] = $configSearchPaths;
+            $resolvedPaths['intents_search_paths'] = $intentsSearchPaths;
+
+            // ================================================================
+            // Check effective_config.json across all candidate paths
+            // ================================================================
+            foreach ($configSearchPaths as $configDir) {
+                $effectiveConfigPath = $configDir . '/effective_config.json';
+                $resolvedPaths['effective_config_checked'][] = $effectiveConfigPath;
+                $stepResult = $this->checkConfigFileForLiveFlag($effectiveConfigPath, 'effective_config', [
+                    'live_trading.live_trading_enabled',
+                    'user_limits.live_trading_enabled',
+                    'live_trading_enabled',
+                ]);
+                $trace[] = $stepResult;
+                if ($stepResult['flag_found'] && $stepResult['flag_value'] === true) {
+                    $flagsFound[] = $stepResult;
+                    $result = true;
+                }
+            }
+
+            // ================================================================
+            // Check user_config.json across all candidate paths
+            // ================================================================
+            foreach ($configSearchPaths as $configDir) {
+                $userConfigPath = $configDir . '/user_config.json';
+                $resolvedPaths['user_config_checked'][] = $userConfigPath;
+                $stepResult = $this->checkConfigFileForLiveFlag($userConfigPath, 'user_config', [
+                    'live_trading_enabled',
+                ]);
+                $trace[] = $stepResult;
+                if ($stepResult['flag_found'] && $stepResult['flag_value'] === true) {
+                    $flagsFound[] = $stepResult;
+                    $result = true;
+                }
+            }
+
+            // ================================================================
+            // Check live_intents.json for authoritative Brain hints
+            // ================================================================
+            foreach ($intentsSearchPaths as $intentsDir) {
+                $liveIntentsPath = $intentsDir . '/live_intents.json';
+                $resolvedPaths['live_intents_checked'][] = $liveIntentsPath;
+                $stepResult = $this->checkConfigFileForLiveFlag($liveIntentsPath, 'live_intents', [
+                    'brain_controlled_live_mode',
+                    'live_trading_enabled',
+                ]);
+                $trace[] = $stepResult;
+                if ($stepResult['flag_found'] && $stepResult['flag_value'] === true) {
+                    $flagsFound[] = $stepResult;
+                    $result = true;
+                }
+            }
+
+            $trace[] = [
+                'step' => 'final_decision',
+                'result' => $result,
+                'flags_found_count' => count($flagsFound),
+                'reason' => $result
+                    ? 'At least one authoritative Brain live flag is true'
+                    : 'No authoritative Brain live flag found in any checked location',
+            ];
+
+        } catch (\Throwable $e) {
+            $trace[] = ['step' => 'exception', 'error' => $e->getMessage()];
+            $result = false;
+        }
+
+        $this->brainDetectionTrace = $trace;
+        $this->brainResolvedPaths = $resolvedPaths;
+        return $result;
+    }
+
+    /**
+     * Check a single config file for any of the specified live flag key paths.
+     *
+     * @param string $filePath Absolute path to JSON config file
+     * @param string $sourceLabel Label for trace (e.g. 'effective_config')
+     * @param list<string> $flagKeys Dot-separated or plain keys to check
+     * @return array Diagnostic step result
+     */
+    private function checkConfigFileForLiveFlag(string $filePath, string $sourceLabel, array $flagKeys): array
+    {
+        $step = [
+            'step' => 'check_' . $sourceLabel,
+            'path' => $filePath,
+            'exists' => false,
+            'parse_ok' => false,
+            'flag_found' => false,
+            'flag_value' => null,
+            'flag_key' => null,
+        ];
+
+        if (!is_file($filePath)) {
+            return $step;
+        }
+        $step['exists'] = true;
+
+        $content = @file_get_contents($filePath);
+        if ($content === false) {
+            $step['error'] = 'read_failed';
+            return $step;
+        }
+
+        $data = @json_decode($content, true);
+        if (!is_array($data)) {
+            $step['error'] = 'json_invalid';
+            return $step;
+        }
+        $step['parse_ok'] = true;
+
+        // Check each flag key path
+        foreach ($flagKeys as $keyPath) {
+            $value = $this->resolveNestedKey($data, $keyPath);
+            if ($value !== null) {
+                $step['flag_found'] = true;
+                $step['flag_value'] = (bool)$value;
+                $step['flag_key'] = $keyPath;
+                return $step;
+            }
+        }
+
+        return $step;
+    }
+
+    /**
+     * Resolve a potentially dot-separated key from a nested array.
+     * E.g. 'live_trading.live_trading_enabled' checks $data['live_trading']['live_trading_enabled']
+     * Falls back to flat key check: $data['live_trading.live_trading_enabled']
+     *
+     * @param array $data Source array
+     * @param string $keyPath Dot-separated or plain key
+     * @return mixed|null Value if found, null otherwise
+     */
+    private function resolveNestedKey(array $data, string $keyPath)
+    {
+        // Try dot-separated nested access
+        $parts = explode('.', $keyPath);
+        if (count($parts) > 1) {
+            $current = $data;
+            foreach ($parts as $part) {
+                if (!is_array($current) || !array_key_exists($part, $current)) {
+                    // Fall through to flat key check
+                    $current = null;
+                    break;
+                }
+                $current = $current[$part];
+            }
+            if ($current !== null) {
+                return $current;
+            }
+        }
+
+        // Try flat key
+        return $data[$keyPath] ?? null;
+    }
+
+    /**
+     * Get diagnostic information from the last detectBrainControlledMode() call.
+     * Includes step-by-step trace, resolved paths, and runtime marker.
+     *
+     * @return array Diagnostic payload for runtime/last_run output
+     */
+    protected function getBrainDetectionDiagnostics(): array
+    {
+        return [
+            'bot_sources_trait_runtime_marker' => self::BOT_SOURCES_RUNTIME_MARKER,
+            'php_file_used_bot_sources_trait' => __FILE__,
+            'brain_resolved_paths' => $this->brainResolvedPaths,
+            'brain_detection_trace' => $this->brainDetectionTrace,
+        ];
+    }
+
+    /**
+     * Resolve the best path for Brain live_intents.json.
+     *
+     * Checks Smart Brain storage first (where current Smart Brain writes),
+     * then falls back to Brain module storage (legacy).
+     *
+     * @return string|null Absolute path to live_intents.json or null if not found
+     */
+    private function resolveLiveIntentsPath(): ?string
+    {
+        try {
+            $paths = SystemPaths::instance();
+            $brainKey = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+            if (!$paths->has($brainKey)) {
+                return null;
+            }
+            $brainBase = $paths->get($brainKey);
+
+            // Smart Brain storage (derived from brain module path)
+            $smartBrainStorage = realpath($brainBase . '/../../smart_brain/storage');
+            if ($smartBrainStorage !== false) {
+                $candidate = $smartBrainStorage . '/live_intents.json';
+                if (is_file($candidate)) {
+                    return $candidate;
+                }
+            }
+
+            // Smart Brain storage from SystemPaths
+            if ($paths->has('system.smart_brain.storage')) {
+                $candidate = $paths->get('system.smart_brain.storage') . '/live_intents.json';
+                if (is_file($candidate)) {
+                    return $candidate;
+                }
+            }
+
+            // Brain module storage (legacy/original)
+            $candidate = $brainBase . '/live_intents.json';
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        } catch (\Throwable $e) {
+            // Silently fail — caller handles missing path
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalize Brain trailing contract into risk.trailing format
+     * that bot execution engines (BotRiskEngine, BotTrailingEngine) expect.
+     *
+     * ── CANONICAL SOURCE GUARD ──────────────────────────────────────────
+     * When Brain's buildBotReadyRiskBlock() has already built risk.trailing
+     * (indicated by brain_trailing_applied=true), this function is a no-op.
+     * This prevents contradictions between the intent's top-level trailing
+     * (Brain naming, ratio units) and risk.trailing (bot naming, percent units).
+     *
+     * @legacy — this normalization path is only active for intents that were NOT
+     * built by the canonical buildBotReadyRiskBlock(). Once all signal sources
+     * produce canonical risk blocks, this function becomes a pass-through guard.
+     *
+     * Brain contract fields → Bot execution fields mapping:
+     * - trailing.trailing_enabled → risk.trailing.enabled
+     * - trailing.trailing_activation_roi → risk.trailing.activation_roi_pct (×100 ratio→percent)
+     * - trailing.trailing_min_lock_roi → risk.trailing.min_lock_roi
+     * - trailing.trailing_min_step → risk.trailing.min_step
+     * - trailing.break_even_enabled → risk.trailing.break_even_enabled
+     * - trailing.break_even_activation_roi → risk.trailing.break_even_activation_roi (×100)
+     * - trailing.exit_mode → risk.trailing.exit_mode
+     * - trailing.fixed_take_profit_roi → risk.trailing.fixed_take_profit_roi
+     * - trailing.hybrid_tp_share → risk.trailing.hybrid_tp_share
+     *
+     * @param array $risk Existing risk block from signal
+     * @param array $brainTrailing Brain trailing contract
+     * @return array Updated risk block with normalized trailing
+     */
+    private function normalizeBrainTrailingIntoRisk(array $risk, array $brainTrailing): array
+    {
+        // UNIFIED EXIT CONTRACT GUARD: If risk.trailing was already built by Brain's
+        // buildBotReadyRiskBlock() from the canonical config source, do NOT overwrite it.
+        // This prevents contradictions between the top-level trailing (Brain naming) and
+        // risk.trailing (bot naming) — they both derive from the same canonical source.
+        if (!empty($risk['trailing']['brain_trailing_applied'])) {
+            // Already a canonical contract — add source tracking and return as-is
+            $risk['trailing']['effective_trailing_contract_source'] = 'brain_canonical_risk_trailing';
+            return $risk;
+        }
+
+        if (empty($brainTrailing)) {
+            return $risk;
+        }
+
+        // V2 FIX: drawdown_factor source must be explicit and semantically correct.
+        // trailing_min_step is NOT the same as drawdown_factor.
+        // Priority: 1) explicit drawdown_factor from Brain trailing contract
+        //           2) existing risk.trailing.drawdown_factor (from Brain signal risk block)
+        //           3) documented engine default (0.5 = normal mode)
+        $drawdownFactor = (float)($brainTrailing['drawdown_factor']
+            ?? $risk['trailing']['drawdown_factor']
+            ?? 0.5);
+        $drawdownFactorSource = isset($brainTrailing['drawdown_factor'])
+            ? 'brain_trailing_contract'
+            : (isset($risk['trailing']['drawdown_factor'])
+                ? 'risk_block'
+                : 'documented_default');
+
+        $normalized = [
+            'enabled' => (bool)($brainTrailing['trailing_enabled'] ?? false),
+            // Brain uses ratio (e.g. 0.02 = 2%), bot expects percentage (e.g. 2.0 = 2%)
+            'activation_roi_pct' => (float)($brainTrailing['trailing_activation_roi'] ?? 0) * 100,
+            'drawdown_factor' => $drawdownFactor,
+            'drawdown_factor_source' => $drawdownFactorSource,
+            'min_lock_roi' => (float)($brainTrailing['trailing_min_lock_roi'] ?? 0),
+            'min_step' => (float)($brainTrailing['trailing_min_step'] ?? 0),
+            'break_even_enabled' => (bool)($brainTrailing['break_even_enabled'] ?? false),
+            // Brain uses ratio (e.g. 0.025 = 2.5%), bot expects percentage (e.g. 2.5 = 2.5%)
+            'break_even_activation_roi' => (float)($brainTrailing['break_even_activation_roi'] ?? 0) * 100,
+            'exit_mode' => (string)($brainTrailing['exit_mode'] ?? 'hybrid_tp'),
+            'fixed_take_profit_roi' => (float)($brainTrailing['fixed_take_profit_roi'] ?? 0),
+            'hybrid_tp_share' => (float)($brainTrailing['hybrid_tp_share'] ?? 0),
+            'brain_trailing_applied' => true,
+            'effective_trailing_contract_source' => 'brain_trailing_contract_normalized',
+        ];
+
+        $risk['trailing'] = $normalized;
+        return $risk;
+    }
+
+    /**
+     * Load demo intents from Pattern Engine downstream demo_signals.json.
+     *
+     * Used when mode=demo and demo_sources.source_mode=pattern_engine_demo.
+     * Converts Pattern Engine downstream scenario records to bot-executable intents
+     * using demo_risk_defaults from config. Entry price taken from entry_hint.
+     * Signals without a valid entry_hint (price) are skipped.
+     *
+     * @return array{ok:bool,count:int,intents:list<array>,errors:list<string>,source:string,source_mode:string,source_path:string,signals_loaded:int,signals_skipped:int}
+     */
+     protected function loadPatternEngineDemoIntents(): array
+    {
+        $result = [
+            'ok'             => true,
+            'count'          => 0,
+            'intents'        => [],
+            'errors'         => [],
+            'source'         => 'pattern_engine_demo_feed',
+            'source_mode'    => 'pattern_engine_demo',
+            'source_path'    => '',
+            'source_status'  => 'unknown',
+            'signals_loaded' => 0,
+            'signals_skipped'=> 0,
+            'feed_generated_at'               => null,
+            'feed_freshness_seconds'          => null,
+            'feed_is_newer_than_previous_run' => null,
+            // PART 1 diagnostics
+            'demo_feed_available_count'          => 0,
+            'demo_feed_selected_count'           => 0,
+            'demo_feed_skipped_due_to_cap'       => 0,
+            'demo_feed_skipped_due_to_idempotency' => 0,
+            'demo_feed_skipped_due_to_ttl'       => 0,
+            'demo_feed_skipped_due_to_validation' => 0,
+            'demo_feed_skipped_other'            => 0,
+            // PART 2 diagnostics
+            'demo_signal_rotation_mode'          => 'fifo',
+            'demo_signals_deferred_by_rotation'  => 0,
+            'demo_signals_selected_by_rotation'  => 0,
+            // PART 3: symbol diversification prefilter diagnostics
+            'demo_feed_prefilter_input_count'                    => 0,
+            'demo_feed_prefilter_output_count'                   => 0,
+            'demo_feed_prefilter_skipped_busy_symbol_count'      => 0,
+            'demo_feed_prefilter_skipped_duplicate_symbol_count' => 0,
+            'demo_feed_unique_symbols_selected_count'            => 0,
+            'demo_feed_prefilter_reason_stats'                   => [],
+            // PART 4 runtime proof: effective trailing settings applied to intents
+            'demo_effective_trailing_enabled'          => false,
+            'demo_effective_trailing_mode'             => '',
+            'demo_effective_trailing_activation'       => 0.0,
+            'demo_effective_trailing_drawdown_factor'  => 0.0,
+            'demo_effective_break_even_enabled'        => false,
+            'demo_effective_break_even_activation'     => 0.0,
+        ];
+
+        try {
+            $demoSrc = (array)($this->config['demo_sources'] ?? []);
+
+            // Resolve path to Pattern Engine downstream demo_signals.json.
+            // Priority: config demo_signals_file → default relative path from module base.
+            $peFile   = (string)($demoSrc['demo_signals_file'] ?? 'downstream/demo_signals.json');
+            $peBase   = dirname(dirname(__DIR__)) . '/pattern_engine/storage';
+            $signalsPath = rtrim($peBase, '/') . '/' . ltrim($peFile, '/');
+            $result['source_path'] = $signalsPath;
+
+            // Feed freshness: record mtime of demo_signals.json
+            if (is_file($signalsPath)) {
+                $feedMtime = @filemtime($signalsPath) ?: 0;
+                if ($feedMtime > 0) {
+                    $result['feed_generated_at']      = date('c', $feedMtime);
+                    $result['feed_freshness_seconds'] = max(0, time() - $feedMtime);
+                }
+            }
+
+            if (!is_file($signalsPath)) {
+                $result['source_status'] = 'missing';
+                return $result; // Not an error — Pattern Engine may not have run yet
+            }
+
+            $content = @file_get_contents($signalsPath);
+            if ($content === false) {
+                $result['ok'] = false;
+                $result['errors'][] = 'Failed to read demo_signals.json';
+                $result['source_status'] = 'read_error';
+                return $result;
+            }
+
+            $signals = @json_decode($content, true);
+            if (!is_array($signals)) {
+                $result['ok'] = false;
+                $result['errors'][] = 'Invalid JSON in demo_signals.json';
+                $result['source_status'] = 'invalid';
+                return $result;
+            }
+
+            $result['signals_loaded'] = count($signals);
+            $result['source_status']  = 'loaded';
+
+            // Build risk block from demo_risk_defaults
+            // profile_id is always included — required by validateRisk() — config value takes priority.
+            // stop_control.stop_loss_from_entry_roi is always included as fallback for Bybit Demo API
+            // which often omits liqPrice, making the liq-based SL formula unavailable.
+            $riskDefaults = array_replace_recursive([
+                'profile_id'              => 'pattern_engine_demo_default',
+                'budget_usdt_per_trade'   => 10,
+                'leverage'                => 5,
+                'stop_from_liq_range_pct' => 0.2,
+                'slippage_bps'            => 20,
+                'fees_bps'                => 10,
+                'order_type'              => 'market',
+                'stop_control'            => [
+                    'stop_control_mode'        => 'auto',
+                    'stop_loss_from_entry_roi' => 0.03,
+                ],
+                'limits'                  => [
+                    'max_open_trades'            => 5,
+                    'max_open_trades_per_symbol'  => 1,
+                    'one_trade_per_symbol'        => true,
+                ],
+                'trailing'                => ['enabled' => false],
+            ], (array)($demoSrc['demo_risk_defaults'] ?? []));
+
+            // Override trailing/break-even subfields from the active execution config.
+            // demo_risk_defaults remain the base; execution settings win for trailing fields only.
+            $execCfg = (array)($this->config['execution'] ?? []);
+            if (!empty($execCfg)) {
+                if (!isset($riskDefaults['trailing']) || !is_array($riskDefaults['trailing'])) {
+                    $riskDefaults['trailing'] = [];
+                }
+                $trailingOverrides = [];
+                if (array_key_exists('trailing_enabled', $execCfg)) {
+                    $trailingOverrides['enabled'] = (bool)$execCfg['trailing_enabled'];
+                }
+                if (array_key_exists('trailing_mode', $execCfg) && (string)$execCfg['trailing_mode'] !== '') {
+                    $trailingOverrides['mode'] = (string)$execCfg['trailing_mode'];
+                }
+                if (array_key_exists('trailing_activation_roi', $execCfg)) {
+                    $trailingOverrides['activation_roi_pct'] = (float)$execCfg['trailing_activation_roi'];
+                }
+                if (array_key_exists('trailing_drawdown_factor', $execCfg)) {
+                    $trailingOverrides['drawdown_factor'] = (float)$execCfg['trailing_drawdown_factor'];
+                }
+                if (array_key_exists('break_even_enabled', $execCfg)) {
+                    $trailingOverrides['break_even_enabled'] = (bool)$execCfg['break_even_enabled'];
+                }
+                if (array_key_exists('break_even_activation_roi', $execCfg)) {
+                    $trailingOverrides['break_even_activation_roi'] = (float)$execCfg['break_even_activation_roi'];
+                }
+                if (!empty($trailingOverrides)) {
+                    $riskDefaults['trailing'] = array_merge($riskDefaults['trailing'], $trailingOverrides);
+                }
+            }
+
+            // Override limits.max_open_trades from demo_learning_mode.max_concurrent_demo_positions.
+            // demo_risk_defaults.limits.max_open_trades may carry a stale lower cap (e.g. 5),
+            // while the real enforced demo capacity is max_concurrent_demo_positions.
+            // Without this override demo signals are rejected_limits:max_open_trades_reached even
+            // when actual demo capacity exists.
+            $dlmCfgLimits = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+            if (($dlmCfgLimits['enabled'] ?? false) && (int)($dlmCfgLimits['max_concurrent_demo_positions'] ?? 0) > 0) {
+                $effectiveMaxOpenTrades = (int)$dlmCfgLimits['max_concurrent_demo_positions'];
+                $riskDefaults['limits']['max_open_trades'] = $effectiveMaxOpenTrades;
+                $result['demo_effective_risk_max_open_trades'] = $effectiveMaxOpenTrades;
+                $result['demo_limits_source']                  = 'demo_learning_mode.max_concurrent_demo_positions';
+            } else {
+                $result['demo_effective_risk_max_open_trades'] = (int)($riskDefaults['limits']['max_open_trades'] ?? 5);
+                $result['demo_limits_source']                  = 'demo_risk_defaults';
+            }
+            $result['demo_effective_risk_max_open_trades_per_symbol'] = (int)($riskDefaults['limits']['max_open_trades_per_symbol'] ?? 1);
+
+            // Runtime proof: record what effective trailing settings were applied to intents.
+            $result['demo_effective_trailing_enabled']           = (bool)($riskDefaults['trailing']['enabled'] ?? false);
+            $result['demo_effective_trailing_mode']              = (string)($riskDefaults['trailing']['mode'] ?? '');
+            $result['demo_effective_trailing_activation']        = (float)($riskDefaults['trailing']['activation_roi_pct'] ?? 0);
+            $result['demo_effective_trailing_drawdown_factor']   = (float)($riskDefaults['trailing']['drawdown_factor'] ?? 0);
+            $result['demo_effective_break_even_enabled']         = (bool)($riskDefaults['trailing']['break_even_enabled'] ?? false);
+            $result['demo_effective_break_even_activation']      = (float)($riskDefaults['trailing']['break_even_activation_roi'] ?? 0);
+
+            $executedIndex = $this->loadExecutedIndex();
+            $intents  = [];
+            $skipped  = 0;
+            $now      = time();
+
+            // ── PART 1: per-skip-reason counters ────────────────────────────
+            $skipIdempotency = 0;
+            $skipTtl         = 0;
+            $skipValidation  = 0;
+            $skipOther       = 0;
+
+            // ── PART 2: Fair rotation ────────────────────────────────────────
+            // Load the per-signal last-attempted timestamp file (rotation state).
+            // Signals never attempted come first; among attempted, oldest-first.
+            // This prevents the same first-N signals from being retried forever.
+            $rotationStatePath = $this->storageDir . '/demo_signal_rotation.json';
+            $rotationState = [];
+            if (is_file($rotationStatePath)) {
+                $rsContent = @file_get_contents($rotationStatePath);
+                if ($rsContent !== false) {
+                    $rs = @json_decode($rsContent, true);
+                    if (is_array($rs)) {
+                        $rotationState = $rs;
+                    }
+                }
+            }
+            $rotationApplied = false;
+
+            // Build candidate list (pre-validation pass)
+            $candidateSignals = [];
+            foreach ($signals as $sig) {
+                if (!is_array($sig)) { $skipped++; $skipOther++; continue; }
+                $signalId = (string)($sig['signal_id'] ?? '');
+                if ($signalId === '') { $skipped++; $skipOther++; continue; }
+
+                // Idempotency: skip already-executed signals.
+                // Exception: allow retry if the previous rejection was a config/schema validation
+                // failure (missing_field) — these are safe to retry after the config is fixed.
+                if (isset($executedIndex[$signalId])) {
+                    $prev = $executedIndex[$signalId];
+                    $isConfigRejection = ($prev['result'] ?? '') === 'rejected_validation'
+                        && strpos((string)($prev['error'] ?? ''), 'missing_field:') !== false;
+                    if (!$isConfigRejection) {
+                        $skipped++;
+                        $skipIdempotency++;
+                        continue;
+                    }
+                }
+
+                // TTL check
+                $ttlSec = (int)($sig['ttl_seconds'] ?? 0);
+                if ($ttlSec > 0) {
+                    $detectedAt = strtotime((string)($sig['detected_at'] ?? '')) ?: 0;
+                    if ($detectedAt > 0 && ($now - $detectedAt) > $ttlSec) {
+                        $skipped++;
+                        $skipTtl++;
+                        continue;
+                    }
+                }
+
+                // Symbol: prefer canonical → normalized → raw
+                $symbol = strtoupper((string)(
+                    $sig['symbol_canonical'] ?? $sig['symbol_normalized'] ?? $sig['symbol'] ?? ''
+                ));
+                $side = strtolower((string)($sig['side'] ?? ''));
+                if ($symbol === '' || !in_array($side, ['long', 'short'], true)) {
+                    $skipped++;
+                    $skipValidation++;
+                    continue;
+                }
+
+                // Entry price from entry_hint (pattern formation price).
+                // Signals without a valid price cannot be executed safely — skip.
+                $entryHint = isset($sig['entry_hint']) ? (float)$sig['entry_hint'] : 0.0;
+                if ($entryHint <= 0.0) {
+                    $skipped++;
+                    $skipValidation++;
+                    continue;
+                }
+
+                // Attach rotation weight: signals never attempted get priority (0),
+                // then older last_attempted_ts comes first.
+                $lastAttempted = (int)($rotationState[$signalId] ?? 0);
+                $sig['_signal_id_resolved'] = $signalId;
+                $sig['_symbol_resolved']    = $symbol;
+                $sig['_side_resolved']      = $side;
+                $sig['_entry_hint_resolved']= $entryHint;
+                $sig['_ttl_sec_resolved']   = $ttlSec;
+                $sig['_last_attempted']     = $lastAttempted;
+                $candidateSignals[]         = $sig;
+            }
+
+            $result['demo_feed_available_count'] = count($candidateSignals);
+
+            // Sort candidates by last_attempted ascending (0 = never attempted → first).
+            if (count($candidateSignals) > 1) {
+                usort($candidateSignals, static function (array $a, array $b): int {
+                    return $a['_last_attempted'] <=> $b['_last_attempted'];
+                });
+                $rotationApplied = true;
+            }
+
+            $result['demo_signal_rotation_mode'] = $rotationApplied ? 'last_attempted_asc' : 'fifo';
+
+            // ── PART 3: Symbol diversification prefilter ─────────────────────────────
+            // After rotation sort, deduplicate same-symbol candidates and exclude symbols
+            // that already have an active local trade. This prevents selected slots from
+            // being wasted on signals that will just get skipped_symbol_busy at execution.
+            $busySymbols = [];
+            try {
+                $activeTrades = $this->store->loadActiveTrades();
+                foreach ($activeTrades as $_at) {
+                    $atSym = strtoupper((string)($_at['symbol'] ?? ''));
+                    if ($atSym !== '') {
+                        $busySymbols[$atSym] = true;
+                    }
+                }
+            } catch (\Throwable $_prefiltEx) {
+                // Non-fatal: if active trades can't be loaded, skip busy filter
+            }
+
+            $prefiltInput  = count($candidateSignals);
+            $prefiltBusy   = 0;
+            $prefiltDup    = 0;
+            $prefiltStats  = [];
+            $seenSymbols   = [];
+            $diversified   = [];
+
+            foreach ($candidateSignals as $cSig) {
+                $cSym = $cSig['_symbol_resolved'];
+                if (isset($busySymbols[$cSym])) {
+                    $prefiltBusy++;
+                    $prefiltStats['busy_symbol'] = ($prefiltStats['busy_symbol'] ?? 0) + 1;
+                    continue;
+                }
+                if (isset($seenSymbols[$cSym])) {
+                    $prefiltDup++;
+                    $prefiltStats['duplicate_symbol'] = ($prefiltStats['duplicate_symbol'] ?? 0) + 1;
+                    continue;
+                }
+                $seenSymbols[$cSym] = true;
+                $diversified[] = $cSig;
+            }
+
+            $candidateSignals = $diversified;
+            $result['demo_feed_prefilter_input_count']                    = $prefiltInput;
+            $result['demo_feed_prefilter_output_count']                   = count($candidateSignals);
+            $result['demo_feed_prefilter_skipped_busy_symbol_count']      = $prefiltBusy;
+            $result['demo_feed_prefilter_skipped_duplicate_symbol_count'] = $prefiltDup;
+            $result['demo_feed_unique_symbols_selected_count']            = count($seenSymbols);
+            $result['demo_feed_prefilter_reason_stats']                   = $prefiltStats;
+
+            foreach ($candidateSignals as $sig) {
+                $signalId  = $sig['_signal_id_resolved'];
+                $symbol    = $sig['_symbol_resolved'];
+                $side      = $sig['_side_resolved'];
+                $entryHint = $sig['_entry_hint_resolved'];
+                $ttlSec    = $sig['_ttl_sec_resolved'];
+
+                $createdTs = strtotime((string)($sig['detected_at'] ?? '')) ?: $now;
+
+                $intent = [
+                    'id'                       => $signalId,
+                    'signal_id'                => $signalId,
+                    'schema_version'           => 'intent_live_v1',
+                    'symbol'                   => $symbol,
+                    'side'                     => $side,
+                    'side_original'            => $side,
+                    'entry_price'              => $entryHint,
+                    'entry_action'             => 'enter_now',
+                    'entry_timeout_minutes'    => null,
+                    'late_threshold_pct'       => (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25),
+                    'created_ts'               => $createdTs,
+                    'expires_at'               => ($ttlSec > 0) ? ($createdTs + $ttlSec) : 0,
+                    'risk'                     => $riskDefaults,
+                    'brain'                    => [],
+                    'source'                   => 'pattern_engine_demo',
+                    'brain_controlled'         => false,
+                    // Top-level signal metadata — mirrors pattern_engine_meta for engine/executor access
+                    'pattern_algorithm'        => (string)($sig['pattern_algorithm'] ?? ''),
+                    'pattern_version'          => (string)($sig['pattern_version']   ?? ''),
+                    'signal_strength'          => (float)($sig['signal_strength']    ?? 0),
+                    'quality_score'            => (float)($sig['quality_score']      ?? 0),
+                    'scenario_id'              => (string)($sig['scenario_id']       ?? ''),
+                    'scenario_score'           => (float)($sig['scenario_score']     ?? 0),
+                    'pattern_engine_meta'      => [
+                        'signal_id'            => $signalId,
+                        'pattern_algorithm'    => (string)($sig['pattern_algorithm'] ?? ''),
+                        'pattern_version'      => (string)($sig['pattern_version']   ?? ''),
+                        'signal_strength'      => (float)($sig['signal_strength']    ?? 0),
+                        'quality_score'        => (float)($sig['quality_score']      ?? 0),
+                        'scenario_id'          => (string)($sig['scenario_id']       ?? ''),
+                        'scenario_score'       => (float)($sig['scenario_score']     ?? 0),
+                        'execution_mode_hint'  => (string)($sig['execution_mode_hint'] ?? ''),
+                        'passport_available'   => (bool)($sig['passport_available']  ?? false),
+                        'source_module'        => 'pattern_engine',
+                    ],
+                    'intent_created_at' => date('c'),
+                ];
+
+                $intents[] = $intent;
+            }
+
+            // Record skip-reason breakdown and selection counts
+            $result['demo_feed_skipped_due_to_idempotency'] = $skipIdempotency;
+            $result['demo_feed_skipped_due_to_ttl']         = $skipTtl;
+            $result['demo_feed_skipped_due_to_validation']  = $skipValidation;
+            $result['demo_feed_skipped_other']              = $skipOther;
+            $result['demo_feed_selected_count']             = count($intents);
+            $result['demo_signals_selected_by_rotation']    = count($intents);
+            // demo_signals_deferred_by_rotation is set later in service.php after cap truncation
+
+            $result['count']          = count($intents);
+            $result['intents']        = $intents;
+            $result['signals_skipped']= $skipped;
+
+        } catch (\Throwable $e) {
+            $result['ok']      = false;
+            $result['errors'][]= 'Exception: ' . $e->getMessage();
+            $result['source_status'] = 'exception';
+        }
+
+        return $result;
+    }
+
+    /**
+     * Load intents from Brain signals (legacy fallback).
+     *
+     * @legacy — this path is only used when Brain's live_intents.json is unavailable
+     * or when the bot is not in Brain-controlled mode. Once Brain is the sole signal
+     * source, this function can be retired.
+     *
      * @return array Result with intents
      */
     protected function loadIntentsFromSignals(): array
@@ -62,9 +1428,16 @@ trait BotSourcesTrait
                 return $result;
             }
             
-            // Extract signals array
-            $signals = $data['signals'] ?? [];
-            if (!is_array($signals)) {
+            // Extract signals array — support both container shapes:
+            // A. Wrapped: {"signals": [signal1, signal2, ...]}
+            // B. Plain list: [signal1, signal2, ...]
+            // Previous logic used $data['signals'] ?? [] which returns []
+            // for plain arrays (numeric keys), and [] is_array so fallback never ran.
+            if (is_array($data) && isset($data['signals']) && is_array($data['signals'])) {
+                $signals = $data['signals'];
+            } elseif (is_array($data)) {
+                $signals = $data;
+            } else {
                 $signals = [];
             }
             
@@ -179,7 +1552,9 @@ trait BotSourcesTrait
         // SL calculated from liquidation after position opens
         $sideLower = strtolower((string)$side);
 
-        // Optional: reverse side (LONG↔SHORT) — testing / contrarian mode
+        // DEPRECATED: reverse side in legacy signal path.
+        // Brain now handles reverse_side via live_reverse_side_enabled in live_intents.
+        // This legacy path is kept for backward compatibility only.
         $reverseEnabled = (bool)($this->config['execution']['reverse_side_enabled'] ?? false);
         $sideOriginal = $sideLower;
 
@@ -255,12 +1630,23 @@ trait BotSourcesTrait
      * - rejected_late_entry: Price moved too far
      * - rejected_sl_failed: Failed to set SL (fail-safe closed)
      * 
-     * @param string $signalId Signal ID
+     * V3 FIX: $signalId is now always the unified execution identity key
+     * (intent_id for Brain intents, signal_id for legacy).
+     * All callers must use getExecutionIdentityKey() to derive this value.
+     * 
+     * @param string $signalId Execution identity key (intent_id or legacy signal_id)
      * @param array $result Execution result
+     * @param string $dedupeBasis 'intent_id' or 'legacy_signal_id' (for debug tracing)
      */
-    protected function markSignalExecuted(string $signalId, array $result): void
+    protected function markSignalExecuted(string $signalId, array $result, string $dedupeBasis = ''): void
     {
-        $path = $this->storageDir . '/executed_index.json';
+        // When the bot is running in demo execution context (live bot routing an intent
+        // to demo storage), the executed_index must also go to demo storage so that live
+        // executed_index.json is not polluted with demo-only openings (e.g. dry_* order ids).
+        $execStorageDir = ($this->demoExecutionContext && isset($this->demoStorageDir) && $this->demoStorageDir !== '')
+            ? $this->demoStorageDir
+            : $this->storageDir;
+        $path = $execStorageDir . '/executed_index.json';
         
         // B7: Use flock for atomic read-modify-write
         $fp = @fopen($path, 'c+');
@@ -276,9 +1662,23 @@ trait BotSourcesTrait
         if ($fp === false) {
             // Last resort: non-atomic write with error logging
             error_log("TradingBot: flock failed for executed_index.json, falling back to non-atomic write");
-            $index = $this->loadExecutedIndex();
-            $index[$signalId] = $this->buildExecutedEntry($result);
+            $rawContent = @file_get_contents($path);
+            $index = is_string($rawContent) ? (@json_decode($rawContent, true) ?? []) : [];
+            if (!is_array($index)) {
+                $index = [];
+            }
+            $index[$signalId] = $this->buildExecutedEntry($result, $signalId, $dedupeBasis);
             @file_put_contents($path, json_encode($index, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $this->journalEvent('file_write', 'execute_intent', true,
+                'executed_index.json updated (fallback): ' . $signalId,
+                [
+                    'path'           => 'executed_index.json',
+                    'write_type'     => 'update',
+                    'classification' => 'executed_index',
+                    'trade_id'       => $result['trade_id'] ?? null,
+                    'reason'         => $result['status'] ?? null,
+                ]
+            );
             return;
         }
         
@@ -302,7 +1702,7 @@ trait BotSourcesTrait
             }
             
             // Add/update entry
-            $index[$signalId] = $this->buildExecutedEntry($result);
+            $index[$signalId] = $this->buildExecutedEntry($result, $signalId, $dedupeBasis);
             
             // Truncate and write
             ftruncate($fp, 0);
@@ -313,22 +1713,388 @@ trait BotSourcesTrait
             flock($fp, LOCK_UN);
             fclose($fp);
         }
+
+        $this->journalEvent('file_write', 'execute_intent', true,
+            'executed_index.json updated: ' . $signalId,
+            [
+                'path'           => 'executed_index.json',
+                'write_type'     => 'update',
+                'classification' => 'executed_index',
+                'trade_id'       => $result['trade_id'] ?? null,
+                'reason'         => $result['status'] ?? null,
+            ]
+        );
     }
     
     /**
      * Build executed index entry
+     *
+     * @param array $result Execution result
+     * @param string $executionKey The execution identity key used (for debug tracing)
+     * @param string $dedupeBasis Whether the key is intent_id or legacy_signal_id
      */
-    private function buildExecutedEntry(array $result): array
+    private function buildExecutedEntry(array $result, string $executionKey = '', string $dedupeBasis = ''): array
     {
-        return [
+        $entry = [
             'executed_at' => date('c'),
             'result' => $result['status'] ?? 'unknown',
             'order_id' => $result['order_id'] ?? null,
             'trade_id' => $result['trade_id'] ?? null,
             'error' => $result['error'] ?? null,
         ];
+
+        if ($executionKey !== '') {
+            $entry['execution_identity_key'] = $executionKey;
+        }
+        if ($dedupeBasis !== '') {
+            $entry['dedupe_basis'] = $dedupeBasis;
+        }
+
+        return $entry;
     }
     
+    /**
+     * Resolve a normalized lifecycle state from an execution result.
+     *
+     * @param array $execResult Execution result array
+     * @return string One of: pending, opened, rejected, failed, deferred, skipped, closed
+     */
+    protected function resolveIntentLifecycleState(array $execResult): string
+    {
+        // Priority order: skipped > rejected > failed > closed > trailing_active > protected > opened > pending
+
+        // Explicit skipped state (duplicate suppression)
+        if (($execResult['status'] ?? '') === 'skipped') {
+            return 'skipped';
+        }
+
+        $status = $execResult['status'] ?? '';
+
+        // Map all rejection-class prefixes to 'rejected'.
+        // 'rejected_*' covers most cases. 'skipped_*' covers limit/position guards
+        // (skipped_active_trade_exists, skipped_max_positions_reached, skipped_symbol_busy).
+        // 'orphan_*' covers orphan-detection guards (orphan_exchange_detected_defer_reconcile).
+        // 'symbol_busy*' covers adopted-orphan ownership guards.
+        // Without this, those statuses fall through to 'pending', which triggers the
+        // rejected_unresolved_lifecycle catch-all in service.php for long intents.
+        if (strpos($status, 'rejected_') === 0
+            || strpos($status, 'skipped_') === 0
+            || strpos($status, 'orphan_') === 0
+            || strpos($status, 'symbol_busy') === 0
+        ) {
+            return 'rejected';
+        }
+        if ($status === 'critical_unprotected_position_close_failed') {
+            return 'failed';
+        }
+        if ($status === 'error') {
+            return 'failed';
+        }
+
+        // Closed states
+        if (strpos($status, 'closed_') === 0 || $status === 'exchange_closed') {
+            return 'closed';
+        }
+
+        if (!empty($execResult['opened'])) {
+            // trailing_active outranks protected outranks opened
+            // NOTE: trailing_active is typically set by post-processing in service.php
+            // after updateActivePositions() runs, but can also be detected here if
+            // trailing_active flag is present in exec result.
+            if (!empty($execResult['trailing_active'])) {
+                return 'trailing_active';
+            }
+            if ($status === 'opened_protected') {
+                return 'protected';
+            }
+            return 'opened';
+        }
+
+        if (strpos($status, 'deferred_') === 0) {
+            return 'deferred';
+        }
+
+        return 'pending';
+    }
+
+    /**
+     * Build a structured result record for a single processed intent.
+     *
+     * @param array $intent  The intent that was processed
+     * @param array $execResult  The execution result
+     * @return array Structured intent result record
+     */
+    protected function buildIntentResultRecord(array $intent, array $execResult): array
+    {
+        $lifecycleState = $this->resolveIntentLifecycleState($execResult);
+        $trailingEnabled = (bool)($intent['risk']['trailing']['enabled'] ?? false);
+        $execStatus = $execResult['status'] ?? 'unknown';
+
+        // Richer protection_status
+        $protectionStatus = 'none';
+        if ($lifecycleState === 'protected') {
+            $protectionStatus = 'protected';
+        } elseif ($lifecycleState === 'opened') {
+            $protectionStatus = 'opened_unprotected';
+        } elseif ($lifecycleState === 'failed' && strpos($execStatus, 'unprotected') !== false) {
+            $protectionStatus = 'protection_error';
+        }
+
+        // Richer trailing_status
+        $trailingStatus = 'disabled';
+        if ($trailingEnabled) {
+            if ($lifecycleState === 'trailing_active') {
+                $trailingStatus = 'active';
+            } elseif (in_array($lifecycleState, ['opened', 'protected'], true)) {
+                $trailingStatus = 'armed';
+            } else {
+                $trailingStatus = 'enabled';
+            }
+        }
+
+        $record = [
+            'intent_id' => $intent['intent_id'] ?? $intent['id'] ?? null,
+            'signal_id' => $intent['signal_id'] ?? null,
+            'symbol' => $intent['symbol'] ?? '',
+            'side' => $intent['side'] ?? '',
+            'brain_controlled' => !empty($intent['brain_controlled']),
+            'execution_identity_key' => $intent['execution_identity_key'] ?? ($intent['intent_id'] ?? ($intent['signal_id'] ?? '')),
+            'lifecycle_state' => $lifecycleState,
+            'processed_at' => date('c'),
+            'execution_result' => $execStatus,
+            'rejection_reason' => null,
+            'close_reason' => null,
+            'order_id' => $execResult['order_id'] ?? null,
+            'position_id' => $execResult['trade_id'] ?? null,
+            'protection_status' => $protectionStatus,
+            'trailing_status' => $trailingStatus,
+            'source_status' => $intent['source'] ?? 'brain_live_intent',
+            'debug_message' => $execResult['error'] ?? null,
+            // P0.1: Execution stage audit - exact stage where chain stopped
+            'execution_stage' => $execResult['execution_stage'] ?? 'unknown',
+            // P0.3: Exchange submit visibility per intent
+            'exchange_submit_attempted' => (bool)($execResult['exchange_submit_attempted'] ?? false),
+            'exchange_response_code' => $execResult['exchange_response_code'] ?? null,
+            'exchange_response_message' => $execResult['exchange_response_message'] ?? null,
+            // P0.6: Validation rejection detail
+            'validation_error_summary' => $execResult['validation_error_summary'] ?? null,
+            'missing_fields_preview' => $execResult['missing_fields_preview'] ?? [],
+            // Execution truth fields: explicit order/position outcome
+            'order_send_attempted' => (bool)($execResult['exchange_submit_attempted'] ?? false),
+            'order_sent' => (bool)($execResult['opened'] ?? false),
+            'position_opened' => (bool)($execResult['opened'] ?? false) && in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true),
+            'terminal_status' => $this->resolveTerminalStatus($lifecycleState, $execStatus, (bool)($execResult['exchange_submit_attempted'] ?? false)),
+        ];
+
+        if ($lifecycleState === 'rejected') {
+            $record['rejection_reason'] = $this->normalizeRejectionReason($execStatus);
+            // Propagate late-entry sub-reason and diagnostics from execution context
+            if (isset($execResult['context']['reject_subreason'])) {
+                $record['reject_subreason'] = $execResult['context']['reject_subreason'];
+            }
+            if (isset($execResult['context']['late_entry_diagnostics'])) {
+                $record['late_entry_diagnostics'] = $execResult['context']['late_entry_diagnostics'];
+            }
+        }
+        if ($lifecycleState === 'failed') {
+            $record['rejection_reason'] = $this->normalizeRejectionReason($execStatus);
+            $record['close_reason'] = $this->normalizeCloseReason($execResult['error'] ?? $execStatus);
+        }
+        if ($lifecycleState === 'closed') {
+            $record['close_reason'] = $this->normalizeCloseReason($execStatus);
+        }
+
+        // Coin Core Step 9: propagate read-only cycle_decision_debug snapshot if present on intent.
+        if (isset($intent['cycle_decision_debug'])) {
+            $record['cycle_decision_debug'] = $intent['cycle_decision_debug'];
+        }
+
+        // Coin/Bot Step 17: propagate cycle_execution_support fields if stamped on intent.
+        foreach ([
+            'cycle_execution_support_used',
+            'cycle_execution_support_applied',
+            'cycle_execution_support_reason',
+            'cycle_execution_support_model_state',
+            'cycle_execution_support_model_risk',
+            'cycle_execution_support_model_actionability',
+        ] as $_suppField) {
+            if (array_key_exists($_suppField, $intent)) {
+                $record[$_suppField] = $intent[$_suppField];
+            }
+        }
+
+        return $record;
+    }
+
+    /**
+     * Normalize a rejection reason to a stable machine-readable value.
+     *
+     * @param string $raw Raw rejection status/reason
+     * @return string Normalized rejection reason
+     */
+    protected function normalizeRejectionReason(string $raw): string
+    {
+        // Already normalized — starts with rejected_
+        if (strpos($raw, 'rejected_') === 0) {
+            // Map known vague suffixes to stable categories
+            $map = [
+                'rejected_validation' => 'rejected_invalid_brain_intent',
+                'rejected_entry_timeout' => 'rejected_late_entry',
+                'rejected_order_failed' => 'rejected_exchange_error',
+                'rejected_leverage_failed' => 'rejected_exchange_error',
+                'rejected_balance_unavailable' => 'rejected_insufficient_balance',
+                'rejected_balance_below_minimum' => 'rejected_insufficient_balance',
+                'rejected_symbol_disabled' => 'rejected_disabled_by_mode',
+            ];
+            return $map[$raw] ?? $raw;
+        }
+
+        // Map non-prefixed reasons
+        if ($raw === 'error' || $raw === 'unknown') {
+            return 'rejected_unknown';
+        }
+        if (strpos($raw, 'critical_') === 0) {
+            return 'rejected_exchange_error';
+        }
+
+        return 'rejected_' . $raw;
+    }
+
+    /**
+     * Normalize a close reason to a stable machine-readable value.
+     *
+     * @param string $raw Raw close reason
+     * @return string Normalized close reason
+     */
+    protected function normalizeCloseReason(string $raw): string
+    {
+        $map = [
+            'stop_loss' => 'close_stop_loss',
+            'trailing_stop' => 'close_trailing_stop',
+            'take_profit' => 'close_take_profit',
+            'hybrid_take_profit' => 'close_hybrid_take_profit',
+            'break_even' => 'close_break_even',
+            'manual_close' => 'close_manual',
+            'exchange_closed' => 'close_exchange_forced',
+            'reconcile_failed' => 'close_fail_safe',
+            'sl_calculation_failed' => 'close_fail_safe',
+            'sl_set_failed' => 'close_fail_safe',
+            'critical_unprotected_position_close_failed' => 'close_protection_error',
+        ];
+
+        // Already normalized
+        if (strpos($raw, 'close_') === 0) {
+            return $raw;
+        }
+
+        return $map[$raw] ?? 'close_unknown';
+    }
+
+    /**
+     * Resolve a terminal status label that reflects real execution truth.
+     *
+     * Only intents that actually sent an order and opened a position are
+     * considered "executed". Everything else is rejected/failed.
+     *
+     * @param string $lifecycleState  Resolved lifecycle state
+     * @param string $execStatus      Raw execution status
+     * @param bool   $exchangeSubmitAttempted  Whether order send was attempted
+     * @return string Terminal status label
+     */
+    protected function resolveTerminalStatus(string $lifecycleState, string $execStatus, bool $exchangeSubmitAttempted): string
+    {
+        if (in_array($lifecycleState, ['opened', 'protected', 'trailing_active'], true)) {
+            return 'executed_position_opened';
+        }
+        if ($lifecycleState === 'failed') {
+            if ($exchangeSubmitAttempted) {
+                return 'failed_exchange_reject';
+            }
+            return 'failed_pre_exchange';
+        }
+        if ($lifecycleState === 'rejected') {
+            // Return the specific rejection status for explainability
+            if (strpos($execStatus, 'rejected_') === 0) {
+                return $execStatus;
+            }
+            return 'rejected_' . $execStatus;
+        }
+        if ($lifecycleState === 'closed') {
+            return 'closed_fail_safe';
+        }
+        if ($lifecycleState === 'deferred') {
+            return 'deferred';
+        }
+        return 'unknown';
+    }
+
+    /**
+     * Rebuild lifecycle_summary from actual intents array inside live_intents.json.
+     *
+     * This ensures the top-level summary always matches the real intent statuses,
+     * preventing stale summary drift between Brain runs.
+     *
+     * @param string $liveIntentsPath Absolute path to live_intents.json
+     * @return bool True on success
+     */
+    protected function rebuildLifecycleSummary(string $liveIntentsPath): bool
+    {
+        if (empty($liveIntentsPath) || !is_file($liveIntentsPath)) {
+            return false;
+        }
+
+        return $this->atomicUpdateLiveIntentsFile($liveIntentsPath, function(array &$data) {
+            $intents = $data['intents'] ?? [];
+            if (!is_array($intents)) {
+                $intents = [];
+            }
+
+            $statusCounts = ['pending' => 0, 'claimed' => 0, 'executed' => 0, 'rejected' => 0, 'expired' => 0];
+            foreach ($intents as $intent) {
+                $s = $intent['status'] ?? 'pending';
+                if (isset($statusCounts[$s])) {
+                    $statusCounts[$s]++;
+                }
+            }
+
+            $data['lifecycle_summary'] = [
+                'total' => count($intents),
+                'pending' => $statusCounts['pending'],
+                'claimed' => $statusCounts['claimed'],
+                'executed' => $statusCounts['executed'],
+                'rejected' => $statusCounts['rejected'],
+                'expired' => $statusCounts['expired'],
+                'rebuilt_at' => date('c'),
+            ];
+        });
+    }
+
+    /**
+     * Detect whether trailing is actually active on a trade.
+     *
+     * trailing_active means trailing has been applied to exchange,
+     * NOT merely enabled in config.
+     *
+     * Primary: protection block has trailing_stop > 0 AND trailing_enabled
+     * Fallback: runtime.dumb_trailing_applied (legacy field, still written by updateActivePositions)
+     *
+     * @param array $trade Active trade record
+     * @return bool
+     */
+    protected function isTrailingActive(array $trade): bool
+    {
+        $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+
+        // Primary: exchange protection state
+        $exchangeTrailingSet = (float)($prot['trailing_stop'] ?? 0) > 0
+            && (bool)($prot['trailing_enabled'] ?? false);
+        // Fallback: legacy runtime field
+        $runtimeTrailingApplied = !empty($rt['dumb_trailing_applied']);
+
+        return $exchangeTrailingSet || $runtimeTrailingApplied;
+    }
+
     /**
      * Load commands from Brain (P7)
      * 

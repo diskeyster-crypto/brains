@@ -23,6 +23,8 @@ final class SmartBrainConfig
     private string $moduleBase;
     /** @var array<string,mixed> */
     private array $config;
+    /** @var array<string,mixed> config source / migration status (set by applyUserConfig) */
+    private array $configMigrationStatus = [];
 
     public function __construct(string $moduleBase)
     {
@@ -1115,6 +1117,7 @@ final class SmartBrainConfig
             'leverage_control' => [
                 'leverage_mode' => (string)($userLimits['leverage_mode'] ?? 'auto'),
                 'manual_leverage' => (int)($userLimits['manual_leverage'] ?? 3),
+                'max_leverage' => (int)($userLimits['max_leverage'] ?? 15),
             ],
             'stop_control' => [
                 'stop_control_mode' => (string)($userLimits['stop_control_mode'] ?? 'auto'),
@@ -1172,6 +1175,9 @@ final class SmartBrainConfig
             'profiles' => $this->getEffective('profiles'),
             'simulator' => $this->getEffective('simulator'),
             'ui' => $this->getEffective('ui'),
+            'config_source_status' => empty($this->configMigrationStatus)
+                ? ['source' => 'legacy_user_config', 'unified_config_available' => false]
+                : $this->configMigrationStatus,
             'generated_at' => date('c'),
         ];
     }
@@ -1293,6 +1299,14 @@ final class SmartBrainConfig
             'sniper_v3_min_hold_quality_score',
             'sniper_v3_min_post_reclaim_stability_score',
             'sniper_v3_min_zone_defense_score',
+            // Short-side V3 overrides (softer than default)
+            'sniper_v3_min_trend_match_score_short',
+            'sniper_v3_min_entry_quality_score_short',
+            'sniper_v3_min_corridor_fit_score_short',
+            // Long-side V3 overrides (symmetric relaxation for double_bottom_contextual_v3)
+            'sniper_v3_min_trend_match_score_long',
+            'sniper_v3_min_entry_quality_score_long',
+            'sniper_v3_min_corridor_fit_score_long',
             // V2 Live Quality Floor
             'v2_live_quality_floor_enabled',
             'v2_live_min_confirmation_score',
@@ -1360,6 +1374,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_trend_match_score_short' => 0.35,
                     'sniper_v3_min_entry_quality_score_short' => 0.60,
                     'sniper_v3_min_corridor_fit_score_short' => 0.60,
+                    // Long-side V3 overrides (symmetric relaxation for double_bottom_contextual_v3)
+                    'sniper_v3_min_trend_match_score_long' => 0.35,
+                    'sniper_v3_min_entry_quality_score_long' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_long' => 0.60,
                 ],
             ],
             'conservative' => [
@@ -1407,6 +1425,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_trend_match_score_short' => 0.40,
                     'sniper_v3_min_entry_quality_score_short' => 0.60,
                     'sniper_v3_min_corridor_fit_score_short' => 0.60,
+                    // Long-side V3 overrides (symmetric relaxation for double_bottom_contextual_v3)
+                    'sniper_v3_min_trend_match_score_long' => 0.40,
+                    'sniper_v3_min_entry_quality_score_long' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_long' => 0.60,
                 ],
             ],
             'sniper_75_attempt' => [
@@ -1455,6 +1477,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_trend_match_score_short' => 0.40,
                     'sniper_v3_min_entry_quality_score_short' => 0.60,
                     'sniper_v3_min_corridor_fit_score_short' => 0.60,
+                    // Long-side V3 overrides (symmetric relaxation for double_bottom_contextual_v3)
+                    'sniper_v3_min_trend_match_score_long' => 0.40,
+                    'sniper_v3_min_entry_quality_score_long' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_long' => 0.60,
                 ],
             ],
             'sniper_lite' => [
@@ -1503,6 +1529,10 @@ final class SmartBrainConfig
                     'sniper_v3_min_trend_match_score_short' => 0.35,
                     'sniper_v3_min_entry_quality_score_short' => 0.60,
                     'sniper_v3_min_corridor_fit_score_short' => 0.60,
+                    // Long-side V3 overrides (symmetric relaxation for double_bottom_contextual_v3)
+                    'sniper_v3_min_trend_match_score_long' => 0.35,
+                    'sniper_v3_min_entry_quality_score_long' => 0.60,
+                    'sniper_v3_min_corridor_fit_score_long' => 0.60,
                 ],
             ],
             'custom' => [
@@ -1577,6 +1607,10 @@ final class SmartBrainConfig
             'sniper_v3_min_trend_match_score_short',
             'sniper_v3_min_entry_quality_score_short',
             'sniper_v3_min_corridor_fit_score_short',
+            // Long-side V3 overrides (symmetric relaxation for double_bottom_contextual_v3)
+            'sniper_v3_min_trend_match_score_long',
+            'sniper_v3_min_entry_quality_score_long',
+            'sniper_v3_min_corridor_fit_score_long',
         ];
     }
 
@@ -1708,6 +1742,7 @@ final class SmartBrainConfig
         $isShort = ($side === 'short');
         $patternAlgo = (string)($signal['pattern_algorithm'] ?? '');
         $isShortV3 = $isShort && $patternAlgo === 'double_top_contextual_v3';
+        $isLongV3  = !$isShort && $patternAlgo === 'double_bottom_contextual_v3';
 
         $confirmationTier = (string)($signal['confirmation_tier'] ?? 'none');
         $confirmationScore = (float)($signal['confirmation_score'] ?? 0.0);
@@ -1720,6 +1755,8 @@ final class SmartBrainConfig
         $holdQualityScore = (float)($signal['hold_quality_score'] ?? 0.0);
         $postReclaimStabilityScore = (float)($signal['post_reclaim_stability_score'] ?? 0.0);
         $zoneDefenseScore = (float)($signal['zone_defense_score'] ?? 0.0);
+
+        $thresholdSource = $isShortV3 ? 'short_v3' : ($isLongV3 ? 'long_v3' : 'default_v3');
 
         $checkedValues = [
             'confirmation_tier' => $confirmationTier,
@@ -1734,7 +1771,7 @@ final class SmartBrainConfig
             'post_reclaim_stability_score' => round($postReclaimStabilityScore, 4),
             'zone_defense_score' => round($zoneDefenseScore, 4),
             'side' => $side,
-            'threshold_source' => $isShortV3 ? 'short_v3' : 'default_v3',
+            'threshold_source' => $thresholdSource,
         ];
 
         // 4.1 Confirmation Tier Gate
@@ -1755,10 +1792,11 @@ final class SmartBrainConfig
             $rejectReasons[] = 'sniper_reject_pattern_confidence_too_low';
         }
 
-        // 4.4 Minimum trend_match_score — side-aware for short V3
+        // 4.4 Minimum trend_match_score — side-aware for short V3 and long V3
         $minTrendMatchDefault = (float)($userLimits['sniper_v3_min_trend_match_score'] ?? 0.55);
         $minTrendMatchShort = (float)($userLimits['sniper_v3_min_trend_match_score_short'] ?? $minTrendMatchDefault);
-        $minTrendMatch = $isShortV3 ? $minTrendMatchShort : $minTrendMatchDefault;
+        $minTrendMatchLong  = (float)($userLimits['sniper_v3_min_trend_match_score_long']  ?? $minTrendMatchDefault);
+        $minTrendMatch = $isShortV3 ? $minTrendMatchShort : ($isLongV3 ? $minTrendMatchLong : $minTrendMatchDefault);
         if ($trendMatchScore === null || (float)$trendMatchScore <= 0.0) {
             $rejectReasons[] = 'sniper_reject_trend_match_missing';
         } elseif ((float)$trendMatchScore + $epsilon < $minTrendMatch) {
@@ -1766,19 +1804,21 @@ final class SmartBrainConfig
         }
         $checkedValues['trend_match_threshold_used'] = round($minTrendMatch, 4);
 
-        // 4.5 Minimum entry_quality_score — side-aware for short V3
+        // 4.5 Minimum entry_quality_score — side-aware for short V3 and long V3
         $minEntryQualityDefault = (float)($userLimits['sniper_v3_min_entry_quality_score'] ?? 0.75);
         $minEntryQualityShort = (float)($userLimits['sniper_v3_min_entry_quality_score_short'] ?? $minEntryQualityDefault);
-        $minEntryQuality = $isShortV3 ? $minEntryQualityShort : $minEntryQualityDefault;
+        $minEntryQualityLong  = (float)($userLimits['sniper_v3_min_entry_quality_score_long']  ?? $minEntryQualityDefault);
+        $minEntryQuality = $isShortV3 ? $minEntryQualityShort : ($isLongV3 ? $minEntryQualityLong : $minEntryQualityDefault);
         if ($entryQualityScore + $epsilon < $minEntryQuality) {
             $rejectReasons[] = 'sniper_reject_entry_quality_too_low';
         }
         $checkedValues['entry_quality_threshold_used'] = round($minEntryQuality, 4);
 
-        // 4.6 Minimum corridor_fit_score — side-aware for short V3
+        // 4.6 Minimum corridor_fit_score — side-aware for short V3 and long V3
         $minCorridorFitDefault = (float)($userLimits['sniper_v3_min_corridor_fit_score'] ?? 0.75);
         $minCorridorFitShort = (float)($userLimits['sniper_v3_min_corridor_fit_score_short'] ?? $minCorridorFitDefault);
-        $minCorridorFit = $isShortV3 ? $minCorridorFitShort : $minCorridorFitDefault;
+        $minCorridorFitLong  = (float)($userLimits['sniper_v3_min_corridor_fit_score_long']  ?? $minCorridorFitDefault);
+        $minCorridorFit = $isShortV3 ? $minCorridorFitShort : ($isLongV3 ? $minCorridorFitLong : $minCorridorFitDefault);
         if ($corridorFitScore + $epsilon < $minCorridorFit) {
             $rejectReasons[] = 'sniper_reject_corridor_fit_too_low';
         }
@@ -1817,12 +1857,301 @@ final class SmartBrainConfig
             'checked_values' => $checkedValues,
         ];
 
-        // Diagnostics: mark if short V3 threshold path was used
+        // Diagnostics: mark which side-specific threshold path was used
         if ($isShortV3) {
             $result['short_v3_threshold_applied'] = true;
         }
+        if ($isLongV3) {
+            $result['long_v3_threshold_applied'] = true;
+        }
 
         return $result;
+    }
+
+    /**
+     * Evaluate the fast-coin long entry gate for a single signal/candidate.
+     *
+     * Applied only to fast / impulse-sensitive long setups when the signal's symbol
+     * is in the configured fast_coin_symbols list (or fast_coin_gate_enabled is true
+     * with class-based selection).
+     *
+     * Outcomes:
+     *   live_pass  → signal is high-quality enough to proceed to live as-is
+     *   demo       → signal should be demoted to demo; do NOT silently pass to live
+     *   reject     → signal is blocked by a hard anti-pattern
+     *
+     * V2 long thresholds (double_bottom_contextual_v2):
+     *   entry_action = enter_now, confirmation_result = confirmed,
+     *   wave_speed_state = slow, quality_score >= 0.75, signal_strength >= 0.65,
+     *   scenario_score >= 0.76, slot_priority_score >= 72,
+     *   breakout hold: livePrice >= entry_zone_high * (1 - breakout_hold_buffer_pct),
+     *   micro-acceleration: livePrice >= entry_zone_high * (1 + micro_accel_min_pct)
+     *
+     * V3 long exception (double_bottom_contextual_v3):
+     *   wave_speed_state = slow, quality_score >= 0.85,
+     *   signal_strength >= 0.60, slot_priority_score >= 71,
+     *   breakout hold + micro-acceleration (same mechanics as V2)
+     *
+     * Hard anti-patterns that force demo/reject:
+     *   entry_action = wait_retrace, pattern_confidence < 0.60,
+     *   v2_priority_score < 0.60, wave_speed_state = normal
+     *
+     * All numeric thresholds are configurable via userLimits (fast_coin_gate_* keys).
+     *
+     * @param array<string,mixed> $signal     Signal or intent candidate payload
+     * @param array<string,mixed> $userLimits Effective user limits
+     * @param float               $livePrice  Current live price for breakout hold / micro-accel checks (0.0 = skip checks)
+     * @return array{outcome:string,gate_applied:bool,reject_reasons:list<string>,anti_patterns:list<string>,checked_values:array<string,mixed>,is_v2_long:bool,is_v3_long:bool,breakout_hold_ok:bool,micro_accel_ok:bool}
+     */
+    public static function evaluateFastCoinLongGate(array $signal, array $userLimits, float $livePrice = 0.0): array
+    {
+        $epsilon = 0.005;
+
+        $patternAlgo        = (string)($signal['pattern_algorithm'] ?? '');
+        $side               = strtolower(trim((string)($signal['side'] ?? '')));
+        $entryAction        = (string)($signal['entry_action'] ?? 'wait_retrace');
+        $confirmationResult = (string)($signal['confirmation_result'] ?? '');
+        $waveSpeedState     = (string)($signal['wave_speed_state'] ?? 'normal');
+        $qualityScore       = (float)($signal['quality_score'] ?? $signal['entry_quality_score'] ?? 0.0);
+        $signalStrength     = (float)($signal['signal_strength'] ?? $signal['pattern_confidence'] ?? 0.0);
+        $scenarioScore      = (float)($signal['scenario_score'] ?? $signal['v2_priority_score'] ?? 0.0);
+        $slotPriorityScore  = (float)($signal['slot_priority_score'] ?? 0.0);
+        $patternConfidence  = (float)($signal['pattern_confidence'] ?? 0.0);
+        $v2PriorityScore    = (float)($signal['v2_priority_score'] ?? 0.0);
+
+        // Breakout reference: upper bound of the long entry zone (= corridor breakout level)
+        $entryZoneHigh = (float)($signal['entry_zone_high'] ?? $signal['corridor_high'] ?? 0.0);
+
+        $isV2Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v2');
+        $isV3Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v3');
+
+        // ── Breakout hold + micro-acceleration checks ─────────────────────
+        // breakout_hold_ok: live price is not below the breakout reference minus a small buffer
+        // micro_accel_ok: live price has moved at least micro_accel_min_pct above the breakout ref
+        $breakoutHoldBufferPct = max(0.0, (float)($userLimits['fast_coin_breakout_hold_buffer_pct'] ?? 0.002));
+        $microAccelMinPct      = max(0.0, (float)($userLimits['fast_coin_micro_accel_min_pct']      ?? 0.003));
+
+        $breakoutHoldOk = true;  // default: skip check when livePrice or ref unavailable
+        $microAccelOk   = true;
+        $breakoutHoldThreshold = 0.0;
+        $microAccelThreshold   = 0.0;
+
+        if ($livePrice > 0.0 && $entryZoneHigh > 0.0) {
+            $breakoutHoldThreshold = $entryZoneHigh * (1.0 - $breakoutHoldBufferPct);
+            $microAccelThreshold   = $entryZoneHigh * (1.0 + $microAccelMinPct);
+            $breakoutHoldOk = ($livePrice >= $breakoutHoldThreshold);
+            $microAccelOk   = ($livePrice >= $microAccelThreshold);
+        }
+
+        $checkedValues = [
+            'pattern_algorithm'           => $patternAlgo,
+            'side'                        => $side,
+            'entry_action'                => $entryAction,
+            'confirmation_result'         => $confirmationResult,
+            'wave_speed_state'            => $waveSpeedState,
+            'quality_score'               => round($qualityScore, 4),
+            'signal_strength'             => round($signalStrength, 4),
+            'scenario_score'              => round($scenarioScore, 4),
+            'slot_priority_score'         => round($slotPriorityScore, 4),
+            'pattern_confidence'          => round($patternConfidence, 4),
+            'v2_priority_score'           => round($v2PriorityScore, 4),
+            'is_v2_long'                  => $isV2Long,
+            'is_v3_long'                  => $isV3Long,
+            'epsilon_used'                => $epsilon,
+            'live_price'                  => $livePrice > 0.0 ? round($livePrice, 8) : null,
+            'entry_zone_high'             => $entryZoneHigh > 0.0 ? round($entryZoneHigh, 8) : null,
+            'breakout_hold_buffer_pct'    => round($breakoutHoldBufferPct, 6),
+            'breakout_hold_threshold'     => $breakoutHoldThreshold > 0.0 ? round($breakoutHoldThreshold, 8) : null,
+            'breakout_hold_ok'            => $breakoutHoldOk,
+            'micro_accel_min_pct'         => round($microAccelMinPct, 6),
+            'micro_accel_threshold'       => $microAccelThreshold > 0.0 ? round($microAccelThreshold, 8) : null,
+            'micro_accel_ok'              => $microAccelOk,
+        ];
+
+        // ── Hard anti-patterns (override all other gates) ─────────────────
+        $antiPatterns = [];
+
+        if ($entryAction === 'wait_retrace') {
+            $antiPatterns[] = 'fast_coin_anti_wait_retrace';
+        }
+
+        $minPatternConf = (float)($userLimits['fast_coin_gate_min_pattern_confidence'] ?? 0.60);
+        if ($patternConfidence + $epsilon < $minPatternConf) {
+            $antiPatterns[] = 'fast_coin_anti_pattern_confidence_too_low';
+        }
+        $checkedValues['min_pattern_confidence_threshold'] = round($minPatternConf, 4);
+
+        $minV2Priority = (float)($userLimits['fast_coin_gate_min_v2_priority_score'] ?? 0.60);
+        if ($isV2Long && $v2PriorityScore + $epsilon < $minV2Priority) {
+            $antiPatterns[] = 'fast_coin_anti_v2_priority_too_low';
+        }
+        $checkedValues['min_v2_priority_score_threshold'] = round($minV2Priority, 4);
+
+        if ($waveSpeedState === 'normal') {
+            $antiPatterns[] = 'fast_coin_anti_normal_wave_speed_impulse_chase';
+        }
+
+        // Hard anti-pattern: breakout not held (live price below breakout reference minus buffer)
+        if (!$breakoutHoldOk) {
+            $antiPatterns[] = 'fast_coin_anti_breakout_not_held';
+        }
+
+        if (!empty($antiPatterns)) {
+            return [
+                'outcome'         => 'reject',
+                'gate_applied'    => true,
+                'reject_reasons'  => $antiPatterns,
+                'anti_patterns'   => $antiPatterns,
+                'checked_values'  => $checkedValues,
+                'is_v2_long'      => $isV2Long,
+                'is_v3_long'      => $isV3Long,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'  => $microAccelOk,
+            ];
+        }
+
+        // ── V3 long exception ─────────────────────────────────────────────
+        if ($isV3Long) {
+            $rejectReasons = [];
+
+            if ($waveSpeedState !== 'slow') {
+                $rejectReasons[] = 'fast_coin_v3_reject_wave_speed_not_slow';
+            }
+
+            $minQuality = (float)($userLimits['fast_coin_gate_v3_min_quality_score'] ?? 0.85);
+            if ($qualityScore + $epsilon < $minQuality) {
+                $rejectReasons[] = 'fast_coin_v3_reject_quality_score_too_low';
+            }
+            $checkedValues['v3_min_quality_score_threshold'] = round($minQuality, 4);
+
+            $minStrength = (float)($userLimits['fast_coin_gate_v3_min_signal_strength'] ?? 0.60);
+            if ($signalStrength + $epsilon < $minStrength) {
+                $rejectReasons[] = 'fast_coin_v3_reject_signal_strength_too_low';
+            }
+            $checkedValues['v3_min_signal_strength_threshold'] = round($minStrength, 4);
+
+            $minSlotV3 = (float)($userLimits['fast_coin_gate_v3_min_slot_priority_score'] ?? 71.0);
+            if ($slotPriorityScore + $epsilon < $minSlotV3) {
+                $rejectReasons[] = 'fast_coin_v3_reject_slot_priority_too_low';
+            }
+            $checkedValues['v3_min_slot_priority_threshold'] = round($minSlotV3, 4);
+
+            // Micro-acceleration: require at least micro_accel_min_pct above breakout ref
+            if (!$microAccelOk) {
+                $rejectReasons[] = 'fast_coin_v3_reject_micro_accel_missing';
+            }
+
+            if (!empty($rejectReasons)) {
+                return [
+                    'outcome'         => 'demo',
+                    'gate_applied'    => true,
+                    'reject_reasons'  => $rejectReasons,
+                    'anti_patterns'   => [],
+                    'checked_values'  => $checkedValues,
+                    'is_v2_long'      => $isV2Long,
+                    'is_v3_long'      => $isV3Long,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'  => $microAccelOk,
+                ];
+            }
+
+            return [
+                'outcome'         => 'live_pass',
+                'gate_applied'    => true,
+                'reject_reasons'  => [],
+                'anti_patterns'   => [],
+                'checked_values'  => $checkedValues,
+                'is_v2_long'      => $isV2Long,
+                'is_v3_long'      => $isV3Long,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'  => $microAccelOk,
+            ];
+        }
+
+        // ── V2 long gate ──────────────────────────────────────────────────
+        if ($isV2Long) {
+            $rejectReasons = [];
+
+            if ($entryAction !== 'enter_now') {
+                $rejectReasons[] = 'fast_coin_v2_reject_entry_action_not_enter_now';
+            }
+
+            if ($confirmationResult !== 'confirmed') {
+                $rejectReasons[] = 'fast_coin_v2_reject_confirmation_not_confirmed';
+            }
+
+            if ($waveSpeedState !== 'slow') {
+                $rejectReasons[] = 'fast_coin_v2_reject_wave_speed_not_slow';
+            }
+
+            $minQuality = (float)($userLimits['fast_coin_gate_v2_min_quality_score'] ?? 0.75);
+            if ($qualityScore + $epsilon < $minQuality) {
+                $rejectReasons[] = 'fast_coin_v2_reject_quality_score_too_low';
+            }
+            $checkedValues['v2_min_quality_score_threshold'] = round($minQuality, 4);
+
+            $minStrength = (float)($userLimits['fast_coin_gate_v2_min_signal_strength'] ?? 0.65);
+            if ($signalStrength + $epsilon < $minStrength) {
+                $rejectReasons[] = 'fast_coin_v2_reject_signal_strength_too_low';
+            }
+            $checkedValues['v2_min_signal_strength_threshold'] = round($minStrength, 4);
+
+            $minScenario = (float)($userLimits['fast_coin_gate_v2_min_scenario_score'] ?? 0.76);
+            if ($scenarioScore + $epsilon < $minScenario) {
+                $rejectReasons[] = 'fast_coin_v2_reject_scenario_score_too_low';
+            }
+            $checkedValues['v2_min_scenario_score_threshold'] = round($minScenario, 4);
+
+            $minSlotV2 = (float)($userLimits['fast_coin_gate_v2_min_slot_priority_score'] ?? 72.0);
+            if ($slotPriorityScore + $epsilon < $minSlotV2) {
+                $rejectReasons[] = 'fast_coin_v2_reject_slot_priority_too_low';
+            }
+            $checkedValues['v2_min_slot_priority_threshold'] = round($minSlotV2, 4);
+
+            // Micro-acceleration: require at least micro_accel_min_pct above breakout ref
+            if (!$microAccelOk) {
+                $rejectReasons[] = 'fast_coin_v2_reject_micro_accel_missing';
+            }
+
+            if (!empty($rejectReasons)) {
+                return [
+                    'outcome'         => 'demo',
+                    'gate_applied'    => true,
+                    'reject_reasons'  => $rejectReasons,
+                    'anti_patterns'   => [],
+                    'checked_values'  => $checkedValues,
+                    'is_v2_long'      => $isV2Long,
+                    'is_v3_long'      => $isV3Long,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'  => $microAccelOk,
+                ];
+            }
+
+            return [
+                'outcome'         => 'live_pass',
+                'gate_applied'    => true,
+                'reject_reasons'  => [],
+                'anti_patterns'   => [],
+                'checked_values'  => $checkedValues,
+                'is_v2_long'      => $isV2Long,
+                'is_v3_long'      => $isV3Long,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'  => $microAccelOk,
+            ];
+        }
+
+        // ── Neither V2 long nor V3 long — gate not applicable ────────────
+        return [
+            'outcome'          => 'live_pass',
+            'gate_applied'     => false,
+            'reject_reasons'   => [],
+            'anti_patterns'    => [],
+            'checked_values'   => $checkedValues,
+            'is_v2_long'       => $isV2Long,
+            'is_v3_long'       => $isV3Long,
+            'breakout_hold_ok' => $breakoutHoldOk,
+            'micro_accel_ok'   => $microAccelOk,
+        ];
     }
 
     /**
@@ -1863,33 +2192,288 @@ final class SmartBrainConfig
 
     /**
      * Apply user config from runtime/user_config.json over base user_limits.
+     *
+     * Soft-switch (wave 1): after applying user_config.json, overlays first-wave
+     * operational parameters from the unified Config Module operational draft (if
+     * available and readable).  Values are identical — this establishes Config Module
+     * as the authoritative source for tracked parameters without changing behaviour.
      */
     private function applyUserConfig(): void
     {
         $saved = $this->loadUserConfig();
-        if (empty($saved)) {
-            return;
+        if (!empty($saved)) {
+            if (!isset($this->config['risk_engine']['user_limits'])) {
+                $this->config['risk_engine']['user_limits'] = [];
+            }
+
+            $this->config['risk_engine']['user_limits'] = array_merge(
+                $this->config['risk_engine']['user_limits'],
+                $saved
+            );
+
+            // Apply execution profile bundle over managed fields (non-custom profiles only)
+            $this->applyExecutionProfile();
+
+            // Apply pattern selection from user config into parser4 config
+            if (isset($saved['patterns']) && is_array($saved['patterns'])) {
+                $this->applyPatternSelection($saved['patterns']);
+            }
+
+            // Apply profile-driven pattern routing AFTER manual patterns (overrides when profile_controlled)
+            $this->applyProfilePatternRouting();
         }
 
-        if (!isset($this->config['risk_engine']['user_limits'])) {
-            $this->config['risk_engine']['user_limits'] = [];
+        // Soft-switch overlay: read first-wave params from unified Config Module draft.
+        // Non-fatal — falls back to user_config.json values already applied above.
+        $this->configMigrationStatus = $this->applyUnifiedConfigOverlay();
+        $this->writeMigrationStatus($this->configMigrationStatus);
+    }
+
+    /**
+     * Return the config migration status recorded during the last applyUserConfig() call.
+     * Always call after construction (applyUserConfig runs in __construct).
+     *
+     * @return array<string,mixed>
+     */
+    public function getMigrationStatus(): array
+    {
+        return $this->configMigrationStatus;
+    }
+
+    /**
+     * Overlay first-wave Smart Brain operational parameters from the unified
+     * Config Module operational draft (shadow artifact).
+     *
+     * Reads config_operational_draft.json from the sibling Config Module's runtime
+     * storage.  If unavailable, no overlay occurs and values from user_config.json
+     * remain in effect.
+     *
+     * Smart Brain behaviour is NOT changed — values are identical to user_config.json
+     * because the Config Module extracts them from user_config.json.  The overlay
+     * establishes the unified Config Module as the tracked source for these params.
+     *
+     * Each param in the returned status includes:
+     *   switched_params_detail[$key]:
+     *     value, original_source, original_source_file, via,
+     *     source_layer, unified_config_used, legacy_fallback_used
+     *   fallback_params_detail[$key]:
+     *     value, source_layer, unified_config_used, legacy_fallback_used, fallback_reason
+     *
+     * @return array<string,mixed> migration status record
+     */
+    private function applyUnifiedConfigOverlay(): array
+    {
+        // First-wave: flat operational params that map 1:1 into user_limits.
+        // Patterns are excluded (nested structure; left for a later wave).
+        $firstWaveParams = [
+            'live_trading_enabled',
+            'live_max_positions',
+            'live_signal_selection_mode',
+            'live_one_trade_per_symbol',
+            'live_entry_policy',
+            'live_reverse_side_enabled',
+            'leverage_mode',
+            'manual_leverage',
+            'max_leverage',
+            'max_budget_per_coin',
+            'stop_control_mode',
+            'stop_loss_from_entry_roi',
+            'trailing_enabled',
+            'trailing_mode',
+            'trailing_activation_roi',
+            'trailing_activation_floor_roi',
+            'trailing_floor_lock_roi',
+            'break_even_enabled',
+            'break_even_activation_roi',
+            'execution_profile',
+        ];
+
+        $status = [
+            'module'                       => 'smart_brain',
+            'switch_wave'                  => 'v1_operational_params',
+            'unified_config_available'     => false,
+            'unified_config_master_path'   => '',
+            'unified_config_draft_path'    => '',
+            'source'                       => 'legacy_user_config',
+            'partially_migrated'           => false,
+            'first_wave_total'             => count($firstWaveParams),
+            'migrated_count'               => 0,
+            'fallback_count'               => 0,
+            'switched_params'              => [],
+            'fallback_params'              => [],
+            'switched_params_detail'       => [],
+            'fallback_params_detail'       => [],
+            'recorded_at'                  => date('c'),
+        ];
+
+        // Locate Config Module (sibling directory under the same system/ parent)
+        $systemDir   = dirname($this->moduleBase);
+        $masterPath  = $systemDir . '/config/storage/runtime/config_operational_master.json';
+        $draftPath   = $systemDir . '/config/storage/runtime/config_operational_draft.json';
+        $status['unified_config_master_path'] = $masterPath;
+        $status['unified_config_draft_path']  = $draftPath;
+
+        /** Build fallback detail for all first-wave params using legacy user_limits values. */
+        $buildFallbackDetail = function (string $fallbackReason) use ($firstWaveParams): array {
+            $detail = [];
+            $userLimits = $this->config['risk_engine']['user_limits'] ?? [];
+            foreach ($firstWaveParams as $key) {
+                $detail[$key] = [
+                    'value'               => $userLimits[$key] ?? null,
+                    'source_layer'        => 'legacy_user_config',
+                    'unified_config_used' => false,
+                    'legacy_fallback_used'=> true,
+                    'fallback_reason'     => $fallbackReason,
+                    'fallback_source'     => 'brain_user_config (runtime/user_config.json)',
+                ];
+            }
+            return $detail;
+        };
+
+        // ── Load master (preferred) ─────────────────────────────────────────
+        $masterParams = [];
+        $masterAvail  = false;
+        if (is_file($masterPath)) {
+            $rawMaster = @file_get_contents($masterPath);
+            if ($rawMaster !== false) {
+                $masterData = @json_decode($rawMaster, true);
+                if (is_array($masterData) && !empty($masterData['params'])) {
+                    $masterParams = $masterData['params'];
+                    $masterAvail  = true;
+                    $status['unified_config_master_saved_at'] = $masterData['saved_at'] ?? null;
+                }
+            }
         }
 
-        $this->config['risk_engine']['user_limits'] = array_merge(
-            $this->config['risk_engine']['user_limits'],
-            $saved
+        // ── Load draft (fallback source) ────────────────────────────────────
+        $draftParams = [];
+        $draftAvail  = false;
+        if (is_file($draftPath)) {
+            $rawDraft = @file_get_contents($draftPath);
+            if ($rawDraft !== false) {
+                $draftData = @json_decode($rawDraft, true);
+                if (is_array($draftData) && !empty($draftData['params'])) {
+                    $draftParams = $draftData['params'];
+                    $draftAvail  = true;
+                    $status['unified_config_generated_at'] = $draftData['generated_at'] ?? null;
+                }
+            }
+        }
+
+        if (!$masterAvail && !$draftAvail) {
+            $status['fallback_params']        = $firstWaveParams;
+            $status['fallback_count']         = count($firstWaveParams);
+            $status['fallback_params_detail'] = $buildFallbackDetail('unified_config_not_found');
+            return $status;
+        }
+
+        $status['unified_config_available'] = true;
+
+        foreach ($firstWaveParams as $key) {
+            // Priority: master → draft → legacy
+            $entry      = null;
+            $sourceLayer = 'legacy_user_config';
+            $via         = '';
+
+            if ($masterAvail && isset($masterParams[$key]) && ($masterParams[$key]['value'] ?? null) !== null) {
+                $entry       = $masterParams[$key];
+                $sourceLayer = 'unified_config_master';
+                $via         = 'unified_config_operational_master';
+            } elseif ($draftAvail && isset($draftParams[$key]) && ($draftParams[$key]['value'] ?? null) !== null) {
+                $entry       = $draftParams[$key];
+                $sourceLayer = 'unified_config';
+                $via         = 'unified_config_operational_draft';
+            }
+
+            if ($entry === null) {
+                $status['fallback_params'][] = $key;
+                $userLimits = $this->config['risk_engine']['user_limits'] ?? [];
+                $status['fallback_params_detail'][$key] = [
+                    'value'               => $userLimits[$key] ?? null,
+                    'source_layer'        => 'legacy_user_config',
+                    'unified_config_used' => false,
+                    'legacy_fallback_used'=> true,
+                    'fallback_reason'     => 'param_not_in_unified_config',
+                    'fallback_source'     => 'brain_user_config (runtime/user_config.json)',
+                ];
+                continue;
+            }
+
+            if (!isset($this->config['risk_engine']['user_limits'])) {
+                $this->config['risk_engine']['user_limits'] = [];
+            }
+            $this->config['risk_engine']['user_limits'][$key] = $entry['value'];
+            $status['switched_params'][]        = $key;
+            $status['switched_params_detail'][$key] = [
+                'value'               => $entry['value'],
+                'original_source'     => $entry['source']      ?? ($sourceLayer === 'unified_config_master' ? 'config_center_save' : 'unknown'),
+                'original_source_file'=> $entry['source_file'] ?? null,
+                'via'                 => $via,
+                'source_layer'        => $sourceLayer,
+                'unified_config_used' => true,
+                'legacy_fallback_used'=> false,
+            ];
+        }
+
+        $migratedCount = count($status['switched_params']);
+        $fallbackCount = count($status['fallback_params']);
+        $status['migrated_count']    = $migratedCount;
+        $status['fallback_count']    = $fallbackCount;
+        $status['partially_migrated']= $migratedCount > 0 && $fallbackCount > 0;
+
+        $status['source'] = $migratedCount === 0
+            ? 'legacy_user_config'
+            : ($masterAvail ? 'unified_config_operational_master' : 'unified_config_operational_draft');
+
+        // Leverage chain config proof — effective values after overlay, for operator diagnostics
+        $userLimitsAfter  = $this->config['risk_engine']['user_limits'] ?? [];
+        $profilesCfgAfter = $this->config['profiles']['settings'] ?? (array)($this->config['profiles'] ?? []);
+        $profileKeyAfter  = (string)($profilesCfgAfter['default_profile'] ?? '111');
+        $profileAfter     = (array)($profilesCfgAfter['profiles'][$profileKeyAfter] ?? []);
+        $leverageModeAfter    = (string)($userLimitsAfter['leverage_mode'] ?? 'auto');
+        $requestedManualAfter = (int)($userLimitsAfter['manual_leverage'] ?? 3);
+        $requestedMaxAfter    = (int)($userLimitsAfter['max_leverage'] ?? 15);
+        $bootstrapMaxAfter    = (int)($userLimitsAfter['bootstrap_max_leverage'] ?? 3);
+        $profileMaxAfter      = (int)($profileAfter['max_leverage'] ?? 5);
+        if ($leverageModeAfter === 'manual') {
+            $effectiveCapAfter      = $requestedMaxAfter;
+            $effectiveCapLabelAfter = 'max_leverage';
+        } else {
+            $effectiveCapAfter      = min($profileMaxAfter, $requestedMaxAfter);
+            $effectiveCapLabelAfter = ($profileMaxAfter <= $requestedMaxAfter) ? 'profile_max' : 'max_leverage';
+        }
+        $status['leverage_chain_config'] = [
+            'leverage_mode'           => $leverageModeAfter,
+            'requested_manual'        => $requestedManualAfter,
+            'requested_max'           => $requestedMaxAfter,
+            'bootstrap_max'           => $bootstrapMaxAfter,
+            'profile_max'             => $profileMaxAfter,
+            'effective_cap'           => $effectiveCapAfter,
+            'effective_cap_label'     => $effectiveCapLabelAfter,
+            'manual_would_be_crushed' => ($leverageModeAfter === 'manual' && $requestedManualAfter > $requestedMaxAfter),
+            'auto_crushed_by_profile' => ($leverageModeAfter !== 'manual' && $profileMaxAfter < $requestedMaxAfter),
+        ];
+
+        return $status;
+    }
+
+    /**
+     * Write Smart Brain config source / migration status to runtime storage.
+     *
+     * @param array<string,mixed> $migrationStatus
+     */
+    private function writeMigrationStatus(array $migrationStatus): void
+    {
+        $path = $this->moduleBase . '/runtime/config_source_status.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($migrationStatus, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
         );
-
-        // Apply execution profile bundle over managed fields (non-custom profiles only)
-        $this->applyExecutionProfile();
-
-        // Apply pattern selection from user config into parser4 config
-        if (isset($saved['patterns']) && is_array($saved['patterns'])) {
-            $this->applyPatternSelection($saved['patterns']);
-        }
-
-        // Apply profile-driven pattern routing AFTER manual patterns (overrides when profile_controlled)
-        $this->applyProfilePatternRouting();
     }
 
     /**

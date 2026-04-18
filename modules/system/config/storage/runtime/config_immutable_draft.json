@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-04-18T08:08:13+01:00",
+    "generated_at": "2026-04-13T12:10:07+00:00",
     "params": {
         "risk_levels": {
             "key": "risk_levels",
@@ -9,22 +9,22 @@
                 {
                     "max_corridor_width": 0.01,
                     "leverage": 6,
-                    "budget_factor": 0.90000000000000002
+                    "budget_factor": 0.9
                 },
                 {
-                    "max_corridor_width": 0.025000000000000001,
+                    "max_corridor_width": 0.025,
                     "leverage": 5,
                     "budget_factor": 0.75
                 },
                 {
-                    "max_corridor_width": 0.050000000000000003,
+                    "max_corridor_width": 0.05,
                     "leverage": 4,
-                    "budget_factor": 0.59999999999999998
+                    "budget_factor": 0.6
                 },
                 {
                     "max_corridor_width": 1,
                     "leverage": 3,
-                    "budget_factor": 0.45000000000000001
+                    "budget_factor": 0.45
                 }
             ],
             "source": "brain_risk_engine",
@@ -53,7 +53,7 @@
             "key": "brain_stop_liq_safety_factor",
             "label": "Brain Stop Liq Safety Factor",
             "type": "immutable",
-            "value": 0.29999999999999999,
+            "value": 0.3,
             "source": "brain_risk_engine",
             "source_file": "modules/system/smart_brain/config/risk_engine.php",
             "notes": "Internal coefficient: liquidation-price safety margin in SL formula"
@@ -152,7 +152,7 @@
                 "medium": {
                     "activation_roi": 3,
                     "floor_lock_roi": 3,
-                    "distance_roi": 0.80000000000000004
+                    "distance_roi": 0.8
                 },
                 "hard": {
                     "activation_roi": 4,

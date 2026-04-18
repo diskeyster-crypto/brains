@@ -43,6 +43,31 @@ final class CoinPassportEngine
     private const LIVE_GATE_IMPULSE_STRENGTH_MIN   = 0.2;   // impulse_strength_score >= this
     private const LIVE_GATE_PULLBACK_SEVERITY_MAX  = 0.75;  // pullback_severity_score <= this
 
+    /**
+     * Fresh-window observation buckets (seconds).
+     * Only data within these windows is considered for live admission decisions.
+     * Data older than WINDOW_7D must not be a primary admission driver.
+     */
+    private const WINDOW_1H  = 3600;
+    private const WINDOW_6H  = 21600;
+    private const WINDOW_24H = 86400;
+    private const WINDOW_7D  = 604800;
+
+    /**
+     * Fresh-window sample thresholds for live eligibility states.
+     *
+     * States produced by the gate chain:
+     *   shadow_only    – no recent data at all (24h=0, 7d=0) or no confidence
+     *   sim_only       – 7d has data but 24h is dead, or hard metric failure
+     *   bootstrap_live – 24h has >= MIN_SAMPLES_24H_FOR_BOOTSTRAP samples and
+     *                    metric gates pass but not enough for full allow_live
+     *   allow_live     – 24h >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE AND
+     *                    7d >= MIN_SAMPLES_7D_FOR_CONTEXT AND metric gates pass
+     */
+    private const MIN_SAMPLES_24H_FOR_BOOTSTRAP  = 1; // >=1 24h sample → bootstrap_live candidate
+    private const MIN_SAMPLES_24H_FOR_ALLOW_LIVE = 2; // >=2 24h samples → allow_live candidate
+    private const MIN_SAMPLES_7D_FOR_CONTEXT     = 3; // >=3 7d samples → 7d behavior context present
+
     /** Evidence timeline config */
     private const MAX_EVIDENCE_ITEMS = 100;
 
@@ -122,6 +147,24 @@ final class CoinPassportEngine
         }
         $data = $this->readJson($file);
         return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Return the coin_cycle_decision_model block from a symbol's passport, or null if unavailable.
+     *
+     * Read-only, best-effort accessor used by PM-15 cycle caution layer and other subsystems
+     * that need cycle model data without loading the full passport.
+     *
+     * @param  string $symbol  Upper-case or mixed-case symbol (normalised internally)
+     * @return array<string,mixed>|null
+     */
+    public function getCycleDecisionModelForSymbol(string $symbol): ?array
+    {
+        $passport = $this->load($symbol);
+        if ($passport === null || !is_array($passport['coin_cycle_decision_model'] ?? null)) {
+            return null;
+        }
+        return $passport['coin_cycle_decision_model'];
     }
 
     /**
@@ -319,10 +362,21 @@ final class CoinPassportEngine
         }
 
         $path     = $this->passportPath($symbol);
-        $existing = $this->readJson($path) ?? [];
+        $existing = $this->readJson($path);
 
-        // Write only the namespaced PM block — never touch other passport fields
-        $existing['profit_manager_stats'] = $stats;
+        // If no passport exists yet, bootstrap a real minimal passport using the canonical
+        // shape from buildPassport() with an empty trades array. This ensures PM write-back
+        // always produces a proper passport file, not a bare PM-only JSON blob.
+        if ($existing === null || !is_array($existing) || empty($existing)) {
+            $existing = $this->buildPassport($symbol, []);
+        }
+
+        // Merge (not overwrite) the namespaced PM block cumulatively across runs.
+        // All other passport fields are left completely untouched.
+        $existing['profit_manager_stats'] = $this->mergePmStats(
+            is_array($existing['profit_manager_stats'] ?? null) ? $existing['profit_manager_stats'] : [],
+            $stats
+        );
 
         // Atomic write: write to .tmp then rename
         $tmp = $path . '.pmtmp.' . getmypid();
@@ -343,6 +397,122 @@ final class CoinPassportEngine
         }
 
         return true;
+    }
+
+    /**
+     * Merge current-run PM stats into existing cumulative profit_manager_stats.
+     *
+     * Counters are summed. Averages are computed via weighted math using the
+     * sample counts stored alongside each average:
+     *   - avg_peak_roi / avg_current_roi          → weighted by samples_total
+     *   - avg_proposed_lock_roi                   → weighted by samples_with_lock_roi
+     *   - avg_post_lock_extension_roi / avg_stop_gap_difference_pct / avg_lock_difference_roi
+     *                                             → weighted by comparison_matches_found_total
+     * max_post_lock_extension_roi is the running maximum across all runs.
+     * last_updated_at always reflects the latest successful merge.
+     *
+     * @param array $prev  Existing profit_manager_stats from passport (may be empty)
+     * @param array $curr  Stats from the current PM run (from aggregatePmStatsBySymbol)
+     * @return array       Merged cumulative stats
+     */
+    private function mergePmStats(array $prev, array $curr): array
+    {
+        $prevTotal = (int)($prev['samples_total'] ?? 0);
+        $currTotal = (int)($curr['samples_total'] ?? 0);
+
+        // If no prior history exists, treat the current run as the initial write
+        if ($prevTotal <= 0) {
+            return $curr;
+        }
+
+        // If the current run produced no meaningful data, preserve previous state
+        if ($currTotal <= 0) {
+            return $prev;
+        }
+
+        $merged = [];
+
+        // ── Cumulative integer counters ─────────────────────────────────────
+        $merged['samples_total']                  = $prevTotal + $currTotal;
+        $merged['samples_profitable']             = (int)($prev['samples_profitable'] ?? 0)             + (int)($curr['samples_profitable'] ?? 0);
+        $merged['samples_armed']                  = (int)($prev['samples_armed'] ?? 0)                  + (int)($curr['samples_armed'] ?? 0);
+        $merged['samples_tightened']              = (int)($prev['samples_tightened'] ?? 0)              + (int)($curr['samples_tightened'] ?? 0);
+        $merged['samples_exit_ready']             = (int)($prev['samples_exit_ready'] ?? 0)             + (int)($curr['samples_exit_ready'] ?? 0);
+        $merged['comparison_samples_total']       = (int)($prev['comparison_samples_total'] ?? 0)       + (int)($curr['comparison_samples_total'] ?? 0);
+        $merged['comparison_matches_found_total'] = (int)($prev['comparison_matches_found_total'] ?? 0) + (int)($curr['comparison_matches_found_total'] ?? 0);
+        $merged['comparison_unavailable_total']   = (int)($prev['comparison_unavailable_total'] ?? 0)   + (int)($curr['comparison_unavailable_total'] ?? 0);
+
+        // Denominator counts for sub-set averages (stored so future merges stay correct)
+        $prevLockCount = (int)($prev['samples_with_lock_roi'] ?? 0);
+        $currLockCount = (int)($curr['samples_with_lock_roi'] ?? 0);
+        $merged['samples_with_lock_roi'] = $prevLockCount + $currLockCount;
+
+        // comparison_matches_found_total doubles as the denominator for comparison-based averages
+        $prevCmpCount = (int)($prev['comparison_matches_found_total'] ?? 0); // value before merge
+        $currCmpCount = (int)($curr['comparison_matches_found_total'] ?? 0);
+
+        // ── Weighted averages (weight = samples_total) ───────────────────────
+        $merged['avg_peak_roi']     = $this->weightedAvgNullable($prev['avg_peak_roi'],     $prevTotal,    $curr['avg_peak_roi'],     $currTotal);
+        $merged['avg_current_roi']  = $this->weightedAvgNullable($prev['avg_current_roi'],  $prevTotal,    $curr['avg_current_roi'],  $currTotal);
+
+        // ── Weighted average (weight = samples_with_lock_roi) ────────────────
+        $merged['avg_proposed_lock_roi'] = $this->weightedAvgNullable($prev['avg_proposed_lock_roi'], $prevLockCount, $curr['avg_proposed_lock_roi'], $currLockCount);
+
+        // ── Weighted averages (weight = comparison_matches_found_total) ───────
+        $merged['avg_post_lock_extension_roi']  = $this->weightedAvgNullable($prev['avg_post_lock_extension_roi'],  $prevCmpCount, $curr['avg_post_lock_extension_roi'],  $currCmpCount);
+        $merged['avg_stop_gap_difference_pct']  = $this->weightedAvgNullable($prev['avg_stop_gap_difference_pct'],  $prevCmpCount, $curr['avg_stop_gap_difference_pct'],  $currCmpCount);
+        $merged['avg_lock_difference_roi']      = $this->weightedAvgNullable($prev['avg_lock_difference_roi'],      $prevCmpCount, $curr['avg_lock_difference_roi'],      $currCmpCount);
+
+        // ── Running maximum ──────────────────────────────────────────────────
+        $prevMax = $prev['max_post_lock_extension_roi'] ?? null;
+        $currMax = $curr['max_post_lock_extension_roi'] ?? null;
+        if ($prevMax === null) {
+            $merged['max_post_lock_extension_roi'] = $currMax;
+        } elseif ($currMax === null) {
+            $merged['max_post_lock_extension_roi'] = $prevMax;
+        } else {
+            $merged['max_post_lock_extension_roi'] = max((float)$prevMax, (float)$currMax);
+        }
+
+        // ── Early-close risk score: recomputed from merged avg_post_lock_extension_roi ──
+        $avgExt = (float)($merged['avg_post_lock_extension_roi'] ?? 0.0);
+        $merged['early_close_risk_score'] = $avgExt > 0.0 ? round(min(1.0, $avgExt / 5.0), 4) : 0.0;
+
+        // ── Timestamp always reflects the latest successful merge ─────────────
+        $merged['last_updated_at'] = $curr['last_updated_at'] ?? date('c');
+
+        return $merged;
+    }
+
+    /**
+     * Compute a weighted average of two nullable float values.
+     *
+     * Falls back gracefully when one side has no weight or no value.
+     * Returns null only when both inputs are null.
+     * Rounds to 4 decimal places.
+     *
+     * @param mixed $prevVal    Previous average (float|null)
+     * @param int   $prevWeight Sample count for $prevVal
+     * @param mixed $currVal    Current average (float|null)
+     * @param int   $currWeight Sample count for $currVal
+     */
+    private function weightedAvgNullable(mixed $prevVal, int $prevWeight, mixed $currVal, int $currWeight): ?float
+    {
+        $prevF = ($prevVal !== null) ? (float)$prevVal : null;
+        $currF = ($currVal !== null) ? (float)$currVal : null;
+
+        if ($prevF === null && $currF === null) {
+            return null;
+        }
+        if ($prevF === null || $prevWeight <= 0) {
+            return $currF !== null ? round($currF, 4) : null;
+        }
+        if ($currF === null || $currWeight <= 0) {
+            return round($prevF, 4);
+        }
+
+        $total = $prevWeight + $currWeight;
+        return round(($prevF * $prevWeight + $currF * $currWeight) / $total, 4);
     }
 
     // =========================================================================
@@ -507,9 +677,21 @@ final class CoinPassportEngine
         $burstCount = 0;
         $burstTotal = 0;
 
-        // Recent trades: last 30 days
-        $recentCutoff  = time() - 30 * 86400;
-        $recentSamples = 0;
+        // Fresh-window recent sample counters.
+        // These drive live eligibility decisions — only data within each window is counted.
+        // 30d bucket is kept separately for computeMarketRegimeHealthScore() only
+        // (non-admission use); it must NOT be used as a primary live gate.
+        $now           = time();
+        $cutoff1h      = $now - self::WINDOW_1H;
+        $cutoff6h      = $now - self::WINDOW_6H;
+        $cutoff24h     = $now - self::WINDOW_24H;
+        $cutoff7d      = $now - self::WINDOW_7D;
+        $cutoff30d     = $now - 30 * 86400;
+        $recentSamples    = 0;  // 30d — used only for computeMarketRegimeHealthScore
+        $recentSamples1h  = 0;
+        $recentSamples6h  = 0;
+        $recentSamples24h = 0;
+        $recentSamples7d  = 0;
 
         foreach ($trades as $trade) {
             $source  = (string)($trade['_source'] ?? 'live_closed');
@@ -566,8 +748,25 @@ final class CoinPassportEngine
                 }
             }
 
-            if ($closedTs >= $recentCutoff || ($openTs >= $recentCutoff && $openTs > 0)) {
+            if ($closedTs >= $cutoff30d || ($openTs >= $cutoff30d && $openTs > 0)) {
+                // Assign to the finest bucket whose cutoff the trade's effective timestamp satisfies.
+                $tradeTs = $closedTs > 0 ? $closedTs : ($openTs > 0 ? $openTs : 0);
                 $recentSamples++;
+                if ($tradeTs >= $cutoff1h) {
+                    $recentSamples1h++;
+                    $recentSamples6h++;
+                    $recentSamples24h++;
+                    $recentSamples7d++;
+                } elseif ($tradeTs >= $cutoff6h) {
+                    $recentSamples6h++;
+                    $recentSamples24h++;
+                    $recentSamples7d++;
+                } elseif ($tradeTs >= $cutoff24h) {
+                    $recentSamples24h++;
+                    $recentSamples7d++;
+                } elseif ($tradeTs >= $cutoff7d) {
+                    $recentSamples7d++;
+                }
             }
 
             if ($finalRoi !== null) {
@@ -769,8 +968,11 @@ final class CoinPassportEngine
         );
 
         // ── Data sufficiency ──────────────────────────────────────────────────
+        // Primary gate: 24h freshness (not lifetime totals).
+        // $recentSamples7d and $recentSamples24h drive the fresh-window model.
         [$insufficientFlag, $insufficientReason, $fallbackMode] = $this->computeDataSufficiency(
-            $sampleSizeTotal, $sampleV2, $sampleV3, $recentSamples, $dataConfidence
+            $sampleSizeTotal, $sampleV2, $sampleV3, $recentSamples, $dataConfidence,
+            $recentSamples24h, $recentSamples7d
         );
         $lastDataGapWarning = $insufficientFlag ? $insufficientReason : null;
 
@@ -792,6 +994,8 @@ final class CoinPassportEngine
         $recRunnerExpect   = $this->recommendRunnerExpectation($runnerProb, $reach10Rate, $corridorP90);
 
         // ── Live eligibility gate ─────────────────────────────────────────────
+        // States: shadow_only | sim_only | bootstrap_live | allow_live
+        // 24h freshness is the primary gate; 7d provides behavior context.
         [$liveEligibility, $liveBlockReason] = $this->computeLiveEligibility(
             $corridorP75,
             $runnerProb,
@@ -803,7 +1007,10 @@ final class CoinPassportEngine
             $fallbackMode,
             $impulse['impulse_strength_score'],
             $pullbackBehavior['pullback_severity_score'],
-            $patternBehavior['v2_success_rate'] ?? null
+            $patternBehavior['v2_success_rate'] ?? null,
+            (string)($insufficientReason ?? ''),
+            $recentSamples24h,
+            $recentSamples7d
         );
 
         // ── Diagnostic notes ──────────────────────────────────────────────────
@@ -831,6 +1038,18 @@ final class CoinPassportEngine
             'sample_size_demo_closed'       => $demoClosedSamples,
             'sample_size_demo_active'       => $demoActiveSamples,
             'healthy_closed_samples'        => $healthyClosedSamples,
+
+            // ── Fresh-window recent sample counters (primary live gate inputs) ──
+            // 24h is the primary live admission gate; 7d is the behavior context.
+            // 1h/6h are freshness/acceleration indicators only.
+            // Data older than 7d must not drive live admission directly.
+            'recent_samples_1h'             => $recentSamples1h,
+            'recent_samples_6h'             => $recentSamples6h,
+            'recent_samples_24h'            => $recentSamples24h,
+            'recent_samples_7d'             => $recentSamples7d,
+            // Derived sufficiency booleans for quick inspection
+            'fresh_behavior_window_ok'      => $recentSamples24h >= self::MIN_SAMPLES_24H_FOR_BOOTSTRAP,
+            'behavior_context_7d_ok'        => $recentSamples7d  >= self::MIN_SAMPLES_7D_FOR_CONTEXT,
 
             // ── Data confidence / sufficiency ──────────────────────────────────
             'data_confidence'               => $dataConfidence,
@@ -923,8 +1142,18 @@ final class CoinPassportEngine
             'regime_sensitivity_score'      => $regimeBehavior['regime_sensitivity_score'],
 
             // ── Live eligibility ───────────────────────────────────────────────
+            // States: shadow_only | sim_only | bootstrap_live | allow_live
+            //   shadow_only    – no recent data (24h=0, 7d=0) or confidence=none
+            //   sim_only       – 24h dead (7d has history) or hard metric gate fail
+            //   bootstrap_live – 24h >= 1 sample, metric gates pass, but below
+            //                    MIN_SAMPLES_24H_FOR_ALLOW_LIVE or 7d context thin
+            //   allow_live     – 24h >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE + 7d context
+            //                    sufficient + all metric gates pass
             'recommended_live_eligibility'  => $liveEligibility,
             'live_block_reason'             => $liveBlockReason,
+            // Compact gate-decision observability (aliased for quick inspection)
+            'passport_gate_state'           => $liveEligibility,
+            'passport_gate_reason_detail'   => $liveBlockReason,
 
             // ── Decision Engine trust state (green / yellow / red / insufficient_data) ──
             // Consumed by BotDecisionEngine to compute confidence_band without re-running
@@ -1834,8 +2063,24 @@ final class CoinPassportEngine
     }
 
     /**
-     * Compute data sufficiency flags.
-     * Uses numeric confidence score so medium/high applies even without live-only data.
+     * Compute data sufficiency flags using the fresh-window model.
+     *
+     * Primary gate: 24h freshness.
+     * Behavior context: 7d window.
+     * Lifetime totals are NOT the primary driver.
+     *
+     * State mapping when insufficientFlag=true:
+     *   fallbackMode='shadow_only' → no usable data at all (total=0, or 24h+7d both empty, or confidence=none)
+     *   fallbackMode='sim_only'    → 7d has history but 24h is dead (stale coin)
+     *
+     * When insufficientFlag=false, computeLiveEligibility() decides among
+     * sim_only / bootstrap_live / allow_live based on metric gates and sample counts.
+     *
+     * NOTE: 'low' confidence is intentionally NOT flagged as insufficient here.
+     * LIVE_GATE_CONFIDENCE_MIN = 'low' means 'low' is the minimum accepted level,
+     * so a coin with enough samples but low confidence must reach the regular
+     * confidence gate inside computeLiveEligibility(), which will correctly pass it.
+     * Treating 'low' as insufficient would bypass that gate and produce overbroad sim_only.
      *
      * @return array{bool, string|null, string}  [insufficient_flag, reason, fallback_mode]
      */
@@ -1843,24 +2088,37 @@ final class CoinPassportEngine
         int    $total,
         int    $shortV2,
         int    $shortV3,
-        int    $recent,
-        string $confidence
+        int    $recent,      // 30d bucket — kept for signature compat, not the primary gate
+        string $confidence,
+        int    $samples24h = 0,  // primary live gate window
+        int    $samples7d  = 0   // behavior context window
     ): array {
+        // No trade data at all → shadow_only (cannot say anything about the coin)
         if ($total === 0) {
             return [true, 'no_trade_data', 'shadow_only'];
         }
-        if ($total < self::MIN_TOTAL_SAMPLES) {
-            return [true, "insufficient_total_samples:{$total}<" . self::MIN_TOTAL_SAMPLES, 'sim_only'];
+
+        // Primary gate: 24h freshness.
+        // If 24h AND 7d both have zero samples, all data is older than 7 days.
+        // Such stale data must not drive live admission.
+        if ($samples24h === 0 && $samples7d === 0) {
+            return [true, 'no_recent_data:all_data_older_than_7d', 'shadow_only'];
         }
-        if ($recent < self::MIN_RECENT_SAMPLES) {
-            return [true, "insufficient_recent_samples:{$recent}<" . self::MIN_RECENT_SAMPLES, 'sim_only'];
+
+        // 24h is dead but 7d has history → coin was recently active but has gone stale in 24h.
+        // Demote to sim_only (not shadow_only, because we have recent context).
+        if ($samples24h === 0) {
+            return [true, "stale_24h:no_24h_evidence,{$samples7d}_7d_samples", 'sim_only'];
         }
+
+        // No data confidence (e.g. zero total quality signals) → shadow_only
         if ($confidence === 'none') {
-            return [true, "no_data_confidence", 'shadow_only'];
+            return [true, 'no_data_confidence', 'shadow_only'];
         }
-        if ($confidence === 'low') {
-            return [true, "low_data_confidence:{$confidence}", 'sim_only'];
-        }
+
+        // 24h has >= 1 sample; proceed to metric gates in computeLiveEligibility()
+        // 'low' confidence is NOT treated as insufficient: the regular confidence
+        // gate inside computeLiveEligibility() handles it correctly.
         return [false, null, 'live_eligible'];
     }
 
@@ -1910,6 +2168,41 @@ final class CoinPassportEngine
     /**
      * Compute live eligibility decision based on all passport metrics.
      *
+     * States (in order of restrictiveness):
+     *   shadow_only    – forced by computeDataSufficiency() for no-data / no-confidence cases
+     *   sim_only       – forced by computeDataSufficiency() for stale 24h, OR by a metric gate failure
+     *   bootstrap_live – 24h has >= MIN_SAMPLES_24H_FOR_BOOTSTRAP samples, all metric gates pass,
+     *                    but 24h count is below MIN_SAMPLES_24H_FOR_ALLOW_LIVE OR 7d context is thin.
+     *                    Live orders are permitted at reduced confidence — Smart Brain must tag these.
+     *   allow_live     – 24h >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE, 7d context sufficient
+     *                    (>= MIN_SAMPLES_7D_FOR_CONTEXT), AND all metric gates pass.
+     *
+     * Which passport fields trigger sim_only:
+     *   - data_confidence below LIVE_GATE_CONFIDENCE_MIN ('low')
+     *   - corridor_p75_roi < LIVE_GATE_CORRIDOR_P75_MIN (3.0)
+     *   - noise_score > LIVE_GATE_NOISE_MAX (0.65)
+     *   - short_suitability_score < LIVE_GATE_SUITABILITY_MIN (0.3)
+     *   - runner_probability < LIVE_GATE_RUNNER_PROB_MIN (0.05)
+     *   - market_regime_health_score < LIVE_GATE_REGIME_HEALTH_MIN (0.3)
+     *   - impulse_strength_score < LIVE_GATE_IMPULSE_STRENGTH_MIN (0.2)
+     *   - pullback_severity_score > LIVE_GATE_PULLBACK_SEVERITY_MAX (0.75)
+     *   - v2_success_rate < 0.35 (when pattern data is available)
+     *
+     * What causes bootstrap_live (metric gates all pass, but fresh window is thin):
+     *   - recent_samples_24h >= MIN_SAMPLES_24H_FOR_BOOTSTRAP (1)
+     *     but < MIN_SAMPLES_24H_FOR_ALLOW_LIVE (2)
+     *   - OR recent_samples_7d < MIN_SAMPLES_7D_FOR_CONTEXT (3)
+     *
+     * Fallback when passport data is missing / partial / stale:
+     *   - total=0 or 24h+7d=0             → shadow_only (handled by computeDataSufficiency)
+     *   - 24h=0 but 7d>0                   → sim_only   (handled by computeDataSufficiency)
+     *   - confidence='none'                → shadow_only (handled by computeDataSufficiency)
+     *   - insufficientFlag=true, otherwise → sim_only or shadow_only per fallbackMode
+     *
+     * @param string $insufficientReason  The actual reason set by computeDataSufficiency()
+     *                                    (e.g. "stale_24h:no_24h_evidence,5_7d_samples"). Used to
+     *                                    produce an informative live_block_reason instead of
+     *                                    the opaque "insufficient_data:{fallbackMode}" string.
      * @return array{string, string|null}  [eligibility, block_reason]
      */
     private function computeLiveEligibility(
@@ -1923,13 +2216,22 @@ final class CoinPassportEngine
         string  $fallbackMode,
         float   $impulseStrength = 0.5,
         float   $pullbackSeverity = 0.5,
-        ?float  $patternSuccessRate = null
+        ?float  $patternSuccessRate = null,
+        string  $insufficientReason = '',
+        int     $samples24h = 0,  // primary 24h window count
+        int     $samples7d  = 0   // 7d behavior context window count
     ): array {
-        // Insufficient data → forced fallback
+        // Insufficient data → forced fallback; include actual reason for observability.
+        // The state is either shadow_only or sim_only per computeDataSufficiency().
         if ($insufficientFlag) {
+            $detailReason = $insufficientReason !== '' ? $insufficientReason : $fallbackMode;
             return [$fallbackMode === 'shadow_only' ? 'shadow_only' : 'sim_only',
-                    "insufficient_data:{$fallbackMode}"];
+                    "insufficient_data:{$detailReason}"];
         }
+
+        // ── Metric gate chain ────────────────────────────────────────────────────
+        // All of these produce sim_only on failure — they reflect hard behavioral
+        // constraints that must hold regardless of the 24h freshness level.
 
         // Data confidence gate
         $confRank = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3];
@@ -1979,6 +2281,34 @@ final class CoinPassportEngine
             return ['sim_only', "pattern_success_rate_too_low:{$patternSuccessRate}<0.35"];
         }
 
+        // ── All metric gates passed. Apply fresh-window ceiling. ─────────────────
+        //
+        // 24h freshness is the primary live gate:
+        //   < MIN_SAMPLES_24H_FOR_ALLOW_LIVE (2) → bootstrap_live (probationary)
+        //   >= MIN_SAMPLES_24H_FOR_ALLOW_LIVE     → check 7d context
+        //
+        // 7d behavior context:
+        //   < MIN_SAMPLES_7D_FOR_CONTEXT (3) → bootstrap_live (limited context)
+        //   >= MIN_SAMPLES_7D_FOR_CONTEXT    → allow_live
+
+        if ($samples24h < self::MIN_SAMPLES_24H_FOR_ALLOW_LIVE) {
+            // 24h has data (computeDataSufficiency ensured >= 1 sample) but not enough
+            // for full allow_live confidence. Permit live at bootstrap level.
+            return [
+                'bootstrap_live',
+                "bootstrap_24h:only_{$samples24h}_24h_samples,need_" . self::MIN_SAMPLES_24H_FOR_ALLOW_LIVE,
+            ];
+        }
+
+        if ($samples7d < self::MIN_SAMPLES_7D_FOR_CONTEXT) {
+            // 24h is strong but 7d context is too thin to confirm stable behavior.
+            return [
+                'bootstrap_live',
+                "bootstrap_7d:limited_context_{$samples7d}_7d_samples,need_" . self::MIN_SAMPLES_7D_FOR_CONTEXT,
+            ];
+        }
+
+        // Strong 24h freshness + sufficient 7d context + all metric gates passed.
         return ['allow_live', null];
     }
 
@@ -2116,6 +2446,8 @@ final class CoinPassportEngine
 
         if ($liveEligibility === 'allow_live') {
             $notes[] = "Live eligibility: ALLOWED — all passport gates passed.";
+        } elseif ($liveEligibility === 'bootstrap_live') {
+            $notes[] = "Live eligibility: BOOTSTRAP_LIVE — probationary live; 24h/7d windows thin. Reason: {$liveBlockReason}.";
         } elseif ($liveBlockReason !== null) {
             $notes[] = "Live eligibility: {$liveEligibility} — blocked: {$liveBlockReason}.";
         }
@@ -2177,9 +2509,986 @@ final class CoinPassportEngine
      * Promotion rules:
      *   insufficient_data → yellow: requires at least MIN_HEALTHY_CLOSED_FOR_YELLOW non-orphan healthy closes
      *   yellow → green:             requires at least MIN_HEALTHY_CLOSED_FOR_GREEN non-orphan healthy closes
-     *                               + live_eligible + medium/high data_confidence + noise <= 0.55
+     *                               + allow_live + medium/high data_confidence + noise <= 0.55
      *   Orphan protection: if healthy_closed_samples < MIN_HEALTHY_CLOSED_FOR_YELLOW, always insufficient_data
+     *
+     * bootstrap_live is treated as yellow: the coin is live-capable but still on probation.
      */
+    // =========================================================================
+    // Coin Cycle Profile (data layer — not yet wired into live or PM decisions)
+    // =========================================================================
+
+    /**
+     * Build derived coin behavior cycle profiles from parser2_history_accumulator NDJSON data.
+     *
+     * Primary window: 24h. Context window: 7d. Data older than 7d is excluded entirely.
+     * Output is a read-only behavior profile artifact — does NOT feed into live admission
+     * or PM decisions at this stage.
+     *
+     * @param string $parser2StorageDir  Absolute path to parser2 per-symbol storage root
+     *                                   (contains {SYMBOL}/{YYYY-MM-DD}.ndjson files)
+     * @param string $runtimeOutputPath  Absolute path to write coin_cycle_profile.json
+     * @param int    $now                Unix timestamp (0 = use time())
+     * @return array<string,mixed>
+     */
+    public function buildCoinCycleProfiles(string $parser2StorageDir, string $runtimeOutputPath, int $now = 0): array
+    {
+        if ($now === 0) {
+            $now = time();
+        }
+        $generatedAt = date('c', $now);
+
+        /** @var array<string,int> $cutoffs */
+        $cutoffs = [
+            '1h'  => $now - 3600,
+            '2h'  => $now - 7200,
+            '3h'  => $now - 10800,
+            '6h'  => $now - 21600,
+            '12h' => $now - 43200,
+            '24h' => $now - 86400,
+            '7d'  => $now - 604800,
+        ];
+
+        $cycleSymbolsTotal = 0;
+        $cycleProfilesOk   = 0;
+        $cycleErrorTotal   = 0;
+        $profiles          = [];
+
+        if (is_dir($parser2StorageDir)) {
+            $entries = scandir($parser2StorageDir) ?: [];
+            foreach ($entries as $entry) {
+                if ($entry === '.' || $entry === '..') {
+                    continue;
+                }
+                $entryPath = $parser2StorageDir . '/' . $entry;
+                if (!is_dir($entryPath)) {
+                    continue;
+                }
+                // Symbol directory names are uppercase alphanumeric (e.g. BTCUSDT)
+                if (!preg_match('/^[A-Z][A-Z0-9]+$/', $entry)) {
+                    continue;
+                }
+                $cycleSymbolsTotal++;
+                $symbol = $entry;
+                try {
+                    $records           = $this->readParser2SymbolRecords($entryPath, $cutoffs['7d'], $now);
+                    $profiles[$symbol] = $this->computeCycleProfile($symbol, $records, $cutoffs, $generatedAt);
+                    $cycleProfilesOk++;
+                } catch (\Throwable $ex) {
+                    $profiles[$symbol] = [
+                        'symbol'                    => $symbol,
+                        'updated_at'                => $generatedAt,
+                        'behavior_cycle_state'      => 'error',
+                        'behavior_cycle_confidence' => 'none',
+                    ];
+                    $cycleErrorTotal++;
+                }
+            }
+            ksort($profiles);
+        }
+
+        $artifact = [
+            'generated_at'                   => $generatedAt,
+            'source'                         => 'parser2_history_accumulator',
+            'symbols_total'                  => $cycleSymbolsTotal,
+            'generated_ok'                   => $cycleProfilesOk,
+            'cycle_symbols_total'            => $cycleSymbolsTotal,
+            'cycle_profiles_generated_total' => $cycleProfilesOk,
+            'cycle_generation_error_total'   => $cycleErrorTotal,
+            'symbols'                        => $profiles,
+        ];
+
+        $runtimeDir = dirname($runtimeOutputPath);
+        if (!is_dir($runtimeDir)) {
+            @mkdir($runtimeDir, 0755, true);
+        }
+        @file_put_contents(
+            $runtimeOutputPath,
+            json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $artifact;
+    }
+
+    // =========================================================================
+    // Coin cycle read model (Step 2 — data layer only, no live routing)
+    // =========================================================================
+
+    /**
+     * Build coin_cycle_read_model.json from a previously written coin_cycle_profile.json.
+     *
+     * Reads the raw derived cycle metrics from the profile artifact and converts them
+     * into compact, decision-friendly per-symbol state summaries.
+     * Best-effort and non-fatal: if the profile is missing or a symbol entry fails,
+     * the remaining symbols are still processed.
+     *
+     * @param  string $profilePath        Absolute path to coin_cycle_profile.json
+     * @param  string $readModelOutputPath Absolute path to write coin_cycle_read_model.json
+     * @return array<string,mixed>
+     */
+    public function buildCoinCycleReadModel(string $profilePath, string $readModelOutputPath): array
+    {
+        $generatedAt     = date('c');
+        $symbolsTotal    = 0;
+        $generatedTotal  = 0;
+        $errorTotal      = 0;
+        $highConfTotal   = 0;
+        $mediumConfTotal = 0;
+        $lowConfTotal    = 0;
+        $entryReadyTotal = 0;
+        $pmReadyTotal    = 0;
+        $entries         = [];
+
+        $sourceProfileUpdated = null;
+
+        if (is_file($profilePath)) {
+            $raw = @file_get_contents($profilePath);
+            $profile = $raw !== false ? json_decode($raw, true) : null;
+            if (is_array($profile)) {
+                $sourceProfileUpdated = $profile['generated_at'] ?? null;
+                $symbols = $profile['symbols'] ?? [];
+                if (is_array($symbols)) {
+                    foreach ($symbols as $symbol => $symProfile) {
+                        if (!is_array($symProfile)) {
+                            continue;
+                        }
+                        $symbolsTotal++;
+                        try {
+                            $entry = $this->deriveSymbolReadModelEntry($symProfile, $generatedAt);
+                            $entries[$symbol] = $entry;
+                            $generatedTotal++;
+                            $conf = $entry['behavior_cycle_confidence'] ?? 'none';
+                            if ($conf === 'high')             { $highConfTotal++; }
+                            elseif ($conf === 'medium')       { $mediumConfTotal++; }
+                            else                              { $lowConfTotal++; }
+                            if (($entry['cycle_entry_readiness'] ?? '') === 'ready') { $entryReadyTotal++; }
+                            if (($entry['cycle_pm_readiness']    ?? '') === 'ready') { $pmReadyTotal++; }
+                        } catch (\Throwable $ex) {
+                            $entries[$symbol] = [
+                                'symbol'                    => (string)$symbol,
+                                'updated_at'                => $generatedAt,
+                                'behavior_cycle_state'      => 'error',
+                                'behavior_cycle_confidence' => 'none',
+                                'low_confidence_reason'     => 'read_model_build_error',
+                            ];
+                            $errorTotal++;
+                            $lowConfTotal++;
+                        }
+                    }
+                    ksort($entries);
+                }
+            }
+        }
+
+        $artifact = [
+            'generated_at'          => $generatedAt,
+            'source'                => 'coin_cycle_profile',
+            'source_profile_updated_at' => $sourceProfileUpdated,
+            'symbols_total'         => $symbolsTotal,
+            'high_confidence_total' => $highConfTotal,
+            'medium_confidence_total' => $mediumConfTotal,
+            'low_confidence_total'  => $lowConfTotal,
+            'entry_ready_total'     => $entryReadyTotal,
+            'pm_ready_total'        => $pmReadyTotal,
+            'generated_ok'          => $generatedTotal,
+            'error_total'           => $errorTotal,
+            'symbols'               => $entries,
+        ];
+
+        $runtimeDir = dirname($readModelOutputPath);
+        if (!is_dir($runtimeDir)) {
+            @mkdir($runtimeDir, 0755, true);
+        }
+        @file_put_contents(
+            $readModelOutputPath,
+            json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return [
+            'read_model_symbols_total'   => $symbolsTotal,
+            'read_model_generated_total' => $generatedTotal,
+            'read_model_error_total'     => $errorTotal,
+            'generated_at'               => $generatedAt,
+        ];
+    }
+
+    /**
+     * Derive a compact read-model entry for one symbol from its raw cycle profile.
+     *
+     * @param  array<string,mixed> $profile     Raw profile entry from coin_cycle_profile.json
+     * @param  string              $generatedAt ISO timestamp of the read model generation run
+     * @return array<string,mixed>
+     */
+    private function deriveSymbolReadModelEntry(array $profile, string $generatedAt): array
+    {
+        $state      = $profile['behavior_cycle_state']      ?? 'insufficient_data';
+        $confidence = $profile['behavior_cycle_confidence'] ?? 'none';
+
+        // ── Per-window activity states ──────────────────────────────────────────
+        $hot1h = $this->windowActivityState(
+            (int)($profile['recent_samples_1h'] ?? 0),
+            $profile['corridor_range_1h'] ?? null,
+            $profile['impulse_strength_1h'] ?? null
+        );
+
+        // 2h: no direct corridor/impulse in profile — proxy via 1h activity + 2h sample count
+        $s2h   = (int)($profile['recent_samples_2h'] ?? 0);
+        $hot2h = 'insufficient_data';
+        if ($s2h >= 2) {
+            if ($hot1h === 'active' && $s2h >= 5) {
+                $hot2h = 'active';
+            } elseif ($hot1h === 'cooling' || $hot1h === 'flat') {
+                $hot2h = $hot1h;
+            } else {
+                $hot2h = 'cooling';
+            }
+        }
+
+        $short3h = $this->windowActivityState(
+            (int)($profile['recent_samples_3h'] ?? 0),
+            $profile['corridor_range_3h'] ?? null,
+            $profile['impulse_strength_3h'] ?? null
+        );
+
+        $short6h = $this->windowActivityState(
+            (int)($profile['recent_samples_6h'] ?? 0),
+            $profile['corridor_range_6h'] ?? null,
+            $profile['impulse_strength_6h'] ?? null
+        );
+
+        // 12h: no direct corridor/impulse in profile — proxy via 24h metrics + 12h sample count
+        $s12h        = (int)($profile['recent_samples_12h'] ?? 0);
+        $range24h    = $profile['corridor_range_24h'] ?? null;
+        $impulse24h  = $profile['impulse_strength_24h'] ?? null;
+        $intraday12h = 'insufficient_data';
+        if ($s12h >= 2) {
+            if ($range24h !== null && $range24h >= 0.5 && ($impulse24h ?? 0.0) >= 0.25 && $s12h >= 10) {
+                $intraday12h = 'active';
+            } elseif ($range24h !== null && $range24h >= 0.2) {
+                $intraday12h = 'cooling';
+            } else {
+                $intraday12h = 'flat';
+            }
+        }
+
+        $daily24h = $this->windowActivityState(
+            (int)($profile['recent_samples_24h'] ?? 0),
+            $range24h,
+            $impulse24h
+        );
+
+        // ── Structural states (24h primary) ────────────────────────────────────
+        $corridorState = $this->deriveCorridorState($range24h);
+        $impulseState  = $this->deriveImpulseState($impulse24h);
+
+        $pullbackState     = (string)($profile['pullback_profile_24h']     ?? 'insufficient_data');
+        $continuationState = (string)($profile['continuation_profile_24h'] ?? 'insufficient_data');
+
+        $vol24h         = $profile['volatility_profile_24h'] ?? null;
+        $volatilityState = $this->deriveVolatilityState($vol24h);
+
+        $liquidityProfile = $profile['liquidity_profile_24h'] ?? [];
+        $liquidityState   = is_array($liquidityProfile)
+            ? (string)($liquidityProfile['state'] ?? 'insufficient_data')
+            : 'insufficient_data';
+
+        $oiPressureState = (string)($profile['oi_pressure_profile_24h'] ?? 'insufficient_data');
+
+        // ── Derived composite states ────────────────────────────────────────────
+        $cycleBiasState      = $this->deriveCycleBiasState($impulseState, $continuationState, $pullbackState);
+        $cycleQualityState   = $this->deriveCycleQualityState($confidence, (int)($profile['recent_samples_24h'] ?? 0));
+        $cycleStabilityState = $this->deriveCycleStabilityState($volatilityState, $corridorState);
+        $cycleEntryReadiness = $this->deriveCycleEntryReadiness($state, $confidence, $impulseState, $volatilityState, $liquidityState, $continuationState);
+        $cyclePmReadiness    = $this->deriveCyclePmReadiness($state, $confidence, $corridorState, $volatilityState);
+
+        // ── Low-confidence reason ───────────────────────────────────────────────
+        $lowConfidenceReason = null;
+        if ($confidence === 'none' || $state === 'insufficient_data') {
+            $s24h = (int)($profile['recent_samples_24h'] ?? 0);
+            if ($s24h < 2) {
+                $lowConfidenceReason = 'insufficient_24h_samples';
+            } elseif ($state === 'insufficient_data') {
+                $lowConfidenceReason = 'state_undetermined';
+            } else {
+                $lowConfidenceReason = 'no_confidence';
+            }
+        } elseif ($confidence === 'low') {
+            $lowConfidenceReason = 'low_sample_count';
+        }
+
+        return [
+            'symbol'                    => (string)($profile['symbol'] ?? ''),
+            'updated_at'                => $generatedAt,
+            'behavior_cycle_state'      => $state,
+            'behavior_cycle_confidence' => $confidence,
+            'hot_state_1h'              => $hot1h,
+            'hot_state_2h'              => $hot2h,
+            'short_state_3h'            => $short3h,
+            'short_state_6h'            => $short6h,
+            'intraday_state_12h'        => $intraday12h,
+            'daily_state_24h'           => $daily24h,
+            'behavior_context_7d_state' => (string)($profile['behavior_context_7d_state'] ?? 'insufficient_data'),
+            'corridor_state'            => $corridorState,
+            'impulse_state'             => $impulseState,
+            'pullback_state'            => $pullbackState,
+            'continuation_state'        => $continuationState,
+            'volatility_state'          => $volatilityState,
+            'liquidity_state'           => $liquidityState,
+            'oi_pressure_state'         => $oiPressureState,
+            'cycle_bias_state'          => $cycleBiasState,
+            'cycle_quality_state'       => $cycleQualityState,
+            'cycle_stability_state'     => $cycleStabilityState,
+            'cycle_entry_readiness'     => $cycleEntryReadiness,
+            'cycle_pm_readiness'        => $cyclePmReadiness,
+            'low_confidence_reason'     => $lowConfidenceReason,
+            'source_profile_updated_at' => $profile['updated_at'] ?? null,
+        ];
+    }
+
+    /**
+     * Classify window activity from sample count, corridor range %, and impulse strength.
+     * Returns 'active'|'cooling'|'flat'|'insufficient_data'.
+     */
+    private function windowActivityState(int $samples, ?float $corridorRange, ?float $impulse): string
+    {
+        if ($samples < 2 || $corridorRange === null) {
+            return 'insufficient_data';
+        }
+        $imp = $impulse ?? 0.0;
+        if ($corridorRange >= 0.5 && $imp >= 0.25) {
+            return 'active';
+        }
+        if ($corridorRange < 0.2) {
+            return 'flat';
+        }
+        return 'cooling';
+    }
+
+    /**
+     * Corridor state from 24h range %.
+     * Returns 'wide'|'normal'|'narrow'|'tight'|'insufficient_data'.
+     */
+    private function deriveCorridorState(?float $range24h): string
+    {
+        if ($range24h === null) {
+            return 'insufficient_data';
+        }
+        if ($range24h >= 3.0) { return 'wide'; }
+        if ($range24h >= 1.0) { return 'normal'; }
+        if ($range24h >= 0.3) { return 'narrow'; }
+        return 'tight';
+    }
+
+    /**
+     * Impulse state from 24h impulse strength (0–1).
+     * Returns 'strong'|'moderate'|'weak'|'insufficient_data'.
+     */
+    private function deriveImpulseState(?float $impulse24h): string
+    {
+        if ($impulse24h === null) {
+            return 'insufficient_data';
+        }
+        if ($impulse24h >= 0.6) { return 'strong'; }
+        if ($impulse24h >= 0.3) { return 'moderate'; }
+        return 'weak';
+    }
+
+    /**
+     * Volatility state from 24h coefficient-of-variation %.
+     * Returns 'high'|'moderate'|'low'|'insufficient_data'.
+     */
+    private function deriveVolatilityState(?float $vol24h): string
+    {
+        if ($vol24h === null) {
+            return 'insufficient_data';
+        }
+        if ($vol24h >= 2.0)  { return 'high'; }
+        if ($vol24h >= 0.5)  { return 'moderate'; }
+        return 'low';
+    }
+
+    /**
+     * Cycle bias: directional character derived from impulse, continuation, pullback.
+     * Returns 'directional'|'reverting'|'choppy'|'neutral'|'insufficient_data'.
+     */
+    private function deriveCycleBiasState(string $impulse, string $continuation, string $pullback): string
+    {
+        if ($impulse === 'insufficient_data' && $continuation === 'insufficient_data') {
+            return 'insufficient_data';
+        }
+        if ($pullback === 'severe') {
+            return 'reverting';
+        }
+        if ($impulse === 'strong' && in_array($continuation, ['moderate', 'strong'], true)) {
+            return 'directional';
+        }
+        if ($impulse === 'weak' && $continuation === 'none') {
+            return 'choppy';
+        }
+        return 'neutral';
+    }
+
+    /**
+     * Cycle quality: overall data quality label.
+     * Returns 'high'|'medium'|'low'|'insufficient_data'.
+     */
+    private function deriveCycleQualityState(string $confidence, int $samples24h): string
+    {
+        if ($confidence === 'none') { return 'insufficient_data'; }
+        if ($confidence === 'high' && $samples24h >= 100) { return 'high'; }
+        if ($confidence === 'medium')                     { return 'medium'; }
+        if ($confidence === 'high')                       { return 'medium'; } // high conf but not enough samples for 'high' quality
+        return 'low';
+    }
+
+    /**
+     * Cycle stability: how settled/predictable the price corridor is.
+     * Returns 'stable'|'moderate'|'volatile'|'insufficient_data'.
+     */
+    private function deriveCycleStabilityState(string $volatility, string $corridor): string
+    {
+        if ($volatility === 'insufficient_data' || $corridor === 'insufficient_data') {
+            return 'insufficient_data';
+        }
+        if ($volatility === 'high' || $corridor === 'wide') {
+            return 'volatile';
+        }
+        if ($volatility === 'low' && in_array($corridor, ['narrow', 'tight'], true)) {
+            return 'stable';
+        }
+        return 'moderate';
+    }
+
+    /**
+     * Cycle entry readiness: whether this symbol looks favourable for a new entry.
+     * Returns 'ready'|'marginal'|'not_ready'.
+     */
+    private function deriveCycleEntryReadiness(
+        string $state,
+        string $confidence,
+        string $impulse,
+        string $volatility,
+        string $liquidity,
+        string $continuation
+    ): string {
+        if ($confidence === 'none' || $state === 'insufficient_data') {
+            return 'not_ready';
+        }
+        if ($state !== 'active') {
+            return 'not_ready';
+        }
+        // Active but high volatility or poor liquidity → marginal
+        if ($volatility === 'high') {
+            return 'marginal';
+        }
+        if (in_array($liquidity, ['insufficient_data', 'unknown', 'low'], true)) {
+            return 'marginal';
+        }
+        if ($impulse === 'strong' && in_array($continuation, ['moderate', 'strong'], true)) {
+            return 'ready';
+        }
+        return 'marginal';
+    }
+
+    /**
+     * Cycle PM readiness: whether conditions support profit-manager trailing.
+     * Returns 'ready'|'marginal'|'not_ready'.
+     */
+    private function deriveCyclePmReadiness(
+        string $state,
+        string $confidence,
+        string $corridor,
+        string $volatility
+    ): string {
+        if ($confidence === 'none' || $state === 'insufficient_data') {
+            return 'not_ready';
+        }
+        if ($state === 'active' && in_array($corridor, ['normal', 'wide'], true) && $volatility !== 'high') {
+            return 'ready';
+        }
+        if ($state !== 'flat') {
+            return 'marginal';
+        }
+        return 'not_ready';
+    }
+
+    /**
+     * Read all parser2 NDJSON records for one symbol that fall within the 7d window.
+     * Reads daily files for the last 8 calendar days (extra day for timezone boundaries).
+     *
+     * @param  string $symDir   Absolute path to the symbol's NDJSON directory
+     * @param  int    $cutoff7d Unix timestamp: exclude records older than this
+     * @param  int    $now      Current Unix timestamp
+     * @return list<array<string,mixed>>  Records sorted by ts_unix ascending
+     */
+    private function readParser2SymbolRecords(string $symDir, int $cutoff7d, int $now): array
+    {
+        $records = [];
+        for ($i = 0; $i <= 7; $i++) {
+            $day  = date('Y-m-d', $now - $i * 86400);
+            $file = $symDir . '/' . $day . '.ndjson';
+            if (!is_file($file)) {
+                continue;
+            }
+            $lines = @file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if ($lines === false) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                $row = json_decode($line, true);
+                if (!is_array($row)) {
+                    continue;
+                }
+                $tsUnix = (int)($row['ts_unix'] ?? 0);
+                if ($tsUnix < $cutoff7d) {
+                    continue; // Older than 7d — exclude
+                }
+                $records[] = $row;
+            }
+        }
+        // Sort ascending by ts_unix (oldest first — needed for directional metrics)
+        usort($records, static fn(array $a, array $b): int => $a['ts_unix'] <=> $b['ts_unix']);
+        return $records;
+    }
+
+    /**
+     * Compute the derived cycle profile for one symbol from its NDJSON records.
+     *
+     * @param  string                    $symbol
+     * @param  list<array<string,mixed>> $records    All 7d records sorted ascending by ts_unix
+     * @param  array<string,int>         $cutoffs    Window cutoffs keyed by '1h','2h',…,'7d'
+     * @param  string                    $generatedAt ISO timestamp string
+     * @return array<string,mixed>
+     */
+    private function computeCycleProfile(
+        string $symbol,
+        array  $records,
+        array  $cutoffs,
+        string $generatedAt
+    ): array {
+        // Partition records into per-window buckets
+        $b1h  = [];
+        $b2h  = [];
+        $b3h  = [];
+        $b6h  = [];
+        $b12h = [];
+        $b24h = [];
+        $b7d  = $records;
+
+        foreach ($records as $r) {
+            $ts = (int)($r['ts_unix'] ?? 0);
+            if ($ts >= $cutoffs['1h'])  { $b1h[]  = $r; }
+            if ($ts >= $cutoffs['2h'])  { $b2h[]  = $r; }
+            if ($ts >= $cutoffs['3h'])  { $b3h[]  = $r; }
+            if ($ts >= $cutoffs['6h'])  { $b6h[]  = $r; }
+            if ($ts >= $cutoffs['12h']) { $b12h[] = $r; }
+            if ($ts >= $cutoffs['24h']) { $b24h[] = $r; }
+        }
+
+        // Pre-compute 24h metrics used by state/confidence/context
+        $range24h   = $this->cycleCorridorRange($b24h);
+        $impulse24h = $this->cycleImpulseStrength($b24h);
+        $vol24h     = $this->cycleVolatilityPct($b24h);
+
+        $profile = [
+            'symbol'     => $symbol,
+            'updated_at' => $generatedAt,
+            // Sample counts per window
+            'recent_samples_1h'  => count($b1h),
+            'recent_samples_2h'  => count($b2h),
+            'recent_samples_3h'  => count($b3h),
+            'recent_samples_6h'  => count($b6h),
+            'recent_samples_12h' => count($b12h),
+            'recent_samples_24h' => count($b24h),
+            'recent_samples_7d'  => count($b7d),
+            // Corridor ranges (% of mid-price; null = insufficient samples)
+            'corridor_range_1h'  => $this->cycleCorridorRange($b1h),
+            'corridor_range_3h'  => $this->cycleCorridorRange($b3h),
+            'corridor_range_6h'  => $this->cycleCorridorRange($b6h),
+            'corridor_range_24h' => $range24h,
+            // Impulse strength: 0.0 = choppy/flat, 1.0 = strongly directional
+            'impulse_strength_1h'  => $this->cycleImpulseStrength($b1h),
+            'impulse_strength_3h'  => $this->cycleImpulseStrength($b3h),
+            'impulse_strength_6h'  => $this->cycleImpulseStrength($b6h),
+            'impulse_strength_24h' => $impulse24h,
+            // Pullback profiles
+            'pullback_profile_6h'  => $this->cyclePullbackProfile($b6h),
+            'pullback_profile_24h' => $this->cyclePullbackProfile($b24h),
+            // Continuation profiles
+            'continuation_profile_6h'  => $this->cycleContinuationProfile($b6h),
+            'continuation_profile_24h' => $this->cycleContinuationProfile($b24h),
+            // Volatility profiles (coefficient of variation, %)
+            'volatility_profile_6h'  => $this->cycleVolatilityPct($b6h),
+            'volatility_profile_24h' => $vol24h,
+            // Liquidity (from 24h window)
+            'liquidity_profile_24h' => $this->cycleLiquidityProfile($b24h),
+            // Open-interest pressure
+            'oi_pressure_profile_6h'  => $this->cycleOiPressureProfile($b6h),
+            'oi_pressure_profile_24h' => $this->cycleOiPressureProfile($b24h),
+        ];
+
+        // Behavior cycle state & confidence (24h is the primary window)
+        [$state, $confidence] = $this->cycleBehaviorState(count($b24h), $range24h, $impulse24h);
+        $profile['behavior_cycle_state']      = $state;
+        $profile['behavior_cycle_confidence'] = $confidence;
+
+        // 7d behavior context (weak background signal — must not dominate)
+        $profile['behavior_context_7d_state'] = $this->cycleContext7dState(count($b7d), $range24h, $vol24h);
+
+        return $profile;
+    }
+
+    /**
+     * Price corridor range as a percentage of the mid-price.
+     * Returns null when fewer than 2 price records are available.
+     *
+     * @param list<array<string,mixed>> $records
+     */
+    private function cycleCorridorRange(array $records): ?float
+    {
+        if (count($records) < 2) {
+            return null;
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 2) {
+            return null;
+        }
+        $min = min($prices);
+        $max = max($prices);
+        if ($min <= 0.0) {
+            return null;
+        }
+        return round(($max - $min) / $min * 100.0, 4);
+    }
+
+    /**
+     * Impulse strength: net directional move as a fraction of the total price range.
+     * 0.0 = pure chop (start ≈ end relative to range), 1.0 = perfectly directional.
+     * Returns null when fewer than 2 records.
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     */
+    private function cycleImpulseStrength(array $records): ?float
+    {
+        if (count($records) < 2) {
+            return null;
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 2) {
+            return null;
+        }
+        $first = $prices[0];
+        $last  = $prices[count($prices) - 1];
+        $min   = min($prices);
+        $max   = max($prices);
+        $range = $max - $min;
+        if ($range <= 0.0) {
+            return 0.0;
+        }
+        return round(abs($last - $first) / $range, 4);
+    }
+
+    /**
+     * Pullback profile: classify how much the price retraced from its peak within the window.
+     * Returns 'insufficient_data' when fewer than 3 records.
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     * @return string  'insufficient_data'|'none'|'mild'|'moderate'|'severe'
+     */
+    private function cyclePullbackProfile(array $records): string
+    {
+        if (count($records) < 3) {
+            return 'insufficient_data';
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 3) {
+            return 'insufficient_data';
+        }
+        // Find peak index
+        $peakIdx = 0;
+        $peakVal = $prices[0];
+        foreach ($prices as $i => $p) {
+            if ($p > $peakVal) {
+                $peakVal = $p;
+                $peakIdx = $i;
+            }
+        }
+        // Minimum after the peak (retracement from peak)
+        $postPeak = array_slice($prices, $peakIdx);
+        if (count($postPeak) < 2) {
+            return 'none'; // Peak is at the very end — no retracement measurable
+        }
+        $minAfterPeak = min($postPeak);
+        if ($peakVal <= 0.0) {
+            return 'insufficient_data';
+        }
+        $retrace = ($peakVal - $minAfterPeak) / $peakVal;
+        if ($retrace < 0.005) {
+            return 'none';
+        }
+        if ($retrace < 0.02) {
+            return 'mild';
+        }
+        if ($retrace < 0.05) {
+            return 'moderate';
+        }
+        return 'severe';
+    }
+
+    /**
+     * Continuation profile: how much of the total range was sustained (not retraced) at window end.
+     * Returns 'insufficient_data' when fewer than 3 records.
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     * @return string  'insufficient_data'|'none'|'weak'|'moderate'|'strong'
+     */
+    private function cycleContinuationProfile(array $records): string
+    {
+        if (count($records) < 3) {
+            return 'insufficient_data';
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        if (count($prices) < 3) {
+            return 'insufficient_data';
+        }
+        $first = $prices[0];
+        $last  = $prices[count($prices) - 1];
+        $min   = min($prices);
+        $max   = max($prices);
+        $range = $max - $min;
+        if ($range <= 0.0) {
+            return 'none';
+        }
+        $netMove      = abs($last - $first);
+        $continuation = $netMove / $range;
+        if ($continuation < 0.1) {
+            return 'none';
+        }
+        if ($continuation < 0.35) {
+            return 'weak';
+        }
+        if ($continuation < 0.65) {
+            return 'moderate';
+        }
+        return 'strong';
+    }
+
+    /**
+     * Volatility profile: coefficient of variation (std deviation / mean) of last_price, as %.
+     * Returns null when fewer than 2 records.
+     *
+     * @param list<array<string,mixed>> $records
+     */
+    private function cycleVolatilityPct(array $records): ?float
+    {
+        if (count($records) < 2) {
+            return null;
+        }
+        $prices = [];
+        foreach ($records as $r) {
+            $p = (float)($r['last_price'] ?? 0);
+            if ($p > 0.0) {
+                $prices[] = $p;
+            }
+        }
+        $n = count($prices);
+        if ($n < 2) {
+            return null;
+        }
+        $mean = array_sum($prices) / $n;
+        if ($mean <= 0.0) {
+            return null;
+        }
+        $variance = 0.0;
+        foreach ($prices as $p) {
+            $variance += ($p - $mean) ** 2;
+        }
+        $std = sqrt($variance / $n);
+        return round($std / $mean * 100.0, 4);
+    }
+
+    /**
+     * Liquidity profile derived from 24h volume/turnover/spread snapshots.
+     *
+     * @param list<array<string,mixed>> $records
+     * @return array<string,mixed>
+     */
+    private function cycleLiquidityProfile(array $records): array
+    {
+        if (empty($records)) {
+            return ['state' => 'insufficient_data', 'samples' => 0];
+        }
+        $spreads   = [];
+        $volumes   = [];
+        $turnovers = [];
+        foreach ($records as $r) {
+            $ask  = (float)($r['ask1_price'] ?? 0);
+            $bid  = (float)($r['bid1_price'] ?? 0);
+            $last = (float)($r['last_price']  ?? 0);
+            $vol  = (float)($r['volume24h']   ?? 0);
+            $turn = (float)($r['turnover24h'] ?? 0);
+            if ($ask > 0.0 && $bid > 0.0 && $last > 0.0) {
+                $spreads[] = ($ask - $bid) / $last * 100.0;
+            }
+            if ($vol  > 0.0) { $volumes[]   = $vol;  }
+            if ($turn > 0.0) { $turnovers[] = $turn; }
+        }
+        $avgSpread   = count($spreads)   > 0 ? round(array_sum($spreads)   / count($spreads),   6) : null;
+        $avgVolume   = count($volumes)   > 0 ? round(array_sum($volumes)   / count($volumes),   2) : null;
+        $avgTurnover = count($turnovers) > 0 ? round(array_sum($turnovers) / count($turnovers), 2) : null;
+
+        $state = 'unknown';
+        if ($avgTurnover !== null) {
+            if ($avgTurnover >= 10_000_000) {
+                $state = 'high';
+            } elseif ($avgTurnover >= 1_000_000) {
+                $state = 'medium';
+            } elseif ($avgTurnover > 0.0) {
+                $state = 'low';
+            }
+        }
+        return [
+            'state'           => $state,
+            'avg_spread_pct'  => $avgSpread,
+            'avg_volume24h'   => $avgVolume,
+            'avg_turnover24h' => $avgTurnover,
+            'samples'         => count($records),
+        ];
+    }
+
+    /**
+     * Open-interest pressure: detect whether OI is trending up/flat/down over the window.
+     * Reads openInterestValue from the raw 'data' field (Bybit linear ticker).
+     *
+     * @param list<array<string,mixed>> $records  Sorted ascending by ts_unix
+     * @return string  'insufficient_data'|'falling'|'flat'|'rising'
+     */
+    private function cycleOiPressureProfile(array $records): string
+    {
+        if (count($records) < 3) {
+            return 'insufficient_data';
+        }
+        $oiValues = [];
+        foreach ($records as $r) {
+            $raw = is_array($r['data'] ?? null) ? $r['data'] : [];
+            $oi  = null;
+            if (isset($raw['openInterestValue'])) {
+                $oi = (float)$raw['openInterestValue'];
+            } elseif (isset($raw['openInterest'])) {
+                $oi = (float)$raw['openInterest'];
+            }
+            if ($oi !== null && $oi > 0.0) {
+                $oiValues[] = $oi;
+            }
+        }
+        if (count($oiValues) < 3) {
+            return 'insufficient_data';
+        }
+        $first = $oiValues[0];
+        $last  = $oiValues[count($oiValues) - 1];
+        if ($first <= 0.0) {
+            return 'insufficient_data';
+        }
+        $changePct = ($last - $first) / $first * 100.0;
+        if ($changePct > 1.0) {
+            return 'rising';
+        }
+        if ($changePct < -1.0) {
+            return 'falling';
+        }
+        return 'flat';
+    }
+
+    /**
+     * Behavior cycle state classification driven by the 24h window.
+     *
+     * States:
+     *   active            – substantial range + directional character in 24h
+     *   cooling           – some range but losing direction
+     *   flat              – very low range (coin barely moving)
+     *   insufficient_data – too few samples to determine state
+     *
+     * @param int        $samples24h  Number of ticker records in 24h window
+     * @param float|null $range24h    Price corridor range % (may be null)
+     * @param float|null $impulse24h  Impulse strength 0–1 (may be null)
+     * @return array{string, string}  [state, confidence]
+     */
+    private function cycleBehaviorState(int $samples24h, ?float $range24h, ?float $impulse24h): array
+    {
+        if ($samples24h < 2 || $range24h === null) {
+            return ['insufficient_data', 'none'];
+        }
+        $confidence = 'none';
+        if ($samples24h >= 100) {
+            $confidence = 'high';
+        } elseif ($samples24h >= 20) {
+            $confidence = 'medium';
+        } elseif ($samples24h >= 2) {
+            $confidence = 'low';
+        }
+        $impulse = $impulse24h ?? 0.0;
+        // Active: meaningful range + clear directional character
+        if ($range24h >= 1.0 && $impulse >= 0.3) {
+            return ['active', $confidence];
+        }
+        // Flat: very low range regardless of direction
+        if ($range24h < 0.3) {
+            return ['flat', $confidence];
+        }
+        // Some range but losing direction or low impulse → cooling
+        return ['cooling', $confidence];
+    }
+
+    /**
+     * 7d behavior context state (weak background signal — must not dominate decisions).
+     *
+     * @param int        $samples7d  Number of records in 7d window
+     * @param float|null $range24h   Price range % from 24h (most recent activity proxy)
+     * @param float|null $vol24h     Volatility % from 24h
+     * @return string  'insufficient_data'|'active'|'moderate'|'quiet'
+     */
+    private function cycleContext7dState(int $samples7d, ?float $range24h, ?float $vol24h): string
+    {
+        if ($samples7d < 3 || $range24h === null) {
+            return 'insufficient_data';
+        }
+        if ($range24h >= 1.5 && $samples7d >= 20) {
+            return 'active';
+        }
+        if ($range24h >= 0.5 || $samples7d >= 10) {
+            return 'moderate';
+        }
+        return 'quiet';
+    }
+
+    // =========================================================================
+    // Trust state
+    // =========================================================================
+
     private function computeTrustState(
         string $liveEligibility,
         string $dataConfidence,
@@ -2199,7 +3508,8 @@ final class CoinPassportEngine
             return $dataConfidence !== 'none' ? 'yellow' : 'insufficient_data';
         }
 
-        if ($liveEligibility === 'live_eligible'
+        // allow_live + sufficient confidence + low noise → green
+        if ($liveEligibility === 'allow_live'
             && in_array($dataConfidence, ['medium', 'high'], true)
             && $noiseScore <= 0.55
             && $healthyClosedSamples >= self::MIN_HEALTHY_CLOSED_FOR_GREEN) {
@@ -2211,8 +3521,13 @@ final class CoinPassportEngine
             return 'red';
         }
 
-        if ($liveEligibility === 'live_eligible') {
-            // Eligible but not fully green (e.g., low data confidence or moderate noise)
+        // allow_live but not fully green (confidence or noise not quite there)
+        if ($liveEligibility === 'allow_live') {
+            return 'yellow';
+        }
+
+        // bootstrap_live: probationary live — treat as yellow (caution, not red)
+        if ($liveEligibility === 'bootstrap_live') {
             return 'yellow';
         }
 
@@ -2222,5 +3537,1469 @@ final class CoinPassportEngine
         }
 
         return 'red';
+    }
+
+    // =========================================================================
+    // Coin cycle context projection (Step 3 — passive, storage/read-side only)
+    // =========================================================================
+
+    /**
+     * Project coin_cycle_read_model.json into each passport as a passive
+     * namespaced 'coin_cycle_context' block.
+     *
+     * Reads the already-generated read-model artifact and writes the compact
+     * per-symbol state block into every passport file found.  Does NOT affect
+     * live-admission, Bot routing, or PM behavior.  Best-effort and non-fatal.
+     *
+     * Also writes a compact projection summary artifact.
+     *
+     * @param  string $readModelPath      Absolute path to coin_cycle_read_model.json
+     * @param  string $summaryOutputPath  Absolute path to write coin_cycle_projection_summary.json
+     * @return array<string,mixed>
+     */
+    // =========================================================================
+    // Step 4 — Passive cycle-derived eligibility hints
+    // =========================================================================
+
+    /**
+     * Derive compact passive eligibility hints from a symbol's coin_cycle_context block.
+     * All hint values use the label set: favorable | cautious | weak | unavailable.
+     * This method is pure / side-effect-free.
+     *
+     * @param  array<string,mixed> $ctx  The passport's coin_cycle_context block
+     * @return array<string,mixed>
+     */
+    private function deriveCycleHints(array $ctx): array
+    {
+        $ts         = date('c');
+        $state      = (string)($ctx['behavior_cycle_state']      ?? 'unavailable');
+        $conf       = (string)($ctx['behavior_cycle_confidence'] ?? 'none');
+        $entry      = (string)($ctx['cycle_entry_readiness']     ?? '');
+        $pm         = (string)($ctx['cycle_pm_readiness']        ?? '');
+        $volatility = (string)($ctx['volatility_state']          ?? '');
+        $corridor   = (string)($ctx['corridor_state']            ?? '');
+        $pullback   = (string)($ctx['pullback_state']            ?? '');
+        $continu    = (string)($ctx['continuation_state']        ?? '');
+        $bias       = (string)($ctx['cycle_bias_state']          ?? '');
+        $lowReason  = ($ctx['low_confidence_reason'] ?? null);
+
+        $unavailable = ($state === 'unavailable' || $conf === 'none');
+
+        // cycle_entry_hint
+        if ($unavailable || $entry === '') {
+            $entryHint = 'unavailable';
+        } elseif ($entry === 'ready') {
+            $entryHint = 'favorable';
+        } elseif ($entry === 'marginal') {
+            $entryHint = 'cautious';
+        } else {
+            $entryHint = 'weak';
+        }
+
+        // cycle_pm_hint
+        if ($unavailable || $pm === '') {
+            $pmHint = 'unavailable';
+        } elseif ($pm === 'ready') {
+            $pmHint = 'favorable';
+        } elseif ($pm === 'marginal') {
+            $pmHint = 'cautious';
+        } else {
+            $pmHint = 'weak';
+        }
+
+        // cycle_live_hint
+        if ($unavailable) {
+            $liveHint = 'unavailable';
+        } elseif ($state === 'active' && $conf === 'high') {
+            $liveHint = 'favorable';
+        } elseif ($state === 'active') {
+            $liveHint = 'cautious';
+        } elseif ($state === 'cooling') {
+            $liveHint = 'cautious';
+        } elseif ($state === 'flat') {
+            $liveHint = 'weak';
+        } else {
+            $liveHint = 'unavailable';
+        }
+
+        // cycle_risk_hint (based on volatility + corridor)
+        if ($unavailable || $volatility === '' || $volatility === 'insufficient_data') {
+            $riskHint = 'unavailable';
+        } elseif ($volatility === 'high') {
+            $riskHint = 'weak';
+        } elseif ($volatility === 'low' && in_array($corridor, ['normal', 'narrow', 'tight'], true)) {
+            $riskHint = 'favorable';
+        } else {
+            $riskHint = 'cautious';
+        }
+
+        // cycle_stop_hint (stop-loss placement friendliness, based on pullback severity)
+        if ($unavailable || $pullback === '' || $pullback === 'insufficient_data') {
+            $stopHint = 'unavailable';
+        } elseif ($pullback === 'mild' && $volatility !== 'high') {
+            $stopHint = 'favorable';
+        } elseif ($pullback === 'severe') {
+            $stopHint = 'weak';
+        } else {
+            $stopHint = 'cautious';
+        }
+
+        // cycle_hold_hint (continuation/hold support)
+        if ($unavailable || $continu === '' || $continu === 'insufficient_data') {
+            $holdHint = 'unavailable';
+        } elseif ($continu === 'strong') {
+            $holdHint = 'favorable';
+        } elseif ($continu === 'moderate') {
+            $holdHint = 'cautious';
+        } else {
+            $holdHint = 'weak';
+        }
+
+        // cycle_confidence_hint
+        if ($conf === 'high') {
+            $confHint = 'favorable';
+        } elseif ($conf === 'medium') {
+            $confHint = 'cautious';
+        } elseif ($conf === 'low') {
+            $confHint = 'weak';
+        } else {
+            $confHint = 'unavailable';
+        }
+
+        // cycle_warning_flag + reason
+        $warningReasons = [];
+        if ($volatility === 'high') {
+            $warningReasons[] = 'high_volatility';
+        }
+        if ($pullback === 'severe') {
+            $warningReasons[] = 'severe_pullback';
+        }
+        if (in_array($bias, ['choppy', 'reverting'], true)) {
+            $warningReasons[] = 'unfavorable_bias:' . $bias;
+        }
+        $warningFlag   = count($warningReasons) > 0;
+        $warningReason = $warningFlag ? implode(',', $warningReasons) : null;
+
+        // cycle_low_confidence_flag
+        $lowConfFlag   = in_array($conf, ['none', 'low'], true);
+        $lowConfReason = $lowConfFlag ? (is_string($lowReason) ? $lowReason : 'low_or_none_confidence') : null;
+
+        return [
+            'updated_at'                  => $ts,
+            'cycle_entry_hint'            => $entryHint,
+            'cycle_pm_hint'               => $pmHint,
+            'cycle_live_hint'             => $liveHint,
+            'cycle_risk_hint'             => $riskHint,
+            'cycle_stop_hint'             => $stopHint,
+            'cycle_hold_hint'             => $holdHint,
+            'cycle_confidence_hint'       => $confHint,
+            'cycle_warning_flag'          => $warningFlag,
+            'cycle_warning_reason'        => $warningReason,
+            'cycle_low_confidence_flag'   => $lowConfFlag,
+            'cycle_low_confidence_reason' => $lowConfReason,
+            'source_cycle_state'          => $state,
+            'source_cycle_confidence'     => $conf,
+            'source_profile_updated_at'   => $ctx['source_profile_updated_at'] ?? null,
+        ];
+    }
+
+    /**
+     * Project derived cycle eligibility hints into all passport files.
+     * Reads coin_cycle_context from each passport, derives coin_cycle_hints, saves back.
+     * Writes a compact summary to $summaryOutputPath.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $summaryOutputPath  Absolute path to write the hints summary JSON
+     * @return array<string,mixed>
+     */
+    public function projectCycleHintsToPassports(string $summaryOutputPath): array
+    {
+        $ts             = date('c');
+        $symbolsTotal   = 0;
+        $hintsTotal     = 0;
+        $favorableTotal = 0;
+        $cautiousTotal  = 0;
+        $weakTotal      = 0;
+        $unavailTotal   = 0;
+        $lowConfTotal   = 0;
+        $errorTotal     = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx = $passport['coin_cycle_context'] ?? null;
+
+                if (!is_array($ctx)) {
+                    // No cycle context available — write minimal unavailable block
+                    $passport['coin_cycle_hints'] = [
+                        'updated_at'                  => $ts,
+                        'cycle_entry_hint'            => 'unavailable',
+                        'cycle_pm_hint'               => 'unavailable',
+                        'cycle_live_hint'             => 'unavailable',
+                        'cycle_risk_hint'             => 'unavailable',
+                        'cycle_stop_hint'             => 'unavailable',
+                        'cycle_hold_hint'             => 'unavailable',
+                        'cycle_confidence_hint'       => 'unavailable',
+                        'cycle_warning_flag'          => false,
+                        'cycle_warning_reason'        => null,
+                        'cycle_low_confidence_flag'   => true,
+                        'cycle_low_confidence_reason' => 'no_cycle_context',
+                        'source_cycle_state'          => 'unavailable',
+                        'source_cycle_confidence'     => 'none',
+                        'source_profile_updated_at'   => null,
+                    ];
+                    $unavailTotal++;
+                    $lowConfTotal++;
+                } else {
+                    $hints = $this->deriveCycleHints($ctx);
+                    $passport['coin_cycle_hints'] = $hints;
+                    $hintsTotal++;
+
+                    // Tally by entry hint as representative
+                    $entryHint = $hints['cycle_entry_hint'];
+                    if ($entryHint === 'favorable')    { $favorableTotal++; }
+                    elseif ($entryHint === 'cautious') { $cautiousTotal++; }
+                    elseif ($entryHint === 'weak')     { $weakTotal++; }
+                    else                               { $unavailTotal++; }
+
+                    if ((bool)($hints['cycle_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.chtmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $summary = [
+            'updated_at'          => $ts,
+            'source'              => 'coin_cycle_context',
+            'symbols_total'       => $symbolsTotal,
+            'hints_written_total' => $hintsTotal,
+            'favorable_total'     => $favorableTotal,
+            'cautious_total'      => $cautiousTotal,
+            'weak_total'          => $weakTotal,
+            'unavailable_total'   => $unavailTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $summaryDir = dirname($summaryOutputPath);
+        if (!is_dir($summaryDir)) {
+            @mkdir($summaryDir, 0755, true);
+        }
+        @file_put_contents(
+            $summaryOutputPath,
+            json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $summary;
+    }
+
+    // =========================================================================
+    // Step 5 — Passive passport-side cycle decision summary block
+    // =========================================================================
+
+    /**
+     * Derive a compact cycle decision summary from the passport's existing
+     * coin_cycle_context and coin_cycle_hints blocks.
+     * All values use the label set: favorable | cautious | weak | unavailable |
+     * stable | unstable | actionable | non_actionable.
+     * Pure / side-effect-free.
+     *
+     * @param  array<string,mixed> $ctx    The passport's coin_cycle_context block
+     * @param  array<string,mixed> $hints  The passport's coin_cycle_hints block
+     * @return array<string,mixed>
+     */
+    private function deriveCycleSummary(array $ctx, array $hints): array
+    {
+        $ts = date('c');
+
+        // Pull from context
+        $state     = (string)($ctx['behavior_cycle_state']      ?? 'unavailable');
+        $conf      = (string)($ctx['behavior_cycle_confidence'] ?? 'none');
+        $stability = (string)($ctx['cycle_stability_state']     ?? '');
+        $bias      = (string)($ctx['cycle_bias_state']          ?? '');
+        $ctxAt     = $ctx['updated_at'] ?? null;
+
+        // Pull from hints
+        $entryHint     = (string)($hints['cycle_entry_hint']          ?? 'unavailable');
+        $pmHint        = (string)($hints['cycle_pm_hint']             ?? 'unavailable');
+        $liveHint      = (string)($hints['cycle_live_hint']           ?? 'unavailable');
+        $riskHint      = (string)($hints['cycle_risk_hint']           ?? 'unavailable');
+        $stopHint      = (string)($hints['cycle_stop_hint']           ?? 'unavailable');
+        $holdHint      = (string)($hints['cycle_hold_hint']           ?? 'unavailable');
+        $warnFlag      = (bool)($hints['cycle_warning_flag']          ?? false);
+        $warnReason    = $hints['cycle_warning_reason']               ?? null;
+        $lowConfFlag   = (bool)($hints['cycle_low_confidence_flag']   ?? false);
+        $lowConfReason = $hints['cycle_low_confidence_reason']        ?? null;
+        $hintsAt       = $hints['updated_at']                         ?? null;
+
+        $unavailable = ($state === 'unavailable' || $conf === 'none');
+
+        // cycle_summary_state
+        if ($unavailable) {
+            $summaryState = 'unavailable';
+        } elseif ($state === 'active') {
+            $summaryState = ($conf === 'high') ? 'favorable' : 'cautious';
+        } elseif ($state === 'cooling') {
+            $summaryState = 'cautious';
+        } elseif ($state === 'flat') {
+            $summaryState = 'weak';
+        } else {
+            $summaryState = 'unavailable';
+        }
+
+        // cycle_summary_confidence
+        if ($conf === 'high') {
+            $summaryConf = 'favorable';
+        } elseif ($conf === 'medium') {
+            $summaryConf = 'cautious';
+        } elseif ($conf === 'low') {
+            $summaryConf = 'weak';
+        } else {
+            $summaryConf = 'unavailable';
+        }
+
+        // cycle_entry_summary: combines entry + pm hint
+        $entryPmVals = [$entryHint, $pmHint];
+        if (in_array('unavailable', $entryPmVals, true)) {
+            $entrySummary = 'unavailable';
+        } elseif (in_array('weak', $entryPmVals, true)) {
+            $entrySummary = 'weak';
+        } elseif (in_array('cautious', $entryPmVals, true)) {
+            $entrySummary = 'cautious';
+        } else {
+            $entrySummary = 'favorable';
+        }
+
+        // cycle_readiness_state: aggregate entry + pm + live
+        $readinessVals    = [$entryHint, $pmHint, $liveHint];
+        $readinessNonAvail = array_filter($readinessVals, static fn(string $v): bool => $v !== 'unavailable');
+        if (empty($readinessNonAvail)) {
+            $readinessState = 'unavailable';
+        } elseif (!in_array('weak', $readinessNonAvail, true) && !in_array('cautious', $readinessNonAvail, true)) {
+            $readinessState = 'favorable';
+        } elseif (in_array('weak', $readinessNonAvail, true)) {
+            $readinessState = 'weak';
+        } else {
+            $readinessState = 'cautious';
+        }
+
+        // cycle_stability_summary
+        if ($unavailable || $stability === '') {
+            $stabilitySummary = 'unavailable';
+        } elseif ($stability === 'stable') {
+            $stabilitySummary = 'stable';
+        } elseif ($stability === 'unstable') {
+            $stabilitySummary = 'unstable';
+        } else {
+            $stabilitySummary = 'unavailable';
+        }
+
+        // cycle_bias_summary
+        if ($unavailable || $bias === '') {
+            $biasSummary = 'unavailable';
+        } elseif ($bias === 'trending') {
+            $biasSummary = 'favorable';
+        } elseif ($bias === 'neutral') {
+            $biasSummary = 'cautious';
+        } elseif (in_array($bias, ['choppy', 'reverting'], true)) {
+            $biasSummary = 'weak';
+        } else {
+            $biasSummary = 'cautious';
+        }
+
+        // cycle_actionability_summary
+        $entryOk = in_array($entryHint, ['favorable', 'cautious'], true);
+        $liveOk  = in_array($liveHint, ['favorable', 'cautious'], true);
+        if (!$unavailable && $entryOk && $liveOk && !$lowConfFlag) {
+            $actionability = 'actionable';
+        } elseif (!$unavailable && ($entryOk || $liveOk) && !$warnFlag) {
+            $actionability = 'actionable';
+        } else {
+            $actionability = 'non_actionable';
+        }
+
+        return [
+            'updated_at'                  => $ts,
+            'cycle_summary_state'         => $summaryState,
+            'cycle_summary_confidence'    => $summaryConf,
+            'cycle_entry_summary'         => $entrySummary,
+            'cycle_pm_summary'            => $pmHint,
+            'cycle_live_summary'          => $liveHint,
+            'cycle_risk_summary'          => $riskHint,
+            'cycle_stop_summary'          => $stopHint,
+            'cycle_hold_summary'          => $holdHint,
+            'cycle_warning_flag'          => $warnFlag,
+            'cycle_warning_reason'        => $warnReason,
+            'cycle_low_confidence_flag'   => $lowConfFlag,
+            'cycle_low_confidence_reason' => $lowConfReason,
+            'cycle_readiness_state'       => $readinessState,
+            'cycle_stability_summary'     => $stabilitySummary,
+            'cycle_bias_summary'          => $biasSummary,
+            'cycle_actionability_summary' => $actionability,
+            'source_context_updated_at'   => $ctxAt,
+            'source_hints_updated_at'     => $hintsAt,
+        ];
+    }
+
+    /**
+     * Project passive cycle decision summaries into all passport files.
+     * Reads coin_cycle_context + coin_cycle_hints from each passport, derives
+     * coin_cycle_summary, saves back.  Writes a compact summary artifact.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $summaryOutputPath  Absolute path to write coin_cycle_summary_projection.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleSummaryToPassports(string $summaryOutputPath): array
+    {
+        $ts                 = date('c');
+        $symbolsTotal       = 0;
+        $writtenTotal       = 0;
+        $favorableTotal     = 0;
+        $cautiousTotal      = 0;
+        $weakTotal          = 0;
+        $unavailTotal       = 0;
+        $actionableTotal    = 0;
+        $nonActionableTotal = 0;
+        $lowConfTotal       = 0;
+        $errorTotal         = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx   = $passport['coin_cycle_context'] ?? null;
+                $hints = $passport['coin_cycle_hints']   ?? null;
+
+                if (!is_array($ctx) || !is_array($hints)) {
+                    // Source blocks absent — write compact unavailable summary
+                    $passport['coin_cycle_summary'] = [
+                        'updated_at'                  => $ts,
+                        'cycle_summary_state'         => 'unavailable',
+                        'cycle_summary_confidence'    => 'unavailable',
+                        'cycle_entry_summary'         => 'unavailable',
+                        'cycle_pm_summary'            => 'unavailable',
+                        'cycle_live_summary'          => 'unavailable',
+                        'cycle_risk_summary'          => 'unavailable',
+                        'cycle_stop_summary'          => 'unavailable',
+                        'cycle_hold_summary'          => 'unavailable',
+                        'cycle_warning_flag'          => false,
+                        'cycle_warning_reason'        => null,
+                        'cycle_low_confidence_flag'   => true,
+                        'cycle_low_confidence_reason' => 'no_context_or_hints',
+                        'cycle_readiness_state'       => 'unavailable',
+                        'cycle_stability_summary'     => 'unavailable',
+                        'cycle_bias_summary'          => 'unavailable',
+                        'cycle_actionability_summary' => 'non_actionable',
+                        'source_context_updated_at'   => null,
+                        'source_hints_updated_at'     => null,
+                    ];
+                    $unavailTotal++;
+                    $lowConfTotal++;
+                    $nonActionableTotal++;
+                } else {
+                    $cycleSummary = $this->deriveCycleSummary($ctx, $hints);
+                    $passport['coin_cycle_summary'] = $cycleSummary;
+                    $writtenTotal++;
+
+                    $summaryState = $cycleSummary['cycle_summary_state'];
+                    if ($summaryState === 'favorable')    { $favorableTotal++; }
+                    elseif ($summaryState === 'cautious') { $cautiousTotal++; }
+                    elseif ($summaryState === 'weak')     { $weakTotal++; }
+                    else                                  { $unavailTotal++; }
+
+                    if ($cycleSummary['cycle_actionability_summary'] === 'actionable') {
+                        $actionableTotal++;
+                    } else {
+                        $nonActionableTotal++;
+                    }
+                    if ((bool)($cycleSummary['cycle_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.cstmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projectionSummary = [
+            'updated_at'              => $ts,
+            'source'                  => 'passport coin_cycle_context + coin_cycle_hints',
+            'symbols_total'           => $symbolsTotal,
+            'summaries_written_total' => $writtenTotal,
+            'favorable_total'         => $favorableTotal,
+            'cautious_total'          => $cautiousTotal,
+            'weak_total'              => $weakTotal,
+            'unavailable_total'       => $unavailTotal,
+            'actionable_total'        => $actionableTotal,
+            'non_actionable_total'    => $nonActionableTotal,
+            'low_confidence_total'    => $lowConfTotal,
+            'error_total'             => $errorTotal,
+        ];
+
+        $summaryDir = dirname($summaryOutputPath);
+        if (!is_dir($summaryDir)) {
+            @mkdir($summaryDir, 0755, true);
+        }
+        @file_put_contents(
+            $summaryOutputPath,
+            json_encode($projectionSummary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projectionSummary;
+    }
+
+    // =========================================================================
+    // Coin Core Step 6 — passive cycle routing profile
+    // =========================================================================
+
+    /**
+     * Derive a compact passive routing profile from context + hints + summary.
+     * All fields are compact labels only.  Does NOT drive any live decisions.
+     *
+     * @param  array<string,mixed> $ctx
+     * @param  array<string,mixed> $hints
+     * @param  array<string,mixed> $summary
+     * @return array<string,mixed>
+     */
+    private function deriveRoutingProfile(array $ctx, array $hints, array $summary): array
+    {
+        $ts = date('c');
+
+        // Inputs from context
+        $state        = (string)($ctx['behavior_cycle_state']      ?? 'unavailable');
+        $conf         = (string)($ctx['behavior_cycle_confidence'] ?? 'none');
+        $ctxAt        = $ctx['updated_at'] ?? null;
+
+        // Inputs from hints
+        $liveHint     = (string)($hints['cycle_live_hint']           ?? 'unavailable');
+        $riskHint     = (string)($hints['cycle_risk_hint']           ?? 'unavailable');
+        $stopHint     = (string)($hints['cycle_stop_hint']           ?? 'unavailable');
+        $holdHint     = (string)($hints['cycle_hold_hint']           ?? 'unavailable');
+        $warnFlag     = (bool)($hints['cycle_warning_flag']          ?? false);
+        $warnReason   = $hints['cycle_warning_reason']               ?? null;
+        $lowConfFlag  = (bool)($hints['cycle_low_confidence_flag']   ?? false);
+        $lowConfReason = $hints['cycle_low_confidence_reason']       ?? null;
+        $hintsAt      = $hints['updated_at']                         ?? null;
+
+        // Inputs from summary
+        $summaryState  = (string)($summary['cycle_summary_state']         ?? 'unavailable');
+        $summaryConf   = (string)($summary['cycle_summary_confidence']    ?? 'unavailable');
+        $actionability = (string)($summary['cycle_actionability_summary'] ?? 'non_actionable');
+        $summaryAt     = $summary['updated_at']                           ?? null;
+
+        $unavailable = ($state === 'unavailable' || $conf === 'none' || $summaryState === 'unavailable');
+
+        // routing_profile_state — overall profile label
+        if ($unavailable) {
+            $profileState = 'unavailable';
+        } elseif ($summaryState === 'favorable' && $actionability === 'actionable') {
+            $profileState = 'favorable';
+        } elseif ($summaryState === 'cautious') {
+            $profileState = 'cautious';
+        } elseif ($summaryState === 'weak') {
+            $profileState = 'weak';
+        } else {
+            $profileState = 'unavailable';
+        }
+
+        // routing_profile_confidence
+        if ($conf === 'high' && !$lowConfFlag) {
+            $profileConf = 'favorable';
+        } elseif ($conf === 'medium') {
+            $profileConf = 'cautious';
+        } elseif ($conf === 'low' || $lowConfFlag) {
+            $profileConf = 'weak';
+        } else {
+            $profileConf = 'unavailable';
+        }
+
+        // routing_live_profile — can this symbol go live?
+        if ($unavailable || $warnFlag || $lowConfFlag) {
+            $liveProfile = 'unavailable';
+        } elseif ($liveHint === 'favorable' && $summaryState === 'favorable') {
+            $liveProfile = 'live_ready';
+        } elseif (in_array($liveHint, ['favorable', 'cautious'], true) && $summaryState !== 'weak') {
+            $liveProfile = 'live_ready';
+        } else {
+            $liveProfile = 'demo_only';
+        }
+
+        // routing_demo_profile
+        if ($unavailable) {
+            $demoProfile = 'unavailable';
+        } elseif (in_array($liveProfile, ['live_ready', 'demo_only'], true)) {
+            $demoProfile = 'favorable';
+        } else {
+            $demoProfile = 'cautious';
+        }
+
+        // routing_shadow_profile
+        if ($unavailable) {
+            $shadowProfile = 'shadow_only';
+        } elseif ($summaryState === 'weak') {
+            $shadowProfile = 'shadow_only';
+        } else {
+            $shadowProfile = 'favorable';
+        }
+
+        // routing_skip_profile — should this symbol be skipped entirely?
+        if ($unavailable || ($summaryState === 'weak' && $warnFlag)) {
+            $skipProfile = 'skip';
+        } else {
+            $skipProfile = 'non_skip';
+        }
+
+        // routing_risk_profile
+        if ($unavailable) {
+            $riskProfile = 'unavailable';
+        } elseif ($riskHint === 'low_risk' || $riskHint === 'favorable') {
+            $riskProfile = 'low_risk';
+        } elseif ($riskHint === 'medium_risk' || $riskHint === 'cautious') {
+            $riskProfile = 'medium_risk';
+        } elseif ($riskHint === 'high_risk' || $riskHint === 'weak') {
+            $riskProfile = 'high_risk';
+        } else {
+            $riskProfile = 'medium_risk';
+        }
+
+        // routing_hold_profile
+        if ($unavailable) {
+            $holdProfile = 'unavailable';
+        } elseif ($holdHint === 'favorable') {
+            $holdProfile = 'favorable';
+        } elseif ($holdHint === 'cautious') {
+            $holdProfile = 'cautious';
+        } elseif ($holdHint === 'weak') {
+            $holdProfile = 'weak';
+        } else {
+            $holdProfile = 'cautious';
+        }
+
+        // routing_actionability_profile
+        if (!$unavailable && $actionability === 'actionable' && !$warnFlag && $liveProfile !== 'unavailable') {
+            $actionabilityProfile = 'actionable';
+        } else {
+            $actionabilityProfile = 'non_actionable';
+        }
+
+        // routing_preferred_mode_hint (compact label for future routing use)
+        if ($unavailable) {
+            $preferredMode = 'shadow_only';
+        } elseif ($liveProfile === 'live_ready') {
+            $preferredMode = 'live';
+        } elseif ($demoProfile === 'favorable') {
+            $preferredMode = 'demo';
+        } else {
+            $preferredMode = 'shadow_only';
+        }
+
+        // routing_preferred_risk_hint
+        if ($unavailable) {
+            $preferredRisk = 'unavailable';
+        } elseif ($riskProfile === 'low_risk') {
+            $preferredRisk = 'low_risk';
+        } elseif ($riskProfile === 'medium_risk') {
+            $preferredRisk = 'medium_risk';
+        } else {
+            $preferredRisk = 'high_risk';
+        }
+
+        // routing_preferred_hold_hint
+        $preferredHold = $unavailable ? 'unavailable' : $holdProfile;
+
+        // routing_preferred_stop_hint
+        if ($unavailable) {
+            $preferredStop = 'unavailable';
+        } elseif ($stopHint === 'favorable') {
+            $preferredStop = 'tight';
+        } elseif ($stopHint === 'cautious') {
+            $preferredStop = 'normal';
+        } elseif ($stopHint === 'weak') {
+            $preferredStop = 'wide';
+        } else {
+            $preferredStop = 'normal';
+        }
+
+        return [
+            'updated_at'                    => $ts,
+            'routing_profile_state'         => $profileState,
+            'routing_profile_confidence'    => $profileConf,
+            'routing_live_profile'          => $liveProfile,
+            'routing_demo_profile'          => $demoProfile,
+            'routing_shadow_profile'        => $shadowProfile,
+            'routing_skip_profile'          => $skipProfile,
+            'routing_risk_profile'          => $riskProfile,
+            'routing_hold_profile'          => $holdProfile,
+            'routing_actionability_profile' => $actionabilityProfile,
+            'routing_warning_flag'          => $warnFlag,
+            'routing_warning_reason'        => $warnReason,
+            'routing_low_confidence_flag'   => $lowConfFlag,
+            'routing_low_confidence_reason' => $lowConfReason,
+            'routing_preferred_mode_hint'   => $preferredMode,
+            'routing_preferred_risk_hint'   => $preferredRisk,
+            'routing_preferred_hold_hint'   => $preferredHold,
+            'routing_preferred_stop_hint'   => $preferredStop,
+            'source_summary_updated_at'     => $summaryAt,
+            'source_hints_updated_at'       => $hintsAt,
+            'source_context_updated_at'     => $ctxAt,
+        ];
+    }
+
+    /**
+     * Project passive cycle routing profiles into all passport files.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary from each
+     * passport, derives coin_cycle_routing_profile, saves back.
+     * Writes a compact projection artifact.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $outputPath  Absolute path to write coin_cycle_routing_profile_projection.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleRoutingProfileToPassports(string $outputPath): array
+    {
+        $ts               = date('c');
+        $symbolsTotal     = 0;
+        $writtenTotal     = 0;
+        $liveReadyTotal   = 0;
+        $demoOnlyTotal    = 0;
+        $shadowOnlyTotal  = 0;
+        $skipTotal        = 0;
+        $lowConfTotal     = 0;
+        $errorTotal       = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx     = $passport['coin_cycle_context']  ?? null;
+                $hints   = $passport['coin_cycle_hints']    ?? null;
+                $summary = $passport['coin_cycle_summary']  ?? null;
+
+                if (!is_array($ctx) || !is_array($hints) || !is_array($summary)) {
+                    // Source blocks absent — write compact unavailable routing profile
+                    $passport['coin_cycle_routing_profile'] = [
+                        'updated_at'                    => $ts,
+                        'routing_profile_state'         => 'unavailable',
+                        'routing_profile_confidence'    => 'unavailable',
+                        'routing_live_profile'          => 'unavailable',
+                        'routing_demo_profile'          => 'unavailable',
+                        'routing_shadow_profile'        => 'shadow_only',
+                        'routing_skip_profile'          => 'skip',
+                        'routing_risk_profile'          => 'unavailable',
+                        'routing_hold_profile'          => 'unavailable',
+                        'routing_actionability_profile' => 'non_actionable',
+                        'routing_warning_flag'          => false,
+                        'routing_warning_reason'        => null,
+                        'routing_low_confidence_flag'   => true,
+                        'routing_low_confidence_reason' => 'no_context_hints_or_summary',
+                        'routing_preferred_mode_hint'   => 'shadow_only',
+                        'routing_preferred_risk_hint'   => 'unavailable',
+                        'routing_preferred_hold_hint'   => 'unavailable',
+                        'routing_preferred_stop_hint'   => 'unavailable',
+                        'source_summary_updated_at'     => null,
+                        'source_hints_updated_at'       => null,
+                        'source_context_updated_at'     => null,
+                    ];
+                    $shadowOnlyTotal++;
+                    $skipTotal++;
+                    $lowConfTotal++;
+                } else {
+                    $profile = $this->deriveRoutingProfile($ctx, $hints, $summary);
+                    $passport['coin_cycle_routing_profile'] = $profile;
+                    $writtenTotal++;
+
+                    $liveP = $profile['routing_live_profile'];
+                    $skipP = $profile['routing_skip_profile'];
+
+                    if ($liveP === 'live_ready')   { $liveReadyTotal++; }
+                    elseif ($liveP === 'demo_only') { $demoOnlyTotal++; }
+                    else                            { $shadowOnlyTotal++; }
+
+                    if ($skipP === 'skip') { $skipTotal++; }
+
+                    if ((bool)($profile['routing_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.crptmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projection = [
+            'updated_at'          => $ts,
+            'source'              => 'passport cycle layers',
+            'symbols_total'       => $symbolsTotal,
+            'profiles_written_total' => $writtenTotal,
+            'live_ready_total'    => $liveReadyTotal,
+            'demo_only_total'     => $demoOnlyTotal,
+            'shadow_only_total'   => $shadowOnlyTotal,
+            'skip_total'          => $skipTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $dir = dirname($outputPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $outputPath,
+            json_encode($projection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projection;
+    }
+
+    // =========================================================================
+    // Coin Core Step 7 — passive cycle decision model
+    // =========================================================================
+
+    /**
+     * Derive a compact passive decision model from context + hints + summary + routing_profile.
+     * All fields are compact labels only.  Does NOT drive any live, bot, or PM decisions.
+     *
+     * @param  array<string,mixed> $ctx
+     * @param  array<string,mixed> $hints
+     * @param  array<string,mixed> $summary
+     * @param  array<string,mixed> $routing
+     * @return array<string,mixed>
+     */
+    private function deriveDecisionModel(array $ctx, array $hints, array $summary, array $routing): array
+    {
+        $ts = date('c');
+
+        // --- Pull synthesised labels from the routing profile (single source of truth) ---
+        $profileState      = (string)($routing['routing_profile_state']         ?? 'unavailable');
+        $profileConf       = (string)($routing['routing_profile_confidence']     ?? 'unavailable');
+        $liveProfile       = (string)($routing['routing_live_profile']           ?? 'unavailable');
+        $demoProfile       = (string)($routing['routing_demo_profile']           ?? 'unavailable');
+        $shadowProfile     = (string)($routing['routing_shadow_profile']         ?? 'shadow_only');
+        $skipProfile       = (string)($routing['routing_skip_profile']           ?? 'skip');
+        $riskProfile       = (string)($routing['routing_risk_profile']           ?? 'unavailable');
+        $holdProfile       = (string)($routing['routing_hold_profile']           ?? 'unavailable');
+        $actionability     = (string)($routing['routing_actionability_profile']  ?? 'non_actionable');
+        $warnFlag          = (bool)($routing['routing_warning_flag']             ?? false);
+        $warnReason        = $routing['routing_warning_reason']                  ?? null;
+        $lowConfFlag       = (bool)($routing['routing_low_confidence_flag']      ?? false);
+        $lowConfReason     = $routing['routing_low_confidence_reason']           ?? null;
+        $preferredMode     = (string)($routing['routing_preferred_mode_hint']    ?? 'shadow_only');
+        $preferredRisk     = (string)($routing['routing_preferred_risk_hint']    ?? 'unavailable');
+        $preferredHold     = (string)($routing['routing_preferred_hold_hint']    ?? 'unavailable');
+        $preferredStop     = (string)($routing['routing_preferred_stop_hint']    ?? 'unavailable');
+        $routingAt         = $routing['updated_at']                              ?? null;
+        $sourceSummaryAt   = $routing['source_summary_updated_at']               ?? null;
+        $sourceHintsAt     = $routing['source_hints_updated_at']                 ?? null;
+        $sourceContextAt   = $routing['source_context_updated_at']               ?? null;
+
+        $unavailable = ($profileState === 'unavailable');
+
+        // decision_model_state — integrated state label
+        if ($unavailable) {
+            $modelState = 'unavailable';
+        } elseif ($profileState === 'favorable' && $actionability === 'actionable') {
+            $modelState = 'favorable';
+        } elseif ($profileState === 'cautious') {
+            $modelState = 'cautious';
+        } elseif ($profileState === 'weak') {
+            $modelState = 'weak';
+        } else {
+            $modelState = 'unavailable';
+        }
+
+        // decision_model_confidence — mirrors routing profile confidence
+        $modelConf = $unavailable ? 'unavailable' : $profileConf;
+
+        // decision_model_readiness — entry readiness
+        if (!$unavailable && $actionability === 'actionable' && !$warnFlag && !$lowConfFlag) {
+            $modelReadiness = 'actionable';
+        } else {
+            $modelReadiness = 'non_actionable';
+        }
+
+        // decision_model_actionability — same as readiness (distinct field for consumer clarity)
+        $modelActionability = $modelReadiness;
+
+        // decision_model_risk_posture
+        $modelRisk = $unavailable ? 'unavailable' : $riskProfile;
+
+        // decision_model_hold_posture
+        $modelHold = $unavailable ? 'unavailable' : $holdProfile;
+
+        // decision_model_stop_posture
+        $modelStop = $unavailable ? 'unavailable' : $preferredStop;
+
+        // decision_model_*_bias flags
+        $liveBias   = (!$unavailable && $liveProfile === 'live_ready')   ? 'live_bias'   : 'non_live_bias';
+        $demoBias   = (!$unavailable && ($liveProfile === 'demo_only' || ($demoProfile === 'favorable' && $liveProfile !== 'live_ready'))) ? 'demo_bias' : 'non_demo_bias';
+        $shadowBias = (!$unavailable && $shadowProfile === 'shadow_only') ? 'shadow_bias' : 'non_shadow_bias';
+        $skipBias   = ($unavailable || $skipProfile === 'skip')           ? 'skip_bias'   : 'non_skip_bias';
+
+        return [
+            'updated_at'                        => $ts,
+            'decision_model_state'              => $modelState,
+            'decision_model_confidence'         => $modelConf,
+            'decision_model_readiness'          => $modelReadiness,
+            'decision_model_actionability'      => $modelActionability,
+            'decision_model_risk_posture'       => $modelRisk,
+            'decision_model_hold_posture'       => $modelHold,
+            'decision_model_stop_posture'       => $modelStop,
+            'decision_model_live_bias'          => $liveBias,
+            'decision_model_demo_bias'          => $demoBias,
+            'decision_model_shadow_bias'        => $shadowBias,
+            'decision_model_skip_bias'          => $skipBias,
+            'decision_model_warning_flag'       => $warnFlag,
+            'decision_model_warning_reason'     => $warnReason,
+            'decision_model_low_confidence_flag'   => $lowConfFlag,
+            'decision_model_low_confidence_reason' => $lowConfReason,
+            'decision_model_preferred_mode'     => $preferredMode,
+            'decision_model_preferred_risk'     => $preferredRisk,
+            'decision_model_preferred_hold'     => $preferredHold,
+            'decision_model_preferred_stop'     => $preferredStop,
+            'source_routing_profile_updated_at' => $routingAt,
+            'source_summary_updated_at'         => $sourceSummaryAt,
+            'source_hints_updated_at'           => $sourceHintsAt,
+            'source_context_updated_at'         => $sourceContextAt,
+        ];
+    }
+
+    /**
+     * Project passive cycle decision models into all passport files.
+     * Reads coin_cycle_context + coin_cycle_hints + coin_cycle_summary +
+     * coin_cycle_routing_profile from each passport, derives coin_cycle_decision_model,
+     * saves back.  Writes a compact projection artifact.
+     * Storage/read-side only — does NOT affect Bot, PM, or live admission.
+     *
+     * @param  string $outputPath  Absolute path to write coin_cycle_decision_model_projection.json
+     * @return array<string,mixed>
+     */
+    public function projectCycleDecisionModelToPassports(string $outputPath): array
+    {
+        $ts                 = date('c');
+        $symbolsTotal       = 0;
+        $writtenTotal       = 0;
+        $favorableTotal     = 0;
+        $cautiousTotal      = 0;
+        $weakTotal          = 0;
+        $unavailTotal       = 0;
+        $actionableTotal    = 0;
+        $nonActionableTotal = 0;
+        $liveBiasTotal      = 0;
+        $demoBiasTotal      = 0;
+        $shadowBiasTotal    = 0;
+        $skipBiasTotal      = 0;
+        $lowConfTotal       = 0;
+        $errorTotal         = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $ctx     = $passport['coin_cycle_context']        ?? null;
+                $hints   = $passport['coin_cycle_hints']          ?? null;
+                $summary = $passport['coin_cycle_summary']        ?? null;
+                $routing = $passport['coin_cycle_routing_profile'] ?? null;
+
+                if (!is_array($ctx) || !is_array($hints) || !is_array($summary) || !is_array($routing)) {
+                    // Source blocks absent — write compact unavailable decision model
+                    $passport['coin_cycle_decision_model'] = [
+                        'updated_at'                           => $ts,
+                        'decision_model_state'                 => 'unavailable',
+                        'decision_model_confidence'            => 'unavailable',
+                        'decision_model_readiness'             => 'non_actionable',
+                        'decision_model_actionability'         => 'non_actionable',
+                        'decision_model_risk_posture'          => 'unavailable',
+                        'decision_model_hold_posture'          => 'unavailable',
+                        'decision_model_stop_posture'          => 'unavailable',
+                        'decision_model_live_bias'             => 'non_live_bias',
+                        'decision_model_demo_bias'             => 'non_demo_bias',
+                        'decision_model_shadow_bias'           => 'shadow_bias',
+                        'decision_model_skip_bias'             => 'skip_bias',
+                        'decision_model_warning_flag'          => false,
+                        'decision_model_warning_reason'        => null,
+                        'decision_model_low_confidence_flag'   => true,
+                        'decision_model_low_confidence_reason' => 'no_context_hints_summary_or_routing_profile',
+                        'decision_model_preferred_mode'        => 'shadow_only',
+                        'decision_model_preferred_risk'        => 'unavailable',
+                        'decision_model_preferred_hold'        => 'unavailable',
+                        'decision_model_preferred_stop'        => 'unavailable',
+                        'source_routing_profile_updated_at'    => null,
+                        'source_summary_updated_at'            => null,
+                        'source_hints_updated_at'              => null,
+                        'source_context_updated_at'            => null,
+                    ];
+                    $unavailTotal++;
+                    $nonActionableTotal++;
+                    $shadowBiasTotal++;
+                    $skipBiasTotal++;
+                    $lowConfTotal++;
+                } else {
+                    $model = $this->deriveDecisionModel($ctx, $hints, $summary, $routing);
+                    $passport['coin_cycle_decision_model'] = $model;
+                    $writtenTotal++;
+
+                    $mState = $model['decision_model_state'];
+                    if ($mState === 'favorable')    { $favorableTotal++; }
+                    elseif ($mState === 'cautious') { $cautiousTotal++; }
+                    elseif ($mState === 'weak')     { $weakTotal++; }
+                    else                            { $unavailTotal++; }
+
+                    if ($model['decision_model_actionability'] === 'actionable') {
+                        $actionableTotal++;
+                    } else {
+                        $nonActionableTotal++;
+                    }
+
+                    if ($model['decision_model_live_bias']   === 'live_bias')   { $liveBiasTotal++; }
+                    if ($model['decision_model_demo_bias']   === 'demo_bias')   { $demoBiasTotal++; }
+                    if ($model['decision_model_shadow_bias'] === 'shadow_bias') { $shadowBiasTotal++; }
+                    if ($model['decision_model_skip_bias']   === 'skip_bias')   { $skipBiasTotal++; }
+
+                    if ((bool)($model['decision_model_low_confidence_flag'] ?? false)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write
+                $tmp  = $file . '.cdmtmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projection = [
+            'updated_at'          => $ts,
+            'source'              => 'passport cycle layers',
+            'symbols_total'       => $symbolsTotal,
+            'models_written_total' => $writtenTotal,
+            'favorable_total'     => $favorableTotal,
+            'cautious_total'      => $cautiousTotal,
+            'weak_total'          => $weakTotal,
+            'unavailable_total'   => $unavailTotal,
+            'actionable_total'    => $actionableTotal,
+            'non_actionable_total' => $nonActionableTotal,
+            'live_bias_total'     => $liveBiasTotal,
+            'demo_bias_total'     => $demoBiasTotal,
+            'shadow_bias_total'   => $shadowBiasTotal,
+            'skip_bias_total'     => $skipBiasTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $dir = dirname($outputPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $outputPath,
+            json_encode($projection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projection;
+    }
+
+    /**
+     * Apply bounded cycle-aware refinement to each passport's live eligibility.
+     *
+     * Reads the coin_cycle_decision_model already projected into each passport and
+     * applies conservative bounded rules to refine recommended_live_eligibility.
+     * Saves the refined value back to recommended_live_eligibility so Smart Brain
+     * reads it automatically via the existing passport gate path.
+     *
+     * Coin Core Step 13.
+     *
+     * Refinement rules (conservative):
+     *   Upgrade  sim_only → bootstrap_live   : cycle favorable+actionable+live_bias, no risk/warn/lowconf
+     *   Downgrade allow_live → sim_only      : cycle non_actionable+high_risk
+     *   Downgrade allow_live → bootstrap_live: cycle warning+low_confidence
+     *   Downgrade bootstrap_live → sim_only  : cycle non_actionable+(high_risk|weak|unavailable)
+     *   Downgrade bootstrap_live → sim_only  : cycle warning+low_confidence
+     *   shadow_only: never modified (most restrictive state)
+     *
+     * @param  string $outputPath  Absolute path to write coin_cycle_eligibility_refinement.json
+     * @return array<string,mixed>
+     */
+    public function applyCycleEligibilityRefinement(string $outputPath): array
+    {
+        $ts             = date('c');
+        $symbolsTotal   = 0;
+        $processedTotal = 0;
+        $upgradeTotal   = 0;
+        $downgradeTotal = 0;
+        $noEffectTotal  = 0;
+        $unavailTotal   = 0;
+        $errorTotal     = 0;
+
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $errorTotal++;
+                    continue;
+                }
+
+                $baseEligibility = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
+                // Preserve original base when refinement is re-applied (subsequent passes)
+                if (array_key_exists('base_live_eligibility', $passport)) {
+                    $baseEligibility = (string)$passport['base_live_eligibility'];
+                }
+
+                $dm = is_array($passport['coin_cycle_decision_model'] ?? null)
+                    ? $passport['coin_cycle_decision_model']
+                    : null;
+
+                if (
+                    $dm === null
+                    || ($dm['decision_model_state'] ?? 'unavailable') === 'unavailable'
+                    || !($dm['available'] ?? true)  // explicit unavailable marker
+                ) {
+                    // Cycle model not present — record but do not change eligibility
+                    $passport['base_live_eligibility']          = $baseEligibility;
+                    $passport['cycle_refined_live_eligibility'] = $baseEligibility;
+                    $passport['cycle_refinement_applied']       = false;
+                    $passport['cycle_refinement_reason']        = 'cycle_model_unavailable';
+                    // Restore recommended_live_eligibility to base (in case a previous pass
+                    // had changed it but the cycle model is now gone/unavailable).
+                    $passport['recommended_live_eligibility']   = $baseEligibility;
+                    $passport['passport_gate_state']            = $baseEligibility;
+                    $unavailTotal++;
+                } else {
+                    $cmState      = (string)($dm['decision_model_state']           ?? 'unavailable');
+                    $cmActionable = (string)($dm['decision_model_actionability']   ?? 'non_actionable');
+                    $cmRisk       = (string)($dm['decision_model_risk_posture']    ?? 'unavailable');
+                    $cmLiveBias   = (string)($dm['decision_model_live_bias']       ?? 'non_live_bias');
+                    $cmWarnFlag   = (bool)  ($dm['decision_model_warning_flag']          ?? false);
+                    $cmLowConf    = (bool)  ($dm['decision_model_low_confidence_flag']   ?? false);
+
+                    $refinedEligibility = $baseEligibility;
+                    $refinementApplied  = false;
+                    $refinementReason   = 'cycle_no_effect';
+
+                    if ($baseEligibility === 'shadow_only') {
+                        // Never modify the most restrictive state
+                        $refinementReason = 'cycle_no_effect_shadow_protected';
+                    } elseif (
+                        // Upgrade: sim_only → bootstrap_live when cycle is explicitly strong
+                        $baseEligibility === 'sim_only'
+                        && $cmState       === 'favorable'
+                        && $cmActionable  === 'actionable'
+                        && $cmLiveBias    === 'live_bias'
+                        && $cmRisk        !== 'high_risk'
+                        && !$cmWarnFlag
+                        && !$cmLowConf
+                    ) {
+                        $refinedEligibility = 'bootstrap_live';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_upgrade_sim_to_bootstrap';
+                        $upgradeTotal++;
+                    } elseif (
+                        // Downgrade: allow_live → sim_only when cycle is clearly unsafe
+                        $baseEligibility === 'allow_live'
+                        && $cmActionable  === 'non_actionable'
+                        && $cmRisk        === 'high_risk'
+                    ) {
+                        $refinedEligibility = 'sim_only';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_allow_to_sim';
+                        $downgradeTotal++;
+                    } elseif (
+                        // Downgrade: allow_live → bootstrap_live when warning+low_confidence
+                        $baseEligibility === 'allow_live'
+                        && $cmWarnFlag
+                        && $cmLowConf
+                    ) {
+                        $refinedEligibility = 'bootstrap_live';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_allow_to_bootstrap';
+                        $downgradeTotal++;
+                    } elseif (
+                        // Downgrade: bootstrap_live → sim_only when non_actionable + (high_risk|weak)
+                        $baseEligibility === 'bootstrap_live'
+                        && $cmActionable  === 'non_actionable'
+                        && ($cmRisk === 'high_risk' || in_array($cmState, ['weak', 'unavailable'], true))
+                    ) {
+                        $refinedEligibility = 'sim_only';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_bootstrap_to_sim';
+                        $downgradeTotal++;
+                    } elseif (
+                        // Downgrade: bootstrap_live → sim_only when warning+low_confidence
+                        $baseEligibility === 'bootstrap_live'
+                        && $cmWarnFlag
+                        && $cmLowConf
+                    ) {
+                        $refinedEligibility = 'sim_only';
+                        $refinementApplied  = true;
+                        $refinementReason   = 'cycle_downgrade_bootstrap_to_sim_warn_lowconf';
+                        $downgradeTotal++;
+                    }
+
+                    $passport['base_live_eligibility']          = $baseEligibility;
+                    $passport['cycle_refined_live_eligibility'] = $refinedEligibility;
+                    $passport['cycle_refinement_applied']       = $refinementApplied;
+                    $passport['cycle_refinement_reason']        = $refinementReason;
+                    // Apply refined value to the field Smart Brain reads
+                    $passport['recommended_live_eligibility']   = $refinedEligibility;
+                    $passport['passport_gate_state']            = $refinedEligibility;
+                    $processedTotal++;
+                    if (!$refinementApplied) {
+                        $noEffectTotal++;
+                    }
+                }
+
+                // Atomic write: tmp → rename
+                $tmp  = $file . '.certmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        $projection = [
+            'updated_at'      => $ts,
+            'source'          => 'passport coin_cycle_decision_model',
+            'symbols_total'   => $symbolsTotal,
+            'processed_total' => $processedTotal,
+            'upgrade_total'   => $upgradeTotal,
+            'downgrade_total' => $downgradeTotal,
+            'no_effect_total' => $noEffectTotal,
+            'unavailable_total' => $unavailTotal,
+            'error_total'     => $errorTotal,
+        ];
+
+        $dir = dirname($outputPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents(
+            $outputPath,
+            json_encode($projection, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $projection;
+    }
+
+    public function projectCycleContextToPassports(string $readModelPath, string $summaryOutputPath): array    {
+        $ts             = date('c');
+        $symbolsTotal   = 0;
+        $projectedTotal = 0;
+        $skippedTotal   = 0;
+        $lowConfTotal   = 0;
+        $errorTotal     = 0;
+
+        // Load read model entries indexed by symbol
+        $readModelEntries = [];
+        $sourceReadModelAt = null;
+        if (is_file($readModelPath)) {
+            $raw = @file_get_contents($readModelPath);
+            $rm  = ($raw !== false) ? json_decode($raw, true) : null;
+            if (is_array($rm)) {
+                $sourceReadModelAt = $rm['generated_at'] ?? null;
+                $symbols = $rm['symbols'] ?? [];
+                if (is_array($symbols)) {
+                    foreach ($symbols as $sym => $entry) {
+                        if (is_array($entry)) {
+                            $readModelEntries[strtoupper((string)$sym)] = $entry;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Collect all passport files to update
+        $passportFiles = glob($this->passportsDir . '/*.json') ?: [];
+        $symbolsTotal  = count($passportFiles);
+
+        foreach ($passportFiles as $file) {
+            $symbol = basename($file, '.json');
+            try {
+                $passport = $this->readJson($file);
+                if (!is_array($passport)) {
+                    $skippedTotal++;
+                    continue;
+                }
+
+                $upper = strtoupper($symbol);
+                if (!isset($readModelEntries[$upper])) {
+                    // No read-model entry for this symbol — write explicit unavailable block
+                    $passport['coin_cycle_context'] = [
+                        'updated_at'                => $ts,
+                        'behavior_cycle_state'      => 'unavailable',
+                        'behavior_cycle_confidence' => 'none',
+                        'low_confidence_reason'     => 'no_read_model_entry',
+                        'source_profile_updated_at' => null,
+                    ];
+                    $skippedTotal++;
+                } else {
+                    $entry = $readModelEntries[$upper];
+                    $conf  = (string)($entry['behavior_cycle_confidence'] ?? 'none');
+
+                    // Project compact namespaced block — only the defined cycle-context fields
+                    $passport['coin_cycle_context'] = [
+                        'updated_at'                => $ts,
+                        'behavior_cycle_state'      => $entry['behavior_cycle_state']      ?? 'unavailable',
+                        'behavior_cycle_confidence' => $conf,
+                        'hot_state_1h'              => $entry['hot_state_1h']              ?? null,
+                        'hot_state_2h'              => $entry['hot_state_2h']              ?? null,
+                        'short_state_3h'            => $entry['short_state_3h']            ?? null,
+                        'short_state_6h'            => $entry['short_state_6h']            ?? null,
+                        'intraday_state_12h'        => $entry['intraday_state_12h']        ?? null,
+                        'daily_state_24h'           => $entry['daily_state_24h']           ?? null,
+                        'behavior_context_7d_state' => $entry['behavior_context_7d_state'] ?? null,
+                        'corridor_state'            => $entry['corridor_state']            ?? null,
+                        'impulse_state'             => $entry['impulse_state']             ?? null,
+                        'pullback_state'            => $entry['pullback_state']            ?? null,
+                        'continuation_state'        => $entry['continuation_state']        ?? null,
+                        'volatility_state'          => $entry['volatility_state']          ?? null,
+                        'liquidity_state'           => $entry['liquidity_state']           ?? null,
+                        'oi_pressure_state'         => $entry['oi_pressure_state']         ?? null,
+                        'cycle_bias_state'          => $entry['cycle_bias_state']          ?? null,
+                        'cycle_quality_state'       => $entry['cycle_quality_state']       ?? null,
+                        'cycle_stability_state'     => $entry['cycle_stability_state']     ?? null,
+                        'cycle_entry_readiness'     => $entry['cycle_entry_readiness']     ?? null,
+                        'cycle_pm_readiness'        => $entry['cycle_pm_readiness']        ?? null,
+                        'low_confidence_reason'     => $entry['low_confidence_reason']     ?? null,
+                        'source_profile_updated_at' => $entry['source_profile_updated_at'] ?? null,
+                    ];
+
+                    $projectedTotal++;
+                    if (in_array($conf, ['none', 'low'], true)) {
+                        $lowConfTotal++;
+                    }
+                }
+
+                // Atomic write: tmp → rename
+                $tmp  = $file . '.cctmp.' . getmypid();
+                $json = json_encode($passport, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+                if (@file_put_contents($tmp, $json, LOCK_EX) !== false) {
+                    if (!@rename($tmp, $file)) {
+                        @unlink($tmp);
+                        $errorTotal++;
+                    }
+                } else {
+                    @unlink($tmp);
+                    $errorTotal++;
+                }
+            } catch (\Throwable $ex) {
+                $errorTotal++;
+            }
+        }
+
+        // Persist the projection summary
+        $summary = [
+            'updated_at'          => $ts,
+            'source'              => 'coin_cycle_read_model',
+            'source_read_model_at' => $sourceReadModelAt,
+            'symbols_total'       => $symbolsTotal,
+            'projected_total'     => $projectedTotal,
+            'skipped_total'       => $skippedTotal,
+            'low_confidence_total' => $lowConfTotal,
+            'error_total'         => $errorTotal,
+        ];
+
+        $summaryDir = dirname($summaryOutputPath);
+        if (!is_dir($summaryDir)) {
+            @mkdir($summaryDir, 0755, true);
+        }
+        @file_put_contents(
+            $summaryOutputPath,
+            json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $summary;
     }
 }

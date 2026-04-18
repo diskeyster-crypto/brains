@@ -1,0 +1,98 @@
+[
+    {
+        "ts": 1775035669,
+        "event_type": "signal_seen",
+        "signal_id": "sig_e011fd34ea582e3b",
+        "symbol": "USUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v3",
+        "signal_ts": 1774984749
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_input_built",
+        "signal_id": "sig_e011fd34ea582e3b",
+        "symbol": "USUSDT",
+        "pattern_algorithm": "double_top_contextual_v3",
+        "provider": "mock",
+        "input_keys": [
+            "symbol",
+            "side",
+            "pattern_algorithm",
+            "signal_ts",
+            "confidence_score",
+            "entry_quality_score",
+            "analyzer_score",
+            "confirmation_score",
+            "trend_bias",
+            "signal_mode",
+            "regime",
+            "market_phase",
+            "atr",
+            "volatility",
+            "noise_score",
+            "parser_diagnostics",
+            "entry_zone_low",
+            "entry_zone_high",
+            "entry_price",
+            "ohlcv_window"
+        ]
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_request_sent",
+        "signal_id": "sig_e011fd34ea582e3b",
+        "symbol": "USUSDT",
+        "pattern_algorithm": "double_top_contextual_v3",
+        "provider": "mock",
+        "model": ""
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_response_received",
+        "signal_id": "sig_e011fd34ea582e3b",
+        "symbol": "USUSDT",
+        "pattern_algorithm": "double_top_contextual_v3",
+        "provider": "mock",
+        "decision": "enter",
+        "confidence": 0.6985,
+        "quality_score": 0.6454,
+        "risk_penalty": 0,
+        "reasons": [
+            "mock_provider",
+            "pattern_match_detected"
+        ]
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_decision_enter",
+        "signal_id": "sig_e011fd34ea582e3b",
+        "symbol": "USUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v3",
+        "confidence": 0.6985,
+        "quality_score": 0.6454,
+        "reasons": [
+            "mock_provider",
+            "pattern_match_detected"
+        ],
+        "recommended_action": "enter",
+        "hold_or_close_bias": "hold",
+        "runner_probability_estimate": 0.6744,
+        "reject_risk_estimate": 0.5552
+    },
+    {
+        "ts": 1775036109,
+        "event_type": "virtual_trade_opened",
+        "signal_id": "sig_e011fd34ea582e3b",
+        "virtual_trade_id": "vt_sig_e011fd34ea582e3b",
+        "symbol": "USUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v3",
+        "ai_decision": "enter",
+        "ai_confidence": 0.6985,
+        "ai_quality_score": 0.6454,
+        "entry_price": 0.0042823,
+        "live_entry_price": 0.0042823
+    }
+]

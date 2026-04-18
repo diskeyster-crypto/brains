@@ -22,13 +22,27 @@ return [
     'module' => [
         'enabled' => true,
 
-        // live | dry
-        // live = sends real exchange calls
-        // dry  = simulates, no real trading-stop updates, no real orders
-        'mode' => 'dry',
+        // live  = sends real exchange calls via KeyCenter credentials
+        // demo  = sends real API calls to Bybit Demo account (credentials stored locally in bot config)
+        // paper = simulates locally, no real orders (legacy alias: dry)
+        'mode' => 'paper',
 
-        // KeyCenter account id for Bybit credentials
+        // KeyCenter account id for Bybit credentials (used only in live mode)
         'account_id' => 'trading_bot',
+
+        // Per-mode local credentials (populated by UI settings, stored in bot.json)
+        // demo credentials are NEVER stored in KeyCenter — local bot config only
+        // live credentials use KeyCenter (account_id above); the block below is informational only
+        'credentials' => [
+            'demo' => [
+                'api_key'      => '',
+                'api_secret'   => '',
+                'api_base_url' => 'https://api-demo.bybit.com',
+            ],
+            'live' => [
+                // live uses KeyCenter via account_id above — no raw keys here
+            ],
+        ],
 
         // Reconcile exchange positions & orders before executing intents
         // true = reconcile first (recommended)
@@ -132,11 +146,22 @@ return [
         // Late / retrace policy defaults (can be overridden by intent fields)
         'default_entry_timeout_minutes' => 8,
         'default_late_threshold_pct' => 1.25,
+        'late_entry_buffer_pct' => 0.15,
+        // Side-specific overrides (null = use default_late_threshold_pct)
+        'late_entry_threshold_pct_long' => null,
+        'late_entry_threshold_pct_short' => 1.75,
+        // Freshness: intents newer than this window get extra tolerance
+        'late_entry_freshness_window_seconds' => 180,
+        'late_entry_freshness_bonus_pct' => 0.20,
+        'late_entry_short_enter_now_bonus_pct' => 0.25,
         'retrace_slack_pct' => 0.05,
+
+        // Stale claimed intent finalization
+        'claim_timeout_minutes' => 10,
 
         // Experimental: invert direction from Brain signals (LONG↔SHORT)
         // Useful for contrarian tests; intent will include side_original.
-        'reverse_side_enabled' => true,
+        'reverse_side_enabled' => false,
 
         // Reconcile / exchange cache
         'exchange_positions_cache_ttl_sec' => 2,
@@ -175,6 +200,53 @@ return [
         'dumb_trailing_enabled' => true,
         'enable_trailing_on_open' => false,
         'dumb_trailing_activation_epsilon_pct' => 0.02,
+
+        // ROI-based trailing presets for price_distance_floor mode
+        // Preset mode: soft | medium | hard | custom
+        // When preset is active, distance is defined in ROI units and converted to price distance via leverage
+        'trailing_preset_mode' => 'medium',
+        'trailing_presets' => [
+            'soft' => [
+                'activation_roi' => 2.0,
+                'floor_lock_roi' => 2.0,
+                'distance_roi'   => 0.5,
+            ],
+            'medium' => [
+                'activation_roi' => 3.0,
+                'floor_lock_roi' => 3.0,
+                'distance_roi'   => 0.8,
+            ],
+            'hard' => [
+                'activation_roi' => 4.0,
+                'floor_lock_roi' => 4.0,
+                'distance_roi'   => 1.0,
+            ],
+        ],
+
+        // Profit Add-On: one-time scale-in into a winning position
+        // Triggered when ROI >= trailing_activation_floor_roi (same threshold as floor lock).
+        // Add-on amount = budget_usdt_per_trade * (profit_addon_budget_pct / 100).
+        // One-time only per trade; does NOT reset protection state.
+        'profit_addon_enabled' => false,
+        'profit_addon_budget_pct' => 0.0,
+
+        // ROI Ladder Trailing step (fixed_roi_ladder mode)
+        // Locked ROI grows in discrete steps of trailing_step_roi from floor_lock base.
+        // Formula: locked_roi = floor_lock + floor((peak_roi - activation_roi) / step_roi) * step_roi
+        'trailing_step_roi' => 1.5,
+
+        // Trend-Reversal Soft Ladder (TEST MODE — short V2/V3 only).
+        // Activated when trailing_step_mode = 'trend_reversal_soft_ladder_short'.
+        // Requires: short trade from double_top_contextual_v2 or _v3, AND
+        //           mirrored double_bottom_contextual_v2 or _v3 signal present.
+        // Fixed test constants (not user-configurable in v1):
+        //   reversal_overlay_activation_peak_roi = 10
+        //   reversal_overlay_base_lock_roi       = 5
+        //   reversal_overlay_main_step_roi       = 3
+        //   reversal_overlay_lock_step_roi       = 1
+        // To enable: set trailing_step_mode = 'trend_reversal_soft_ladder_short'
+        //            in trailing config (Brain or bot local).
+        'reversal_overlay_enabled' => false,
 
         // Balance checks
         'balance_strict_stable_coin_only' => true,
@@ -322,6 +394,139 @@ return [
 
                 // Re-arm if trailing exists but not armed
                 'rearm_if_not_armed' => true,
+            ],
+
+            /* ======================================================
+               SHADOW TRAILING (PM shadow-only, no exchange writes)
+               ====================================================== */
+            'shadow_trailing' => [
+                // Activation threshold: arm trailing once peak_roi >= this (%)
+                'activation_roi_pct' => 3.5,
+
+                // First lock ROI after arming (soft lock — break-even or small positive %)
+                // Set 0.0 for break-even, or a small positive value for initial profit lock
+                'first_lock_roi_pct' => 0.0,
+
+                // Step size: tighten lock every +N% ROI above activation (%)
+                'step_roi_pct' => 2.0,
+
+                // Buffer subtracted from step lock to avoid setting stop too tight (%)
+                'lock_buffer_roi_pct' => 0.5,
+
+                // Cooldown between proposed lock updates (seconds)
+                // Prevents rapid repeated moves on noisy candles
+                'cooldown_sec' => 30,
+
+                // Minimum distance from current price (% of mark price)
+                // Proposed stop must be at least this far from mark price
+                'min_distance_to_price_pct' => 1.0,
+
+                // Use peak_roi as main driver (monotonic — never decreases)
+                'peak_based_mode' => true,
+            ],
+
+            /* ======================================================
+               PM-10: POST-ENTRY REFINEMENT POLICY
+               Applied only in active-owner mode (trailing_owner=profit_manager),
+               after trailing is armed. Controls three refinement branches:
+               first_lock_protection, shallow_pullback_protection,
+               and continuation_extension (observational).
+               ====================================================== */
+            'pm10_refinement' => [
+                // first_lock_protection: hold first lock when peak is barely above activation.
+                // Requires peakRoi >= activationRoi + (stepRoi * this_factor) before placing lock.
+                // 0.0 = disable (lock immediately on arm), 1.0 = require full first step.
+                'first_lock_min_continuation_factor' => 0.5,
+
+                // shallow_pullback_protection: hold tightening when pullback fraction exceeds this.
+                // Pullback fraction = (peakRoi - currentRoi) / peakRoi.
+                // 0.30 = hold if more than 30% of peak ROI has been given back.
+                // 0.0 = disable, 1.0 = never hold on pullback.
+                'shallow_pullback_threshold_factor' => 0.30,
+
+                // continuation_extension: observational branch, fires when position is this many
+                // ROI points above the last lock (confirms PM is allowing position to breathe).
+                'continuation_extension_min_headroom' => 1.0,
+            ],
+
+            'pm11_adaptive' => [
+                // strong_continuation: minimum headroom above last lock (in ROI points) to classify
+                // a position as "strong continuation". Must be >= 2 × step_roi_pct to qualify.
+                // Prevents classifying normal progress as strong continuation prematurely.
+                'strong_continuation_headroom_factor' => 2.0,
+
+                // strong_continuation: maximum ROI extension PM-11 may record as adaptive
+                // adjustment for a strong-continuation position. Pure observational bound —
+                // does not bypass the step trailing ratchet or cooldown guards.
+                'max_extension_roi' => 0.5,
+
+                // flat_carry: position is classified as flat_carry when trailing is armed,
+                // a lock is already placed, and the headroom (currentRoi - prevLockRoi) is below
+                // this fraction of step_roi_pct (e.g. 0.3 × step means barely above lock).
+                'flat_carry_headroom_factor' => 0.3,
+            ],
+
+            // PM-17: Profit capture — drawdown from peak ROI tracking and lock enforcement.
+            // Computes drawdown = peak_roi - current_roi and classifies into branches.
+            // When drawdown exceeds the aggressive threshold the layer overrides any pm10_hold
+            // so step trailing can fire and tighten the stop. Only tightens — never loosens.
+            'pm17_profit_capture' => [
+                // peak_headroom_min: peak_roi must exceed activation_roi_pct by at least this many
+                // ROI points for the position to be considered "meaningfully peaked".
+                // Prevents premature profit-capture action on barely-armed positions.
+                'peak_headroom_min' => 0.5,
+
+                // shallow_drawdown_max_fraction: drawdown / peak_roi <= this = shallow pullback.
+                // At shallow pullback the layer tags the position but does NOT force action —
+                // position may continue to new highs.
+                'shallow_drawdown_max_fraction' => 0.20,
+
+                // lock_strengthen_at_peak_max_fraction: drawdown / peak_roi <= this = at/near peak.
+                // At peak the layer overrides any pm10_hold so step trailing can lock in gains
+                // immediately rather than being held by first_lock_protection or adaptive hold.
+                'lock_strengthen_at_peak_max_fraction' => 0.05,
+
+                // aggressive_drawdown_fraction: drawdown / peak_roi >= this = significant giveback.
+                // At this level the layer overrides pm10_hold unconditionally to force the stop
+                // to tighten and capture remaining profit.
+                'aggressive_drawdown_fraction' => 0.35,
+            ],
+
+            // PM-18 (pm_refine): Peak-drawdown refinement v2 — decisive zone-based layer.
+            // Runs after PM-17. Uses ABSOLUTE drawdown (ROI points, not fraction) from peak
+            // to classify each position into a clear zone and apply a decisive hold override.
+            //
+            // Zones:
+            //   growth       — drawdown <= shallow_max_abs  → release hold, support continuation
+            //   shallow_pullback — shallow_max < drawdown < protect_min → set hold, avoid tightening
+            //   protection   — drawdown >= protect_min_abs  → ALWAYS release hold, force step trailing
+            //
+            // In protection zone pm_refine is DECISIVE: it always fires when peak is meaningful,
+            // ensuring the position gives back as little as possible after a meaningful drawdown.
+            'pm_refine' => [
+                // pm_refine_enabled: master toggle for the pm_refine layer (true = active).
+                'pm_refine_enabled' => true,
+
+                // peak_headroom_min: peak must exceed activation_roi_pct by at least this many
+                // ROI points for pm_refine to evaluate the position.
+                // Same gate as PM-17 — prevents action on barely-armed positions.
+                'peak_headroom_min' => 0.5,
+
+                // shallow_drawdown_max_abs: absolute drawdown (ROI points) at or below which
+                // the position is classified as growth zone (at or near peak).
+                // In growth zone pm_refine releases any hold so step trailing can lock in gains.
+                'shallow_drawdown_max_abs' => 0.30,
+
+                // protect_drawdown_min_abs: absolute drawdown (ROI points) at or above which
+                // the position is classified as protection zone.
+                // In protection zone pm_refine ALWAYS releases hold so step trailing fires.
+                // Complements PM-17 which uses fraction; pm_refine fires sooner on absolute distance.
+                'protect_drawdown_min_abs' => 1.0,
+
+                // pm_refine_drawdown_strictness: normal | strict.
+                // In strict mode thresholds are tightened (both multiplied by 0.7) so protection
+                // triggers sooner and growth window is narrower.
+                'pm_refine_drawdown_strictness' => 'normal',
             ],
 
             /* ======================================================

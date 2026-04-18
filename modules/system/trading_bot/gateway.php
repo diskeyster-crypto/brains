@@ -17,6 +17,9 @@ class TradingBotGateway
     private array $config;
     private ?object $client = null;
     
+    /** @var string Execution mode: live|dry */
+    private string $mode = 'dry';
+    
     /** @var array P4: Instrument meta cache (tickSize, qtyStep, minOrderQty) */
     private array $instrumentMetaCache = [];
     
@@ -61,14 +64,15 @@ class TradingBotGateway
     public function init(): void
     {
         $accountId = $this->config['module']['account_id'] ?? 'trading_bot';
-        $mode = $this->config['module']['mode'] ?? 'dry';
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        $this->mode = $mode;
         
         if (!class_exists('\\Core\\Gateway\\Bybit')) {
             throw new \RuntimeException('Core\\Gateway\\Bybit class not found');
         }
         
-        // P0.4.2: Preflight credentials check (LIVE mode only)
         if ($mode === 'live') {
+            // LIVE mode: credentials from KeyCenter (unchanged behavior)
             $keyCenter = \Core\KeyCenter\KeyCenter::instance();
 
             $hasStoredCredentials = $keyCenter->hasCredentials('bybit', $accountId);
@@ -87,7 +91,6 @@ class TradingBotGateway
                 );
             }
 
-            // Credentials exist, but are not usable (most commonly: decryption failed due to wrong storage/.encryption_key).
             if (empty($credentials)) {
                 throw new \RuntimeException(
                     "KeyCenter: Bybit credentials for account '{$accountId}' exist but are not usable (decryption failed). " .
@@ -95,9 +98,33 @@ class TradingBotGateway
                     "or re-save the API key/secret in KeyCenter to re-encrypt them."
                 );
             }
+
+            $this->client = \Core\Gateway\Bybit::client($accountId);
+
+        } elseif ($mode === 'demo') {
+            // DEMO mode: credentials stored locally in bot config (NOT KeyCenter)
+            $demoCreds = $this->config['module']['credentials']['demo'] ?? [];
+            $demoApiKey    = trim((string)($demoCreds['api_key']    ?? ''));
+            $demoApiSecret = trim((string)($demoCreds['api_secret'] ?? ''));
+            $demoBaseUrl   = trim((string)($demoCreds['api_base_url'] ?? 'https://api-demo.bybit.com'));
+
+            if ($demoApiKey === '' || $demoApiSecret === '') {
+                throw new \RuntimeException(
+                    "Demo mode requires API credentials configured in bot settings (Demo section). " .
+                    "api_key and api_secret must not be empty."
+                );
+            }
+
+            // Use a dedicated named client so demo never shares state with live
+            $this->client = \Core\Gateway\Bybit::client('demo_' . $accountId);
+            $this->client->setCredentials($demoApiKey, $demoApiSecret);
+            $this->client->setBaseUrl($demoBaseUrl);
+
+        } else {
+            // PAPER / DRY mode: no real exchange calls; client is not used
+            $this->client = null;
+            return;
         }
-        
-        $this->client = \Core\Gateway\Bybit::client($accountId);
         
         if ($this->client === null) {
             throw new \RuntimeException("Failed to initialize Bybit client for account: {$accountId}");
@@ -477,8 +504,8 @@ class TradingBotGateway
             ], true);
             
             if (!isset($resp['success']) || $resp['success'] !== true) {
-                // In LIVE mode we must surface auth/config failures instead of silently returning empty.
-                if ($this->mode === 'live') {
+                // In real exchange modes (live/demo) surface auth/config failures instead of silently returning empty.
+                if ($this->mode === 'live' || $this->mode === 'demo') {
                     throw new \RuntimeException('Bybit getPositions failed: ' . $this->buildErrorSummary($resp));
                 }
                 return [];
@@ -486,8 +513,8 @@ class TradingBotGateway
             
             return $resp['result']['list'] ?? [];
         } catch (\Throwable $e) {
-            // In LIVE mode we prefer surfacing the reason via BotReconcileTrait (it catches exceptions).
-            if ($this->mode === 'live') {
+            // In real exchange modes surface the reason via BotReconcileTrait (it catches exceptions).
+            if ($this->mode === 'live' || $this->mode === 'demo') {
                 throw $e;
             }
             return [];
@@ -871,8 +898,8 @@ class TradingBotGateway
             ], true);
             
             if (!isset($resp['success']) || $resp['success'] !== true) {
-                // In LIVE mode we must surface auth/config failures instead of silently returning empty.
-                if ($this->mode === 'live') {
+                // In real exchange modes (live/demo) surface auth/config failures instead of silently returning empty.
+                if ($this->mode === 'live' || $this->mode === 'demo') {
                     throw new \RuntimeException('Bybit getOpenOrders failed: ' . $this->buildErrorSummary($resp));
                 }
                 return [];
@@ -880,8 +907,8 @@ class TradingBotGateway
             
             return $resp['result']['list'] ?? [];
         } catch (\Throwable $e) {
-            // In LIVE mode we prefer surfacing the reason via BotReconcileTrait (it catches exceptions).
-            if ($this->mode === 'live') {
+            // In real exchange modes surface the reason via BotReconcileTrait (it catches exceptions).
+            if ($this->mode === 'live' || $this->mode === 'demo') {
                 throw $e;
             }
             return [];

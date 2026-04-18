@@ -1003,6 +1003,216 @@ Router::post('/admin/brain/api/profiles/set_active', function () {
 });
 
 // ============================================================
+// SMART BRAIN MODULE ROUTES
+// ============================================================
+
+require_once ROOT . '/modules/system/smart_brain/controller.php';
+
+Router::get('/admin/smart_brain', function () {
+    $controller = new SmartBrainController();
+    $controller->index();
+});
+
+Router::get('/admin/smart_brain/config', function () {
+    $controller = new SmartBrainController();
+    $controller->config();
+});
+
+Router::get('/admin/smart_brain/user_config', function () {
+    $controller = new SmartBrainController();
+    $controller->userConfig();
+});
+
+Router::post('/admin/smart_brain/user_config/save', function () {
+    $controller = new SmartBrainController();
+    $controller->saveUserConfig();
+});
+
+Router::get('/admin/smart_brain/analizator', function () {
+    $controller = new SmartBrainController();
+    $controller->analizator();
+});
+
+Router::get('/admin/smart_brain/simulator', function () {
+    $controller = new SmartBrainController();
+    $controller->simulator();
+});
+
+Router::get('/admin/smart_brain/simulator_analytics', function () {
+    $controller = new SmartBrainController();
+    $controller->simulatorAnalytics();
+});
+
+Router::get('/admin/smart_brain/passports', function () {
+    $controller = new SmartBrainController();
+    $controller->passports();
+});
+
+Router::get('/admin/smart_brain/live_performance', function () {
+    $controller = new SmartBrainController();
+    $controller->livePerformance();
+});
+
+Router::get('/admin/smart_brain/runtime', function () {
+    $controller = new SmartBrainController();
+    $controller->runtimePage();
+});
+
+Router::get('/admin/smart_brain/api/runtime', function () {
+    $controller = new SmartBrainController();
+    $controller->runtime();
+});
+
+Router::post('/admin/smart_brain/run', function () {
+    $controller = new SmartBrainController();
+    $controller->run();
+});
+
+Router::get('/admin/smart_brain/maintenance', function () {
+    $controller = new SmartBrainController();
+    $controller->maintenance();
+});
+
+Router::post('/admin/smart_brain/cleanup/soft', function () {
+    $controller = new SmartBrainController();
+    $controller->cleanupSoft();
+});
+
+Router::post('/admin/smart_brain/cleanup/simulator', function () {
+    $controller = new SmartBrainController();
+    $controller->cleanupSimulator();
+});
+
+Router::post('/admin/smart_brain/cleanup/full', function () {
+    $controller = new SmartBrainController();
+    $controller->cleanupFull();
+});
+
+Router::post('/admin/smart_brain/blacklist/save', function () {
+    $controller = new SmartBrainController();
+    $controller->saveBlacklist();
+});
+
+// AI Shadow control-plane routes (Brain UI only; execution stays in ai_shadow module)
+Router::get('/admin/smart_brain/ai_shadow', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadow();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/run_mirror', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowRunMirror();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/run_replay', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowRunReplay();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/save_settings', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowSaveSettings();
+});
+
+Router::get('/admin/smart_brain/ai_shadow/stats', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowStats();
+});
+
+Router::post('/admin/smart_brain/ai_shadow/clear_storage', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowClearStorage();
+});
+
+// Trading Bot Execution control-plane routes (Brain UI only; execution stays in trading_bot module)
+Router::get('/admin/smart_brain/execution', function () {
+    $controller = new SmartBrainController();
+    $controller->execution();
+});
+
+Router::post('/admin/smart_brain/execution/run', function () {
+    $controller = new SmartBrainController();
+    $controller->executionRunBot();
+});
+
+Router::post('/admin/smart_brain/execution/reconcile', function () {
+    $controller = new SmartBrainController();
+    $controller->executionReconcile();
+});
+
+Router::get('/admin/smart_brain/execution/status', function () {
+    $controller = new SmartBrainController();
+    $controller->executionStatus();
+});
+
+Router::post('/admin/smart_brain/execution/save_config', function () {
+    $controller = new SmartBrainController();
+    $controller->executionSaveConfig();
+});
+
+// Pattern Engine control-plane inside Brain
+Router::get('/admin/smart_brain/patterns', function () {
+    $controller = new SmartBrainController();
+    $controller->patterns();
+});
+
+Router::post('/admin/smart_brain/patterns/run', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsRun();
+});
+
+Router::post('/admin/smart_brain/patterns/save_config', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsSaveConfig();
+});
+
+Router::get('/admin/smart_brain/patterns/api/signals', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsApiSignals();
+});
+
+Router::get('/admin/smart_brain/patterns/api/scenarios', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsApiScenarios();
+});
+
+Router::get('/admin/smart_brain/patterns/api/demo_signals', function () {
+    $controller = new SmartBrainController();
+    $controller->patternsApiDemoSignals();
+});
+
+// Module Configs hub inside Brain
+Router::get('/admin/smart_brain/module_configs', function () {
+    $controller = new SmartBrainController();
+    $controller->moduleConfigs();
+});
+
+Router::get('/admin/smart_brain/profit_manager', function () {
+    $controller = new SmartBrainController();
+    $controller->profitManager();
+});
+
+Router::post('/admin/smart_brain/profit_manager/save_config', function () {
+    $controller = new SmartBrainController();
+    $controller->profitManagerSaveConfig();
+});
+
+Router::get('/admin/smart_brain/ai_shadow/journal', function () {
+    $controller = new SmartBrainController();
+    $controller->aiShadowJournal();
+});
+
+Router::get('/admin/smart_brain/win_universe', function () {
+    $controller = new SmartBrainController();
+    $controller->winUniverse();
+});
+
+Router::post('/admin/smart_brain/win_universe/run', function () {
+    $controller = new SmartBrainController();
+    $controller->winUniverseRun();
+});
+
+// ============================================================
 // SIMULATOR MODULE ROUTES (Parser6 Simulator)
 // ============================================================
 
@@ -1199,6 +1409,198 @@ Router::get('/admin/assets/css/style.css', function () {
 Router::get('/admin/assets/js/app.js', function () {
     header('Content-Type: application/javascript');
     readfile(ROOT . '/admin/assets/js/app.js');
+});
+
+// ============================================================
+// COIN PASSPORT MODULE ROUTES
+// ============================================================
+
+require_once ROOT . '/modules/system/coin_passport/controller.php';
+
+// UI
+Router::get('/admin/coin_passport', function () {
+    $controller = new CoinPassportController();
+    $controller->index();
+});
+
+Router::get('/admin/coin_passport/symbol/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->detail($symbol);
+});
+
+// Actions
+Router::post('/admin/coin_passport/rebuild', function () {
+    $controller = new CoinPassportController();
+    $controller->rebuildAll();
+});
+
+Router::post('/admin/coin_passport/rebuild/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->rebuildSymbol($symbol);
+});
+
+// API (read-only, for future Brain/Bot integration)
+Router::get('/admin/coin_passport/api/passports', function () {
+    $controller = new CoinPassportController();
+    $controller->apiPassports();
+});
+
+Router::get('/admin/coin_passport/api/passport/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->apiPassport($symbol);
+});
+
+Router::get('/admin/coin_passport/api/guidance/{symbol}', function (string $symbol) {
+    $controller = new CoinPassportController();
+    $controller->apiGuidance($symbol);
+});
+
+// ============================================================
+// PATTERN ENGINE MODULE ROUTES
+// Pattern Engine is a backend/API module only.
+// User-facing UI lives entirely in Smart Brain: /admin/smart_brain/patterns
+// No standalone GET page routes are registered here.
+// ============================================================
+
+require_once ROOT . '/modules/system/pattern_engine/controller.php';
+
+// Actions
+Router::post('/admin/pattern_engine/settings/save', function () {
+    $controller = new PatternEngineController();
+    $controller->saveSettings();
+});
+
+Router::post('/admin/pattern_engine/clear', function () {
+    $controller = new PatternEngineController();
+    $controller->clearStorage();
+});
+
+Router::post('/admin/pattern_engine/run', function () {
+    $controller = new PatternEngineController();
+    $controller->runNow();
+});
+
+// API (read-only, for Demo Execution / AI Shadow / Simulator integration)
+Router::get('/admin/pattern_engine/api/signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiSignals();
+});
+
+Router::get('/admin/pattern_engine/api/scenarios', function () {
+    $controller = new PatternEngineController();
+    $controller->apiScenarios();
+});
+
+Router::get('/admin/pattern_engine/api/demo_signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiDemoSignals();
+});
+
+Router::get('/admin/pattern_engine/api/shadow_signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiShadowSignals();
+});
+
+Router::get('/admin/pattern_engine/api/sim_signals', function () {
+    $controller = new PatternEngineController();
+    $controller->apiSimSignals();
+});
+
+// ============================================================
+// UNIFIED CONFIG MODULE — Shadow UI (config_all)
+// Read-only preview. NOT runtime authority. Legacy /admin/smart_brain/config untouched.
+// ============================================================
+
+require_once ROOT . '/modules/system/config/lib/config_store.php';
+require_once ROOT . '/modules/system/config/lib/config_audit_engine.php';
+require_once ROOT . '/modules/system/config/service.php';
+require_once ROOT . '/modules/system/config/controller.php';
+
+use Modules\System\Config\UnifiedConfigController;
+
+Router::get('/admin/smart_brain/config_all', function () {
+    $controller = new UnifiedConfigController();
+    $controller->index();
+});
+
+Router::get('/admin/smart_brain/config_all/patterns', function () {
+    $controller = new UnifiedConfigController();
+    $controller->patterns();
+});
+
+Router::get('/admin/smart_brain/config_all/smart_brain', function () {
+    $controller = new UnifiedConfigController();
+    $controller->smartBrain();
+});
+
+Router::get('/admin/smart_brain/config_all/trading_bot', function () {
+    $controller = new UnifiedConfigController();
+    $controller->tradingBot();
+});
+
+Router::get('/admin/smart_brain/config_all/profit_manager', function () {
+    $controller = new UnifiedConfigController();
+    $controller->profitManager();
+});
+
+Router::get('/admin/smart_brain/config_all/coin_cycle', function () {
+    $controller = new UnifiedConfigController();
+    $controller->coinCycle();
+});
+
+Router::get('/admin/smart_brain/config_all/win_universe', function () {
+    $controller = new UnifiedConfigController();
+    $controller->winUniverse();
+});
+
+Router::post('/admin/smart_brain/config_all/win_universe/save', function () {
+    $controller = new UnifiedConfigController();
+    $controller->winUniverseSaveConfig();
+});
+
+Router::get('/admin/smart_brain/config_all/advanced', function () {
+    $controller = new UnifiedConfigController();
+    $controller->advanced();
+});
+
+Router::get('/admin/smart_brain/config_all/api/ownership', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiOwnership();
+});
+
+Router::get('/admin/smart_brain/config_all/api/conflicts', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiConflicts();
+});
+
+Router::get('/admin/smart_brain/config_all/api/operational', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiOperational();
+});
+
+Router::get('/admin/smart_brain/config_all/api/immutable', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiImmutable();
+});
+
+Router::get('/admin/smart_brain/config_all/api/preview', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiPreview();
+});
+
+Router::post('/admin/smart_brain/config_all/api/extract', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiExtract();
+});
+
+Router::post('/admin/smart_brain/config_all/api/save', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiSave();
+});
+
+Router::post('/admin/smart_brain/config_all/api/save_and_reextract', function () {
+    $controller = new UnifiedConfigController();
+    $controller->apiSaveAndReextract();
 });
 
 // ============================================================

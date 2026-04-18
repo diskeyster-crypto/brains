@@ -1,0 +1,64 @@
+{
+    "module": "coin_passport",
+    "switch_wave": "v1_operational_params",
+    "unified_config_available": true,
+    "unified_config_master_path": "/home/runner/work/brains/brains/modules/system/coin_passport/../config/storage/runtime/config_operational_master.json",
+    "unified_config_draft_path": "/home/runner/work/brains/brains/modules/system/coin_passport/../config/storage/runtime/config_operational_draft.json",
+    "source": "unified_config_operational_draft",
+    "partially_migrated": true,
+    "first_wave_total": 4,
+    "migrated_count": 4,
+    "fallback_count": 0,
+    "switched_params": [
+        "cp_enabled",
+        "cp_rebuild_all_enabled",
+        "cp_rebuild_recent_enabled",
+        "cp_cycle_profiles_enabled"
+    ],
+    "fallback_params": [],
+    "switched_params_detail": {
+        "cp_enabled": {
+            "value": true,
+            "original_source": "cp_config",
+            "original_source_file": "modules/system/coin_passport/config/config.php",
+            "via": "unified_config_operational_draft",
+            "source_layer": "unified_config",
+            "source_owner": "coin_passport",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "cp_rebuild_all_enabled": {
+            "value": true,
+            "original_source": "cp_config",
+            "original_source_file": "modules/system/coin_passport/config/config.php",
+            "via": "unified_config_operational_draft",
+            "source_layer": "unified_config",
+            "source_owner": "coin_passport",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "cp_rebuild_recent_enabled": {
+            "value": true,
+            "original_source": "cp_config",
+            "original_source_file": "modules/system/coin_passport/config/config.php",
+            "via": "unified_config_operational_draft",
+            "source_layer": "unified_config",
+            "source_owner": "coin_passport",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "cp_cycle_profiles_enabled": {
+            "value": true,
+            "original_source": "cp_config",
+            "original_source_file": "modules/system/coin_passport/config/config.php",
+            "via": "unified_config_operational_draft",
+            "source_layer": "unified_config",
+            "source_owner": "coin_passport",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        }
+    },
+    "fallback_params_detail": [],
+    "recorded_at": "2026-04-13T12:14:56+00:00",
+    "unified_config_generated_at": "2026-04-13T12:10:07+00:00"
+}

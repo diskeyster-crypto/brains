@@ -6,12 +6,12 @@ return [
     'settings' => [
         'enabled' => true,
         'risk_levels' => [
-            ['max_corridor_width' => 0.008, 'leverage' => 5, 'budget_factor' => 0.80],
-            ['max_corridor_width' => 0.020, 'leverage' => 4, 'budget_factor' => 0.60],
-            ['max_corridor_width' => 0.040, 'leverage' => 3, 'budget_factor' => 0.45],
-            ['max_corridor_width' => 1.000, 'leverage' => 2, 'budget_factor' => 0.30],
+            ['max_corridor_width' => 0.010, 'leverage' => 6, 'budget_factor' => 0.90],
+            ['max_corridor_width' => 0.025, 'leverage' => 5, 'budget_factor' => 0.75],
+            ['max_corridor_width' => 0.050, 'leverage' => 4, 'budget_factor' => 0.60],
+            ['max_corridor_width' => 1.000, 'leverage' => 3, 'budget_factor' => 0.45],
         ],
-        'default_stop_loss_percent' => 0.04,
+        'default_stop_loss_percent' => 0.05,
     ],
     'auto_rules' => [
         'allow_brain_override' => false,
@@ -19,27 +19,158 @@ return [
     ],
     'user_limits' => [
         'max_budget_per_coin' => 10.0,
-        'max_active_tasks' => 3,
-        'max_leverage' => 5,
-        'brain_mode' => 'safe',
+        'max_active_tasks' => 5,
+        'max_leverage' => 6,
+        'brain_mode' => 'balanced',
         'bootstrap_enabled' => true,
-        'bootstrap_max_signals' => 2,
-        'bootstrap_budget_factor' => 0.25,
-        'bootstrap_max_leverage' => 2,
-        'min_reliability_after_warmup' => 0.22,
-        'warmup_min_trades' => 12,
-        'exit_mode' => 'trailing_tp',
+        'bootstrap_max_signals' => 8,
+        'bootstrap_budget_factor' => 0.35,
+        'bootstrap_max_leverage' => 3,
+        'min_reliability_after_warmup' => 0.12,
+        'warmup_min_trades' => 6,
         'stop_floor_type' => 'corridor_percent',
-        'stop_floor_value' => 0.35,
+        'stop_floor_value' => 0.30,
         'brain_may_tighten_stop' => true,
         'trailing_enabled' => true,
-        'trailing_activation_roi' => 0.018,
-        'trailing_min_lock_roi' => 0.004,
-        'trailing_min_step' => 0.004,
+        'trailing_activation_roi' => 0.05,
+        'trailing_min_lock_roi' => 0.012,
+        'trailing_min_step' => 0.01,
         'brain_may_delay_trailing' => true,
-        'fixed_take_profit_roi' => 0.025,
+        'fixed_take_profit_roi' => 0.03,
+        'exit_mode' => 'hybrid_tp',
         'hybrid_tp_share' => 0.40,
         'break_even_enabled' => true,
-        'break_even_activation_roi' => 0.008,
+        'break_even_activation_roi' => 0.025,
+        'logical_stop_roi' => 0.03,
+        // MAE-based adaptive logical stop
+        'mae_stop_enabled' => true,
+        'mae_stop_floor' => 0.03,
+        'mae_stop_cap' => 0.08,
+        'mae_stop_min_trades' => 10,
+        'mae_stop_min_winners' => 5,
+        'mae_stop_percentile' => 75,
+        // Stop Control
+        'stop_control_mode' => 'auto',
+        'manual_stop_loss_roi' => 0.03,
+        'stop_loss_from_entry_roi' => 0.10,
+        // Stop Loss Engine V2
+        'stop_mode' => 'brain_managed',
+        'simple_stop_liq_factor' => 0.15,
+        'brain_stop_corridor_factor' => 0.25,
+        'brain_stop_volatility_factor' => 0.50,
+        'brain_stop_liq_safety_factor' => 0.30,
+        // Early Failure Guard
+        'early_failure_enabled' => true,
+        'early_failure_window_minutes' => 5,
+        'early_failure_max_adverse_roi' => -0.008,
+        // V2 Confirmation Tier Policy
+        'v2_confirmation_weak_max' => 0.45,
+        'v2_confirmation_strong_min' => 0.75,
+        'v2_zone_widen_weak_pct' => 0.50,
+        'v2_zone_widen_medium_pct' => 0.65,
+        'v2_zone_widen_strong_pct' => 0.80,
+        'v2_zone_widen_max_cap_pct' => 0.85,
+        // V2 Entry Policy
+        'strong_confirmation_enter_now_enabled' => true,
+        'medium_confirmation_wait_retrace_enabled' => true,
+        'weak_confirmation_live_enabled' => false,
+        // V2 Quality Floors
+        'v2_hold_quality_min' => 0.65,
+        'v2_post_reclaim_stability_min' => 0.65,
+        'v2_zone_defense_min' => 0.35,
+        'v2_trend_match_min' => 0.50,
+        'v2_price_position_max' => 0.88,
+        // V2 Live Quality Floor — applied to V2 signals before live approval
+        'v2_live_quality_floor_enabled' => true,
+        'v2_live_min_confirmation_score' => 0.55,
+        'v2_live_min_pattern_confidence' => 0.50,
+        'v2_live_min_trend_match_score' => 0.40,
+        // V2 Cleanup filter — stricter weak+slow and medium-quality tightening for V2 only
+        'v2_cleanup_medium_min_conf' => 0.57,
+        'v2_cleanup_medium_min_eq'   => 0.60,
+        // Sniper V3 Live Filters — applied ONLY when execution_profile = sniper_75_attempt AND pattern = V3
+        'sniper_v3_live_filter_enabled' => true,
+        'sniper_v3_min_confirmation_score' => 0.80,
+        'sniper_v3_min_pattern_confidence' => 0.60,
+        'sniper_v3_min_trend_match_score' => 0.55,
+        'sniper_v3_min_entry_quality_score' => 0.75,
+        'sniper_v3_min_corridor_fit_score' => 0.75,
+        'sniper_v3_max_price_position' => 0.80,
+        'sniper_v3_min_reclaim_strength_score' => 0.70,
+        'sniper_v3_min_hold_quality_score' => 0.75,
+        'sniper_v3_min_post_reclaim_stability_score' => 0.70,
+        'sniper_v3_min_zone_defense_score' => 0.40,
+        // Short-side V3 overrides (softer thresholds for short V3 structural signals)
+        'sniper_v3_min_trend_match_score_short' => 0.40,
+        'sniper_v3_min_entry_quality_score_short' => 0.60,
+        'sniper_v3_min_corridor_fit_score_short' => 0.60,
+        // Slot Priority Layer — time-aware candidate ranking for limited live slots
+        // Ranks competing candidates when approved signals exceed available slots.
+        // Does NOT raise slot limits or bypass any hard gate.
+        'slot_priority_enabled'                 => true,
+        'freshness_decay_enabled'               => true,
+        'slot_priority_freshness_window_minutes' => 30,
+        // Confirmation Layer — post-pattern wait window before live entry for targeted patterns.
+        // Only applies to patterns listed in confirmation_target_patterns.
+        // V2 rollout scope: double_top_contextual_v2 short, double_bottom_contextual_v2 long.
+        // Default: disabled — enable via user config to activate.
+        'confirmation_layer_enabled'            => true,
+        'confirmation_wait_cycles'              => 3,
+        'confirmation_reclaim_tolerance_pct'    => 0.005,
+        'confirmation_target_patterns'          => ['double_top_contextual_v2', 'double_bottom_contextual_v2'],
+        // Max age for a pending confirmation entry before it expires.
+        // Raised from 720 to 900 to give valid setups sufficient time to reach confirmation
+        // before expiry (max_age_exceeded) when confirmation_wait_cycles = 3.
+        'confirmation_max_age_seconds'          => 900,
+        // Post-confirm quality gate — weak+normal long V2 only.
+        // Applied ONLY when: pattern=double_bottom_contextual_v2, side=long,
+        // confirmation_result=confirmed, wave_amplitude_state=weak, wave_speed_state=normal.
+        // Uses a bounded multi-signal gate: at least min_signals_pass of the three primary
+        // score checks must pass; pattern_confidence is a hard floor applied in addition.
+        // Signals that fail route to demo (preferred fallback, not hard reject).
+        'post_confirm_wn_long_v2_gate_enabled'          => true,
+        'post_confirm_wn_long_v2_min_entry_quality'     => 0.58,
+        'post_confirm_wn_long_v2_min_corridor_fit'      => 0.52,
+        'post_confirm_wn_long_v2_min_trend_match'       => 0.48,
+        'post_confirm_wn_long_v2_min_pattern_confidence' => 0.52,
+        'post_confirm_wn_long_v2_min_signals_pass'      => 2,
+        // Fast-coin long entry gate — prevents raw impulse-chase on fast/impulse-sensitive symbols.
+        // Applies only to symbols in fast_coin_symbols list (comma-separated).
+        // Gate targets double_bottom_contextual_v2 long and double_bottom_contextual_v3 long.
+        'fast_coin_gate_enabled'                        => true,
+        'fast_coin_symbols'                             => 'APEUSDT,CRVUSDT,ROSEUSDT,DEGENUSDT,SKRUSDT,NEWTUSDT,BATUSDT,CETUSUSDT',
+        // Breakout hold: live price must be at or above entry_zone_high minus this buffer.
+        // 0.002 = 0.2% below the breakout reference is still considered "held".
+        'fast_coin_breakout_hold_buffer_pct'            => 0.002,
+        // Micro-acceleration: live price must exceed entry_zone_high by at least this % to
+        // confirm real upward continuation above the breakout reference.
+        'fast_coin_micro_accel_min_pct'                 => 0.003,
+        // Informational: max wait cycles after confirmation before micro-accel is required.
+        // Currently advisory; enforced by the live-intent TTL + gate checks above.
+        'fast_coin_micro_accel_max_wait_cycles'         => 2,
+        // Hard anti-pattern floors (apply regardless of V2/V3 path)
+        'fast_coin_gate_min_pattern_confidence'         => 0.60,
+        'fast_coin_gate_min_v2_priority_score'          => 0.60,
+        // V2 long (double_bottom_contextual_v2) positive gate thresholds
+        'fast_coin_gate_v2_min_quality_score'           => 0.75,
+        'fast_coin_gate_v2_min_signal_strength'         => 0.65,
+        'fast_coin_gate_v2_min_scenario_score'          => 0.76,
+        'fast_coin_gate_v2_min_slot_priority_score'     => 72.0,
+        // V3 long (double_bottom_contextual_v3) exception thresholds (stricter quality)
+        'fast_coin_gate_v3_min_quality_score'           => 0.85,
+        'fast_coin_gate_v3_min_signal_strength'         => 0.60,
+        'fast_coin_gate_v3_min_slot_priority_score'     => 71.0,
+        // Fast-confirmed-slow exception — narrow bypass of v2_live_quality_floor for strong confirmed
+        // slow long V2 setups on configured fast-coin symbols.
+        // Applies only when ALL of these are true:
+        //   symbol in fast_coin_symbols, pattern = double_bottom_contextual_v2, side = long,
+        //   confirmation_result = confirmed, wave_speed_state = slow,
+        //   fast_coin_breakout_hold_ok = true, fast_coin_micro_accel_ok = true.
+        // Support thresholds are strict; the fast_coin_gate still evaluates the signal afterward.
+        // This is NOT a broad bypass — it only rescues clean confirmed slow fast-coin setups.
+        'fast_confirmed_slow_exception_enabled'         => true,
+        'fast_confirmed_slow_v2_min_quality_score'      => 0.68,
+        'fast_confirmed_slow_v2_min_signal_strength'    => 0.58,
+        'fast_confirmed_slow_v2_min_scenario_score'     => 0.65,
     ],
 ];

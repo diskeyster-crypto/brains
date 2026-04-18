@@ -1,0 +1,15 @@
+{
+    "symbol": "1000PEPEUSDT",
+    "corridor_width_avg": 0.013795,
+    "volatility_avg": 0,
+    "avg_mae": 0,
+    "avg_mfe": 0,
+    "avg_duration": 0,
+    "winrate": 0,
+    "trades_total": 0,
+    "trades_won": 0,
+    "trades_lost": 0,
+    "speed_class": "fast",
+    "reliability_score": 0,
+    "updated_at": "2026-03-21T11:29:38+00:00"
+}

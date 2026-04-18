@@ -119,7 +119,10 @@ class BotRiskEngine
             return $result;
         }
         
-        // P1.2: If trailing is enabled, validate its params
+        // P1.2: If trailing is enabled, validate its params.
+        // In Brain-controlled mode, these values come from normalizeBrainTrailingIntoRisk()
+        // which provides drawdown_factor from: brain_trailing_contract, risk_block,
+        // or documented_default (0.5). drawdown_factor is NOT the same as trailing_min_step.
         $trailing = $risk['trailing'];
         if ($trailing['enabled'] ?? false) {
             $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
@@ -138,6 +141,16 @@ class BotRiskEngine
             }
         }
         
+        // Validate logical_stop block if present
+        $logicalStop = $risk['logical_stop'] ?? null;
+        if (is_array($logicalStop) && ($logicalStop['enabled'] ?? false)) {
+            $logicalStopRoi = (float)($logicalStop['logical_stop_roi'] ?? 0);
+            if ($logicalStopRoi <= 0 || $logicalStopRoi > 1.0) {
+                // Don't reject — just warn. Logical stop is optional enhancement.
+                $result['missing_fields'][] = 'logical_stop.logical_stop_roi_invalid:' . $logicalStopRoi;
+            }
+        }
+
         // P1.2: Validate numeric values with proper ranges
         $budget = (float)($risk['budget_usdt_per_trade'] ?? 0);
         if ($budget <= 0) {
@@ -153,12 +166,29 @@ class BotRiskEngine
             return $result;
         }
         
-        // P1.2: stop_from_liq_range_pct must be > 0 and <= 100
+        // P1.2: stop_from_liq_range_pct validation — relaxed for entry_roi mode
+        // When stop_control_mode=entry_roi, the exchange SL is computed from entry price,
+        // so stop_from_liq_range_pct is used only as emergency fallback (still required > 0).
+        $stopControlMode = (string)($risk['stop_control']['stop_control_mode'] ?? ($risk['stop_control_mode'] ?? 'auto'));
         $stopFromLiqPct = (float)($risk['stop_from_liq_range_pct'] ?? 0);
         if ($stopFromLiqPct <= 0 || $stopFromLiqPct > 100) {
-            $result['valid'] = false;
-            $result['reason'] = 'invalid_stop_from_liq_range_pct:' . $stopFromLiqPct;
-            return $result;
+            if ($stopControlMode !== 'entry_roi') {
+                $result['valid'] = false;
+                $result['reason'] = 'invalid_stop_from_liq_range_pct:' . $stopFromLiqPct;
+                return $result;
+            }
+            // In entry_roi mode, warn but don't reject — emergency stop may not be needed
+            $result['missing_fields'][] = 'stop_from_liq_range_pct_zero_in_entry_roi_mode';
+        }
+        
+        // Validate entry_roi mode fields
+        if ($stopControlMode === 'entry_roi') {
+            $entryRoi = (float)($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0);
+            if ($entryRoi <= 0 || $entryRoi > 1.0) {
+                $result['valid'] = false;
+                $result['reason'] = 'invalid_stop_loss_from_entry_roi:' . $entryRoi;
+                return $result;
+            }
         }
         
         // P1.2: slippage_bps >= 0 (must be set and non-negative)
@@ -290,20 +320,70 @@ class BotRiskEngine
     }
     
     /**
+     * Calculate stop loss from entry price (entry_roi mode)
+     * 
+     * Formula:
+     * - LONG: sl = entryPrice * (1 - stop_loss_from_entry_roi)
+     * - SHORT: sl = entryPrice * (1 + stop_loss_from_entry_roi)
+     * 
+     * @param array $risk Risk block
+     * @param float $entryPrice Entry price from exchange
+     * @param string $side Position side (long|short)
+     * @return float|null Stop loss price or null if invalid
+     */
+    public function calculateStopLossFromEntry(array $risk, float $entryPrice, string $side): ?float
+    {
+        if ($entryPrice <= 0) {
+            return null;
+        }
+        
+        $stopControl = $risk['stop_control'] ?? [];
+        $entryRoi = (float)($stopControl['stop_loss_from_entry_roi'] ?? 0);
+        if ($entryRoi <= 0 || $entryRoi > 1.0) {
+            return null;
+        }
+        
+        $side = strtolower($side);
+        
+        if ($side === 'long') {
+            // LONG: SL below entry
+            $sl = $entryPrice * (1 - $entryRoi);
+        } else {
+            // SHORT: SL above entry
+            $sl = $entryPrice * (1 + $entryRoi);
+        }
+        
+        if ($sl <= 0) {
+            return null;
+        }
+        
+        return round($sl, 8);
+    }
+    
+    /**
      * Calculate trailing stop parameters (Phase-1)
      * 
      * B3 FIX: ROI calculation INCLUDES leverage.
      * 
+     * Supports three trailing modes:
+     *   - roi_giveback (default): trailing distance based on drawdown_factor
+     *   - price_distance: trailing at fixed pct from current price
+     *   - price_distance_floor: activation floor + locked ROI + price distance + step corridor
+     * 
      * If risk.trailing.enabled=false → ['enabled'=>false].
      * If enabled:
      * - activation_roi_pct = risk.trailing.activation_roi_pct (ROI including leverage)
-     * - drawdown_factor = risk.trailing.drawdown_factor
-     * - activePrice:
-     *   - LONG: entry * (1 + activation_roi_pct/100/leverage)
-     *   - SHORT: entry * (1 - activation_roi_pct/100/leverage)
-     * - trailingStop (distance in price):
-     *   - trail_dist_pct = (activation_roi_pct/100/leverage) * drawdown_factor
-     *   - trailingStop = entry * trail_dist_pct
+     * - For roi_giveback mode:
+     *   - drawdown_factor = risk.trailing.drawdown_factor
+     *   - trailingStop = entry * priceMovePct * drawdown_factor
+     * - For price_distance mode:
+     *   - trailing_price_distance_pct = risk.trailing.trailing_price_distance_pct
+     *   - trailingStop = entry * trailing_price_distance_pct
+     * - For price_distance_floor mode:
+     *   - trailing_activation_floor_roi = activation threshold (percent)
+     *   - trailing_floor_lock_roi = minimum locked ROI (percent)
+     *   - trailing_price_distance_pct = distance from best price
+     *   - trailing_step_mode = 'fixed' | 'auto_strength' | 'fixed_roi_ladder' | 'trend_reversal_soft_ladder_short'
      * 
      * @param array $risk Risk block
      * @param float $entryAvg Average entry price
@@ -315,42 +395,148 @@ class BotRiskEngine
         $trailing = $risk['trailing'] ?? [];
         
         // Check if trailing is enabled
+        // In Brain-controlled mode, this reflects the Brain's trailing decision
         if (!($trailing['enabled'] ?? false)) {
             return ['enabled' => false];
         }
         
-        // Get parameters
+        // Get common parameters
         $activationRoiPct = (float)($trailing['activation_roi_pct'] ?? 0);
-        $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0);
         $leverage = (int)($risk['leverage'] ?? 1);
+        $trailingMode = (string)($trailing['trailing_mode'] ?? 'roi_giveback');
         
-        // Validate parameters
-        if ($activationRoiPct <= 0 || $drawdownFactor <= 0 || $leverage < 1 || $entryAvg <= 0) {
+        if ($activationRoiPct <= 0 || $leverage < 1 || $entryAvg <= 0) {
             return ['enabled' => false];
         }
         
         $side = strtolower($side);
         
         // B3 FIX: ROI includes leverage, so actual price move is smaller
-        // If user wants 10% ROI at 10x leverage, price needs to move only 1%
         $priceMovePct = $activationRoiPct / 100 / $leverage;
         
         // Calculate activePrice (price at which trailing activates)
         if ($side === 'long') {
-            // LONG: activates when price rises to target ROI
             $activePrice = $entryAvg * (1 + $priceMovePct);
         } else {
-            // SHORT: activates when price falls to target ROI
             $activePrice = $entryAvg * (1 - $priceMovePct);
         }
-        
-        // Calculate trailingStop distance (in price units)
-        // Trailing distance = price move * drawdown_factor
+
+        // Price-distance-floor mode (activation floor + locked ROI + price distance + step corridor)
+        if ($trailingMode === 'price_distance_floor') {
+            // Resolve ROI-based trailing preset if active
+            $presetMode = (string)($trailing['trailing_preset_mode'] ?? ($this->config['execution']['trailing_preset_mode'] ?? 'custom'));
+            $presetValues = $this->resolveTrailingPreset($presetMode, $trailing);
+            $distanceRoi = $presetValues['distance_roi'];
+
+            $floorActivationRoi = $presetValues['activation_roi'] ?? (float)($trailing['trailing_activation_floor_roi'] ?? $activationRoiPct);
+            $floorLockRoi = $presetValues['floor_lock_roi'] ?? (float)($trailing['trailing_floor_lock_roi'] ?? 3.0);
+
+            // Convert distance ROI to price distance using leverage
+            // Formula: price_distance_pct = distance_roi / leverage / 100
+            if ($distanceRoi !== null && $distanceRoi > 0) {
+                $distancePct = $distanceRoi / $leverage / 100;
+            } else {
+                $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+                $distanceRoi = null;
+            }
+
+            $stepMode = (string)($trailing['trailing_step_mode'] ?? 'fixed');
+            $stepPctMin = (float)($trailing['trailing_step_pct_min'] ?? 0.005);
+            $stepPctMax = (float)($trailing['trailing_step_pct_max'] ?? 0.02);
+
+            if ($distancePct <= 0 || $distancePct >= 1.0) {
+                return ['enabled' => false];
+            }
+            if ($floorLockRoi > $floorActivationRoi) {
+                // Floor lock must be less than or equal to activation threshold
+                return ['enabled' => false];
+            }
+
+            // Use floor activation ROI for activePrice
+            $floorPriceMovePct = $floorActivationRoi / 100 / $leverage;
+            if ($side === 'long') {
+                $activePrice = $entryAvg * (1 + $floorPriceMovePct);
+            } else {
+                $activePrice = $entryAvg * (1 - $floorPriceMovePct);
+            }
+
+            $trailingStop = $entryAvg * $distancePct;
+            // Compute floor stop price
+            $floorPriceMove = ($floorLockRoi / 100.0) / $leverage;
+            if ($side === 'long') {
+                $floorStopPrice = $entryAvg * (1.0 + $floorPriceMove);
+                $theoreticalStop = $activePrice * (1.0 - $distancePct);
+            } else {
+                $floorStopPrice = $entryAvg * (1.0 - $floorPriceMove);
+                $theoreticalStop = $activePrice * (1.0 + $distancePct);
+            }
+
+            return [
+                'enabled' => true,
+                'trailing_mode' => 'price_distance_floor',
+                'activation_roi_pct' => $floorActivationRoi,
+                'trailing_activation_floor_roi' => $floorActivationRoi,
+                'trailing_floor_lock_roi' => $floorLockRoi,
+                'trailing_price_distance_pct' => $distancePct,
+                'trailing_distance_roi' => $distanceRoi,
+                'trailing_preset_mode' => $presetMode,
+                'trailing_step_mode' => $stepMode,
+                'trailing_step_pct_min' => $stepPctMin,
+                'trailing_step_pct_max' => $stepPctMax,
+                'leverage' => $leverage,
+                'active_price' => round($activePrice, 8),
+                'trailing_stop' => round($trailingStop, 8),
+                'floor_stop_price' => round($floorStopPrice, 8),
+                'exchange_trailing_distance' => round($trailingStop, 8),
+                'theoretical_current_stop_price' => round($theoreticalStop, 8),
+            ];
+        }
+
+        // Price-distance mode
+        if ($trailingMode === 'price_distance') {
+            $distancePct = (float)($trailing['trailing_price_distance_pct'] ?? 0.02);
+            if ($distancePct <= 0 || $distancePct >= 1.0) {
+                return ['enabled' => false];
+            }
+            $trailingStop = $entryAvg * $distancePct;
+            // Compute theoretical stop price at activation point
+            $theoreticalStop = $side === 'long'
+                ? $activePrice * (1.0 - $distancePct)
+                : $activePrice * (1.0 + $distancePct);
+            return [
+                'enabled' => true,
+                'trailing_mode' => 'price_distance',
+                'activation_roi_pct' => $activationRoiPct,
+                'trailing_price_distance_pct' => $distancePct,
+                'leverage' => $leverage,
+                'active_price' => round($activePrice, 8),
+                'trailing_stop' => round($trailingStop, 8),
+                'exchange_trailing_distance' => round($trailingStop, 8),
+                'theoretical_current_stop_price' => round($theoreticalStop, 8),
+            ];
+        }
+
+        // ROI-giveback mode (default)
+        $drawdownFactor = (float)($trailing['drawdown_factor'] ?? 0);
+        if ($drawdownFactor <= 0) {
+            return ['enabled' => false];
+        }
+
         $trailDistPct = $priceMovePct * $drawdownFactor;
         $trailingStop = $entryAvg * $trailDistPct;
-        
+
+        // Enforce minimum Bybit callback distance using min_step from trailing config.
+        // min_step is a price ratio (0.01 = 1% of entry). At high leverage, activation_roi
+        // maps to a very small price move, making the drawdown-derived callback too tight
+        // for normal candle noise. min_step provides a noise-tolerant floor.
+        $minStepRatio = (float)($trailing['min_step'] ?? 0.0);
+        if ($minStepRatio > 0.0 && $entryAvg > 0.0) {
+            $trailingStop = max($trailingStop, $entryAvg * $minStepRatio);
+        }
+
         return [
             'enabled' => true,
+            'trailing_mode' => 'roi_giveback',
             'activation_roi_pct' => $activationRoiPct,
             'drawdown_factor' => $drawdownFactor,
             'leverage' => $leverage,
@@ -448,6 +634,40 @@ class BotRiskEngine
         }
         
         return $result;
+    }
+
+    /**
+     * Resolve ROI-based trailing preset values.
+     *
+     * Returns activation_roi, floor_lock_roi, and distance_roi based on preset mode.
+     * For 'custom' mode, returns values from the trailing block directly.
+     * For named presets (soft/medium/hard), returns preset definitions from config.
+     *
+     * @param string $presetMode Preset name: soft|medium|hard|custom
+     * @param array  $trailing   Trailing block from Brain risk
+     * @return array  Resolved values: activation_roi, floor_lock_roi, distance_roi
+     */
+    private function resolveTrailingPreset(string $presetMode, array $trailing): array
+    {
+        $presets = $this->config['execution']['trailing_presets'] ?? [];
+
+        if ($presetMode !== 'custom' && isset($presets[$presetMode])) {
+            $preset = $presets[$presetMode];
+            return [
+                'activation_roi'  => (float)($preset['activation_roi'] ?? 3.0),
+                'floor_lock_roi'  => (float)($preset['floor_lock_roi'] ?? 3.0),
+                'distance_roi'    => (float)($preset['distance_roi'] ?? 0.8),
+            ];
+        }
+
+        // Custom mode: use explicit trailing block values (backward-compatible)
+        return [
+            'activation_roi'  => (float)($trailing['trailing_activation_floor_roi'] ?? null),
+            'floor_lock_roi'  => (float)($trailing['trailing_floor_lock_roi'] ?? null),
+            'distance_roi'    => isset($trailing['trailing_distance_roi'])
+                ? (float)$trailing['trailing_distance_roi']
+                : null,
+        ];
     }
 }
 

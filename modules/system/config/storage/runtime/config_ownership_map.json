@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-04-18T08:08:13+01:00",
+    "generated_at": "2026-04-13T12:10:07+00:00",
     "parameters": [
         {
             "key": "live_trading_enabled",
@@ -38,14 +38,14 @@
                 {
                     "source": "brain_effective",
                     "path": "live_trading.live_max_positions",
-                    "value": 20,
+                    "value": 5,
                     "file": "modules/system/smart_brain/runtime/effective_config.json"
                 }
             ],
             "primary": "brain_user_config",
-            "conflict": true,
+            "conflict": false,
             "unused": false,
-            "migration_readiness": "blocked_by_conflict"
+            "migration_readiness": "ready_for_soft_switch"
         },
         {
             "key": "live_signal_selection_mode",
@@ -158,14 +158,14 @@
                 {
                     "source": "brain_effective",
                     "path": "leverage_control.manual_leverage",
-                    "value": 15,
+                    "value": 5,
                     "file": "modules/system/smart_brain/runtime/effective_config.json"
                 }
             ],
             "primary": "brain_user_config",
-            "conflict": true,
+            "conflict": false,
             "unused": false,
-            "migration_readiness": "blocked_by_conflict"
+            "migration_readiness": "ready_for_soft_switch"
         },
         {
             "key": "max_leverage",
@@ -295,7 +295,7 @@
                 {
                     "source": "brain_user_config",
                     "path": "trailing_activation_roi",
-                    "value": 0.070000000000000007,
+                    "value": 0.07,
                     "file": "modules/system/smart_brain/runtime/user_config.json"
                 }
             ],
@@ -312,7 +312,7 @@
                 {
                     "source": "brain_user_config",
                     "path": "trailing_activation_floor_roi",
-                    "value": 0.089999999999999997,
+                    "value": 0.09,
                     "file": "modules/system/smart_brain/runtime/user_config.json"
                 }
             ],
@@ -329,7 +329,7 @@
                 {
                     "source": "brain_user_config",
                     "path": "trailing_floor_lock_roi",
-                    "value": 0.029999999999999999,
+                    "value": 0.03,
                     "file": "modules/system/smart_brain/runtime/user_config.json"
                 }
             ],
@@ -369,7 +369,7 @@
                 {
                     "source": "brain_user_config",
                     "path": "break_even_activation_roi",
-                    "value": 0.025000000000000001,
+                    "value": 0.025,
                     "file": "modules/system/smart_brain/runtime/user_config.json"
                 }
             ],
@@ -645,22 +645,22 @@
                         {
                             "max_corridor_width": 0.01,
                             "leverage": 6,
-                            "budget_factor": 0.90000000000000002
+                            "budget_factor": 0.9
                         },
                         {
-                            "max_corridor_width": 0.025000000000000001,
+                            "max_corridor_width": 0.025,
                             "leverage": 5,
                             "budget_factor": 0.75
                         },
                         {
-                            "max_corridor_width": 0.050000000000000003,
+                            "max_corridor_width": 0.05,
                             "leverage": 4,
-                            "budget_factor": 0.59999999999999998
+                            "budget_factor": 0.6
                         },
                         {
                             "max_corridor_width": 1,
                             "leverage": 3,
-                            "budget_factor": 0.45000000000000001
+                            "budget_factor": 0.45
                         }
                     ],
                     "file": "modules/system/smart_brain/config/risk_engine.php"
@@ -713,7 +713,7 @@
                 {
                     "source": "brain_risk_engine",
                     "path": "user_limits.brain_stop_liq_safety_factor",
-                    "value": 0.29999999999999999,
+                    "value": 0.3,
                     "file": "modules/system/smart_brain/config/risk_engine.php"
                 }
             ],

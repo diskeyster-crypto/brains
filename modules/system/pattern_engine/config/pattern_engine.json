@@ -1,0 +1,190 @@
+{
+    "enabled": true,
+    "live_output_enabled": false,
+    "default_time_window_minutes": 15,
+    "real_run": {
+        "max_symbols_per_run": 30,
+        "lookback_candles": 100,
+        "timeframe": "15",
+        "min_candles_required": 30,
+        "use_internal_source_first": true,
+        "bybit_base_url": "https://api.bybit.com",
+        "bybit_timeout_sec": 10,
+        "symbol_universe_policy": {
+            "mode": "passport_preferred",
+            "max_symbols_without_passport": 10,
+            "prefer_passport_symbols_first": true,
+            "require_passport_for_default_run": false
+        }
+    },
+    "anti_flood": {
+        "max_signals_per_symbol_per_run": 10,
+        "max_signals_per_pattern_per_symbol": 2,
+        "max_scenarios_per_symbol_per_run": 10
+    },
+    "detector_config": {
+        "double_bottom_contextual_v2": {
+            "tolerance_pct": 0.015,
+            "min_bounce_pct": 0.005
+        },
+        "double_bottom_contextual_v3": {
+            "tolerance_pct": 0.012,
+            "min_bounce_pct": 0.006,
+            "require_volume_confirm": true
+        },
+        "double_top_contextual_v2": {
+            "tolerance_pct": 0.015,
+            "min_bounce_pct": 0.005
+        },
+        "double_top_contextual_v3": {
+            "tolerance_pct": 0.012,
+            "min_bounce_pct": 0.006,
+            "require_volume_confirm": true
+        }
+    },
+    "scenario_profiles": {
+        "strict_short_runner": {
+            "description": "High-confidence short setups only — requires strong passport data",
+            "allowed_algorithms": [
+                "double_top_contextual_v2",
+                "double_top_contextual_v3"
+            ],
+            "allowed_sides": ["short"],
+            "min_signal_strength": 0.65,
+            "min_quality_score": 0.60,
+            "min_corridor_p75_roi": 3.0,
+            "min_runner_probability": 0.10,
+            "max_noise_score": 0.55,
+            "min_confidence": "medium",
+            "min_regime_health": 0.35,
+            "require_passport": true,
+            "execution_mode_hint": "allow_live",
+            "degraded_execution_mode": "shadow_only",
+            "max_hold_minutes": 480
+        },
+        "demo_first_short": {
+            "description": "Demo-first short setups — lower passport requirements, safe for testing",
+            "allowed_algorithms": [
+                "double_top_contextual_v2",
+                "double_top_contextual_v3"
+            ],
+            "allowed_sides": ["short"],
+            "min_signal_strength": 0.45,
+            "min_quality_score": 0.40,
+            "min_corridor_p75_roi": 1.5,
+            "min_runner_probability": 0.05,
+            "max_noise_score": 0.70,
+            "min_confidence": "low",
+            "min_regime_health": 0.20,
+            "require_passport": false,
+            "execution_mode_hint": "allow_demo",
+            "degraded_execution_mode": "shadow_only",
+            "max_hold_minutes": 360
+        },
+        "demo_first_long": {
+            "description": "Demo-first long setups — lower passport requirements, safe for testing",
+            "allowed_algorithms": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3"
+            ],
+            "allowed_sides": ["long"],
+            "min_signal_strength": 0.45,
+            "min_quality_score": 0.40,
+            "min_corridor_p75_roi": 1.5,
+            "min_runner_probability": 0.05,
+            "max_noise_score": 0.70,
+            "min_confidence": "low",
+            "min_regime_health": 0.20,
+            "require_passport": false,
+            "execution_mode_hint": "allow_demo",
+            "degraded_execution_mode": "shadow_only",
+            "max_hold_minutes": 360
+        },
+        "shadow_experimental": {
+            "description": "Shadow-only experimental patterns — any algorithm, any side, minimal gates",
+            "allowed_algorithms": [],
+            "allowed_sides": ["long", "short"],
+            "min_signal_strength": 0.30,
+            "min_quality_score": 0.25,
+            "min_corridor_p75_roi": 0.0,
+            "min_runner_probability": 0.0,
+            "max_noise_score": 1.0,
+            "min_confidence": "",
+            "min_regime_health": 0.0,
+            "require_passport": false,
+            "execution_mode_hint": "shadow_only",
+            "degraded_execution_mode": "shadow_only",
+            "max_hold_minutes": 1440
+        },
+        "sim_only_low_confidence": {
+            "description": "Simulator-only for low-confidence or insufficient-data symbols",
+            "allowed_algorithms": [],
+            "allowed_sides": ["long", "short"],
+            "min_signal_strength": 0.20,
+            "min_quality_score": 0.20,
+            "min_corridor_p75_roi": 0.0,
+            "min_runner_probability": 0.0,
+            "max_noise_score": 1.0,
+            "min_confidence": "",
+            "min_regime_health": 0.0,
+            "require_passport": false,
+            "execution_mode_hint": "sim_only",
+            "degraded_execution_mode": "sim_only",
+            "max_hold_minutes": 2880
+        }
+    },
+    "downstream_policy": {
+        "allow_demo_enabled": true,
+        "allow_sim_enabled": true,
+        "shadow_only_default": true,
+        "demo_require_passport": true,
+        "demo_min_quality_score": 0.30,
+        "demo_min_signal_strength": 0.35,
+        "demo_min_corridor_p75_roi": 0.5,
+        "demo_min_runner_probability": 0.02,
+        "demo_max_noise_score": 0.80,
+        "demo_min_confidence": "low",
+        "demo_require_passport_eligibility": ["allow_live", "allow_demo", "sim_only", "shadow_only", ""],
+        "demo_near_miss_max_failed_checks": 2,
+        "sim_require_passport": false,
+        "sim_min_quality_score": 0.20,
+        "sim_min_signal_strength": 0.25,
+        "demo_low_confidence_policy": {
+            "enabled": true,
+            "allow_when_data_confidence": ["low", "none"],
+            "allow_if_insufficient_data_flag": true,
+            "require_quality_score_min": 0.30,
+            "require_signal_strength_min": 0.35,
+            "require_noise_score_max": 0.75,
+            "require_short_suitability_min": 0.0,
+            "max_demo_low_confidence_signals_per_run": 10,
+            "require_passport_lookup_success": true
+        }
+    },
+    "paper_policy": {
+        "enabled": true,
+        "paper_strong_min_signal_strength": 0.42,
+        "paper_strong_min_quality_score": 0.37,
+        "paper_strong_min_corridor_p75_roi": 0.0,
+        "paper_strong_min_runner_probability": 0.0,
+        "paper_strong_max_noise_score": 1.0,
+        "paper_strong_require_passport": false,
+        "paper_candidate_min_signal_strength": 0.33,
+        "paper_candidate_min_quality_score": 0.26,
+        "paper_candidate_require_passport": false,
+        "paper_max_strong_per_run": 40,
+        "paper_max_candidates_per_run": 60
+    },
+    "demo_feed_targets": {
+        "demo_feed_target_min_per_run": 3,
+        "demo_feed_target_soft_max_per_run": 10
+    },
+    "storage": {
+        "max_candidates_per_run": 200,
+        "max_signals_stored": 500,
+        "max_scenarios_stored": 500,
+        "candidate_ttl_hours": 24,
+        "signal_ttl_hours": 48,
+        "scenario_ttl_hours": 48
+    }
+}

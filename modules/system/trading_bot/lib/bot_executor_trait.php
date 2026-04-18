@@ -40,6 +40,28 @@ trait BotExecutorTrait
     protected int $balanceCacheTs = 0;
     
     /**
+     * Get the authoritative execution identity key for an intent.
+     * For Brain-controlled intents: use intent_id (stable, deterministic).
+     * For legacy signals: use signal_id or id.
+     *
+     * All execution branches (success, reject, fail-safe, emergency)
+     * MUST use this helper so the same Brain intent is always marked
+     * under the same dedupe key.
+     *
+     * @param array $intent Intent data
+     * @return string Execution identity key
+     */
+    protected function getExecutionIdentityKey(array $intent): string
+    {
+        if (!empty($intent['brain_controlled'])) {
+            // Brain intent: intent_id is authoritative — signal_id is informational only
+            return (string)($intent['intent_id'] ?? $intent['id'] ?? $intent['signal_id'] ?? 'unknown');
+        }
+        // Legacy signal: signal_id / id
+        return (string)($intent['signal_id'] ?? $intent['id'] ?? 'unknown');
+    }
+
+    /**
      * Execute intent (open position) - LIVE Phase-1
      * 
      * @param array $intent Intent data
@@ -56,57 +78,73 @@ trait BotExecutorTrait
             'trade_id' => null,
             'status' => 'pending',
             'error' => null,
+            // P0.1: Execution stage audit — tracks exactly where the chain stopped
+            'execution_stage' => 'source_loaded',
+            // P0.3: Exchange submit visibility
+            'exchange_submit_attempted' => false,
+            'exchange_response_code' => null,
+            'exchange_response_message' => null,
         ];        $signalId = $intent['signal_id'] ?? ($intent['id'] ?? 'unknown');
         $symbol = (string)($intent['symbol'] ?? '');
         $side = (string)($intent['side'] ?? '');
 
         // ============================================================
-        // Per-symbol overrides (manual):
-        // config.symbol_overrides[SYMBOL]:
-        // - enabled: bool (false → reject)
-        // - reverse_side_enabled: bool (overrides global execution.reverse_side_enabled)
-        // - force_side: 'long'|'short' (applies after reverse toggle)
+        // Brain-controlled intent check:
+        // If intent comes from Brain live_intents (brain_controlled=true),
+        // skip bot-local strategy toggles (reverse_side, force_side, symbol_overrides).
+        // Brain has already applied all strategy decisions.
+        // Bot only applies execution-layer logic.
         // ============================================================
-        $symbolOverrides = (array)($this->config['symbol_overrides'] ?? []);
-        $symCfg = [];
-        if ($symbol !== '' && isset($symbolOverrides[$symbol]) && is_array($symbolOverrides[$symbol])) {
-            $symCfg = $symbolOverrides[$symbol];
-        }
+        $isBrainControlled = !empty($intent['brain_controlled']);
 
-        if (!empty($symCfg) && array_key_exists('enabled', $symCfg) && $symCfg['enabled'] === false) {
-            return $this->rejectIntent($intent, 'rejected_symbol_disabled', "symbol_disabled:{$symbol}", $result);
-        }
+        if (!$isBrainControlled) {
+            // ============================================================
+            // LEGACY: Per-symbol overrides (manual) — DEPRECATED when Brain-controlled.
+            // config.symbol_overrides[SYMBOL]:
+            // - enabled: bool (false → reject)
+            // - reverse_side_enabled: bool (overrides global execution.reverse_side_enabled)
+            // - force_side: 'long'|'short' (applies after reverse toggle)
+            // WARNING: These are deprecated strategy controls. Brain should be the source of truth.
+            // ============================================================
+            $symbolOverrides = (array)($this->config['symbol_overrides'] ?? []);
+            $symCfg = [];
+            if ($symbol !== '' && isset($symbolOverrides[$symbol]) && is_array($symbolOverrides[$symbol])) {
+                $symCfg = $symbolOverrides[$symbol];
+            }
 
-        // ============================================================
-        // Side inversion (LONG↔SHORT) — runtime toggle (global or per-symbol)
-        // execution.reverse_side_enabled = true → invert side for execution.
-        // Keeps original side for UI/debug in intent.side_original.
-        // ============================================================
-        $reverseEnabled = (bool)($this->config['execution']['reverse_side_enabled'] ?? false);
-        if (!empty($symCfg) && array_key_exists('reverse_side_enabled', $symCfg)) {
-            $reverseEnabled = (bool)$symCfg['reverse_side_enabled'];
-        }
+            if (!empty($symCfg) && array_key_exists('enabled', $symCfg) && $symCfg['enabled'] === false) {
+                return $this->rejectIntent($intent, 'rejected_symbol_disabled', "symbol_disabled:{$symbol} (legacy bot override)", $result);
+            }
 
-        if ($reverseEnabled) {
-            $origSide = (string)($intent['side_original'] ?? $intent['side'] ?? '');
-            if ($origSide === 'long' || $origSide === 'short') {
-                $intent['side_original'] = $origSide;
-                $intent['side'] = ($origSide === 'long') ? 'short' : 'long';
-                $intent['side_effective_reason'] = 'reverse_side_enabled';
-                $side = (string)$intent['side'];
+            // DEPRECATED: Side inversion (LONG↔SHORT) — bot-local toggle
+            // Brain now controls reverse_side via live_reverse_side_enabled.
+            $reverseEnabled = (bool)($this->config['execution']['reverse_side_enabled'] ?? false);
+            if (!empty($symCfg) && array_key_exists('reverse_side_enabled', $symCfg)) {
+                $reverseEnabled = (bool)$symCfg['reverse_side_enabled'];
+            }
+
+            if ($reverseEnabled) {
+                $origSide = (string)($intent['side_original'] ?? $intent['side'] ?? '');
+                if ($origSide === 'long' || $origSide === 'short') {
+                    $intent['side_original'] = $origSide;
+                    $intent['side'] = ($origSide === 'long') ? 'short' : 'long';
+                    $intent['side_effective_reason'] = 'reverse_side_enabled (legacy bot override)';
+                    $side = (string)$intent['side'];
+                }
+            }
+
+            // DEPRECATED: Optional force-side after reverse toggle
+            $forceSide = (!empty($symCfg) && isset($symCfg['force_side'])) ? (string)$symCfg['force_side'] : '';
+            if ($forceSide === 'long' || $forceSide === 'short') {
+                if (!isset($intent['side_original'])) {
+                    $intent['side_original'] = (string)($intent['side'] ?? $side);
+                }
+                $intent['side'] = $forceSide;
+                $intent['side_effective_reason'] = 'force_side (legacy bot override)';
+                $side = $forceSide;
             }
         }
-
-        // Optional force-side after reverse toggle
-        $forceSide = (!empty($symCfg) && isset($symCfg['force_side'])) ? (string)$symCfg['force_side'] : '';
-        if ($forceSide === 'long' || $forceSide === 'short') {
-            if (!isset($intent['side_original'])) {
-                $intent['side_original'] = (string)($intent['side'] ?? $side);
-            }
-            $intent['side'] = $forceSide;
-            $intent['side_effective_reason'] = 'force_side';
-            $side = $forceSide;
-        }
+        // Brain-controlled: side/symbol already decided by Brain, no bot overrides
 
         $risk = $intent['risk'] ?? [];
         
@@ -114,23 +152,33 @@ trait BotExecutorTrait
             // ============================================================
             // Step 1: Validate intent + risk
             // ============================================================
+            $result['execution_stage'] = 'validation_started';
             $intentValidation = $this->validator->validateIntent($intent);
             if (!$intentValidation['valid']) {
+                $result['execution_stage'] = 'validation_rejected';
+                // P0.6: Include missing/invalid fields preview for debugging
+                $result['validation_error_summary'] = $intentValidation['reason'] ?? 'unknown';
+                $result['missing_fields_preview'] = $intentValidation['missing_fields'] ?? [];
+                $result['invalid_fields_preview'] = $intentValidation['invalid_fields'] ?? [];
                 return $this->rejectIntent($intent, 'rejected_validation', $intentValidation['reason'], $result);
             }
             
             $riskValidation = $this->riskEngine->validateRisk($risk);
             if (!$riskValidation['valid']) {
+                $result['execution_stage'] = 'validation_rejected';
+                $result['validation_error_summary'] = $riskValidation['reason'] ?? 'unknown';
+                $result['missing_fields_preview'] = $riskValidation['missing_fields'] ?? [];
                 return $this->rejectIntent($intent, 'rejected_validation', $riskValidation['reason'], $result);
             }
             
             // ============================================================
             // Step 2: P3 Exchange Guard - check for orphan positions
             // ============================================================
+            $result['execution_stage'] = 'execution_guard_check';
             $activeTrades = $this->store->loadActiveTrades();
             $localSymbols = array_map(function($t) { return $t['symbol'] ?? ''; }, $activeTrades);
             
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $exchangeOpen = $this->getExchangeOpenPositionsCached();
                 
                 // Check if symbol has orphan position on exchange
@@ -139,23 +187,108 @@ trait BotExecutorTrait
                     if ($exSymbol === $symbol) {
                         // Position exists on exchange for this symbol
                         if (!in_array($symbol, $localSymbols, true)) {
-                            // Not in local trades - this is an ORPHAN position
-                            return $this->rejectIntent($intent, 'rejected_orphan_exchange_position_exists', 
-                                "Orphan position on exchange for {$symbol}", $result, [
-                                    'exchange_position' => [
-                                        'symbol' => $exSymbol,
-                                        'side' => $exPos['side'] ?? 'unknown',
-                                        'size' => $exPos['size'] ?? 0,
-                                        'avgPrice' => $exPos['avgPrice'] ?? 0,
-                                        'liqPrice' => $exPos['liqPrice'] ?? 0,
-                                        'positionIdx' => $exPos['positionIdx'] ?? 0,
+                            // Not in local trades - this is an ORPHAN position.
+                            // In demo mode, do NOT adopt inline. Defer adoption to reconcile phase
+                            // so fresh signals are never blocked by inline orphan adoption side-effects.
+                            $result['execution_stage'] = 'execution_guard_blocked';
+                            $exSize = (float)($exPos['size'] ?? 0);
+                            if ($mode === 'demo') {
+                                $orphanReason = 'orphan_exchange_detected_defer_reconcile';
+                                $result['orphan_detected']       = true;
+                                $result['orphan_symbol']         = $exSymbol;
+                                $result['orphan_side']           = strtolower($exPos['side'] ?? 'unknown');
+                                $result['orphan_size']           = $exSize;
+                                $result['deferred_to_reconcile'] = true;
+                            } else {
+                                // Live mode: exchange has a position for this symbol but no local
+                                // trade owns it — this is a true orphan with no valid local live
+                                // owner.  Surface as recoverable (not opaque hard block) so the
+                                // next reconcile cycle can adopt and resolve it.
+                                $orphanReason = 'skipped_exchange_position_exists';
+                            }
+                            return $this->rejectIntent($intent, $orphanReason,
+                                ($mode === 'demo')
+                                    ? "Exchange orphan detected for {$symbol} (size={$exSize}) — deferred to reconcile"
+                                    : "Orphan position on exchange for {$symbol} (size={$exSize}) — no local owner, recovery needed",
+                                $result, [
+                                    'blocked_symbol'             => $symbol,
+                                    'orphan_reason'              => $orphanReason,
+                                    'orphan_detected'            => true,
+                                    'orphan_symbol'              => $exSymbol,
+                                    'orphan_side'                => $exPos['side'] ?? 'unknown',
+                                    'orphan_size'                => $exSize,
+                                    'deferred_to_reconcile'      => $mode === 'demo',
+                                    'exchange_position_detected' => true,
+                                    'local_trade_detected'       => false,
+                                    'blocker_type'               => 'exchange_orphan_no_local_owner',
+                                    'blocker_reason'             => 'exchange_has_open_position_symbol_not_in_local_trades',
+                                    'symbol_busy_source'         => 'exchange_orphan',
+                                    'recovery_needed'            => true,
+                                    'recovery_action'            => $mode === 'demo'
+                                        ? 'deferred_to_reconcile_for_adoption'
+                                        : 'reconcile_required_to_adopt_or_close_orphan',
+                                    'exchange_position'          => [
+                                        'symbol'   => $exSymbol,
+                                        'side'     => $exPos['side'] ?? 'unknown',
+                                        'size'     => $exSize,
+                                        'avgPrice' => (float)($exPos['avgPrice'] ?? 0),
                                     ],
                                     'intent_side' => $side,
                                 ]);
                         } else {
-                            // Symbol is already being tracked - reject as busy
-                            return $this->rejectIntent($intent, 'rejected_limits', 
-                                "symbol_busy:{$symbol}", $result);
+                            // Symbol is already being tracked locally — reject as busy.
+                            // Detect whether the local trade is an adopted orphan so we can use
+                            // a precise reason code and expose that the orphan is resolved.
+                            $result['execution_stage'] = 'execution_guard_blocked';
+                            $relatedTrade    = null;
+                            $isAdoptedOrphan = false;
+                            foreach ($activeTrades as $at) {
+                                if (($at['symbol'] ?? '') === $symbol) {
+                                    $relatedTrade    = $at;
+                                    $isAdoptedOrphan = !empty($at['adopted_from_exchange_orphan'])
+                                        || !empty($at['is_orphan_adopted']);
+                                    break;
+                                }
+                            }
+                            if ($isAdoptedOrphan) {
+                                // The local trade is a previously-adopted orphan: this symbol is
+                                // owned locally.  Emit a distinct reason so it is NOT counted as an
+                                // unresolved orphan blocker in diagnostics.
+                                $result['orphan_resolved_local_ownership'] = true;
+                                $result['orphan_resolution_reason']        = 'adopted_into_local_active_trade';
+                                return $this->rejectIntent($intent, 'symbol_busy_local_adopted_trade',
+                                    "symbol_busy:{$symbol} — adopted orphan trade exists (local ownership resolved)", $result, [
+                                        'blocked_symbol'                  => $symbol,
+                                        'orphan_resolved_local_ownership' => true,
+                                        'orphan_resolution_reason'        => 'adopted_into_local_active_trade',
+                                        'related_active_trade_id'         => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
+                                        'related_position_symbol'         => $symbol,
+                                        'open_since'                      => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                        'exchange_position_detected'      => true,
+                                        'local_trade_detected'            => true,
+                                        'orphan_detected'                 => false,
+                                        'blocker_type'                    => 'true_active_local_owner',
+                                        'blocker_reason'                  => 'adopted_orphan_local_trade_active',
+                                        'symbol_busy_source'              => 'local_adopted_trade',
+                                        'recovery_needed'                 => false,
+                                        'recovery_action'                 => 'none_local_owner_active',
+                                    ]);
+                            }
+                            return $this->rejectIntent($intent, 'skipped_symbol_busy',
+                                "symbol_busy:{$symbol} — already has active exchange position and local trade", $result, [
+                                    'blocked_symbol'             => $symbol,
+                                    'related_active_trade_id'    => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
+                                    'related_position_symbol'    => $symbol,
+                                    'open_since'                 => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                                    'exchange_position_detected' => true,
+                                    'local_trade_detected'       => true,
+                                    'orphan_detected'            => false,
+                                    'blocker_type'               => 'true_active_local_owner',
+                                    'blocker_reason'             => 'symbol_has_exchange_and_local_active_trade',
+                                    'symbol_busy_source'         => 'local_active_trade',
+                                    'recovery_needed'            => false,
+                                    'recovery_action'            => 'none_local_owner_active',
+                                ]);
                         }
                     }
                 }
@@ -172,17 +305,68 @@ trait BotExecutorTrait
                     }
                 }
                 $effectiveActiveTrades = array_values(array_merge($activeTrades, $orphanTrades));
+
+                // Demo mode: global position-limit checks must only count LOCAL demo trades.
+                // Exchange orphan positions in demo are from the demo exchange account and may
+                // include stale / untracked positions. Mixing them into the global limit count
+                // would block new demo entries with counts that have nothing to do with the
+                // current bot-managed demo portfolio.
+                // Per-symbol exchange-orphan checks (above) are still enforced so we never
+                // open a duplicate on a symbol that already has an exchange position.
+                $limitsActiveTrades = ($mode === 'demo') ? $activeTrades : $effectiveActiveTrades;
             } else {
                 $effectiveActiveTrades = array_values($activeTrades);
+                $limitsActiveTrades    = $activeTrades;
             }
             
             // ============================================================
             // Step 3: Check limits (with effective count)
             // ============================================================
             $effectiveOpenSymbols = array_map(function($t) { return $t['symbol'] ?? ''; }, $effectiveActiveTrades);
+            // For global limit counting use the mode-appropriate set (demo = local only)
+            $limitsOpenCount = count($limitsActiveTrades ?? $effectiveActiveTrades);
             
-            $limitsCheck = $this->riskEngine->checkLimits($risk, count($effectiveActiveTrades), $effectiveOpenSymbols, $symbol);
+            // Brain-owned execution limits enforcement
+            if ($isBrainControlled) {
+                $brainLimits = $intent['execution_limits_snapshot'] ?? [];
+                $brainMaxPositions = (int)($brainLimits['live_max_positions'] ?? 0);
+                $brainOnePerSymbol = (bool)($brainLimits['live_one_trade_per_symbol'] ?? true);
+
+                if ($brainMaxPositions > 0 && $limitsOpenCount >= $brainMaxPositions) {
+                    $result['execution_stage'] = 'execution_guard_blocked';
+                    return $this->rejectIntent($intent, 'skipped_max_positions_reached',
+                        "Brain limit: max {$brainMaxPositions} positions reached (current: " . $limitsOpenCount . ")", $result, [
+                            'effective_live_max_positions' => $brainMaxPositions,
+                            'current_positions' => $limitsOpenCount,
+                            'limits_controlled_by_brain' => true,
+                        ]);
+                }
+
+                if ($brainOnePerSymbol && in_array($symbol, $effectiveOpenSymbols, true)) {
+                    $result['execution_stage'] = 'execution_guard_blocked';
+                    // Find related active trade for linkage
+                    $relatedTrade = null;
+                    foreach ($activeTrades as $at) {
+                        if (($at['symbol'] ?? '') === $symbol) {
+                            $relatedTrade = $at;
+                            break;
+                        }
+                    }
+                    return $this->rejectIntent($intent, 'skipped_active_trade_exists',
+                        "Brain limit: one trade per symbol — {$symbol} already open", $result, [
+                            'effective_live_one_trade_per_symbol' => true,
+                            'blocked_symbol' => $symbol,
+                            'related_active_trade_id' => $relatedTrade['id'] ?? null,
+                            'related_position_symbol' => $symbol,
+                            'open_since' => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
+                            'limits_controlled_by_brain' => true,
+                        ]);
+                }
+            }
+
+            $limitsCheck = $this->riskEngine->checkLimits($risk, $limitsOpenCount, $effectiveOpenSymbols, $symbol);
             if (!$limitsCheck['allowed']) {
+                $result['execution_stage'] = 'execution_guard_blocked';
                 return $this->rejectIntent($intent, 'rejected_limits', $limitsCheck['reason'], $result);
             }
             
@@ -196,7 +380,7 @@ trait BotExecutorTrait
             // - execution.enter_now_timeout_minutes fallback for enter_now
             // - execution.default_entry_timeout_minutes fallback for legacy
             // ============================================================
-            $deadlineInfo = $this->computeEntryDeadline($intent);
+            $deadlineInfo = $this->computeEntryDeadline($intent, $mode);
             if (($deadlineInfo['exceeded'] ?? false) === true) {
                 // P5.13: Late enter_now policy
                 // If enter_now timed out, we can switch to wait_retrace instead of hard reject.
@@ -210,7 +394,7 @@ trait BotExecutorTrait
                     $intent['entry_action_switched_reason'] = 'enter_now_timeout_exceeded';
                     $intent['entry_action_switched_at'] = date('c');
 
-                    $deadlineInfo2 = $this->computeEntryDeadline($intent);
+                    $deadlineInfo2 = $this->computeEntryDeadline($intent, $mode);
                     if (($deadlineInfo2['exceeded'] ?? false) === true) {
                         // Still exceeded (e.g., expires_at passed) → hard reject
                         $ctx = $deadlineInfo2['context'] ?? [];
@@ -237,16 +421,26 @@ trait BotExecutorTrait
             }
 
 // ============================================================
-            // Step 4: Price check (late entry) - LIVE only
+            // Step 4: Price check (late entry) - real exchange modes only
             // ============================================================
-            if ($mode === 'live' && ($this->config['execution']['require_price_check_live'] ?? true)) {
+            // Store deadline context for observability (accessible in signal_processed journal).
+            $result['deadline_context'] = $deadlineInfo['context'] ?? null;
+
+            if (in_array($mode, ['live', 'demo'], true) && ($this->config['execution']['require_price_check_live'] ?? true)) {
                 if ($intent['entry_action'] === 'enter_now') {
-                    $lateCheck = $this->checkLateEntry($intent);
+                    $lateCheck = $this->checkLateEntry($intent, $mode);
+                    // Always persist diagnostics (pass AND reject) for runtime observability.
+                    $result['late_entry_diagnostics'] = $lateCheck['diagnostics'] ?? [];
                     if (!$lateCheck['ok']) {
-                        return $this->rejectIntent($intent, 'rejected_late_entry', $lateCheck['reason'], $result);
+                        $subreason = $lateCheck['subreason'] ?? 'rejected_late_entry_price_moved_too_far';
+                        return $this->rejectIntent($intent, 'rejected_late_entry', $lateCheck['reason'], $result, [
+                            'reject_subreason' => $subreason,
+                            'late_entry_diagnostics' => $lateCheck['diagnostics'] ?? [],
+                        ]);
                     }
                 }
             }
+            $result['execution_guard_passed'] = true;
             // ============================================================
             // Step 3.5 (P6.9): wait_retrace entry action gate - BEFORE balance/order
             // ============================================================
@@ -272,32 +466,81 @@ trait BotExecutorTrait
             }
             
             // ============================================================
-            // Step 4a: P6.6 Balance preflight check - LIVE only
+            // Step 4a: P6.6 Balance preflight check - real exchange modes only
+            // Skip when demoExecutionContext=true (demo-routed intent on live bot)
+            // because the real exchange is not used in that path.
             // ============================================================
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true) && $this->isRealExchangeMode()) {
                 $balanceCheck = $this->checkBalancePreflight($risk);
                 if (!$balanceCheck['ok']) {
                     // P8: Differentiate "insufficient balance" from "balance unavailable".
                     // If gateway could not fetch balance (auth/config/network), we must NOT label it as insufficient.
                     $rejectStatus = 'rejected_insufficient_balance';
                     $reason = (string)($balanceCheck['reason'] ?? 'unknown');
-                    if ($reason === 'balance_fetch_failed' || $reason === 'wallet_balance_failed' || $reason === 'wallet_balance_auth_missing' || $reason === 'gateway_not_ready' || $reason === 'client_not_initialized') {
+                    $isFetchFailed = in_array($reason, [
+                        'balance_fetch_failed', 'wallet_balance_failed', 'wallet_balance_auth_missing',
+                        'gateway_not_ready', 'client_not_initialized',
+                    ], true);
+                    $isBelowMinimum    = ($reason === 'balance_below_minimum_threshold');
+                    $isInsufficientMargin = ($reason === 'insufficient_margin');
+                    if ($isFetchFailed) {
                         $rejectStatus = 'rejected_balance_unavailable';
-                    } elseif ($reason === 'balance_below_minimum_threshold') {
+                    } elseif ($isBelowMinimum) {
                         $rejectStatus = 'rejected_balance_below_minimum';
                     }
+
+                    // Derive structured blocker fields for clear per-case diagnostics.
+                    $balanceBlockerType = $isFetchFailed ? 'balance_unavailable'
+                        : ($isBelowMinimum ? 'balance_below_minimum' : 'balance_insufficient_margin');
+                    $balanceRecoveryNeeded = $isFetchFailed || $isBelowMinimum;
+                    $balanceRecoveryAction = $isFetchFailed
+                        ? 'check_gateway_auth_and_connectivity'
+                        : ($isBelowMinimum ? 'add_funds_above_reject_threshold' : 'reduce_budget_or_add_funds');
+                    $budgetRequested = (float)($balanceCheck['budget']   ?? 0.0);
+                    $budgetAfterBuf  = (float)($balanceCheck['required'] ?? 0.0); // budget * (1 + buffer%)
+
+                    // Estimate quantity attempted for diagnostics (best-effort, pre-rounding).
+                    // Uses intent entry_price and leverage from risk block; null when price is unavailable.
+                    $balDiagEntryPrice = (float)($intent['entry_price'] ?? 0.0);
+                    $balDiagLeverage   = max(1, (int)($risk['leverage'] ?? 1));
+                    $balDiagQtyAttempted = ($balDiagEntryPrice > 0 && $budgetRequested > 0)
+                        ? round(($budgetRequested * $balDiagLeverage) / $balDiagEntryPrice, 8)
+                        : null;
 
                     // P6.8.1: Pass full context with required/available/snapshot for debugging
                     $balanceCtx = [
                         'context' => [
-                            'required_usdt' => (float)($balanceCheck['required'] ?? 0.0),
-                            'available_usdt' => (float)($balanceCheck['available'] ?? 0.0),
-                            'buffer_pct' => (int)($balanceCheck['buffer_pct'] ?? 5),
-                            'budget_usdt_per_trade' => (float)($balanceCheck['budget'] ?? 0.0),
-                            'account_type' => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),
-                            'balance_snapshot' => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
-                            'coin' => $balanceCheck['coin'] ?? 'USDT',
-                            'shortfall' => $balanceCheck['shortfall'] ?? null,
+                            'blocker_type'          => $balanceBlockerType,
+                            'blocker_reason'        => $reason,
+                            // Four distinct balance cases (problem statement requirement §2):
+                            //   fetch_failed          → gateway could not retrieve balance
+                            //   below_exchange_minimum → available < exchange reject_below threshold
+                            //   below_budget_target   → available < required (budget * buffer)
+                            //   other                 → any other margin shortfall
+                            'balance_case'          => $isFetchFailed ? 'fetch_failed'
+                                : ($isBelowMinimum ? 'below_exchange_minimum'
+                                : ($isInsufficientMargin ? 'below_budget_target' : 'other')),
+                            'available_usdt'        => (float)($balanceCheck['available'] ?? 0.0),
+                            'required_usdt'         => $budgetAfterBuf,
+                            'budget_requested_usdt' => $budgetRequested,
+                            'budget_after_limits_usdt' => $budgetAfterBuf,
+                            'buffer_pct'            => (int)($balanceCheck['buffer_pct'] ?? 5),
+                            'budget_usdt_per_trade' => $budgetRequested,
+                            'reject_below_usdt'     => $balanceCheck['reject_below_usdt'] ?? null,
+                            'shortfall'             => $balanceCheck['shortfall'] ?? null,
+                            // Sizing diagnostics: pre-rounding quantity estimate and price used.
+                            // min_notional_required / min_qty_required require exchange instrument
+                            // info not available at balance-check stage; set null as explicit marker.
+                            'symbol_price_used'     => $balDiagEntryPrice > 0 ? $balDiagEntryPrice : null,
+                            'quantity_attempted'    => $balDiagQtyAttempted,
+                            'min_notional_required' => null,
+                            'min_qty_required'      => null,
+                            'recovery_needed'       => $balanceRecoveryNeeded,
+                            'recovery_action'       => $balanceRecoveryAction,
+                            'account_type'          => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),
+                            'coin'                  => $balanceCheck['coin'] ?? 'USDT',
+                            'balance_snapshot'      => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
+                            'balance_diagnostics'   => $balanceCheck['balance_diagnostics'] ?? null,
                         ],
                         'balance_check' => $balanceCheck, // Keep full result for backward compat
                     ];
@@ -306,98 +549,212 @@ trait BotExecutorTrait
             }
             
             // ============================================================
-            // Step 4b: Set leverage - LIVE only
+            // Step 4b: Set leverage - real exchange modes only
             // ============================================================
-            if ($mode === 'live') {
+            $result['execution_stage'] = 'exchange_prepare_started';
+            if (in_array($mode, ['live', 'demo'], true)) {
                 $leverage = (int)($risk['leverage'] ?? 1);
-                $leverageResult = $this->setLeverageOnExchange($symbol, $leverage);
-                if (!$leverageResult['success']) {
-                    // Provide full context for UI explainability (no SSH needed)
-                    $ctx = [
-                        'leverage_requested' => $leverage,
-                        'leverage_error' => $leverageResult['error'] ?? 'unknown',
-                    ];
-                    if (isset($leverageResult['ret_code'])) {
-                        $ctx['leverage_ret_code'] = $leverageResult['ret_code'];
-                    }
-                    if (isset($leverageResult['ret_msg'])) {
-                        $ctx['leverage_ret_msg'] = $leverageResult['ret_msg'];
-                    }
-                    if (isset($leverageResult['response'])) {
-                        $ctx['leverage_response'] = $leverageResult['response'];
-                    }
-
-                    return $this->rejectIntent($intent, 'rejected_leverage_failed', $leverageResult['error'] ?? 'unknown', $result, $ctx);
-                }
-
-                // If gateway clamped leverage (instrument max / risk limit), use effective leverage for sizing.
-                $effectiveLeverage = (int)($leverageResult['effective'] ?? $leverage);
-                if ($effectiveLeverage < 1) {
-                    $effectiveLeverage = 1;
-                }
-
-                if ($effectiveLeverage !== $leverage) {
-                    $requestedLeverage = (int)($leverageResult['requested'] ?? $leverage);
-
-                    $risk['leverage'] = $effectiveLeverage;
-                    $intent['risk']['leverage'] = $effectiveLeverage;
-                    $leverage = $effectiveLeverage;
-
-                    // Surface as warning for observability in last_run.json
-                    if (property_exists($this, 'warnings') && is_array($this->warnings)) {
-                        $metaMax = $leverageResult['meta_max'] ?? null;
-                        $note = (string)($leverageResult['note'] ?? 'leverage_clamped');
-
-                        $msg = "Leverage clamped for {$symbol}: requested {$requestedLeverage}x -> effective {$effectiveLeverage}x ({$note})";
-                        if ($metaMax !== null) {
-                            $msg .= " meta_max={$metaMax}";
+                if ($this->isRealExchangeMode()) {
+                    // Real exchange: set leverage and use clamped effective value for sizing.
+                    $leverageResult = $this->setLeverageOnExchange($symbol, $leverage);
+                    if (!$leverageResult['success']) {
+                        $result['execution_stage'] = 'exchange_prepare_failed';
+                        $ctx = [
+                            'leverage_requested' => $leverage,
+                            'leverage_error' => $leverageResult['error'] ?? 'unknown',
+                        ];
+                        if (isset($leverageResult['ret_code'])) {
+                            $ctx['leverage_ret_code'] = $leverageResult['ret_code'];
+                            $result['exchange_response_code'] = $leverageResult['ret_code'];
                         }
-                        $this->warnings[] = $msg;
+                        if (isset($leverageResult['ret_msg'])) {
+                            $ctx['leverage_ret_msg'] = $leverageResult['ret_msg'];
+                            $result['exchange_response_message'] = $leverageResult['ret_msg'];
+                        }
+                        if (isset($leverageResult['response'])) {
+                            $ctx['leverage_response'] = $leverageResult['response'];
+                        }
+                        return $this->rejectIntent($intent, 'rejected_leverage_failed', $leverageResult['error'] ?? 'unknown', $result, $ctx);
                     }
-                }            // ============================================================
-            // Step 4c: Calculate position size (AFTER leverage is resolved)
-            // ============================================================
-            $positionSize = $this->riskEngine->calculatePositionSize($risk, $intent['entry_price'], $symbol);
-            if ($positionSize <= 0) {
-                return $this->rejectIntent($intent, 'rejected_validation', 'position_size_zero', $result);
-            }
 
+                    // If gateway clamped leverage (instrument max / risk limit), use effective leverage for sizing.
+                    $effectiveLeverage = (int)($leverageResult['effective'] ?? $leverage);
+                    if ($effectiveLeverage < 1) {
+                        $effectiveLeverage = 1;
+                    }
 
+                    if ($effectiveLeverage !== $leverage) {
+                        $requestedLeverage = (int)($leverageResult['requested'] ?? $leverage);
+                        $risk['leverage'] = $effectiveLeverage;
+                        $intent['risk']['leverage'] = $effectiveLeverage;
+                        $leverage = $effectiveLeverage;
+
+                        if (property_exists($this, 'warnings') && is_array($this->warnings)) {
+                            $metaMax = $leverageResult['meta_max'] ?? null;
+                            $note = (string)($leverageResult['note'] ?? 'leverage_clamped');
+                            $msg = "Leverage clamped for {$symbol}: requested {$requestedLeverage}x -> effective {$effectiveLeverage}x ({$note})";
+                            if ($metaMax !== null) {
+                                $msg .= " meta_max={$metaMax}";
+                            }
+                            $this->warnings[] = $msg;
+                        }
+                    }
+                }
+                // else: demo simulation context — leverage already set in risk block from Brain intent, no exchange call needed.
+
+                // ============================================================
+                // Step 4c: Calculate position size (AFTER leverage is resolved)
+                // ============================================================
+                $positionSize = $this->riskEngine->calculatePositionSize($risk, $intent['entry_price'], $symbol);
+                if ($positionSize <= 0) {
+                    return $this->rejectIntent($intent, 'rejected_validation', 'position_size_zero', $result);
+                }
             }
             
             // ============================================================
             // Step 5: Submit market order
             // ============================================================
-            $orderLinkId = 'tb_' . substr($signalId, 0, 32);
+            $result['execution_stage'] = 'exchange_submit_started';
+            // Generate a fresh, unique OrderLinkedID for each exchange submit attempt.
+            // The stable execution-dedup identity is tracked separately via executionKey /
+            // executed_index — that protection is unaffected. Using a microsecond-based
+            // nonce prevents "OrderLinkedID is duplicate" rejections when the same intent
+            // is retried or replayed after a prior failed/incomplete submit.
+            // Format: 'tb_' (3) + 27 signal chars + 6 hex nonce = 36 chars (Bybit limit).
+            $orderLinkId = 'tb_' . substr($signalId, 0, 27) . substr(uniqid(), -6);
+            $result['live_submit_attempt_id']     = $orderLinkId;
+            $result['exchange_order_link_id']     = $orderLinkId;
+            $result['exchange_order_link_reused'] = false;
             $order = $this->buildOrder($intent, $positionSize, $risk, $orderLinkId);
             
-            if ($mode === 'live') {
+            if (in_array($mode, ['live', 'demo'], true)) {
+                $result['exchange_submit_attempted'] = true;
                 $orderResult = $this->submitOrder($order);
             } else {
+                $result['exchange_submit_attempted'] = true;
                 $orderResult = $this->simulateOrder($order);
             }
             
             if (!$orderResult['ok']) {
+                $result['execution_stage'] = 'exchange_submit_failed';
+                // P0.4: Capture exchange error details for runtime visibility
+                $result['exchange_response_code'] = $orderResult['ret_code'] ?? ($orderResult['response']['retCode'] ?? null);
+                $result['exchange_response_message'] = $orderResult['error'] ?? ($orderResult['response']['retMsg'] ?? null);
                 return $this->rejectIntent($intent, 'rejected_order_failed', $orderResult['error'] ?? 'unknown', $result);
             }
             
             $result['order_id'] = $orderResult['order_id'] ?? null;
             $result['opened'] = true;
             $result['filled'] = $orderResult['filled'] ?? false;
+            $result['execution_stage'] = 'order_submitted';
             
             // ============================================================
-            // Step 6: Post-open reconcile (LIVE only)
+            // Step 6: Post-open reconcile (real exchange modes only)
             // ============================================================
-            if ($mode === 'live') {
-                $positionData = $this->fetchOpenPosition($symbol, $side);
-                
-                if ($positionData === null || !$this->isValidPositionData($positionData)) {
-                    // Failed to get position data - fail-safe close
-                    $this->performFailSafeClose($intent, $symbol, $side, $positionSize, 'reconcile_failed', [
+            if (in_array($mode, ['live', 'demo'], true)) {
+                $isDemoMode = ($mode === 'demo');
+                $result['execution_stage'] = 'position_open_confirmed';
+
+                if (!$this->isRealExchangeMode()) {
+                    // Demo simulation context: order was simulated, no real exchange position exists.
+                    // Build synthetic position directly from fill data — no exchange query.
+                    $fillPrice = (float)($orderResult['fill_price'] ?? $intent['entry_price'] ?? 0);
+                    $fillQty   = (float)($orderResult['fill_qty'] ?? $positionSize);
+                    $positionData = ($fillPrice > 0 && $fillQty > 0) ? [
+                        'avgPrice'    => $fillPrice,
+                        'size'        => $fillQty,
+                        'liqPrice'    => 0,
+                        'positionIdx' => (int)($this->config['exchange']['position_idx'] ?? 0),
+                    ] : null;
+                    $result['demo_reconcile_fallback_used'] = true;
+                    $result['demo_reconcile_note']          = 'demo_execution_context_synthetic';
+                    $result['exchange_position_incomplete'] = true;
+                    $result['liq_price_unavailable']        = true;
+                } else {
+                    $positionData = $this->fetchOpenPosition($symbol, $side);
+                }
+
+                // Minimum required fields: size > 0 and avgPrice > 0 (always fatal if missing)
+                $positionHasMinFields = $this->isValidPositionData($positionData, false);
+                // Full validation: also requires liqPrice > 0
+                $positionHasLiqPrice  = $positionHasMinFields && $this->isValidPositionData($positionData, true);
+
+                // Demo compatibility: Bybit Demo API sometimes takes several seconds to
+                // reflect a newly-opened position.  If fetchOpenPosition() returns null
+                // (or incomplete data) after all retries in demo mode, build a synthetic
+                // position record from the confirmed order-fill data instead of calling
+                // performFailSafeClose().  This prevents creating orphan positions that
+                // would block every subsequent demo signal on the next run.
+                if (($positionData === null || !$positionHasMinFields) && $isDemoMode) {
+                    $fillPrice = (float)($orderResult['fill_price'] ?? $intent['entry_price'] ?? 0);
+                    $fillQty   = (float)($orderResult['fill_qty']   ?? $positionSize);
+                    if ($fillPrice > 0 && $fillQty > 0) {
+                        $positionData = [
+                            'avgPrice'    => $fillPrice,
+                            'size'        => $fillQty,
+                            'liqPrice'    => 0,  // triggers entry_roi SL fallback below
+                            'positionIdx' => (int)($this->config['exchange']['position_idx'] ?? 0),
+                        ];
+                        $result['demo_reconcile_fallback_used']         = true;
+                        $result['demo_reconcile_note']                  = 'position_not_visible_using_order_fill';
+                        $result['demo_reconcile_position_source']       = 'order_fill_data';
+                        $result['exchange_position_incomplete']         = true;
+                        $result['liq_price_unavailable']                = true;
+                        $result['close_detection_result']               = 'close_detected_uncertain_exchange_state';
+                        // Re-evaluate validation flags for the synthetic data
+                        $positionHasMinFields = true;
+                        $positionHasLiqPrice  = false;
+                    }
+                    // If fill data is also unavailable, fall through to the hard-fail block.
+                }
+
+                if ($positionData === null || !$positionHasMinFields) {
+                    // Truly unusable position — determine precise sub-reason.
+                    if (!$this->gateway || !$this->gateway->isInitialized()) {
+                        $reconcileSubReason = 'reconcile_failed_gateway_not_initialized';
+                    } elseif ($positionData === null) {
+                        $reconcileSubReason = 'reconcile_failed_exchange_position_missing';
+                    } else {
+                        $size     = (float)($positionData['size'] ?? $positionData['qty'] ?? 0);
+                        $avgPrice = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? 0);
+                        if ($size <= 0) {
+                            $reconcileSubReason = 'reconcile_failed_position_size_zero';
+                        } elseif ($avgPrice <= 0) {
+                            $reconcileSubReason = 'reconcile_failed_position_avg_price_missing';
+                        } else {
+                            $reconcileSubReason = 'reconcile_failed_position_data_invalid';
+                        }
+                    }
+
+                    $this->performFailSafeClose($intent, $symbol, $side, $positionSize, $reconcileSubReason, [
                         'order_result' => $orderResult,
                         'position_data' => $positionData,
+                        'reconcile_sub_reason' => $reconcileSubReason,
                     ], $result);
                     return $result;
+                }
+
+                // liqPrice is missing: hard-fail in live mode; tolerate in demo mode.
+                if (!$positionHasLiqPrice && !$isDemoMode) {
+                    $reconcileSubReason = 'reconcile_failed_position_liq_price_missing';
+                    $this->performFailSafeClose($intent, $symbol, $side, $positionSize, $reconcileSubReason, [
+                        'order_result'          => $orderResult,
+                        'position_data'         => $positionData,
+                        'reconcile_sub_reason'  => $reconcileSubReason,
+                    ], $result);
+                    return $result;
+                }
+
+                // Demo compatibility: Bybit Demo API sometimes omits liqPrice even for a valid
+                // open position. In live mode this would be unsafe (liqPrice is needed for the
+                // liq-based SL formula), so live hard-fails above. In demo mode we continue and
+                // record diagnostic flags. Step 7 will attempt an entry_roi SL fallback when
+                // the liq-based calculation returns null due to liqPrice = 0.
+                if (!$positionHasLiqPrice) {
+                    $result['demo_reconcile_fallback_used']  = true;
+                    $result['demo_reconcile_note']           = 'missing_liq_price';
+                    $result['liq_price_unavailable']         = true;
+                    $result['exchange_position_incomplete']  = true;
                 }
                 
                 $entryAvg = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? 0);
@@ -408,15 +765,69 @@ trait BotExecutorTrait
                 // ============================================================
                 // Step 7: Calculate protection
                 // ============================================================
-                $sl = $this->riskEngine->calculateStopLossFromLiq($risk, $entryAvg, $liqPrice, $side);
+                $result['execution_stage'] = 'protection_apply_started';
+                
+                // Determine stop control mode from risk block
+                $stopControlMode = (string)($risk['stop_control']['stop_control_mode'] ?? ($risk['stop_control_mode'] ?? 'auto'));
+
+                if ($stopControlMode === 'entry_roi') {
+                    // Entry-based stop: SL = entry price ± stop_loss_from_entry_roi
+                    $sl = $this->riskEngine->calculateStopLossFromEntry($risk, $entryAvg, $side);
+                    $result['stop_control_mode_used'] = 'entry_roi';
+                    $result['stop_loss_from_entry_roi'] = (float)($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0);
+                } else {
+                    // Legacy/auto: SL from liquidation distance
+                    $sl = $this->riskEngine->calculateStopLossFromLiq($risk, $entryAvg, $liqPrice, $side);
+                    $result['stop_control_mode_used'] = $stopControlMode;
+
+                    // Demo compatibility: if liqPrice is absent, fall back to entry_roi SL calculation.
+                    if ($sl === null && $isDemoMode && $liqPrice <= 0) {
+                        $slFallback = $this->riskEngine->calculateStopLossFromEntry($risk, $entryAvg, $side);
+                        if ($slFallback !== null) {
+                            $sl = $slFallback;
+                            $result['demo_reconcile_fallback_used']  = true;
+                            $result['demo_reconcile_sl_fallback']    = 'entry_roi';
+                            $result['stop_control_mode_used']        = $stopControlMode . '_demo_entry_roi_fallback';
+                        }
+                    }
+                }
                 
                 if ($sl === null) {
-                    // Cannot calculate SL - fail-safe close
-                    $this->performFailSafeClose($intent, $symbol, $side, $actualQty, 'sl_calculation_failed', [
-                        'order_result' => $orderResult,
-                        'position_data' => $positionData,
-                        'entry_avg' => $entryAvg,
-                        'liq_price' => $liqPrice,
+                    // Cannot calculate SL — build precise reason for diagnostics
+                    $slFailReason = 'sl_calculation_failed';
+                    $slFailDetail = [];
+                    if ($entryAvg <= 0) {
+                        $slFailDetail[] = 'missing_entry_price';
+                    }
+                    if ($liqPrice <= 0 && $stopControlMode !== 'entry_roi') {
+                        $slFailDetail[] = 'liq_price_unavailable';
+                    }
+                    $stopRangePct = (float)($risk['stop_from_liq_range_pct'] ?? 0);
+                    if ($stopRangePct <= 0 && $stopControlMode !== 'entry_roi') {
+                        $slFailDetail[] = 'stop_from_liq_range_pct_invalid';
+                    }
+                    $entryRoi = (float)($risk['stop_control']['stop_loss_from_entry_roi'] ?? 0);
+                    if ($entryRoi <= 0) {
+                        $slFailDetail[] = 'entry_roi_fallback_unavailable:stop_loss_from_entry_roi_missing_or_zero';
+                    } elseif ($entryRoi > 1.0) {
+                        $slFailDetail[] = 'entry_roi_fallback_unavailable:stop_loss_from_entry_roi_exceeds_1';
+                    }
+                    if (!empty($slFailDetail)) {
+                        $slFailReason = 'sl_calculation_failed:' . implode(',', $slFailDetail);
+                    }
+
+                    $result['execution_stage']   = 'protection_apply_failed';
+                    $result['sl_fail_reason']    = $slFailReason;
+                    $result['sl_fail_detail']    = $slFailDetail;
+                    $this->performFailSafeClose($intent, $symbol, $side, $actualQty, $slFailReason, [
+                        'order_result'          => $orderResult,
+                        'position_data'         => $positionData,
+                        'entry_avg'             => $entryAvg,
+                        'liq_price'             => $liqPrice,
+                        'stop_control_mode'     => $stopControlMode,
+                        'stop_from_liq_range_pct' => $stopRangePct,
+                        'stop_loss_from_entry_roi' => $entryRoi,
+                        'sl_fail_detail'        => $slFailDetail,
                     ], $result);
                     return $result;
                 }
@@ -426,24 +837,41 @@ trait BotExecutorTrait
                 // ============================================================
                 // Step 8: Set trading-stop (SL + trailing if enabled)
                 // P6.6: Trailing only sent if enable_trailing_on_open=true
+                // V2 FIX: In Brain-controlled mode, trailing decision comes from
+                // the normalized Brain contract — bot-local toggles are overridden.
                 // ============================================================
                 $tradingStopOptions = [
                     'position_idx' => $positionIdx,
                     'stop_loss' => $sl,
                 ];
                 
-                // P6.6: Phase-1 trailing toggle - only add trailing if config allows
-                $enableTrailingOnOpen = (bool)($this->config['execution']['enable_trailing_on_open'] ?? false);
-                if ($trailing['enabled'] && $enableTrailingOnOpen) {
-                    $tradingStopOptions['trailing_stop'] = $trailing['trailing_stop'];
-                    $tradingStopOptions['active_price'] = $trailing['active_price'];
+                // V2 FIX: Brain-controlled trailing overrides bot-local enable_trailing_on_open
+                if ($isBrainControlled) {
+                    // Brain decides trailing behavior — bot-local toggle ignored
+                    if ($trailing['enabled']) {
+                        $tradingStopOptions['trailing_stop'] = $trailing['trailing_stop'];
+                        $tradingStopOptions['active_price'] = $trailing['active_price'];
+                    }
+                } else {
+                    // Legacy mode: P6.6 Phase-1 trailing toggle still applies
+                    $enableTrailingOnOpen = (bool)($this->config['execution']['enable_trailing_on_open'] ?? false);
+                    if ($trailing['enabled'] && $enableTrailingOnOpen) {
+                        $tradingStopOptions['trailing_stop'] = $trailing['trailing_stop'];
+                        $tradingStopOptions['active_price'] = $trailing['active_price'];
+                    }
                 }
                 
                 // P4: Pass side for proper price normalization
-                $tradingStopResult = $this->gateway->setTradingStop($symbol, $side, $tradingStopOptions);
+                if ($this->isRealExchangeMode()) {
+                    $tradingStopResult = $this->gateway->setTradingStop($symbol, $side, $tradingStopOptions);
+                } else {
+                    // Demo simulation: SL placement skipped; trade saved with computed SL price only.
+                    $tradingStopResult = ['success' => true, 'simulated' => true];
+                }
                 
                 if (!$tradingStopResult['success']) {
                     // P6: SL failed to set - fail-safe close
+                    $result['execution_stage'] = 'protection_apply_failed';
                     $this->performFailSafeClose($intent, $symbol, $side, $actualQty, 'sl_set_failed', [
                         'order_result' => $orderResult,
                         'position_data' => $positionData,
@@ -457,24 +885,74 @@ trait BotExecutorTrait
                 // Step 9: Success - save trade as opened_protected
                 // ============================================================
                 $trade = $this->buildTradeLiveV1($intent, $order, $orderResult, $positionData, $sl, $trailing);
+
+                // Embed demo compatibility flags into the trade record so they are
+                // visible in the active trade file, Brain page, and reconcile.
+                if (!empty($result['demo_reconcile_fallback_used'])) {
+                    $trade['exchange_position_incomplete'] = true;
+                    $trade['liq_price_unavailable']        = (bool)($result['liq_price_unavailable'] ?? false);
+                    $trade['demo_reconcile_fallback_used'] = true;
+                    $trade['demo_reconcile_note']          = $result['demo_reconcile_note'] ?? null;
+                    if (!empty($result['demo_reconcile_sl_fallback'])) {
+                        $trade['demo_reconcile_sl_fallback'] = $result['demo_reconcile_sl_fallback'];
+                    }
+                }
+
                 $this->store->saveActiveTrade($trade);
-                
+                $this->journalEvent('file_write', 'execute_intent', true,
+                    'active trade created (opened_protected): ' . ($trade['symbol'] ?? ($trade['trade_id'] ?? '')),
+                    [
+                        'path'           => 'trades/active/' . ($trade['trade_id'] ?? '') . '.json',
+                        'write_type'     => 'create',
+                        'classification' => 'active_trade',
+                        'symbol'         => $trade['symbol'] ?? null,
+                        'trade_id'       => $trade['trade_id'] ?? null,
+                        'reason'         => 'opened_protected',
+                    ]
+                );
+
+                // P-PERSIST-DIAG: Verify the active trade file was actually persisted.
+                // A silent write failure here means the Brain Execution page stays empty
+                // even though executed_index.json correctly shows opened_protected.
+                $persistedTradeId = $trade['trade_id'] ?? null;
+                if ($persistedTradeId !== null && !$this->store->activeTradeExists($persistedTradeId)) {
+                    $this->errors[] = 'opened_protected_without_trade_write: trade_id=' . $persistedTradeId;
+                    error_log('TradingBot: opened_protected but active trade file not found for trade_id=' . $persistedTradeId);
+                }
+
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_protected';
                 $result['ok'] = true;
+                $result['execution_stage'] = 'finished';
                 
-                $this->markSignalExecuted($signalId, $result);
+                $executionKey = $this->getExecutionIdentityKey($intent);
+                $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+                $this->markSignalExecuted($executionKey, $result, $dedupeBasis);
                 $this->store->saveOrder($order, $orderResult);
                 
             } else {
                 // Dry/test mode - simpler flow
                 $trade = $this->buildTrade($intent, $order, $orderResult);
                 $this->store->saveActiveTrade($trade);
+                $this->journalEvent('file_write', 'execute_intent', true,
+                    'active trade created (opened_dry): ' . ($trade['symbol'] ?? ($trade['trade_id'] ?? '')),
+                    [
+                        'path'           => 'trades/active/' . ($trade['trade_id'] ?? '') . '.json',
+                        'write_type'     => 'create',
+                        'classification' => 'active_trade',
+                        'symbol'         => $trade['symbol'] ?? null,
+                        'trade_id'       => $trade['trade_id'] ?? null,
+                        'reason'         => 'opened_dry',
+                    ]
+                );
                 
                 $result['trade_id'] = $trade['trade_id'];
                 $result['status'] = 'opened_dry';
+                $result['execution_stage'] = 'finished';
                 
-                $this->markSignalExecuted($signalId, $result);
+                $executionKey = $this->getExecutionIdentityKey($intent);
+                $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+                $this->markSignalExecuted($executionKey, $result, $dedupeBasis);
                 $this->store->saveOrder($order, $orderResult);
             }
             
@@ -502,13 +980,17 @@ trait BotExecutorTrait
         $result['ok'] = false;
         $result['status'] = $status;
         $result['error'] = $reason;
+        $result['context'] = $context;
+        $result['execution_guard_passed'] = !in_array($result['execution_stage'] ?? '', ['execution_guard_blocked', 'execution_guard_check'], true);
+        $result['execution_stage_at_failure'] = $result['execution_stage'] ?? 'unknown';
         
         $this->store->saveRejectedIntent($intent, array_merge([
             'reason' => $reason,
             'status' => $status,
         ], $context));
         
-        $this->markSignalExecuted($intent['signal_id'] ?? $intent['id'], $result);
+        $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result, $dedupeBasis);
         
         return $result;
     }
@@ -529,10 +1011,11 @@ trait BotExecutorTrait
     ): void {
         $closeResult = null;
         $closeOk = false;
-        $intentId = $intent['signal_id'] ?? $intent['id'] ?? 'unknown';
+        // V2 FIX: Use unified execution identity key for all paths (Brain intent_id or legacy signal_id)
+        $intentId = $this->getExecutionIdentityKey($intent);
         
-        // Attempt to close position
-        if ($this->gateway && $this->gateway->isInitialized() && $qty > 0) {
+        // Attempt to close position (real exchange modes only — skip for demo simulation context)
+        if ($this->gateway && $this->gateway->isInitialized() && $qty > 0 && $this->isRealExchangeMode()) {
             $closeResult = $this->gateway->closePosition($symbol, $side, $qty);
             $closeOk = $closeResult['success'] ?? false;
             
@@ -586,7 +1069,9 @@ trait BotExecutorTrait
             $result['error'] = $reason;
         }
         
-        $this->markSignalExecuted($intent['signal_id'] ?? $intent['id'], $result);
+        // V2 FIX: Use unified execution identity key (same as used everywhere else)
+        $dedupeBasis = !empty($intent['brain_controlled']) ? 'intent_id' : 'legacy_signal_id';
+        $this->markSignalExecuted($this->getExecutionIdentityKey($intent), $result, $dedupeBasis);
     }
     
     /**
@@ -599,8 +1084,8 @@ trait BotExecutorTrait
      */
     private function getExchangeOpenPositionsCached(?int $ttlSec = null): array
     {
-        // Only for LIVE mode
-        if (!$this->isLiveMode()) {
+        // Only for real exchange modes (live / demo)
+        if (!$this->isRealExchangeMode()) {
             return [];
         }
         
@@ -647,8 +1132,8 @@ trait BotExecutorTrait
      */
         private function getAvailableMarginCached(): ?float
     {
-        // Only for LIVE mode
-        if (!$this->isLiveMode()) {
+        // Only for real exchange modes (live / demo)
+        if (!$this->isRealExchangeMode()) {
             return null;
         }
 
@@ -721,6 +1206,10 @@ trait BotExecutorTrait
         $budget = (float)($risk['budget_usdt_per_trade'] ?? 0.0);
         $bufferPct = (float)($this->config['execution']['balance_required_buffer_pct'] ?? 5.0);
         $rejectBelow = (float)($this->config['execution']['balance_reject_below_usdt'] ?? 0.0);
+        $coin = $this->config['exchange']['balance_coin'] ?? 'USDT';
+        $accountType = $this->config['exchange']['account_type'] ?? 'UNIFIED';
+        $accountId = $this->config['module']['account_id'] ?? 'trading_bot';
+        $mode = $this->config['module']['mode'] ?? 'paper';
         
         // Required margin = budget * (1 + buffer%)
         $required = $budget * (1.0 + $bufferPct / 100.0);
@@ -729,7 +1218,17 @@ trait BotExecutorTrait
         
         // P6.6: Include balance_snapshot in all responses
         $balanceSnapshot = $this->balanceCache ?? null;
-        
+        $balanceDiag = [
+            'balance_account_id'    => $accountId,
+            'balance_mode'          => $mode,
+            'balance_fetch_ok'      => ($available !== null),
+            'balance_available_usdt'=> ($available !== null) ? (float)$available : null,
+            'balance_parse_source'  => is_array($balanceSnapshot) ? ($balanceSnapshot['source'] ?? null) : null,
+            'balance_http_code'     => is_array($balanceSnapshot) ? ($balanceSnapshot['http_code'] ?? null) : null,
+            'balance_error_code'    => is_array($balanceSnapshot) ? ($balanceSnapshot['error'] ?? null) : null,
+            'balance_error_message' => is_array($balanceSnapshot) ? ($balanceSnapshot['ret_msg'] ?? null) : null,
+        ];
+
                 // If we couldn't get balance, reject for safety
         if ($available === null) {
             // Prefer a specific error code (if gateway returned one) for UI visibility.
@@ -745,8 +1244,9 @@ trait BotExecutorTrait
                 'required' => $required,
                 'budget' => $budget,
                 'buffer_pct' => $bufferPct,
-                'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+                'coin' => $coin,
                 'balance_snapshot' => $balanceSnapshot,
+                'balance_diagnostics' => $balanceDiag,
             ];
         }// Check minimum threshold
         if ($rejectBelow > 0.0 && $available < $rejectBelow) {
@@ -758,8 +1258,9 @@ trait BotExecutorTrait
                 'budget' => $budget,
                 'buffer_pct' => $bufferPct,
                 'reject_below_usdt' => $rejectBelow,
-                'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+                'coin' => $coin,
                 'balance_snapshot' => $balanceSnapshot,
+                'balance_diagnostics' => $balanceDiag,
             ];
         }
         
@@ -773,8 +1274,9 @@ trait BotExecutorTrait
                 'budget' => $budget,
                 'buffer_pct' => $bufferPct,
                 'shortfall' => $required - $available,
-                'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+                'coin' => $coin,
                 'balance_snapshot' => $balanceSnapshot,
+                'balance_diagnostics' => $balanceDiag,
             ];
         }
         
@@ -785,8 +1287,9 @@ trait BotExecutorTrait
             'required' => $required,
             'budget' => $budget,
             'buffer_pct' => $bufferPct,
-            'coin' => $this->config['exchange']['balance_coin'] ?? 'USDT',
+            'coin' => $coin,
             'balance_snapshot' => $balanceSnapshot,
+            'balance_diagnostics' => $balanceDiag,
         ];
     }
     
@@ -847,21 +1350,48 @@ trait BotExecutorTrait
     /**
      * Check if position data is valid for SL calculation
      */
-    private function isValidPositionData(?array $data): bool
+    private function isValidPositionData(?array $data, bool $requireLiqPrice = true): bool
     {
         if ($data === null) {
             return false;
         }
-        
-        $size = (float)($data['size'] ?? $data['qty'] ?? 0);
+
+        $size     = (float)($data['size'] ?? $data['qty'] ?? 0);
         $avgPrice = (float)($data['avgPrice'] ?? $data['entry_price'] ?? 0);
+
+        if (!$requireLiqPrice) {
+            return $size > 0 && $avgPrice > 0;
+        }
+
         $liqPrice = (float)($data['liqPrice'] ?? 0);
-        
         return $size > 0 && $avgPrice > 0 && $liqPrice > 0;
     }
     
     /**
-     * Build trade for LIVE Phase-1 (trade_live_v1 schema)
+     * Derive contract generation label from exit mode string.
+     */
+    private function deriveContractGeneration(string $exitMode): string
+    {
+        return match ($exitMode) {
+            'hybrid_tp' => 'v3_hybrid',
+            'trailing_tp' => 'v2_trailing',
+            'fixed_tp' => 'v1_fixed',
+            default => 'v1_fixed',
+        };
+    }
+
+    /**
+     * Build trade snapshot for LIVE execution (trade_live_v2 schema).
+     *
+     * ── ACTIVE TRADE SNAPSHOT SCHEMA ────────────────────────────────────
+     * Schema version: trade_live_v2
+     * Previous: trade_live_v1 (auto-upgraded on first update cycle)
+     *
+     * Top-level effective_* fields are mirrored from runtime.* each update
+     * cycle to keep the snapshot self-describing without deep nesting.
+     *
+     * @legacy — function name still says "V1" for git-blame traceability,
+     * but produces trade_live_v2 schema since the v1→v2 migration.
      */
     private function buildTradeLiveV1(
         array $intent,
@@ -872,15 +1402,49 @@ trait BotExecutorTrait
         array $trailing
     ): array {
         $entryAvg = (float)($positionData['avgPrice'] ?? $positionData['entry_price'] ?? $intent['entry_price']);
-        
+
+        $riskTrailing = $intent['risk']['trailing'] ?? [];
+        $trailingEnabled = (bool)($riskTrailing['enabled'] ?? false);
+        $exitMode = (string)($riskTrailing['exit_mode'] ?? 'unknown');
+        $beEnabled = (bool)($riskTrailing['break_even_enabled'] ?? false);
+        $initialProtectionState = ($sl > 0) ? 'opened_protected' : 'opened_unprotected';
+        $contractGeneration = $this->deriveContractGeneration($exitMode);
+        $effectiveSource = !empty($riskTrailing['brain_trailing_applied'])
+            ? 'brain_trailing_contract'
+            : (!empty($riskTrailing['effective_trailing_contract_source'])
+                ? $riskTrailing['effective_trailing_contract_source']
+                : 'bot_local_config');
+
         return [
-            'schema_version' => 'trade_live_v1',
+            'schema_version' => 'trade_live_v2',
             'trade_id' => $intent['signal_id'] ?? $intent['id'],
             'signal_id' => $intent['signal_id'] ?? $intent['id'],
+            'opened_at' => date('c'),
             'symbol' => $intent['symbol'],
             'side' => $intent['side'],
-            'mode' => 'live',
-            'opened_at' => date('c'),
+            'side_original' => (string)($intent['side_original'] ?? $intent['side']),
+            'source' => (string)($intent['source'] ?? ''),
+            'pattern_algorithm' => (string)($intent['pattern_algorithm'] ?? ''),
+            'pattern_version'   => (string)($intent['pattern_version'] ?? ''),
+            'signal_strength'   => (float)($intent['signal_strength'] ?? 0),
+            'quality_score'     => (float)($intent['quality_score'] ?? 0),
+            'scenario_id'       => (string)($intent['scenario_id'] ?? ''),
+            'scenario_score'    => (float)($intent['scenario_score'] ?? 0),
+            // Decision engine lineage fields (populated when BotDecisionEngine is active)
+            'decision_id'     => (string)($intent['decision_id'] ?? ''),
+            'confidence_band' => (string)($intent['confidence_band'] ?? ''),
+            'route_state'     => (string)($intent['route_state'] ?? ''),
+            // Brain-route observability: present when a brain-controlled live intent was
+            // executed live. confidence_band/route_state above reflect normalized live
+            // semantics; bot_assessed_* preserve the bot's internal re-assessment for audit.
+            'brain_routed_live_intent'     => (bool)($intent['brain_routed_live_intent'] ?? false),
+            'bot_respected_brain_route'    => (bool)($intent['bot_respected_brain_route'] ?? false),
+            'actual_execution_namespace'   => (string)($intent['actual_execution_namespace'] ?? ''),
+            'persisted_execution_namespace'=> (string)($intent['persisted_execution_namespace'] ?? ''),
+            'metadata_normalized_to_live'  => (bool)($intent['metadata_normalized_to_live'] ?? false),
+            'bot_assessed_confidence_band' => $intent['bot_assessed_confidence_band'] ?? null,
+            'bot_assessed_route_state'     => $intent['bot_assessed_route_state'] ?? null,
+            'mode' => $this->getMode(),
             'risk' => $intent['risk'],
             'exchange' => [
                 'order_id' => $orderResult['order_id'] ?? null,
@@ -897,7 +1461,61 @@ trait BotExecutorTrait
                 'trailing_enabled' => $trailing['enabled'] ?? false,
                 'trailing_stop' => $trailing['trailing_stop'] ?? null,
                 'active_price' => $trailing['active_price'] ?? null,
+                'stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
+                'stop_loss_from_entry_roi' => ($intent['risk']['stop_control']['stop_control_mode'] ?? 'auto') === 'entry_roi'
+                    ? (float)($intent['risk']['stop_control']['stop_loss_from_entry_roi'] ?? 0)
+                    : null,
             ],
+            // Top-level effective post-entry contract (mirrors runtime, consistent from creation)
+            'protection_state' => $initialProtectionState,
+            'trailing_enabled' => $trailingEnabled,
+            'trailing_active' => false,
+            'break_even_enabled' => $beEnabled,
+            'break_even_armed' => false,
+            'break_even_applied' => false,
+            'effective_exit_mode' => $exitMode,
+            'effective_trailing_activation' => (float)($riskTrailing['activation_roi_pct'] ?? 0),
+            'effective_break_even_activation' => $beEnabled ? (float)($riskTrailing['break_even_activation_roi'] ?? 0) : null,
+            'effective_drawdown_factor' => (float)($riskTrailing['drawdown_factor'] ?? 0),
+            'effective_hybrid_tp_share' => $exitMode === 'hybrid_tp'
+                ? (float)($riskTrailing['hybrid_tp_share'] ?? 0)
+                : null,
+            'effective_fixed_take_profit_roi' => (float)($riskTrailing['fixed_take_profit_roi'] ?? 0),
+            'effective_trailing_contract_source' => $effectiveSource,
+            'effective_trailing_mode' => (string)($riskTrailing['trailing_mode'] ?? 'roi_giveback'),
+            'effective_trailing_price_distance_pct' => in_array($riskTrailing['trailing_mode'] ?? 'roi_giveback', ['price_distance', 'price_distance_floor'], true)
+                ? (float)($riskTrailing['trailing_price_distance_pct'] ?? 0.02)
+                : null,
+            'effective_trailing_activation_floor_roi' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (float)($riskTrailing['trailing_activation_floor_roi'] ?? 4.0)
+                : null,
+            'effective_trailing_floor_lock_roi' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (float)($riskTrailing['trailing_floor_lock_roi'] ?? 3.0)
+                : null,
+            'effective_trailing_step_mode' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (string)($riskTrailing['trailing_step_mode'] ?? 'fixed')
+                : null,
+            // ROI-based trailing preset fields
+            'effective_trailing_preset_mode' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? (string)($trailing['trailing_preset_mode'] ?? 'custom')
+                : null,
+            'effective_trailing_distance_roi' => ($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor'
+                ? ($trailing['trailing_distance_roi'] ?? null)
+                : null,
+            // Stop mode truth (top-level for operator observability)
+            'effective_stop_control_mode' => (string)($intent['risk']['stop_control']['stop_control_mode'] ?? ($intent['risk']['stop_control_mode'] ?? 'auto')),
+            'effective_stop_loss_from_entry_roi' => ($intent['risk']['stop_control']['stop_control_mode'] ?? 'auto') === 'entry_roi'
+                ? (float)($intent['risk']['stop_control']['stop_loss_from_entry_roi'] ?? 0)
+                : null,
+            'effective_stop_price' => ($sl > 0) ? round($sl, 8) : null,
+            // Initial vs current stop separation: initial is frozen at entry, never overwritten by BE/trailing
+            'initial_computed_stop_price' => ($sl > 0) ? round($sl, 8) : null,
+            'stop_moved_from_initial' => false,
+            // Contract generation tracking (Part 1-3: opened_with vs current)
+            'opened_with_exit_mode' => $exitMode,
+            'opened_with_contract_generation' => $contractGeneration,
+            'current_effective_contract_generation' => $contractGeneration,
+            'contract_migrated' => false,
             // Legacy fields for compatibility
             'entry_price' => $entryAvg,
             'position_size' => (float)($positionData['size'] ?? $order['qty']),
@@ -928,37 +1546,1323 @@ trait BotExecutorTrait
         $result = [
             'updated' => 0,
             'closed' => 0,
+            'closed_by_logical_stop' => 0,
+            'closed_by_exchange' => 0,
             'errors' => [],
             'warnings' => [],
             'trailing_applied' => 0,
             'trailing_failed' => 0,
             'trailing_skipped' => 0,
-        'step_trailing_applied' => 0,
+            'step_trailing_applied' => 0,
             'step_trailing_failed' => 0,
             'step_trailing_skipped' => 0,
-            ];
+            'break_even_applied' => 0,
+            'hybrid_partial_applied' => 0,
+            'floor_lock_applied' => 0,
+            'floor_lock_failed' => 0,
+            'floor_lock_skipped' => 0,
+            'effective_stop_zero_while_protected_count' => 0,
+            'protection_source_missing_count' => 0,
+            'best_price_missing_while_trailing_active_count' => 0,
+            'top_level_runtime_mismatch_count' => 0,
+            'profit_addon_applied' => 0,
+            'profit_addon_failed' => 0,
+            'profit_addon_skipped' => 0,
+            'profit_addon_checked' => 0,
+            'profit_addon_trigger_reached' => 0,
+            'profit_addon_eligible' => 0,
+            'profit_addon_attempted' => 0,
+            'profit_addon_too_small' => 0,
+            'profit_addon_skip_reason_distribution' => [],
+            'profit_addon_fail_reason_distribution' => [],
+            'reversal_overlay_candidates_seen' => 0,
+            'reversal_overlay_activated' => 0,
+            'reversal_overlay_step_advanced' => 0,
+            'reversal_overlay_skipped_wrong_pattern' => 0,
+            'reversal_overlay_skipped_wrong_side' => 0,
+            'reversal_overlay_skipped_peak_too_low' => 0,
+            'reversal_overlay_shadow_mirror_seen' => 0,
+            'reversal_overlay_harvest_applied' => 0,
+            // Demo close pipeline counters
+            'ai_dataset_records_written' => 0,
+            'close_failures' => 0,
+            'close_failure_reasons' => [],
+            // Demo turnover / staleness counters
+            'stale_trades_found' => 0,
+            'stale_trade_reasons' => [],
+            'avg_active_age_minutes' => null,
+            'oldest_active_trade_minutes' => null,
+            'finalized_from_exchange_this_run' => 0,
+            'finalized_locally_this_run' => 0,
+            // Adopted orphan turnover counters (demo only)
+            'adopted_orphans_active_before' => 0,
+            'adopted_orphans_closed_this_run' => 0,
+            'adopted_orphans_stale_this_run' => 0,
+            'adopted_orphans_finalized_locally_this_run' => 0,
+            'adopted_orphans_finalized_from_exchange_this_run' => 0,
+            'adopted_orphans_close_failures_this_run' => 0,
+            'adopted_orphan_close_failure_reasons' => [],
+            // Close quality counters for adopted orphans
+            'adopted_orphans_closed_complete_this_run' => 0,
+            'adopted_orphans_ai_dataset_written_this_run' => 0,
+            'adopted_orphans_closed_without_ai_dataset_this_run' => 0,
+            // Timing health counters for adopted orphans (demo only)
+            'adopted_orphans_with_valid_timing_count' => 0,
+            'adopted_orphans_with_missing_timing_count' => 0,
+            'adopted_orphans_stale_eligible_count' => 0,
+            'adopted_orphans_timeout_eligible_count' => 0,
+            'adopted_orphans_average_age_minutes' => null,
+            'adopted_orphans_oldest_age_minutes' => null,
+            // Healthy active turnover counters (demo only)
+            'healthy_active_before'                          => 0,
+            'healthy_active_stale_count'                     => 0,
+            'healthy_active_timeout_eligible_count'          => 0,
+            'healthy_active_processed_this_run'              => 0,
+            'healthy_active_closed_this_run'                 => 0,
+            'healthy_active_close_failures_this_run'         => 0,
+            'healthy_active_close_failure_reasons'           => [],
+            // Per-run closed trade data-quality counters (demo only)
+            'closed_trades_this_run_full_complete'           => 0,
+            'closed_trades_this_run_missing_mfe'             => 0,
+            'closed_trades_this_run_missing_mae'             => 0,
+            'closed_trades_this_run_missing_close_price'     => 0,
+            'closed_trades_this_run_missing_hold_minutes'    => 0,
+            // Healthy-specific closed trade data-quality counters (demo only)
+            'healthy_closed_this_run_total'                  => 0,
+            'healthy_closed_this_run_full_complete'          => 0,
+            'healthy_closed_this_run_missing_mfe'            => 0,
+            'healthy_closed_this_run_missing_mae'            => 0,
+            'healthy_closed_this_run_missing_close_price'    => 0,
+            'healthy_closed_this_run_missing_hold_minutes'   => 0,
+            'healthy_ai_dataset_written_this_run'            => 0,
+        ];
         
-        if ($mode !== 'live') {
+        if (!in_array($mode, ['live', 'demo'], true)) {
             return $result;
         }
         
         $trades = $this->store->loadActiveTrades();
-        
+
+        // Count adopted orphans and healthy actives before processing for per-run turnover diagnostics (demo only)
+        if ($mode === 'demo') {
+            foreach ($trades as $_t) {
+                if (!empty($_t['is_orphan_adopted']) || !empty($_t['adopted_from_exchange_orphan'])) {
+                    $result['adopted_orphans_active_before']++;
+                } else {
+                    $result['healthy_active_before']++;
+                }
+            }
+        }
+
+                // ── Demo learning mode: stale-age config ────────────────────────────
+        $dlmCfg = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+        $dlmEnabled = ($dlmCfg['enabled'] ?? false) && $mode === 'demo';
+        $staleAgeMinutes = $dlmEnabled && ($dlmCfg['learning_max_active_age_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_max_active_age_minutes']
+            : 0;
+        $closeTimeoutMinutes = $dlmEnabled && ($dlmCfg['learning_close_timeout_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_close_timeout_minutes']
+            : 0;
+        $preferCloseStale = $dlmEnabled && !empty($dlmCfg['prefer_close_stale_when_learning']);
+
+        // ── Bootstrap mode: healthy-close accelerator thresholds ────────────
+        // Read from demo_composition config injected by service.php before this call.
+        $demoComp = is_array($this->config['demo_composition'] ?? null) ? $this->config['demo_composition'] : [];
+        $bootstrapActive       = $mode === 'demo' && !empty($demoComp['healthy_close_bootstrap_active']);
+        $bootstrapTimeoutMin   = $bootstrapActive && ($demoComp['healthy_close_timeout_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoComp['healthy_close_timeout_minutes_bootstrap'] : 0;
+        $bootstrapStaleMin     = $bootstrapActive && ($demoComp['healthy_stale_age_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoComp['healthy_stale_age_minutes_bootstrap'] : 0;
+
+        // Compute active-age stats across all trades (demo mode only)
+        if ($mode === 'demo' && count($trades) > 0) {
+            $ageAccum = 0;
+            $maxAge   = 0;
+            $nowTs    = time();
+            $aoAgeAccum = 0;
+            $aoAgeCount = 0;
+            $aoMaxAge   = 0;
+            foreach ($trades as $t) {
+                $ots = (int)(strtotime((string)($t['opened_at'] ?? '')) ?: ($t['open_ts'] ?? 0));
+                $ageMin = $ots > 0 ? (int)round(($nowTs - $ots) / 60) : 0;
+                $ageAccum += $ageMin;
+                if ($ageMin > $maxAge) {
+                    $maxAge = $ageMin;
+                }
+                // Track adopted orphan timing health separately
+                if (!empty($t['is_orphan_adopted']) || !empty($t['adopted_from_exchange_orphan'])) {
+                    // Valid timing: opened_ts or opened_at resolves to a real timestamp
+                    $aoOts = $ots > 0 ? $ots : (int)($t['opened_ts'] ?? $t['adoption_ts'] ?? 0);
+                    if ($aoOts > 0 && empty($t['timing_missing_reason'])) {
+                        $result['adopted_orphans_with_valid_timing_count']++;
+                        $aoAgeMin = (int)round(($nowTs - $aoOts) / 60);
+                        $aoAgeAccum += $aoAgeMin;
+                        $aoAgeCount++;
+                        if ($aoAgeMin > $aoMaxAge) {
+                            $aoMaxAge = $aoAgeMin;
+                        }
+                        if ($staleAgeMinutes > 0 && $aoAgeMin >= $staleAgeMinutes) {
+                            $result['adopted_orphans_stale_eligible_count']++;
+                        }
+                        if ($closeTimeoutMinutes > 0 && $aoAgeMin >= $closeTimeoutMinutes) {
+                            $result['adopted_orphans_timeout_eligible_count']++;
+                        }
+                    } else {
+                        $result['adopted_orphans_with_missing_timing_count']++;
+                    }
+                } else {
+                    // Healthy active trade — track stale and timeout eligibility
+                    if ($staleAgeMinutes > 0 && $ageMin >= $staleAgeMinutes) {
+                        $result['healthy_active_stale_count']++;
+                    }
+                    if ($closeTimeoutMinutes > 0 && $ageMin >= $closeTimeoutMinutes) {
+                        $result['healthy_active_timeout_eligible_count']++;
+                    }
+                }
+            }
+            $result['avg_active_age_minutes']    = (int)round($ageAccum / count($trades));
+            $result['oldest_active_trade_minutes'] = $maxAge;
+            if ($aoAgeCount > 0) {
+                $result['adopted_orphans_average_age_minutes'] = (int)round($aoAgeAccum / $aoAgeCount);
+                $result['adopted_orphans_oldest_age_minutes']  = $aoMaxAge;
+            }
+        }
+
         foreach ($trades as $tradeId => $trade) {
             try {
+                // Freshness guard: skip position verification for trades opened in the last 30 seconds.
+                // This prevents a race condition where updateActivePositions() immediately re-queries
+                // the exchange right after executeIntent() just confirmed the position is open, and
+                // a transient null response causes the trade to be moved to closed in the same cycle.
+                $openedAt = strtotime($trade['opened_at'] ?? '');
+                if ($openedAt > 0 && (time() - $openedAt) < 30) {
+                    $result['updated']++;
+                    continue;
+                }
+
+                // ── Demo orphan dead-shell detection ─────────────────────────────────
+                // An adopted orphan trade is a dead shell if it is missing entry_price or qty.
+                // These trades cannot be finalized meaningfully (close pipeline needs entry_price
+                // for PnL). In demo mode, clear them from active storage to stop them from
+                // inflating active counts and blocking new signal slots.
+                if ($mode === 'demo' && !empty($trade['is_orphan_adopted'])) {
+                    $hasEntryPrice = (float)($trade['entry_price'] ?? 0) > 0;
+                    $hasQty        = (float)($trade['position_size'] ?? $trade['qty'] ?? 0) > 0;
+                    $hasSide       = in_array($trade['side'] ?? '', ['long', 'short'], true);
+                    if (!$hasEntryPrice || !$hasQty || !$hasSide) {
+                        // Dead shell — finalize as quarantined (no close on exchange since we have no
+                        // usable position data; just remove from active to unblock the slot).
+                        $closedAtTs = time();
+                        $deadShellTrade = array_merge($trade, [
+                            'status'                         => 'quarantined',
+                            'closed_at'                      => date('c', $closedAtTs),
+                            'closed_ts'                      => $closedAtTs,
+                            'close_ts'                       => $closedAtTs,
+                            'close_reason'                   => 'orphan_dead_shell_quarantined',
+                            'close_reason_normalized'        => 'orphan_dead_shell_quarantined',
+                            'close_detection_result'         => 'close_detected_orphan_dead_shell_cleared',
+                            'close_detection_source'         => 'update_active_positions_dead_shell_cleanup',
+                            'orphan_dead_shell_quarantined'  => true,
+                            'orphan_dead_shell_reason'       => !$hasEntryPrice ? 'missing_entry_price' : (!$hasQty ? 'missing_qty' : 'missing_side'),
+                            'pnl'                            => 0.0,
+                            'roi'                            => 0.0,
+                            'hold_minutes'                   => 0,
+                            'local_close_finalize_used'      => false,
+                        ]);
+                        $this->store->moveTradeToClosedDir($tradeId, $deadShellTrade);
+                        $this->journalEvent('trade_closed', 'update_positions', true,
+                            'Dead shell quarantined: ' . ($trade['symbol'] ?? $tradeId),
+                            [
+                                'trade_id'                => $tradeId,
+                                'symbol'                  => $trade['symbol'] ?? null,
+                                'classification'          => 'orphan_adopted',
+                                'close_reason_normalized' => 'orphan_dead_shell_quarantined',
+                                'close_result_source'     => 'update_active_positions',
+                                'close_price'             => null,
+                                'roi'                     => 0.0,
+                                'pnl'                     => 0.0,
+                                'hold_minutes'            => null,
+                                'mfe'                     => null,
+                                'mae'                     => null,
+                                'mfe_missing_reason'      => 'orphan_dead_shell_no_finalize',
+                                'mae_missing_reason'      => 'orphan_dead_shell_no_finalize',
+                                'ai_dataset_written'      => false,
+                                'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                            ]
+                        );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'closed trade file written (orphan_dead_shell): ' . ($trade['symbol'] ?? $tradeId),
+                            [
+                                'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                'write_type'              => 'create',
+                                'classification'          => 'orphan_close',
+                                'symbol'                  => $trade['symbol'] ?? null,
+                                'trade_id'                => $tradeId,
+                                'close_reason_normalized' => 'orphan_dead_shell_quarantined',
+                                'ai_dataset_written'      => false,
+                            ]
+                        );
+                        $result['closed']++;
+                        // Dead shells are always orphan-adopted trades; classify so total = healthy + orphan holds.
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['close_failure_reasons']['orphan_dead_shell_quarantined'] =
+                            ($result['close_failure_reasons']['orphan_dead_shell_quarantined'] ?? 0) + 1;
+                        continue;
+                    }
+                }
+
+                // ── Trade age & staleness annotation (demo only) ────────────
+                $isAdoptedTrade = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+                if ($mode === 'demo') {
+                    // For adopted orphans, fall back through opened_ts → adoption_ts → orphan_resolution_ts
+                    // so that age is never silently zero when a better baseline exists.
+                    if ($isAdoptedTrade && $openedAt <= 0) {
+                        $tradeOpenedTs = (int)($trade['opened_ts'] ?? $trade['adoption_ts'] ?? $trade['orphan_resolution_ts'] ?? 0);
+                        // Annotate which fallback was used
+                        if ((int)($trade['opened_ts'] ?? 0) > 0) {
+                            $trade['age_minutes_source'] = 'opened_ts_field';
+                        } elseif ((int)($trade['adoption_ts'] ?? 0) > 0) {
+                            $trade['age_minutes_source'] = 'adoption_ts_fallback';
+                            if (empty($trade['timing_missing_reason'])) {
+                                $trade['timing_missing_reason'] = 'opened_at_unparseable_used_adoption_ts';
+                            }
+                        } elseif ((int)($trade['orphan_resolution_ts'] ?? 0) > 0) {
+                            $trade['age_minutes_source'] = 'orphan_resolution_ts_fallback';
+                            if (empty($trade['timing_missing_reason'])) {
+                                $trade['timing_missing_reason'] = 'opened_at_and_adoption_ts_missing';
+                            }
+                        } else {
+                            $tradeOpenedTs = 0;
+                            $trade['timing_missing_reason'] = $trade['timing_missing_reason'] ?? 'no_timing_baseline_available';
+                        }
+                    } else {
+                        // For healthy trades, fall back to opened_ts then open_ts if opened_at is unparseable
+                        $tradeOpenedTs = $openedAt > 0
+                            ? $openedAt
+                            : (int)($trade['opened_ts'] ?? $trade['open_ts'] ?? 0);
+                    }
+                    $ageMin = $tradeOpenedTs > 0 ? (int)round((time() - $tradeOpenedTs) / 60) : 0;
+                    $trade['age_minutes'] = $ageMin;
+                    $trade['last_reconcile_ts']    = date('c');
+                    $trade['last_runtime_update_ts'] = time();
+                    $isStale = $staleAgeMinutes > 0 && $ageMin >= $staleAgeMinutes;
+                    if ($isStale) {
+                        $staleReason = 'age_exceeded_' . $staleAgeMinutes . 'min';
+                        $trade['is_stale_trade'] = true;
+                        $trade['stale_reason']   = $staleReason;
+                        $result['stale_trades_found']++;
+                        $result['stale_trade_reasons'][$staleReason] = ($result['stale_trade_reasons'][$staleReason] ?? 0) + 1;
+                    } else {
+                        $trade['is_stale_trade'] = false;
+                        $trade['stale_reason']   = null;
+                    }
+                }
+
+                // ── Demo learning mode: force-close trades that exceeded learning_close_timeout_minutes ──
+                // Hard timeout fires whenever demo learning mode is active and a close timeout is configured.
+                // This applies to both healthy actives and is not gated on prefer_close_stale_when_learning
+                // so that the timeout is authoritative regardless of soft-stale preference config.
+                // When bootstrap mode is active, healthy (non-orphan) trades use the shorter bootstrap timeout.
+                $effectiveCloseTimeout = $closeTimeoutMinutes;
+                $closeBootstrapTriggered = false;
+                if (!$isAdoptedTrade && $bootstrapActive && $bootstrapTimeoutMin > 0
+                    && ($closeTimeoutMinutes <= 0 || $bootstrapTimeoutMin < $closeTimeoutMinutes)) {
+                    $effectiveCloseTimeout   = $bootstrapTimeoutMin;
+                    $closeBootstrapTriggered = true;
+                }
+                if ($mode === 'demo' && $dlmEnabled && $effectiveCloseTimeout > 0) {
+                    $tradeAgeMin = (int)($trade['age_minutes'] ?? 0);
+                    if ($tradeAgeMin >= $effectiveCloseTimeout) {
+                        if (!$isAdoptedTrade) {
+                            $result['healthy_active_processed_this_run']++;
+                        }
+                        $exchangeCloseResult = $this->closePositionOnExchange($trade);
+                        $closeReason = 'learning_timeout_close';
+                        if (!($exchangeCloseResult['success'] ?? false)) {
+                            // Close order failed — verify whether position is still open
+                            $checkPos = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+                            if ($checkPos !== null && (float)($checkPos['size'] ?? 0) > 0) {
+                                // Position confirmed still open; log failure and continue
+                                $result['close_failures']++;
+                                $cfKey = 'close_detection_exchange_state_uncertain';
+                                $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                if (!$isAdoptedTrade) {
+                                    $result['healthy_active_close_failures_this_run']++;
+                                    $result['healthy_active_close_failure_reasons'][$cfKey] = ($result['healthy_active_close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                }
+                                $result['updated']++;
+                                continue;
+                            }
+                            // Position not found → already closed by exchange
+                            $closeReason = 'exchange_closed_unknown';
+                        }
+                        // Finalize locally
+                        $closedAtTs = time();
+                        $closeDetectionResultTimeout = ($closeReason === 'learning_timeout_close')
+                            ? 'close_detected_local_finalize_triggered'
+                            : 'close_detected_exchange_gone_after_close_failure';
+                        $closedTrade = array_merge($trade, [
+                            'closed_at'                    => date('c', $closedAtTs),
+                            'closed_ts'                    => $closedAtTs,
+                            'close_ts'                     => $closedAtTs,
+                            'close_reason'                 => $closeReason,
+                            'close_reason_normalized'      => $closeReason,
+                            'close_protection_state'       => 'learning_force_closed',
+                            'learning_timeout_force_close' => true,
+                            'close_detection_result'       => $closeDetectionResultTimeout,
+                            'close_detection_source'       => 'learning_timeout_force_close',
+                            'bootstrap_close_triggered'    => $closeBootstrapTriggered,
+                        ]);
+                        if (method_exists($this, 'applyLocalCloseFinalize')) {
+                            $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                            $closedTrade['close_reason']            = $closeReason;
+                            $closedTrade['close_reason_normalized'] = $closeReason;
+                        }
+                        // Orphan recovery trades must not enter the primary AI learning dataset.
+                        // The healthy timeout path runs for all trades; guard the AI write here.
+                        if ($isAdoptedTrade) {
+                            $aiWritten = false;
+                            $closedTrade['ai_dataset_record_written'] = false;
+                            $closedTrade['ai_dataset_partition']      = 'orphan_recovery_secondary';
+                        } else {
+                            $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                            $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                            if (!$aiWritten) {
+                                $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                            }
+                        }
+                        // Per-run data-quality counters — based on record content, computed before persistence.
+                        if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                        if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                        if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                        if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                        if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                            && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                            && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                            && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                            $result['closed_trades_this_run_full_complete']++;
+                        }
+                        // Persist the closed record first; increment close counters only after persistence.
+                        $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                        $this->journalEvent('trade_closed', 'update_positions', true,
+                            'Trade closed (learning_timeout): ' . ($trade['symbol'] ?? $tradeId),
+                            [
+                                'trade_id'                => $tradeId,
+                                'symbol'                  => $closedTrade['symbol'] ?? null,
+                                'classification'          => $isAdoptedTrade ? 'orphan_adopted' : 'healthy',
+                                'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                                'close_result_source'     => $closedTrade['close_result_source'] ?? null,
+                                'close_price'             => $closedTrade['close_price'] ?? null,
+                                'roi'                     => $closedTrade['roi'] ?? null,
+                                'pnl'                     => $closedTrade['pnl'] ?? null,
+                                'hold_minutes'            => $closedTrade['hold_minutes'] ?? null,
+                                'mfe'                     => $closedTrade['mfe'] ?? null,
+                                'mae'                     => $closedTrade['mae'] ?? null,
+                                'mfe_missing_reason'      => $closedTrade['mfe_missing_reason'] ?? null,
+                                'mae_missing_reason'      => $closedTrade['mae_missing_reason'] ?? null,
+                                'ai_dataset_written'      => $aiWritten,
+                                'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                            ]
+                        );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'closed trade file written (learning_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                            [
+                                'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                'write_type'              => 'create',
+                                'classification'          => $isAdoptedTrade ? 'orphan_close' : 'healthy_close',
+                                'symbol'                  => $closedTrade['symbol'] ?? null,
+                                'trade_id'                => $tradeId,
+                                'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                                'ai_dataset_written'      => $aiWritten,
+                            ]
+                        );
+                        if ($aiWritten) {
+                            $this->journalEvent('ai_dataset_written', 'update_positions', true,
+                                'AI record written: ' . ($trade['symbol'] ?? $tradeId),
+                                [
+                                    'trade_id'       => $tradeId,
+                                    'symbol'         => $closedTrade['symbol'] ?? null,
+                                    'classification' => $isAdoptedTrade ? 'orphan_adopted' : 'healthy',
+                                    'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                ]
+                            );
+                            $this->journalEvent('file_write', 'update_positions', true,
+                                'ai_dataset file written (learning_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                                [
+                                    'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                    'write_type'     => 'create',
+                                    'classification' => 'ai_dataset',
+                                    'symbol'         => $closedTrade['symbol'] ?? null,
+                                    'trade_id'       => $tradeId,
+                                ]
+                            );
+                        }
+                        $result['closed']++;
+                        $result['closed_by_logical_stop']++;
+                        $result['finalized_locally_this_run']++;
+                        if (!$isAdoptedTrade) {
+                            $result['healthy_active_closed_this_run']++;
+                            // Healthy-specific quality counters
+                            $result['healthy_closed_this_run_total']++;
+                            if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['healthy_closed_this_run_missing_close_price']++; }
+                            if (($closedTrade['hold_minutes'] ?? null) === null) { $result['healthy_closed_this_run_missing_hold_minutes']++; }
+                            if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['healthy_closed_this_run_missing_mfe']++; }
+                            if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['healthy_closed_this_run_missing_mae']++; }
+                            if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                                && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                                && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                                && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                                $result['healthy_closed_this_run_full_complete']++;
+                            }
+                            if ($aiWritten) { $result['healthy_ai_dataset_written_this_run']++; }
+                        } else {
+                            $result['adopted_orphans_closed_this_run']++;
+                            $result['adopted_orphans_finalized_locally_this_run']++;
+                        }
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                            if ($isAdoptedTrade) {
+                                $result['adopted_orphans_ai_dataset_written_this_run']++;
+                            }
+                        } elseif ($isAdoptedTrade) {
+                            $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                        }
+                        $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                        continue;
+                    }
+                }
+
+                // ── Adopted orphan force-close when learning timeout exceeded ─────────────
+                // Runs for adopted orphan trades even when prefer_close_stale_when_learning is false.
+                // Adopted orphans must progress through the lifecycle; they should not sit forever.
+                if ($mode === 'demo' && !empty($trade['is_orphan_adopted']) && $closeTimeoutMinutes > 0) {
+                    $adoptedOrphanAgeMin = (int)($trade['age_minutes'] ?? 0);
+                    if ($adoptedOrphanAgeMin >= $closeTimeoutMinutes) {
+                        $result['adopted_orphans_stale_this_run']++;
+                        $trade['adopted_orphan_is_stale']   = true;
+                        $trade['is_stale_trade']            = true;
+                        $staleReason = 'adopted_orphan_age_exceeded_close_timeout';
+                        if (empty($trade['stale_reason'])) {
+                            $trade['stale_reason'] = $staleReason;
+                        }
+                        $result['stale_trade_reasons'][$staleReason] = ($result['stale_trade_reasons'][$staleReason] ?? 0) + 1;
+                        $exchangeCloseResult = $this->closePositionOnExchange($trade);
+                        $adoptedCloseReason = 'adopted_orphan_close_forced_by_learning_timeout';
+                        if (!($exchangeCloseResult['success'] ?? false)) {
+                            $checkPos = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+                            if ($checkPos !== null && (float)($checkPos['size'] ?? 0) > 0) {
+                                // Position confirmed still open; cannot close yet
+                                $result['close_failures']++;
+                                $result['adopted_orphans_close_failures_this_run']++;
+                                $cfKey = 'adopted_orphan_close_order_failed_position_still_open';
+                                $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                $result['adopted_orphan_close_failure_reasons'][$cfKey] = ($result['adopted_orphan_close_failure_reasons'][$cfKey] ?? 0) + 1;
+                                $result['updated']++;
+                                continue;
+                            }
+                            // Position gone on exchange after close failure
+                            $adoptedCloseReason = 'adopted_orphan_close_detected_exchange_gone';
+                        }
+                        $closedAtTs = time();
+                        $closedTrade = array_merge($trade, [
+                            'closed_at'                    => date('c', $closedAtTs),
+                            'closed_ts'                    => $closedAtTs,
+                            'close_ts'                     => $closedAtTs,
+                            'close_reason'                 => $adoptedCloseReason,
+                            'close_reason_normalized'      => $adoptedCloseReason,
+                            'close_protection_state'       => 'adopted_orphan_force_closed',
+                            'learning_timeout_force_close' => true,
+                            'adopted_orphan_force_close'   => true,
+                            'adopted_orphan_close_path'    => 'stale_timeout',
+                            'close_detection_result'       => 'adopted_orphan_close_finalize_triggered',
+                            'close_detection_source'       => 'updateActivePositions_adopted_orphan_stale',
+                        ]);
+                        if (method_exists($this, 'applyLocalCloseFinalize')) {
+                            $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                            $closedTrade['close_reason']            = $adoptedCloseReason;
+                            $closedTrade['close_reason_normalized'] = $adoptedCloseReason;
+                        }
+                        // Orphan recovery trades are excluded from the primary AI learning dataset.
+                        $aiWritten = false;
+                        $closedTrade['ai_dataset_record_written'] = false;
+                        $closedTrade['ai_dataset_partition'] = 'orphan_recovery_secondary';
+                        // Count complete close (close_price + roi + close_reason all present)
+                        $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
+                            && ($closedTrade['roi'] ?? null) !== null
+                            && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
+                        // Per-run data-quality counters — based on record content, computed before persistence.
+                        if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                        if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                        if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                        if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                        if ($isComplete && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                            && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                            $result['closed_trades_this_run_full_complete']++;
+                        }
+                        // Persist the closed record first; increment close counters only after persistence.
+                        $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                        $this->journalEvent('trade_closed', 'update_positions', true,
+                            'Trade closed (adopted_orphan_timeout): ' . ($trade['symbol'] ?? $tradeId),
+                            [
+                                'trade_id'                => $tradeId,
+                                'symbol'                  => $closedTrade['symbol'] ?? null,
+                                'classification'          => 'orphan_adopted',
+                                'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                                'close_result_source'     => $closedTrade['close_result_source'] ?? null,
+                                'close_price'             => $closedTrade['close_price'] ?? null,
+                                'roi'                     => $closedTrade['roi'] ?? null,
+                                'pnl'                     => $closedTrade['pnl'] ?? null,
+                                'hold_minutes'            => $closedTrade['hold_minutes'] ?? null,
+                                'mfe'                     => $closedTrade['mfe'] ?? null,
+                                'mae'                     => $closedTrade['mae'] ?? null,
+                                'mfe_missing_reason'      => $closedTrade['mfe_missing_reason'] ?? null,
+                                'mae_missing_reason'      => $closedTrade['mae_missing_reason'] ?? null,
+                                'ai_dataset_written'      => $aiWritten,
+                                'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                            ]
+                        );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'closed trade file written (adopted_orphan_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                            [
+                                'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                'write_type'              => 'create',
+                                'classification'          => 'orphan_close',
+                                'symbol'                  => $closedTrade['symbol'] ?? null,
+                                'trade_id'                => $tradeId,
+                                'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                                'ai_dataset_written'      => $aiWritten,
+                            ]
+                        );
+                        if ($aiWritten) {
+                            $this->journalEvent('ai_dataset_written', 'update_positions', true,
+                                'AI record written: ' . ($trade['symbol'] ?? $tradeId),
+                                [
+                                    'trade_id'       => $tradeId,
+                                    'symbol'         => $closedTrade['symbol'] ?? null,
+                                    'classification' => 'orphan_adopted',
+                                    'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                ]
+                            );
+                            $this->journalEvent('file_write', 'update_positions', true,
+                                'ai_dataset file written (adopted_orphan_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                                [
+                                    'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                    'write_type'     => 'create',
+                                    'classification' => 'ai_dataset',
+                                    'symbol'         => $closedTrade['symbol'] ?? null,
+                                    'trade_id'       => $tradeId,
+                                ]
+                            );
+                        }
+                        $result['closed']++;
+                        $result['closed_by_logical_stop']++;
+                        $result['finalized_locally_this_run']++;
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['adopted_orphans_finalized_locally_this_run']++;
+                        if ($aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                            $result['adopted_orphans_ai_dataset_written_this_run']++;
+                        } else {
+                            $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                        }
+                        if ($isComplete) {
+                            $result['adopted_orphans_closed_complete_this_run']++;
+                        }
+                        $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                        continue;
+                    }
+                }
+
                 // Get position from exchange
+                // Guard: if gateway is not initialized, skip position check to avoid false-positive closure.
+                if (!$this->gateway || !$this->gateway->isInitialized()) {
+                    if ($mode === 'demo') {
+                        $cfKey = 'close_detection_skipped_gateway_unavailable';
+                        $result['close_failure_reasons'][$cfKey] = ($result['close_failure_reasons'][$cfKey] ?? 0) + 1;
+                        $result['close_failures']++;
+                    }
+                    $result['updated']++;
+                    continue;
+                }
                 $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
                 
                 if ($position === null || (float)($position['size'] ?? 0) <= 0) {
-                    // Position closed on exchange
+                    // Position closed on exchange — determine close reason and detection state
+                    $isAdoptedOrphanTrade = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+                    $closeDetectionResult = $position === null
+                        ? ($isAdoptedOrphanTrade ? 'adopted_orphan_close_detected_exchange_gone'   : 'close_detected_exchange_gone')
+                        : ($isAdoptedOrphanTrade ? 'adopted_orphan_close_detected_size_zero'        : 'close_detected_size_zero');
+                    $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $closeReason = 'exchange_closed_unknown';
+                    if (!empty($rt['dumb_trailing_applied'])) {
+                        $closeReason = 'trailing_stop';
+                    } elseif (!empty($rt['break_even_applied'])) {
+                        $closeReason = 'break_even';
+                    } elseif (!empty($rt['close_trigger']) && $rt['close_trigger'] === 'logical_stop') {
+                        $closeReason = 'stop_loss';
+                    }
+                    $closedAtTs = time();
+                    $closedTrade = array_merge($trade, [
+                        'closed_at'               => date('c', $closedAtTs),
+                        'closed_ts'               => $closedAtTs,
+                        'close_ts'                => $closedAtTs,
+                        'close_reason'            => $closeReason,
+                        'close_reason_normalized' => $closeReason,
+                        'close_protection_state'  => (string)($rt['protection_state'] ?? 'unknown'),
+                        'close_detection_result'  => $closeDetectionResult,
+                        'close_detection_source'  => 'update_active_positions',
+                    ]);
+                    // Apply local finalization so fields are never empty
+                    if (method_exists($this, 'applyLocalCloseFinalize')) {
+                        $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                        $closedTrade['close_reason']            = $closeReason;
+                        $closedTrade['close_reason_normalized'] = $closeReason;
+                    }
+                    // Demo mode: write AI-ready dataset record BEFORE moving to closed dir.
+                    if (($this->config['module']['mode'] ?? '') === 'demo') {
+                        // Orphan recovery trades must not enter the primary AI learning dataset.
+                        if ($isAdoptedOrphanTrade) {
+                            $aiWritten = false;
+                            $closedTrade['ai_dataset_record_written'] = false;
+                            $closedTrade['ai_dataset_partition']      = 'orphan_recovery_secondary';
+                        } else {
+                            $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                            $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                            if (!$aiWritten) {
+                                $closedTrade['ai_dataset_write_fail_reason'] = 'write_failed';
+                            }
+                        }
+                        if ($isAdoptedOrphanTrade) {
+                            $isComplete = (float)($closedTrade['close_price'] ?? 0) > 0
+                                && ($closedTrade['roi'] ?? null) !== null
+                                && (string)($closedTrade['close_reason_normalized'] ?? '') !== '';
+                        }
+                        // Per-run data-quality counters — based on record content, computed before persistence.
+                        if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                        if (($closedTrade['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                        if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                        if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                        if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                            && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                            && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                            && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                            $result['closed_trades_this_run_full_complete']++;
+                        }
+                    }
+                    // Persist the closed record first; increment close counters only after persistence.
+                    $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                    $this->journalEvent('trade_closed', 'update_positions', true,
+                        'Trade closed (exchange_detected): ' . ($trade['symbol'] ?? $tradeId),
+                        [
+                            'trade_id'                => $tradeId,
+                            'symbol'                  => $closedTrade['symbol'] ?? null,
+                            'classification'          => $isAdoptedOrphanTrade ? 'orphan_adopted' : 'healthy',
+                            'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                            'close_result_source'     => $closedTrade['close_result_source'] ?? null,
+                            'close_price'             => $closedTrade['close_price'] ?? null,
+                            'roi'                     => $closedTrade['roi'] ?? null,
+                            'pnl'                     => $closedTrade['pnl'] ?? null,
+                            'hold_minutes'            => $closedTrade['hold_minutes'] ?? null,
+                            'mfe'                     => $closedTrade['mfe'] ?? null,
+                            'mae'                     => $closedTrade['mae'] ?? null,
+                            'mfe_missing_reason'      => $closedTrade['mfe_missing_reason'] ?? null,
+                            'mae_missing_reason'      => $closedTrade['mae_missing_reason'] ?? null,
+                            'ai_dataset_written'      => isset($aiWritten) ? (bool)$aiWritten : false,
+                            'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                        ]
+                    );
+                    $this->journalEvent('file_write', 'update_positions', true,
+                        'closed trade file written (exchange_detected): ' . ($closedTrade['symbol'] ?? $tradeId),
+                        [
+                            'path'                    => 'trades/closed/' . $tradeId . '.json',
+                            'write_type'              => 'create',
+                            'classification'          => $isAdoptedOrphanTrade ? 'orphan_close' : 'healthy_close',
+                            'symbol'                  => $closedTrade['symbol'] ?? null,
+                            'trade_id'                => $tradeId,
+                            'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                            'ai_dataset_written'      => isset($aiWritten) ? (bool)$aiWritten : false,
+                        ]
+                    );
+                    if (isset($aiWritten) && $aiWritten) {
+                        $this->journalEvent('ai_dataset_written', 'update_positions', true,
+                            'AI record written: ' . ($trade['symbol'] ?? $tradeId),
+                            [
+                                'trade_id'       => $tradeId,
+                                'symbol'         => $closedTrade['symbol'] ?? null,
+                                'classification' => $isAdoptedOrphanTrade ? 'orphan_adopted' : 'healthy',
+                                'path'           => 'ai_dataset/' . $tradeId . '.json',
+                            ]
+                        );
+                        $this->journalEvent('file_write', 'update_positions', true,
+                            'ai_dataset file written (exchange_detected): ' . ($closedTrade['symbol'] ?? $tradeId),
+                            [
+                                'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                'write_type'     => 'create',
+                                'classification' => 'ai_dataset',
+                                'symbol'         => $closedTrade['symbol'] ?? null,
+                                'trade_id'       => $tradeId,
+                            ]
+                        );
+                    }
                     $result['closed']++;
-                    $this->store->moveTradeToClosedDir($tradeId, array_merge($trade, [
-                        'closed_at' => date('c'),
-                        'close_reason' => 'exchange_closed',
-                    ]));
+                    $result['closed_by_exchange']++;
+                    $result['finalized_from_exchange_this_run']++;
+                    if ($isAdoptedOrphanTrade) {
+                        $result['adopted_orphans_closed_this_run']++;
+                        $result['adopted_orphans_finalized_from_exchange_this_run']++;
+                    } else {
+                        // Healthy (non-orphan) exchange-detected close — count for healthy turnover tracking.
+                        $result['healthy_active_closed_this_run']++;
+                    }
+                    if (($this->config['module']['mode'] ?? '') === 'demo') {
+                        if (isset($aiWritten) && $aiWritten) {
+                            $result['ai_dataset_records_written']++;
+                            if ($isAdoptedOrphanTrade) {
+                                $result['adopted_orphans_ai_dataset_written_this_run']++;
+                            }
+                        } elseif (isset($aiWritten)) {
+                            if ($isAdoptedOrphanTrade) {
+                                $result['adopted_orphans_closed_without_ai_dataset_this_run']++;
+                            }
+                        }
+                        if ($isAdoptedOrphanTrade && isset($isComplete) && $isComplete) {
+                            $result['adopted_orphans_closed_complete_this_run']++;
+                        }
+                        // Healthy-specific quality counters (exchange-detected close)
+                        if (!$isAdoptedOrphanTrade) {
+                            $result['healthy_closed_this_run_total']++;
+                            if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['healthy_closed_this_run_missing_close_price']++; }
+                            if (($closedTrade['hold_minutes'] ?? null) === null) { $result['healthy_closed_this_run_missing_hold_minutes']++; }
+                            if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['healthy_closed_this_run_missing_mfe']++; }
+                            if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['healthy_closed_this_run_missing_mae']++; }
+                            if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                                && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                                && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                                && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                                $result['healthy_closed_this_run_full_complete']++;
+                            }
+                            if (isset($aiWritten) && $aiWritten) { $result['healthy_ai_dataset_written_this_run']++; }
+                        }
+                    }
+                    $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
                     continue;
                 }
-                
+
+                // Compute protection state for this trade
+                $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                $prot = is_array($trade['protection'] ?? null) ? $trade['protection'] : [];
+                $riskTrailing = $trade['risk']['trailing'] ?? [];
+
+                $protectionState = 'opened_unprotected';
+                if ((float)($prot['stop_loss_price'] ?? 0) > 0) {
+                    $protectionState = 'opened_protected';
+                }
+                if (!empty($runtime['break_even_armed'])) {
+                    $protectionState = 'break_even_armed';
+                }
+                if (!empty($runtime['break_even_applied'])) {
+                    $protectionState = 'break_even_applied';
+                }
+                if (!empty($runtime['dumb_trailing_applied']) || !empty($prot['trailing_stop'])) {
+                    $protectionState = 'trailing_active';
+                }
+
+                $runtime['protection_state'] = $protectionState;
+                $runtime['effective_trailing_contract_source'] = !empty($riskTrailing['brain_trailing_applied'])
+                    ? 'brain_trailing_contract'
+                    : (!empty($riskTrailing['effective_trailing_contract_source'])
+                        ? $riskTrailing['effective_trailing_contract_source']
+                        : 'bot_local_config');
+
+                // Persist effective post-entry contract fields from risk.trailing into trade runtime.
+                // These evolve each cycle so the active trade snapshot always reflects real state.
+                $runtime['trailing_enabled'] = (bool)($riskTrailing['enabled'] ?? false);
+                $runtime['trailing_active'] = ($protectionState === 'trailing_active');
+                $runtime['break_even_enabled'] = (bool)($riskTrailing['break_even_enabled'] ?? false);
+                $runtime['effective_exit_mode'] = (string)($riskTrailing['exit_mode'] ?? 'unknown');
+                $runtime['effective_trailing_activation'] = (float)($riskTrailing['activation_roi_pct'] ?? 0);
+                $runtime['effective_break_even_activation'] = (float)($riskTrailing['break_even_activation_roi'] ?? 0);
+                $runtime['effective_drawdown_factor'] = (float)($riskTrailing['drawdown_factor'] ?? 0);
+                $runtime['effective_hybrid_tp_share'] = ($riskTrailing['exit_mode'] ?? '') === 'hybrid_tp'
+                    ? (float)($riskTrailing['hybrid_tp_share'] ?? 0)
+                    : null;
+                $runtime['effective_fixed_take_profit_roi'] = (float)($riskTrailing['fixed_take_profit_roi'] ?? 0);
+                $runtime['effective_trailing_mode'] = (string)($riskTrailing['trailing_mode'] ?? 'roi_giveback');
+                $runtime['effective_trailing_price_distance_pct'] = in_array($riskTrailing['trailing_mode'] ?? 'roi_giveback', ['price_distance', 'price_distance_floor'], true)
+                    ? (float)($riskTrailing['trailing_price_distance_pct'] ?? 0.02)
+                    : null;
+                if (($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor') {
+                    $runtime['effective_trailing_activation_floor_roi'] = (float)($riskTrailing['trailing_activation_floor_roi'] ?? 4.0);
+                    $runtime['effective_trailing_floor_lock_roi'] = (float)($riskTrailing['trailing_floor_lock_roi'] ?? 3.0);
+                    $runtime['effective_trailing_step_mode'] = (string)($riskTrailing['trailing_step_mode'] ?? 'fixed');
+                    // Preserve floor lock runtime state across cycles
+                    $runtime['floor_lock_active'] = (bool)($runtime['floor_lock_active'] ?? false);
+                    $runtime['floor_locked_roi'] = (float)($runtime['floor_locked_roi'] ?? 0);
+                    $runtime['floor_stop_price'] = (float)($runtime['floor_stop_price'] ?? 0);
+                    $runtime['current_effective_stop_price'] = (float)($runtime['current_effective_stop_price'] ?? 0);
+                    $runtime['protection_source_of_truth'] = (string)($runtime['protection_source_of_truth'] ?? '');
+                    $runtime['floor_enforced_via_exchange_stop'] = (bool)($runtime['floor_enforced_via_exchange_stop'] ?? false);
+                    $runtime['floor_enforced_via_bot_exit'] = (bool)($runtime['floor_enforced_via_bot_exit'] ?? false);
+                }
+
+                // Stop mode truth: persist into runtime for observability
+                $tradeStopControl = is_array($trade['risk']['stop_control'] ?? null) ? $trade['risk']['stop_control'] : [];
+                $tradeStopMode = (string)($prot['stop_control_mode'] ?? ($tradeStopControl['stop_control_mode'] ?? 'auto'));
+                $runtime['effective_stop_control_mode'] = $tradeStopMode;
+                $runtime['effective_stop_loss_from_entry_roi'] = $tradeStopMode === 'entry_roi'
+                    ? (float)($prot['stop_loss_from_entry_roi'] ?? ($tradeStopControl['stop_loss_from_entry_roi'] ?? 0))
+                    : null;
+                $runtime['effective_stop_price'] = (float)($prot['stop_loss_price'] ?? 0) > 0
+                    ? round((float)$prot['stop_loss_price'], 8)
+                    : null;
+
+                // Preserve initial_computed_stop_price: set once at trade open, never overwritten
+                if (!isset($runtime['initial_computed_stop_price'])) {
+                    $runtime['initial_computed_stop_price'] = $trade['initial_computed_stop_price'] ?? $runtime['effective_stop_price'];
+                }
+                // Compute stop_moved_from_initial flag
+                $initialStop = $runtime['initial_computed_stop_price'];
+                $currentStop = $runtime['effective_stop_price'];
+                $runtime['stop_moved_from_initial'] = ($initialStop !== null && $currentStop !== null && abs($initialStop - $currentStop) > 0.0000001);
+
+                // ====================================================================
+                // P11: Protection Layer Synchronization
+                // Ensure current_effective_stop_price, protection_source_of_truth,
+                // break_even_stop_price, and best_price are always consistent
+                // when any protection layer is active.
+                // ====================================================================
+                $side = strtolower($trade['side'] ?? 'long');
+                $protectionActive = !empty($runtime['trailing_active'])
+                    || !empty($runtime['break_even_applied'])
+                    || !empty($runtime['floor_lock_active']);
+
+                // --- Break-even stop price: ensure it's always in runtime when BE applied ---
+                if (!empty($runtime['break_even_applied'])) {
+                    $beSLPrice = (float)($runtime['break_even_sl_price'] ?? 0);
+                    if ($beSLPrice > 0) {
+                        $runtime['break_even_stop_price'] = $beSLPrice;
+                    } elseif (empty($runtime['break_even_stop_price']) || (float)$runtime['break_even_stop_price'] <= 0) {
+                        // Fallback: use entry price as break-even stop
+                        $entryPx = (float)($trade['entry_price'] ?? 0);
+                        if ($entryPx > 0) {
+                            $runtime['break_even_stop_price'] = $entryPx;
+                        }
+                    }
+                }
+
+                // --- Best price tracking: must be live when trailing active ---
+                if (!empty($runtime['trailing_active'])) {
+                    $currentPx = (float)($position['mark_price'] ?? ($position['last_price'] ?? 0));
+                    if ($currentPx <= 0) {
+                        $currentPx = (float)($trade['entry_price'] ?? 0);
+                    }
+                    if (empty($runtime['best_price']) || (float)$runtime['best_price'] <= 0) {
+                        $runtime['best_price'] = $currentPx;
+                    } else {
+                        // Update best_price monotonically
+                        if ($side === 'long') {
+                            $runtime['best_price'] = max((float)$runtime['best_price'], $currentPx);
+                        } else {
+                            $runtime['best_price'] = min((float)$runtime['best_price'], $currentPx);
+                        }
+                    }
+                    // Ensure trailing_reference_price is populated
+                    if (empty($runtime['trailing_reference_price']) || (float)$runtime['trailing_reference_price'] <= 0) {
+                        $runtime['trailing_reference_price'] = $runtime['best_price'];
+                    }
+                }
+
+                // --- Stop stack: compute current_effective_stop_price from all layers ---
+                if ($protectionActive) {
+                    $stopCandidates = [];
+
+                    // Layer 1: initial stop
+                    $initSP = (float)($runtime['initial_computed_stop_price'] ?? 0);
+                    if ($initSP > 0) {
+                        $stopCandidates[] = $initSP;
+                    }
+
+                    // Layer 2: exchange stop (effective_stop_price)
+                    $exchSP = (float)($runtime['effective_stop_price'] ?? 0);
+                    if ($exchSP > 0) {
+                        $stopCandidates[] = $exchSP;
+                    }
+
+                    // Layer 3: break-even stop
+                    if (!empty($runtime['break_even_applied'])) {
+                        $beSP = (float)($runtime['break_even_stop_price'] ?? 0);
+                        if ($beSP > 0) {
+                            $stopCandidates[] = $beSP;
+                        }
+                    }
+
+                    // Layer 4: floor lock stop
+                    if (!empty($runtime['floor_lock_active'])) {
+                        $floorSP = (float)($runtime['floor_stop_price'] ?? 0);
+                        if ($floorSP > 0) {
+                            $stopCandidates[] = $floorSP;
+                        }
+                    }
+
+                    // Layer 5: theoretical distance stop
+                    $distSP = (float)($runtime['theoretical_current_stop_price'] ?? 0);
+                    if ($distSP > 0) {
+                        $stopCandidates[] = $distSP;
+                    }
+
+                    // Pick strongest protection
+                    if (!empty($stopCandidates)) {
+                        $prevEffective = (float)($runtime['current_effective_stop_price'] ?? 0);
+                        if ($side === 'long') {
+                            $bestStop = max($stopCandidates);
+                            // Monotonic: never decrease for LONG
+                            if ($prevEffective > 0) {
+                                $bestStop = max($bestStop, $prevEffective);
+                            }
+                        } else {
+                            $bestStop = min($stopCandidates);
+                            // Monotonic: never increase for SHORT
+                            if ($prevEffective > 0) {
+                                $bestStop = min($bestStop, $prevEffective);
+                            }
+                        }
+                        $runtime['current_effective_stop_price'] = round($bestStop, 8);
+                    }
+
+                    // --- Protection source of truth: determine enforcement path ---
+                    if (empty($runtime['protection_source_of_truth'])) {
+                        $sources = [];
+                        if ($exchSP > 0) {
+                            $sources[] = 'exchange_stop';
+                        }
+                        if (!empty($runtime['floor_lock_active']) && !empty($runtime['floor_enforced_via_exchange_stop'])) {
+                            $sources[] = 'floor_lock_stop';
+                        }
+                        if (!empty($runtime['floor_lock_active']) && !empty($runtime['floor_enforced_via_bot_exit'])) {
+                            $sources[] = 'bot_forced_exit';
+                        }
+                        if (!empty($runtime['break_even_applied'])) {
+                            $sources[] = 'break_even_stop';
+                        }
+
+                        if (count($sources) > 1) {
+                            $runtime['protection_source_of_truth'] = 'combined';
+                        } elseif (count($sources) === 1) {
+                            $runtime['protection_source_of_truth'] = $sources[0];
+                        } else {
+                            // Fallback: if we have an exchange stop, that's the source
+                            $runtime['protection_source_of_truth'] = $exchSP > 0 ? 'exchange_stop' : 'initial_stop';
+                        }
+                    }
+
+                    // --- Update stop_moved_from_initial truthfully ---
+                    $effStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+                    if ($initSP > 0 && $effStop > 0) {
+                        if ($side === 'long') {
+                            $runtime['stop_moved_from_initial'] = ($effStop > $initSP + 0.0000001);
+                        } else {
+                            $runtime['stop_moved_from_initial'] = ($effStop < $initSP - 0.0000001);
+                        }
+                    }
+
+                    // --- Sync timestamp ---
+                    $runtime['last_protection_update_at'] = date('c');
+                }
+
+                // --- Diagnostics: per-trade warning flags ---
+                $runtime['warning_effective_stop_zero_while_protected'] = (
+                    $protectionActive && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
+                );
+                $runtime['warning_protection_source_missing'] = (
+                    $protectionActive && empty($runtime['protection_source_of_truth'])
+                );
+                $runtime['warning_best_price_missing'] = (
+                    !empty($runtime['trailing_active']) && ((float)($runtime['best_price'] ?? 0) <= 0)
+                );
+                $runtime['warning_floor_lock_active_but_not_enforced'] = (
+                    !empty($runtime['floor_lock_active'])
+                    && ((float)($runtime['floor_stop_price'] ?? 0) > 0)
+                    && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
+                );
+                $runtime['warning_break_even_missing_stop_update'] = (
+                    !empty($runtime['break_even_applied'])
+                    && ((float)($runtime['current_effective_stop_price'] ?? 0) <= 0)
+                );
+
+                // ── Demo MFE/MAE tracking for healthy active trades (Part 1) ─────────────
+                // Update best/worst ROI seen in runtime so applyLocalCloseFinalize can
+                // persist real MFE/MAE into the closed record.
+                // Only for demo mode, healthy (non-orphan) trades with a valid entry price.
+                if ($mode === 'demo' && !$isAdoptedTrade) {
+                    $entryPxMfe = (float)($trade['entry_price'] ?? 0);
+                    $currentPxMfe = (float)($position['markPrice'] ?? $position['mark_price'] ?? $position['lastPrice'] ?? $position['last_price'] ?? 0);
+                    if ($entryPxMfe > 0 && $currentPxMfe > 0) {
+                        $mfeSide = strtolower($trade['side'] ?? 'long');
+                        if ($mfeSide === 'long') {
+                            $currentRoiPct = (($currentPxMfe - $entryPxMfe) / $entryPxMfe) * 100;
+                        } else {
+                            $currentRoiPct = (($entryPxMfe - $currentPxMfe) / $entryPxMfe) * 100;
+                        }
+                        $currentRoiPct = round($currentRoiPct, 4);
+                        // Update best_roi_seen (MFE) monotonically
+                        if (!isset($runtime['best_roi_seen']) || $runtime['best_roi_seen'] === null
+                            || $currentRoiPct > (float)$runtime['best_roi_seen']) {
+                            $runtime['best_roi_seen'] = $currentRoiPct;
+                        }
+                        // Update worst_roi_seen (MAE) monotonically
+                        if (!isset($runtime['worst_roi_seen']) || $runtime['worst_roi_seen'] === null
+                            || $currentRoiPct < (float)$runtime['worst_roi_seen']) {
+                            $runtime['worst_roi_seen'] = $currentRoiPct;
+                        }
+                        // Track best/worst price seen (useful for close_price estimation and MFE/MAE cross-check)
+                        if (!isset($runtime['best_price_seen']) || $runtime['best_price_seen'] === null
+                            || $currentPxMfe > (float)$runtime['best_price_seen']) {
+                            $runtime['best_price_seen'] = $currentPxMfe;
+                        }
+                        if (!isset($runtime['worst_price_seen']) || $runtime['worst_price_seen'] === null
+                            || $currentPxMfe < (float)$runtime['worst_price_seen']) {
+                            $runtime['worst_price_seen'] = $currentPxMfe;
+                        }
+                        // Keep last_price up to date for close_price estimation
+                        $runtime['last_price'] = $currentPxMfe;
+                    }
+                }
+
+                $trade['runtime'] = $runtime;
+
+                // Mirror runtime truth into top-level fields (Option A: no conflicting nulls)
+                $trade['protection_state'] = $runtime['protection_state'];
+                $trade['trailing_enabled'] = $runtime['trailing_enabled'];
+                $trade['trailing_active'] = $runtime['trailing_active'];
+                $trade['break_even_enabled'] = $runtime['break_even_enabled'];
+                $trade['break_even_armed'] = !empty($runtime['break_even_armed']);
+                $trade['break_even_applied'] = !empty($runtime['break_even_applied']);
+                $trade['effective_exit_mode'] = $runtime['effective_exit_mode'];
+                $trade['effective_trailing_activation'] = $runtime['effective_trailing_activation'];
+                $trade['effective_break_even_activation'] = $runtime['break_even_enabled']
+                    ? $runtime['effective_break_even_activation']
+                    : null;
+                $trade['effective_drawdown_factor'] = $runtime['effective_drawdown_factor'];
+                $trade['effective_hybrid_tp_share'] = $runtime['effective_hybrid_tp_share'];
+                $trade['effective_fixed_take_profit_roi'] = $runtime['effective_fixed_take_profit_roi'];
+                $trade['effective_trailing_contract_source'] = $runtime['effective_trailing_contract_source'];
+                $trade['effective_trailing_mode'] = $runtime['effective_trailing_mode'];
+                $trade['effective_trailing_price_distance_pct'] = $runtime['effective_trailing_price_distance_pct'];
+                // Stop mode truth: mirror into top-level
+                $trade['effective_stop_control_mode'] = $runtime['effective_stop_control_mode'];
+                $trade['effective_stop_loss_from_entry_roi'] = $runtime['effective_stop_loss_from_entry_roi'];
+                $trade['effective_stop_price'] = $runtime['effective_stop_price'];
+                // Initial vs current stop separation: mirror into top-level
+                $trade['initial_computed_stop_price'] = $runtime['initial_computed_stop_price'];
+                $trade['stop_moved_from_initial'] = $runtime['stop_moved_from_initial'];
+                // Protection layer fields: mirror into top-level for observability (all modes)
+                $trade['current_effective_stop_price'] = $runtime['current_effective_stop_price'] ?? 0;
+                $trade['protection_source_of_truth'] = $runtime['protection_source_of_truth'] ?? '';
+                $trade['break_even_stop_price'] = $runtime['break_even_stop_price'] ?? 0;
+                $trade['best_price'] = $runtime['best_price'] ?? null;
+                $trade['last_protection_update_at'] = $runtime['last_protection_update_at'] ?? null;
+                // Floor lock fields: mirror into top-level for observability
+                if (($riskTrailing['trailing_mode'] ?? 'roi_giveback') === 'price_distance_floor') {
+                    $trade['floor_lock_active'] = $runtime['floor_lock_active'] ?? false;
+                    $trade['floor_locked_roi'] = $runtime['floor_locked_roi'] ?? 0;
+                    $trade['floor_stop_price'] = $runtime['floor_stop_price'] ?? 0;
+                    $trade['floor_enforced_via_exchange_stop'] = $runtime['floor_enforced_via_exchange_stop'] ?? false;
+                    $trade['floor_enforced_via_bot_exit'] = $runtime['floor_enforced_via_bot_exit'] ?? false;
+                }
+                // Diagnostic warnings: mirror into top-level
+                $trade['warning_effective_stop_zero_while_protected'] = $runtime['warning_effective_stop_zero_while_protected'] ?? false;
+                $trade['warning_protection_source_missing'] = $runtime['warning_protection_source_missing'] ?? false;
+                $trade['warning_best_price_missing'] = $runtime['warning_best_price_missing'] ?? false;
+                $trade['warning_floor_lock_active_but_not_enforced'] = $runtime['warning_floor_lock_active_but_not_enforced'] ?? false;
+                $trade['last_top_level_mirror_sync_at'] = date('c');
+
+                // Increment diagnostic counters
+                if (!empty($runtime['warning_effective_stop_zero_while_protected'])) {
+                    $result['effective_stop_zero_while_protected_count']++;
+                }
+                if (!empty($runtime['warning_protection_source_missing'])) {
+                    $result['protection_source_missing_count']++;
+                }
+                if (!empty($runtime['warning_best_price_missing'])) {
+                    $result['best_price_missing_while_trailing_active_count']++;
+                }
+                // Check top-level / runtime mismatch
+                $topEffStop = (float)($trade['current_effective_stop_price'] ?? 0);
+                $rtEffStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+                if (abs($topEffStop - $rtEffStop) > 0.0000001) {
+                    $result['top_level_runtime_mismatch_count']++;
+                    $runtime['warning_top_level_runtime_mismatch'] = true;
+                    $trade['runtime'] = $runtime;
+                }
+                // @legacy — v1→v2 schema upgrade for active trades. Remove after all active
+                // v1 snapshot trades have been closed or cycled out.
+                if (($trade['schema_version'] ?? '') === 'trade_live_v1') {
+                    $trade['schema_version'] = 'trade_live_v2';
+                }
+
+                // Contract generation tracking: distinguish "opened with" from "currently managed as"
+                $currentExitMode = $runtime['effective_exit_mode'];
+                $currentGeneration = $this->deriveContractGeneration($currentExitMode);
+                $trade['current_effective_contract_generation'] = $currentGeneration;
+
+                // @legacy — backfill opened_with_* for trades that predate contract generation
+                // tracking. Remove after all pre-generation trades have been closed.
+                if (!isset($trade['opened_with_exit_mode'])) {
+                    $originalExitMode = (string)($trade['risk']['trailing']['exit_mode'] ?? 'unknown');
+                    $trade['opened_with_exit_mode'] = $originalExitMode;
+                    $trade['opened_with_contract_generation'] = $this->deriveContractGeneration($originalExitMode);
+                }
+
+                // Detect if the trade's currently applied contract differs from what it was opened with
+                $openedGeneration = (string)($trade['opened_with_contract_generation'] ?? 'unknown');
+                $trade['contract_migrated'] = ($openedGeneration !== $currentGeneration);
+
+                // Logical stop check: strategy invalidation exit
+                $logicalStop = $trade['risk']['logical_stop'] ?? [];
+                if (($logicalStop['enabled'] ?? false)) {
+                    $logicalStopRoi = (float)($logicalStop['logical_stop_roi'] ?? 0);
+                    if ($logicalStopRoi > 0) {
+                        $entryPriceLS = (float)($trade['entry_price'] ?? 0);
+                        $sideLS = strtolower($trade['side'] ?? '');
+                        $markPriceLS = (float)($position['markPrice'] ?? $position['lastPrice'] ?? 0);
+
+                        if ($entryPriceLS > 0 && $markPriceLS > 0) {
+                            $currentRoiLS = 0;
+                            if ($sideLS === 'long') {
+                                $currentRoiLS = ($markPriceLS - $entryPriceLS) / $entryPriceLS;
+                            } else {
+                                $currentRoiLS = ($entryPriceLS - $markPriceLS) / $entryPriceLS;
+                            }
+
+                            // Logical stop: close if ROI drops below negative threshold
+                            if ($currentRoiLS <= -$logicalStopRoi) {
+                                $runtime['close_trigger'] = 'logical_stop';
+                                $runtime['close_roi_at_trigger'] = round($currentRoiLS * 100, 4);
+                                $runtime['logical_stop_roi_threshold'] = $logicalStopRoi;
+
+                                $result['closed']++;
+                                $result['finalized_locally_this_run']++;
+                                $closedAtTs2 = time();
+                                $closedTrade2 = array_merge($trade, [
+                                    'closed_at'               => date('c', $closedAtTs2),
+                                    'closed_ts'               => $closedAtTs2,
+                                    'close_ts'                => $closedAtTs2,
+                                    'close_reason'            => 'stop_loss',
+                                    'close_reason_normalized' => 'stop_loss',
+                                    'close_roi'               => round($currentRoiLS * 100, 4),
+                                    'runtime'                 => $runtime,
+                                    'close_detection_result'  => 'close_detected_logical_stop',
+                                    'close_detection_source'  => 'update_active_positions_logical_stop',
+                                ]);
+                                if (method_exists($this, 'applyLocalCloseFinalize')) {
+                                    $closedTrade2 = $this->applyLocalCloseFinalize($closedTrade2, $closedAtTs2);
+                                    $closedTrade2['close_reason']            = 'stop_loss';
+                                    $closedTrade2['close_reason_normalized'] = 'stop_loss';
+                                }
+                                // Demo mode: write AI-ready dataset record BEFORE moving to closed dir.
+                                if (($this->config['module']['mode'] ?? '') === 'demo') {
+                                    $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade2);
+                                    $closedTrade2['ai_dataset_record_written'] = $aiWritten;
+                                    if ($aiWritten) {
+                                        $result['ai_dataset_records_written']++;
+                                    } else {
+                                        $closedTrade2['ai_dataset_write_fail_reason'] = 'write_failed';
+                                    }
+                                    // Per-run data-quality counters
+                                    if ((float)($closedTrade2['close_price'] ?? 0) <= 0) { $result['closed_trades_this_run_missing_close_price']++; }
+                                    if (($closedTrade2['hold_minutes'] ?? null) === null) { $result['closed_trades_this_run_missing_hold_minutes']++; }
+                                    if (($closedTrade2['mfe'] ?? null) === null || !empty($closedTrade2['mfe_missing_reason'])) { $result['closed_trades_this_run_missing_mfe']++; }
+                                    if (($closedTrade2['mae'] ?? null) === null || !empty($closedTrade2['mae_missing_reason'])) { $result['closed_trades_this_run_missing_mae']++; }
+                                    if ((float)($closedTrade2['close_price'] ?? 0) > 0 && ($closedTrade2['roi'] ?? null) !== null
+                                        && ($closedTrade2['mfe'] ?? null) !== null && empty($closedTrade2['mfe_missing_reason'])
+                                        && ($closedTrade2['mae'] ?? null) !== null && empty($closedTrade2['mae_missing_reason'])) {
+                                        $result['closed_trades_this_run_full_complete']++;
+                                    }
+                                    // Classify healthy vs adopted orphan — must happen every close path
+                                    $lsIsAdoptedOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+                                    if ($lsIsAdoptedOrphan) {
+                                        $result['adopted_orphans_closed_this_run']++;
+                                        $result['adopted_orphans_finalized_locally_this_run']++;
+                                        if (isset($aiWritten) && $aiWritten) { $result['adopted_orphans_ai_dataset_written_this_run']++; }
+                                        else { $result['adopted_orphans_closed_without_ai_dataset_this_run']++; }
+                                    } else {
+                                        $result['healthy_active_closed_this_run']++;
+                                        $result['healthy_closed_this_run_total']++;
+                                        if ((float)($closedTrade2['close_price'] ?? 0) <= 0) { $result['healthy_closed_this_run_missing_close_price']++; }
+                                        if (($closedTrade2['hold_minutes'] ?? null) === null) { $result['healthy_closed_this_run_missing_hold_minutes']++; }
+                                        if (($closedTrade2['mfe'] ?? null) === null || !empty($closedTrade2['mfe_missing_reason'])) { $result['healthy_closed_this_run_missing_mfe']++; }
+                                        if (($closedTrade2['mae'] ?? null) === null || !empty($closedTrade2['mae_missing_reason'])) { $result['healthy_closed_this_run_missing_mae']++; }
+                                        if ((float)($closedTrade2['close_price'] ?? 0) > 0 && ($closedTrade2['roi'] ?? null) !== null
+                                            && (string)($closedTrade2['close_reason_normalized'] ?? '') !== ''
+                                            && ($closedTrade2['mfe'] ?? null) !== null && empty($closedTrade2['mfe_missing_reason'])
+                                            && ($closedTrade2['mae'] ?? null) !== null && empty($closedTrade2['mae_missing_reason'])) {
+                                            $result['healthy_closed_this_run_full_complete']++;
+                                        }
+                                        if (isset($aiWritten) && $aiWritten) { $result['healthy_ai_dataset_written_this_run']++; }
+                                    }
+                                }
+                                $this->store->moveTradeToClosedDir($tradeId, $closedTrade2);
+                                $lsIsAdoptedOrphan2 = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+                                $this->journalEvent('trade_closed', 'update_positions', true,
+                                    'Trade closed (logical_stop): ' . ($trade['symbol'] ?? $tradeId),
+                                    [
+                                        'trade_id'                => $tradeId,
+                                        'symbol'                  => $closedTrade2['symbol'] ?? null,
+                                        'classification'          => $lsIsAdoptedOrphan2 ? 'orphan_adopted' : 'healthy',
+                                        'close_reason_normalized' => $closedTrade2['close_reason_normalized'] ?? null,
+                                        'close_result_source'     => $closedTrade2['close_result_source'] ?? null,
+                                        'close_price'             => $closedTrade2['close_price'] ?? null,
+                                        'roi'                     => $closedTrade2['roi'] ?? null,
+                                        'pnl'                     => $closedTrade2['pnl'] ?? null,
+                                        'hold_minutes'            => $closedTrade2['hold_minutes'] ?? null,
+                                        'mfe'                     => $closedTrade2['mfe'] ?? null,
+                                        'mae'                     => $closedTrade2['mae'] ?? null,
+                                        'mfe_missing_reason'      => $closedTrade2['mfe_missing_reason'] ?? null,
+                                        'mae_missing_reason'      => $closedTrade2['mae_missing_reason'] ?? null,
+                                        'ai_dataset_written'      => isset($aiWritten) ? (bool)$aiWritten : false,
+                                        'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                                    ]
+                                );
+                                $this->journalEvent('file_write', 'update_positions', true,
+                                    'closed trade file written (logical_stop): ' . ($closedTrade2['symbol'] ?? $tradeId),
+                                    [
+                                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                                        'write_type'              => 'create',
+                                        'classification'          => $lsIsAdoptedOrphan2 ? 'orphan_close' : 'healthy_close',
+                                        'symbol'                  => $closedTrade2['symbol'] ?? null,
+                                        'trade_id'                => $tradeId,
+                                        'close_reason_normalized' => $closedTrade2['close_reason_normalized'] ?? null,
+                                        'ai_dataset_written'      => isset($aiWritten) ? (bool)$aiWritten : false,
+                                    ]
+                                );
+                                if (isset($aiWritten) && $aiWritten) {
+                                    $this->journalEvent('ai_dataset_written', 'update_positions', true,
+                                        'AI record written: ' . ($trade['symbol'] ?? $tradeId),
+                                        [
+                                            'trade_id'       => $tradeId,
+                                            'symbol'         => $closedTrade2['symbol'] ?? null,
+                                            'classification' => $lsIsAdoptedOrphan2 ? 'orphan_adopted' : 'healthy',
+                                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                        ]
+                                    );
+                                    $this->journalEvent('file_write', 'update_positions', true,
+                                        'ai_dataset file written (logical_stop): ' . ($closedTrade2['symbol'] ?? $tradeId),
+                                        [
+                                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                                            'write_type'     => 'create',
+                                            'classification' => 'ai_dataset',
+                                            'symbol'         => $closedTrade2['symbol'] ?? null,
+                                            'trade_id'       => $tradeId,
+                                        ]
+                                    );
+                                }
+                                $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 // Phase-1 safety: Check if SL is set on exchange
                 $exchangeSL = (float)($position['stopLoss'] ?? 0);
                 
@@ -993,6 +2897,17 @@ trait BotExecutorTrait
                             
                             // Save updated trade with attempt flag
                             $this->store->updateActiveTrade($tradeId, $trade);
+                            $this->journalEvent('file_write', 'update_positions', true,
+                                'active trade updated (sl_repair): ' . ($trade['symbol'] ?? $tradeId),
+                                [
+                                    'path'           => 'trades/active/' . $tradeId . '.json',
+                                    'write_type'     => 'update',
+                                    'classification' => 'active_trade',
+                                    'symbol'         => $trade['symbol'] ?? null,
+                                    'trade_id'       => $tradeId,
+                                    'reason'         => 'sl_repair_attempted',
+                                ]
+                            );
                             
                             if (!$slResult['success']) {
                                 // Failed to set SL - WARNING ONLY, do NOT close position
@@ -1013,9 +2928,28 @@ trait BotExecutorTrait
                 // ============================================================
                 // P8: Phase-1 "Dumb" Trailing (exchange-managed)
                 // Activate trailing "now" once ROI (Bybit) reaches activation threshold.
+                // V2 FIX: In Brain-controlled mode, trailing decision comes from
+                // the normalized Brain contract in risk.trailing — bot-local
+                // dumb_trailing_enabled toggle is overridden.
                 // ============================================================
 
-                if (($this->config['execution']['dumb_trailing_enabled'] ?? false) === true) {
+                $tradeBrainControlled = !empty($trade['brain_controlled']);
+                $dumbTrailingGateOpen = $tradeBrainControlled
+                    ? true  // Brain-controlled: trailing gated by risk.trailing.enabled only
+                    : (($this->config['execution']['dumb_trailing_enabled'] ?? false) === true);
+
+                // trailing_owner guard: when PM owns trailing, bot skips post-entry dynamic trailing
+                $trailingOwner = (string)($this->config['execution']['trailing_owner'] ?? 'bot');
+                if ($trailingOwner === 'profit_manager') {
+                    $dumbTrailingGateOpen = false;
+                    // Mark in trade runtime that dynamic trailing is intentionally skipped by PM ownership
+                    $pmOwnerRuntime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $pmOwnerRuntime['bot_dynamic_trailing_skipped_by_owner'] = true;
+                    $pmOwnerRuntime['trailing_runtime_owner'] = 'profit_manager';
+                    $trade['runtime'] = $pmOwnerRuntime;
+                }
+
+                if ($dumbTrailingGateOpen) {
                     $risk = $trade['risk'] ?? [];
                     $trailingCfg = $risk['trailing'] ?? [];
 
@@ -1081,6 +3015,16 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                             }
 
                             if ($activationRoiPct > 0 && $roiBybit >= $activationRoiPct) {
+                                // Peak-based mode: arm only — actual stop moves handled by peak-based P9.
+                                if ((bool)($this->config['execution']['trailing_peak_based_mode'] ?? false)) {
+                                    if (empty($runtime['trailing_armed'])) {
+                                        $runtime['trailing_armed'] = true;
+                                        $runtime['trailing_armed_at'] = date('c');
+                                        $runtime['trailing_armed_roi'] = round($roiBybit, 2);
+                                        $trade['runtime'] = $runtime;
+                                    }
+                                    $result['trailing_skipped']++;
+                                } else {
                                 $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
 
                                 // Calculate trailing distance (trailingStop)
@@ -1119,6 +3063,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
                                     if (($trailRes['success'] ?? false) === true) {
                                         $runtime['dumb_trailing_applied'] = true;
+                                        $runtime['protection_state'] = 'trailing_active';
                                         if ($hasExchangeTrailing) {
                                             $runtime['dumb_trailing_rearmed'] = true;
                                         }
@@ -1145,6 +3090,7 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 } else {
                                     $result['trailing_skipped']++;
                                 }
+                                } // close else: peak_based_mode not active
                             } else {
                                 $result['trailing_skipped']++;
                             }
@@ -1169,7 +3115,8 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                 // This does NOT replace exchange trailingStop; it complements it by moving SL.
                 // ============================================================
 
-                if (($this->config['execution']['step_trailing_enabled'] ?? false) === true) {
+                if (($this->config['execution']['step_trailing_enabled'] ?? false) === true
+                    && $trailingOwner !== 'profit_manager') {
                     $risk = $trade['risk'] ?? [];
                     $trailingCfg = $risk['trailing'] ?? [];
 
@@ -1191,22 +3138,46 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                         $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
                         $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
 
-                        if ($activationRoiPct > 0 && $stepRoi > 0 && $roiBybit >= $activationRoiPct) {
+                        // Peak ROI tracking: monotonic — never decreases.
+                        // Use peak for all step decisions so normal noise cannot retrace the lock.
+                        $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                        $prevPeakRoi = (float)($runtime['step_trailing_peak_roi'] ?? 0.0);
+                        $peakRoi = max($prevPeakRoi, $roiBybit);
+                        if ($peakRoi > $prevPeakRoi) {
+                            $runtime['step_trailing_peak_roi'] = round($peakRoi, 4);
+                            $trade['runtime'] = $runtime;
+                        }
 
-                            // We start moving SL only AFTER the first full step beyond activation.
-                            $stepIndex = (int)floor(($roiBybit - $activationRoiPct) / $stepRoi);
-                            if ($stepIndex > 0) {
-                                $lockedRoi = ($stepIndex * $stepRoi) - $bufferRoi;
+                        if ($activationRoiPct > 0 && $stepRoi > 0 && $peakRoi >= $activationRoiPct) {
 
-                                if ($lockedRoi < $lockFloorRoi) {
-                                    $lockedRoi = $lockFloorRoi;
+                            // Peak-based step index — only advances when a new ROI peak is set.
+                            $stepIndex = (int)floor(($peakRoi - $activationRoiPct) / $stepRoi);
+
+                            // Ladder locked ROI: first lock at floor (step 0), then steps forward.
+                            // Formula: lockFloorRoi + stepIndex * stepRoi - bufferRoi, min lockFloorRoi.
+                            $lockedRoi = $lockFloorRoi + ($stepIndex * $stepRoi) - $bufferRoi;
+                            if ($lockedRoi < $lockFloorRoi) {
+                                $lockedRoi = $lockFloorRoi;
+                            }
+
+                            // Ratchet: locked ROI never decreases.
+                            // Sentinel -1e9 = never applied (allows first lock at 0.0 to pass through).
+                            $lastLockedRoi = isset($runtime['step_trailing_locked_roi_pct'])
+                                ? (float)$runtime['step_trailing_locked_roi_pct']
+                                : -1e9;
+
+                            // Hysteresis: optional cooldown between stop moves.
+                            $cooldownSec = (int)($this->config['execution']['step_trailing_cooldown_sec'] ?? 0);
+                            $cooldownOk = true;
+                            if ($cooldownSec > 0 && !empty($runtime['step_trailing_last_update_at'])) {
+                                $elapsed = time() - strtotime($runtime['step_trailing_last_update_at']);
+                                if ($elapsed < $cooldownSec) {
+                                    $cooldownOk = false;
                                 }
+                            }
 
-                                $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
-                                $lastLockedRoi = (float)($runtime['step_trailing_locked_roi_pct'] ?? 0);
-
-                                // Only update when locked ROI increases
-                                if ($lockedRoi > 0 && $lockedRoi > ($lastLockedRoi + 0.0001)) {
+                            // Apply when locked ROI has genuinely increased (covers first lock at 0.0).
+                            if ($lockedRoi > ($lastLockedRoi + 0.0001) && $cooldownOk) {
 
                                     $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
                                     $leverage = (float)($risk['leverage'] ?? ($trade['leverage'] ?? 1));
@@ -1265,8 +3236,9 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                                     $runtime['step_trailing_last_update_at'] = date('c');
                                                     $trade['runtime'] = $runtime;
 
+                                                    $runtime['step_trailing_peak_roi'] = round($peakRoi, 4);
                                                     $result['step_trailing_applied']++;
-                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, lock " . round($lockedRoi, 2) . "%)";
+                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (peakROI " . round($peakRoi, 2) . "%, lock " . round($lockedRoi, 2) . "%, SL " . round($desiredSL, 8) . ")";
                                                 } else {
                                                     $runtime['step_trailing_last_error'] = $slRes;
                                                     $trade['runtime'] = $runtime;
@@ -1311,8 +3283,9 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                                     $runtime['step_trailing_last_update_at'] = date('c');
                                                     $trade['runtime'] = $runtime;
 
+                                                    $runtime['step_trailing_peak_roi'] = round($peakRoi, 4);
                                                     $result['step_trailing_applied']++;
-                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, lock " . round($lockedRoi, 2) . "%)";
+                                                    $result['warnings'][] = "Step trailing SL updated for {$trade['symbol']} (peakROI " . round($peakRoi, 2) . "%, lock " . round($lockedRoi, 2) . "%, SL " . round($desiredSL, 8) . ")";
                                                 } else {
                                                     $runtime['step_trailing_last_error'] = $slRes;
                                                     $trade['runtime'] = $runtime;
@@ -1330,9 +3303,6 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                                 } else {
                                     $result['step_trailing_skipped']++;
                                 }
-                            } else {
-                                $result['step_trailing_skipped']++;
-                            }
                         } else {
                             $result['step_trailing_skipped']++;
                         }
@@ -1341,14 +3311,881 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
                     }
                 }
 
+                // ============================================================
+                // Break-Even Execution
+                // When ROI reaches break_even_activation_roi, move SL to entry price.
+                // This is a one-time operation per trade.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $beEnabled = (bool)($trailingCfg['break_even_enabled'] ?? false);
+                    $beApplied = (bool)($runtime['break_even_applied'] ?? false);
+
+                    if ($beEnabled && !$beApplied && $trailingOwner !== 'profit_manager') {
+                        $beActivationRoi = (float)($trailingCfg['break_even_activation_roi'] ?? 0);
+                        if ($beActivationRoi > 0) {
+                            $positionIM = (float)($position['positionIM'] ?? 0);
+                            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                            $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                            if ($roiBybit >= $beActivationRoi) {
+                                $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+                                $side = strtolower((string)($trade['side'] ?? 'long'));
+                                if ($side === 'buy') $side = 'long';
+                                if ($side === 'sell') $side = 'short';
+
+                                if ($entryAvg > 0) {
+                                    // Move SL to entry price (break-even)
+                                    $beSL = $entryAvg;
+                                    $currentExchangeSL = (float)($position['stopLoss'] ?? 0);
+
+                                    // Only move SL if it would be an improvement (ratchet logic)
+                                    $shouldApply = false;
+                                    if ($side === 'long') {
+                                        $shouldApply = ($currentExchangeSL <= 0 || $beSL > $currentExchangeSL);
+                                    } else {
+                                        $shouldApply = ($currentExchangeSL <= 0 || $beSL < $currentExchangeSL);
+                                    }
+
+                                    if ($shouldApply) {
+                                        $positionIdx = (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0)));
+                                        $beOpts = [
+                                            'position_idx' => $positionIdx,
+                                            'stop_loss' => $beSL,
+                                        ];
+                                        $beResult = $this->gateway->setTradingStop($trade['symbol'], $side, $beOpts);
+
+                                        if (($beResult['success'] ?? false) === true) {
+                                            $runtime['break_even_armed'] = true;
+                                            $runtime['break_even_applied'] = true;
+                                            $runtime['break_even_applied_at'] = date('c');
+                                            $runtime['break_even_sl_price'] = $beSL;
+                                            $runtime['break_even_roi_at_trigger'] = round($roiBybit, 2);
+                                            $runtime['protection_state'] = 'break_even_applied';
+                                            $trade['protection']['stop_loss_price'] = $beSL;
+                                            $trade['runtime'] = $runtime;
+                                            $result['warnings'][] = "Break-even applied for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, SL→{$beSL})";
+                                        } else {
+                                            $runtime['break_even_last_error'] = $beResult;
+                                            $trade['runtime'] = $runtime;
+                                            $result['warnings'][] = "Break-even failed for {$trade['symbol']}: " . ($beResult['error'] ?? 'unknown');
+                                        }
+                                    } else {
+                                        // SL already better than entry — mark as applied
+                                        $runtime['break_even_armed'] = true;
+                                        $runtime['break_even_applied'] = true;
+                                        $runtime['break_even_applied_at'] = date('c');
+                                        $runtime['break_even_note'] = 'sl_already_beyond_entry';
+                                        $trade['runtime'] = $runtime;
+                                    }
+                                }
+                            } else {
+                                // ROI not yet at threshold — arm if approaching
+                                if ($roiBybit > 0 && $roiBybit >= ($beActivationRoi * 0.5)) {
+                                    $runtime['break_even_armed'] = true;
+                                    $trade['runtime'] = $runtime;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // Hybrid Exit: Partial Take Profit + Runner
+                // When exit_mode=hybrid_tp and ROI reaches fixed_take_profit_roi,
+                // close hybrid_tp_share portion and let the rest trail.
+                // One-time operation per trade.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $exitMode = (string)($trailingCfg['exit_mode'] ?? '');
+                    $hybridApplied = (bool)($runtime['hybrid_partial_applied'] ?? false);
+
+                    if ($exitMode === 'hybrid_tp' && !$hybridApplied) {
+                        $fixedTpRoi = (float)($trailingCfg['fixed_take_profit_roi'] ?? 0);
+                        $hybridShare = (float)($trailingCfg['hybrid_tp_share'] ?? 0.4);
+
+                        if ($fixedTpRoi > 0 && $hybridShare > 0 && $hybridShare < 1.0) {
+                            $positionIM = (float)($position['positionIM'] ?? 0);
+                            $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                            $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                            // Convert fixedTpRoi from ratio to percent for comparison
+                            $fixedTpRoiPct = ($fixedTpRoi < 1.0) ? $fixedTpRoi * 100 : $fixedTpRoi;
+
+                            if ($roiBybit >= $fixedTpRoiPct) {
+                                $side = strtolower((string)($trade['side'] ?? 'long'));
+                                if ($side === 'buy') $side = 'long';
+                                if ($side === 'sell') $side = 'short';
+
+                                $totalQty = (float)($position['size'] ?? $trade['position_size'] ?? $trade['qty'] ?? 0);
+                                $closeQty = round($totalQty * $hybridShare, 8);
+
+                                if ($closeQty > 0 && $this->gateway && $this->gateway->isInitialized()) {
+                                    $closeResult = $this->gateway->closePosition($trade['symbol'], $side, $closeQty);
+
+                                    if (($closeResult['success'] ?? false) === true) {
+                                        $runtime['hybrid_partial_applied'] = true;
+                                        $runtime['hybrid_partial_applied_at'] = date('c');
+                                        $runtime['hybrid_partial_qty_closed'] = $closeQty;
+                                        $runtime['hybrid_partial_roi_at_trigger'] = round($roiBybit, 2);
+                                        $runtime['hybrid_remaining_qty'] = round($totalQty - $closeQty, 8);
+                                        $trade['runtime'] = $runtime;
+                                        $result['warnings'][] = "Hybrid partial TP applied for {$trade['symbol']} (closed {$closeQty}/{$totalQty} at ROI " . round($roiBybit, 2) . "%)";
+                                    } else {
+                                        $runtime['hybrid_partial_last_error'] = $closeResult;
+                                        $trade['runtime'] = $runtime;
+                                        $result['warnings'][] = "Hybrid partial TP failed for {$trade['symbol']}: " . ($closeResult['error'] ?? 'unknown');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // P10: Floor Lock Enforcement (price_distance_floor mode)
+                //
+                // When trailing_mode=price_distance_floor and ROI reaches
+                // trailing_activation_floor_roi, compute floor_stop_price from
+                // entry + floor_lock_roi and enforce it as a real exchange SL.
+                //
+                // The floor stop is the *minimum* protective level; the effective
+                // stop is the best (most protective) among: initial SL, break-even
+                // SL, floor stop, and current exchange SL.
+                //
+                // This section bridges BotTrailingEngine's computation with actual
+                // exchange execution that was previously missing.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $trailingMode = (string)($trailingCfg['trailing_mode'] ?? 'roi_giveback');
+                    $trailingEnabled = (bool)($trailingCfg['enabled'] ?? false);
+
+                    if ($trailingMode === 'price_distance_floor' && $trailingEnabled && $trailingOwner !== 'profit_manager') {
+
+                        $positionIM = (float)($position['positionIM'] ?? 0);
+                        $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                        $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                        $activationFloorRoi = (float)($trailingCfg['trailing_activation_floor_roi'] ?? 4.0);
+
+                        if ($roiBybit >= $activationFloorRoi) {
+
+                            $floorLockRoi = (float)($trailingCfg['trailing_floor_lock_roi'] ?? 3.0);
+                            $leverage = (float)($risk['leverage'] ?? ($trade['leverage'] ?? 1));
+                            if ($leverage <= 0) {
+                                $leverage = 1.0;
+                            }
+
+                            $entryAvg = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+                            $side = strtolower((string)($trade['side'] ?? 'long'));
+                            if ($side === 'buy') {
+                                $side = 'long';
+                            } elseif ($side === 'sell') {
+                                $side = 'short';
+                            }
+
+                            $markPrice = (float)($position['markPrice'] ?? 0);
+                            $lastPrice = (float)($position['lastPrice'] ?? 0);
+                            $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice);
+                            $minDistancePct = (float)($this->config['execution']['step_trailing_min_distance_to_price_pct'] ?? 0.05);
+
+                            if ($entryAvg > 0 && $currentPrice > 0) {
+
+                                // Compute floor stop price from entry + floor_lock_roi
+                                $floorPriceMove = ($floorLockRoi / 100.0) / $leverage;
+                                if ($side === 'long') {
+                                    $floorStopPrice = round($entryAvg * (1.0 + $floorPriceMove), 8);
+                                } else {
+                                    $floorStopPrice = round($entryAvg * (1.0 - $floorPriceMove), 8);
+                                }
+
+                                // Determine initial stop price
+                                $initialStopPrice = (float)($trade['initial_computed_stop_price']
+                                    ?? ($trade['protection']['stop_loss_price'] ?? 0));
+
+                                // Determine break-even stop price
+                                $breakEvenStopPrice = 0.0;
+                                if (!empty($runtime['break_even_applied'])) {
+                                    $breakEvenStopPrice = (float)$entryAvg;
+                                }
+
+                                // Compute current_effective_stop_price: most protective among all stops
+                                if ($side === 'long') {
+                                    $desiredSL = max($initialStopPrice, $breakEvenStopPrice, $floorStopPrice, $exchangeSL);
+                                } else {
+                                    // SHORT: most protective = lowest positive stop
+                                    $candidates = array_filter(
+                                        [$initialStopPrice, $breakEvenStopPrice, $floorStopPrice, $exchangeSL],
+                                        function ($v) { return $v > 0; }
+                                    );
+                                    $desiredSL = !empty($candidates) ? min($candidates) : 0.0;
+                                }
+
+                                $desiredSL = round($desiredSL, 8);
+
+                                // Safety: keep SL below current price (LONG) / above current price (SHORT)
+                                if ($side === 'long') {
+                                    $maxAllowed = $currentPrice * (1 - ($minDistancePct / 100));
+                                    if ($maxAllowed > 0 && $desiredSL > $maxAllowed) {
+                                        $desiredSL = round($maxAllowed, 8);
+                                    }
+                                } else {
+                                    $minAllowed = $currentPrice * (1 + ($minDistancePct / 100));
+                                    if ($minAllowed > 0 && $desiredSL < $minAllowed) {
+                                        $desiredSL = round($minAllowed, 8);
+                                    }
+                                }
+
+                                // Determine if the floor-derived stop improves exchange SL
+                                $shouldApply = false;
+                                if ($side === 'long') {
+                                    $shouldApply = ($desiredSL > 0 && $desiredSL > $exchangeSL);
+                                } else {
+                                    $shouldApply = ($desiredSL > 0 && ($exchangeSL <= 0 || $desiredSL < $exchangeSL));
+                                }
+
+                                if ($shouldApply && $this->gateway && $this->gateway->isInitialized()) {
+
+                                    $opts = [
+                                        'position_idx' => (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0))),
+                                        'tpsl_mode' => $this->config['exchange']['tpsl_mode'] ?? 'Full',
+                                        'sl_trigger_by' => $this->config['exchange']['sl_trigger_by'] ?? 'IndexPrice',
+                                        'stop_loss' => $desiredSL,
+                                    ];
+
+                                    $slRes = $this->gateway->setTradingStop($trade['symbol'], $side, $opts);
+
+                                    if (($slRes['success'] ?? false) === true) {
+                                        $exchangeSL = $desiredSL;
+                                        $trade['protection']['stop_loss_price'] = $desiredSL;
+
+                                        $runtime['floor_lock_active'] = true;
+                                        $runtime['floor_locked_roi'] = $floorLockRoi;
+                                        $runtime['floor_stop_price'] = $floorStopPrice;
+                                        $runtime['current_effective_stop_price'] = $desiredSL;
+                                        $runtime['protection_source_of_truth'] = 'exchange_stop';
+                                        $runtime['floor_enforced_via_exchange_stop'] = true;
+                                        $runtime['floor_enforced_via_bot_exit'] = false;
+                                        $runtime['floor_lock_last_update_at'] = date('c');
+                                        $runtime['floor_lock_last_roi_bybit_pct'] = round($roiBybit, 2);
+                                        $runtime['stop_moved_from_initial'] = ($initialStopPrice > 0 && abs($desiredSL - $initialStopPrice) > 0.0000001);
+                                        $trade['runtime'] = $runtime;
+
+                                        $result['floor_lock_applied']++;
+                                        $result['warnings'][] = "Floor lock SL applied for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, floor " . round($floorLockRoi, 2) . "%, SL " . round($desiredSL, 8) . ")";
+                                    } else {
+                                        $runtime['floor_lock_last_error'] = $slRes;
+                                        $trade['runtime'] = $runtime;
+
+                                        $result['floor_lock_failed']++;
+                                        $result['warnings'][] = "Floor lock SL update failed for {$trade['symbol']}: " . ($slRes['error'] ?? 'unknown');
+                                    }
+                                } else {
+                                    // Floor is active but exchange SL already at or beyond desired level
+                                    $runtime['floor_lock_active'] = true;
+                                    $runtime['floor_locked_roi'] = $floorLockRoi;
+                                    $runtime['floor_stop_price'] = $floorStopPrice;
+                                    $runtime['current_effective_stop_price'] = ($side === 'long') ? max($exchangeSL, $desiredSL) : (($exchangeSL > 0) ? min($exchangeSL, $desiredSL) : $desiredSL);
+                                    $runtime['protection_source_of_truth'] = 'exchange_stop';
+                                    $runtime['floor_enforced_via_exchange_stop'] = true;
+                                    $runtime['floor_enforced_via_bot_exit'] = false;
+                                    $trade['runtime'] = $runtime;
+
+                                    $result['floor_lock_skipped']++;
+                                }
+                            } else {
+                                $result['floor_lock_skipped']++;
+                            }
+                        } else {
+                            // Activation not reached: mark floor lock inactive
+                            $runtime['floor_lock_active'] = false;
+                            $trade['runtime'] = $runtime;
+
+                            $result['floor_lock_skipped']++;
+                        }
+                    }
+                }
+
+                // ============================================================
+                // P10b: Reversal Overlay Enforcement
+                //       (trend_reversal_soft_ladder_short TEST MODE — short-only)
+                //
+                // Applies ONLY when:
+                //   - trailing_step_mode = 'trend_reversal_soft_ladder_short'
+                //   - trade is SHORT
+                //   - trade source pattern is double_top_contextual_v2 or _v3
+                //
+                // NOTE: Long reversal mirror signal is NO LONGER a hard requirement.
+                //       findReversalSignal() is called as optional diagnostics / harvest hint only.
+                //
+                // TWO-STAGE PROFIT PROTECTION (short_two_stage_peak_roi):
+                //
+                //   Stage 0 (peak < 5):
+                //     No lock. No aggressive distance trailing. Normal SL only.
+                //     reversal_overlay_active = false
+                //
+                //   Stage 1 mini-ladder (peak >= 5, < 10):
+                //     Floor lock grows in steps — no distance trailing.
+                //       5 <= peak <  7  → locked ROI = 2
+                //       7 <= peak <  9  → locked ROI = 3
+                //       9 <= peak < 10  → locked ROI = 4
+                //     reversal_overlay_active = true, stage1_active = true, stage2_active = false
+                //
+                //   Stage 2 (peak >= 10):
+                //     Soft ladder: locked ROI = 5 + floor((peak - 10) / 3) * 1
+                //     reversal_overlay_active = true, stage1_active = true, stage2_active = true
+                //
+                //   Final locked ROI = max(prev_locked_roi, stage1_locked_roi, stage2_locked_roi)
+                //   Protection is monotonic — never weakened.
+                //
+                // Sets trade['reversal_overlay_active'] so BotTrailingEngine's
+                // checkReversalSoftLadderTrailing() can read it in subsequent runs.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $rvStepMode = (string)($trailingCfg['trailing_step_mode'] ?? 'fixed');
+
+                    if ($rvStepMode === 'trend_reversal_soft_ladder_short') {
+
+                        $rvSide = strtolower((string)($trade['side'] ?? ''));
+                        if ($rvSide === 'buy') { $rvSide = 'long'; }
+                        if ($rvSide === 'sell') { $rvSide = 'short'; }
+
+                        $rvPattern = (string)($trade['pattern_algorithm'] ?? '');
+                        $rvSymbol  = (string)($trade['symbol'] ?? '');
+
+                        // Always store test-mode constants and activation mode in runtime
+                        $runtime['reversal_overlay_mode']                  = 'trend_reversal_soft_ladder_short';
+                        $runtime['reversal_overlay_activation_mode']       = 'short_two_stage_peak_roi';
+                        $runtime['reversal_overlay_trigger_requirement']   = 'none_long_reversal_required';
+                        $runtime['reversal_overlay_stage1_peak_roi']       = BotReversalSignalHelper::STAGE1_ACTIVATION_PEAK_ROI;
+                        $runtime['reversal_overlay_stage1_lock_roi']       = BotReversalSignalHelper::STAGE1_FLOOR_LOCK_ROI;
+                        $runtime['reversal_overlay_activation_peak_roi']   = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+                        $runtime['reversal_overlay_base_lock_roi']         = BotReversalSignalHelper::OVERLAY_BASE_LOCK_ROI;
+                        $runtime['reversal_overlay_main_step_roi']         = BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI;
+                        $runtime['reversal_overlay_lock_step_roi']         = BotReversalSignalHelper::OVERLAY_LOCK_STEP_ROI;
+
+                        if ($rvSide !== 'short') {
+                            $runtime['reversal_overlay_active']       = false;
+                            $runtime['reversal_overlay_skip_reason']  = 'not_short_position';
+                            $trade['reversal_overlay_active']         = false;
+                            $trade['runtime'] = $runtime;
+                            $result['reversal_overlay_skipped_wrong_side']++;
+                        } elseif (!BotReversalSignalHelper::isEligibleSourcePattern($rvPattern)) {
+                            $runtime['reversal_overlay_active']       = false;
+                            $runtime['reversal_overlay_skip_reason']  = 'source_pattern_not_eligible';
+                            $runtime['reversal_overlay_source_pattern'] = $rvPattern;
+                            $trade['reversal_overlay_active']         = false;
+                            $trade['runtime'] = $runtime;
+                            $result['reversal_overlay_skipped_wrong_pattern']++;
+                        } else {
+                            // Eligible short V2/V3 trade
+                            $result['reversal_overlay_candidates_seen']++;
+                            $runtime['reversal_overlay_source_pattern'] = $rvPattern;
+
+                            // Shadow mirror lookup — scans candidates.json, monitors.json,
+                            // and signals.json in priority order so it finds mirrored long
+                            // reversal patterns even when long trading is disabled.
+                            $rvStorageDir  = null;
+                            $rvSignalsPath = null;
+                            try {
+                                $rvPaths = \Core\System\SystemPaths::instance();
+                                $rvSignalsKey  = $this->config['sources']['signals_key'] ?? 'system.brain.storage';
+                                $rvSignalsFile = $this->config['sources']['signals_file'] ?? 'signals.json';
+                                if ($rvPaths->has($rvSignalsKey)) {
+                                    $rvStorageDir  = $rvPaths->get($rvSignalsKey);
+                                    $rvSignalsPath = $rvStorageDir . '/' . $rvSignalsFile;
+                                }
+                            } catch (\Throwable $rvEx) {
+                                $rvStorageDir  = null;
+                                $rvSignalsPath = null;
+                            }
+
+                            $rvLookup = ($rvStorageDir !== null)
+                                ? BotReversalSignalHelper::findShadowMirrorSignal($rvSymbol, $rvStorageDir, $rvSignalsPath)
+                                : ['found' => false, 'pattern' => null, 'shadow_source' => null, 'reason' => 'storage_path_unavailable'];
+
+                            // Store mirror observability fields — does not gate overlay
+                            $runtime['reversal_overlay_long_mirror_seen']          = (bool)($rvLookup['found'] ?? false);
+                            $runtime['reversal_overlay_trigger_lookup_reason']     = $rvLookup['reason'] ?? '';
+                            $runtime['reversal_overlay_trigger_pattern']           = $rvLookup['pattern'] ?? null;
+
+                            // Step 2 shadow mirror observability — extended fields
+                            $rvMirrorFound   = (bool)($rvLookup['found'] ?? false);
+                            $rvMirrorPattern = $rvLookup['pattern'] ?? null;
+                            $rvShadowSource  = $rvLookup['shadow_source'] ?? null;
+
+                            // Semantic alias for clearer runtime inspection
+                            $runtime['reversal_overlay_long_mirror_pattern'] = $rvMirrorPattern;
+                            $runtime['reversal_overlay_shadow_source']       = $rvShadowSource;
+
+                            // Persist first-seen timestamp across bot runs; never overwrite once set
+                            $prevMirrorSeenAt = (string)($trade['runtime']['reversal_overlay_long_mirror_seen_at'] ?? '');
+                            if ($rvMirrorFound && $prevMirrorSeenAt === '') {
+                                $runtime['reversal_overlay_long_mirror_seen_at'] = date('c');
+                            } elseif ($prevMirrorSeenAt !== '') {
+                                $runtime['reversal_overlay_long_mirror_seen_at'] = $prevMirrorSeenAt;
+                            }
+
+                            if (true) {
+                                // Always proceed — compute overlay state
+                                $positionIM    = (float)($position['positionIM'] ?? 0);
+                                $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                                $rvRoiBybit    = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                                $entryAvg  = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+                                $rvLeverage = (float)($risk['leverage'] ?? ($trade['leverage'] ?? 1));
+                                if ($rvLeverage <= 0) { $rvLeverage = 1.0; }
+
+                                // Update monotonic peak ROI for overlay
+                                $prevOverlayPeakRoi   = (float)($trade['reversal_overlay_peak_roi'] ?? 0.0);
+                                $prevOverlayLockedRoi = (float)($trade['reversal_overlay_locked_roi_current'] ?? 0.0);
+                                $prevStepCount        = (int)($trade['reversal_overlay_step_count'] ?? 0);
+
+                                $overlayPeakRoi           = max($prevOverlayPeakRoi, $rvRoiBybit);
+                                $stage1ActivationPeak     = BotReversalSignalHelper::STAGE1_ACTIVATION_PEAK_ROI;
+                                $stage2ActivationPeak     = BotReversalSignalHelper::OVERLAY_ACTIVATION_PEAK_ROI;
+
+                                // Always track monotonic peak ROI regardless of activation state
+                                $runtime['reversal_overlay_peak_roi'] = round($overlayPeakRoi, 4);
+                                $trade['reversal_overlay_peak_roi']   = round($overlayPeakRoi, 4);
+
+                                // Determine active stages
+                                $stage1Active = ($overlayPeakRoi >= $stage1ActivationPeak);
+                                $stage2Active = ($overlayPeakRoi >= $stage2ActivationPeak);
+
+                                if (!$stage1Active) {
+                                    // Stage 0: peak < 5 — no lock, no aggressive trailing
+                                    $runtime['reversal_overlay_active']                  = false;
+                                    $runtime['reversal_overlay_stage1_active']           = false;
+                                    $runtime['reversal_overlay_stage2_active']           = false;
+                                    $runtime['reversal_overlay_skip_reason']             = 'peak_below_activation';
+                                    $runtime['reversal_overlay_locked_roi_current']      = 0.0;
+                                    $runtime['reversal_overlay_next_step_target_roi']    = $stage1ActivationPeak;
+                                    $runtime['reversal_overlay_harvest_hint_active']     = false;
+                                    $runtime['reversal_overlay_harvest_action']          = null;
+                                    $trade['reversal_overlay_active']                    = false;
+                                    $trade['runtime'] = $runtime;
+                                    $result['reversal_overlay_skipped_peak_too_low']++;
+                                } else {
+                                    // Stage 1 or Stage 2 active
+                                    $runtime['reversal_overlay_active']        = true;
+                                    $runtime['reversal_overlay_stage1_active'] = true;
+                                    $runtime['reversal_overlay_stage2_active'] = $stage2Active;
+                                    $trade['reversal_overlay_active']          = true;
+
+                                    // Compute stage locked ROIs
+                                    $stage1LockedRoi = BotReversalSignalHelper::computeStage1LockedRoi($overlayPeakRoi);
+                                    $stage2LockedRoi = $stage2Active
+                                        ? BotReversalSignalHelper::computeOverlayLockedRoi($overlayPeakRoi)
+                                        : 0.0;
+
+                                    // Final effective = max of stages and previous (monotonic)
+                                    $effectiveLocked = max($stage1LockedRoi, $stage2LockedRoi, $prevOverlayLockedRoi);
+
+                                    // Set triggered_at when stage 2 first activates
+                                    if ($stage2Active) {
+                                        $runtime['reversal_overlay_triggered_at'] = $runtime['reversal_overlay_triggered_at'] ?? date('c');
+                                    }
+
+                                    // Step count (stage 2 ladder steps)
+                                    if ($stage2Active) {
+                                        $rvSteps = (int)floor(
+                                            ($overlayPeakRoi - $stage2ActivationPeak) /
+                                            BotReversalSignalHelper::OVERLAY_MAIN_STEP_ROI
+                                        );
+                                        $rvSteps = max($rvSteps, $prevStepCount);
+                                        $stepAdvanced = ($rvSteps > $prevStepCount);
+                                    } else {
+                                        $rvSteps      = 0;
+                                        $stepAdvanced = false;
+                                    }
+
+                                    // Store overlay state
+                                    $runtime['reversal_overlay_locked_roi_current']    = round($effectiveLocked, 4);
+                                    $runtime['reversal_overlay_step_count']            = $rvSteps;
+                                    $runtime['reversal_overlay_next_step_target_roi']  = round(
+                                        BotReversalSignalHelper::computeNextStepTargetRoi($overlayPeakRoi), 4
+                                    );
+                                    $trade['reversal_overlay_locked_roi_current'] = round($effectiveLocked, 4);
+                                    $trade['reversal_overlay_step_count']         = $rvSteps;
+
+                                    $result['reversal_overlay_activated']++;
+                                    if ($stepAdvanced) {
+                                        $result['reversal_overlay_step_advanced']++;
+                                    }
+
+                                    // Step 2 — shadow mirror harvest assist
+                                    // When a mirrored long reversal pattern is observed for the same
+                                    // symbol while the trade is already in profit (overlay active),
+                                    // apply an optional lock bonus (+1) to tighten protection faster.
+                                    // This is monotonic: only ever increases effectiveLocked.
+                                    $harvestHintActive  = $rvMirrorFound && $overlayPeakRoi > 0;
+                                    $harvestApplied     = false;
+                                    $harvestLockBonus   = 0.0;
+                                    $harvestAction      = null;
+
+                                    if ($harvestHintActive) {
+                                        $harvestAction    = $stage2Active
+                                            ? 'advance_ladder_step'
+                                            : 'early_harvest_floor_lock';
+                                        $bonus            = BotReversalSignalHelper::HARVEST_LOCK_BONUS;
+                                        $boostedLocked    = $effectiveLocked + $bonus;
+                                        // Monotonic: only apply if bonus strictly increases the lock
+                                        if ($boostedLocked > $effectiveLocked) {
+                                            $effectiveLocked  = $boostedLocked;
+                                            $harvestApplied   = true;
+                                            $harvestLockBonus = $bonus;
+                                        }
+                                    }
+
+                                    // Persist harvest-boosted lock (monotonic via max with prev)
+                                    $effectiveLocked = max($effectiveLocked, $prevOverlayLockedRoi);
+
+                                    // Re-write stored lock after harvest bonus
+                                    $runtime['reversal_overlay_locked_roi_current']    = round($effectiveLocked, 4);
+                                    $trade['reversal_overlay_locked_roi_current']      = round($effectiveLocked, 4);
+
+                                    $runtime['reversal_overlay_harvest_hint_active']   = $harvestHintActive;
+                                    $runtime['reversal_overlay_harvest_action']        = $harvestAction;
+                                    $runtime['reversal_overlay_harvest_applied']       = $harvestApplied;
+                                    $runtime['reversal_overlay_harvest_lock_bonus']    = $harvestLockBonus;
+
+                                    if ($rvMirrorFound) {
+                                        $result['reversal_overlay_shadow_mirror_seen']++;
+                                    }
+                                    if ($harvestApplied) {
+                                        $result['reversal_overlay_harvest_applied']++;
+                                    }
+
+                                    // Enforce overlay locked ROI as exchange SL if it improves protection
+                                    if ($entryAvg > 0) {
+                                        $rvPriceMove   = ($effectiveLocked / 100.0) / $rvLeverage;
+                                        $rvOverlayStop = round($entryAvg * (1.0 - $rvPriceMove), 8);
+
+                                        $markPrice  = (float)($position['markPrice'] ?? 0);
+                                        $lastPrice  = (float)($position['lastPrice'] ?? 0);
+                                        $rvRefPrice = $this->pickTrailingReferencePrice('short', $markPrice, $lastPrice);
+                                        $minDistPct = (float)($this->config['execution']['step_trailing_min_distance_to_price_pct'] ?? 0.05);
+
+                                        // Safety: keep SL above current price for short
+                                        if ($rvRefPrice > 0) {
+                                            $rvMinAllowed = $rvRefPrice * (1.0 + ($minDistPct / 100));
+                                            if ($rvOverlayStop < $rvMinAllowed) {
+                                                $rvOverlayStop = round($rvMinAllowed, 8);
+                                            }
+                                        }
+
+                                        $rvExchangeSL = (float)($trade['protection']['stop_loss_price'] ?? 0);
+                                        $rvShouldApply = ($rvOverlayStop > 0 && ($rvExchangeSL <= 0 || $rvOverlayStop < $rvExchangeSL));
+
+                                        $runtime['reversal_overlay_computed_stop'] = $rvOverlayStop;
+                                        $runtime['current_effective_stop_price']   = $rvOverlayStop;
+                                        $runtime['protection_source_of_truth']     = 'reversal_overlay';
+
+                                        if ($rvShouldApply && $this->gateway && $this->gateway->isInitialized()) {
+                                            $rvOpts = [
+                                                'position_idx' => (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0))),
+                                                'tpsl_mode'    => $this->config['exchange']['tpsl_mode'] ?? 'Full',
+                                                'sl_trigger_by' => $this->config['exchange']['sl_trigger_by'] ?? 'IndexPrice',
+                                                'stop_loss'    => $rvOverlayStop,
+                                            ];
+                                            $rvSlRes = $this->gateway->setTradingStop($trade['symbol'], 'short', $rvOpts);
+                                            if (($rvSlRes['success'] ?? false) === true) {
+                                                $trade['protection']['stop_loss_price'] = $rvOverlayStop;
+                                                $runtime['reversal_overlay_stop_enforced']    = true;
+                                                $runtime['reversal_overlay_stop_enforced_at'] = date('c');
+                                            } else {
+                                                $runtime['reversal_overlay_stop_enforce_error'] = $rvSlRes['error'] ?? 'unknown';
+                                            }
+                                        }
+                                    }
+
+                                    $trade['runtime'] = $runtime;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ============================================================
+                // Profit Add-On: one-time scale-in into a winning position
+                //
+                // Trigger: ROI >= trailing_activation_floor_roi (or activation_roi_pct).
+                // Amount:  canonical_trade_budget * (profit_addon_budget_pct / 100).
+                // One-time: profit_addon_used = true after execution.
+                //
+                // Protection state (floor_lock_active, break_even_applied,
+                // current_effective_stop_price) is preserved and NEVER weakened.
+                //
+                // Every skip or failure stores an explicit reason in runtime so
+                // the operator can see exactly why the add-on did or did not run.
+                // ============================================================
+                {
+                    $risk = $trade['risk'] ?? [];
+                    $trailingCfg = $risk['trailing'] ?? [];
+                    // Read profit_addon config: Brain trailing contract takes precedence over bot local config
+                    $paEnabled = array_key_exists('profit_addon_enabled', $trailingCfg)
+                        ? (bool)$trailingCfg['profit_addon_enabled']
+                        : (bool)($this->config['execution']['profit_addon_enabled'] ?? false);
+                    $paBudgetPct = array_key_exists('profit_addon_budget_pct', $trailingCfg)
+                        ? (float)$trailingCfg['profit_addon_budget_pct']
+                        : (float)($this->config['execution']['profit_addon_budget_pct'] ?? 0.0);
+                    $runtime = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+                    $paUsed = (bool)($runtime['profit_addon_used'] ?? false);
+
+                    // --- Checkpoint 1: always record that we checked this trade ---
+                    $result['profit_addon_checked']++;
+
+                    // Store observable config state per-trade
+                    $runtime['profit_addon_enabled'] = $paEnabled;
+                    $runtime['profit_addon_budget_pct_config'] = $paBudgetPct;
+
+                    // Helper: record a skip reason and bump counters
+                    $paSkip = function(string $reason) use (&$runtime, &$result) {
+                        $runtime['profit_addon_skip_reason'] = $reason;
+                        $runtime['profit_addon_attempted'] = false;
+                        $result['profit_addon_skipped']++;
+                        $result['profit_addon_skip_reason_distribution'][$reason] =
+                            ($result['profit_addon_skip_reason_distribution'][$reason] ?? 0) + 1;
+                    };
+
+                    if (!$paEnabled) {
+                        $paSkip('profit_addon_disabled');
+                    } elseif ($paBudgetPct <= 0) {
+                        $paSkip('profit_addon_budget_missing');
+                    } elseif ($paUsed) {
+                        // Already used — do not overwrite skip_reason so the success record stays
+                    } else {
+                        // --- Checkpoint 2: compute current ROI ---
+                        $positionIM = (float)($position['positionIM'] ?? 0);
+                        $unrealisedPnl = (float)($position['unrealisedPnl'] ?? 0);
+                        $roiBybit = ($positionIM > 0) ? (($unrealisedPnl / $positionIM) * 100.0) : 0.0;
+
+                        // Use trailing_activation_floor_roi for price_distance_floor mode,
+                        // otherwise activation_roi_pct.
+                        $trailingMode = (string)($trailingCfg['trailing_mode'] ?? 'roi_giveback');
+                        if ($trailingMode === 'price_distance_floor') {
+                            $addonTriggerRoi = (float)($trailingCfg['trailing_activation_floor_roi'] ?? 4.0);
+                        } else {
+                            $addonTriggerRoi = (float)($trailingCfg['activation_roi_pct'] ?? 0.0);
+                        }
+
+                        // Store observable trigger state per-trade
+                        $runtime['profit_addon_trigger_roi'] = $addonTriggerRoi;
+                        $runtime['profit_addon_current_roi'] = round($roiBybit, 4);
+
+                        if ($addonTriggerRoi <= 0) {
+                            $paSkip('profit_addon_trigger_not_configured');
+                        } elseif ($roiBybit < $addonTriggerRoi) {
+                            $runtime['profit_addon_trigger_reached'] = false;
+                            $paSkip('profit_addon_trigger_not_reached');
+                        } else {
+                            // --- Checkpoint 3: trigger reached ---
+                            $runtime['profit_addon_trigger_reached'] = true;
+                            $result['profit_addon_trigger_reached']++;
+
+                            $side = strtolower((string)($trade['side'] ?? 'long'));
+                            if ($side === 'buy') { $side = 'long'; }
+                            if ($side === 'sell') { $side = 'short'; }
+
+                            if (!in_array($side, ['long', 'short'], true)) {
+                                $paSkip('profit_addon_side_invalid');
+                            } else {
+                                $canonicalBudget = (float)($risk['budget_usdt_per_trade'] ?? 0.0);
+                                $leverage = (float)($risk['leverage'] ?? 1.0);
+                                if ($leverage <= 0) { $leverage = 1.0; }
+
+                                if ($canonicalBudget <= 0) {
+                                    $paSkip('profit_addon_budget_missing');
+                                } else {
+                                    // --- Checkpoint 4: compute add-on amount ---
+                                    $addonAmountRaw = $canonicalBudget * ($paBudgetPct / 100.0);
+                                    $runtime['profit_addon_amount_usdt_raw'] = round($addonAmountRaw, 6);
+
+                                    $markPrice = (float)($position['markPrice'] ?? 0);
+                                    $lastPrice = (float)($position['lastPrice'] ?? 0);
+                                    $refPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice);
+                                    if ($refPrice <= 0) {
+                                        $refPrice = (float)($trade['entry_price'] ?? 0);
+                                    }
+
+                                    if ($refPrice <= 0) {
+                                        $paSkip('profit_addon_ref_price_unavailable');
+                                    } elseif ($addonAmountRaw <= 0) {
+                                        $paSkip('profit_addon_budget_missing');
+                                    } else {
+                                        // --- Checkpoint 5: normalize qty and check minimum order ---
+                                        $addonNotional = $addonAmountRaw * $leverage;
+                                        $addonQty = round($addonNotional / $refPrice, 8);
+                                        $runtime['profit_addon_amount_usdt_normalized'] = round($addonAmountRaw, 6);
+
+                                        // Minimum notional check: reject if add-on notional < 1 USDT
+                                        // (exchange minimum is typically 5–10 USDT, but even 1 USDT is clearly unusable)
+                                        $minNotional = 1.0;
+                                        $minOrderCheckPassed = ($addonAmountRaw >= $minNotional && $addonQty > 0);
+                                        $runtime['profit_addon_min_order_check_passed'] = $minOrderCheckPassed;
+
+                                        if (!$minOrderCheckPassed) {
+                                            $runtime['profit_addon_eligible'] = false;
+                                            $result['profit_addon_too_small']++;
+                                            $paSkip('profit_addon_amount_too_small');
+                                        } elseif (!$this->gateway || !$this->gateway->isInitialized()) {
+                                            $runtime['profit_addon_eligible'] = false;
+                                            $paSkip('profit_addon_gateway_not_ready');
+                                        } else {
+                                            // --- Checkpoint 6: eligible — record and attempt ---
+                                            $runtime['profit_addon_eligible'] = true;
+                                            $result['profit_addon_eligible']++;
+
+                                            // Snapshot pre-addon protection state for audit
+                                            $preAddonEffStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+
+                                            $addonOrderLinkId = 'tb_addon_' . substr((string)($trade['trade_id'] ?? $tradeId), 0, 24) . '_' . time();
+                                            $addonOrder = [
+                                                'symbol' => $trade['symbol'],
+                                                'side' => ($side === 'long') ? 'Buy' : 'Sell',
+                                                'order_type' => 'Market',
+                                                'qty' => $addonQty,
+                                                'order_link_id' => $addonOrderLinkId,
+                                                'position_idx' => (int)($position['positionIdx'] ?? ($trade['exchange']['position_idx'] ?? ($this->config['exchange']['position_idx'] ?? 0))),
+                                                'price' => null,
+                                            ];
+
+                                            // --- Checkpoint 7: order send attempted ---
+                                            $runtime['profit_addon_attempted'] = true;
+                                            $result['profit_addon_attempted']++;
+
+                                            $addonResult = $this->submitOrder($addonOrder);
+
+                                            if (($addonResult['ok'] ?? false) === true) {
+                                                $addonFillPrice = (float)($addonResult['fill_price'] ?? $refPrice);
+                                                $addonFillQty = (float)($addonResult['fill_qty'] ?? $addonQty);
+
+                                                // Recalculate avg entry price and position size
+                                                $oldQty = (float)($position['size'] ?? ($trade['position_size'] ?? 0));
+                                                $oldEntry = (float)($position['avgPrice'] ?? ($trade['entry_price'] ?? 0));
+
+                                                if ($oldQty > 0 && $addonFillQty > 0) {
+                                                    $newTotalQty = $oldQty + $addonFillQty;
+                                                    $newAvgEntry = (($oldQty * $oldEntry) + ($addonFillQty * $addonFillPrice)) / $newTotalQty;
+                                                } else {
+                                                    $newTotalQty = $addonFillQty;
+                                                    $newAvgEntry = $addonFillPrice;
+                                                }
+
+                                                $newAvgEntry = round($newAvgEntry, 8);
+                                                $newTotalQty = round($newTotalQty, 8);
+
+                                                // Update trade position fields
+                                                $trade['position_size'] = $newTotalQty;
+                                                $trade['entry_price'] = $newAvgEntry;
+                                                if (isset($trade['exchange']['entry_avg_price'])) {
+                                                    $trade['exchange']['entry_avg_price'] = $newAvgEntry;
+                                                }
+                                                if (isset($trade['exchange']['qty'])) {
+                                                    $trade['exchange']['qty'] = $newTotalQty;
+                                                }
+
+                                                // Mark add-on as used and record metadata
+                                                $runtime['profit_addon_used'] = true;
+                                                $runtime['profit_addon_executed_at'] = date('c');
+                                                $runtime['profit_addon_budget_pct'] = $paBudgetPct;
+                                                $runtime['profit_addon_amount_usdt'] = round($addonAmountRaw, 4);
+                                                $runtime['profit_addon_qty'] = $addonFillQty;
+                                                $runtime['profit_addon_fill_price'] = $addonFillPrice;
+                                                $runtime['profit_addon_order_id'] = $addonResult['order_id'] ?? null;
+                                                $runtime['profit_addon_pre_avg_entry'] = $oldEntry;
+                                                $runtime['profit_addon_post_avg_entry'] = $newAvgEntry;
+                                                $runtime['profit_addon_pre_qty'] = $oldQty;
+                                                $runtime['profit_addon_post_qty'] = $newTotalQty;
+                                                $runtime['profit_addon_pre_effective_stop'] = $preAddonEffStop;
+                                                $runtime['profit_addon_protection_preserved'] = true;
+                                                $runtime['profit_addon_skip_reason'] = null;
+                                                $runtime['profit_addon_fail_reason'] = null;
+
+                                                // Verify protection monotonicity — effective stop must not weaken
+                                                $postAddonEffStop = (float)($runtime['current_effective_stop_price'] ?? 0);
+                                                if ($preAddonEffStop > 0 && $postAddonEffStop > 0) {
+                                                    if ($side === 'long' && $postAddonEffStop < $preAddonEffStop - 0.0000001) {
+                                                        // Stop weakened for LONG — restore
+                                                        $runtime['current_effective_stop_price'] = $preAddonEffStop;
+                                                        $runtime['profit_addon_stop_restored'] = true;
+                                                    } elseif ($side === 'short' && $postAddonEffStop > $preAddonEffStop + 0.0000001) {
+                                                        // Stop weakened for SHORT — restore
+                                                        $runtime['current_effective_stop_price'] = $preAddonEffStop;
+                                                        $runtime['profit_addon_stop_restored'] = true;
+                                                    }
+                                                } elseif ($preAddonEffStop > 0 && $postAddonEffStop <= 0) {
+                                                    // Stop was cleared — restore
+                                                    $runtime['current_effective_stop_price'] = $preAddonEffStop;
+                                                    $runtime['profit_addon_stop_restored'] = true;
+                                                }
+
+                                                $runtime['profit_addon_post_effective_stop'] = (float)($runtime['current_effective_stop_price'] ?? 0);
+
+                                                $trade['runtime'] = $runtime;
+                                                $result['profit_addon_applied']++;
+                                                $result['warnings'][] = "Profit add-on executed for {$trade['symbol']} (ROI " . round($roiBybit, 2) . "%, added {$addonFillQty} qty @ {$addonFillPrice}, new avg " . round($newAvgEntry, 6) . ")";
+                                            } else {
+                                                // --- Order rejected or exchange error ---
+                                                $failReason = 'profit_addon_order_rejected';
+                                                $exchangeErr = (string)($addonResult['error'] ?? '');
+                                                if ($exchangeErr !== '') {
+                                                    $failReason = 'profit_addon_exchange_error';
+                                                }
+                                                $runtime['profit_addon_fail_reason'] = $failReason;
+                                                $runtime['profit_addon_last_error'] = $exchangeErr ?: 'unknown';
+                                                $runtime['profit_addon_failed_at'] = date('c');
+                                                $trade['runtime'] = $runtime;
+                                                $result['profit_addon_failed']++;
+                                                $result['profit_addon_fail_reason_distribution'][$failReason] =
+                                                    ($result['profit_addon_fail_reason_distribution'][$failReason] ?? 0) + 1;
+                                                $result['warnings'][] = "Profit add-on failed for {$trade['symbol']}: " . ($addonResult['error'] ?? 'unknown');
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    $trade['runtime'] = $runtime;
+                }
+
                         // Update last_update timestamp
                 $trade['last_update'] = date('c');
+                $trade['last_runtime_update_ts'] = date('c');
                 $trade['last_price'] = (float)($position['markPrice'] ?? $position['lastPrice'] ?? $trade['last_price']);
                 $this->store->updateActiveTrade($tradeId, $trade);
+                $this->journalEvent('file_write', 'update_positions', true,
+                    'active trade updated (runtime_cycle): ' . ($trade['symbol'] ?? $tradeId),
+                    [
+                        'path'           => 'trades/active/' . $tradeId . '.json',
+                        'write_type'     => 'update',
+                        'classification' => 'active_trade',
+                        'symbol'         => $trade['symbol'] ?? null,
+                        'trade_id'       => $tradeId,
+                        'reason'         => 'runtime_update',
+                    ]
+                );
                 $result['updated']++;
                 
             } catch (\Throwable $e) {
                 $result['errors'][] = "Error updating {$tradeId}: " . $e->getMessage();
+                $result['close_failures']++;
+                $failReason = 'exception:' . substr($e->getMessage(), 0, 80);
+                $result['close_failure_reasons'][$failReason] = ($result['close_failure_reasons'][$failReason] ?? 0) + 1;
             }
         }
         
@@ -1470,33 +4307,132 @@ $currentPrice = $this->pickTrailingReferencePrice($side, $markPrice, $lastPrice)
 
         return max($mark, $last);
     }
-private function checkLateEntry(array $intent): array
+private function checkLateEntry(array $intent, string $mode = 'live'): array
     {
-        $result = ['ok' => true];
-        
+        $result = ['ok' => true, 'diagnostics' => []];
+
         $currentPrice = $this->getCurrentPrice($intent['symbol']);
         if ($currentPrice === null) {
             return $result; // Can't check, assume ok
         }
-        
-        $entryPrice = $intent['entry_price'];
-        $threshold = $intent['late_threshold_pct'] ?? 0.5;
-        $side = $intent['side'];
-        
-        $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
-        
-        if ($side === 'long' && $currentPrice > $entryPrice) {
-            if ($priceDiff > $threshold) {
-                $result['ok'] = false;
-                $result['reason'] = "Price moved up {$priceDiff}% > threshold {$threshold}%";
-            }
-        } elseif ($side === 'short' && $currentPrice < $entryPrice) {
-            if ($priceDiff > $threshold) {
-                $result['ok'] = false;
-                $result['reason'] = "Price moved down {$priceDiff}% > threshold {$threshold}%";
-            }
+
+        $entryPrice = (float)($intent['entry_price'] ?? 0);
+        if ($entryPrice <= 0) {
+            return $result; // No entry price, skip check
         }
-        
+
+        $side = $intent['side'] ?? 'long';
+        // FIX: Use config default_late_threshold_pct (1.25%) instead of hardcoded 0.5%.
+        // The intent may provide its own late_threshold_pct, but the fallback must be
+        // the config default — not an overly tight hardcoded value.
+        $configDefault = (float)($this->config['execution']['default_late_threshold_pct'] ?? 1.25);
+        $baseThreshold = (float)($intent['late_threshold_pct'] ?? $configDefault);
+        $bufferPct = (float)($this->config['execution']['late_entry_buffer_pct'] ?? 0.15);
+        $createdTs = (int)($intent['created_ts'] ?? 0);
+        $now = time();
+        $intentAgeSec = ($createdTs > 0) ? ($now - $createdTs) : 0;
+
+        // Side-specific threshold override: short breakdowns often continue
+        // immediately, so short side gets a slightly wider tolerance.
+        $sideThresholdKey = ($side === 'short')
+            ? 'late_entry_threshold_pct_short'
+            : 'late_entry_threshold_pct_long';
+        $sideOverride = $this->config['execution'][$sideThresholdKey] ?? null;
+        if ($sideOverride !== null) {
+            $baseThreshold = (float)$sideOverride;
+        }
+
+        // Freshness bonus: intents created within the configured freshness window
+        // get an extra tolerance buffer (they are structurally fresh).
+        $freshnessWindow = (int)($this->config['execution']['late_entry_freshness_window_seconds'] ?? 180);
+        $freshnessBonusPct = (float)($this->config['execution']['late_entry_freshness_bonus_pct'] ?? 0.20);
+        $freshnessBonus = 0.0;
+        if ($intentAgeSec > 0 && $intentAgeSec <= $freshnessWindow) {
+            $freshnessBonus = $freshnessBonusPct;
+        }
+
+        // Short enter_now breakdown bonus: breakdown entries move immediately after confirm,
+        // so they need extra tolerance to avoid false late-entry rejections.
+        $shortEnterNowBonus = 0.0;
+        $entryAction = $intent['entry_action'] ?? 'enter_now';
+        if ($side === 'short' && $entryAction === 'enter_now') {
+            $shortEnterNowBonus = (float)($this->config['execution']['late_entry_short_enter_now_bonus_pct'] ?? 0.25);
+        }
+
+        // Demo learning mode: apply extra tolerance so fresh signal-born demo trades have
+        // a better chance to open. Live safety is not affected.
+        $demoExtraBonus = 0.0;
+        if ($mode === 'demo') {
+            $demoExtraBonus = (float)($this->config['execution']['demo_late_entry_tolerance_extra_pct'] ?? 0.0);
+        }
+
+        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus + $shortEnterNowBonus + $demoExtraBonus;
+
+        $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
+        $priceDiffRound = round($priceDiff, 4);
+        $effectiveThresholdRound = round($effectiveThreshold, 4);
+
+        // Build diagnostics for every check (pass or fail)
+        $diag = [
+            'symbol' => $intent['symbol'] ?? '',
+            'side' => $side,
+            'entry_action' => $entryAction,
+            'pattern_algorithm' => $intent['pattern_algorithm'] ?? $intent['source_schema_version'] ?? 'unknown',
+            'current_price' => $currentPrice,
+            'entry_price' => $entryPrice,
+            'price_move_pct' => $priceDiffRound,
+            'base_threshold_pct' => round($baseThreshold, 4),
+            'config_default_threshold_pct' => round($configDefault, 4),
+            'buffer_pct' => round($bufferPct, 4),
+            'freshness_bonus_pct' => round($freshnessBonus, 4),
+            'short_enter_now_bonus_pct' => round($shortEnterNowBonus, 4),
+            'demo_extra_tolerance_pct' => round($demoExtraBonus, 4),
+            'effective_threshold_pct' => $effectiveThresholdRound,
+            'intent_age_seconds' => $intentAgeSec,
+            'created_ts' => $createdTs,
+            'threshold_source' => isset($intent['late_threshold_pct']) ? 'intent' : (($sideOverride !== null) ? 'side_override' : 'config_default'),
+        ];
+        $result['diagnostics'] = $diag;
+
+        // Direction-aware check: only reject if price moved AGAINST entry
+        $isMoveAgainstEntry = false;
+        $moveDirection = '';
+        if ($side === 'long' && $currentPrice > $entryPrice) {
+            $isMoveAgainstEntry = true;
+            $moveDirection = 'up';
+        } elseif ($side === 'short' && $currentPrice < $entryPrice) {
+            $isMoveAgainstEntry = true;
+            $moveDirection = 'down';
+        }
+
+        // Epsilon-safe comparison: allow borderline passes within 0.01% tolerance
+        $epsilon = 0.01;
+        if ($isMoveAgainstEntry && ($priceDiff - $effectiveThreshold) > $epsilon) {
+            // Determine sub-reason based on severity
+            $subreason = 'rejected_late_entry_price_moved_too_far';
+            if ($intentAgeSec > 300) {
+                $subreason = 'rejected_late_entry_timeout_exceeded';
+            } elseif ($side === 'short' && $entryAction === 'enter_now' && $priceDiff <= $effectiveThreshold * 1.3) {
+                $subreason = 'rejected_late_entry_short_breakdown_followthrough';
+            } elseif ($priceDiff <= $effectiveThreshold * 1.5) {
+                $subreason = 'rejected_late_entry_borderline_buffer_fail';
+            }
+
+            $result['ok'] = false;
+            $result['subreason'] = $subreason;
+            $result['reason'] = sprintf(
+                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%% + short_enter_now=%.2f%% + demo_extra=%.2f%%)",
+                $moveDirection,
+                $priceDiffRound,
+                $effectiveThresholdRound,
+                $baseThreshold,
+                $bufferPct,
+                $freshnessBonus,
+                $shortEnterNowBonus,
+                $demoExtraBonus
+            );
+        }
+
         return $result;
     }
     
@@ -1526,7 +4462,7 @@ private function checkLateEntry(array $intent): array
      * @param array<string,mixed> $intent
      * @return array<string,mixed>
      */
-private function computeEntryDeadline(array $intent): array
+private function computeEntryDeadline(array $intent, string $mode = 'live'): array
 {
     $now = time();
 
@@ -1562,6 +4498,16 @@ private function computeEntryDeadline(array $intent): array
         } else {
             $timeoutMinutes = (int)($this->config['execution']['default_entry_timeout_minutes'] ?? 10);
             $timeoutSource = 'config.execution.default_entry_timeout_minutes';
+        }
+
+        // Demo learning mode: extend entry timeout so fresh demo intents have more
+        // time to execute without being dropped by timeout. Live timeout is unchanged.
+        if ($mode === 'demo' && $timeoutMinutes > 0) {
+            $demoExtraMinutes = (int)($this->config['execution']['demo_entry_timeout_extra_minutes'] ?? 0);
+            if ($demoExtraMinutes > 0) {
+                $timeoutMinutes += $demoExtraMinutes;
+                $timeoutSource .= '+demo_extra';
+            }
         }
     }
 
@@ -1628,7 +4574,7 @@ private function computeEntryDeadline(array $intent): array
         $entryPrice = (float)($intent['entry_price'] ?? 0);
 
         // Effective deadline (min(expires_at, created_ts + timeout_minutes))
-        $deadlineInfo = $this->computeEntryDeadline($intent);
+        $deadlineInfo = $this->computeEntryDeadline($intent, $mode);
         $deadline = (int)($deadlineInfo['deadline'] ?? 0);
 
         // Check if deadline exceeded
@@ -1751,6 +4697,10 @@ private function computeEntryDeadline(array $intent): array
             'low_watermark' => $intent['entry_price'],
             'last_price' => $intent['entry_price'],
             'last_update' => date('c'),
+            // Decision engine lineage fields (populated when BotDecisionEngine is active)
+            'decision_id'     => (string)($intent['decision_id'] ?? ''),
+            'confidence_band' => (string)($intent['confidence_band'] ?? ''),
+            'route_state'     => (string)($intent['route_state'] ?? ''),
         ];
     }
     
@@ -1759,15 +4709,17 @@ private function computeEntryDeadline(array $intent): array
      */
     private function submitOrder(array $order): array
     {
-        if (!$this->isLiveMode()) {
+        if (!$this->isRealExchangeMode()) {
             return $this->simulateOrder($order);
         }
         
+        $currentMode = $this->getMode();
+
         if ($this->gateway === null || !$this->gateway->isInitialized()) {
             return [
                 'ok' => false,
                 'error' => 'gateway_not_initialized',
-                'mode' => 'live',
+                'mode' => $currentMode,
             ];
         }
         
@@ -1778,7 +4730,7 @@ private function computeEntryDeadline(array $intent): array
                 return [
                     'ok' => false,
                     'error' => $gatewayResult['error'] ?? 'order_submission_failed',
-                    'mode' => 'live',
+                    'mode' => $currentMode,
                 ];
             }
             
@@ -1791,13 +4743,13 @@ private function computeEntryDeadline(array $intent): array
                 'fill_price' => $fillPrice,
                 'fill_qty' => $gatewayResult['fill_qty'] ?? $order['qty'],
                 'status' => $gatewayResult['status'] ?? 'filled',
-                'mode' => 'live',
+                'mode' => $currentMode,
             ];
         } catch (\Throwable $e) {
             return [
                 'ok' => false,
                 'error' => 'Exception: ' . $e->getMessage(),
-                'mode' => 'live',
+                'mode' => $currentMode,
             ];
         }
     }
@@ -1823,7 +4775,7 @@ private function computeEntryDeadline(array $intent): array
      */
     private function getCurrentPrice(string $symbol): ?float
     {
-        if (!$this->isLiveMode()) {
+        if (!$this->isRealExchangeMode()) {
             return null;
         }
         
@@ -1886,6 +4838,581 @@ private function computeEntryDeadline(array $intent): array
         
         $result['ok'] = $result['checks_failed'] === 0;
         
+        return $result;
+    }
+
+    /**
+     * Trigger an immediate best-effort coin_passport rebuild for $symbol after a trade close.
+     * Non-blocking: failures must never interrupt trade close flow.
+     */
+    private function triggerCoinPassportRebuildForSymbol(string $symbol): void
+    {
+        if ($symbol === '' || $this->moduleBase === null) {
+            return;
+        }
+        $coinPassportServicePath = dirname($this->moduleBase) . '/coin_passport/service.php';
+        if (!file_exists($coinPassportServicePath)) {
+            return;
+        }
+        try {
+            require_once $coinPassportServicePath;
+            (new CoinPassportService())->rebuildSymbol($symbol);
+        } catch (\Throwable $e) {
+            // Non-blocking: passport rebuild failure must never interrupt trade close.
+        }
+    }
+
+    // =========================================================================
+    // Demo Slot Recovery / Turnover Pass
+    // =========================================================================
+
+    /**
+     * Attempt to free active-trade slots when demo capacity is full.
+     *
+     * Scores each active trade by close priority, then processes the top N
+     * candidates — dead shells are quarantined immediately, timeout-exceeded
+     * trades are force-closed, and exchange-gone positions are finalized
+     * locally.  Only runs in demo mode; never touches live trades.
+     *
+     * @return array{
+     *   turnover_candidates_found: int,
+     *   turnover_candidates_processed: int,
+     *   turnover_slots_freed: int,
+     *   turnover_block_reason: string,
+     *   turnover_priority_stats: array<string,int>,
+     *   turnover_ai_records_written: int,
+     *   turnover_close_priority_scores: array<string,array{score:int,reason:string,age_min:int}>
+     * }
+     */
+    protected function performDemoTurnoverPass(string $mode): array
+    {
+        $result = [
+            'turnover_candidates_found'                  => 0,
+            'turnover_candidates_processed'              => 0,
+            'turnover_slots_freed'                       => 0,
+            'turnover_block_reason'                      => 'none',
+            'turnover_priority_stats'                    => [],
+            'turnover_ai_records_written'                => 0,
+            'turnover_close_priority_scores'             => [],
+            'turnover_candidates_stale_count'            => 0,
+            'turnover_candidates_timeout_count'          => 0,
+            'turnover_candidates_dead_shell_count'       => 0,
+            'turnover_candidates_finalize_eligible_count'=> 0,
+            'turnover_candidates_other_count'            => 0,
+            'turnover_candidates_healthy_count'          => 0,
+            'turnover_healthy_closed'                    => 0,
+            'turnover_orphan_closed'                     => 0,
+            // Healthy-specific quality counters for turnover-pass closes
+            'turnover_healthy_closed_full_complete'      => 0,
+            'turnover_healthy_closed_missing_mfe'        => 0,
+            'turnover_healthy_closed_missing_mae'        => 0,
+            'turnover_healthy_closed_missing_close_price'=> 0,
+            'turnover_healthy_ai_written'                => 0,
+            // Composition state at turnover time (PART 7)
+            'turnover_active_healthy_count'              => 0,
+            'turnover_active_orphan_count'               => 0,
+            'turnover_orphan_pressure_active'            => false,
+            'turnover_healthy_share_low'                 => false,
+        ];
+
+        if ($mode !== 'demo') {
+            return $result;
+        }
+
+        $trades = $this->store->loadActiveTrades();
+        if (empty($trades)) {
+            $result['turnover_block_reason'] = 'no_active_trades';
+            return $result;
+        }
+
+        $dlmCfg           = is_array($this->config['demo_learning_mode'] ?? null) ? $this->config['demo_learning_mode'] : [];
+        $dlmEnabled        = ($dlmCfg['enabled'] ?? false);
+        $closeTimeoutMin   = $dlmEnabled && ($dlmCfg['learning_close_timeout_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_close_timeout_minutes'] : 0;
+        $staleAgeMin       = $dlmEnabled && ($dlmCfg['learning_max_active_age_minutes'] ?? 0) > 0
+            ? (int)$dlmCfg['learning_max_active_age_minutes'] : 0;
+        $preferCloseStale  = $dlmEnabled && !empty($dlmCfg['prefer_close_stale_when_learning']);
+        $maxPerRun         = max(1, (int)($dlmCfg['max_turnover_per_run'] ?? 5));
+        $nowTs             = time();
+
+        // ── Bootstrap mode: healthy-close accelerator ────────────────────────
+        $demoCompTov = is_array($this->config['demo_composition'] ?? null) ? $this->config['demo_composition'] : [];
+        $bootstrapActiveTov     = !empty($demoCompTov['healthy_close_bootstrap_active']);
+        $bootstrapTimeoutMinTov = $bootstrapActiveTov && ($demoCompTov['healthy_close_timeout_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoCompTov['healthy_close_timeout_minutes_bootstrap'] : 0;
+        $bootstrapStaleMinTov   = $bootstrapActiveTov && ($demoCompTov['healthy_stale_age_minutes_bootstrap'] ?? 0) > 0
+            ? (int)$demoCompTov['healthy_stale_age_minutes_bootstrap'] : 0;
+
+        // ── PART 7: Composition-aware config ───────────────────────────────
+        $compOrphanMaxSlots  = $dlmEnabled ? (int)($dlmCfg['orphan_max_active_slots'] ?? 0) : 0;
+        $compHealthyMinSlots = $dlmEnabled ? (int)($dlmCfg['healthy_min_active_slots'] ?? 0) : 0;
+        $compShareTarget     = $dlmEnabled ? (float)($dlmCfg['healthy_share_target_pct'] ?? 0) : 0.0;
+
+        // Compute active composition before scoring so boost can be applied
+        $compActiveOrphan  = 0;
+        $compActiveHealthy = 0;
+        foreach ($trades as $_compT) {
+            if (!empty($_compT['is_orphan_adopted']) || !empty($_compT['adopted_from_exchange_orphan'])) {
+                $compActiveOrphan++;
+            } else {
+                $compActiveHealthy++;
+            }
+        }
+        $compActiveTotal       = $compActiveOrphan + $compActiveHealthy;
+        $compOrphanPressureHigh = $compOrphanMaxSlots > 0 && $compActiveOrphan >= $compOrphanMaxSlots;
+        $compHealthyShareLow    = $compShareTarget > 0 && $compActiveTotal > 0
+            && ($compActiveHealthy / $compActiveTotal * 100) < $compShareTarget;
+        $result['turnover_active_healthy_count']  = $compActiveHealthy;
+        $result['turnover_active_orphan_count']   = $compActiveOrphan;
+        $result['turnover_orphan_pressure_active'] = $compOrphanPressureHigh;
+        $result['turnover_healthy_share_low']      = $compHealthyShareLow;
+
+        // ── Score every active trade ────────────────────────────────────────
+        $scored = [];
+        foreach ($trades as $tradeId => $trade) {
+            $openedAt = strtotime($trade['opened_at'] ?? '') ?: 0;
+            $openedTs = $openedAt > 0
+                ? $openedAt
+                : (int)($trade['opened_ts'] ?? $trade['adoption_ts'] ?? $trade['orphan_resolution_ts'] ?? 0);
+            $ageMin = $openedTs > 0 ? (int)round(($nowTs - $openedTs) / 60) : 0;
+
+            $isOrphan    = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+            $hasEntry    = (float)($trade['entry_price'] ?? 0) > 0;
+            $hasQty      = (float)($trade['position_size'] ?? $trade['qty'] ?? 0) > 0;
+            $hasSide     = in_array($trade['side'] ?? '', ['long', 'short'], true);
+            $isDeadShell = $isOrphan && (!$hasEntry || !$hasQty || !$hasSide);
+
+            // Determine effective timeout/stale thresholds — bootstrap uses shorter thresholds for healthy trades
+            $effectiveTimeoutMin = $closeTimeoutMin;
+            $effectiveStaleMin   = $staleAgeMin;
+            if ($bootstrapActiveTov && !$isOrphan && !$isDeadShell) {
+                if ($bootstrapTimeoutMinTov > 0 && ($closeTimeoutMin <= 0 || $bootstrapTimeoutMinTov < $closeTimeoutMin)) {
+                    $effectiveTimeoutMin = $bootstrapTimeoutMinTov;
+                }
+                if ($bootstrapStaleMinTov > 0 && ($staleAgeMin <= 0 || $bootstrapStaleMinTov < $staleAgeMin)) {
+                    $effectiveStaleMin = $bootstrapStaleMinTov;
+                }
+            }
+            $isTimeout   = $effectiveTimeoutMin > 0 && $ageMin >= $effectiveTimeoutMin;
+            $isStale     = $effectiveStaleMin   > 0 && $ageMin >= $effectiveStaleMin;
+
+            $score  = 0;
+            $reason = 'age_based';
+
+            if ($isDeadShell) {
+                $score  = 100;
+                $reason = 'orphan_dead_shell';
+            } elseif ($isOrphan && $isTimeout) {
+                $score  = 90 + min(9, $closeTimeoutMin > 0 ? (int)($ageMin / $closeTimeoutMin * 9) : 0);
+                $reason = 'orphan_adopted_timeout_exceeded';
+            } elseif ($isTimeout && !$isOrphan) {
+                // Healthy active that exceeded timeout (normal or bootstrap-shortened)
+                $score  = 80 + min(9, $effectiveTimeoutMin > 0 ? (int)($ageMin / $effectiveTimeoutMin * 9) : 0);
+                $reason = ($bootstrapActiveTov && $effectiveTimeoutMin === $bootstrapTimeoutMinTov)
+                    ? 'healthy_bootstrap_timeout_exceeded'
+                    : 'healthy_trade_timeout_exceeded';
+            } elseif ($isOrphan && $isStale) {
+                $score  = 70;
+                $reason = 'orphan_adopted_stale';
+            } elseif ($isStale && !$isOrphan) {
+                // Healthy active that exceeded the stale threshold (normal or bootstrap-shortened)
+                $score  = 60;
+                $reason = ($bootstrapActiveTov && $effectiveStaleMin === $bootstrapStaleMinTov)
+                    ? 'healthy_bootstrap_stale'
+                    : 'healthy_trade_stale';
+            } elseif ($isStale) {
+                $score  = 55;
+                $reason = 'trade_stale';
+            } elseif ($ageMin > 0) {
+                $score  = min(50, (int)($ageMin / 30));
+                $reason = 'age_based';
+            }
+
+            // PART 7: Composition-aware score boost.
+            // When orphan occupancy is above the configured cap, boost all orphan
+            // candidate scores by +15 so they are freed before healthy trades.
+            // This ensures recovered slots become available for new healthy opens.
+            if ($compOrphanPressureHigh && $isOrphan && !$isDeadShell && $score > 0) {
+                $score += 15;
+            }
+
+            // Bootstrap boost: when healthy closed share is below target, boost eligible healthy
+            // trade scores by +10 so they are prioritised over lower-scoring orphan holds.
+            if ($bootstrapActiveTov && !$isOrphan && !$isDeadShell && ($isTimeout || $isStale) && $score > 0) {
+                $score  += 10;
+                $reason  = ($reason === 'healthy_bootstrap_timeout_exceeded' || $reason === 'healthy_bootstrap_stale')
+                    ? $reason
+                    : 'healthy_bootstrap_turnover_priority';
+            }
+
+            if ($score > 0 || $isDeadShell || $isTimeout) {
+                $scored[$tradeId] = compact('trade', 'score', 'reason', 'ageMin', 'isDeadShell', 'isTimeout', 'isOrphan', 'isStale');
+                $result['turnover_close_priority_scores'][$tradeId] = [
+                    'score'   => $score,
+                    'reason'  => $reason,
+                    'age_min' => $ageMin,
+                ];
+                // Candidate type breakdown
+                if ($isDeadShell) {
+                    $result['turnover_candidates_dead_shell_count']++;
+                } elseif ($isTimeout) {
+                    $result['turnover_candidates_timeout_count']++;
+                    if (!$isOrphan) {
+                        $result['turnover_candidates_healthy_count']++;
+                    }
+                } elseif ($isStale) {
+                    $result['turnover_candidates_stale_count']++;
+                    if (!$isOrphan) {
+                        $result['turnover_candidates_healthy_count']++;
+                    }
+                } else {
+                    $result['turnover_candidates_other_count']++;
+                }
+            }
+        }
+
+        $result['turnover_candidates_found'] = count($scored);
+
+        if (empty($scored)) {
+            $result['turnover_block_reason'] = 'no_finalize_eligible_candidates';
+            return $result;
+        }
+
+        uasort($scored, static fn($a, $b) => $b['score'] <=> $a['score']);
+
+        $processed = 0;
+        $freed     = 0;
+
+        foreach ($scored as $tradeId => $info) {
+            if ($processed >= $maxPerRun) {
+                break;
+            }
+
+            $trade       = $info['trade'];
+            $isDeadShell = $info['isDeadShell'];
+            $isTimeout   = $info['isTimeout'];
+            $isOrphan    = $info['isOrphan'];
+            $reason      = $info['reason'];
+
+            $result['turnover_priority_stats'][$reason] = ($result['turnover_priority_stats'][$reason] ?? 0) + 1;
+            $processed++;
+
+            // ── Dead shell: quarantine immediately (no exchange call) ─────
+            if ($isDeadShell) {
+                $closedAtTs = $nowTs;
+                $closedTrade = array_merge($trade, [
+                    'status'                        => 'quarantined',
+                    'closed_at'                     => date('c', $closedAtTs),
+                    'closed_ts'                     => $closedAtTs,
+                    'close_ts'                      => $closedAtTs,
+                    'close_reason'                  => 'orphan_dead_shell_quarantined',
+                    'close_reason_normalized'       => 'orphan_dead_shell_quarantined',
+                    'close_detection_result'        => 'close_detected_turnover_pass_dead_shell',
+                    'close_detection_source'        => 'demo_turnover_pass',
+                    'turnover_pass_closed'          => true,
+                    'turnover_priority_reason'      => $reason,
+                    'close_priority_score'          => $info['score'],
+                    'pnl'                           => 0.0,
+                    'roi'                           => 0.0,
+                    'hold_minutes'                  => 0,
+                    'local_close_finalize_used'     => false,
+                ]);
+                $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                $freed++;
+                // Classify from final closed record — dead shells are always orphan-adopted.
+                $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
+                if (!$closedIsOrphan) {
+                    $result['turnover_healthy_closed']++;
+                } else {
+                    $result['turnover_orphan_closed']++;
+                }
+                $this->journalEvent('trade_closed', 'turnover', true,
+                    'Trade closed (turnover_dead_shell): ' . ($trade['symbol'] ?? $tradeId),
+                    [
+                        'trade_id'                => $tradeId,
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'classification'          => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
+                        'close_reason_normalized' => 'orphan_dead_shell_quarantined',
+                        'close_result_source'     => 'demo_turnover_pass',
+                        'close_price'             => null,
+                        'roi'                     => 0.0,
+                        'pnl'                     => 0.0,
+                        'hold_minutes'            => null,
+                        'mfe'                     => null,
+                        'mae'                     => null,
+                        'mfe_missing_reason'      => 'turnover_dead_shell_no_finalize',
+                        'mae_missing_reason'      => 'turnover_dead_shell_no_finalize',
+                        'ai_dataset_written'      => false,
+                        'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                    ]
+                );
+                $this->journalEvent('file_write', 'turnover', true,
+                    'closed trade file written (turnover_dead_shell): ' . ($closedTrade['symbol'] ?? $tradeId),
+                    [
+                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                        'write_type'              => 'create',
+                        'classification'          => $closedIsOrphan ? 'orphan_close' : 'healthy_close',
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'trade_id'                => $tradeId,
+                        'close_reason_normalized' => 'orphan_dead_shell_quarantined',
+                        'ai_dataset_written'      => false,
+                    ]
+                );
+                continue;
+            }
+
+            // ── Timeout-exceeded: force close via exchange ────────────────
+            if ($isTimeout) {
+                $exchangeResult = $this->closePositionOnExchange($trade);
+                $closeReason    = 'turnover_pass_timeout_close';
+                if (!($exchangeResult['success'] ?? false)) {
+                    if ($this->gateway && $this->gateway->isInitialized()) {
+                        $checkPos = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+                        if ($checkPos !== null && (float)($checkPos['size'] ?? 0) > 0) {
+                            if ($result['turnover_block_reason'] === 'none') {
+                                $result['turnover_block_reason'] = 'exchange_positions_still_open';
+                            }
+                            continue;
+                        }
+                    }
+                    $closeReason = 'turnover_pass_exchange_gone_after_close_failure';
+                }
+                $closedAtTs  = $nowTs;
+                $closedTrade = array_merge($trade, [
+                    'closed_at'                     => date('c', $closedAtTs),
+                    'closed_ts'                     => $closedAtTs,
+                    'close_ts'                      => $closedAtTs,
+                    'close_reason'                  => $closeReason,
+                    'close_reason_normalized'       => $closeReason,
+                    'close_detection_result'        => 'close_detected_turnover_pass',
+                    'close_detection_source'        => 'demo_turnover_pass',
+                    'turnover_pass_closed'          => true,
+                    'turnover_priority_reason'      => $reason,
+                    'close_priority_score'          => $info['score'],
+                    'learning_timeout_force_close'  => true,
+                    'bootstrap_close_triggered'     => $bootstrapActiveTov && in_array($reason, [
+                        'healthy_bootstrap_timeout_exceeded',
+                        'healthy_bootstrap_stale',
+                        'healthy_bootstrap_turnover_priority',
+                        'healthy_bootstrap_share_gap',
+                    ], true),
+                ]);
+                if (method_exists($this, 'applyLocalCloseFinalize')) {
+                    $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                    $closedTrade['close_reason']            = $closeReason;
+                    $closedTrade['close_reason_normalized'] = $closeReason;
+                }
+                // Orphan recovery trades must not enter the primary AI learning dataset.
+                if ($isOrphan) {
+                    $aiWritten = false;
+                    $closedTrade['ai_dataset_record_written'] = false;
+                    $closedTrade['ai_dataset_partition']      = 'orphan_recovery_secondary';
+                } else {
+                    $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                    $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                }
+                if ($aiWritten) {
+                    $result['turnover_ai_records_written']++;
+                }
+                $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                // Classify from final closed record (post-finalization), not pre-scored active trade assumption.
+                $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
+                if (!$closedIsOrphan) {
+                    $result['turnover_healthy_closed']++;
+                    if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['turnover_healthy_closed_missing_close_price']++; }
+                    if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['turnover_healthy_closed_missing_mfe']++; }
+                    if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['turnover_healthy_closed_missing_mae']++; }
+                    if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                        && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                        && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                        && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                        $result['turnover_healthy_closed_full_complete']++;
+                    }
+                    if ($aiWritten) { $result['turnover_healthy_ai_written']++; }
+                } else {
+                    $result['turnover_orphan_closed']++;
+                }
+                $this->journalEvent('trade_closed', 'turnover', true,
+                    'Trade closed (turnover_timeout): ' . ($trade['symbol'] ?? $tradeId),
+                    [
+                        'trade_id'                => $tradeId,
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'classification'          => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
+                        'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                        'close_result_source'     => $closedTrade['close_result_source'] ?? null,
+                        'close_price'             => $closedTrade['close_price'] ?? null,
+                        'roi'                     => $closedTrade['roi'] ?? null,
+                        'pnl'                     => $closedTrade['pnl'] ?? null,
+                        'hold_minutes'            => $closedTrade['hold_minutes'] ?? null,
+                        'mfe'                     => $closedTrade['mfe'] ?? null,
+                        'mae'                     => $closedTrade['mae'] ?? null,
+                        'mfe_missing_reason'      => $closedTrade['mfe_missing_reason'] ?? null,
+                        'mae_missing_reason'      => $closedTrade['mae_missing_reason'] ?? null,
+                        'ai_dataset_written'      => $aiWritten,
+                        'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                    ]
+                );
+                $this->journalEvent('file_write', 'turnover', true,
+                    'closed trade file written (turnover_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                    [
+                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                        'write_type'              => 'create',
+                        'classification'          => $closedIsOrphan ? 'orphan_close' : 'healthy_close',
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'trade_id'                => $tradeId,
+                        'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                        'ai_dataset_written'      => $aiWritten,
+                    ]
+                );
+                if ($aiWritten) {
+                    $this->journalEvent('ai_dataset_written', 'turnover', true,
+                        'AI record written: ' . ($trade['symbol'] ?? $tradeId),
+                        [
+                            'trade_id'       => $tradeId,
+                            'symbol'         => $closedTrade['symbol'] ?? null,
+                            'classification' => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
+                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                        ]
+                    );
+                    $this->journalEvent('file_write', 'turnover', true,
+                        'ai_dataset file written (turnover_timeout): ' . ($closedTrade['symbol'] ?? $tradeId),
+                        [
+                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                            'write_type'     => 'create',
+                            'classification' => 'ai_dataset',
+                            'symbol'         => $closedTrade['symbol'] ?? null,
+                            'trade_id'       => $tradeId,
+                        ]
+                    );
+                }
+                $freed++;
+                continue;
+            }
+
+            // ── Check if already closed on exchange ───────────────────────
+            if (!$this->gateway || !$this->gateway->isInitialized()) {
+                if ($result['turnover_block_reason'] === 'none') {
+                    $result['turnover_block_reason'] = 'local_finalize_not_triggered';
+                }
+                continue;
+            }
+            $position = $this->fetchOpenPosition($trade['symbol'], $trade['side']);
+            if ($position === null || (float)($position['size'] ?? 0) <= 0) {
+                $result['turnover_candidates_finalize_eligible_count']++;
+                $closedAtTs  = $nowTs;
+                $closeReason = 'turnover_pass_exchange_gone';
+                $closedTrade = array_merge($trade, [
+                    'closed_at'                     => date('c', $closedAtTs),
+                    'closed_ts'                     => $closedAtTs,
+                    'close_ts'                      => $closedAtTs,
+                    'close_reason'                  => $closeReason,
+                    'close_reason_normalized'       => $closeReason,
+                    'close_detection_result'        => 'close_detected_turnover_pass_exchange_gone',
+                    'close_detection_source'        => 'demo_turnover_pass',
+                    'turnover_pass_closed'          => true,
+                    'turnover_priority_reason'      => $reason,
+                    'close_priority_score'          => $info['score'],
+                ]);
+                if (method_exists($this, 'applyLocalCloseFinalize')) {
+                    $closedTrade = $this->applyLocalCloseFinalize($closedTrade, $closedAtTs);
+                    $closedTrade['close_reason']            = $closeReason;
+                    $closedTrade['close_reason_normalized'] = $closeReason;
+                }
+                $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $closedTrade);
+                $closedTrade['ai_dataset_record_written'] = $aiWritten;
+                if ($aiWritten) {
+                    $result['turnover_ai_records_written']++;
+                }
+                $this->store->moveTradeToClosedDir($tradeId, $closedTrade);
+                $this->triggerCoinPassportRebuildForSymbol((string)($trade['symbol'] ?? ''));
+                // Classify from final closed record (post-finalization), not pre-scored active trade assumption.
+                $closedIsOrphan = !empty($closedTrade['adopted_from_exchange_orphan']) || !empty($closedTrade['is_orphan_adopted']);
+                if (!$closedIsOrphan) {
+                    $result['turnover_healthy_closed']++;
+                    if ((float)($closedTrade['close_price'] ?? 0) <= 0) { $result['turnover_healthy_closed_missing_close_price']++; }
+                    if (($closedTrade['mfe'] ?? null) === null || !empty($closedTrade['mfe_missing_reason'])) { $result['turnover_healthy_closed_missing_mfe']++; }
+                    if (($closedTrade['mae'] ?? null) === null || !empty($closedTrade['mae_missing_reason'])) { $result['turnover_healthy_closed_missing_mae']++; }
+                    if ((float)($closedTrade['close_price'] ?? 0) > 0 && ($closedTrade['roi'] ?? null) !== null
+                        && (string)($closedTrade['close_reason_normalized'] ?? '') !== ''
+                        && ($closedTrade['mfe'] ?? null) !== null && empty($closedTrade['mfe_missing_reason'])
+                        && ($closedTrade['mae'] ?? null) !== null && empty($closedTrade['mae_missing_reason'])) {
+                        $result['turnover_healthy_closed_full_complete']++;
+                    }
+                    if ($aiWritten) { $result['turnover_healthy_ai_written']++; }
+                } else {
+                    $result['turnover_orphan_closed']++;
+                }
+                $this->journalEvent('trade_closed', 'turnover', true,
+                    'Trade closed (turnover_exchange_gone): ' . ($trade['symbol'] ?? $tradeId),
+                    [
+                        'trade_id'                => $tradeId,
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'classification'          => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
+                        'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                        'close_result_source'     => $closedTrade['close_result_source'] ?? null,
+                        'close_price'             => $closedTrade['close_price'] ?? null,
+                        'roi'                     => $closedTrade['roi'] ?? null,
+                        'pnl'                     => $closedTrade['pnl'] ?? null,
+                        'hold_minutes'            => $closedTrade['hold_minutes'] ?? null,
+                        'mfe'                     => $closedTrade['mfe'] ?? null,
+                        'mae'                     => $closedTrade['mae'] ?? null,
+                        'mfe_missing_reason'      => $closedTrade['mfe_missing_reason'] ?? null,
+                        'mae_missing_reason'      => $closedTrade['mae_missing_reason'] ?? null,
+                        'ai_dataset_written'      => $aiWritten,
+                        'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+                    ]
+                );
+                $this->journalEvent('file_write', 'turnover', true,
+                    'closed trade file written (turnover_exchange_gone): ' . ($closedTrade['symbol'] ?? $tradeId),
+                    [
+                        'path'                    => 'trades/closed/' . $tradeId . '.json',
+                        'write_type'              => 'create',
+                        'classification'          => $closedIsOrphan ? 'orphan_close' : 'healthy_close',
+                        'symbol'                  => $closedTrade['symbol'] ?? null,
+                        'trade_id'                => $tradeId,
+                        'close_reason_normalized' => $closedTrade['close_reason_normalized'] ?? null,
+                        'ai_dataset_written'      => $aiWritten,
+                    ]
+                );
+                if ($aiWritten) {
+                    $this->journalEvent('ai_dataset_written', 'turnover', true,
+                        'AI record written: ' . ($trade['symbol'] ?? $tradeId),
+                        [
+                            'trade_id'       => $tradeId,
+                            'symbol'         => $closedTrade['symbol'] ?? null,
+                            'classification' => $closedIsOrphan ? 'orphan_adopted' : 'healthy',
+                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                        ]
+                    );
+                    $this->journalEvent('file_write', 'turnover', true,
+                        'ai_dataset file written (turnover_exchange_gone): ' . ($closedTrade['symbol'] ?? $tradeId),
+                        [
+                            'path'           => 'ai_dataset/' . $tradeId . '.json',
+                            'write_type'     => 'create',
+                            'classification' => 'ai_dataset',
+                            'symbol'         => $closedTrade['symbol'] ?? null,
+                            'trade_id'       => $tradeId,
+                        ]
+                    );
+                }
+                $freed++;
+            } else {
+                if ($result['turnover_block_reason'] === 'none') {
+                    $result['turnover_block_reason'] = 'exchange_positions_still_open';
+                }
+            }
+        }
+
+        $result['turnover_candidates_processed'] = $processed;
+        $result['turnover_slots_freed']          = $freed;
+
+        if ($freed === 0 && $result['turnover_block_reason'] === 'none') {
+            $result['turnover_block_reason'] = 'capacity_recovery_failed';
+        } elseif ($freed > 0 && $result['turnover_block_reason'] === 'capacity_recovery_failed') {
+            $result['turnover_block_reason'] = 'none';
+        }
+
         return $result;
     }
 }

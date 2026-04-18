@@ -31,8 +31,17 @@ final class TradingBotController
             return;
         }
         
-        $this->storageDir = $this->moduleBase . '/storage';
         $this->config = $this->loadConfig();
+
+        // Mode-aware storage namespace (must match service.php logic)
+        $mode = $this->config['module']['mode'] ?? 'paper';
+        if ($mode === 'live') {
+            $this->storageDir = $this->moduleBase . '/storage_live';
+        } elseif ($mode === 'demo') {
+            $this->storageDir = $this->moduleBase . '/storage_demo';
+        } else {
+            $this->storageDir = $this->moduleBase . '/storage_paper';
+        }
     }
     
     /**
@@ -534,7 +543,8 @@ final class TradingBotController
                 }
                 if (isset($runtime['mode']) && is_string($runtime['mode'])) {
                     $mode = strtolower(trim($runtime['mode']));
-                    $cfg['module']['mode'] = in_array($mode, ['live', 'dry'], true) ? $mode : ($cfg['module']['mode'] ?? 'dry');
+                    $validModes = ['live', 'demo', 'dry', 'paper'];
+                    $cfg['module']['mode'] = in_array($mode, $validModes, true) ? $mode : ($cfg['module']['mode'] ?? 'paper');
                 }
                 if (isset($runtime['account_id']) && is_string($runtime['account_id'])) {
                     $acc = trim($runtime['account_id']);
@@ -625,6 +635,7 @@ final class TradingBotController
                         'default_late_threshold_pct',
                         'retrace_slack_pct',
                         'dumb_trailing_activation_epsilon_pct',
+                        'profit_addon_budget_pct',
                     ];
 
                     foreach ($floats as $k) {
@@ -642,6 +653,7 @@ final class TradingBotController
                         'enable_trailing_on_open',
                         'balance_strict_stable_coin_only',
                         'reverse_side_enabled',
+                        'profit_addon_enabled',
                     ];
 
                     foreach ($bools as $k) {
@@ -1251,7 +1263,7 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
             // Store only runtime overrides into config/bot.json (whitelist).
             $runtime = [
                 'enabled' => (bool)($config['enabled'] ?? ($existing['enabled'] ?? true)),
-                'mode' => (string)($config['mode'] ?? ($existing['mode'] ?? 'dry')),
+                'mode' => (string)($config['mode'] ?? ($existing['mode'] ?? 'paper')),
                 'account_id' => (string)($config['account_id'] ?? ($existing['account_id'] ?? 'trading_bot')),
                 'max_positions' => (int)($config['max_positions'] ?? ($existing['max_positions'] ?? 10)),
                 'reconcile_before_action' => (bool)($config['reconcile_before_action'] ?? ($existing['reconcile_before_action'] ?? true)),
@@ -1261,6 +1273,15 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
                     ? (array)$config['symbol_overrides']
                     : (is_array($existing['symbol_overrides'] ?? null) ? (array)$existing['symbol_overrides'] : []),
                 'safety_stop_errors' => (int)($config['safety_stop_errors'] ?? ($existing['safety_stop_errors'] ?? 3)),
+
+                // Demo credentials (stored locally — NOT in KeyCenter)
+                'credentials' => [
+                    'demo' => [
+                        'api_key'      => '',
+                        'api_secret'   => '',
+                        'api_base_url' => 'https://api-demo.bybit.com',
+                    ],
+                ],
 
                 // Nested blocks
                 'exchange' => is_array($config['exchange'] ?? null) ? (array)$config['exchange'] : (is_array($existing['exchange'] ?? null) ? (array)$existing['exchange'] : []),
@@ -1272,13 +1293,28 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
 
             // Normalize / validate
             $mode = strtolower(trim((string)$runtime['mode']));
-            $runtime['mode'] = in_array($mode, ['live', 'dry'], true) ? $mode : 'dry';
+            $runtime['mode'] = in_array($mode, ['live', 'demo', 'dry', 'paper'], true) ? $mode : 'paper';
 
             $runtime['max_positions'] = max(0, (int)$runtime['max_positions']);
             $runtime['safety_stop_errors'] = max(0, (int)$runtime['safety_stop_errors']);
 
             $acc = trim((string)$runtime['account_id']);
             $runtime['account_id'] = $acc !== '' ? $acc : 'trading_bot';
+
+            // Merge demo credentials from incoming request with existing stored credentials
+            // IMPORTANT: api_secret is only overwritten when a non-empty value is explicitly provided
+            $existingCreds = is_array($existing['credentials']['demo'] ?? null) ? $existing['credentials']['demo'] : [];
+            $incomingCreds = is_array($config['credentials']['demo'] ?? null) ? $config['credentials']['demo'] : [];
+            $mergedDemoCreds = [
+                'api_key'      => isset($incomingCreds['api_key']) ? (string)$incomingCreds['api_key'] : (string)($existingCreds['api_key'] ?? ''),
+                'api_secret'   => (isset($incomingCreds['api_secret']) && $incomingCreds['api_secret'] !== '')
+                    ? (string)$incomingCreds['api_secret']
+                    : (string)($existingCreds['api_secret'] ?? ''),
+                'api_base_url' => isset($incomingCreds['api_base_url']) && $incomingCreds['api_base_url'] !== ''
+                    ? trim((string)$incomingCreds['api_base_url'])
+                    : (string)($existingCreds['api_base_url'] ?? 'https://api-demo.bybit.com'),
+            ];
+            $runtime['credentials'] = ['demo' => $mergedDemoCreds];
 
 
             // Symbol overrides validation / normalization
@@ -1390,6 +1426,7 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
                     'default_late_threshold_pct' => [0.0, 100.0],
                     'retrace_slack_pct' => [0.0, 10.0],
                     'dumb_trailing_activation_epsilon_pct' => [0.0, 10.0],
+                    'profit_addon_budget_pct' => [0.0, 500.0],
                 ];
 
                 foreach ($floatKeys as $k => $range) {
@@ -1408,6 +1445,7 @@ private function markTradeAsManualClose(string $symbol, string $side): ?array
                     'enable_trailing_on_open',
                     'balance_strict_stable_coin_only',
                     'reverse_side_enabled',
+                    'profit_addon_enabled',
                 ];
 
                 foreach ($boolKeys as $k) {

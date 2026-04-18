@@ -1,0 +1,25 @@
+{
+    "virtual_trade_id": "vt_sig_4d436f02eeba4ac1",
+    "source_signal_id": "sig_4d436f02eeba4ac1",
+    "symbol": "BLASTUSDT",
+    "side": "short",
+    "pattern_algorithm": "double_top_contextual_v2",
+    "ai_decision": "enter",
+    "result_label": "good",
+    "roi_outcome": 0.021991,
+    "live_roi": 0.018997,
+    "ai_confidence": 0.89,
+    "ai_quality_score": 0.8275,
+    "ai_reasons": [
+        "mock_provider",
+        "pattern_match_detected"
+    ],
+    "mfe": 0,
+    "mae": 0,
+    "delta_roi": 0.002994,
+    "agreement": "agree",
+    "live_close_reason": "take_profit",
+    "ai_exit_reason": "take_profit",
+    "input_snapshot_ref": "sig_4d436f02eeba4ac1",
+    "stored_at": 1775036109
+}

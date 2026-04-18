@@ -1,0 +1,126 @@
+[
+    {
+        "ts": 1775035669,
+        "event_type": "signal_seen",
+        "signal_id": "sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "signal_ts": 1774984749
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_input_built",
+        "signal_id": "sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "provider": "mock",
+        "input_keys": [
+            "symbol",
+            "side",
+            "pattern_algorithm",
+            "signal_ts",
+            "confidence_score",
+            "entry_quality_score",
+            "analyzer_score",
+            "confirmation_score",
+            "trend_bias",
+            "signal_mode",
+            "regime",
+            "market_phase",
+            "atr",
+            "volatility",
+            "noise_score",
+            "parser_diagnostics",
+            "entry_zone_low",
+            "entry_zone_high",
+            "entry_price",
+            "ohlcv_window"
+        ]
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_request_sent",
+        "signal_id": "sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "provider": "mock",
+        "model": ""
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_response_received",
+        "signal_id": "sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "provider": "mock",
+        "decision": "enter",
+        "confidence": 0.421,
+        "quality_score": 0.3363,
+        "risk_penalty": 0,
+        "reasons": [
+            "mock_provider",
+            "pattern_match_detected"
+        ]
+    },
+    {
+        "ts": 1775035669,
+        "event_type": "ai_decision_enter",
+        "signal_id": "sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "confidence": 0.421,
+        "quality_score": 0.3363,
+        "reasons": [
+            "mock_provider",
+            "pattern_match_detected"
+        ],
+        "recommended_action": "enter",
+        "hold_or_close_bias": "hold",
+        "runner_probability_estimate": 0.6952,
+        "reject_risk_estimate": 0.2288
+    },
+    {
+        "ts": 1775036109,
+        "event_type": "virtual_trade_opened",
+        "signal_id": "sig_c1234302ce47d974",
+        "virtual_trade_id": "vt_sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "ai_decision": "enter",
+        "ai_confidence": 0.421,
+        "ai_quality_score": 0.3363,
+        "entry_price": 0.2420045,
+        "live_entry_price": 0.2420045
+    },
+    {
+        "ts": 1775036109,
+        "event_type": "virtual_trade_closed",
+        "signal_id": "sig_c1234302ce47d974",
+        "virtual_trade_id": "vt_sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "side": "short",
+        "pattern_algorithm": "double_top_contextual_v2",
+        "ai_decision": "enter",
+        "ai_exit_reason": "take_profit",
+        "ai_exit_price": 0.2366804,
+        "roi": 0.022,
+        "mfe": 0,
+        "mae": 0
+    },
+    {
+        "ts": 1775036109,
+        "event_type": "comparison_finalized",
+        "signal_id": "sig_c1234302ce47d974",
+        "virtual_trade_id": "vt_sig_c1234302ce47d974",
+        "symbol": "FORMUSDT",
+        "ai_roi": 0.022,
+        "live_roi": 0.019,
+        "delta_roi": 0.003,
+        "agreement": "agree",
+        "live_close_reason": "take_profit",
+        "ai_exit_reason": "take_profit"
+    }
+]

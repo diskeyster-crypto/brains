@@ -368,7 +368,7 @@ final class SmartBrainCore
         // and produces live_intents.json for the Trading Bot executor.
         // ================================================================
         $liveConfig = $this->config->buildLiveConfig();
-        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits);
+        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits, $prices);
 
         // Simulator uses real prices for entry trigger / ROI / MAE / MFE / SL / TP
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
@@ -422,6 +422,9 @@ final class SmartBrainCore
                     'short_enter_now_candidates_count' => 0,
                     'short_enter_now_signal_emitted_count' => 0,
                     'short_enter_now_monitor_bypassed_count' => 0,
+                    'long_enter_now_candidates_count' => 0,
+                    'long_enter_now_signal_emitted_count' => 0,
+                    'long_enter_now_monitor_bypassed_count' => 0,
                     'avg_zone_width_pct' => 0.0,
                     'avg_zone_distance' => 0.0,
                     'avg_price_position' => 0.0,
@@ -467,6 +470,13 @@ final class SmartBrainCore
                 $v2DownstreamFunnel[$algo]['short_enter_now_candidates_count']++;
                 if (!empty($m['enter_now_promoted'])) {
                     $v2DownstreamFunnel[$algo]['short_enter_now_monitor_bypassed_count']++;
+                }
+            }
+            // Track long enter_now candidates and monitor bypass (symmetric)
+            if ($mSide === 'long' && $mEntryAction === 'enter_now') {
+                $v2DownstreamFunnel[$algo]['long_enter_now_candidates_count']++;
+                if (!empty($m['enter_now_promoted'])) {
+                    $v2DownstreamFunnel[$algo]['long_enter_now_monitor_bypassed_count']++;
                 }
             }
 
@@ -553,6 +563,10 @@ final class SmartBrainCore
                 $sEntryAction = (string)($s['entry_action'] ?? 'wait_retrace');
                 if ($sSide === 'short' && $sEntryAction === 'enter_now') {
                     $v2DownstreamFunnel[$algo]['short_enter_now_signal_emitted_count']++;
+                }
+                // Track long enter_now signal emission (symmetric)
+                if ($sSide === 'long' && $sEntryAction === 'enter_now') {
+                    $v2DownstreamFunnel[$algo]['long_enter_now_signal_emitted_count']++;
                 }
             }
             // Track global tier distribution for V2 signals
@@ -745,6 +759,28 @@ final class SmartBrainCore
             }
         }
 
+        // Compute side-specific candidate/signal totals for long-path observability
+        $longCandidatesCount = 0;
+        $shortCandidatesCount = 0;
+        foreach ($candidates as $c) {
+            $cSide = strtolower(trim((string)($c['side'] ?? '')));
+            if ($cSide === 'long') {
+                $longCandidatesCount++;
+            } elseif ($cSide === 'short') {
+                $shortCandidatesCount++;
+            }
+        }
+        $longSignalsCount = 0;
+        $shortSignalsCount = 0;
+        foreach ($signals as $s) {
+            $sSide2 = strtolower(trim((string)($s['side'] ?? '')));
+            if ($sSide2 === 'long') {
+                $longSignalsCount++;
+            } elseif ($sSide2 === 'short') {
+                $shortSignalsCount++;
+            }
+        }
+
         // Persist V2 downstream funnel
         $this->state->writeJson('storage/v2_downstream_funnel.json', [
             'by_pattern' => $v2DownstreamFunnel,
@@ -776,6 +812,34 @@ final class SmartBrainCore
             'short_enter_now_live_rejected_count' => (int)($liveIntentResult['short_enter_now_live_rejected_count'] ?? 0),
             'short_enter_now_live_reject_reasons' => $liveIntentResult['short_enter_now_live_reject_reasons'] ?? [],
             'short_enter_now_live_borderline_pass_count' => (int)($liveIntentResult['short_enter_now_live_borderline_pass_count'] ?? 0),
+            // Long enter_now live diagnostics (symmetric)
+            'long_enter_now_live_applied_count' => (int)($liveIntentResult['long_enter_now_live_applied_count'] ?? 0),
+            'long_enter_now_live_approved_count' => (int)($liveIntentResult['long_enter_now_live_approved_count'] ?? 0),
+            'long_enter_now_live_rejected_count' => (int)($liveIntentResult['long_enter_now_live_rejected_count'] ?? 0),
+            // Long-path funnel observability counters
+            'long_quality_floor_reject_total' => (int)($liveIntentResult['long_quality_floor_reject_total'] ?? 0),
+            'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
+            'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
+            'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
+            // Fast-coin gate diagnostics
+            'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
+            'fast_coin_symbols'              => (string)($userLimits['fast_coin_symbols']              ?? ''),
+            'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
+            'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
+            'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
+            'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
+            'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
+            'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
+            'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
+            'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
+            'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
+            // Fast-confirmed-slow exception path diagnostics
+            'fast_confirmed_slow_exception_used'            => (bool)($liveIntentResult['fast_confirmed_slow_exception_used']            ?? false),
+            'fast_confirmed_slow_exception_applied'         => (int)($liveIntentResult['fast_confirmed_slow_exception_applied']          ?? 0),
+            'fast_confirmed_slow_exception_live_pass_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_live_pass_total']   ?? 0),
+            'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
+            'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
+            'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -826,6 +890,25 @@ final class SmartBrainCore
             'restrictive_si_skip_reason' => $restrictiveSiSkipReason,
             // Config Conflict Guard warnings
             'config_warnings' => $this->config->detectConfigConflicts(),
+            // Config Module migration proof — first-wave soft-switch runtime evidence
+            'config_source_proof' => (static function (array $ms): array {
+                $migratedCount = $ms['migrated_count'] ?? count($ms['switched_params'] ?? []);
+                $fallbackCount = $ms['fallback_count'] ?? count($ms['fallback_params'] ?? []);
+                return [
+                    'migration_wave'           => $ms['switch_wave']                ?? 'v1_operational_params',
+                    'partially_migrated'       => (bool)($ms['partially_migrated']  ?? ($migratedCount > 0 && $fallbackCount > 0)),
+                    'unified_config_available' => (bool)($ms['unified_config_available'] ?? false),
+                    'unified_config_used'      => $migratedCount > 0,
+                    'legacy_fallback_used'     => $fallbackCount > 0,
+                    'migrated_count'           => $migratedCount,
+                    'fallback_count'           => $fallbackCount,
+                    'first_wave_total'         => $ms['first_wave_total'] ?? ($migratedCount + $fallbackCount),
+                    'switched_params'          => $ms['switched_params']  ?? [],
+                    'fallback_params'          => $ms['fallback_params']  ?? [],
+                    'source'                   => $ms['source']           ?? 'legacy_user_config',
+                    'recorded_at'              => $ms['recorded_at']      ?? null,
+                ];
+            })($this->config->getMigrationStatus()),
             // Manual Symbol Universe
             'manual_symbol_universe_enabled' => $manualUniverseEnabled,
             'manual_symbol_mode' => $manualSymbolMode,
@@ -853,6 +936,18 @@ final class SmartBrainCore
             'live_signal_id_source_stats' => $liveIntentResult['signal_id_source_stats'],
             'live_intents_created_count' => $liveIntentResult['intents_created'],
             'live_intents_sent_to_bot_count' => $liveIntentResult['intents_written'],
+            // Long-path observability counters
+            'long_candidates_count' => $longCandidatesCount,
+            'short_candidates_count' => $shortCandidatesCount,
+            'long_signals_count' => $longSignalsCount,
+            'short_signals_count' => $shortSignalsCount,
+            'long_live_candidates_approved_count' => (int)($liveIntentResult['long_approved_count'] ?? 0),
+            'long_live_intents_created_count' => (int)($liveIntentResult['long_intents_created_count'] ?? 0),
+            // Long-path funnel observability counters
+            'long_quality_floor_reject_total' => (int)($liveIntentResult['long_quality_floor_reject_total'] ?? 0),
+            'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
+            'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
+            'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
             'live_intents_total_after_merge' => $liveIntentResult['intents_total_after_merge'] ?? 0,
             'live_terminal_retained_count' => $liveIntentResult['terminal_retained_count'] ?? 0,
             'lifecycle_counters' => $liveIntentResult['lifecycle_counters'] ?? [],
@@ -862,6 +957,9 @@ final class SmartBrainCore
             'live_missing_risk_count' => $liveIntentResult['live_missing_risk_count'],
             'live_missing_entry_count' => $liveIntentResult['live_missing_entry_count'],
             'live_mode_filter_rejected_count' => $liveIntentResult['live_mode_filter_rejected_count'],
+            // Live mode filter observability (req. WU-5 §7)
+            'live_mode_filter_used' => (bool)($liveIntentResult['live_mode_filter_used'] ?? true),
+            'live_mode_filter_mode' => (string)($liveIntentResult['live_mode_filter_mode'] ?? 'unknown'),
             'live_invalid_risk_contract_count' => $liveIntentResult['live_invalid_risk_contract_count'],
             'late_entry_rejected_count' => $liveIntentResult['late_entry_rejected_count'] ?? 0,
             'late_entry_rejected_distribution' => $liveIntentResult['late_entry_rejected_distribution'] ?? [],
@@ -909,6 +1007,7 @@ final class SmartBrainCore
             'passport_gate_passed_count' => (int)($liveIntentResult['passport_gate_passed_count'] ?? 0),
             'passport_gate_rejected_count' => (int)($liveIntentResult['passport_gate_rejected_count'] ?? 0),
             'passport_gate_allow_live_count' => (int)($liveIntentResult['passport_gate_allow_live_count'] ?? 0),
+            'passport_gate_bootstrap_live_count' => (int)($liveIntentResult['passport_gate_bootstrap_live_count'] ?? 0),
             'passport_gate_sim_only_count' => (int)($liveIntentResult['passport_gate_sim_only_count'] ?? 0),
             'passport_gate_shadow_only_count' => (int)($liveIntentResult['passport_gate_shadow_only_count'] ?? 0),
             'passport_gate_reject_count' => (int)($liveIntentResult['passport_gate_reject_count'] ?? 0),
@@ -919,6 +1018,167 @@ final class SmartBrainCore
             'passport_gate_signal_blocked_by_passport_count' => (int)($liveIntentResult['passport_gate_signal_blocked_by_passport_count'] ?? 0),
             'passport_gate_reject_reason_distribution' => $liveIntentResult['passport_gate_reject_reason_distribution'] ?? [],
             'passport_gate_rejected_preview' => $liveIntentResult['passport_gate_rejected_preview'] ?? [],
+            // Coin cycle decision debug observability counters (read-only, does not affect routing)
+            'cycle_debug_available_total' => (int)($liveIntentResult['cycle_debug_available_total'] ?? 0),
+            'cycle_debug_missing_total' => (int)($liveIntentResult['cycle_debug_missing_total'] ?? 0),
+            'cycle_debug_low_confidence_total' => (int)($liveIntentResult['cycle_debug_low_confidence_total'] ?? 0),
+            // Coin cycle model veto/demotion layer counters (Coin Core Step 11)
+            'cycle_model_veto_total' => (int)($liveIntentResult['cycle_model_veto_total'] ?? 0),
+            'cycle_model_demote_demo_total' => (int)($liveIntentResult['cycle_model_demote_demo_total'] ?? 0),
+            'cycle_model_demote_skip_total' => (int)($liveIntentResult['cycle_model_demote_skip_total'] ?? 0),
+            'cycle_model_no_effect_total' => (int)($liveIntentResult['cycle_model_no_effect_total'] ?? 0),
+            'cycle_model_unavailable_total' => (int)($liveIntentResult['cycle_model_unavailable_total'] ?? 0),
+            // Coin cycle positive support layer counters (Coin Core Step 12)
+            'cycle_model_support_total'           => (int)($liveIntentResult['cycle_model_support_total'] ?? 0),
+            'cycle_model_support_live_total'      => (int)($liveIntentResult['cycle_model_support_live_total'] ?? 0),
+            'cycle_model_support_borderline_total' => (int)($liveIntentResult['cycle_model_support_borderline_total'] ?? 0),
+            'cycle_model_support_no_effect_total'  => (int)($liveIntentResult['cycle_model_support_no_effect_total'] ?? 0),
+            // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
+            'cycle_model_support_preview'         => $liveIntentResult['cycle_model_support_preview'] ?? [],
+            // Coin cycle eligibility refinement counters (Coin Core Step 13)
+            'cycle_eligibility_refine_total'      => (int)($liveIntentResult['cycle_eligibility_refine_total']      ?? 0),
+            'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
+            'cycle_eligibility_downgrade_total'   => (int)($liveIntentResult['cycle_eligibility_downgrade_total']   ?? 0),
+            'cycle_eligibility_no_effect_total'   => (int)($liveIntentResult['cycle_eligibility_no_effect_total']   ?? 0),
+            'cycle_eligibility_unavailable_total' => (int)($liveIntentResult['cycle_eligibility_unavailable_total'] ?? 0),
+            // Slot Priority Layer diagnostics (time-aware candidate ranking)
+            'slot_priority_used'                  => (bool)($liveIntentResult['slot_priority_used']                  ?? false),
+            'slot_priority_candidates_total'      => (int)($liveIntentResult['slot_priority_candidates_total']       ?? 0),
+            'slot_priority_won_total'             => (int)($liveIntentResult['slot_priority_won_total']              ?? 0),
+            'slot_priority_lost_total'            => (int)($liveIntentResult['slot_priority_lost_total']             ?? 0),
+            'slot_priority_not_needed_total'      => (int)($liveIntentResult['slot_priority_not_needed_total']       ?? 0),
+            'slot_priority_open_positions_count'  => (int)($liveIntentResult['slot_priority_open_positions_count']   ?? 0),
+            'slot_priority_existing_active_slots' => (int)($liveIntentResult['slot_priority_existing_active_slots']  ?? 0),
+            'slot_priority_slots_available'       => (int)($liveIntentResult['slot_priority_slots_available']        ?? 0),
+            'slot_priority_rejected_preview'      => $liveIntentResult['slot_priority_rejected_preview']             ?? [],
+            // Entry Quality Filter diagnostics (bounded entry-quality improvement layer)
+            'entry_quality_filter_total'           => (int)($liveIntentResult['entry_quality_filter_total']           ?? 0),
+            'entry_quality_filter_reject_total'    => (int)($liveIntentResult['entry_quality_filter_reject_total']    ?? 0),
+            'entry_quality_filter_demo_total'      => (int)($liveIntentResult['entry_quality_filter_demo_total']      ?? 0),
+            'entry_quality_filter_no_effect_total' => (int)($liveIntentResult['entry_quality_filter_no_effect_total'] ?? 0),
+            'entry_quality_filter_rejected_preview' => $liveIntentResult['entry_quality_filter_rejected_preview']     ?? [],
+            // Per-rule entry quality filter counters
+            'entry_filter_weak_stale_reject_total'     => (int)($liveIntentResult['entry_filter_weak_stale_reject_total']     ?? 0),
+            'entry_filter_weak_structure_reject_total' => (int)($liveIntentResult['entry_filter_weak_structure_reject_total'] ?? 0),
+            'entry_filter_weak_structure_demo_total'   => (int)($liveIntentResult['entry_filter_weak_structure_demo_total']   ?? 0),
+            'entry_filter_late_pressure_reject_total'  => (int)($liveIntentResult['entry_filter_late_pressure_reject_total']  ?? 0),
+            'entry_filter_weak_tail_reject_total'      => (int)($liveIntentResult['entry_filter_weak_tail_reject_total']      ?? 0),
+            // Wave Filter diagnostics (bounded wave amplitude/speed improvement layer)
+            'wave_filter_total'                => (int)($liveIntentResult['wave_filter_total']                ?? 0),
+            'wave_filter_reject_total'         => (int)($liveIntentResult['wave_filter_reject_total']         ?? 0),
+            'wave_filter_demo_total'           => (int)($liveIntentResult['wave_filter_demo_total']           ?? 0),
+            'wave_filter_no_effect_total'      => (int)($liveIntentResult['wave_filter_no_effect_total']      ?? 0),
+            'wave_filter_rejected_preview'     => $liveIntentResult['wave_filter_rejected_preview']           ?? [],
+            'wave_filter_release_valve_used'   => (bool)($liveIntentResult['wave_filter_release_valve_used']  ?? false),
+            // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
+            'v2_cleanup_total'                 => (int)($liveIntentResult['v2_cleanup_total']                 ?? 0),
+            'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
+            'v2_cleanup_demo_total'            => (int)($liveIntentResult['v2_cleanup_demo_total']            ?? 0),
+            'v2_cleanup_no_effect_total'       => (int)($liveIntentResult['v2_cleanup_no_effect_total']       ?? 0),
+            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
+            'confirmation_total'               => (int)($liveIntentResult['confirmation_total']               ?? 0),
+            'confirmation_confirmed_total'     => (int)($liveIntentResult['confirmation_confirmed_total']     ?? 0),
+            'confirmation_demo_total'          => (int)($liveIntentResult['confirmation_demo_total']          ?? 0),
+            'confirmation_reject_total'        => (int)($liveIntentResult['confirmation_reject_total']        ?? 0),
+            'confirmation_fakeout_total'       => (int)($liveIntentResult['confirmation_fakeout_total']       ?? 0),
+            'confirmation_expired_total'       => (int)($liveIntentResult['confirmation_expired_total']       ?? 0),
+            'confirmation_state_preview'       => $liveIntentResult['confirmation_state_preview']             ?? [],
+            // Side-separated V2 confirmation counters
+            'short_v2_confirmation_total'           => (int)($liveIntentResult['short_v2_confirmation_total']           ?? 0),
+            'short_v2_confirmation_confirmed_total'  => (int)($liveIntentResult['short_v2_confirmation_confirmed_total']  ?? 0),
+            'short_v2_confirmation_demo_total'       => (int)($liveIntentResult['short_v2_confirmation_demo_total']       ?? 0),
+            'short_v2_confirmation_reject_total'     => (int)($liveIntentResult['short_v2_confirmation_reject_total']     ?? 0),
+            'short_v2_confirmation_fakeout_total'    => (int)($liveIntentResult['short_v2_confirmation_fakeout_total']    ?? 0),
+            'short_v2_confirmation_expired_total'    => (int)($liveIntentResult['short_v2_confirmation_expired_total']    ?? 0),
+            'long_v2_confirmation_total'            => (int)($liveIntentResult['long_v2_confirmation_total']            ?? 0),
+            'long_v2_confirmation_confirmed_total'   => (int)($liveIntentResult['long_v2_confirmation_confirmed_total']   ?? 0),
+            'long_v2_confirmation_demo_total'        => (int)($liveIntentResult['long_v2_confirmation_demo_total']        ?? 0),
+            'long_v2_confirmation_reject_total'      => (int)($liveIntentResult['long_v2_confirmation_reject_total']      ?? 0),
+            'long_v2_confirmation_fakeout_total'     => (int)($liveIntentResult['long_v2_confirmation_fakeout_total']     ?? 0),
+            'long_v2_confirmation_expired_total'     => (int)($liveIntentResult['long_v2_confirmation_expired_total']     ?? 0),
+            // Post-confirm quality gate diagnostics (weak+normal long V2 only)
+            'post_confirm_quality_gate_total'           => (int)($liveIntentResult['post_confirm_quality_gate_total']           ?? 0),
+            'post_confirm_quality_gate_applied'         => (int)($liveIntentResult['post_confirm_quality_gate_applied']         ?? 0),
+            'post_confirm_quality_gate_used'            => (bool)($liveIntentResult['post_confirm_quality_gate_used']           ?? false),
+            'post_confirm_quality_gate_live_pass_total' => (int)($liveIntentResult['post_confirm_quality_gate_live_pass_total'] ?? 0),
+            'post_confirm_quality_gate_demo_total'      => (int)($liveIntentResult['post_confirm_quality_gate_demo_total']      ?? 0),
+            'post_confirm_quality_gate_reject_total'    => (int)($liveIntentResult['post_confirm_quality_gate_reject_total']    ?? 0),
+            'post_confirm_quality_gate_no_effect_total' => (int)($liveIntentResult['post_confirm_quality_gate_no_effect_total'] ?? 0),
+            // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
+            'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
+            'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
+            'wave_penalty_no_effect_total'     => (int)($liveIntentResult['wave_penalty_no_effect_total']     ?? 0),
+            // Ranking Boost layer diagnostics (bounded positive boost for strong/fresh/clean candidates)
+            'ranking_boost_total'              => (int)($liveIntentResult['ranking_boost_total']              ?? 0),
+            'ranking_boost_applied_total'      => (int)($liveIntentResult['ranking_boost_applied_total']      ?? 0),
+            'ranking_boost_no_effect_total'    => (int)($liveIntentResult['ranking_boost_no_effect_total']    ?? 0),
+            // Win Universe bonus layer diagnostics (soft priority bonus for qualified win-pool symbols)
+            'win_universe_bonus_total'                 => (int)($liveIntentResult['win_universe_bonus_total']                  ?? 0),
+            'win_universe_bonus_applied_total'         => (int)($liveIntentResult['win_universe_bonus_applied_total']          ?? 0),
+            'win_universe_bonus_no_effect_total'       => (int)($liveIntentResult['win_universe_bonus_no_effect_total']        ?? 0),
+            'win_universe_bonus_ranking_changed_total' => (int)($liveIntentResult['win_universe_bonus_ranking_changed_total']  ?? 0),
+            'win_universe_mode'                        => (string)($liveIntentResult['win_universe_mode']                     ?? 'shadow'),
+            'win_universe_mode_source'                 => (string)($liveIntentResult['win_universe_mode_source']              ?? 'config_defaults'),
+            'win_universe_mode_sync_ok'                => (bool)($liveIntentResult['win_universe_mode_sync_ok']               ?? true),
+            'win_universe_last_run_mode'               => $liveIntentResult['win_universe_last_run_mode']                     ?? null,
+            'win_universe_pool_size'                   => (int)($liveIntentResult['win_universe_pool_size']                   ?? 0),
+            'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
+            // Fast-coin long entry gate diagnostics
+            'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
+            'fast_coin_symbols'              => (string)($userLimits['fast_coin_symbols']              ?? ''),
+            'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
+            'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
+            'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
+            'fast_coin_gate_reason'          => $liveIntentResult['fast_coin_gate_reason']                ?? [],
+            'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
+            'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
+            'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
+            'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
+            'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
+            'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
+            // Fast-confirmed-slow exception path diagnostics
+            'fast_confirmed_slow_exception_used'            => (bool)($liveIntentResult['fast_confirmed_slow_exception_used']            ?? false),
+            'fast_confirmed_slow_exception_applied'         => (int)($liveIntentResult['fast_confirmed_slow_exception_applied']          ?? 0),
+            'fast_confirmed_slow_exception_live_pass_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_live_pass_total']   ?? 0),
+            'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
+            'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
+            'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
+            // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
+            'leverage_chain_config' => (static function (
+                array $userLimits,
+                array $profilesCfg
+            ): array {
+                $profileKey = (string)($profilesCfg['default_profile'] ?? '111');
+                $profile = (array)($profilesCfg['profiles'][$profileKey] ?? []);
+                $leverageMode   = (string)($userLimits['leverage_mode'] ?? 'auto');
+                $requestedManual = (int)($userLimits['manual_leverage'] ?? 3);
+                $requestedMax    = (int)($userLimits['max_leverage'] ?? 15);
+                $bootstrapMax    = (int)($userLimits['bootstrap_max_leverage'] ?? 3);
+                $profileMax      = (int)($profile['max_leverage'] ?? 5);
+                // Effective cap = whichever layer is most restrictive for the active mode
+                if ($leverageMode === 'manual') {
+                    $effectiveCap = $requestedMax;
+                    $effectiveCapLabel = 'max_leverage';
+                } else {
+                    $effectiveCap = min($profileMax, $requestedMax);
+                    $effectiveCapLabel = ($profileMax <= $requestedMax) ? 'profile_max' : 'max_leverage';
+                }
+                // risk_engine_cap: highest leverage the dynamic algorithm can return in normal mode
+                // (profile_max × 1, before volatility/corridor/reliability adjustments)
+                $riskEngineCap = ($leverageMode === 'manual') ? $requestedMax : $effectiveCap;
+                return [
+                    'leverage_mode'          => $leverageMode,
+                    'requested_manual'       => $requestedManual,
+                    'requested_max'          => $requestedMax,
+                    'bootstrap_max'          => $bootstrapMax,
+                    'profile_max'            => $profileMax,
+                    'risk_engine_cap'        => $riskEngineCap,
+                    'effective_cap'          => $effectiveCap,
+                    'effective_cap_label'    => $effectiveCapLabel,
+                    'manual_would_be_crushed' => ($leverageMode === 'manual' && $requestedManual > $requestedMax),
+                    'auto_crushed_by_profile' => ($leverageMode !== 'manual' && $profileMax < $requestedMax),
+                ];
+            })($userLimits, $profilesCfg),
         ];
 
         $this->state->writeJson('storage/last_run.json', $result);
@@ -949,7 +1209,7 @@ final class SmartBrainCore
      * @param array  $userLimits User limits from config
      * @return array Live stage audit result
      */
-    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits): array
+    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits, array $prices = []): array
     {
         $result = [
             'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
@@ -968,6 +1228,9 @@ final class SmartBrainCore
             'live_missing_risk_count' => 0,
             'live_missing_entry_count' => 0,
             'live_mode_filter_rejected_count' => 0,
+            // Live mode filter observability (req. WU-5 §7)
+            'live_mode_filter_used' => true,  // filter is always evaluated when live trading is enabled
+            'live_mode_filter_mode' => 'unknown', // updated below once selectionMode is resolved
             'live_invalid_risk_contract_count' => 0,
             'live_debug_preview' => [],
             // MAE adaptive stop runtime proof counters
@@ -994,6 +1257,18 @@ final class SmartBrainCore
             'short_enter_now_live_rejected_count' => 0,
             'short_enter_now_live_reject_reasons' => [],
             'short_enter_now_live_borderline_pass_count' => 0,
+            // Long enter_now live diagnostics (symmetric)
+            'long_enter_now_live_applied_count' => 0,
+            'long_enter_now_live_approved_count' => 0,
+            'long_enter_now_live_rejected_count' => 0,
+            // Long-path intent counters
+            'long_approved_count' => 0,
+            'long_intents_created_count' => 0,
+            // Long-path funnel rejection counters (per problem-statement requirement)
+            'long_quality_floor_reject_total' => 0,
+            'long_sniper_v3_live_rejected_count' => 0,
+            'long_passport_gate_reject_total' => 0,
+            'long_cycle_veto_total' => 0,
             // Manual blacklist diagnostics
             'manual_blacklist_active' => false,
             'manual_blacklist_count' => 0,
@@ -1004,6 +1279,7 @@ final class SmartBrainCore
             'passport_gate_passed_count' => 0,
             'passport_gate_rejected_count' => 0,
             'passport_gate_allow_live_count' => 0,
+            'passport_gate_bootstrap_live_count' => 0,
             'passport_gate_sim_only_count' => 0,
             'passport_gate_shadow_only_count' => 0,
             'passport_gate_reject_count' => 0,
@@ -1014,10 +1290,138 @@ final class SmartBrainCore
             'passport_gate_signal_blocked_by_passport_count' => 0,
             'passport_gate_reject_reason_distribution' => [],
             'passport_gate_rejected_preview' => [],
+            // Coin cycle decision debug observability (read-only, does not affect routing)
+            'cycle_debug_available_total' => 0,
+            'cycle_debug_missing_total' => 0,
+            'cycle_debug_low_confidence_total' => 0,
+            // Coin cycle model veto/demotion layer (Coin Core Step 11)
+            'cycle_model_veto_total' => 0,
+            'cycle_model_demote_demo_total' => 0,
+            'cycle_model_demote_skip_total' => 0,
+            'cycle_model_no_effect_total' => 0,
+            'cycle_model_unavailable_total' => 0,
+            // Coin cycle positive support layer counters (Coin Core Step 12)
+            'cycle_model_support_total'           => 0,
+            'cycle_model_support_live_total'      => 0,
+            'cycle_model_support_borderline_total' => 0,
+            'cycle_model_support_no_effect_total'  => 0,
+            // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
+            'cycle_model_support_preview'         => [],
+            // Coin cycle eligibility refinement counters (Coin Core Step 13)
+            'cycle_eligibility_refine_total'      => 0,
+            'cycle_eligibility_upgrade_total'     => 0,
+            'cycle_eligibility_downgrade_total'   => 0,
+            'cycle_eligibility_no_effect_total'   => 0,
+            'cycle_eligibility_unavailable_total' => 0,
             // Intent lifecycle diagnostics
             'lifecycle_counters' => [],
             'lifecycle_summary' => [],
             'intent_ttl_minutes' => SmartBrainConfig::LIVE_INTENT_TTL_MINUTES,
+            // Slot priority layer diagnostics (time-aware candidate ranking)
+            'slot_priority_used'                  => false,
+            'slot_priority_candidates_total'      => 0,
+            'slot_priority_won_total'             => 0,
+            'slot_priority_lost_total'            => 0,
+            'slot_priority_not_needed_total'      => 0,
+            'slot_priority_open_positions_count'  => 0,
+            'slot_priority_existing_active_slots' => 0,
+            'slot_priority_slots_available'       => 0,
+            'slot_priority_rejected_preview'      => [],
+            // Entry quality filter diagnostics (bounded entry-quality improvement layer)
+            'entry_quality_filter_total'          => 0,
+            'entry_quality_filter_reject_total'   => 0,
+            'entry_quality_filter_demo_total'     => 0,
+            'entry_quality_filter_no_effect_total' => 0,
+            'entry_quality_filter_rejected_preview' => [],
+            // Per-rule entry quality filter counters
+            'entry_filter_weak_stale_reject_total'     => 0,
+            'entry_filter_weak_structure_reject_total' => 0,
+            'entry_filter_weak_structure_demo_total'   => 0,
+            'entry_filter_late_pressure_reject_total'  => 0,
+            'entry_filter_weak_tail_reject_total'      => 0,
+            // Wave filter diagnostics (bounded wave amplitude/speed improvement layer)
+            'wave_filter_total'                => 0,
+            'wave_filter_reject_total'         => 0,
+            'wave_filter_demo_total'           => 0,
+            'wave_filter_no_effect_total'      => 0,
+            'wave_filter_rejected_preview'     => [],
+            'wave_filter_release_valve_used'   => false,
+            // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
+            'v2_cleanup_total'                 => 0,
+            'v2_cleanup_reject_total'          => 0,
+            'v2_cleanup_demo_total'            => 0,
+            'v2_cleanup_no_effect_total'       => 0,
+            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
+            'confirmation_total'               => 0,
+            'confirmation_confirmed_total'     => 0,
+            'confirmation_demo_total'          => 0,
+            'confirmation_reject_total'        => 0,
+            'confirmation_fakeout_total'       => 0,
+            'confirmation_expired_total'       => 0,
+            // Confirmation Layer observability: preview of all pending entries and their current state.
+            // Includes setup_detected, waiting, confirmed, fakeout, expired events this cycle.
+            'confirmation_state_preview'       => [],
+            // Side-separated V2 confirmation counters (short V2 = double_top_contextual_v2, long V2 = double_bottom_contextual_v2)
+            'short_v2_confirmation_total'          => 0,
+            'short_v2_confirmation_confirmed_total' => 0,
+            'short_v2_confirmation_demo_total'      => 0,
+            'short_v2_confirmation_reject_total'    => 0,
+            'short_v2_confirmation_fakeout_total'   => 0,
+            'short_v2_confirmation_expired_total'   => 0,
+            'long_v2_confirmation_total'           => 0,
+            'long_v2_confirmation_confirmed_total'  => 0,
+            'long_v2_confirmation_demo_total'       => 0,
+            'long_v2_confirmation_reject_total'     => 0,
+            'long_v2_confirmation_fakeout_total'    => 0,
+            'long_v2_confirmation_expired_total'    => 0,
+            // Post-confirm quality gate diagnostics (weak+normal long V2 only)
+            // Applied after confirmation_result=confirmed for double_bottom_contextual_v2 long
+            // signals with wave_amplitude_state=weak and wave_speed_state=normal.
+            'post_confirm_quality_gate_total'           => 0,
+            'post_confirm_quality_gate_applied'         => 0,
+            'post_confirm_quality_gate_used'            => false,
+            'post_confirm_quality_gate_live_pass_total' => 0,
+            'post_confirm_quality_gate_demo_total'      => 0,
+            'post_confirm_quality_gate_reject_total'    => 0,
+            'post_confirm_quality_gate_no_effect_total' => 0,
+            // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
+            'wave_penalty_total'               => 0,
+            'wave_penalty_applied_total'       => 0,
+            'wave_penalty_no_effect_total'     => 0,
+            // Ranking boost layer diagnostics (bounded positive boost for strong/fresh/clean candidates)
+            'ranking_boost_total'              => 0,
+            'ranking_boost_applied_total'      => 0,
+            'ranking_boost_no_effect_total'    => 0,
+            // Win Universe bonus layer diagnostics (soft priority bonus for qualified win-pool symbols)
+            'win_universe_bonus_total'              => 0,
+            'win_universe_bonus_applied_total'      => 0,
+            'win_universe_bonus_no_effect_total'    => 0,
+            'win_universe_bonus_ranking_changed_total' => 0,
+            'win_universe_mode'                     => 'shadow',
+            'win_universe_mode_source'              => 'config_defaults',
+            'win_universe_mode_sync_ok'             => true,
+            'win_universe_last_run_mode'            => null,
+            'win_universe_pool_size'                => 0,
+            'win_universe_bonus_preview'            => [],
+            // Fast-coin long entry gate diagnostics
+            'fast_coin_gate_used'              => false,
+            'fast_coin_gate_applied'           => 0,
+            'fast_coin_gate_total'             => 0,
+            'fast_coin_gate_reason'            => [],
+            'fast_coin_gate_live_pass_total'   => 0,
+            'fast_coin_gate_demo_total'        => 0,
+            'fast_coin_gate_reject_total'      => 0,
+            'fast_coin_gate_no_effect_total'   => 0,
+            'fast_coin_breakout_hold_ok_total' => 0,
+            'fast_coin_micro_accel_ok_total'   => 0,
+            // Fast-confirmed-slow exception path (narrow v2 quality-floor bypass for strong
+            // confirmed slow fast-coin long setups; fast_coin_gate still evaluates afterward)
+            'fast_confirmed_slow_exception_used'            => false,
+            'fast_confirmed_slow_exception_applied'         => 0,
+            'fast_confirmed_slow_exception_live_pass_total' => 0,
+            'fast_confirmed_slow_exception_demo_total'      => 0,
+            'fast_confirmed_slow_exception_reject_total'    => 0,
+            'fast_confirmed_slow_exception_no_effect_total' => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1036,6 +1440,9 @@ final class SmartBrainCore
         $selectionMode = (string)($liveConfig['live_signal_selection_mode'] ?? 'whitelist_only');
         $entryPolicy = (string)($liveConfig['live_entry_policy'] ?? 'enter_now');
         $reverseEnabled = (bool)($liveConfig['live_reverse_side_enabled'] ?? false);
+
+        // Update live_mode_filter_mode now that selectionMode is resolved
+        $result['live_mode_filter_mode'] = $selectionMode;
 
         // Load symbol intelligence lists for live selection filtering
         $whitelist = $this->loadSymbolList('whitelist.json');
@@ -1068,7 +1475,49 @@ final class SmartBrainCore
         $passportStrictMinPatternSuccess = (float)($userLimits['passport_gate_strict_min_pattern_success_rate'] ?? 0.35);
         $passports = [];
         $passportsDir = dirname($this->moduleBase) . '/coin_passport/storage/passports';
+
+        // Refresh cycle decision model into passport files before loading them (best-effort,
+        // non-fatal). This ensures coin_cycle_decision_model is present in passport files even
+        // if the coin_passport cron has not yet run since the passports were last rebuilt.
+        // Read-only observability only — does NOT affect routing decisions.
         if ($passportGateEnabled && is_dir($passportsDir)) {
+            try {
+                $cpLibFile = dirname($this->moduleBase) . '/coin_passport/lib/passport_engine.php';
+                if (is_file($cpLibFile)) {
+                    if (!class_exists('CoinPassportEngine', false)) {
+                        require_once $cpLibFile;
+                    }
+                    $cpEng = new CoinPassportEngine(
+                        $passportsDir,
+                        dirname($this->moduleBase) . '/trading_bot/storage',
+                        dirname($this->moduleBase) . '/ai_shadow/storage'
+                    );
+                    $cpRuntimeDir = dirname($this->moduleBase) . '/coin_passport/storage/runtime';
+                    @mkdir($cpRuntimeDir, 0755, true);
+                    $cpEng->projectCycleDecisionModelToPassports(
+                        $cpRuntimeDir . '/coin_cycle_decision_model_projection.json'
+                    );
+                    // Step 13: Apply cycle-aware eligibility refinement immediately after the
+                    // decision model is projected so Smart Brain reads already-refined passports.
+                    // Best-effort, non-fatal — failure leaves recommended_live_eligibility unchanged.
+                    try {
+                        $cpEng->applyCycleEligibilityRefinement(
+                            $cpRuntimeDir . '/coin_cycle_eligibility_refinement.json'
+                        );
+                    } catch (\Throwable $refineEx) {
+                        // non-fatal
+                    }
+                }
+            } catch (\Throwable $e) {
+                // non-fatal — passports load without cycle decision model
+            }
+        }
+
+        // Passports are loaded unconditionally when the directory exists.
+        // The debug block below reads them regardless of whether the passport gate
+        // is enforcing routing decisions. The gate enforcement block (further below)
+        // is still controlled by $passportGateEnabled.
+        if (is_dir($passportsDir)) {
             foreach (glob($passportsDir . '/*.json') ?: [] as $pFile) {
                 $raw = @file_get_contents($pFile);
                 $pData = $raw !== false ? @json_decode($raw, true) : null;
@@ -1079,6 +1528,96 @@ final class SmartBrainCore
                 }
             }
         }
+
+        // ── Win Universe pool pre-load (best-effort, non-fatal) ───────────────
+        // Reads win_universe_pool.json to support the Win Universe Bonus Layer below.
+        // Mode + bonus strength come from win_universe/storage/runtime/win_universe_user_config.json
+        // with fallback to win_universe/config/config.php defaults.
+        $wuWinPool           = [];
+        $wuMode              = 'shadow';
+        $wuBonusEnabled      = false;
+        $wuBonusStrength     = 0.5;
+        $wuPoolSize          = 0;
+        $wuMaxQualifiedRatio = 0.30; // safety cap: ignore bonus when >30% of seen qualifies
+        $wuModeSource        = 'config_defaults';
+        $wuLastRunMode       = null;
+        try {
+            $wuModuleBase = dirname($this->moduleBase) . '/win_universe';
+            // Load pool
+            $wuPoolPath = $wuModuleBase . '/storage/runtime/win_universe_pool.json';
+            if (is_file($wuPoolPath)) {
+                $wuPoolRaw = @file_get_contents($wuPoolPath);
+                if ($wuPoolRaw !== false && $wuPoolRaw !== '') {
+                    $wuPoolData = @json_decode($wuPoolRaw, true);
+                    if (is_array($wuPoolData) && isset($wuPoolData['win_pool']) && is_array($wuPoolData['win_pool'])) {
+                        foreach (array_keys($wuPoolData['win_pool']) as $wuSym) {
+                            $wuWinPool[strtoupper((string)$wuSym)] = true;
+                        }
+                        $wuPoolSize = count($wuWinPool);
+                    }
+                }
+            }
+            // Load config: same resolution order as WinUniverseService::loadConfig()
+            // Priority: win_universe_user_config.json → config/config.php defaults
+            $wuCfg        = [];
+            $wuModeSource = 'config_defaults';
+            $wuUserCfgPath = $wuModuleBase . '/storage/runtime/win_universe_user_config.json';
+            if (is_file($wuUserCfgPath)) {
+                $wuUserCfgRaw = @file_get_contents($wuUserCfgPath);
+                if ($wuUserCfgRaw !== false && $wuUserCfgRaw !== '') {
+                    $wuUserCfgData = @json_decode($wuUserCfgRaw, true);
+                    if (is_array($wuUserCfgData) && isset($wuUserCfgData['win_universe'])) {
+                        $wuCfg        = $wuUserCfgData['win_universe'];
+                        $wuModeSource = 'user_config';
+                    }
+                }
+            }
+            if (empty($wuCfg)) {
+                $wuDefaultCfgPath = $wuModuleBase . '/config/config.php';
+                if (is_file($wuDefaultCfgPath)) {
+                    $wuDefaultCfgLoaded = @include $wuDefaultCfgPath;
+                    if (is_array($wuDefaultCfgLoaded) && isset($wuDefaultCfgLoaded['win_universe'])) {
+                        $wuCfg = $wuDefaultCfgLoaded['win_universe'];
+                    }
+                }
+            }
+            $wuMode         = (string)($wuCfg['win_universe_mode']      ?? 'shadow');
+            $wuBonusEnabled = (bool)($wuCfg['priority_bonus_enabled']   ?? false);
+            $wuBonusStrength = min(1.0, max(0.0, (float)($wuCfg['priority_bonus_strength'] ?? 0.5)));
+            // Safety cap: if excessive_qualification_warning is set in win_universe_status.json, deactivate bonus
+            $wuStatusPath = $wuModuleBase . '/storage/runtime/win_universe_status.json';
+            $wuLastRunMode = null; // mode from Win Universe's last run (for sync check)
+            if (is_file($wuStatusPath)) {
+                $wuStatusRaw = @file_get_contents($wuStatusPath);
+                if ($wuStatusRaw !== false && $wuStatusRaw !== '') {
+                    $wuStatusData = @json_decode($wuStatusRaw, true);
+                    if (is_array($wuStatusData)) {
+                        if (!empty($wuStatusData['excessive_qualification_warning'])) {
+                            // Pool qualifies >30% of universe — treat bonus as inactive for safety
+                            $wuBonusEnabled = false;
+                        }
+                        $wuLastRunMode = $wuStatusData['mode'] ?? null;
+                    }
+                }
+            }
+        } catch (\Throwable $wuLoadEx) {
+            // non-fatal — bonus stays inactive
+        }
+        $result['win_universe_mode']            = $wuMode;
+        $result['win_universe_mode_source']     = $wuModeSource;
+        $result['win_universe_mode_sync_ok']    = ($wuLastRunMode === null || $wuLastRunMode === $wuMode);
+        $result['win_universe_last_run_mode']   = $wuLastRunMode;
+        $result['win_universe_pool_size']       = $wuPoolSize;
+
+        // ── Confirmation Layer pre-load ──────────────────────────────────────────
+        // Load persistent confirmation pending store (survives across cron cycles).
+        $confLayerEnabled        = (bool)($userLimits['confirmation_layer_enabled']         ?? false);
+        $confWaitCycles          = max(1, (int)($userLimits['confirmation_wait_cycles']      ?? 3));
+        $confReclaimTolPct       = max(0.0, (float)($userLimits['confirmation_reclaim_tolerance_pct'] ?? 0.005));
+        $confTargetPatterns      = (array)($userLimits['confirmation_target_patterns']       ?? ['double_top_contextual_v2']);
+        $confMaxAgeSeconds       = max(60, (int)($userLimits['confirmation_max_age_seconds'] ?? 480));
+        $confPending             = $this->state->readJson('storage/confirmation_pending.json', []);
+        $confNow                 = time();
 
         $intents = [];
 
@@ -1231,6 +1770,11 @@ final class SmartBrainCore
                 continue;
             }
 
+            // Record live_mode_filter outcome on the signal for downstream observability.
+            // live_mode_filter_passed = true means the candidate survived this gate.
+            $signal['live_mode_filter_passed'] = true;
+            $signal['live_mode_filter_mode']   = $selectionMode;
+
             // === VALIDATION GATE 5: Weak Entry Quality Filter (P3) ===
             // Reject late entries (signal age > threshold) with nuanced sub-reasons
             $signalCreatedTs = (int)($signal['created_ts'] ?? 0);
@@ -1299,6 +1843,94 @@ final class SmartBrainCore
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
             $v2QualityFloorEnabled = (bool)($userLimits['v2_live_quality_floor_enabled'] ?? true);
 
+            // ── Per-signal fast-coin diagnostics (initialised once per iteration) ──────
+            // Carried through to intent construction for audit trail.
+            $fcgDiagnostic = [
+                'fast_coin_gate_used'        => false,
+                'fast_coin_gate_applied'     => false,
+                'fast_coin_gate_result'      => null,
+                'fast_coin_gate_reason'      => [],
+                'fast_coin_breakout_hold_ok' => null,
+                'fast_coin_micro_accel_ok'   => null,
+            ];
+            $fastConfSlowExcDiagnostic = [
+                'fast_confirmed_slow_exception_used'    => false,
+                'fast_confirmed_slow_exception_applied' => false,
+                'fast_confirmed_slow_exception_reason'  => null,
+            ];
+
+            // ── Fast-confirmed-slow exception eligibility check ───────────────────────
+            // Evaluated BEFORE the v2 quality floor so that a clean confirmed-slow fast-coin
+            // long V2 setup can bypass an overly-broad floor rejection.
+            // Conditions (ALL must be true):
+            //   symbol in fast_coin_symbols, pattern = double_bottom_contextual_v2, side = long,
+            //   confirmation_result = confirmed, wave_speed_state = slow,
+            //   breakout hold ok (live price above breakout ref − buffer),
+            //   micro-acceleration ok (live price above breakout ref + micro_accel_min_pct).
+            // Bounded support thresholds (quality_score, signal_strength, scenario_score) are
+            // checked here; the fast_coin_gate will run its own quality check afterward.
+            $fastConfSlowExcWasApplied = false;
+            $fastCoinGateEnabledHere   = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
+            $fastConfSlowExcEnabled    = (bool)($userLimits['fast_confirmed_slow_exception_enabled'] ?? false);
+            // Internal: tracks whether exception conditions are met, so the v2 floor bypass can
+            // activate. Set separately from $fastConfSlowExcWasApplied (which only becomes true
+            // when the bypass is actually needed and used).
+            $fastConfSlowExcEligible   = false;
+
+            if ($fastCoinGateEnabledHere && $fastConfSlowExcEnabled
+                && $patternAlgo === 'double_bottom_contextual_v2'
+                && $side === 'long'
+                && (string)($signal['confirmation_result'] ?? '') === 'confirmed'
+                && (string)($signal['wave_speed_state'] ?? '') === 'slow'
+            ) {
+                $rawFastSymsExc    = (string)($userLimits['fast_coin_symbols'] ?? '');
+                $fastSymListExc    = array_filter(array_map('trim', explode(',', strtoupper($rawFastSymsExc))));
+                $isFastCoinExcSym  = !empty($fastSymListExc) && in_array(strtoupper($symbol), $fastSymListExc, true);
+
+                if ($isFastCoinExcSym) {
+                    $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'] = true;
+                    $result['fast_confirmed_slow_exception_used'] = true;
+
+                    // Compute breakout hold and micro-acceleration inline
+                    $fcExcPrice        = isset($prices[$symbol]) && $prices[$symbol] > 0.0 ? (float)$prices[$symbol] : 0.0;
+                    $fcExcZoneHigh     = (float)($signal['entry_zone_high'] ?? $signal['corridor_high'] ?? 0.0);
+                    $fcExcHoldBufPct   = max(0.0, (float)($userLimits['fast_coin_breakout_hold_buffer_pct'] ?? 0.002));
+                    $fcExcMicroAccPct  = max(0.0, (float)($userLimits['fast_coin_micro_accel_min_pct'] ?? 0.003));
+                    $fcExcBrkHoldOk    = true;
+                    $fcExcMicroAccOk   = true;
+                    if ($fcExcPrice > 0.0 && $fcExcZoneHigh > 0.0) {
+                        $fcExcBrkHoldOk  = ($fcExcPrice >= $fcExcZoneHigh * (1.0 - $fcExcHoldBufPct));
+                        $fcExcMicroAccOk = ($fcExcPrice >= $fcExcZoneHigh * (1.0 + $fcExcMicroAccPct));
+                    }
+
+                    if ($fcExcBrkHoldOk && $fcExcMicroAccOk) {
+                        // Breakout and micro-accel satisfied — check bounded support thresholds
+                        $excMinQuality  = (float)($userLimits['fast_confirmed_slow_v2_min_quality_score']   ?? 0.68);
+                        $excMinStrength = (float)($userLimits['fast_confirmed_slow_v2_min_signal_strength'] ?? 0.58);
+                        $excMinScenario = (float)($userLimits['fast_confirmed_slow_v2_min_scenario_score']  ?? 0.65);
+                        $excQuality     = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                        $excStrength    = (float)($signal['pattern_confidence'] ?? 0.0);
+                        $excScenario    = (float)($signal['v2_priority_score'] ?? 0.0);
+
+                        if ($excQuality >= $excMinQuality && $excStrength >= $excMinStrength && $excScenario >= $excMinScenario) {
+                            // All conditions met — eligible to bypass v2 floor if it would reject
+                            $fastConfSlowExcEligible = true;
+                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                'fast_confirmed_slow_v2_exception_eligible';
+                        } else {
+                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                'fast_confirmed_slow_v2_exc_thresholds_not_met';
+                            $result['fast_confirmed_slow_exception_no_effect_total']++;
+                        }
+                    } else {
+                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] = !$fcExcBrkHoldOk
+                            ? 'fast_confirmed_slow_exc_breakout_not_held'
+                            : 'fast_confirmed_slow_exc_micro_accel_missing';
+                        $result['fast_confirmed_slow_exception_no_effect_total']++;
+                    }
+                }
+            }
+
             if (($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') && $v2QualityFloorEnabled) {
                 $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
 
@@ -1306,43 +1938,74 @@ final class SmartBrainCore
                 $signalSide = strtolower(trim((string)($signal['side'] ?? '')));
                 $signalEntryAction = (string)($signal['entry_action'] ?? 'wait_retrace');
                 $isShortEnterNow = ($signalSide === 'short' && $signalEntryAction === 'enter_now');
+                $isLongEnterNow  = ($signalSide === 'long'  && $signalEntryAction === 'enter_now');
                 if ($isShortEnterNow) {
                     $result['short_enter_now_live_applied_count'] = ($result['short_enter_now_live_applied_count'] ?? 0) + 1;
+                }
+                if ($isLongEnterNow) {
+                    $result['long_enter_now_live_applied_count'] = ($result['long_enter_now_live_applied_count'] ?? 0) + 1;
                 }
 
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
                 if (!$v2FloorResult['eligible']) {
-                    $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
-                    // Track reject reasons in result
-                    foreach ($v2FloorResult['reject_reasons'] as $vr) {
-                        $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
-                            ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
-                    }
-                    // Record preview for diagnostics (first 10)
-                    if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
-                        $result['v2_live_quality_floor_rejected_preview'][] = [
-                            'symbol' => $symbol,
-                            'reject_reasons' => $v2FloorResult['reject_reasons'],
-                            'checked_values' => $v2FloorResult['checked_values'],
-                        ];
-                    }
-                    // Track short enter_now rejection with explicit reason
-                    if ($isShortEnterNow) {
-                        $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
+                    if ($fastConfSlowExcEligible) {
+                        // === FAST-CONFIRMED-SLOW EXCEPTION: bypass v2 floor rejection ===
+                        // The fast_coin_gate runs next and will apply its own quality check.
+                        $fastConfSlowExcWasApplied = true;
+                        $result['fast_confirmed_slow_exception_applied']++;
+                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'] = true;
+                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason']  =
+                            'fast_confirmed_slow_v2_exception_bypassed_floor';
+                        // Count as a floor pass so downstream diagnostics are correct
+                        $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                        if ($isLongEnterNow) {
+                            $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
+                        }
+                        // Fall through — do NOT rejectLiveSignal, do NOT continue
+                    } else {
+                        $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
+                        // Track reject reasons in result
                         foreach ($v2FloorResult['reject_reasons'] as $vr) {
-                            $result['short_enter_now_live_reject_reasons'][$vr] =
-                                ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
+                            $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
+                                ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
+                        }
+                        // Record preview for diagnostics (first 10)
+                        if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
+                            $result['v2_live_quality_floor_rejected_preview'][] = [
+                                'symbol' => $symbol,
+                                'reject_reasons' => $v2FloorResult['reject_reasons'],
+                                'checked_values' => $v2FloorResult['checked_values'],
+                            ];
+                        }
+                        // Track short/long enter_now rejection with explicit reason
+                        if ($isShortEnterNow) {
+                            $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
+                            foreach ($v2FloorResult['reject_reasons'] as $vr) {
+                                $result['short_enter_now_live_reject_reasons'][$vr] =
+                                    ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
+                            }
+                        }
+                        if ($isLongEnterNow) {
+                            $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
+                        }
+                        // Long-path funnel observability
+                        if ($signalSide === 'long') {
+                            $result['long_quality_floor_reject_total']++;
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
+                        continue;
+                    }
+                } else {
+                    $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                    // Track short/long enter_now quality floor pass
+                    if ($isShortEnterNow) {
+                        $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
+                        if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
+                            $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
                         }
                     }
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
-                    continue;
-                }
-                $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
-                // Track short enter_now quality floor pass
-                if ($isShortEnterNow) {
-                    $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
-                    if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
-                        $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
+                    if ($isLongEnterNow) {
+                        $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
                     }
                 }
             }
@@ -1375,6 +2038,10 @@ final class SmartBrainCore
                     }
                     $result['sniper_v3_live_rejected_count'] = ($result['sniper_v3_live_rejected_count'] ?? 0) + 1;
                     $result['sniper_v3_shadow_only_count'] = ($result['sniper_v3_shadow_only_count'] ?? 0) + 1;
+                    // Long-path funnel observability
+                    if ($side === 'long') {
+                        $result['long_sniper_v3_live_rejected_count']++;
+                    }
                     // Record preview for diagnostics (first 10)
                     if (count($result['sniper_v3_rejected_preview'] ?? []) < 10) {
                         $result['sniper_v3_rejected_preview'][] = [
@@ -1385,21 +2052,326 @@ final class SmartBrainCore
                             'checked_values' => $sniperFilterResult['checked_values'],
                             'threshold_source' => $sniperFilterResult['checked_values']['threshold_source'] ?? 'default_v3',
                             'short_v3_threshold_applied' => $sniperFilterResult['short_v3_threshold_applied'] ?? false,
+                            'long_v3_threshold_applied' => $sniperFilterResult['long_v3_threshold_applied'] ?? false,
                         ];
                     }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'sniper_v3_quality_filter', $selectionMode);
                     continue;
                 }
                 $result['sniper_v3_live_eligible_count'] = ($result['sniper_v3_live_eligible_count'] ?? 0) + 1;
-                // Track short V3 eligible separately
+                // Track short/long V3 eligible separately
                 if (!empty($sniperFilterResult['short_v3_threshold_applied'])) {
                     $result['sniper_v3_short_live_eligible_count'] = ($result['sniper_v3_short_live_eligible_count'] ?? 0) + 1;
                 }
+                if (!empty($sniperFilterResult['long_v3_threshold_applied'])) {
+                    $result['sniper_v3_long_live_eligible_count'] = ($result['sniper_v3_long_live_eligible_count'] ?? 0) + 1;
+                }
             }
+
+            // === FAST-COIN LONG ENTRY GATE ===
+            // Prevents raw impulse-chase entries on fast / impulse-sensitive long setups.
+            // Applied only when:
+            //   1. fast_coin_gate_enabled = true in userLimits
+            //   2. The signal's symbol is in the configured fast_coin_symbols list
+            //      (comma-separated; stored under userLimits['fast_coin_symbols']).
+            //   3. The signal is a long (double_bottom_contextual_v2 or _v3).
+            //
+            // Outcomes: live_pass → no change; demo → rejectLiveSignal (demoted);
+            //           reject → rejectLiveSignal (hard block).
+            // Gate is a no-op for shorts, non-fast symbols, and other patterns.
+            $fastCoinGateEnabled = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
+            if ($fastCoinGateEnabled && $side === 'long') {
+                $rawFastSymbols = (string)($userLimits['fast_coin_symbols'] ?? '');
+                $fastSymbolList = array_filter(array_map('trim', explode(',', strtoupper($rawFastSymbols))));
+                $isFastCoin = !empty($fastSymbolList) && in_array(strtoupper($symbol), $fastSymbolList, true);
+
+                if ($isFastCoin) {
+                    $fcgLivePrice = isset($prices[$symbol]) && $prices[$symbol] > 0.0 ? (float)$prices[$symbol] : 0.0;
+                    $fcgResult = SmartBrainConfig::evaluateFastCoinLongGate($signal, $userLimits, $fcgLivePrice);
+                    $result['fast_coin_gate_total']++;
+                    if ($fcgResult['gate_applied']) {
+                        $result['fast_coin_gate_used']  = true;
+                        $result['fast_coin_gate_applied']++;
+                        $fcgOutcome = $fcgResult['outcome'];
+                        $fcgRejectReasons = array_merge($fcgResult['reject_reasons'], $fcgResult['anti_patterns']);
+
+                        // Track per-eval breakout hold and micro-accel results
+                        if (!empty($fcgResult['breakout_hold_ok'])) {
+                            $result['fast_coin_breakout_hold_ok_total']++;
+                        }
+                        if (!empty($fcgResult['micro_accel_ok'])) {
+                            $result['fast_coin_micro_accel_ok_total']++;
+                        }
+
+                        if ($fcgOutcome === 'reject') {
+                            $result['fast_coin_gate_reject_total']++;
+                            $result['fast_coin_gate_reason'][] = [
+                                'symbol'           => $symbol,
+                                'outcome'          => 'reject',
+                                'reasons'          => $fcgRejectReasons,
+                                'breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
+                                'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                                'checked'          => $fcgResult['checked_values'] ?? [],
+                            ];
+                            if ($fastConfSlowExcWasApplied) {
+                                $result['fast_confirmed_slow_exception_reject_total']++;
+                                $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                    'fast_confirmed_slow_exc_gate_rejected';
+                            }
+                            $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_reject', $selectionMode);
+                            continue;
+                        }
+
+                        if ($fcgOutcome === 'demo') {
+                            $result['fast_coin_gate_demo_total']++;
+                            $result['fast_coin_gate_reason'][] = [
+                                'symbol'           => $symbol,
+                                'outcome'          => 'demo',
+                                'reasons'          => $fcgRejectReasons,
+                                'breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
+                                'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                                'checked'          => $fcgResult['checked_values'] ?? [],
+                            ];
+                            if ($fastConfSlowExcWasApplied) {
+                                $result['fast_confirmed_slow_exception_demo_total']++;
+                                $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                    'fast_confirmed_slow_exc_gate_demoted';
+                            }
+                            $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_demo', $selectionMode);
+                            continue;
+                        }
+
+                        // live_pass — gate satisfied, signal proceeds normally
+                        $result['fast_coin_gate_live_pass_total']++;
+                        if ($fastConfSlowExcWasApplied) {
+                            $result['fast_confirmed_slow_exception_live_pass_total']++;
+                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
+                                'fast_confirmed_slow_exc_gate_live_pass';
+                        }
+                        // Capture gate result for intent-level diagnostics
+                        $fcgDiagnostic = [
+                            'fast_coin_gate_used'        => true,
+                            'fast_coin_gate_applied'     => true,
+                            'fast_coin_gate_result'      => 'live_pass',
+                            'fast_coin_gate_reason'      => [],
+                            'fast_coin_breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
+                            'fast_coin_micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                        ];
+                    } else {
+                        // gate_applied = false: non-V2/V3 long on a fast coin — no effect
+                        $result['fast_coin_gate_no_effect_total']++;
+                        $fcgDiagnostic['fast_coin_gate_used'] = true;
+                    }
+                }
+            }
+
+            // === COIN CYCLE DECISION DEBUG (read-only observability, does not affect routing) ===
+            // Evaluated here — before the passport gate — so ALL evaluated signals are counted,
+            // including those that are later rejected/demoted by the gate. Counters reflect
+            // reality for every signal that reaches this point in the evaluation loop.
+            // Runs unconditionally: passport gate enforcement is separate (see below).
+            // cycle_decision_debug is only attached to the intent for approved signals below.
+            $cycleDecisionDebug = null;
+            $passportForDebug = $passports[strtoupper($symbol)] ?? null;
+            if ($passportForDebug !== null && is_array($passportForDebug['coin_cycle_decision_model'] ?? null)) {
+                $dm = $passportForDebug['coin_cycle_decision_model'];
+                $cycleDecisionDebug = [
+                    'available'                  => true,
+                    'model_state'                => $dm['decision_model_state'] ?? null,
+                    'model_confidence'           => $dm['decision_model_confidence'] ?? null,
+                    'model_readiness'            => $dm['decision_model_readiness'] ?? null,
+                    'model_actionability'        => $dm['decision_model_actionability'] ?? null,
+                    'model_risk_posture'         => $dm['decision_model_risk_posture'] ?? null,
+                    'model_hold_posture'         => $dm['decision_model_hold_posture'] ?? null,
+                    'model_stop_posture'         => $dm['decision_model_stop_posture'] ?? null,
+                    'model_live_bias'            => $dm['decision_model_live_bias'] ?? null,
+                    'model_demo_bias'            => $dm['decision_model_demo_bias'] ?? null,
+                    'model_shadow_bias'          => $dm['decision_model_shadow_bias'] ?? null,
+                    'model_skip_bias'            => $dm['decision_model_skip_bias'] ?? null,
+                    'model_warning_flag'         => $dm['decision_model_warning_flag'] ?? null,
+                    'model_warning_reason'       => $dm['decision_model_warning_reason'] ?? null,
+                    'model_low_confidence_flag'  => $dm['decision_model_low_confidence_flag'] ?? null,
+                    'model_low_confidence_reason' => $dm['decision_model_low_confidence_reason'] ?? null,
+                    'model_preferred_mode'       => $dm['decision_model_preferred_mode'] ?? null,
+                    'model_preferred_risk'       => $dm['decision_model_preferred_risk'] ?? null,
+                    'model_preferred_hold'       => $dm['decision_model_preferred_hold'] ?? null,
+                    'model_preferred_stop'       => $dm['decision_model_preferred_stop'] ?? null,
+                    'source_updated_at'          => $dm['updated_at'] ?? null,
+                ];
+                $result['cycle_debug_available_total']++;
+                if (!empty($dm['decision_model_low_confidence_flag'])) {
+                    $result['cycle_debug_low_confidence_total']++;
+                }
+            } else {
+                $cycleDecisionDebug = ['available' => false];
+                $result['cycle_debug_missing_total']++;
+            }
+
+            // === COIN CYCLE MODEL VETO LAYER (Coin Core Step 11) ===
+            // Repositioned before the passport gate so the veto layer runs for ALL
+            // quality-floor-passing candidates, not only the rare subset that also
+            // clears the passport gate.  Hard gates (passport, quality floors, late-entry,
+            // duplicate) remain intact and execute after this block.
+            // Bounded: may only demote/skip; cannot promote or bypass existing hard gates.
+            //
+            // === COIN CYCLE POSITIVE SUPPORT LAYER (Coin Core Step 12) ===
+            // Integrated after the veto conditions below.
+            // For condition 3 (non_live_bias soft veto): if the overall cycle model is
+            // explicitly favorable + actionable + no warnings, Step 12 support preserves
+            // live routing instead of demoting to demo ("borderline live" case).
+            // For no-veto signals: Step 12 records whether the cycle model actively
+            // supports the live candidate (cycle_model_support_live) or is neutral
+            // (cycle_model_support_no_effect).
+            // Bounded: support can only preserve/tag; cannot promote hard-rejected candidates.
+            $cycleModelUsed         = false;
+            $cycleModelVetoApplied  = false;
+            $cycleModelVetoReason   = null;
+            $cycleModelRouteBefore  = 'live';
+            // Step 12 support tracking variables
+            $cycleModelSupportUsed          = false;
+            $cycleModelSupportApplied       = false;
+            $cycleModelSupportReason        = null;
+            $cycleModelRouteBeforeSupport   = null;
+            $cycleModelRouteAfterSupport    = null;
+
+            if ($cycleDecisionDebug !== null && ($cycleDecisionDebug['available'] ?? false) === true) {
+                $cycleModelUsed  = true;
+                $cmState         = (string)($cycleDecisionDebug['model_state']         ?? 'unavailable');
+                $cmActionability = (string)($cycleDecisionDebug['model_actionability'] ?? 'non_actionable');
+                $cmRisk          = (string)($cycleDecisionDebug['model_risk_posture']  ?? 'unavailable');
+                $cmLiveBias      = (string)($cycleDecisionDebug['model_live_bias']     ?? 'non_live_bias');
+                $cmWarnFlag      = (bool)($cycleDecisionDebug['model_warning_flag']        ?? false);
+                $cmLowConf       = (bool)($cycleDecisionDebug['model_low_confidence_flag'] ?? false);
+
+                // Step 12: pre-compute support eligibility — explicit favorable conditions required.
+                // Used by condition 3 and the no-veto support evaluation below.
+                $isCycleSupportFavorable = (
+                    $cmState         === 'favorable'
+                    && $cmActionability === 'actionable'
+                    && $cmRisk        !== 'high_risk'
+                    && !$cmWarnFlag
+                    && !$cmLowConf
+                );
+
+                // Hard veto → skip: non_actionable AND high_risk together signal a clearly
+                // unfavorable entry window; skip is the appropriate outcome.
+                if ($cmActionability === 'non_actionable' && $cmRisk === 'high_risk') {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_veto_high_risk';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_skip_total']++;
+                    if ($side === 'long') {
+                        $result['long_cycle_veto_total']++;
+                    }
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_high_risk', $selectionMode);
+                    continue;
+                }
+
+                // Hard veto → skip: model explicitly non_actionable with state weak or unavailable
+                if ($cmActionability === 'non_actionable' && in_array($cmState, ['weak', 'unavailable'], true)) {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_veto_non_actionable';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_skip_total']++;
+                    if ($side === 'long') {
+                        $result['long_cycle_veto_total']++;
+                    }
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_non_actionable', $selectionMode);
+                    continue;
+                }
+
+                // Soft veto → demo: model has no live bias (would prefer demo/shadow).
+                // Step 12 override: when overall cycle conditions are explicitly favorable
+                // (state=favorable, actionable, no high_risk, no warnings, no low confidence),
+                // support preserves live routing rather than demoting — "borderline live" case.
+                if ($cmLiveBias === 'non_live_bias') {
+                    if ($isCycleSupportFavorable) {
+                        // Step 12 positive support: favorable overall state overrides non_live_bias
+                        $cycleModelSupportUsed         = true;
+                        $cycleModelSupportApplied      = true;
+                        $cycleModelSupportReason       = 'cycle_model_support_borderline_live';
+                        $cycleModelRouteBeforeSupport  = 'pending_demo_demotion';
+                        $cycleModelRouteAfterSupport   = 'live';
+                        $result['cycle_model_support_total']++;
+                        $result['cycle_model_support_borderline_total']++;
+                        // Do NOT continue — signal survives into passport gate
+                    } else {
+                        $cycleModelVetoApplied = true;
+                        $cycleModelVetoReason  = 'cycle_model_demote_demo';
+                        $result['cycle_model_veto_total']++;
+                        $result['cycle_model_demote_demo_total']++;
+                        if ($side === 'long') {
+                            $result['long_cycle_veto_total']++;
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
+                        continue;
+                    }
+                }
+
+                // Soft veto → demo: warning active AND low confidence together.
+                // Note: $isCycleSupportFavorable requires !$cmWarnFlag && !$cmLowConf, so a
+                // borderline-support bypass (above) can never also satisfy this condition.
+                if ($cmWarnFlag && $cmLowConf) {
+                    $cycleModelVetoApplied = true;
+                    $cycleModelVetoReason  = 'cycle_model_demote_demo';
+                    $result['cycle_model_veto_total']++;
+                    $result['cycle_model_demote_demo_total']++;
+                    if ($side === 'long') {
+                        $result['long_cycle_veto_total']++;
+                    }
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
+                    continue;
+                }
+
+                // No hard veto triggered — model conditions acceptable for live.
+                // Step 12: evaluate positive support for this viable candidate.
+                // (Borderline-bypass case already set $cycleModelSupportApplied above.)
+                if (!$cycleModelSupportApplied) {
+                    $cycleModelSupportUsed        = true;
+                    $cycleModelRouteBeforeSupport = 'live';
+                    $cycleModelRouteAfterSupport  = 'live';
+                    $result['cycle_model_support_total']++;
+                    if ($isCycleSupportFavorable) {
+                        $cycleModelSupportApplied = true;
+                        $cycleModelSupportReason  = 'cycle_model_support_live';
+                        $result['cycle_model_support_live_total']++;
+                    } else {
+                        $cycleModelSupportReason  = 'cycle_model_support_no_effect';
+                        $result['cycle_model_support_no_effect_total']++;
+                    }
+                }
+                $result['cycle_model_no_effect_total']++;
+            } else {
+                // Cycle model unavailable for this symbol — no veto applied
+                $result['cycle_model_unavailable_total']++;
+            }
+
+            // Step 12 support proof: record support evaluation before passport gate so the
+            // data survives even if the candidate is later rejected by a downstream gate.
+            if ($cycleModelSupportUsed && count($result['cycle_model_support_preview']) < 20) {
+                $result['cycle_model_support_preview'][] = [
+                    'symbol'                           => $symbol,
+                    'signal_id'                        => $signalId,
+                    'cycle_model_support_used'         => true,
+                    'cycle_model_support_applied'      => $cycleModelSupportApplied,
+                    'cycle_model_support_reason'       => $cycleModelSupportReason,
+                    'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                    'cycle_model_route_after_support'  => $cycleModelRouteAfterSupport,
+                ];
+            }
+
+            // Step 13: cycle eligibility refinement observability variables.
+            // Populated inside the passport gate when passport is found; remain null/false
+            // when passport is absent or refinement has not yet been applied.
+            $cycleRefUsed            = false;
+            $cycleRefApplied         = false;
+            $cycleRefReason          = null;
+            $passportEligBase        = null;
+            $passportEligAfterCycle  = null;
 
             // === COIN PASSPORT LIVE GATE ===
             // Brain reads Coin Passport before allowing live signal issuance.
-            // Gate result: allow_live | sim_only | shadow_only | reject
+            // Gate result: allow_live | bootstrap_live | sim_only | shadow_only | reject
             if ($passportGateEnabled) {
                 $result['passport_gate_applied_count']++;
 
@@ -1424,12 +2396,41 @@ final class SmartBrainCore
                 } else {
                     $passportEligibility  = (string)($passport['recommended_live_eligibility'] ?? 'sim_only');
                     $passportBlockReason  = (string)($passport['live_block_reason'] ?? '');
+                    // Detailed insufficiency reason (e.g. "insufficient_total_samples:1<10").
+                    // Present when the sim_only outcome came from the data-sufficiency check;
+                    // null/empty when the block came from a metric gate instead.
+                    $passportInsufReason  = (string)($passport['insufficient_data_reason'] ?? '');
                     $passportConfidence   = (string)($passport['data_confidence'] ?? 'none');
                     $passportCorridorP75  = (float)($passport['corridor_p75_roi'] ?? $passport['corridor_high_roi'] ?? 0.0);
                     $passportRunnerProb   = (float)($passport['runner_probability'] ?? 0.0);
                     $passportNoiseScore   = (float)($passport['noise_score'] ?? 1.0);
                     $pb                   = is_array($passport['pattern_behavior'] ?? null) ? $passport['pattern_behavior'] : [];
                     $passportV2Success    = is_float($pb['v2_success_rate'] ?? null) ? (float)$pb['v2_success_rate'] : null;
+
+                    // Step 13: Read cycle eligibility refinement fields written by
+                    // applyCycleEligibilityRefinement() (Coin Core Step 13).
+                    // recommended_live_eligibility already reflects the refined value when present.
+                    if (array_key_exists('cycle_refinement_applied', $passport)) {
+                        $cycleRefUsed           = true;
+                        $cycleRefApplied        = (bool)($passport['cycle_refinement_applied'] ?? false);
+                        $cycleRefReason         = ($passport['cycle_refinement_reason'] ?? null) ?: null;
+                        $passportEligBase       = ($passport['base_live_eligibility'] ?? null) ?: null;
+                        $passportEligAfterCycle = ($passport['cycle_refined_live_eligibility'] ?? null) ?: null;
+                        // Increment Step 13 counters
+                        $result['cycle_eligibility_refine_total']++;
+                        if ($cycleRefApplied && $passportEligBase !== null && $passportEligAfterCycle !== null) {
+                            $eligOrder = ['shadow_only' => 0, 'sim_only' => 1, 'bootstrap_live' => 2, 'allow_live' => 3];
+                            if (($eligOrder[$passportEligAfterCycle] ?? 1) > ($eligOrder[$passportEligBase] ?? 1)) {
+                                $result['cycle_eligibility_upgrade_total']++;
+                            } else {
+                                $result['cycle_eligibility_downgrade_total']++;
+                            }
+                        } else {
+                            $result['cycle_eligibility_no_effect_total']++;
+                        }
+                    } else {
+                        $result['cycle_eligibility_unavailable_total']++;
+                    }
 
                     // Track low-confidence passports regardless of eligibility decision
                     if ($passportConfidence === 'none' || $passportConfidence === 'low') {
@@ -1470,9 +2471,33 @@ final class SmartBrainCore
                         $signal['passport_regime_health'] = $passport['market_regime_health_score'] ?? null;
                         $result['passport_gate_passed_count']++;
                         $result['passport_gate_allow_live_count']++;
+                    } elseif ($passportEligibility === 'bootstrap_live') {
+                        // bootstrap_live: 24h evidence is present but thin, or 7d context limited.
+                        // All metric gates passed — live orders are permitted at reduced confidence.
+                        // Smart Brain surfaces the bootstrap state explicitly so observers can
+                        // distinguish it from a full allow_live.
+                        $signal['passport_gate_result']           = 'bootstrap_live';
+                        $signal['passport_gate_bootstrap']        = true;
+                        $signal['passport_gate_bootstrap_reason'] = $passportBlockReason;
+                        $signal['passport_corridor_p75']          = $passportCorridorP75;
+                        $signal['passport_runner_prob']           = $passportRunnerProb;
+                        $signal['passport_noise_score']           = $passportNoiseScore;
+                        $signal['passport_regime_health']         = $passport['market_regime_health_score'] ?? null;
+                        // Compact gate observability fields
+                        $signal['passport_gate_state']            = 'bootstrap_live';
+                        $signal['passport_gate_decision']         = 'pass_bootstrap';
+                        $signal['passport_gate_demote_reason_detail'] = $passportBlockReason ?: null;
+                        // Fresh-window counters for downstream inspection
+                        $signal['passport_gate_samples_24h']     = (int)($passport['recent_samples_24h'] ?? 0);
+                        $signal['passport_gate_samples_7d']      = (int)($passport['recent_samples_7d']  ?? 0);
+                        $result['passport_gate_passed_count']++;
+                        $result['passport_gate_bootstrap_live_count']++;
                     } elseif ($passportEligibility === 'reject') {
                         // Hard reject — coin explicitly blocked
                         $result['passport_gate_signal_blocked_by_passport_count']++;
+                        if ($side === 'long') {
+                            $result['long_passport_gate_reject_total']++;
+                        }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_reject:' . $passportBlockReason, $selectionMode);
                         $result['passport_gate_rejected_count']++;
                         $result['passport_gate_reject_count']++;
@@ -1480,19 +2505,45 @@ final class SmartBrainCore
                             ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: 'reject'] ?? 0) + 1;
                         if (count($result['passport_gate_rejected_preview']) < 10) {
                             $result['passport_gate_rejected_preview'][] = [
-                                'symbol'        => $symbol,
-                                'eligibility'   => $passportEligibility,
-                                'block_reason'  => $passportBlockReason,
-                                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                                'symbol'                           => $symbol,
+                                'eligibility'                      => $passportEligibility,
+                                'block_reason'                     => $passportBlockReason,
+                                'pattern_algorithm'                => (string)($signal['pattern_algorithm'] ?? ''),
+                                // Step 12: cycle support fields for cross-reference
+                                'cycle_model_support_used'         => $cycleModelSupportUsed,
+                                'cycle_model_support_applied'      => $cycleModelSupportApplied,
+                                'cycle_model_support_reason'       => $cycleModelSupportReason,
+                                'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                                'cycle_model_route_after_support'  => $cycleModelRouteAfterSupport,
+                                // Step 13: cycle eligibility refinement fields
+                                'passport_cycle_refinement_used'     => $cycleRefUsed,
+                                'passport_cycle_refinement_applied'  => $cycleRefApplied,
+                                'passport_cycle_refinement_reason'   => $cycleRefReason,
+                                'passport_eligibility_before_cycle'  => $passportEligBase,
+                                'passport_eligibility_after_cycle'   => $passportEligAfterCycle,
                             ];
                         }
                         continue;
                     } else {
-                        // sim_only / shadow_only — demote, do not issue live
+                        // sim_only / shadow_only — demote, do not issue live.
+                        // passport_gate_demote:sim_only is produced only for these states.
+                        // bootstrap_live is explicitly handled above and does NOT reach this branch.
                         $result['passport_gate_signal_blocked_by_passport_count']++;
+                        if ($side === 'long') {
+                            $result['long_passport_gate_reject_total']++;
+                        }
                         $signal['passport_gate_result']    = $passportEligibility;
                         $signal['passport_gate_demoted']   = true;
                         $signal['passport_block_reason']   = $passportBlockReason;
+                        $signal['passport_gate_state']     = $passportEligibility;
+                        $signal['passport_gate_decision']  = 'demoted';
+                        // Surface the actual insufficiency detail so observers can distinguish
+                        // e.g. stale_24h from metric-gate failures without reading passport files.
+                        if ($passportInsufReason !== '') {
+                            $signal['passport_gate_demote_reason_detail'] = $passportInsufReason;
+                        } elseif ($passportBlockReason !== '') {
+                            $signal['passport_gate_demote_reason_detail'] = $passportBlockReason;
+                        }
                         $result['passport_gate_demoted_to_sim_count']++;
                         if ($passportEligibility === 'sim_only') {
                             $result['passport_gate_sim_only_count']++;
@@ -1503,10 +2554,23 @@ final class SmartBrainCore
                             ($result['passport_gate_reject_reason_distribution'][$passportBlockReason ?: $passportEligibility] ?? 0) + 1;
                         if (count($result['passport_gate_rejected_preview']) < 10) {
                             $result['passport_gate_rejected_preview'][] = [
-                                'symbol'        => $symbol,
-                                'eligibility'   => $passportEligibility,
-                                'block_reason'  => $passportBlockReason,
-                                'pattern_algorithm' => (string)($signal['pattern_algorithm'] ?? ''),
+                                'symbol'                           => $symbol,
+                                'eligibility'                      => $passportEligibility,
+                                'block_reason'                     => $passportBlockReason,
+                                'insuf_reason'                     => $passportInsufReason ?: null,
+                                'pattern_algorithm'                => (string)($signal['pattern_algorithm'] ?? ''),
+                                // Step 12: cycle support fields for cross-reference
+                                'cycle_model_support_used'         => $cycleModelSupportUsed,
+                                'cycle_model_support_applied'      => $cycleModelSupportApplied,
+                                'cycle_model_support_reason'       => $cycleModelSupportReason,
+                                'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                                'cycle_model_route_after_support'  => $cycleModelRouteAfterSupport,
+                                // Step 13: cycle eligibility refinement fields
+                                'passport_cycle_refinement_used'     => $cycleRefUsed,
+                                'passport_cycle_refinement_applied'  => $cycleRefApplied,
+                                'passport_cycle_refinement_reason'   => $cycleRefReason,
+                                'passport_eligibility_before_cycle'  => $passportEligBase,
+                                'passport_eligibility_after_cycle'   => $passportEligAfterCycle,
                             ];
                         }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_demote:' . $passportEligibility, $selectionMode);
@@ -1514,6 +2578,845 @@ final class SmartBrainCore
                     }
                 }
             }
+
+            // === ENTRY QUALITY FILTER (Bounded Entry-Quality Layer) ===
+            // Runs AFTER all hard gates pass. Rejects structurally poor entry setups
+            // before a live intent is created. Does NOT bypass passport/cycle/late-entry.
+            // Rules are conservative — each rule requires two weak indicators together.
+            {
+                $eqFilterEnabled = (bool)($userLimits['entry_quality_filter_enabled'] ?? true);
+                $eqFilterApplied  = false;
+                $eqFilterReason   = null;
+
+                // Freshness state (for observability and rule use)
+                $eqSignalAge      = max(0, (int)(time() - (int)($signal['created_ts'] ?? time())));
+                $eqLateLimitSec   = max(60, (int)($userLimits['late_entry_max_minutes'] ?? 15) * 60);
+                $eqFreshnessRatio = $eqLateLimitSec > 0 ? ($eqSignalAge / $eqLateLimitSec) : 0.0;
+                if ($eqFreshnessRatio <= 0.33) {
+                    $eqFreshnessState = 'fresh';
+                } elseif ($eqFreshnessRatio <= 0.66) {
+                    $eqFreshnessState = 'aging';
+                } else {
+                    $eqFreshnessState = 'stale';
+                }
+
+                // Stretch state from corridor_width (for observability and rule use).
+                // Thresholds align with Rule 2 (overstretched = >= 0.25, wide = >= 0.15).
+                $eqCorridorWidth = (float)($signal['corridor_width'] ?? 0.0);
+                if ($eqCorridorWidth >= 0.25) {
+                    $eqStretchState = 'overstretched';
+                } elseif ($eqCorridorWidth >= 0.15) {
+                    $eqStretchState = 'wide';
+                } else {
+                    $eqStretchState = 'normal';
+                }
+
+                if ($eqFilterEnabled) {
+                    $eqEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                    $eqHoldQuality  = (float)($signal['hold_quality_score']  ?? 0.0);
+                    $eqPatternConf  = (float)($signal['pattern_confidence']  ?? $signal['confirmation_score'] ?? 0.0);
+                    // confidence_score: confirmation_score with pattern_confidence as fallback
+                    $eqConfScore    = (float)($signal['confirmation_score']  ?? $signal['pattern_confidence'] ?? 0.0);
+                    $eqEntryAction  = (string)($signal['entry_action']       ?? 'wait_retrace');
+                    $eqCmAvailable  = ($cycleDecisionDebug['available'] ?? false) === true;
+                    $eqCmState      = $eqCmAvailable ? (string)($cycleDecisionDebug['model_state']        ?? '') : '';
+                    $eqCmRisk       = $eqCmAvailable ? (string)($cycleDecisionDebug['model_risk_posture'] ?? '') : '';
+                    // Soft-demote flag: when true the filter outcome is counted as demo_total
+                    // (conceptually "would go to demo") rather than a hard reject.
+                    $eqIsDemote     = false;
+
+                    $result['entry_quality_filter_total']++;
+
+                    // Rule 1: weak_structure_reject (HARD reject — quality floor)
+                    // Raised to 0.45 so clearly weak signals are removed before learning
+                    // overhead is paid. Low confidence doubles down on reject.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.45
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'weak_structure_reject';
+                        $result['entry_filter_weak_structure_reject_total']++;
+                    }
+
+                    // Rule 1b: weak_structure (demo or reject based on confidence)
+                    // quality in [0.45, 0.50) AND confidence < 0.55 = borderline weak.
+                    // If confidence is also very low (< 0.45) bias toward reject rather
+                    // than demo — low-confidence borderline signals have poor learning value.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.50
+                        && $eqConfScore    < 0.55
+                    ) {
+                        $eqFilterApplied = true;
+                        // Very low confidence → hard reject; otherwise → demo, but guard against overflow
+                        $demoOverflow = ($result['entry_quality_filter_demo_total'] ?? 0) > 4;
+                        if ($eqConfScore < 0.45 || $demoOverflow) {
+                            $eqIsDemote     = false;
+                            $eqFilterReason = 'weak_structure_reject';
+                            $result['entry_filter_weak_structure_reject_total']++;
+                        } else {
+                            $eqIsDemote     = true;
+                            $eqFilterReason = 'weak_structure_demo';
+                            $result['entry_filter_weak_structure_demo_total']++;
+                        }
+                    }
+
+                    // Rule 2: weak_stale_reject (HARD reject)
+                    // Signal is BOTH weak (low quality + low signal/confidence strength)
+                    // AND stale/aging. Low learning value → hard reject, not demo.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.45
+                        && ($eqPatternConf < 0.50 || $eqConfScore < 0.50)
+                        && $eqFreshnessState !== 'fresh'
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = false;
+                        $eqFilterReason  = 'weak_stale_reject';
+                        $result['entry_filter_weak_stale_reject_total']++;
+                    }
+
+                    // Rule 3: late_pressure_reject — metric-based, fires even when signal is fresh.
+                    // Targets signals where signal_strength and confidence are both sub-threshold
+                    // while quality is not high enough to compensate. Must trigger BEFORE live
+                    // intent creation. No staleness requirement — catches late/degraded candidates
+                    // regardless of age.
+                    if (!$eqFilterApplied
+                        && $eqPatternConf  < 0.55   // signal_strength weak
+                        && $eqConfScore    < 0.60   // confidence weak
+                        && $eqEntryQuality < 0.60   // quality not high enough to compensate
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = false;
+                        $eqFilterReason  = 'late_pressure_reject';
+                        $result['entry_filter_late_pressure_reject_total']++;
+                    }
+
+                    // Rule 3b: staleness-based late pressure (HARD reject / conditional demo)
+                    // Hard late: enter_now past the confirmation window OR stale freshness.
+                    // Only clearly strong signals are exempt (quality >= 0.78 AND conf >= 0.70).
+                    // Soft late: aging signals default to REJECT. Demo only if unusually strong
+                    // (quality >= 0.70 AND pattern_conf >= 0.65) — high learning value edge case.
+                    $eqLateEnterNowMaxSec = max(120, (int)($userLimits['entry_quality_late_enter_now_max_minutes'] ?? 8) * 60);
+                    $eqIsStrongSignal     = ($eqEntryQuality >= 0.78 && $eqPatternConf >= 0.70);
+                    $eqIsHighValueLate    = ($eqEntryQuality >= 0.70 && $eqPatternConf >= 0.65);
+                    $eqIsHardLate         = ($eqEntryAction === 'enter_now' && $eqSignalAge > $eqLateEnterNowMaxSec)
+                                        || ($eqFreshnessState === 'stale');
+                    $eqIsSoftLate         = ($eqFreshnessState === 'aging' && !$eqIsStrongSignal);
+                    if (!$eqFilterApplied && $eqIsHardLate && !$eqIsStrongSignal) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'late_pressure_reject';
+                        $result['entry_filter_late_pressure_reject_total']++;
+                    } elseif (!$eqFilterApplied && $eqIsSoftLate) {
+                        $eqFilterApplied = true;
+                        // Default soft-late to reject; only demo if unusually high-value
+                        if ($eqIsHighValueLate) {
+                            $eqIsDemote     = true;
+                            $eqFilterReason = 'late_pressure_reject';
+                        } else {
+                            $eqIsDemote     = false;
+                            $eqFilterReason = 'late_pressure_reject';
+                            $result['entry_filter_late_pressure_reject_total']++;
+                        }
+                    }
+
+                    // Rule 4: entry_quality_overstretched (HARD reject)
+                    // Price too far from zone (corridor >= 0.25). Overstretch is a dominant reject reason.
+                    // To pass, signal must be ALL three: strong quality (>= 0.75), strong confidence
+                    // (>= 0.68), AND fresh. Any other overstretched signal is rejected.
+                    if (!$eqFilterApplied
+                        && $eqCorridorWidth >= 0.25
+                        && !($eqEntryQuality >= 0.75 && $eqPatternConf >= 0.68 && $eqFreshnessState === 'fresh')
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqFilterReason  = 'entry_quality_overstretched';
+                    }
+
+                    // Rule 5: entry_quality_poor_actionability (soft demote → demo)
+                    // Cycle model: weak/unavailable state + below-average entry quality.
+                    if (!$eqFilterApplied
+                        && $eqCmAvailable
+                        && in_array($eqCmState, ['weak', 'unavailable'], true)
+                        && $eqEntryQuality < 0.55
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = true;
+                        $eqFilterReason  = 'entry_quality_poor_actionability';
+                    }
+
+                    // Rule 6: weak_tail_reject — fallback to guarantee minimum filter effect.
+                    // If no other rule fired, reject the absolute lowest quality tail signals.
+                    // Threshold (< 0.38) targets the bottom 10–20% of candidates without
+                    // collapsing live flow. Prevents "no-op filter" runs.
+                    if (!$eqFilterApplied
+                        && $eqEntryQuality < 0.38
+                    ) {
+                        $eqFilterApplied = true;
+                        $eqIsDemote      = false;
+                        $eqFilterReason  = 'weak_tail_reject';
+                        $result['entry_filter_weak_tail_reject_total']++;
+                    }
+
+                    if ($eqFilterApplied) {
+                        if ($eqIsDemote) {
+                            $result['entry_quality_filter_demo_total']++;
+                        } else {
+                            $result['entry_quality_filter_reject_total']++;
+                        }
+                        if (count($result['entry_quality_filter_rejected_preview']) < 10) {
+                            $result['entry_quality_filter_rejected_preview'][] = [
+                                'symbol'              => $symbol,
+                                'side'                => $side,
+                                'pattern_algorithm'   => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'       => $eqFilterReason,
+                                'filter_outcome'      => $eqIsDemote ? 'demote' : 'reject',
+                                'entry_quality_score' => $eqEntryQuality,
+                                'hold_quality_score'  => $eqHoldQuality,
+                                'pattern_confidence'  => $eqPatternConf,
+                                'confidence_score'    => $eqConfScore,
+                                'signal_age_seconds'  => $eqSignalAge,
+                                'freshness_state'     => $eqFreshnessState,
+                                'stretch_state'       => $eqStretchState,
+                                'corridor_width'      => $eqCorridorWidth,
+                                'entry_action'        => $eqEntryAction,
+                            ];
+                        }
+                        if (count($result['live_debug_preview']) < 10) {
+                            $result['live_debug_preview'][] = [
+                                'symbol'              => $symbol,
+                                'side'                => $side,
+                                'outcome'             => $eqIsDemote ? 'entry_filter_demote' : 'entry_filter_reject',
+                                'reason'              => $eqFilterReason,
+                                'entry_quality_score' => $eqEntryQuality,
+                                'hold_quality_score'  => $eqHoldQuality,
+                                'pattern_confidence'  => $eqPatternConf,
+                                'confidence_score'    => $eqConfScore,
+                                'freshness_state'     => $eqFreshnessState,
+                                'signal_age_seconds'  => $eqSignalAge,
+                            ];
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $eqFilterReason, $selectionMode);
+                        continue;
+                    }
+
+                    $result['entry_quality_filter_no_effect_total']++;
+                }
+
+                // Capture filter state for intent-level observability (attached to intent below)
+                $eqFilterResult = [
+                    'entry_quality_filter_used'     => $eqFilterEnabled,
+                    'entry_quality_filter_applied'  => $eqFilterApplied,
+                    'entry_quality_filter_reason'   => $eqFilterReason,
+                    'entry_quality_freshness_state' => $eqFreshnessState,
+                    'entry_quality_stretch_state'   => $eqStretchState,
+                ];
+            }
+            // === END ENTRY QUALITY FILTER ===
+
+            // === WAVE FILTER (Bounded Wave Amplitude/Speed Layer — soft mode) ===
+            // Runs after entry quality filter. Targets narrow low-amplitude / slow-wave candidates.
+            // Uses existing signal data only. Does NOT bypass passport/cycle/slot gates.
+            // soft mode: thresholds relaxed so filter is a secondary quality layer, not a primary
+            //   blocker. Hard reject reserved ONLY for weak+slow without quality bypass. All other
+            //   cases demote to demo or pass (no_effect). Strong/fresh signals always survive.
+            {
+                $wfEnabled  = (bool)($userLimits['wave_filter_enabled'] ?? true);
+                $wfApplied  = false;
+                $wfReason   = null;
+                $wfIsDemote = false;
+
+                // Wave amplitude: soft-mode thresholds — fewer signals classified as 'weak'.
+                // strong requires corridor >= 0.14 or roi >= 0.015 (was 0.18/0.018).
+                $wfInitialRoi = (float)($signal['initial_roi'] ?? $signal['entry_roi'] ?? 0.0);
+                if ($wfInitialRoi >= 0.015 || $eqCorridorWidth >= 0.14) {
+                    $wfAmplitudeState = 'strong';
+                } elseif ($wfInitialRoi >= 0.007 || $eqCorridorWidth >= 0.08) {
+                    $wfAmplitudeState = 'acceptable';
+                } else {
+                    $wfAmplitudeState = 'weak';
+                }
+
+                // Wave speed: soft-mode lower bound for 'normal' raised to 0.38 (was 0.50)
+                // so fewer signals fall into 'slow'. fast threshold unchanged at 0.68.
+                $wfTrendScore = (float)($signal['trend_match_score'] ?? 0.0);
+                $wfVolatility = (float)($signal['volatility']        ?? 0.0);
+                $wfVolNorm    = min(1.0, $wfVolatility / 0.005);
+                $wfSpeedProxy = ($wfTrendScore * 0.7 + $wfVolNorm * 0.3);
+                if ($wfSpeedProxy >= 0.68) {
+                    $wfSpeedState = 'fast';
+                } elseif ($wfSpeedProxy >= 0.38) {
+                    $wfSpeedState = 'normal';
+                } else {
+                    $wfSpeedState = 'slow';
+                }
+
+                // Signal quality helpers for exception gates.
+                // $eqFreshnessState is always computed above (outside the eq-filter enabled block).
+                $wfEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                $wfPatternConf  = (float)($signal['pattern_confidence']  ?? $signal['confirmation_score'] ?? 0.0);
+                // Strong-fresh exception: weak amplitude CAN pass when signal is high quality + fresh.
+                // Speed restriction removed (was also requiring fast) — high quality fresh signals
+                // must always survive wave filter regardless of speed state.
+                $wfStrongFreshExcept     = ($wfEntryQuality >= 0.68 && $wfPatternConf >= 0.60
+                                            && $eqFreshnessState === 'fresh');
+                // High-quality-fresh exception: slow speed + strong amplitude can pass when
+                // high quality AND fresh (strong breakout in a slow market).
+                $wfHighQualityFreshExcept = ($wfEntryQuality >= 0.68 && $wfPatternConf >= 0.62
+                                            && $eqFreshnessState === 'fresh');
+                // Rule 1 excellent escape: weak+slow signal with good quality + fresh → pass entirely.
+                // Prevents over-rejection when the entire pool is classified as weak+slow.
+                $wfRule1ExcellentEscape = ($wfEntryQuality >= 0.72 && $wfPatternConf >= 0.64
+                                           && $eqFreshnessState === 'fresh');
+                // Rule 1 soft escape: weak+slow signal → demote, not reject, when signal has
+                // reasonable quality OR is fresh with acceptable confidence.
+                // OR logic ensures most weak+slow signals demote instead of hard-reject.
+                $wfRule1SoftEscape = ($wfEntryQuality >= 0.60
+                                      || ($wfPatternConf >= 0.55 && $eqFreshnessState === 'fresh'));
+
+                if ($wfEnabled) {
+                    $result['wave_filter_total']++;
+
+                    // Rule 1: weak amplitude + slow speed → HARD reject with quality exceptions.
+                    // Excellent quality + fresh: pass entirely (release valve for over-filtered pools).
+                    // Good quality + fresh: demote to demo (not hard reject).
+                    // All others: hard reject (primary reject source for narrow+slow candidates).
+                    if (!$wfApplied
+                        && $wfAmplitudeState === 'weak'
+                        && $wfSpeedState === 'slow'
+                        && !$wfRule1ExcellentEscape
+                    ) {
+                        $wfApplied  = true;
+                        $wfIsDemote = $wfRule1SoftEscape; // demote if good quality, reject if poor
+                        $wfReason   = 'wave_filter_low_amplitude_slow_wave';
+                    }
+                    // else: $wfRule1ExcellentEscape → pass through (wfApplied stays false)
+
+                    // Rule 2: weak amplitude (normal or fast speed) → default to demote.
+                    // Exception: strong signal + high quality + fresh → allow pass (no_effect).
+                    // Speed requirement removed from exception: high quality fresh signals survive.
+                    if (!$wfApplied && $wfAmplitudeState === 'weak') {
+                        if (!$wfStrongFreshExcept) {
+                            $wfApplied  = true;
+                            $wfIsDemote = true;
+                            $wfReason   = 'wave_filter_low_amplitude';
+                        }
+                        // else: strong+high quality+fresh exception — pass (no filter)
+                    }
+
+                    // Rule 3: slow speed + acceptable amplitude → demote.
+                    // No exception — acceptable amplitude + slow speed is weak market structure.
+                    if (!$wfApplied
+                        && $wfSpeedState === 'slow'
+                        && $wfAmplitudeState === 'acceptable'
+                    ) {
+                        $wfApplied  = true;
+                        $wfIsDemote = true;
+                        $wfReason   = 'wave_filter_slow_wave';
+                    }
+
+                    // Rule 4: slow speed + strong amplitude → demote unless truly high quality + fresh.
+                    // Prevents silent pass on slow-moving markets even when amplitude looks strong.
+                    if (!$wfApplied
+                        && $wfSpeedState === 'slow'
+                        && $wfAmplitudeState === 'strong'
+                        && !$wfHighQualityFreshExcept
+                    ) {
+                        $wfApplied  = true;
+                        $wfIsDemote = true;
+                        $wfReason   = 'wave_filter_slow_wave_strong_amp';
+                    }
+
+                    if ($wfApplied && !$wfIsDemote) {
+                        // Hard reject: only triggered when BOTH weak amplitude AND slow speed
+                        // (Rule 1 without a quality escape). Signal is removed from the live pool.
+                        $result['wave_filter_reject_total']++;
+                        if (count($result['wave_filter_rejected_preview']) < 10) {
+                            $result['wave_filter_rejected_preview'][] = [
+                                'symbol'               => $symbol,
+                                'side'                 => $side,
+                                'pattern_algorithm'    => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'        => $wfReason,
+                                'filter_outcome'       => 'reject',
+                                'wave_amplitude_state' => $wfAmplitudeState,
+                                'wave_speed_state'     => $wfSpeedState,
+                                'corridor_width'       => $eqCorridorWidth,
+                                'trend_match_score'    => $wfTrendScore,
+                                'volatility'           => $wfVolatility,
+                            ];
+                        }
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $wfReason, $selectionMode);
+                        continue;
+                    }
+
+                    if ($wfApplied && $wfIsDemote) {
+                        // Soft demote: single-condition cases (only-weak OR only-slow) and
+                        // Rule 1 quality escapes. Signal is tagged for observability but is
+                        // NOT removed from the live pool — it proceeds as a live candidate.
+                        $result['wave_filter_demo_total']++;
+                        if (count($result['wave_filter_rejected_preview']) < 10) {
+                            $result['wave_filter_rejected_preview'][] = [
+                                'symbol'               => $symbol,
+                                'side'                 => $side,
+                                'pattern_algorithm'    => (string)($signal['pattern_algorithm'] ?? ''),
+                                'filter_reason'        => $wfReason,
+                                'filter_outcome'       => 'demote',
+                                'wave_amplitude_state' => $wfAmplitudeState,
+                                'wave_speed_state'     => $wfSpeedState,
+                                'corridor_width'       => $eqCorridorWidth,
+                                'trend_match_score'    => $wfTrendScore,
+                                'volatility'           => $wfVolatility,
+                            ];
+                        }
+                        // fall through — signal continues to approved list
+                    } else {
+                        $result['wave_filter_no_effect_total']++;
+                    }
+                }
+
+                // Capture filter state for intent-level observability
+                $wfFilterResult = [
+                    'wave_filter_used'        => $wfEnabled,
+                    'wave_filter_applied'     => $wfApplied,
+                    'wave_filter_reason'      => $wfReason,
+                    'wave_amplitude_state'    => $wfAmplitudeState,
+                    'wave_speed_state'        => $wfSpeedState,
+                    'wave_filter_soft_mode'   => true,
+                ];
+            }
+            // === END WAVE FILTER ===
+
+            // === V2 CLEANUP FILTER ===
+            // Stricter quality tightening for V2 contextual patterns only.
+            // Runs after the general wave filter. Targets weak+slow V2 candidates that
+            // the wave filter's soft-mode demote still lets through, as well as
+            // medium-quality V2 signals that fall below V2-specific tighter floors.
+            // Does NOT touch V3, non-V2 patterns, or global wave filter logic.
+            {
+                $v2cPatternAlgo = (string)($signal['pattern_algorithm'] ?? '');
+                $isV2Pattern    = ($v2cPatternAlgo === 'double_bottom_contextual_v2'
+                                   || $v2cPatternAlgo === 'double_top_contextual_v2');
+
+                $v2cApplied     = false;
+                $v2cReason      = '';
+                $v2cQualityBand = 'none';
+                $v2cWaveState   = '';
+
+                if ($isV2Pattern) {
+                    $result['v2_cleanup_total']++;
+
+                    // Wave states already computed by wave filter block above (always available).
+                    $v2cAmpState   = $wfAmplitudeState;
+                    $v2cSpeedState = $wfSpeedState;
+                    $v2cWaveState  = $v2cAmpState . '+' . $v2cSpeedState;
+
+                    // Quality metrics for V2 cleanup exception gate.
+                    $v2cEntryQuality = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                    $v2cPatternConf  = (float)($signal['pattern_confidence'] ?? 0.0);
+                    $v2cConfScore    = (float)($signal['confirmation_score'] ?? 0.0);
+                    $v2cSignalStr    = (float)($signal['reclaim_strength_score'] ?? 0.0);
+
+                    // Classify quality band for V2 (tighter than wave filter exception thresholds).
+                    if ($v2cEntryQuality >= 0.72 && $v2cPatternConf >= 0.64 && $v2cConfScore >= 0.68) {
+                        $v2cQualityBand = 'high';
+                    } elseif ($v2cEntryQuality >= 0.58 && $v2cPatternConf >= 0.52) {
+                        $v2cQualityBand = 'medium';
+                    } else {
+                        $v2cQualityBand = 'low';
+                    }
+
+                    // Strong exception: a V2 weak+slow may survive only when signal is clearly
+                    // strong across entry quality, pattern confidence, confirmation, AND signal strength.
+                    $v2cStrongException = ($v2cEntryQuality >= 0.72
+                                          && $v2cPatternConf >= 0.64
+                                          && $v2cConfScore   >= 0.68
+                                          && $v2cSignalStr   >= 0.60);
+
+                    // Rule A: V2 weak+slow → reject unless strong exception passes.
+                    if ($v2cAmpState === 'weak' && $v2cSpeedState === 'slow') {
+                        $v2cApplied = true;
+                        if ($v2cStrongException) {
+                            // Passes with strong exception — tag as demo-tier, allow through.
+                            $v2cReason = 'v2_cleanup_weak_slow_strong_exception';
+                            $result['v2_cleanup_demo_total']++;
+                        } else {
+                            // No exception — reject from live pool.
+                            $v2cReason = 'v2_cleanup_weak_slow_rejected';
+                            $result['v2_cleanup_reject_total']++;
+                            $this->rejectLiveSignal($result, $symbol, $signalId, $v2cReason, $selectionMode);
+                            continue;
+                        }
+                    }
+
+                    // Rule B: V2 medium quality band → apply V2-specific tighter live floor.
+                    // Reject only when BOTH entry quality AND pattern confidence are below V2 floor.
+                    // AND logic keeps this bounded — a strong confidence OR strong EQ rescues the signal.
+                    // Only applies when Rule A did not already fire.
+                    if (!$v2cApplied && $v2cQualityBand === 'medium') {
+                        $v2cMediumLiveFloorConf = (float)($userLimits['v2_cleanup_medium_min_conf'] ?? 0.57);
+                        $v2cMediumLiveFloorEq   = (float)($userLimits['v2_cleanup_medium_min_eq']   ?? 0.60);
+                        if ($v2cPatternConf < $v2cMediumLiveFloorConf && $v2cEntryQuality < $v2cMediumLiveFloorEq) {
+                            $v2cApplied = true;
+                            $v2cReason  = 'v2_cleanup_medium_quality_tightened';
+                            $result['v2_cleanup_reject_total']++;
+                            $this->rejectLiveSignal($result, $symbol, $signalId, $v2cReason, $selectionMode);
+                            continue;
+                        }
+                    }
+
+                    // Rule C: V2 low quality band → reject unconditionally.
+                    if (!$v2cApplied && $v2cQualityBand === 'low') {
+                        $v2cApplied = true;
+                        $v2cReason  = 'v2_cleanup_low_quality_rejected';
+                        $result['v2_cleanup_reject_total']++;
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $v2cReason, $selectionMode);
+                        continue;
+                    }
+
+                    if (!$v2cApplied) {
+                        $result['v2_cleanup_no_effect_total']++;
+                    }
+                }
+
+                // Capture V2 cleanup state for intent-level observability.
+                $v2cFilterResult = [
+                    'v2_cleanup_used'         => $isV2Pattern,
+                    'v2_cleanup_applied'      => $v2cApplied,
+                    'v2_cleanup_reason'       => $v2cReason,
+                    'v2_cleanup_wave_state'   => $v2cWaveState,
+                    'v2_cleanup_quality_band' => $v2cQualityBand,
+                ];
+            }
+            // === END V2 CLEANUP FILTER ===
+
+            // === CONFIRMATION LAYER ===
+            // Post-pattern wait window for targeted patterns before allowing live entry.
+            // V2 rollout scope: double_top_contextual_v2 short, double_bottom_contextual_v2 long.
+            // Does NOT touch V3 or any other pattern.
+            // Direction is derived from pattern name: double_top → short, double_bottom → long.
+            $confLayerResult = [
+                'confirmation_layer_used'       => false,
+                'confirmation_setup_detected'   => false,
+                'confirmation_wait_cycles_used' => 0,
+                'confirmation_result'           => 'not_applicable',
+                'confirmation_reason'           => '',
+                'confirmation_side'             => $side,
+            ];
+
+            // Derive the expected side from pattern name so double_top always maps to short
+            // and double_bottom always maps to long, without hardcoding per-call.
+            $confPatternAlgoKey = (string)($signal['pattern_algorithm'] ?? '');
+            $confExpectedSide   = str_contains($confPatternAlgoKey, 'double_top')    ? 'short'
+                : (str_contains($confPatternAlgoKey, 'double_bottom') ? 'long' : '');
+
+            if ($confLayerEnabled
+                && $confExpectedSide !== ''
+                && in_array($confPatternAlgoKey, $confTargetPatterns, true)
+                && $side === $confExpectedSide
+            ) {
+                $confLayerResult['confirmation_layer_used'] = true;
+                $result['confirmation_total']++;
+
+                // Side-separated counter key: short_v2 for double_top short, long_v2 for double_bottom long.
+                $confSideCounterKey = ($confPatternAlgoKey === 'double_top_contextual_v2'    && $side === 'short') ? 'short_v2'
+                    : (($confPatternAlgoKey === 'double_bottom_contextual_v2' && $side === 'long')  ? 'long_v2' : '');
+                if ($confSideCounterKey !== '') {
+                    $result[$confSideCounterKey . '_confirmation_total']++;
+                }
+
+                // Build a precise lineage key: prefer signal_id (stable identity) when it is
+                // a real upstream ID (not a fallback we generated ourselves this run).
+                // Fallback: stable zone-hash anchored to setup geometry + side so a new setup
+                // at a different price level or opposite side gets its own slot.
+                $confZoneHigh = (float)($signal['entry_zone_high'] ?? 0.0);
+                $confZoneLow  = (float)($signal['entry_zone_low']  ?? 0.0);
+                $patternAlgoConf = $confPatternAlgoKey;
+                if ($signalIdSource === 'original' && $signalId !== '') {
+                    $confKey = 'sid_' . $signalId;
+                } else {
+                    $zoneHash = substr(md5($symbol . '|' . $patternAlgoConf . '|' . $side . '|' . $confZoneHigh . '|' . $confZoneLow), 0, 12);
+                    $confKey = $symbol . '_' . $patternAlgoConf . '_' . $side . '_' . $zoneHash;
+                }
+
+                // Current live price for continuation proof.
+                $currentLivePrice = (float)($prices[$symbol] ?? 0.0);
+
+                if (!isset($confPending[$confKey])) {
+                    // First time seeing this lineage → record setup, hold this cycle.
+                    $confPending[$confKey] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'conf_key'          => $confKey,
+                        'setup_detected_at' => date('c'),
+                        'setup_ts'          => $confNow,
+                        'cycles_seen'       => 1,
+                        'setup_zone_high'   => $confZoneHigh,
+                        'setup_zone_low'    => $confZoneLow,
+                        'setup_live_price'  => $currentLivePrice,
+                    ];
+                    $confLayerResult['confirmation_setup_detected'] = true;
+                    $confLayerResult['confirmation_result']         = 'setup_detected';
+                    $confLayerResult['confirmation_reason']         = 'first_detection_hold';
+                    $confLayerResult['confirmation_wait_cycles_used'] = 1;
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'setup_detected',
+                        'result'            => 'setup_detected',
+                        'reason'            => 'first_detection_hold',
+                        'wait_cycles_used'  => 1,
+                        'setup_zone_high'   => $confZoneHigh,
+                        'setup_zone_low'    => $confZoneLow,
+                        'live_price'        => $currentLivePrice,
+                    ];
+                    // Skip to next signal — do not create a live intent this cycle.
+                    continue;
+                }
+
+                // Seen before: increment cycle count and check fakeout / continuation / confirmation.
+                $confPending[$confKey]['cycles_seen']++;
+                $cyclesSeen = (int)$confPending[$confKey]['cycles_seen'];
+                $confLayerResult['confirmation_wait_cycles_used'] = $cyclesSeen;
+
+                $setupZoneHigh = (float)($confPending[$confKey]['setup_zone_high'] ?? 0.0);
+                $setupZoneLow  = (float)($confPending[$confKey]['setup_zone_low']  ?? 0.0);
+
+                if ($side === 'short') {
+                    // Fakeout check for short: if current entry_zone_high drifted significantly
+                    // above the setup zone high, the top was reclaimed → fakeout.
+                    $fakeoutThreshold = $setupZoneHigh > 0.0
+                        ? $setupZoneHigh * (1.0 + $confReclaimTolPct)
+                        : 0.0;
+                    $isFakeout = ($fakeoutThreshold > 0.0 && $confZoneHigh > $fakeoutThreshold);
+                    $fakeoutReason = 'zone_high_reclaimed_above_setup';
+
+                    // Continuation proof for short: price must be strictly below setup zone high.
+                    $hasContinuation = ($currentLivePrice > 0.0 && $setupZoneHigh > 0.0)
+                        ? ($currentLivePrice < $setupZoneHigh)
+                        : false;
+                    $continuationReason    = 'wait_cycles_and_downside_continuation';
+                    $noContinuationReason  = 'no_downside_continuation_at_expiry';
+                } else {
+                    // Fakeout check for long: if current entry_zone_low drifted significantly
+                    // below the setup zone low, the bottom was reclaimed → fakeout.
+                    $fakeoutThreshold = $setupZoneLow > 0.0
+                        ? $setupZoneLow * (1.0 - $confReclaimTolPct)
+                        : 0.0;
+                    $isFakeout = ($fakeoutThreshold > 0.0 && $confZoneLow < $fakeoutThreshold);
+                    $fakeoutReason = 'zone_low_reclaimed_below_setup';
+
+                    // Continuation proof for long: price must be strictly above setup zone low.
+                    $hasContinuation = ($currentLivePrice > 0.0 && $setupZoneLow > 0.0)
+                        ? ($currentLivePrice > $setupZoneLow)
+                        : false;
+                    $continuationReason    = 'wait_cycles_and_upside_continuation';
+                    $noContinuationReason  = 'no_upside_continuation_at_expiry';
+                }
+
+                if ($isFakeout) {
+                    // Fakeout detected — remove from pending, route to demo.
+                    unset($confPending[$confKey]);
+                    $confLayerResult['confirmation_result'] = 'fakeout';
+                    $confLayerResult['confirmation_reason'] = $fakeoutReason;
+                    $result['confirmation_fakeout_total']++;
+                    $result['confirmation_demo_total']++;
+                    if ($confSideCounterKey !== '') {
+                        $result[$confSideCounterKey . '_confirmation_fakeout_total']++;
+                        $result[$confSideCounterKey . '_confirmation_demo_total']++;
+                    }
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'fakeout',
+                        'result'            => 'fakeout',
+                        'reason'            => $fakeoutReason,
+                        'wait_cycles_used'  => $cyclesSeen,
+                        'setup_zone_high'   => $setupZoneHigh,
+                        'setup_zone_low'    => $setupZoneLow,
+                        'current_zone_high' => $confZoneHigh,
+                        'current_zone_low'  => $confZoneLow,
+                        'live_price'        => $currentLivePrice,
+                    ];
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_fakeout', $selectionMode);
+                    continue;
+                }
+
+                if ($cyclesSeen >= $confWaitCycles) {
+                    // Enough cycles elapsed without fakeout — require explicit continuation proof
+                    // in the intended direction. Do NOT auto-confirm on wait-cycle expiry alone.
+                    if ($hasContinuation) {
+                        // Confirmed: wait elapsed AND price moved in the intended direction.
+                        unset($confPending[$confKey]);
+                        $confLayerResult['confirmation_result'] = 'confirmed';
+                        $confLayerResult['confirmation_reason'] = $continuationReason;
+                        $result['confirmation_confirmed_total']++;
+                        if ($confSideCounterKey !== '') {
+                            $result[$confSideCounterKey . '_confirmation_confirmed_total']++;
+                        }
+                        $result['confirmation_state_preview'][] = [
+                            'symbol'            => $symbol,
+                            'pattern_algorithm' => $patternAlgoConf,
+                            'side'              => $side,
+                            'state'             => 'confirmed',
+                            'result'            => 'confirmed',
+                            'reason'            => $continuationReason,
+                            'wait_cycles_used'  => $cyclesSeen,
+                            'setup_zone_high'   => $setupZoneHigh,
+                            'setup_zone_low'    => $setupZoneLow,
+                            'live_price'        => $currentLivePrice,
+                        ];
+                        // Fall through — signal proceeds to live intent.
+                    } else {
+                        // Wait elapsed but no continuation proof — reject (not fakeout).
+                        // Prefer demo on soft rollout; remove from pending to unblock next fresh setup.
+                        unset($confPending[$confKey]);
+                        $confLayerResult['confirmation_result'] = 'reject';
+                        $confLayerResult['confirmation_reason'] = $noContinuationReason;
+                        $result['confirmation_reject_total']++;
+                        $result['confirmation_demo_total']++;
+                        if ($confSideCounterKey !== '') {
+                            $result[$confSideCounterKey . '_confirmation_reject_total']++;
+                            $result[$confSideCounterKey . '_confirmation_demo_total']++;
+                        }
+                        $result['confirmation_state_preview'][] = [
+                            'symbol'            => $symbol,
+                            'pattern_algorithm' => $patternAlgoConf,
+                            'side'              => $side,
+                            'state'             => 'reject',
+                            'result'            => 'reject',
+                            'reason'            => $noContinuationReason,
+                            'wait_cycles_used'  => $cyclesSeen,
+                            'setup_zone_high'   => $setupZoneHigh,
+                            'setup_zone_low'    => $setupZoneLow,
+                            'live_price'        => $currentLivePrice,
+                        ];
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_no_continuation', $selectionMode);
+                        continue;
+                    }
+                } else {
+                    // Still waiting: hold this cycle.
+                    $confLayerResult['confirmation_result'] = 'waiting';
+                    $confLayerResult['confirmation_reason'] = 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen);
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'waiting',
+                        'result'            => 'waiting',
+                        'reason'            => 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen),
+                        'wait_cycles_used'  => $cyclesSeen,
+                        'cycles_needed'     => $confWaitCycles,
+                        'setup_zone_high'   => $setupZoneHigh,
+                        'setup_zone_low'    => $setupZoneLow,
+                        'live_price'        => $currentLivePrice,
+                    ];
+                    continue;
+                }
+            }
+            // === END CONFIRMATION LAYER ===
+
+            // === POST-CONFIRM QUALITY GATE (weak+normal long V2) ===
+            // Runs ONLY when all five conditions are true:
+            //   1. pattern_algorithm = double_bottom_contextual_v2
+            //   2. side = long
+            //   3. confirmation_result = confirmed
+            //   4. wave_amplitude_state = weak
+            //   5. wave_speed_state = normal
+            // Uses a bounded multi-signal gate: at least min_signals_pass of three primary
+            // score checks must pass. Signals that fail are demoted to demo (safe fallback —
+            // not hard reject) so the funnel stays alive for strong confirmed long V2.
+            {
+                $pcGateEnabled = (bool)($userLimits['post_confirm_wn_long_v2_gate_enabled'] ?? true);
+                $pcGateResult  = [
+                    'post_confirm_quality_gate_used'    => false,
+                    'post_confirm_quality_gate_applied' => false,
+                    'post_confirm_quality_gate_reason'  => '',
+                    'post_confirm_quality_gate_outcome' => 'not_applicable',
+                    'post_confirm_quality_gate_result'  => 'not_applicable',
+                    'post_confirm_quality_gate_inputs'  => null,
+                ];
+
+                $pcIsTarget = ($pcGateEnabled
+                    && $confPatternAlgoKey === 'double_bottom_contextual_v2'
+                    && $side === 'long'
+                    && $confLayerResult['confirmation_result'] === 'confirmed'
+                    && isset($wfAmplitudeState)
+                    && $wfAmplitudeState === 'weak'
+                    && isset($wfSpeedState)
+                    && $wfSpeedState === 'normal'
+                );
+
+                // total / no_effect only count when the gate actually evaluates a signal
+                // (pcIsTarget = true). Non-targeted signals do not update any gate counter,
+                // which prevents no_effect > 0 while total stays 0.
+                if ($pcIsTarget) {
+                    $result['post_confirm_quality_gate_total']++;
+                    $result['post_confirm_quality_gate_used'] = true;
+                    $pcGateResult['post_confirm_quality_gate_used'] = true;
+
+                    $pcMinEq   = (float)($userLimits['post_confirm_wn_long_v2_min_entry_quality']      ?? 0.58);
+                    $pcMinCf   = (float)($userLimits['post_confirm_wn_long_v2_min_corridor_fit']       ?? 0.52);
+                    $pcMinTm   = (float)($userLimits['post_confirm_wn_long_v2_min_trend_match']        ?? 0.48);
+                    $pcMinPc   = (float)($userLimits['post_confirm_wn_long_v2_min_pattern_confidence'] ?? 0.52);
+                    $pcMinPass = (int)($userLimits['post_confirm_wn_long_v2_min_signals_pass']         ?? 2);
+
+                    $pcEq = (float)($signal['entry_quality_score']  ?? 0.0);
+                    $pcCf = (float)($signal['corridor_fit_score']   ?? 0.0);
+                    $pcTm = (float)($signal['trend_match_score']    ?? 0.0);
+                    $pcPc = (float)($signal['pattern_confidence']   ?? 0.0);
+
+                    $pcPass = 0;
+                    if ($pcEq >= $pcMinEq) { $pcPass++; }
+                    if ($pcCf >= $pcMinCf) { $pcPass++; }
+                    if ($pcTm >= $pcMinTm) { $pcPass++; }
+
+                    $pcPatternConfPass = ($pcPc >= $pcMinPc);
+                    $pcGateFail = ($pcPass < $pcMinPass || !$pcPatternConfPass);
+
+                    // Compact inputs snapshot for per-intent diagnostics.
+                    $pcGateResult['post_confirm_quality_gate_inputs'] = [
+                        'entry_quality_score'    => $pcEq,
+                        'corridor_fit_score'     => $pcCf,
+                        'trend_match_score'      => $pcTm,
+                        'pattern_confidence'     => $pcPc,
+                        'min_entry_quality'      => $pcMinEq,
+                        'min_corridor_fit'       => $pcMinCf,
+                        'min_trend_match'        => $pcMinTm,
+                        'min_pattern_confidence' => $pcMinPc,
+                        'signals_passed'         => $pcPass,
+                        'min_signals_pass'       => $pcMinPass,
+                        'pattern_conf_pass'      => $pcPatternConfPass,
+                    ];
+
+                    if ($pcGateFail) {
+                        $pcFailReason = !$pcPatternConfPass
+                            ? 'post_confirm_wn_long_v2_pattern_confidence_below_floor'
+                            : 'post_confirm_wn_long_v2_multi_signal_below_floor';
+                        $result['post_confirm_quality_gate_applied']++;
+                        $result['post_confirm_quality_gate_demo_total']++;
+                        $pcGateResult['post_confirm_quality_gate_applied'] = true;
+                        $pcGateResult['post_confirm_quality_gate_reason']  = $pcFailReason;
+                        $pcGateResult['post_confirm_quality_gate_outcome'] = 'demo';
+                        $pcGateResult['post_confirm_quality_gate_result']  = 'demoted_to_demo';
+                        // Prefer demo (not hard reject) as safe fallback.
+                        // Signal is tagged for observability and removed from live flow.
+                        $this->rejectLiveSignal($result, $symbol, $signalId, $pcFailReason, $selectionMode);
+                        continue;
+                    }
+
+                    // Gate passed — strong enough to proceed as live.
+                    // no_effect increments here (gate evaluated, routing unchanged).
+                    $result['post_confirm_quality_gate_live_pass_total']++;
+                    $result['post_confirm_quality_gate_no_effect_total']++;
+                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'live_pass';
+                    $pcGateResult['post_confirm_quality_gate_result']  = 'live_pass';
+                } else {
+                    // Gate not applicable for this signal — no counter updates.
+                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'not_applicable';
+                    $pcGateResult['post_confirm_quality_gate_result']  = 'not_applicable';
+                }
+            }
+            // === END POST-CONFIRM QUALITY GATE ===
 
             // === APPROVED: build bot-ready live intent ===
 
@@ -1620,6 +3523,9 @@ final class SmartBrainCore
 
             // Increment approved count only after bot-ready validation passes
             $result['approved_count']++;
+            if ($side === 'long') {
+                $result['long_approved_count']++;
+            }
 
             $intent = [
                 'schema_version' => 'live_intent_v1',
@@ -1680,6 +3586,85 @@ final class SmartBrainCore
                 $intent['passport_regime_health']   = $signal['passport_regime_health'] ?? null;
             }
 
+            // Attach read-only cycle decision debug snapshot (observability only, no routing effect)
+            if ($cycleDecisionDebug !== null) {
+                $intent['cycle_decision_debug'] = $cycleDecisionDebug;
+            }
+
+            // Attach cycle model veto layer observability fields (Coin Core Step 11)
+            $intent['cycle_model_used']        = $cycleModelUsed;
+            $intent['cycle_model_veto_applied'] = $cycleModelVetoApplied;
+            $intent['cycle_model_veto_reason']  = $cycleModelVetoReason;
+            $intent['cycle_model_route_before'] = $cycleModelRouteBefore;
+            $intent['cycle_model_route_after']  = 'live';
+
+            // Attach cycle positive support layer observability fields (Coin Core Step 12)
+            $intent['cycle_model_support_used']          = $cycleModelSupportUsed;
+            $intent['cycle_model_support_applied']       = $cycleModelSupportApplied;
+            $intent['cycle_model_support_reason']        = $cycleModelSupportReason;
+            $intent['cycle_model_route_before_support']  = $cycleModelRouteBeforeSupport;
+            $intent['cycle_model_route_after_support']   = $cycleModelRouteAfterSupport;
+
+            // Attach cycle eligibility refinement observability fields (Coin Core Step 13)
+            $intent['passport_cycle_refinement_used']    = $cycleRefUsed;
+            $intent['passport_cycle_refinement_applied'] = $cycleRefApplied;
+            $intent['passport_cycle_refinement_reason']  = $cycleRefReason;
+            $intent['passport_eligibility_before_cycle'] = $passportEligBase;
+            $intent['passport_eligibility_after_cycle']  = $passportEligAfterCycle;
+
+            // Attach entry quality filter observability fields
+            $intent['entry_quality_filter_used']     = $eqFilterResult['entry_quality_filter_used'];
+            $intent['entry_quality_filter_applied']  = $eqFilterResult['entry_quality_filter_applied'];
+            $intent['entry_quality_filter_reason']   = $eqFilterResult['entry_quality_filter_reason'];
+            $intent['entry_quality_freshness_state'] = $eqFilterResult['entry_quality_freshness_state'];
+            $intent['entry_quality_stretch_state']   = $eqFilterResult['entry_quality_stretch_state'];
+
+            // Attach wave filter observability fields
+            $intent['wave_filter_used']        = $wfFilterResult['wave_filter_used'];
+            $intent['wave_filter_applied']     = $wfFilterResult['wave_filter_applied'];
+            $intent['wave_filter_reason']      = $wfFilterResult['wave_filter_reason'];
+            $intent['wave_amplitude_state']    = $wfFilterResult['wave_amplitude_state'];
+            $intent['wave_speed_state']        = $wfFilterResult['wave_speed_state'];
+            $intent['wave_filter_soft_mode']   = $wfFilterResult['wave_filter_soft_mode'];
+
+            // Attach V2 cleanup filter observability fields
+            $intent['v2_cleanup_used']         = $v2cFilterResult['v2_cleanup_used'];
+            $intent['v2_cleanup_applied']      = $v2cFilterResult['v2_cleanup_applied'];
+            $intent['v2_cleanup_reason']       = $v2cFilterResult['v2_cleanup_reason'];
+            $intent['v2_cleanup_wave_state']   = $v2cFilterResult['v2_cleanup_wave_state'];
+            $intent['v2_cleanup_quality_band'] = $v2cFilterResult['v2_cleanup_quality_band'];
+
+            // Attach confirmation layer observability fields
+            $intent['confirmation_layer_used']       = $confLayerResult['confirmation_layer_used'];
+            $intent['confirmation_setup_detected']   = $confLayerResult['confirmation_setup_detected'];
+            $intent['confirmation_wait_cycles_used'] = $confLayerResult['confirmation_wait_cycles_used'];
+            $intent['confirmation_result']           = $confLayerResult['confirmation_result'];
+            $intent['confirmation_reason']           = $confLayerResult['confirmation_reason'];
+            $intent['confirmation_side']             = $confLayerResult['confirmation_side'];
+
+            // Attach post-confirm quality gate observability fields
+            $intent['post_confirm_quality_gate_used']    = $pcGateResult['post_confirm_quality_gate_used'];
+            $intent['post_confirm_quality_gate_applied'] = $pcGateResult['post_confirm_quality_gate_applied'];
+            $intent['post_confirm_quality_gate_reason']  = $pcGateResult['post_confirm_quality_gate_reason'];
+            $intent['post_confirm_quality_gate_outcome'] = $pcGateResult['post_confirm_quality_gate_outcome'];
+            $intent['post_confirm_quality_gate_result']  = $pcGateResult['post_confirm_quality_gate_result']  ?? $pcGateResult['post_confirm_quality_gate_outcome'];
+            if (isset($pcGateResult['post_confirm_quality_gate_inputs'])) {
+                $intent['post_confirm_quality_gate_inputs'] = $pcGateResult['post_confirm_quality_gate_inputs'];
+            }
+
+            // Attach fast-coin gate observability fields
+            $intent['fast_coin_gate_used']        = $fcgDiagnostic['fast_coin_gate_used'];
+            $intent['fast_coin_gate_applied']     = $fcgDiagnostic['fast_coin_gate_applied'];
+            $intent['fast_coin_gate_result']      = $fcgDiagnostic['fast_coin_gate_result'];
+            $intent['fast_coin_gate_reason']      = $fcgDiagnostic['fast_coin_gate_reason'];
+            $intent['fast_coin_breakout_hold_ok'] = $fcgDiagnostic['fast_coin_breakout_hold_ok'];
+            $intent['fast_coin_micro_accel_ok']   = $fcgDiagnostic['fast_coin_micro_accel_ok'];
+
+            // Attach fast-confirmed-slow exception path observability fields
+            $intent['fast_confirmed_slow_exception_used']    = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'];
+            $intent['fast_confirmed_slow_exception_applied'] = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'];
+            $intent['fast_confirmed_slow_exception_reason']  = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'];
+
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
                 $intent['symbol_hints'] = $symbolHints;
@@ -1688,6 +3673,16 @@ final class SmartBrainCore
             if (isset($signal['schema_version'])) {
                 $intent['source_schema_version'] = $signal['schema_version'];
             }
+
+            // Leverage chain — expose every cap applied so operators can diagnose silent crushing
+            $intent['leverage_chain_requested_manual'] = (int)($signal['leverage_chain_requested_manual'] ?? $userLimits['manual_leverage'] ?? 0);
+            $intent['leverage_chain_requested_max']    = (int)($signal['leverage_chain_requested_max'] ?? $userLimits['max_leverage'] ?? 0);
+            $intent['leverage_chain_mode_cap']         = (int)($signal['leverage_chain_mode_cap'] ?? 0);
+            $intent['leverage_chain_mode_cap_label']   = (string)($signal['leverage_chain_mode_cap_label'] ?? '');
+            $intent['leverage_chain_profile_cap']      = (int)($signal['leverage_chain_profile_cap'] ?? 0);
+            $intent['leverage_chain_risk_cap']         = (int)($signal['leverage_chain_risk_cap'] ?? 0);
+            $intent['leverage_chain_final']            = (int)($signal['leverage_chain_final'] ?? $botReadyRisk['leverage'] ?? 0);
+            $intent['leverage_chain_reason']           = (string)($signal['leverage_chain_reason'] ?? '');
 
             $intents[] = $intent;
             $result['approvals'][] = [
@@ -1704,15 +3699,51 @@ final class SmartBrainCore
                     'signal_id_source' => $signalIdSource,
                     'outcome' => 'approved',
                     'reason' => $approvalReason,
+                    // Live mode filter observability (req. WU-5 §7)
+                    'live_mode_filter_passed' => true,
+                    'live_mode_filter_mode'   => $selectionMode,
                     'profile_id' => $botReadyRisk['profile_id'] ?? null,
                     'budget_usdt_per_trade' => $botReadyRisk['budget_usdt_per_trade'] ?? null,
                     'order_type' => $botReadyRisk['order_type'] ?? null,
                     'has_limits' => !empty($botReadyRisk['limits']),
+                    'cycle_model_used' => $cycleModelUsed,
+                    'cycle_model_veto_applied' => $cycleModelVetoApplied,
+                    'cycle_model_veto_reason' => $cycleModelVetoReason,
+                    'cycle_model_route_before' => $cycleModelRouteBefore,
+                    'cycle_model_route_after' => 'live',
+                    'cycle_model_support_used' => $cycleModelSupportUsed,
+                    'cycle_model_support_applied' => $cycleModelSupportApplied,
+                    'cycle_model_support_reason' => $cycleModelSupportReason,
+                    'cycle_model_route_before_support' => $cycleModelRouteBeforeSupport,
+                    'cycle_model_route_after_support' => $cycleModelRouteAfterSupport,
+                    // Step 13: cycle eligibility refinement observability
+                    'passport_cycle_refinement_used'    => $cycleRefUsed,
+                    'passport_cycle_refinement_applied' => $cycleRefApplied,
+                    'passport_cycle_refinement_reason'  => $cycleRefReason,
+                    'passport_eligibility_before_cycle' => $passportEligBase,
+                    'passport_eligibility_after_cycle'  => $passportEligAfterCycle,
+                    // Entry quality filter observability
+                    'entry_quality_filter_used'     => $eqFilterResult['entry_quality_filter_used'],
+                    'entry_quality_freshness_state' => $eqFilterResult['entry_quality_freshness_state'],
+                    'entry_quality_stretch_state'   => $eqFilterResult['entry_quality_stretch_state'],
+                    // Wave filter observability
+                    'wave_filter_used'        => $wfFilterResult['wave_filter_used'],
+                    'wave_amplitude_state'    => $wfFilterResult['wave_amplitude_state'],
+                    'wave_speed_state'        => $wfFilterResult['wave_speed_state'],
+                    'wave_filter_soft_mode'   => $wfFilterResult['wave_filter_soft_mode'],
                 ];
             }
         }
 
         $result['intents_created'] = count($intents);
+        $result['long_intents_created_count'] = count(array_filter($intents, static fn($i) => ($i['side'] ?? '') === 'long'));
+
+        // Wave filter release valve: if live pool ended up empty despite signals being wave-filtered,
+        // flag for observability. The quality exceptions in Rule 1 serve as the primary release
+        // mechanism (excellent-quality weak+slow signals pass entirely instead of being rejected).
+        if ($result['approved_count'] === 0 && $result['wave_filter_total'] > 0) {
+            $result['wave_filter_release_valve_used'] = true;
+        }
 
         // Build rejection reason stats (grouped counts)
         $reasonStats = [];
@@ -1741,6 +3772,590 @@ final class SmartBrainCore
             }
         }
         unset($intentRef);
+
+        // ── Wave Penalty Layer ──────────────────────────────────────────────
+        // Additive ranking penalty for candidates with weak/slow wave conditions.
+        // Runs AFTER all hard gates (entry filter, passport, cycle, wave filter).
+        // Does NOT add filtering — reduces effective slot priority score so that
+        // weak/slow candidates more often lose slot competition to stronger ones,
+        // while still surviving when the pool is weak and slots are available.
+        // Side-neutral: penalty applies identically to long and short.
+        {
+            $wpEnabled = (bool)($userLimits['wave_penalty_enabled'] ?? true);
+
+            foreach ($intents as &$wpIntent) {
+                $wpAmpState   = (string)($wpIntent['wave_amplitude_state'] ?? 'acceptable');
+                $wpSpeedState = (string)($wpIntent['wave_speed_state']     ?? 'normal');
+
+                $wpPenalty = 0.0;
+                $wpReason  = null;
+
+                if ($wpEnabled) {
+                    $result['wave_penalty_total']++;
+                    $wpIsWeakAmp  = ($wpAmpState  === 'weak');
+                    $wpIsSlowWave = ($wpSpeedState === 'slow');
+
+                    if ($wpIsWeakAmp && $wpIsSlowWave) {
+                        // Both weak amplitude AND slow wave → larger combined penalty.
+                        // These candidates survived only via a quality escape in Rule 1.
+                        $wpPenalty = 10.0;
+                        $wpReason  = 'wave_penalty_weak_amplitude_slow_wave';
+                    } elseif ($wpIsWeakAmp) {
+                        // Weak amplitude only → small penalty.
+                        $wpPenalty = 5.0;
+                        $wpReason  = 'wave_penalty_weak_amplitude';
+                    } elseif ($wpIsSlowWave) {
+                        // Slow wave only → small penalty.
+                        $wpPenalty = 5.0;
+                        $wpReason  = 'wave_penalty_slow_wave';
+                    }
+
+                    if ($wpPenalty > 0.0) {
+                        $result['wave_penalty_applied_total']++;
+                    } else {
+                        $result['wave_penalty_no_effect_total']++;
+                    }
+                }
+
+                $wpIntent['wave_penalty_used']            = $wpEnabled;
+                $wpIntent['wave_penalty_value']           = $wpPenalty;
+                $wpIntent['wave_penalty_reason']          = $wpReason;
+                $wpIntent['wave_penalty_amplitude_state'] = $wpAmpState;
+                $wpIntent['wave_penalty_speed_state']     = $wpSpeedState;
+            }
+            unset($wpIntent);
+        }
+        // ── End Wave Penalty Layer ──────────────────────────────────────────
+
+        // ── Ranking Boost Layer ─────────────────────────────────────────────
+        // Runs AFTER all filters and wave penalty. Does NOT filter or reject.
+        // Computes a bounded positive boost (0–10 pts) per intent so that
+        // clearly strong/fresh/clean candidates earn a higher slot priority score
+        // and beat merely acceptable ones more often under slot competition.
+        // Components: quality (0–4), freshness (0–3), cycle support (0–2), wave clean (0–1).
+        // Side-neutral: boost applies identically to long and short.
+        {
+            $rbEnabled = (bool)($userLimits['ranking_boost_enabled'] ?? true);
+
+            foreach ($intents as &$rbIntent) {
+                $rbBoost     = 0.0;
+                $rbReasons   = [];
+                $rbQComp     = 0.0;
+                $rbFComp     = 0.0;
+                $rbCComp     = 0.0;
+                $rbWComp     = 0.0;
+
+                if ($rbEnabled) {
+                    $result['ranking_boost_total']++;
+
+                    // Quality component: reward clearly strong entry quality.
+                    $rbQuality = (float)($rbIntent['quality_score'] ?? 0.0);
+                    if ($rbQuality >= 0.75) {
+                        $rbQComp   = 4.0;
+                        $rbReasons[] = 'quality_strong+4';
+                    } elseif ($rbQuality >= 0.65) {
+                        $rbQComp   = 2.0;
+                        $rbReasons[] = 'quality_good+2';
+                    }
+
+                    // Freshness component: reward fresh signals over aging/stale ones.
+                    $rbFreshnessState = (string)($rbIntent['entry_quality_freshness_state'] ?? 'stale');
+                    if ($rbFreshnessState === 'fresh') {
+                        $rbFComp   = 3.0;
+                        $rbReasons[] = 'freshness_fresh+3';
+                    } elseif ($rbFreshnessState === 'aging') {
+                        $rbFComp   = 1.0;
+                        $rbReasons[] = 'freshness_aging+1';
+                    }
+
+                    // Cycle support component: reward cycle-confirmed candidates.
+                    if ((bool)($rbIntent['cycle_model_support_applied'] ?? false)) {
+                        $rbCComp   = 2.0;
+                        $rbReasons[] = 'cycle_support+2';
+                    } elseif (!(bool)($rbIntent['cycle_model_veto_applied'] ?? false)) {
+                        $rbCComp   = 1.0;
+                        $rbReasons[] = 'no_cycle_veto+1';
+                    }
+
+                    // Wave cleanliness component: reward candidates with zero wave penalty
+                    // that also passed the wave filter without a soft-mode override.
+                    $rbWavePenalty      = (float)($rbIntent['wave_penalty_value']   ?? 0.0);
+                    $rbWaveFilterApplied = (bool)($rbIntent['wave_filter_applied']  ?? false);
+                    if ($rbWavePenalty === 0.0 && !$rbWaveFilterApplied) {
+                        $rbWComp   = 1.0;
+                        $rbReasons[] = 'wave_clean+1';
+                    }
+
+                    $rbBoost = $rbQComp + $rbFComp + $rbCComp + $rbWComp;
+                    $rbBoost = min(10.0, max(0.0, $rbBoost));
+
+                    if ($rbBoost > 0.0) {
+                        $result['ranking_boost_applied_total']++;
+                    } else {
+                        $result['ranking_boost_no_effect_total']++;
+                    }
+                }
+
+                $rbIntent['ranking_boost_used']               = $rbEnabled;
+                $rbIntent['ranking_boost_value']              = $rbBoost;
+                $rbIntent['ranking_boost_reason']             = $rbEnabled && !empty($rbReasons) ? implode(', ', $rbReasons) : null;
+                $rbIntent['ranking_boost_quality_component']  = $rbQComp;
+                $rbIntent['ranking_boost_freshness_component'] = $rbFComp;
+                $rbIntent['ranking_boost_cycle_component']    = $rbCComp;
+                $rbIntent['ranking_boost_wave_component']     = $rbWComp;
+            }
+            unset($rbIntent);
+        }
+        // ── End Ranking Boost Layer ─────────────────────────────────────────
+
+        // ── Win Universe Bonus Layer ────────────────────────────────────────
+        // Soft ranking bonus for qualified win-pool symbols.
+        // Only active when win_universe_mode = 'priority' AND priority_bonus_enabled = true.
+        // Runs AFTER all hard gates and ranking layers, BEFORE Slot Priority scoring.
+        // Does NOT filter or reject — adds a bounded positive bonus to slot_priority_score
+        // so win-pool symbols more often beat similar non-pool candidates in slot competition,
+        // while clearly stronger non-pool signals still win.
+        // Side-neutral: bonus applies identically to long and short.
+        // Safety: inactive when excessive_qualification_warning is set (>30% of universe qualified).
+        //
+        // Per-intent observability fields set here:
+        //   in_win_pool                  = true|false — symbol is currently in win pool
+        //   win_universe_status_at_eval  = 'qualified'|'not_in_pool'|'shadow_mode'|'bonus_disabled'|'pool_empty'
+        //   win_universe_bonus_applied   = true|false — bonus was applied to THIS candidate
+        //   win_universe_bonus_used      = same as win_universe_bonus_applied (alias for backward compat)
+        //   win_universe_bonus_value     = bonus points pre-loaded into intent for slot priority scoring
+        //   win_universe_bonus_reason    = human-readable reason string
+        //   ranking_changed_by_bonus     = false here; may be set true in Slot Priority competition branch
+        //   effective_priority_before_bonus = null here; set in Slot Priority layer
+        //   effective_priority_after_bonus  = null here; set in Slot Priority layer
+        {
+            $wuBonusActive = ($wuMode === 'priority' && $wuBonusEnabled && $wuPoolSize > 0);
+
+            foreach ($intents as &$wuIntent) {
+                $wuSym      = strtoupper((string)($wuIntent['symbol'] ?? ''));
+                $wuInPool   = isset($wuWinPool[$wuSym]);
+                $wuBonusVal = 0.0;
+                $wuReason   = null;
+                $wuStatus   = 'not_in_pool';
+
+                $result['win_universe_bonus_total']++;
+
+                if ($wuBonusActive && $wuInPool) {
+                    // Bonus = strength × 10 pts, bounded [0, 10]
+                    $wuBonusVal = round(min(10.0, max(0.0, $wuBonusStrength * 10.0)), 2);
+                    $wuReason   = 'win_pool_qualified+' . $wuBonusVal;
+                    $wuStatus   = 'qualified';
+                    $result['win_universe_bonus_applied_total']++;
+                } else {
+                    $result['win_universe_bonus_no_effect_total']++;
+                    if (!$wuBonusActive) {
+                        if ($wuMode !== 'priority') {
+                            $wuStatus = 'shadow_mode';
+                        } elseif (!$wuBonusEnabled) {
+                            $wuStatus = 'bonus_disabled';
+                        } else {
+                            // mode=priority, bonus_enabled=true, but pool is empty
+                            $wuStatus = 'pool_empty';
+                        }
+                    }
+                }
+
+                // win_universe_bonus_applied = true when THIS candidate received the bonus (per-intent flag).
+                // win_universe_bonus_used is kept as an alias for backward compatibility.
+                $wuBonusApplied = ($wuBonusActive && $wuInPool);
+
+                $wuIntent['in_win_pool']                       = $wuInPool;
+                $wuIntent['win_universe_status_at_eval']       = $wuStatus;
+                $wuIntent['win_universe_bonus_applied']        = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_used']           = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_value']          = $wuBonusVal;
+                $wuIntent['win_universe_bonus_reason']         = $wuReason;
+                // Explicit at-entry fields for causal evaluation attribution.
+                // These are stamped at evaluation time and must NOT be recomputed later.
+                $wuIntent['win_universe_status_at_entry']       = $wuStatus;
+                $wuIntent['in_win_pool_at_entry']               = $wuInPool;
+                $wuIntent['win_universe_bonus_applied_at_entry'] = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_used_at_entry']   = $wuBonusApplied;
+                $wuIntent['win_universe_bonus_value_at_entry']  = $wuBonusVal;
+                // These fields are populated by the Slot Priority layer below.
+                $wuIntent['effective_priority_before_bonus']   = null;
+                $wuIntent['effective_priority_after_bonus']    = null;
+                $wuIntent['ranking_changed_by_bonus']          = false;
+            }
+            unset($wuIntent);
+        }
+        // ── End Win Universe Bonus Layer ────────────────────────────────────
+
+        // ── Confirmation Layer: expire stale pending entries and persist ──────
+        // Remove entries that have exceeded the max age window (no update in too long).
+        if ($confLayerEnabled) {
+            foreach ($confPending as $ck => $ce) {
+                $setupTs = (int)($ce['setup_ts'] ?? 0);
+                if ($setupTs > 0 && ($confNow - $setupTs) > $confMaxAgeSeconds) {
+                    $cePattern = (string)($ce['pattern_algorithm'] ?? '');
+                    $ceSide    = (string)($ce['side'] ?? '');
+                    $ceSideKey = ($cePattern === 'double_top_contextual_v2'    && $ceSide === 'short') ? 'short_v2'
+                        : (($cePattern === 'double_bottom_contextual_v2' && $ceSide === 'long')  ? 'long_v2' : '');
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => (string)($ce['symbol'] ?? ''),
+                        'pattern_algorithm' => $cePattern,
+                        'side'              => $ceSide,
+                        'state'             => 'expired',
+                        'result'            => 'expired',
+                        'reason'            => 'max_age_exceeded',
+                        'wait_cycles_used'  => (int)($ce['cycles_seen'] ?? 0),
+                        'setup_zone_high'   => (float)($ce['setup_zone_high'] ?? 0.0),
+                        'setup_zone_low'    => (float)($ce['setup_zone_low']  ?? 0.0),
+                        'age_seconds'       => $confNow - $setupTs,
+                    ];
+                    unset($confPending[$ck]);
+                    $result['confirmation_expired_total']++;
+                    if ($ceSideKey !== '') {
+                        $result[$ceSideKey . '_confirmation_expired_total']++;
+                    }
+                }
+            }
+            $this->state->writeJson('storage/confirmation_pending.json', $confPending);
+        }
+        // ── End Confirmation Layer persist ───────────────────────────────────
+
+        // ── Slot Priority Layer ─────────────────────────────────────────────
+        // Time-aware candidate ranking for limited live slots.
+        // Applied AFTER all existing gates, BEFORE lifecycle merge.
+        // Does NOT change hard slot limits — only ranks competing candidates.
+        // Pipeline: signal → decision → slot_priority → slot_competition → routing
+        {
+            $slotPriorityEnabled     = (bool)($userLimits['slot_priority_enabled']     ?? true);
+            $freshnessDecayEnabled   = (bool)($userLimits['freshness_decay_enabled']   ?? true);
+            $freshnessWindowMinutes  = max(1, (int)($userLimits['slot_priority_freshness_window_minutes'] ?? 30));
+            $maxPositions            = (int)($liveConfig['live_max_positions'] ?? 3);
+
+            // Read current open position count from bot's last_run.json (best-effort, non-fatal).
+            $currentOpenPositions = 0;
+            try {
+                $botStoragePath = $this->resolveBotStoragePath();
+                if ($botStoragePath !== null) {
+                    $rawBotLastRun = @file_get_contents($botStoragePath . '/last_run.json');
+                    if ($rawBotLastRun !== false) {
+                        $botLastRunData = @json_decode($rawBotLastRun, true);
+                        if (is_array($botLastRunData)) {
+                            $activeProtSummary = $botLastRunData['active_protection_summary'] ?? [];
+                            $currentOpenPositions = (int)($activeProtSummary['active_positions_count'] ?? 0);
+                        }
+                    }
+                }
+            } catch (\Throwable $slotEx) {
+                // non-fatal — slotsAvailable falls back to maxPositions
+            }
+
+            // Count pending+claimed intents already in live_intents.json that are NOT being
+            // superseded by the current run. These occupy future slots and must be subtracted
+            // from available slots to correctly detect slot pressure.
+            $existingActiveSlots = 0;
+            $liveIntentsPathForSlot = $this->state->resolvePath('storage/live_intents.json');
+            try {
+                if (is_file($liveIntentsPathForSlot)) {
+                    $rawLiveIntents = @file_get_contents($liveIntentsPathForSlot);
+                    if ($rawLiveIntents !== false) {
+                        $existingLiveData = @json_decode($rawLiveIntents, true);
+                        if (is_array($existingLiveData)) {
+                            // Build set of intent_ids being emitted by this run
+                            $thisRunIntentIds = [];
+                            foreach ($intents as $spCheckIntent) {
+                                $thisRunId = $spCheckIntent['intent_id'] ?? '';
+                                if ($thisRunId !== '') {
+                                    $thisRunIntentIds[$thisRunId] = true;
+                                }
+                            }
+                            // Count non-terminal existing intents not replaced by this run
+                            foreach ($existingLiveData['intents'] ?? [] as $ei) {
+                                $eiId     = $ei['intent_id'] ?? '';
+                                $eiStatus = $ei['status']    ?? 'pending';
+                                if (($eiStatus === SmartBrainConfig::INTENT_STATUS_PENDING ||
+                                     $eiStatus === SmartBrainConfig::INTENT_STATUS_CLAIMED) &&
+                                    ($eiId === '' || !isset($thisRunIntentIds[$eiId]))) {
+                                    $existingActiveSlots++;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $slotLookEx) {
+                // non-fatal — existingActiveSlots stays 0
+            }
+
+            $slotsAvailable  = max(0, $maxPositions - $currentOpenPositions - $existingActiveSlots);
+            $candidatesCount = count($intents);
+
+            $result['slot_priority_open_positions_count']   = $currentOpenPositions;
+            $result['slot_priority_existing_active_slots']  = $existingActiveSlots;
+            $result['slot_priority_slots_available']        = $slotsAvailable;
+            $result['slot_priority_candidates_total']       = $candidatesCount;
+
+            if (!$slotPriorityEnabled || $candidatesCount <= $slotsAvailable) {
+                // No slot competition — all candidates fit or feature disabled.
+                $result['slot_priority_used']             = false;
+                $result['slot_priority_not_needed_total'] = $candidatesCount;
+                $spNoCompIdx = 0;
+                foreach ($intents as &$spIntentRef) {
+                    $priorityData = $this->computeSlotPriorityScore($spIntentRef, $freshnessDecayEnabled, $freshnessWindowMinutes);
+                    $spIntentRef['slot_priority_score']           = $priorityData['score'];
+                    $spIntentRef['slot_priority_bucket']          = $priorityData['bucket'];
+                    $spIntentRef['slot_priority_reason']          = $priorityData['reason'];
+                    $spIntentRef['slot_priority_ranking_index']   = $spNoCompIdx;
+                    $spIntentRef['slot_priority_total_competitors'] = $candidatesCount;
+                    $spIntentRef['slot_competition_result']       = 'not_needed';
+                    $spIntentRef['slot_competition_reason']       = $slotPriorityEnabled
+                        ? 'slots_available'
+                        : 'slot_priority_disabled';
+                    // Win Universe bonus observability: before/after scores.
+                    // No competition — bonus increased score but did not change ranking outcome.
+                    $spWuBonusOnThis = (float)($spIntentRef['win_universe_bonus_value'] ?? 0.0);
+                    $spIntentRef['effective_priority_before_bonus'] = round($priorityData['score'] - $spWuBonusOnThis, 2);
+                    $spIntentRef['effective_priority_after_bonus']  = $priorityData['score'];
+                    $spIntentRef['ranking_changed_by_bonus']        = false;
+                    $spNoCompIdx++;
+                }
+                unset($spIntentRef);
+            } else {
+                // Slot competition: more candidates than available slots.
+                $result['slot_priority_used'] = true;
+
+                // Score every candidate.
+                // Also compute score-without-wu-bonus for ranking_changed_by_bonus detection.
+                $scoredCandidates = [];
+                foreach ($intents as $spIdx => $spIntent) {
+                    $priorityData = $this->computeSlotPriorityScore($spIntent, $freshnessDecayEnabled, $freshnessWindowMinutes);
+                    $spWuBonusThis = (float)($spIntent['win_universe_bonus_value'] ?? 0.0);
+                    $scoreWithoutWuBonus = round($priorityData['score'] - $spWuBonusThis, 2);
+                    $scoredCandidates[] = [
+                        'idx'                    => $spIdx,
+                        'intent'                 => $spIntent,
+                        'score'                  => $priorityData['score'],
+                        'score_without_wu_bonus' => $scoreWithoutWuBonus,
+                        'wu_bonus_value'         => $spWuBonusThis,
+                        'bucket'                 => $priorityData['bucket'],
+                        'reason'                 => $priorityData['reason'],
+                        'created_ts'             => (int)($spIntent['created_ts'] ?? 0),
+                        'quality_score'          => (float)($spIntent['quality_score'] ?? 0.0),
+                    ];
+                }
+
+                // Sort: primary = score desc, secondary = freshness (created_ts desc),
+                // tertiary = quality_score desc.
+                usort($scoredCandidates, static function (array $a, array $b): int {
+                    if ($b['score'] !== $a['score']) {
+                        return $b['score'] <=> $a['score'];
+                    }
+                    if ($b['created_ts'] !== $a['created_ts']) {
+                        return $b['created_ts'] <=> $a['created_ts'];
+                    }
+                    return $b['quality_score'] <=> $a['quality_score'];
+                });
+
+                $totalCompetitors = count($scoredCandidates);
+                $winners = array_slice($scoredCandidates, 0, $slotsAvailable);
+                $losers  = array_slice($scoredCandidates, $slotsAvailable);
+
+                // Cutoff score = lowest winning score (used for ranking_changed_by_bonus detection).
+                // A pool-bonus winner whose score-without-bonus would fall below this cutoff
+                // would have lost without the bonus, so ranking_changed_by_bonus = true.
+                $cutoffScore = !empty($winners) ? (float)end($winners)['score'] : 0.0;
+
+                $winnerIdxSet = [];
+                foreach ($winners as $wRank => $w) {
+                    $winnerIdxSet[$w['idx']] = ['data' => $w, 'rank' => $wRank];
+                }
+
+                // Rebuild intents list with only winners; annotate priority fields.
+                $priorityFilteredIntents = [];
+                foreach ($intents as $spIdx => $spIntent) {
+                    if (isset($winnerIdxSet[$spIdx])) {
+                        $wEntry = $winnerIdxSet[$spIdx];
+                        $w      = $wEntry['data'];
+                        $spIntent['slot_priority_score']             = $w['score'];
+                        $spIntent['slot_priority_bucket']            = $w['bucket'];
+                        $spIntent['slot_priority_reason']            = $w['reason'];
+                        $spIntent['slot_priority_ranking_index']     = $wEntry['rank'];
+                        $spIntent['slot_priority_total_competitors'] = $totalCompetitors;
+                        $spIntent['slot_competition_result']         = 'won';
+                        $spIntent['slot_competition_reason']         = 'higher_priority_won';
+                        // Win Universe bonus observability for competition winners.
+                        $spIntent['effective_priority_after_bonus']  = $w['score'];
+                        $spIntent['effective_priority_before_bonus'] = $w['score_without_wu_bonus'];
+                        // ranking_changed_by_bonus: true when the bonus caused this win
+                        // (without bonus the candidate would have fallen to the loser set).
+                        $wuBonusHere = $w['wu_bonus_value'];
+                        $rankChangedHere = ($wuBonusHere > 0.0 && $w['score_without_wu_bonus'] < $cutoffScore);
+                        $spIntent['ranking_changed_by_bonus'] = $rankChangedHere;
+                        if ($rankChangedHere) {
+                            $result['win_universe_bonus_ranking_changed_total']++;
+                        }
+                        $priorityFilteredIntents[] = $spIntent;
+                        $result['slot_priority_won_total']++;
+                    }
+                }
+
+                // Record losers in rejection_reasons and preview (observability only).
+                foreach ($losers as $lRank => $l) {
+                    $lIntent = $l['intent'];
+                    $lIntent['slot_priority_score']              = $l['score'];
+                    $lIntent['slot_priority_bucket']             = $l['bucket'];
+                    $lIntent['slot_priority_reason']             = $l['reason'];
+                    $lIntent['slot_priority_ranking_index']      = $slotsAvailable + $lRank;
+                    $lIntent['slot_priority_total_competitors']  = $totalCompetitors;
+                    $lIntent['slot_competition_result']          = 'lost';
+                    $lIntent['slot_competition_reason']          = 'low_priority_lost';
+                    $lIntent['effective_priority_after_bonus']   = $l['score'];
+                    $lIntent['effective_priority_before_bonus']  = $l['score_without_wu_bonus'];
+                    $lIntent['ranking_changed_by_bonus']         = false;
+                    $this->rejectLiveSignal(
+                        $result,
+                        (string)($lIntent['symbol'] ?? ''),
+                        (string)($lIntent['signal_id'] ?? ''),
+                        'slot_priority_lost',
+                        $selectionMode
+                    );
+                    $result['slot_priority_lost_total']++;
+                    if (count($result['slot_priority_rejected_preview']) < 5) {
+                        $result['slot_priority_rejected_preview'][] = [
+                            'symbol'                          => (string)($lIntent['symbol'] ?? ''),
+                            'side'                            => (string)($lIntent['side'] ?? ''),
+                            'slot_priority_score'             => $l['score'],
+                            'slot_priority_bucket'            => $l['bucket'],
+                            'slot_priority_reason'            => $l['reason'],
+                            'slot_priority_ranking_index'     => $slotsAvailable + $lRank,
+                            'slot_priority_total_competitors' => $totalCompetitors,
+                            'slot_competition_result'         => 'lost',
+                            'slot_competition_reason'         => 'low_priority_lost',
+                        ];
+                    }
+                }
+
+                $intents = $priorityFilteredIntents;
+
+                // Update derived intent counters to reflect post-priority filtering.
+                $result['intents_created']            = count($intents);
+                $result['long_intents_created_count'] = count(array_filter($intents, static fn($i) => ($i['side'] ?? '') === 'long'));
+            }
+        }
+        // ── End Slot Priority Layer ─────────────────────────────────────────
+
+        // Build win_universe_bonus_preview AFTER slot priority so it includes
+        // effective_priority_before_bonus, effective_priority_after_bonus, and ranking_changed_by_bonus.
+        {
+            $wuPreview = [];
+            foreach ($intents as $wuPrevIntent) {
+                if (count($wuPreview) >= 10) {
+                    break;
+                }
+                $wuPreview[] = [
+                    'symbol'                          => $wuPrevIntent['symbol']                         ?? '',
+                    'side'                            => $wuPrevIntent['side']                           ?? '',
+                    'in_win_pool'                     => $wuPrevIntent['in_win_pool']                    ?? false,
+                    'win_universe_status_at_eval'     => $wuPrevIntent['win_universe_status_at_eval']    ?? 'not_in_pool',
+                    'win_universe_status_at_entry'    => $wuPrevIntent['win_universe_status_at_entry']   ?? 'not_in_pool',
+                    'win_universe_bonus_applied'      => $wuPrevIntent['win_universe_bonus_applied']     ?? false,
+                    'win_universe_bonus_used'         => $wuPrevIntent['win_universe_bonus_used']        ?? false,
+                    'win_universe_bonus_value'        => $wuPrevIntent['win_universe_bonus_value']       ?? 0.0,
+                    'win_universe_bonus_reason'       => $wuPrevIntent['win_universe_bonus_reason']      ?? null,
+                    'effective_priority_before_bonus' => $wuPrevIntent['effective_priority_before_bonus'] ?? null,
+                    'effective_priority_after_bonus'  => $wuPrevIntent['effective_priority_after_bonus']  ?? null,
+                    'ranking_changed_by_bonus'        => $wuPrevIntent['ranking_changed_by_bonus']        ?? false,
+                    'slot_competition_result'         => $wuPrevIntent['slot_competition_result']         ?? null,
+                    'slot_priority_score'             => $wuPrevIntent['slot_priority_score']             ?? null,
+                ];
+            }
+            $result['win_universe_bonus_preview'] = $wuPreview;
+        }
+
+        // ── Win Universe entry-attribution log (best-effort, non-fatal) ─────
+        // Append one record per new intent to win_universe/storage/runtime/win_universe_intent_attribution.ndjson.
+        // This log is consumed by WinUniverseService::computeEvalAtEntry() to build causal
+        // entry-status evaluation. Bounded to 2000 records to prevent unbounded growth.
+        if (!empty($intents)) {
+            try {
+                $wuModBaseForLog = dirname($this->moduleBase) . '/win_universe';
+                $wuAttrLogPath   = $wuModBaseForLog . '/storage/runtime/win_universe_intent_attribution.ndjson';
+                $wuAttrDir       = dirname($wuAttrLogPath);
+                if (!is_dir($wuAttrDir)) {
+                    @mkdir($wuAttrDir, 0755, true);
+                }
+
+                // Load per-symbol WU engine qualification_status (qualified/near_qualified/rejected)
+                // from win_universe.json. This allows evaluation to distinguish near_qualified from
+                // rejected at the time of entry — a finer distinction than win-pool membership alone.
+                $wuSymQualStatus = [];
+                try {
+                    $wuUnivPath = $wuModBaseForLog . '/storage/runtime/win_universe.json';
+                    if (is_file($wuUnivPath)) {
+                        $wuUnivRaw = @file_get_contents($wuUnivPath);
+                        if ($wuUnivRaw !== false && $wuUnivRaw !== '') {
+                            $wuUnivData = @json_decode($wuUnivRaw, true);
+                            if (is_array($wuUnivData) && isset($wuUnivData['symbols']) && is_array($wuUnivData['symbols'])) {
+                                foreach ($wuUnivData['symbols'] as $wuQSym => $wuQRec) {
+                                    $wuQStatus = (string)($wuQRec['qualification_status'] ?? '');
+                                    if ($wuQStatus !== '') {
+                                        $wuSymQualStatus[strtoupper((string)$wuQSym)] = $wuQStatus;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (\Throwable $_wuQEx) {
+                    // non-fatal — qualification_status_at_entry will be null for this run
+                }
+
+                $wuNowTs  = time();
+                $wuLines  = [];
+                foreach ($intents as $wuAttrIntent) {
+                    $wuAttrSym = strtoupper((string)($wuAttrIntent['symbol'] ?? ''));
+                    if ($wuAttrSym === '') {
+                        continue;
+                    }
+                    // wu_qualification_status_at_entry: WU engine's assessment (qualified/near_qualified/rejected).
+                    // Distinct from win_universe_status_at_entry which reflects pool membership + bonus state.
+                    $wuQualStatusAtEntry = $wuSymQualStatus[$wuAttrSym] ?? null;
+                    $wuLines[] = json_encode([
+                        'intent_id'                        => $wuAttrIntent['intent_id']                      ?? null,
+                        'symbol'                           => $wuAttrSym,
+                        'side'                             => (string)($wuAttrIntent['side'] ?? ''),
+                        'created_at_ts'                    => $wuNowTs,
+                        'win_universe_status_at_entry'     => $wuAttrIntent['win_universe_status_at_entry']   ?? 'not_in_pool',
+                        'in_win_pool_at_entry'             => (bool)($wuAttrIntent['in_win_pool_at_entry']   ?? false),
+                        'bonus_applied_at_entry'           => (bool)($wuAttrIntent['win_universe_bonus_applied_at_entry'] ?? false),
+                        'bonus_value_at_entry'             => (float)($wuAttrIntent['win_universe_bonus_value_at_entry']  ?? 0.0),
+                        'wu_qualification_status_at_entry' => $wuQualStatusAtEntry,
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (!empty($wuLines)) {
+                    // Read existing lines, prepend new, bound to 2000
+                    $wuExistingLines = [];
+                    if (is_file($wuAttrLogPath)) {
+                        $wuRawLog = @file_get_contents($wuAttrLogPath);
+                        if ($wuRawLog !== false && $wuRawLog !== '') {
+                            $wuExistingLines = array_filter(explode("\n", trim($wuRawLog)));
+                        }
+                    }
+                    $wuAllLines = array_merge($wuLines, array_values($wuExistingLines));
+                    if (count($wuAllLines) > 2000) {
+                        $wuAllLines = array_slice($wuAllLines, 0, 2000);
+                    }
+                    @file_put_contents($wuAttrLogPath, implode("\n", $wuAllLines) . "\n", LOCK_EX);
+                }
+            } catch (\Throwable $wuAttrEx) {
+                // non-fatal
+            }
+        }
+        // ── End Win Universe entry-attribution log ──────────────────────────
+
+        // Rebuild rejection_reason_stats to include any slot_priority_lost rejections added above.
+        $reasonStats = [];
+        foreach ($result['rejection_reasons'] as $r) {
+            $reason = $r['reason'] ?? 'unknown';
+            $reasonStats[$reason] = ($reasonStats[$reason] ?? 0) + 1;
+        }
+        $result['rejection_reason_stats'] = $reasonStats;
 
         // ── Lifecycle-aware merge + cleanup ────────────────────────────────
         // Instead of overwriting live_intents.json, we:
@@ -1781,6 +4396,7 @@ final class SmartBrainCore
             'preserved_pending' => 0,
             'expired_by_brain' => 0,
             'cleaned_terminal' => 0,
+            'superseded_terminal_by_new_pending' => 0,
             'new_pending' => count($intents),
         ];
 
@@ -1794,12 +4410,17 @@ final class SmartBrainCore
 
             // Skip if new Brain run produced a replacement for this intent
             if ($eid !== '' && isset($newIntentIds[$eid])) {
-                // New intent supersedes — only if existing is still pending
                 if ($status === SmartBrainConfig::INTENT_STATUS_PENDING) {
                     continue; // will be replaced by the new version
                 }
-                // Non-pending (claimed/executed/rejected) — keep existing, skip new
-                // (remove from new set so we don't duplicate)
+                if (SmartBrainConfig::isTerminalIntentStatus($status)) {
+                    // Terminal intent (executed/rejected/expired) with same deterministic ID:
+                    // the new Brain run produced a fresh pending for the same signal lineage.
+                    // Drop the old terminal so the new pending can be inserted without ID collision.
+                    $lifecycleCounters['superseded_terminal_by_new_pending']++;
+                    continue;
+                }
+                // Claimed: bot is actively working on it — keep existing, block new via mergedIds check.
                 unset($newIntentIds[$eid]);
             }
 
@@ -1896,7 +4517,7 @@ final class SmartBrainCore
         $result['lifecycle_summary'] = $payload['lifecycle_summary'];
 
         if (count($intents) > 0) {
-            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ', terminal_retained=' . $result['terminal_retained_count'] . ')');
+            $this->logger->log('info', 'Live Intents: generated ' . count($intents) . ' new pending, merged total ' . count($mergedIntents) . ' (mode=' . $selectionMode . ', claimed_preserved=' . $lifecycleCounters['preserved_claimed'] . ', superseded_terminal=' . $lifecycleCounters['superseded_terminal_by_new_pending'] . ', expired=' . $lifecycleCounters['expired_by_brain'] . ', cleaned=' . $lifecycleCounters['cleaned_terminal'] . ', terminal_retained=' . $result['terminal_retained_count'] . ')');
         } elseif ($result['signals_seen'] > 0) {
             $lateCount = $result['late_entry_rejected_count'] ?? 0;
             $this->logger->log('info', 'Live Intents: 0 new intents from ' . $result['signals_seen'] . ' signals, merged total ' . count($mergedIntents) . ' (approved=' . $result['approved_count'] . ', rejected=' . $result['rejected_count'] . ', late_entry_rejected=' . $lateCount . ', terminal_retained=' . $result['terminal_retained_count'] . ', reasons=' . json_encode($reasonStats) . ')');
@@ -1926,8 +4547,133 @@ final class SmartBrainCore
                 'signal_id_source' => $signalId !== '' ? 'present' : 'missing',
                 'outcome' => 'rejected',
                 'reason' => $reason,
+                // Live mode filter observability (req. WU-5 §7)
+                'live_mode_filter_passed' => false,
+                'live_mode_filter_mode'   => ($reason === 'live_mode_filter_rejected') ? $selectionMode : null,
             ];
         }
+    }
+
+    /**
+     * Compute a bounded, explicit slot priority score for a live intent candidate.
+     *
+     * Score components (total cap: 100):
+     *   signal_strength   → 0–25 pts
+     *   quality_score     → 0–25 pts
+     *   scenario_score    → 0–15 pts
+     *   passport state    → 0–15 pts  (allow_live=15, bootstrap_live=5)
+     *   cycle support     → 0–10 pts  (support+10, no-veto+5, veto=0)
+     *   freshness decay   → 0–10 pts  (linear decay within freshness window)
+     *
+     * Buckets: high (>=70), medium (40–69), low (<40).
+     *
+     * @param array $intent                  The approved live intent record.
+     * @param bool  $freshnessDecayEnabled   Whether time-decay component is active.
+     * @param int   $freshnessWindowMinutes  Window in minutes within which signals are "fresh".
+     * @return array{score:float,bucket:string,reason:string}
+     */
+    private function computeSlotPriorityScore(array $intent, bool $freshnessDecayEnabled, int $freshnessWindowMinutes): array
+    {
+        $score   = 0.0;
+        $factors = [];
+
+        // ── Signal strength (0–25 pts) ────────────────────────────────────
+        $signalStrength = min(1.0, max(0.0, (float)($intent['signal_strength'] ?? 0.0)));
+        $ssPoints       = round($signalStrength * 25.0, 2);
+        $score         += $ssPoints;
+        if ($ssPoints > 0) {
+            $factors[] = 'signal_strength+' . $ssPoints;
+        }
+
+        // ── Entry quality score (0–25 pts) ───────────────────────────────
+        $qualityScore = min(1.0, max(0.0, (float)($intent['quality_score'] ?? 0.0)));
+        $qsPoints     = round($qualityScore * 25.0, 2);
+        $score       += $qsPoints;
+        if ($qsPoints > 0) {
+            $factors[] = 'quality_score+' . $qsPoints;
+        }
+
+        // ── Scenario / V2 priority score (0–15 pts) ──────────────────────
+        $scenarioScore = min(1.0, max(0.0, (float)($intent['scenario_score'] ?? 0.0)));
+        $scPoints      = round($scenarioScore * 15.0, 2);
+        $score        += $scPoints;
+        if ($scPoints > 0) {
+            $factors[] = 'scenario_score+' . $scPoints;
+        }
+
+        // ── Passport live eligibility state (0–15 pts) ───────────────────
+        $passportResult = (string)($intent['passport_gate_result'] ?? 'not_applied');
+        if ($passportResult === 'allow_live') {
+            $score    += 15.0;
+            $factors[] = 'passport:allow_live+15';
+        } elseif ($passportResult === 'bootstrap_live') {
+            $score    += 5.0;
+            $factors[] = 'passport:bootstrap_live+5';
+        }
+
+        // ── Cycle model layer (0–10 pts) ─────────────────────────────────
+        if ((bool)($intent['cycle_model_support_applied'] ?? false)) {
+            $score    += 10.0;
+            $factors[] = 'cycle_support+10';
+        } elseif (!(bool)($intent['cycle_model_veto_applied'] ?? false)) {
+            $score    += 5.0;
+            $factors[] = 'no_cycle_veto+5';
+        } else {
+            $factors[] = 'cycle_veto_detected';
+        }
+
+        // ── Freshness decay (0–10 pts) ────────────────────────────────────
+        // Signals generated recently score higher than older ones.
+        // Uses the signal's created_ts if available; otherwise treat as fully fresh.
+        if ($freshnessDecayEnabled) {
+            $createdTs            = (int)($intent['created_ts'] ?? time());
+            $ageSeconds           = max(0, time() - $createdTs);
+            $windowSeconds        = $freshnessWindowMinutes * 60;
+            $freshnessRatio       = max(0.0, 1.0 - ($ageSeconds / max(1, $windowSeconds)));
+            $freshnessPoints      = round($freshnessRatio * 10.0, 2);
+            $score               += $freshnessPoints;
+            if ($freshnessPoints > 0) {
+                $factors[] = 'freshness+' . $freshnessPoints . '(age=' . $ageSeconds . 's)';
+            } else {
+                $factors[] = 'freshness:stale(age=' . $ageSeconds . 's)';
+            }
+        }
+
+        // ── Wave penalty (bounded deduction for weak/slow wave candidates) ──
+        // Pre-computed by the Wave Penalty Layer before this scoring call.
+        // weak amplitude only: -5 pts, slow wave only: -5 pts,
+        // weak amplitude + slow wave: -10 pts. Bounded to [0, 10].
+        $wavePenalty = min(10.0, max(0.0, (float)($intent['wave_penalty_value'] ?? 0.0)));
+        if ($wavePenalty > 0.0) {
+            $score    -= $wavePenalty;
+            $factors[] = 'wave_penalty-' . $wavePenalty . '(' . ($intent['wave_penalty_reason'] ?? 'wave_penalty') . ')';
+        }
+
+        // ── Ranking boost (bounded positive boost for strong/fresh/clean candidates) ──
+        // Pre-computed by the Ranking Boost Layer. Rewards quality, freshness, cycle
+        // support, and wave cleanliness. Bounded to [0, 10].
+        $rankingBoost = min(10.0, max(0.0, (float)($intent['ranking_boost_value'] ?? 0.0)));
+        if ($rankingBoost > 0.0) {
+            $score    += $rankingBoost;
+            $factors[] = 'ranking_boost+' . $rankingBoost . '(' . ($intent['ranking_boost_reason'] ?? 'ranking_boost') . ')';
+        }
+
+        // ── Win Universe bonus (soft priority for qualified win-pool symbols) ──
+        // Pre-computed by the Win Universe Bonus Layer. Only non-zero when
+        // win_universe_mode=priority, priority_bonus_enabled=true, and symbol is in pool.
+        // Bounded to [0, 10]. Does NOT bypass any hard gates.
+        $wuBonus = min(10.0, max(0.0, (float)($intent['win_universe_bonus_value'] ?? 0.0)));
+        if ($wuBonus > 0.0) {
+            $score    += $wuBonus;
+            $factors[] = 'win_universe_bonus+' . $wuBonus . '(' . ($intent['win_universe_bonus_reason'] ?? 'win_pool') . ')';
+        }
+
+        // ── Cap and bucket ────────────────────────────────────────────────
+        $score  = min(100.0, max(0.0, round($score, 2)));
+        $bucket = $score >= 70.0 ? 'high' : ($score >= 40.0 ? 'medium' : 'low');
+        $reason = implode(', ', $factors) ?: 'no_factors';
+
+        return ['score' => $score, 'bucket' => $bucket, 'reason' => $reason];
     }
 
     /**
@@ -3009,6 +5755,7 @@ final class SmartBrainCore
             'live_intents' => $this->state->readJson('storage/live_intents.json', []),
             'config_warnings' => $this->config->detectConfigConflicts(),
             'bot_execution_mirror' => $this->readBotExecutionMirror(),
+            'config_source_status' => $this->state->readJson('runtime/config_source_status.json', []),
         ];
     }
 

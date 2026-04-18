@@ -36,8 +36,8 @@ trait BotCommandsTrait
             'errors' => [],
         ];
         
-        // P7.6.1: Only apply commands in LIVE mode
-        if ($mode !== 'live') {
+        // Only apply commands in real exchange modes (live / demo)
+        if (!$this->isRealExchangeMode()) {
             $result['status'] = 'skipped_not_live';
             return $result;
         }

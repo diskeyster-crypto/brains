@@ -29,11 +29,17 @@ trait BotReconcileTrait
             'positions_orphan' => 0,
             'orphan_positions_count' => 0, // P3
             'orphan_positions' => [],      // P3
+            // Per-run close stats (for demo per-run counter aggregation)
+            'reconcile_healthy_closed'    => 0,
+            'reconcile_orphan_closed'     => 0,
+            'reconcile_ai_written'        => 0,
+            'reconcile_healthy_ai_written'=> 0,
+            'reconcile_orphan_ai_written' => 0,
             'error' => null,
         ];
         
-        // In dry mode, just return success
-        if ($this->isDryMode() || $this->isTestMode()) {
+        // In paper/dry mode, just return success (no real exchange calls)
+        if ($this->isPaperMode() || $this->isTestMode()) {
             return $result;
         }
         
@@ -93,7 +99,12 @@ trait BotReconcileTrait
                 if (!$found) {
                     // Local trade not found on exchange - might be closed
                     $result['positions_closed']++;
-                    $this->handleClosedPosition($tradeId, $trade);
+                    $closeStats = $this->handleClosedPosition($tradeId, $trade);
+                    $result['reconcile_healthy_closed']     += $closeStats['healthy_closed']     ? 1 : 0;
+                    $result['reconcile_orphan_closed']      += $closeStats['orphan_closed']      ? 1 : 0;
+                    $result['reconcile_ai_written']         += $closeStats['ai_written']         ? 1 : 0;
+                    $result['reconcile_healthy_ai_written'] += $closeStats['healthy_ai_written'] ? 1 : 0;
+                    $result['reconcile_orphan_ai_written']  += $closeStats['orphan_ai_written']  ? 1 : 0;
                 }
             }
             
@@ -119,8 +130,8 @@ trait BotReconcileTrait
      */
     private function fetchExchangePositions(): array
     {
-        // In dry/test mode, return empty
-        if (!$this->isLiveMode()) {
+        // In paper/dry/test mode, return empty
+        if (!$this->isRealExchangeMode()) {
             return [];
         }
         
@@ -144,8 +155,8 @@ trait BotReconcileTrait
      */
     private function fetchExchangeOrders(): array
     {
-        // In dry/test mode, return empty
-        if (!$this->isLiveMode()) {
+        // In paper/dry/test mode, return empty
+        if (!$this->isRealExchangeMode()) {
             return [];
         }
         
@@ -164,33 +175,297 @@ trait BotReconcileTrait
     
     /**
      * Handle position that was closed on exchange
-     * 
+     *
+     * Returns a result array so the caller can aggregate per-run close counters:
+     *   ['healthy_closed' => bool, 'orphan_closed' => bool, 'ai_written' => bool]
+     *
      * @param string $tradeId Trade ID
      * @param array $trade Trade data
+     * @return array Close result with classification flags
      */
-    private function handleClosedPosition(string $tradeId, array $trade): void
+    private function handleClosedPosition(string $tradeId, array $trade): array
 {
     $closedAtTs = time();
 
     // Base close fields (always)
-    $trade['status'] = 'closed';
+    $trade['status']    = 'closed';
     $trade['closed_at'] = date('c', $closedAtTs);
     $trade['closed_ts'] = $closedAtTs;
+    $trade['close_ts']  = $closedAtTs;
 
-    // Enrich with exchange closed-pnl (best-effort)
+    // Record how this close was detected (reconcile path = position not found on exchange)
+    $trade['close_detection_result'] = 'close_detected_position_closed_remote';
+    $trade['close_detection_source'] = 'reconcile_with_exchange';
+
+    // ── Local finalization (immediate, no exchange call) ────────────────────
+    // Compute local estimates from trade snapshot so closed file is never empty,
+    // even if exchange enrichment is delayed or unavailable.
+    $trade = $this->applyLocalCloseFinalize($trade, $closedAtTs);
+
+    // ── Exchange enrichment (best-effort improvement) ────────────────────────
     $trade = $this->enrichClosedTradeFromExchange($trade, $closedAtTs);
 
-    // Determine close_reason from inferred data or fallback
+    // Upgrade close_result_source if exchange matched
+    if (!empty($trade['exchange_close']['matched'])) {
+        $prevSource = (string)($trade['close_result_source'] ?? 'local_finalize');
+        if ($prevSource === 'local_finalize') {
+            $trade['close_result_source'] = 'mixed';
+        } else {
+            $trade['close_result_source'] = 'exchange_enriched';
+        }
+        $trade['exchange_enrichment_used'] = true;
+    } else {
+        $trade['close_finalize_warning'] = 'exchange_enrichment_skipped_or_no_match';
+    }
+
+    // ── Normalize close reason ────────────────────────────────────────────────
     $closeReason = $this->determineCloseReason($trade);
-    $trade['close_reason'] = $closeReason['reason'];
-    $trade['close_reason_meta'] = $closeReason['meta'];
+    $trade['close_reason']            = $closeReason['reason'];
+    $trade['close_reason_normalized'] = $closeReason['reason'];
+    $trade['close_reason_meta']       = $closeReason['meta'];
 
     // Ensure realized_pnl field exists (alias for pnl)
     if (!isset($trade['realized_pnl']) && isset($trade['pnl'])) {
         $trade['realized_pnl'] = $trade['pnl'];
     }
 
+    // Demo mode: write AI-ready dataset record BEFORE moving to closed dir,
+    // so the closed trade file can carry the ai_dataset_record_written flag.
+    // Orphan/adopted trades must NOT write into the primary AI learning dataset.
+    $isOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+    $aiWritten = false;
+    $orphanAiWritten = false;
+    if (($this->config['module']['mode'] ?? '') === 'demo') {
+        if ($isOrphan) {
+            // Orphan recovery closes go to secondary partition only — skip primary ai_dataset
+            $trade['ai_dataset_partition']       = 'orphan_recovery_secondary';
+            $trade['ai_dataset_record_written']  = false;
+            $trade['ai_dataset_skip_reason']     = 'orphan_recovery_excluded_from_primary';
+        } else {
+            $aiWritten = $this->store->appendAiDatasetRecord($tradeId, $trade);
+            $trade['ai_dataset_record_written'] = $aiWritten;
+            if (!$aiWritten) {
+                $trade['ai_dataset_write_fail_reason'] = 'write_failed';
+            }
+        }
+    }
+
     $this->store->moveTradeToClosedDir($tradeId, $trade);
+
+    // Trigger immediate coin_passport rebuild for this symbol (best-effort, non-blocking).
+    $symbol = (string)($trade['symbol'] ?? '');
+    $this->triggerCoinPassportRebuildForSymbol($symbol);
+
+    $this->journalEvent('trade_closed', 'reconcile', true,
+        'Trade closed (reconcile): ' . ($symbol ?: $tradeId),
+        [
+            'trade_id'                => $tradeId,
+            'symbol'                  => $trade['symbol'] ?? null,
+            'classification'          => $isOrphan ? 'orphan_adopted' : 'healthy',
+            'close_reason_normalized' => $trade['close_reason_normalized'] ?? null,
+            'close_result_source'     => $trade['close_result_source'] ?? null,
+            'close_price'             => $trade['close_price'] ?? null,
+            'roi'                     => $trade['roi'] ?? null,
+            'pnl'                     => $trade['pnl'] ?? null,
+            'hold_minutes'            => $trade['hold_minutes'] ?? null,
+            'mfe'                     => $trade['mfe'] ?? null,
+            'mae'                     => $trade['mae'] ?? null,
+            'mfe_missing_reason'      => $trade['mfe_missing_reason'] ?? null,
+            'mae_missing_reason'      => $trade['mae_missing_reason'] ?? null,
+            'ai_dataset_written'      => $isOrphan ? false : $aiWritten,
+            'ai_dataset_partition'    => $isOrphan ? 'orphan_recovery_secondary' : 'primary',
+            'closed_file_path'        => 'trades/closed/' . $tradeId . '.json',
+        ]
+    );
+    $this->journalEvent('file_write', 'reconcile', true,
+        'closed trade file written (reconcile): ' . ($symbol ?: $tradeId),
+        [
+            'path'                    => 'trades/closed/' . $tradeId . '.json',
+            'write_type'              => 'create',
+            'classification'          => $isOrphan ? 'orphan_close' : 'healthy_close',
+            'symbol'                  => $trade['symbol'] ?? null,
+            'trade_id'                => $tradeId,
+            'close_reason_normalized' => $trade['close_reason_normalized'] ?? null,
+            'ai_dataset_written'      => $isOrphan ? false : $aiWritten,
+        ]
+    );
+    if ($aiWritten && !$isOrphan) {
+        $this->journalEvent('ai_dataset_written', 'reconcile', true,
+            'AI record written (primary, healthy): ' . ($symbol ?: $tradeId),
+            [
+                'trade_id'         => $tradeId,
+                'symbol'           => $trade['symbol'] ?? null,
+                'classification'   => 'healthy',
+                'ai_dataset_partition' => 'primary',
+                'path'             => 'ai_dataset/' . $tradeId . '.json',
+            ]
+        );
+        $this->journalEvent('file_write', 'reconcile', true,
+            'ai_dataset file written (reconcile): ' . ($symbol ?: $tradeId),
+            [
+                'path'             => 'ai_dataset/' . $tradeId . '.json',
+                'write_type'       => 'create',
+                'classification'   => 'ai_dataset',
+                'ai_dataset_partition' => 'primary',
+                'symbol'           => $trade['symbol'] ?? null,
+                'trade_id'         => $tradeId,
+            ]
+        );
+    }
+
+    return [
+        'healthy_closed'     => !$isOrphan,
+        'orphan_closed'      => $isOrphan,
+        'ai_written'         => $aiWritten,
+        'healthy_ai_written' => !$isOrphan && $aiWritten,
+        'orphan_ai_written'  => false,
+    ];
+}
+
+/**
+ * Apply local close finalization — compute close fields from local trade state
+ * immediately at close time, without relying on the exchange.
+ *
+ * Fields set:
+ *   close_price           — last known price or entry_price estimate
+ *   pnl                   — estimated PnL based on local price (approximate)
+ *   roi                   — estimated ROI %
+ *   hold_minutes          — time held since open
+ *   local_close_finalize_used  — true (diagnostic flag)
+ *   close_result_source   — 'local_finalize'
+ *
+ * The exchange enrichment step may overwrite close_price/pnl with real data later.
+ *
+ * @param array<string,mixed> $trade
+ * @param int $closedAtTs
+ * @return array<string,mixed>
+ */
+private function applyLocalCloseFinalize(array $trade, int $closedAtTs): array
+{
+    $trade['local_close_finalize_used'] = true;
+    $isAdoptedOrphan = !empty($trade['is_orphan_adopted']) || !empty($trade['adopted_from_exchange_orphan']);
+
+    // Hold minutes
+    $openedTs = (int)(strtotime((string)($trade['opened_at'] ?? '')) ?: ($trade['open_ts'] ?? 0));
+    if ($openedTs > 0 && $closedAtTs > $openedTs) {
+        $trade['hold_minutes'] = (int)round(($closedAtTs - $openedTs) / 60);
+        unset($trade['hold_minutes_missing_reason']);
+    } elseif (!isset($trade['hold_minutes'])) {
+        $trade['hold_minutes'] = 0;
+        $trade['hold_minutes_missing_reason'] = $openedTs <= 0 ? 'no_opened_at' : 'zero_duration';
+    }
+
+    // Estimate close_price from last known position data if not already set
+    if (!isset($trade['close_price']) || (float)($trade['close_price'] ?? 0) <= 0) {
+        // Use last known price from runtime or protection
+        $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+        $lastPrice = (float)($rt['last_price'] ?? $rt['last_mark_price'] ?? 0);
+        if ($lastPrice > 0) {
+            $trade['close_price'] = $lastPrice;
+            unset($trade['close_price_missing_reason']);
+        } else {
+            // Explicit missing reason so closed record is never silently incomplete
+            $trade['close_price_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_no_runtime_price'
+                : 'no_runtime_price';
+        }
+    }
+
+    // Explicit missing reason for entry_price if absent (adopted orphans may lack it)
+    if (!isset($trade['entry_price_missing_reason'])) {
+        if (!isset($trade['entry_price']) || (float)($trade['entry_price'] ?? 0) <= 0) {
+            $trade['entry_price_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_entry_price_unavailable'
+                : 'entry_price_unavailable';
+        }
+    }
+
+    // Estimate ROI/PnL locally from entry_price + close_price if not already set
+    if (!isset($trade['pnl']) || !isset($trade['roi'])) {
+        $entryPrice  = (float)($trade['entry_price'] ?? 0);
+        $closePrice  = (float)($trade['close_price'] ?? 0);
+        $side        = strtolower((string)($trade['side'] ?? 'long'));
+        $qty         = (float)($trade['position_size'] ?? $trade['qty'] ?? 0);
+
+        if ($entryPrice > 0 && $closePrice > 0 && $qty > 0) {
+            if ($side === 'long') {
+                $priceDiff = $closePrice - $entryPrice;
+            } else {
+                $priceDiff = $entryPrice - $closePrice;
+            }
+            $pnlEst  = round($priceDiff * $qty, 8);
+            $roiEst  = round(($priceDiff / $entryPrice) * 100, 4);
+
+            if (!isset($trade['pnl'])) {
+                $trade['pnl'] = $pnlEst;
+                unset($trade['pnl_missing_reason']);
+            }
+            if (!isset($trade['roi'])) {
+                $trade['roi'] = $roiEst;
+                unset($trade['roi_missing_reason']);
+            }
+        } elseif (!isset($trade['pnl'])) {
+            $trade['pnl'] = 0.0;
+            $trade['roi'] = 0.0;
+            $missingReason = $isAdoptedOrphan ? 'adopted_orphan_no_price_data' : 'no_price_data';
+            $trade['pnl_missing_reason'] = $missingReason;
+            $trade['roi_missing_reason'] = $missingReason;
+        }
+    }
+
+    $trade['close_result_source'] = 'local_finalize';
+
+    // Copy mfe/mae from runtime if available and not already set on closed trade.
+    // MFE requires best_roi_seen > 0 (trade actually moved in our favour).
+    // MAE requires worst_roi_seen < 0 (trade actually moved against us).
+    $rt = is_array($trade['runtime'] ?? null) ? $trade['runtime'] : [];
+    if (!isset($trade['mfe']) || $trade['mfe'] === null) {
+        $bestRoi = $rt['best_roi_seen'] ?? null;
+        if ($bestRoi !== null && (float)$bestRoi > 0) {
+            $trade['mfe'] = (float)$bestRoi;
+            unset($trade['mfe_missing_reason']);
+        } elseif ($bestRoi !== null) {
+            // Runtime tracked it but price never went positive — no valid MFE evidence
+            $trade['mfe_missing_reason'] = 'no_runtime_evidence';
+        } else {
+            $trade['mfe_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_runtime_no_best_roi_seen'
+                : 'runtime_no_best_roi_seen';
+        }
+    }
+    if (!isset($trade['mae']) || $trade['mae'] === null) {
+        $worstRoi = $rt['worst_roi_seen'] ?? null;
+        if ($worstRoi !== null && (float)$worstRoi < 0) {
+            $trade['mae'] = (float)$worstRoi;
+            unset($trade['mae_missing_reason']);
+        } elseif ($worstRoi !== null) {
+            // Runtime tracked it but price never went negative — no valid MAE evidence
+            $trade['mae_missing_reason'] = 'no_runtime_evidence';
+        } else {
+            $trade['mae_missing_reason'] = $isAdoptedOrphan
+                ? 'adopted_orphan_runtime_no_worst_roi_seen'
+                : 'runtime_no_worst_roi_seen';
+        }
+    }
+
+    // ── Adopted-orphan metadata preservation ─────────────────────────────────
+    // Ensure adopted-orphan lineage fields are always present in the closed record.
+    if ($isAdoptedOrphan) {
+        $trade['adopted_from_exchange_orphan']  = true;
+        $trade['orphan_resolved_local_ownership'] = (bool)($trade['orphan_resolved_local_ownership'] ?? false);
+        // Preserve or set orphan_resolution_ts
+        if (!isset($trade['orphan_resolution_ts'])) {
+            $trade['orphan_resolution_ts'] = (int)($trade['orphan_adopted_at']
+                ? strtotime((string)$trade['orphan_adopted_at'])
+                : $closedAtTs);
+        }
+        // Preserve or default orphan_resolution_reason
+        if (!isset($trade['orphan_resolution_reason']) || $trade['orphan_resolution_reason'] === '') {
+            $trade['orphan_resolution_reason'] = 'orphan_adopted_as_local_demo_trade';
+        }
+    }
+
+    return $trade;
 }
 
 /**
@@ -199,7 +474,9 @@ trait BotReconcileTrait
  * Contract: close_reason MUST be one of:
  * - stop_loss
  * - trailing_stop
- * - manual_close (fallback, also covers liquidation/other)
+ * - break_even
+ * - manual_close
+ * - exchange_closed_unknown (fallback when closed by exchange with no matching known trigger)
  *
  * @param array<string,mixed> $trade
  * @return array{reason:string,meta:array<string,mixed>}
@@ -269,12 +546,12 @@ private function determineCloseReason(array $trade): array
         ];
     }
 
-    // 3) Fallback (also covers liquidation / manual close without marker / unknown)
+    // 3) Fallback: closed by exchange with no identifiable local trigger
     return [
-        'reason' => 'manual_close',
+        'reason' => 'exchange_closed_unknown',
         'meta' => [
             'schema_version' => 'close_reason_meta_v1',
-            'method' => 'fallback_manual_close',
+            'method' => 'fallback_exchange_closed_unknown',
             'confidence' => 0.20,
         ],
     ];
@@ -547,7 +824,7 @@ private function backfillRecentClosedTradesMissingExit(): void
         $reason = (string)($trade['close_reason'] ?? '');
 
         $needsExit = ($closePrice <= 0) || (!$hasPnl);
-        $needsReasonFix = ($reason === '' || $reason === 'exchange_closed' || $reason === 'unknown');
+        $needsReasonFix = ($reason === '' || $reason === 'exchange_closed' || $reason === 'exchange_closed_unknown' || $reason === 'unknown');
 
         if (!$needsExit && !$needsReasonFix) {
             continue;
@@ -568,8 +845,17 @@ private function backfillRecentClosedTradesMissingExit(): void
 
         // Re-evaluate close reason to remove legacy reasons like "exchange_closed"
         $closeReason = $this->determineCloseReason($trade);
-        $trade['close_reason'] = $closeReason['reason'];
-        $trade['close_reason_meta'] = $closeReason['meta'];
+        $trade['close_reason']            = $closeReason['reason'];
+        $trade['close_reason_normalized'] = $closeReason['reason'];
+        $trade['close_reason_meta']       = $closeReason['meta'];
+
+        // Update close_result_source based on enrichment outcome
+        if (!empty($trade['exchange_close']['matched'])) {
+            $prevSource = (string)($trade['close_result_source'] ?? 'local_finalize');
+            $trade['close_result_source'] = ($prevSource === 'local_finalize') ? 'mixed' : 'exchange_enriched';
+            $trade['exchange_enrichment_used'] = true;
+            unset($trade['close_finalize_warning']);
+        }
 
         $this->store->saveClosedTrade($tradeId, $trade);
         $processed++;
@@ -700,7 +986,8 @@ private function inferCloseCause(array $trade): array
 - Closed trades are enriched via Bybit /v5/position/closed-pnl:
   - "side" in closed-pnl is treated as closing-order side (Sell closes LONG, Buy closes SHORT)
   - match is STRICTLY constrained by reconcile_closed_pnl_match_window_sec
-- close_reason is ALWAYS one of: stop_loss | trailing_stop | manual_close (fallback)
+- close_reason_normalized contract: stop_loss | trailing_stop | break_even | manual_close | exchange_closed_unknown (fallback)
+- exchange_closed_unknown triggers backfill so richer exchange data can upgrade the reason later
 - backfillRecentClosedTradesMissingExit retries enrichment for recently closed trades to fill close_price/pnl and fix legacy reasons
 */
 

@@ -1,0 +1,21 @@
+{
+    "enabled": true,
+    "mode": "shadow",
+    "provider": "mock",
+    "model": "",
+    "credential_id": "",
+    "allowed_patterns": ["double_top_contextual_v2", "double_top_contextual_v3"],
+    "allowed_sides": ["short"],
+    "simulate_on_live_signals": true,
+    "simulate_on_live_trades": true,
+    "store_prototypes": true,
+    "store_images": false,
+    "max_signals_per_run": 50,
+    "max_trades_per_run": 20,
+    "confidence_threshold_enter": 0.55,
+    "confidence_threshold_skip": 0.35,
+    "quality_score_threshold": 0.40,
+    "log_enabled": true,
+    "log_decisions": true,
+    "log_rejections": false
+}

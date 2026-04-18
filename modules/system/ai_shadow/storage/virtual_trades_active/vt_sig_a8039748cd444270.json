@@ -1,0 +1,29 @@
+{
+    "virtual_trade_id": "vt_sig_a8039748cd444270",
+    "source_signal_id": "sig_a8039748cd444270",
+    "live_trade_id": "sig_a8039748cd444270",
+    "symbol": "SKLUSDT",
+    "side": "short",
+    "pattern_algorithm": "double_top_contextual_v2",
+    "ai_decision": "enter",
+    "ai_confidence": 0.832,
+    "ai_quality_score": 0.8429,
+    "ai_reasons": [
+        "mock_provider",
+        "pattern_match_detected"
+    ],
+    "status": "active",
+    "entry_price": 0.00707927,
+    "ai_entry_price": 0.00707927,
+    "ai_entry_timestamp": 1775036109,
+    "live_entry_timestamp": 1774984749,
+    "live_entry_price": 0.00707927,
+    "current_price": 0.00707927,
+    "mfe": 0,
+    "mae": 0,
+    "roi": 0,
+    "opened_at": 1775036109,
+    "closed_at": null,
+    "close_reason": null,
+    "exit_price": null
+}

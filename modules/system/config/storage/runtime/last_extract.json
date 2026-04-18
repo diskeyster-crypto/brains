@@ -1,5 +1,5 @@
 {
-    "extracted_at": "2026-04-18T08:08:13+01:00",
+    "extracted_at": "2026-04-13T12:10:07+00:00",
     "status": "ok",
     "errors": [],
     "warnings": [],
@@ -12,8 +12,8 @@
     },
     "counts": {
         "ownership_entries": 44,
-        "conflicts": 3,
-        "duplicates": 8,
+        "conflicts": 1,
+        "duplicates": 10,
         "operational_params": 32,
         "immutable_params": 14,
         "preview_sections": 4

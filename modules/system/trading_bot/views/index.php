@@ -9,12 +9,14 @@ use Core\System\System;
 use Core\System\SystemPaths;
 
 $tab = $tab ?? 'dashboard';
-$mode = $this->config['module']['mode'] ?? 'dry';
+$mode = $this->config['module']['mode'] ?? 'paper';
 $enabled = $this->config['module']['enabled'] ?? false;
 $modeClass = [
-    'live' => 'badge-live',
-    'dry' => 'badge-dry',
-    'test' => 'badge-test',
+    'live'  => 'badge-live',
+    'demo'  => 'badge-demo',
+    'paper' => 'badge-paper',
+    'dry'   => 'badge-paper',
+    'test'  => 'badge-paper',
 ][$mode] ?? 'badge-secondary';
 
 // Include tabs via SystemPaths
@@ -36,7 +38,13 @@ require $moduleBase . '/views/_tabs.php';
             <?php endif; ?>
         </h4>
         <p class="text-muted mb-0">
-            LIVE Executor — executes Brain decisions on exchange
+            <?php if ($mode === 'live'): ?>
+                <span class="text-danger fw-bold">LIVE Execution</span> — real exchange, real funds
+            <?php elseif ($mode === 'demo'): ?>
+                <span class="text-warning fw-bold">DEMO Execution</span> — sandbox exchange, no real funds
+            <?php else: ?>
+                <span class="text-secondary fw-bold">Paper Mode</span> — local simulation, no exchange
+            <?php endif; ?>
         </p>
     </div>
     <div class="d-flex gap-2">
@@ -51,6 +59,266 @@ require $moduleBase . '/views/_tabs.php';
         </button>
     </div>
 </div>
+
+<!-- Brain-Controlled Status -->
+<?php
+$lastRunBot = $lastRun ?? [];
+$controlledByBrain = (bool)($lastRunBot['controlled_by_brain'] ?? false);
+$inputSourceBot = (string)($lastRunBot['input_source'] ?? 'unknown');
+$selectionModeBot = (string)($lastRunBot['effective_selection_mode_from_brain'] ?? 'n/a');
+?>
+<?php
+$legacyFallbackAllowed = (bool)($lastRunBot['legacy_fallback_allowed'] ?? true);
+$legacyFallbackUsed = (bool)($lastRunBot['legacy_fallback_used'] ?? false);
+$effectiveTrailingSource = (string)($lastRunBot['effective_trailing_contract_source'] ?? 'n/a');
+$limitsControlledByBrain = (bool)($lastRunBot['limits_controlled_by_brain'] ?? false);
+$sourceLoadStatus = (string)($lastRunBot['source_status'] ?? 'n/a');
+$sourceErrorMessage = (string)($lastRunBot['source_error_message'] ?? '');
+$trailingControlledByBrain = (bool)($lastRunBot['trailing_controlled_by_brain'] ?? false);
+$localTrailingOverridden = (bool)($lastRunBot['local_trailing_toggles_overridden'] ?? false);
+$executionIdentityKey = (string)($lastRunBot['execution_identity_key'] ?? 'n/a');
+$dedupeBasis = (string)($lastRunBot['dedupe_basis'] ?? 'n/a');
+$normalizedDrawdownFactorSource = (string)($lastRunBot['normalized_drawdown_factor_source'] ?? 'n/a');
+$effectiveTrailingContract = is_array($lastRunBot['effective_trailing_contract'] ?? null) ? $lastRunBot['effective_trailing_contract'] : null;
+?>
+<div class="alert <?= $controlledByBrain ? 'alert-info' : 'alert-secondary' ?> mb-4 py-2" style="font-size: 0.85rem;">
+    <i class="bi bi-<?= $controlledByBrain ? 'lightning-charge' : 'info-circle' ?> me-1"></i>
+    <strong>Intent Source:</strong> <?= htmlspecialchars($inputSourceBot) ?>
+    <?php if ($controlledByBrain): ?>
+        — <span class="text-info">Brain-controlled</span> (selection mode: <code><?= htmlspecialchars($selectionModeBot) ?></code>)
+        <br><small>Bot-local strategy overrides (reverse_side, force_side, symbol_overrides) are <b>skipped</b> — Brain owns strategy decisions.</small>
+        <br><small>Legacy fallback: <b>disabled</b> | Trailing: <code><?= htmlspecialchars($effectiveTrailingSource) ?></code> | Limits: <b><?= $limitsControlledByBrain ? 'Brain-owned' : 'bot-local' ?></b></small>
+        <br><small>Trailing controlled by Brain: <b><?= $trailingControlledByBrain ? 'yes' : 'no' ?></b> | Local toggles overridden: <b><?= $localTrailingOverridden ? 'yes' : 'no' ?></b> | Drawdown factor source: <code><?= htmlspecialchars($normalizedDrawdownFactorSource) ?></code></small>
+        <?php if ($effectiveTrailingContract !== null): ?>
+        <br><small>Effective exit contract: mode=<code><?= htmlspecialchars((string)($effectiveTrailingContract['exit_mode'] ?? 'n/a')) ?></code> | trailing=<b><?= ($effectiveTrailingContract['enabled'] ?? false) ? 'ON' : 'OFF' ?></b> | trailing_mode=<code><?= htmlspecialchars((string)($effectiveTrailingContract['trailing_mode'] ?? 'roi_giveback')) ?></code> | activation=<code><?= htmlspecialchars((string)($effectiveTrailingContract['activation_roi_pct'] ?? 'n/a')) ?>%</code><?php $tm = (string)($effectiveTrailingContract['trailing_mode'] ?? 'roi_giveback'); if ($tm === 'price_distance'): ?> | distance=<code><?= htmlspecialchars((string)($effectiveTrailingContract['trailing_price_distance_pct'] ?? 'n/a')) ?></code> <small class="text-info">(<?= round(((float)($effectiveTrailingContract['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>% from price)</small><?php else: ?> | drawdown=<code><?= htmlspecialchars((string)($effectiveTrailingContract['drawdown_factor'] ?? 'n/a')) ?></code><?php endif; ?> | min_step=<code><?= htmlspecialchars((string)($effectiveTrailingContract['min_step'] ?? 'n/a')) ?></code> | BE=<b><?= ($effectiveTrailingContract['break_even_enabled'] ?? false) ? 'ON' : 'OFF' ?></b> @ <code><?= htmlspecialchars((string)($effectiveTrailingContract['break_even_activation_roi'] ?? 'n/a')) ?>%</code><?php if (($effectiveTrailingContract['exit_mode'] ?? '') === 'hybrid_tp'): ?> | hybrid: <code><?= round(((float)($effectiveTrailingContract['hybrid_tp_share'] ?? 0)) * 100) ?>%</code> @ <code><?= htmlspecialchars((string)($effectiveTrailingContract['fixed_take_profit_roi'] ?? '')) ?></code><?php endif; ?></small>
+        <?php endif; ?>
+        <?php
+        $effectiveStopControlMode = (string)($lastRunBot['effective_stop_control_mode'] ?? 'auto');
+        $effectiveEntryRoi = $lastRunBot['effective_stop_loss_from_entry_roi'] ?? null;
+        $runtimeInitialStop = $lastRunBot['initial_computed_stop_price'] ?? null;
+        $runtimeCurrentStop = $lastRunBot['effective_stop_price'] ?? null;
+        $runtimeStopMoved = (bool)($lastRunBot['stop_moved_from_initial'] ?? false);
+        ?>
+        <br><small>Stop control: <code><?= htmlspecialchars($effectiveStopControlMode) ?></code><?php if ($effectiveStopControlMode === 'entry_roi' && $effectiveEntryRoi !== null): ?> — SL from entry: <code><?= round((float)$effectiveEntryRoi * 100, 1) ?>%</code><?php endif; ?><?php if ($runtimeInitialStop !== null): ?> | initial stop: <code><?= number_format((float)$runtimeInitialStop, 4) ?></code><?php endif; ?><?php if ($runtimeCurrentStop !== null): ?> | current stop: <code><?= number_format((float)$runtimeCurrentStop, 4) ?></code><?php endif; ?><?php if ($runtimeStopMoved): ?> <span class="badge bg-warning text-dark" style="font-size:0.65rem;">moved</span><?php endif; ?></small>
+        <br><small>Execution identity key: <code><?= htmlspecialchars($executionIdentityKey) ?></code> | Dedupe basis: <code><?= htmlspecialchars($dedupeBasis) ?></code></small>
+        <br><small>Source status: <code><?= htmlspecialchars($sourceLoadStatus) ?></code><?= $sourceErrorMessage !== '' ? ' — <span class="text-warning">' . htmlspecialchars($sourceErrorMessage) . '</span>' : '' ?></small>
+    <?php else: ?>
+        — <span class="text-secondary">Legacy fallback mode</span> (bot-local overrides active)
+        <?php if ($legacyFallbackUsed): ?>
+        <br><small>Legacy fallback: <b>used</b></small>
+        <?php endif; ?>
+    <?php endif; ?>
+</div>
+
+<!-- P0.3: Execution Audit — Exchange Submit Visibility -->
+<?php
+$exchSubmitAttempted = (int)($lastRunBot['exchange_submit_attempted_count'] ?? 0);
+$exchSubmitFailed = (int)($lastRunBot['exchange_submit_failed_count'] ?? 0);
+$exchSubmitSuccess = (int)($lastRunBot['exchange_submit_success_count'] ?? 0);
+$posOpenConfirmed = (int)($lastRunBot['position_open_confirmed_count'] ?? 0);
+$protApplyFailed = (int)($lastRunBot['protection_apply_failed_count'] ?? 0);
+$execGuardBlocked = (int)($lastRunBot['execution_guard_blocked_count'] ?? 0);
+$executableAfterDedupe = (int)($lastRunBot['executable_after_dedupe'] ?? 0);
+$latestExchErrCode = $lastRunBot['latest_exchange_error_code'] ?? null;
+$latestExchErrMsg = (string)($lastRunBot['latest_exchange_error_message'] ?? '');
+$lastFailedSym = (string)($lastRunBot['last_failed_symbol'] ?? '');
+$lastFailedStg = (string)($lastRunBot['last_failed_stage'] ?? '');
+$approvedLoaded = (int)($lastRunBot['approved_intents_loaded'] ?? 0);
+$dupSkipped = (int)($lastRunBot['duplicate_skipped'] ?? 0);
+$busySkipped = (int)($lastRunBot['busy_skipped'] ?? 0);
+$executableAfterBusy = (int)($lastRunBot['executable_after_busy'] ?? 0);
+$intentsRejected = (int)($lastRunBot['intents_rejected'] ?? 0);
+$intentsRejectedExec = (int)($lastRunBot['intents_rejected_exec'] ?? 0);
+$noOrderPreview = is_array($lastRunBot['no_order_path_preview'] ?? null) ? $lastRunBot['no_order_path_preview'] : [];
+$botIntentClaim = is_array($lastRunBot['intent_claim'] ?? null) ? $lastRunBot['intent_claim'] : [];
+$botLifecycleSkipped = is_array($lastRunBot['lifecycle_skipped'] ?? null) ? $lastRunBot['lifecycle_skipped'] : [];
+?>
+<?php if ($approvedLoaded > 0 || $exchSubmitAttempted > 0 || $latestExchErrCode !== null): ?>
+<div class="card mb-4" style="border-color: <?= $exchSubmitAttempted > 0 && $exchSubmitSuccess === 0 ? '#dc3545' : ($exchSubmitSuccess > 0 ? '#198754' : '#6c757d') ?>;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard-check me-2"></i>Execution Audit — Exchange Submit Visibility</span>
+        <?php if ($exchSubmitSuccess > 0): ?>
+            <span class="badge bg-success">Orders Placed</span>
+        <?php elseif ($exchSubmitAttempted > 0): ?>
+            <span class="badge bg-danger">Submit Failed</span>
+        <?php elseif ($approvedLoaded > 0): ?>
+            <span class="badge bg-warning text-dark">No Exchange Submit</span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-2 text-center" style="font-size: 0.85rem;">
+            <div class="col">
+                <small class="text-muted d-block">Loaded</small>
+                <strong><?= $approvedLoaded ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Duplicates</small>
+                <strong class="text-secondary"><?= $dupSkipped ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">After Dedupe</small>
+                <strong><?= $executableAfterDedupe ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Busy Skipped</small>
+                <strong class="text-warning"><?= $busySkipped ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">After Busy</small>
+                <strong><?= $executableAfterBusy ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Guard Blocked</small>
+                <strong class="text-warning"><?= $execGuardBlocked ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Exch. Attempted</small>
+                <strong class="text-info"><?= $exchSubmitAttempted ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Exch. Success</small>
+                <strong class="text-success"><?= $exchSubmitSuccess ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Exch. Failed</small>
+                <strong class="text-danger"><?= $exchSubmitFailed ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Protection Fail</small>
+                <strong class="text-danger"><?= $protApplyFailed ?></strong>
+            </div>
+        </div>
+        <?php if ($latestExchErrCode !== null || $latestExchErrMsg !== ''): ?>
+        <div class="alert alert-danger py-1 px-2 mb-2" style="font-size: 0.80rem;">
+            <i class="bi bi-exclamation-octagon me-1"></i>
+            <strong>Latest Exchange Error:</strong>
+            <?php if ($latestExchErrCode !== null): ?>
+                code=<code><?= htmlspecialchars((string)$latestExchErrCode) ?></code>
+            <?php endif; ?>
+            <?php if ($latestExchErrMsg !== ''): ?>
+                — <?= htmlspecialchars($latestExchErrMsg) ?>
+            <?php endif; ?>
+            <?php if ($lastFailedSym !== ''): ?>
+                (<?= htmlspecialchars($lastFailedSym) ?> @ <?= htmlspecialchars($lastFailedStg) ?>)
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($noOrderPreview)): ?>
+        <details style="font-size: 0.80rem;">
+            <summary class="text-warning mb-1"><i class="bi bi-bug me-1"></i>No-Order Debug Preview (<?= count($noOrderPreview) ?> intents)</summary>
+            <table class="table table-sm table-dark mb-0" style="font-size: 0.78rem;">
+                <thead><tr><th>Symbol</th><th>Side</th><th>Intent ID</th><th>Outcome</th><th>Terminal</th><th>Stage</th><th>Reason</th><th>Order?</th><th>Pos?</th></tr></thead>
+                <tbody>
+                <?php foreach ($noOrderPreview as $nop): ?>
+                <tr>
+                    <td><?= htmlspecialchars((string)($nop['symbol'] ?? '')) ?></td>
+                    <td><?= htmlspecialchars((string)($nop['side'] ?? '')) ?></td>
+                    <td><code style="font-size:0.70rem;"><?= htmlspecialchars(substr((string)($nop['intent_id'] ?? ''), 0, 20)) ?></code></td>
+                    <td><span class="badge bg-<?= ($nop['final_outcome'] ?? '') === 'rejected' ? 'danger' : 'warning' ?>"><?= htmlspecialchars((string)($nop['final_outcome'] ?? '')) ?></span></td>
+                    <td><span class="badge bg-secondary"><?= htmlspecialchars((string)($nop['terminal_status'] ?? '')) ?></span></td>
+                    <td><?= htmlspecialchars((string)($nop['execution_stage'] ?? '')) ?></td>
+                    <td><?= htmlspecialchars(substr((string)($nop['main_reason'] ?? ''), 0, 50)) ?></td>
+                    <td><?= !empty($nop['order_send_attempted']) ? '✓' : '✗' ?></td>
+                    <td><?= !empty($nop['position_opened']) ? '✓' : '✗' ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </details>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
+// Execution Truth Counters
+$etLoaded = (int)($lastRunBot['intents_loaded_count'] ?? 0);
+$etClaimedNow = (int)($lastRunBot['intents_claimed_now_count'] ?? 0);
+$etProcessed = (int)($lastRunBot['intents_processed'] ?? 0);
+$etValidationPassed = (int)($lastRunBot['intents_validation_passed_count'] ?? 0);
+$etGuardPassed = (int)($lastRunBot['intents_execution_guard_passed_count'] ?? 0);
+$etExecRejected = (int)($lastRunBot['intents_execution_rejected_count'] ?? 0);
+$etOrderSendAttempted = (int)($lastRunBot['intents_order_send_attempted_count'] ?? 0);
+$etOrderSent = (int)($lastRunBot['intents_order_sent_count'] ?? 0);
+$etExchangeAccepted = (int)($lastRunBot['intents_exchange_accepted_count'] ?? 0);
+$etPositionOpened = (int)($lastRunBot['intents_position_opened_count'] ?? 0);
+$etTerminalExecuted = (int)($lastRunBot['intents_terminal_executed_count'] ?? 0);
+$etTerminalRejected = (int)($lastRunBot['intents_terminal_rejected_count'] ?? 0);
+$etTerminalFailed = (int)($lastRunBot['intents_terminal_failed_count'] ?? 0);
+$etStaleFound = (int)($lastRunBot['intents_claimed_stale_count'] ?? 0);
+$etStaleFinalized = (int)($lastRunBot['intents_claimed_finalized_count'] ?? 0);
+?>
+<?php if ($etProcessed > 0 || $etLoaded > 0): ?>
+<div class="card mb-4" style="border-color: <?= $etTerminalExecuted > 0 ? '#198754' : ($etTerminalRejected > 0 ? '#dc3545' : '#6c757d') ?>;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-check me-2"></i>Execution Truth Counters</span>
+        <?php if ($etTerminalExecuted > 0): ?>
+            <span class="badge bg-success"><?= $etTerminalExecuted ?> Real Executed</span>
+        <?php elseif ($etProcessed > 0): ?>
+            <span class="badge bg-warning text-dark">0 Real Executed</span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 text-center" style="font-size: 0.82rem;">
+            <div class="col"><small class="text-muted d-block">Loaded</small><strong><?= $etLoaded ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Claimed</small><strong class="text-primary"><?= $etClaimedNow ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Valid</small><strong><?= $etValidationPassed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Processed</small><strong><?= $etProcessed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Guard Passed</small><strong class="text-info"><?= $etGuardPassed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Order Attempted</small><strong class="text-info"><?= $etOrderSendAttempted ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Order Sent</small><strong class="text-success"><?= $etOrderSent ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Pos Opened</small><strong class="text-success"><?= $etPositionOpened ?></strong></div>
+        </div>
+        <div class="row g-2 text-center mt-1" style="font-size: 0.82rem;">
+            <div class="col"><small class="text-muted d-block">Terminal Executed</small><strong class="text-success"><?= $etTerminalExecuted ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Terminal Rejected</small><strong class="text-danger"><?= $etTerminalRejected ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Terminal Failed</small><strong class="text-warning"><?= $etTerminalFailed ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Exec Rejected</small><strong class="text-danger"><?= $etExecRejected ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Stale Found</small><strong class="text-secondary"><?= $etStaleFound ?></strong></div>
+            <div class="col"><small class="text-muted d-block">Stale Finalized</small><strong class="text-secondary"><?= $etStaleFinalized ?></strong></div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($botIntentClaim) || !empty($botLifecycleSkipped)): ?>
+<div class="card mb-4" style="border-color: #6610f2;">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-arrow-repeat me-2"></i>Intent Lifecycle — Claim & Skip</span>
+        <?php if (($botIntentClaim['claimed_count'] ?? 0) > 0): ?>
+            <span class="badge bg-primary"><?= (int)$botIntentClaim['claimed_count'] ?> Claimed</span>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 text-center" style="font-size: 0.85rem;">
+            <div class="col">
+                <small class="text-muted d-block">Claimed Now</small>
+                <strong class="text-primary"><?= (int)($botIntentClaim['claimed_count'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Already Claimed</small>
+                <strong class="text-secondary"><?= (int)($botIntentClaim['already_claimed'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Expired</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['expired'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Claimed</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['claimed'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Already Executed</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['already_executed'] ?? 0) ?></strong>
+            </div>
+            <div class="col">
+                <small class="text-muted d-block">Skip: Rejected</small>
+                <strong class="text-secondary"><?= (int)($botLifecycleSkipped['rejected'] ?? 0) ?></strong>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 
 <!-- Active Positions (Exchange) -->
@@ -274,6 +542,414 @@ $exShow = array_slice($exPositions, 0, 3);
         <?php endif; ?>
     </div>
 </div>
+
+<!-- Execution & Protection Summary -->
+<?php
+$intentResults = is_array($lastRunBot['intent_results'] ?? null) ? $lastRunBot['intent_results'] : [];
+$rejReasonStats = is_array($lastRunBot['rejection_reason_stats'] ?? null) ? $lastRunBot['rejection_reason_stats'] : [];
+$closeReasonStats = is_array($lastRunBot['close_reason_stats'] ?? null) ? $lastRunBot['close_reason_stats'] : [];
+$protSummary = is_array($lastRunBot['active_protection_summary'] ?? null) ? $lastRunBot['active_protection_summary'] : [];
+?>
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-bar-chart me-2"></i>Execution Summary</div>
+            <div class="card-body">
+                <div class="row small">
+                    <div class="col-4 mb-2">
+                        <div class="text-muted">Processed</div>
+                        <div class="fw-semibold"><?= (int)($lastRunBot['intents_processed'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4 mb-2">
+                        <div class="text-muted">Opened / Protected / Trailing</div>
+                        <div class="fw-semibold text-success"><?= (int)($lastRunBot['intents_opened'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4 mb-2">
+                        <div class="text-muted">Rejected (exec)</div>
+                        <div class="fw-semibold text-danger"><?= (int)($lastRunBot['intents_rejected_exec'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted">Skipped / Deferred</div>
+                        <div class="fw-semibold text-warning"><?= (int)($lastRunBot['intents_skipped'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted">Failed (exec)</div>
+                        <div class="fw-semibold text-danger"><?= (int)($lastRunBot['intents_failed_exec'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted">Duplicates Suppressed</div>
+                        <div class="fw-semibold text-secondary"><?= (int)($lastRunBot['duplicate_skipped'] ?? 0) ?></div>
+                    </div>
+                </div>
+                <?php if (!empty($rejReasonStats)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Rejection Reasons</small>
+                <?php foreach ($rejReasonStats as $reason => $cnt): ?>
+                    <span class="badge bg-danger me-1 mb-1"><?= htmlspecialchars($reason) ?> (<?= (int)$cnt ?>)</span>
+                <?php endforeach; ?>
+                <?php endif; ?>
+                <?php if (!empty($closeReasonStats)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Close Reasons</small>
+                <?php foreach ($closeReasonStats as $reason => $cnt): ?>
+                    <span class="badge bg-secondary me-1 mb-1"><?= htmlspecialchars($reason) ?> (<?= (int)$cnt ?>)</span>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-shield-check me-2"></i>Active Protection Summary</div>
+            <div class="card-body">
+                <div class="row small">
+                    <div class="col-6 mb-2">
+                        <div class="text-muted">Active Positions</div>
+                        <div class="fw-semibold"><?= (int)($protSummary['active_positions_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6 mb-2">
+                        <div class="text-muted">Protected (SL set)</div>
+                        <div class="fw-semibold text-success"><?= (int)($protSummary['protected_positions_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Trailing Active</div>
+                        <div class="fw-semibold text-info"><?= (int)($protSummary['trailing_active_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Break-Even Armed</div>
+                        <div class="fw-semibold text-warning"><?= (int)($protSummary['break_even_armed_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Break-Even Applied</div>
+                        <div class="fw-semibold text-success"><?= (int)($protSummary['break_even_applied_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Floor Lock Active</div>
+                        <div class="fw-semibold text-info"><?= (int)($protSummary['floor_lock_active_count'] ?? 0) ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Protection Errors</div>
+                        <div class="fw-semibold <?= (int)($protSummary['protection_errors_count'] ?? 0) > 0 ? 'text-danger' : '' ?>"><?= (int)($protSummary['protection_errors_count'] ?? 0) ?></div>
+                    </div>
+                    <?php if ((int)($protSummary['effective_stop_zero_while_protected_count'] ?? 0) > 0): ?>
+                    <div class="col-6">
+                        <div class="text-muted">⚠ Stop=0 while Protected</div>
+                        <div class="fw-semibold text-danger"><?= (int)$protSummary['effective_stop_zero_while_protected_count'] ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ((int)($protSummary['protection_source_missing_count'] ?? 0) > 0): ?>
+                    <div class="col-6">
+                        <div class="text-muted">⚠ Source Missing</div>
+                        <div class="fw-semibold text-warning"><?= (int)$protSummary['protection_source_missing_count'] ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ((int)($protSummary['best_price_missing_while_trailing_active_count'] ?? 0) > 0): ?>
+                    <div class="col-6">
+                        <div class="text-muted">⚠ Best Price Missing</div>
+                        <div class="fw-semibold text-warning"><?= (int)$protSummary['best_price_missing_while_trailing_active_count'] ?></div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php
+                $idxProtDetails = is_array($lastRunBot['active_position_protection_details'] ?? null) ? $lastRunBot['active_position_protection_details'] : [];
+                $genStats = is_array($lastRunBot['active_trade_contract_generation_stats'] ?? null) ? $lastRunBot['active_trade_contract_generation_stats'] : [];
+                $isMixedGen = (bool)($genStats['mixed_generations'] ?? false);
+                if ($isMixedGen): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Contract Generation Mix</small>
+                <div class="small mb-2">
+                    <span class="badge bg-warning text-dark">⚠ Mixed generations</span>
+                    <?php foreach ((array)($genStats['generation_counts'] ?? []) as $gen => $cnt): ?>
+                        <span class="badge bg-secondary ms-1"><?= htmlspecialchars((string)$gen) ?>: <?= (int)$cnt ?></span>
+                    <?php endforeach; ?>
+                    <?php if ((int)($genStats['migrated_active_trades_count'] ?? 0) > 0): ?>
+                        <span class="badge bg-info ms-1">Migrated: <?= (int)$genStats['migrated_active_trades_count'] ?></span>
+                    <?php endif; ?>
+                </div>
+                <?php elseif (!empty($genStats) && (int)($protSummary['active_positions_count'] ?? 0) > 0): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Contract Generation: <span class="badge bg-success"><?= htmlspecialchars((string)($genStats['current_bot_generation'] ?? 'unknown')) ?></span></small>
+                <?php endif; ?>
+                <?php if (!empty($idxProtDetails)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">Per-Trade Protection Details</small>
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped mb-0" style="font-size:0.8rem;">
+                        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Protection</th><th>Trailing</th><th>BE</th><th>Contract</th><th>Stop Mode</th><th>Initial Stop</th><th>Current Stop</th><th>Eff. Stop</th><th>Source</th><th>⚠</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($idxProtDetails as $ipd): ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string)($ipd['symbol'] ?? '')) ?></td>
+                                <td><span class="badge bg-<?= ($ipd['side'] ?? '') === 'long' ? 'success' : 'danger' ?>"><?= htmlspecialchars(strtoupper((string)($ipd['side'] ?? ''))) ?></span></td>
+                                <td><?= number_format((float)($ipd['entry_price'] ?? 0), 4) ?></td>
+                                <td><span class="badge bg-<?= ($ipd['protection_state'] ?? '') === 'trailing_active' ? 'success' : (($ipd['protection_state'] ?? '') === 'opened_protected' ? 'info' : 'warning') ?>"><?= htmlspecialchars((string)($ipd['protection_state'] ?? 'unknown')) ?></span></td>
+                                <td>
+                                    <?= ($ipd['trailing_active'] ?? false) ? '🟢' : (($ipd['trailing_enabled'] ?? false) ? '⏳' : '⚪') ?>
+                                    <?php $ipdTm = (string)($ipd['trailing_mode'] ?? 'roi_giveback'); ?>
+                                    <?php if ($ipdTm === 'price_distance'): ?>
+                                        <small class="text-info">(dist <?= round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 1) ?>%)</small>
+                                    <?php elseif ($ipdTm === 'price_distance_floor'): ?>
+                                        <small class="text-info" title="Trailing mode: price_distance_floor (multi-layer)">(pdf)</small>
+                                        <?php
+                                            $ipdDistPct = round(((float)($ipd['trailing_price_distance_pct'] ?? 0)) * 100, 2);
+                                            $ipdDistRoi = $ipd['trailing_distance_roi'] ?? null;
+                                            $ipdPreset = (string)($ipd['trailing_preset_mode'] ?? 'custom');
+                                            $ipdFloorRoi = round((float)($ipd['floor_locked_roi'] ?? $ipd['trailing_floor_lock_roi'] ?? 0), 1);
+                                            $ipdActivationRoi = round((float)($ipd['trailing_activation_floor_roi'] ?? $ipd['trailing_activation_roi_pct'] ?? 0), 1);
+                                        ?>
+                                        <?php if ($ipdPreset !== 'custom'): ?>
+                                            <br><small class="text-primary" title="ROI-based trailing preset">🎯 Preset: <strong><?= htmlspecialchars($ipdPreset) ?></strong></small>
+                                        <?php endif; ?>
+                                        <?php if ($ipdDistRoi !== null && (float)$ipdDistRoi > 0): ?>
+                                            <br><small class="text-muted" title="Distance in ROI units (converted to <?= $ipdDistPct ?>% price distance via leverage)">📏 Dist: <?= round((float)$ipdDistRoi, 2) ?> ROI → <?= $ipdDistPct ?>%</small>
+                                        <?php else: ?>
+                                            <br><small class="text-muted" title="Distance trailing layer (shown in exchange UI)">📏 Dist: <?= $ipdDistPct ?>%</small>
+                                        <?php endif; ?>
+                                        <?php if ($ipd['floor_lock_active'] ?? false): ?>
+                                            <br><small class="text-success" title="Floor lock active — minimum ROI protected">🔒 Floor: <?= $ipdFloorRoi ?>% ROI</small>
+                                            <?php if ((float)($ipd['floor_stop_price'] ?? 0) > 0): ?>
+                                                <br><small title="Floor stop price enforced by bot">floor_stop: <?= number_format((float)$ipd['floor_stop_price'], 4) ?></small>
+                                            <?php endif; ?>
+                                            <?php if ($ipd['protection_source_of_truth'] ?? ''): ?>
+                                                <br><small class="text-muted">via: <?= htmlspecialchars((string)$ipd['protection_source_of_truth']) ?></small>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <br><small class="text-muted" title="Floor not yet active — waiting for activation ROI">🔓 Activation: <?= $ipdActivationRoi ?>% ROI</small>
+                                        <?php endif; ?>
+                                        <br><small class="text-muted fst-italic" style="font-size:0.65rem;" title="Distance ROI converted to price % via leverage">⚡ Exchange shows distance layer</small>
+                                    <?php elseif ($ipd['trailing_activation_roi_pct'] ?? 0): ?>
+                                        <small>(<?= number_format((float)($ipd['trailing_activation_roi_pct'] ?? 0), 2) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= ($ipd['break_even_applied'] ?? false) ? '✅' : (($ipd['break_even_armed'] ?? false) ? '🔶' : '⚪') ?></td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($ipd['contract_generation'] ?? '')) ?></small>
+                                    <?php if ($ipd['contract_migrated'] ?? false): ?><span class="badge bg-info" style="font-size:0.6rem;">migrated</span><?php endif; ?>
+                                </td>
+                                <td>
+                                    <small><?= htmlspecialchars((string)($ipd['stop_control_mode'] ?? 'auto')) ?></small>
+                                    <?php if (($ipd['stop_control_mode'] ?? 'auto') === 'entry_roi' && ($ipd['stop_loss_from_entry_roi'] ?? null) !== null): ?>
+                                        <small>(<?= round((float)$ipd['stop_loss_from_entry_roi'] * 100, 1) ?>%)</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php $ipdInitialStop = $ipd['initial_computed_stop_price'] ?? null; ?>
+                                    <?php if ($ipdInitialStop !== null): ?>
+                                        <small><?= number_format((float)$ipdInitialStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php $ipdStopPrice = $ipd['effective_stop_price'] ?? null; ?>
+                                    <?php if ($ipdStopPrice !== null): ?>
+                                        <small><?= number_format((float)$ipdStopPrice, 4) ?></small>
+                                        <?php if ($ipd['stop_moved_from_initial'] ?? false): ?>
+                                            <span class="badge bg-warning text-dark" style="font-size:0.55rem;">moved</span>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php $ipdEffStop = (float)($ipd['current_effective_stop_price'] ?? 0); ?>
+                                    <?php if ($ipdEffStop > 0): ?>
+                                        <small class="text-success fw-bold"><?= number_format($ipdEffStop, 4) ?></small>
+                                    <?php else: ?>
+                                        <small class="text-muted">—</small>
+                                    <?php endif; ?>
+                                    <?php if ((float)($ipd['best_price'] ?? 0) > 0): ?>
+                                        <br><small class="text-muted">best: <?= number_format((float)$ipd['best_price'], 4) ?></small>
+                                    <?php endif; ?>
+                                    <?php if ((float)($ipd['break_even_stop_price'] ?? 0) > 0): ?>
+                                        <br><small class="text-muted">BE: <?= number_format((float)$ipd['break_even_stop_price'], 4) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td><small><?= htmlspecialchars((string)($ipd['effective_trailing_contract_source'] ?? '')) ?></small></td>
+                                <td>
+                                    <?php if ($ipd['warning_effective_stop_zero_while_protected'] ?? false): ?><span class="badge bg-danger" title="Effective stop = 0 while protected">⚠ stop=0</span><br><?php endif; ?>
+                                    <?php if ($ipd['warning_protection_source_missing'] ?? false): ?><span class="badge bg-warning text-dark" title="Protection source missing">⚠ src?</span><br><?php endif; ?>
+                                    <?php if ($ipd['warning_best_price_missing'] ?? false): ?><span class="badge bg-warning text-dark" title="Best price missing">⚠ best?</span><br><?php endif; ?>
+                                    <?php if ($ipd['warning_floor_lock_active_but_not_enforced'] ?? false): ?><span class="badge bg-danger" title="Floor lock active but not enforced">⚠ floor!</span><br><?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+                <?php
+                // Trailing Contract Summary for price_distance_floor trades
+                $pdfTrades = array_filter($idxProtDetails, function($ipd) {
+                    return ($ipd['trailing_mode'] ?? '') === 'price_distance_floor';
+                });
+                if (!empty($pdfTrades)): ?>
+                <hr>
+                <small class="text-muted d-block mb-1">📋 Trailing Contract — price_distance_floor</small>
+                <div class="alert alert-info py-1 px-2 mb-2" style="font-size:0.75rem;">
+                    <strong>Multi-layer protection:</strong>
+                    Exchange UI shows the <em>distance trailing</em> layer (correction %).
+                    Floor lock ROI is enforced separately by bot/exchange stop logic.
+                    <br><em>Distance ROI is converted to price distance using leverage.</em>
+                </div>
+                <?php foreach ($pdfTrades as $pdfT):
+                    $pdfSym = htmlspecialchars((string)($pdfT['symbol'] ?? ''));
+                    $pdfDist = round(((float)($pdfT['trailing_price_distance_pct'] ?? 0)) * 100, 2);
+                    $pdfDistRoi = $pdfT['trailing_distance_roi'] ?? null;
+                    $pdfPreset = (string)($pdfT['trailing_preset_mode'] ?? 'custom');
+                    $pdfFloor = round((float)($pdfT['floor_locked_roi'] ?? $pdfT['trailing_floor_lock_roi'] ?? 0), 1);
+                    $pdfAct = round((float)($pdfT['trailing_activation_floor_roi'] ?? $pdfT['trailing_activation_roi_pct'] ?? 0), 1);
+                    $pdfEffStop = (float)($pdfT['current_effective_stop_price'] ?? 0);
+                    $pdfSource = htmlspecialchars((string)($pdfT['protection_source_of_truth'] ?? 'unknown'));
+                    $pdfFloorActive = (bool)($pdfT['floor_lock_active'] ?? false);
+                ?>
+                <div class="mb-2 p-2 border rounded" style="font-size:0.75rem;">
+                    <strong><?= $pdfSym ?></strong>
+                    <span class="badge bg-<?= ($pdfT['side'] ?? '') === 'long' ? 'success' : 'danger' ?> ms-1"><?= strtoupper((string)($pdfT['side'] ?? '')) ?></span>
+                    <table class="table table-sm table-borderless mb-0 mt-1" style="font-size:0.72rem;">
+                        <tr><td class="text-muted" style="width:40%">Mode</td><td>price_distance_floor</td></tr>
+                        <?php if ($pdfPreset !== 'custom'): ?>
+                        <tr><td class="text-muted">Preset</td><td><strong><?= htmlspecialchars($pdfPreset) ?></strong></td></tr>
+                        <?php endif; ?>
+                        <tr><td class="text-muted">Activation ROI</td><td><?= $pdfAct ?>%</td></tr>
+                        <tr><td class="text-muted">Floor Lock ROI</td><td><?= $pdfFloor ?>% <?= $pdfFloorActive ? '🔒 active' : '🔓 waiting' ?></td></tr>
+                        <?php if ($pdfDistRoi !== null && (float)$pdfDistRoi > 0): ?>
+                        <tr><td class="text-muted">Distance ROI</td><td><?= round((float)$pdfDistRoi, 2) ?> ROI</td></tr>
+                        <tr><td class="text-muted">Converted Distance</td><td><?= $pdfDist ?>% <small class="text-muted">(via leverage)</small></td></tr>
+                        <?php else: ?>
+                        <tr><td class="text-muted">Distance Layer</td><td><?= $pdfDist ?>%</td></tr>
+                        <?php endif; ?>
+                        <?php if ($pdfEffStop > 0): ?>
+                         <tr><td class="text-muted">Effective Stop</td><td class="fw-bold"><?= number_format($pdfEffStop, 4) ?></td></tr>
+                        <?php endif; ?>
+                        <tr><td class="text-muted">Source</td><td><?= $pdfSource ?></td></tr>
+                        <?php
+                            // Profit Add-On state for this trade
+                            $pdfAddonUsed = (bool)($pdfT['runtime']['profit_addon_used'] ?? false);
+                            $pdfAddonEnabled = (bool)($pdfT['runtime']['profit_addon_enabled'] ?? ($pdfT['profit_addon_enabled'] ?? false));
+                            $pdfAddonSkipReason = (string)($pdfT['runtime']['profit_addon_skip_reason'] ?? '');
+                            $pdfAddonFailReason = (string)($pdfT['runtime']['profit_addon_fail_reason'] ?? '');
+                            $pdfAddonAttempted = isset($pdfT['runtime']['profit_addon_attempted']) ? (bool)$pdfT['runtime']['profit_addon_attempted'] : null;
+                            $pdfAddonTriggerReached = isset($pdfT['runtime']['profit_addon_trigger_reached']) ? (bool)$pdfT['runtime']['profit_addon_trigger_reached'] : null;
+                            $pdfAddonEligible = isset($pdfT['runtime']['profit_addon_eligible']) ? (bool)$pdfT['runtime']['profit_addon_eligible'] : null;
+                            $pdfAddonMinCheck = isset($pdfT['runtime']['profit_addon_min_order_check_passed']) ? (bool)$pdfT['runtime']['profit_addon_min_order_check_passed'] : null;
+                            $pdfAddonRaw = (float)($pdfT['runtime']['profit_addon_amount_usdt_raw'] ?? 0);
+                            $pdfAddonTriggerRoi = (float)($pdfT['runtime']['profit_addon_trigger_roi'] ?? 0);
+                            $pdfAddonCurrentRoi = (float)($pdfT['runtime']['profit_addon_current_roi'] ?? 0);
+                        ?>
+                        <?php if ($pdfAddonUsed): ?>
+                        <tr><td class="text-muted">Add-On</td><td>
+                            <span class="badge bg-success">✅ used</span>
+                            <?php $pdfAddonAt = $pdfT['runtime']['profit_addon_executed_at'] ?? null; if ($pdfAddonAt): ?><small class="text-muted ms-1"><?= htmlspecialchars(substr((string)$pdfAddonAt, 0, 16)) ?></small><?php endif; ?>
+                            <?php if ((float)($pdfT['runtime']['profit_addon_amount_usdt'] ?? 0) > 0): ?>
+                                <br><small>+<?= round((float)$pdfT['runtime']['profit_addon_amount_usdt'], 2) ?> USDT @ ROI <?= round((float)($pdfT['runtime']['profit_addon_trigger_roi'] ?? 0), 1) ?>%</small>
+                            <?php endif; ?>
+                            <?php if ((float)($pdfT['runtime']['profit_addon_pre_effective_stop'] ?? 0) > 0): ?>
+                                <br><small class="text-muted">stop before: <?= number_format((float)$pdfT['runtime']['profit_addon_pre_effective_stop'], 4) ?></small>
+                            <?php endif; ?>
+                            <?php if ((float)($pdfT['runtime']['profit_addon_post_effective_stop'] ?? 0) > 0): ?>
+                                <br><small class="text-muted">stop after: <?= number_format((float)$pdfT['runtime']['profit_addon_post_effective_stop'], 4) ?></small>
+                            <?php endif; ?>
+                            <?php if (!empty($pdfT['runtime']['profit_addon_stop_restored'])): ?>
+                                <br><span class="badge bg-warning text-dark" style="font-size:0.6rem;">stop restored</span>
+                            <?php endif; ?>
+                        </td></tr>
+                        <?php elseif ($pdfAddonEnabled && !$pdfAddonUsed): ?>
+                        <tr><td class="text-muted">Add-On</td><td>
+                            <?php if ($pdfAddonFailReason !== ''): ?>
+                                <span class="badge bg-danger">❌ failed</span>
+                                <br><small class="text-danger"><?= htmlspecialchars($pdfAddonFailReason) ?></small>
+                                <?php $paErr = (string)($pdfT['runtime']['profit_addon_last_error'] ?? ''); if ($paErr !== ''): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars(substr($paErr, 0, 80)) ?></small>
+                                <?php endif; ?>
+                            <?php elseif ($pdfAddonAttempted === true): ?>
+                                <span class="badge bg-warning text-dark">⏳ attempted</span>
+                            <?php elseif ($pdfAddonSkipReason !== ''): ?>
+                                <span class="badge bg-secondary">⏭ skipped</span>
+                                <br><small class="text-muted"><?= htmlspecialchars($pdfAddonSkipReason) ?></small>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">💰 pending</span>
+                            <?php endif; ?>
+                            <?php if ($pdfAddonTriggerRoi > 0): ?>
+                                <br><small class="text-muted">trigger: <?= round($pdfAddonTriggerRoi, 2) ?>% ROI</small>
+                                <?php if ($pdfAddonCurrentRoi > 0): ?>
+                                    <small class="text-muted"> | now: <?= round($pdfAddonCurrentRoi, 2) ?>%</small>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($pdfAddonRaw > 0 && $pdfAddonMinCheck === false): ?>
+                                <br><small class="text-warning">⚠ amount too small: <?= round($pdfAddonRaw, 4) ?> USDT</small>
+                            <?php elseif ($pdfAddonRaw > 0): ?>
+                                <br><small class="text-muted">raw: <?= round($pdfAddonRaw, 4) ?> USDT</small>
+                            <?php endif; ?>
+                        </td></tr>
+                        <?php endif; ?>
+                        <?php
+                            // Reversal Overlay state for this trade (trend_reversal_soft_ladder_short mode)
+                            $rvOverlayMode    = (string)($pdfT['runtime']['reversal_overlay_mode'] ?? '');
+                            $rvOverlayActive  = isset($pdfT['runtime']['reversal_overlay_active']) ? (bool)$pdfT['runtime']['reversal_overlay_active'] : null;
+                            $rvOverlayPattern = $pdfT['runtime']['reversal_overlay_trigger_pattern'] ?? null;
+                            $rvOverlayAt      = $pdfT['runtime']['reversal_overlay_triggered_at'] ?? null;
+                            $rvPeakRoi        = (float)($pdfT['runtime']['reversal_overlay_peak_roi'] ?? 0);
+                            $rvLockedRoi      = (float)($pdfT['runtime']['reversal_overlay_locked_roi_current'] ?? 0);
+                            $rvStepCount      = (int)($pdfT['runtime']['reversal_overlay_step_count'] ?? 0);
+                            $rvNextStep       = (float)($pdfT['runtime']['reversal_overlay_next_step_target_roi'] ?? 0);
+                            $rvSkipReason     = (string)($pdfT['runtime']['reversal_overlay_skip_reason'] ?? '');
+                            $rvComputedStop   = (float)($pdfT['runtime']['reversal_overlay_computed_stop'] ?? 0);
+                            $rvEnforced       = (bool)($pdfT['runtime']['reversal_overlay_stop_enforced'] ?? false);
+                        ?>
+                        <?php if ($rvOverlayMode === 'trend_reversal_soft_ladder_short'): ?>
+                        <tr><td class="text-muted" style="width:40%">
+                            <span class="badge bg-warning text-dark" style="font-size:0.6rem;">TEST</span> Reversal Overlay
+                        </td><td>
+                            <?php if ($rvOverlayActive === true): ?>
+                                <span class="badge bg-success">🔬 active</span>
+                                <?php if ($rvOverlayPattern): ?>
+                                    <br><small class="text-success">trigger: <?= htmlspecialchars($rvOverlayPattern) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvOverlayAt): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars(substr((string)$rvOverlayAt, 0, 16)) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvPeakRoi > 0): ?>
+                                    <br><small class="text-muted">peak: <?= round($rvPeakRoi, 2) ?>% ROI</small>
+                                <?php endif; ?>
+                                <?php if ($rvLockedRoi > 0): ?>
+                                    <br><small class="text-info fw-bold">lock: <?= round($rvLockedRoi, 2) ?>% ROI (step <?= $rvStepCount ?>)</small>
+                                <?php endif; ?>
+                                <?php if ($rvNextStep > 0): ?>
+                                    <br><small class="text-muted">next step @ <?= round($rvNextStep, 1) ?>% ROI</small>
+                                <?php endif; ?>
+                                <?php if ($rvComputedStop > 0): ?>
+                                    <br><small class="text-muted">overlay stop: <?= number_format($rvComputedStop, 4) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvEnforced): ?>
+                                    <br><span class="badge bg-primary" style="font-size:0.6rem;">stop enforced</span>
+                                <?php endif; ?>
+                            <?php elseif ($rvOverlayActive === false): ?>
+                                <span class="badge bg-secondary">⏸ inactive</span>
+                                <?php if ($rvSkipReason !== ''): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars($rvSkipReason) ?></small>
+                                <?php endif; ?>
+                                <?php if ($rvPeakRoi > 0): ?>
+                                    <br><small class="text-muted">peak so far: <?= round($rvPeakRoi, 2) ?>% ROI</small>
+                                <?php endif; ?>
+                                <?php if ($rvNextStep > 0): ?>
+                                    <br><small class="text-muted">activates @ <?= round($rvNextStep, 1) ?>% ROI</small>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">⏸ waiting</span>
+                            <?php endif; ?>
+                            <br><small class="text-muted fst-italic" style="font-size:0.65rem;">constants: act=10 base=5 step=3/+1</small>
+                        </td></tr>
+                        <?php endif; ?>
+                    </table>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php endif; ?>
 
 <?php if (!empty($lastRun)): ?>
@@ -443,7 +1119,7 @@ $exShow = array_slice($exPositions, 0, 3);
                     <div class="card-body">
                         <?php $bal = $lastRun['balance_snapshot_last'] ?? null; ?>
                         <?php if (empty($bal) || !is_array($bal)): ?>
-                            <p class="text-muted mb-0">No balance snapshot captured in last run (may be deferred or dry mode).</p>
+                            <p class="text-muted mb-0">No balance snapshot captured in last run (may be deferred or paper mode).</p>
                         <?php else: ?>
                             <div class="row small">
                                 <div class="col-md-3">

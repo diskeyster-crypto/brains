@@ -1,0 +1,25 @@
+{
+    "virtual_trade_id": "vt_sig_bb8deadc26f673d7",
+    "source_signal_id": "sig_bb8deadc26f673d7",
+    "symbol": "METISUSDT",
+    "side": "short",
+    "pattern_algorithm": "double_top_contextual_v2",
+    "ai_decision": "enter",
+    "result_label": "bad",
+    "roi_outcome": -0.015,
+    "live_roi": -0.012,
+    "ai_confidence": 0.835,
+    "ai_quality_score": 0.5283,
+    "ai_reasons": [
+        "mock_provider",
+        "pattern_match_detected"
+    ],
+    "mfe": 0,
+    "mae": 0,
+    "delta_roi": -0.003,
+    "agreement": "agree",
+    "live_close_reason": "stop_loss",
+    "ai_exit_reason": "stop_loss",
+    "input_snapshot_ref": "sig_bb8deadc26f673d7",
+    "stored_at": 1775036109
+}

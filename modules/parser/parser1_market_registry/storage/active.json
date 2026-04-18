@@ -5,7 +5,7 @@
         "baseCoin": "0G",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000000BABYDOGEUSDT": {
         "symbol": "1000000BABYDOGEUSDT",
@@ -13,7 +13,7 @@
         "baseCoin": "1000000BABYDOGE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000000CHEEMSUSDT": {
         "symbol": "1000000CHEEMSUSDT",
@@ -21,7 +21,7 @@
         "baseCoin": "1000000CHEEMS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000000MOGUSDT": {
         "symbol": "1000000MOGUSDT",
@@ -29,7 +29,7 @@
         "baseCoin": "1000000MOG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "10000QUBICUSDT": {
         "symbol": "10000QUBICUSDT",
@@ -37,7 +37,7 @@
         "baseCoin": "10000QUBIC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "10000SATSUSDT": {
         "symbol": "10000SATSUSDT",
@@ -45,7 +45,7 @@
         "baseCoin": "10000SATS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000BONKUSDT": {
         "symbol": "1000BONKUSDT",
@@ -53,7 +53,7 @@
         "baseCoin": "1000BONK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000BTTUSDT": {
         "symbol": "1000BTTUSDT",
@@ -61,7 +61,7 @@
         "baseCoin": "1000BTT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000CATUSDT": {
         "symbol": "1000CATUSDT",
@@ -69,7 +69,7 @@
         "baseCoin": "1000CAT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000FLOKIUSDT": {
         "symbol": "1000FLOKIUSDT",
@@ -77,7 +77,7 @@
         "baseCoin": "1000FLOKI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000LUNCUSDT": {
         "symbol": "1000LUNCUSDT",
@@ -85,7 +85,7 @@
         "baseCoin": "1000LUNC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000NEIROCTOUSDT": {
         "symbol": "1000NEIROCTOUSDT",
@@ -93,7 +93,7 @@
         "baseCoin": "1000NEIROCTO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000PEPEUSDT": {
         "symbol": "1000PEPEUSDT",
@@ -101,7 +101,7 @@
         "baseCoin": "1000PEPE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000RATSUSDT": {
         "symbol": "1000RATSUSDT",
@@ -109,7 +109,7 @@
         "baseCoin": "1000RATS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000TAGUSDT": {
         "symbol": "1000TAGUSDT",
@@ -117,7 +117,7 @@
         "baseCoin": "1000TAG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000TOSHIUSDT": {
         "symbol": "1000TOSHIUSDT",
@@ -125,7 +125,7 @@
         "baseCoin": "1000TOSHI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000TURBOUSDT": {
         "symbol": "1000TURBOUSDT",
@@ -133,7 +133,7 @@
         "baseCoin": "1000TURBO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1000XECUSDT": {
         "symbol": "1000XECUSDT",
@@ -141,7 +141,7 @@
         "baseCoin": "1000XEC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "1INCHUSDT": {
         "symbol": "1INCHUSDT",
@@ -149,7 +149,7 @@
         "baseCoin": "1INCH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "2ZUSDT": {
         "symbol": "2ZUSDT",
@@ -157,7 +157,7 @@
         "baseCoin": "2Z",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "4USDT": {
         "symbol": "4USDT",
@@ -165,7 +165,7 @@
         "baseCoin": "4",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AAVEUSDT": {
         "symbol": "AAVEUSDT",
@@ -173,7 +173,7 @@
         "baseCoin": "AAVE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ACEUSDT": {
         "symbol": "ACEUSDT",
@@ -181,7 +181,7 @@
         "baseCoin": "ACE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ACHUSDT": {
         "symbol": "ACHUSDT",
@@ -189,7 +189,7 @@
         "baseCoin": "ACH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ACTUSDT": {
         "symbol": "ACTUSDT",
@@ -197,7 +197,7 @@
         "baseCoin": "ACT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ACUUSDT": {
         "symbol": "ACUUSDT",
@@ -205,7 +205,7 @@
         "baseCoin": "ACU",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ACXUSDT": {
         "symbol": "ACXUSDT",
@@ -213,7 +213,7 @@
         "baseCoin": "ACX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ADAUSDT": {
         "symbol": "ADAUSDT",
@@ -221,7 +221,7 @@
         "baseCoin": "ADA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AERGOUSDT": {
         "symbol": "AERGOUSDT",
@@ -229,7 +229,7 @@
         "baseCoin": "AERGO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AEROUSDT": {
         "symbol": "AEROUSDT",
@@ -237,7 +237,7 @@
         "baseCoin": "AERO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AEVOUSDT": {
         "symbol": "AEVOUSDT",
@@ -245,7 +245,7 @@
         "baseCoin": "AEVO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AGIUSDT": {
         "symbol": "AGIUSDT",
@@ -253,7 +253,7 @@
         "baseCoin": "AGI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AGLDUSDT": {
         "symbol": "AGLDUSDT",
@@ -261,7 +261,7 @@
         "baseCoin": "AGLD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AIOUSDT": {
         "symbol": "AIOUSDT",
@@ -269,7 +269,7 @@
         "baseCoin": "AIO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AIOZUSDT": {
         "symbol": "AIOZUSDT",
@@ -277,7 +277,7 @@
         "baseCoin": "AIOZ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AIXBTUSDT": {
         "symbol": "AIXBTUSDT",
@@ -285,7 +285,7 @@
         "baseCoin": "AIXBT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AKEUSDT": {
         "symbol": "AKEUSDT",
@@ -293,7 +293,7 @@
         "baseCoin": "AKE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AKTUSDT": {
         "symbol": "AKTUSDT",
@@ -301,7 +301,7 @@
         "baseCoin": "AKT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ALCHUSDT": {
         "symbol": "ALCHUSDT",
@@ -309,7 +309,7 @@
         "baseCoin": "ALCH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ALGOUSDT": {
         "symbol": "ALGOUSDT",
@@ -317,7 +317,7 @@
         "baseCoin": "ALGO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ALICEUSDT": {
         "symbol": "ALICEUSDT",
@@ -325,7 +325,7 @@
         "baseCoin": "ALICE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ALLOUSDT": {
         "symbol": "ALLOUSDT",
@@ -333,7 +333,7 @@
         "baseCoin": "ALLO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ALPINEUSDT": {
         "symbol": "ALPINEUSDT",
@@ -341,7 +341,7 @@
         "baseCoin": "ALPINE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ALTUSDT": {
         "symbol": "ALTUSDT",
@@ -349,7 +349,7 @@
         "baseCoin": "ALT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ANIMEUSDT": {
         "symbol": "ANIMEUSDT",
@@ -357,7 +357,7 @@
         "baseCoin": "ANIME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ANKRUSDT": {
         "symbol": "ANKRUSDT",
@@ -365,7 +365,7 @@
         "baseCoin": "ANKR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "APEUSDT": {
         "symbol": "APEUSDT",
@@ -373,7 +373,7 @@
         "baseCoin": "APE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "APEXUSDT": {
         "symbol": "APEXUSDT",
@@ -381,7 +381,7 @@
         "baseCoin": "APEX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "API3USDT": {
         "symbol": "API3USDT",
@@ -389,7 +389,7 @@
         "baseCoin": "API3",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "APRUSDT": {
         "symbol": "APRUSDT",
@@ -397,7 +397,7 @@
         "baseCoin": "APR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "APTUSDT": {
         "symbol": "APTUSDT",
@@ -405,7 +405,7 @@
         "baseCoin": "APT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARBUSDT": {
         "symbol": "ARBUSDT",
@@ -413,7 +413,7 @@
         "baseCoin": "ARB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARCUSDT": {
         "symbol": "ARCUSDT",
@@ -421,7 +421,7 @@
         "baseCoin": "ARC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARIAUSDT": {
         "symbol": "ARIAUSDT",
@@ -429,7 +429,7 @@
         "baseCoin": "ARIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARKMUSDT": {
         "symbol": "ARKMUSDT",
@@ -437,7 +437,7 @@
         "baseCoin": "ARKM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARKUSDT": {
         "symbol": "ARKUSDT",
@@ -445,7 +445,7 @@
         "baseCoin": "ARK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARPAUSDT": {
         "symbol": "ARPAUSDT",
@@ -453,7 +453,7 @@
         "baseCoin": "ARPA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ARUSDT": {
         "symbol": "ARUSDT",
@@ -461,7 +461,7 @@
         "baseCoin": "AR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ASPUSDT": {
         "symbol": "ASPUSDT",
@@ -469,7 +469,7 @@
         "baseCoin": "ASP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ASRUSDT": {
         "symbol": "ASRUSDT",
@@ -477,7 +477,7 @@
         "baseCoin": "ASR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ASTERUSDT": {
         "symbol": "ASTERUSDT",
@@ -485,7 +485,7 @@
         "baseCoin": "ASTER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ASTRUSDT": {
         "symbol": "ASTRUSDT",
@@ -493,7 +493,7 @@
         "baseCoin": "ASTR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ATHUSDT": {
         "symbol": "ATHUSDT",
@@ -501,7 +501,7 @@
         "baseCoin": "ATH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ATOMUSDT": {
         "symbol": "ATOMUSDT",
@@ -509,7 +509,7 @@
         "baseCoin": "ATOM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ATUSDT": {
         "symbol": "ATUSDT",
@@ -517,7 +517,7 @@
         "baseCoin": "AT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AUCTIONUSDT": {
         "symbol": "AUCTIONUSDT",
@@ -525,7 +525,7 @@
         "baseCoin": "AUCTION",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AUSDT": {
         "symbol": "AUSDT",
@@ -533,7 +533,7 @@
         "baseCoin": "A",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AVAAIUSDT": {
         "symbol": "AVAAIUSDT",
@@ -541,7 +541,7 @@
         "baseCoin": "AVAAI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AVAUSDT": {
         "symbol": "AVAUSDT",
@@ -549,7 +549,7 @@
         "baseCoin": "AVA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AVAXUSDT": {
         "symbol": "AVAXUSDT",
@@ -557,7 +557,7 @@
         "baseCoin": "AVAX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AVLUSDT": {
         "symbol": "AVLUSDT",
@@ -565,7 +565,7 @@
         "baseCoin": "AVL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AVNTUSDT": {
         "symbol": "AVNTUSDT",
@@ -573,7 +573,7 @@
         "baseCoin": "AVNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AWEUSDT": {
         "symbol": "AWEUSDT",
@@ -581,7 +581,7 @@
         "baseCoin": "AWE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AXLUSDT": {
         "symbol": "AXLUSDT",
@@ -589,7 +589,7 @@
         "baseCoin": "AXL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AXSUSDT": {
         "symbol": "AXSUSDT",
@@ -597,7 +597,7 @@
         "baseCoin": "AXS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "AZTECUSDT": {
         "symbol": "AZTECUSDT",
@@ -605,7 +605,7 @@
         "baseCoin": "AZTEC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "B2USDT": {
         "symbol": "B2USDT",
@@ -613,7 +613,7 @@
         "baseCoin": "B2",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "B3USDT": {
         "symbol": "B3USDT",
@@ -621,7 +621,7 @@
         "baseCoin": "B3",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BABYUSDT": {
         "symbol": "BABYUSDT",
@@ -629,7 +629,7 @@
         "baseCoin": "BABY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BANANAS31USDT": {
         "symbol": "BANANAS31USDT",
@@ -637,7 +637,7 @@
         "baseCoin": "BANANAS31",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BANANAUSDT": {
         "symbol": "BANANAUSDT",
@@ -645,7 +645,7 @@
         "baseCoin": "BANANA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BANDUSDT": {
         "symbol": "BANDUSDT",
@@ -653,7 +653,7 @@
         "baseCoin": "BAND",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BANKUSDT": {
         "symbol": "BANKUSDT",
@@ -661,7 +661,7 @@
         "baseCoin": "BANK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BANUSDT": {
         "symbol": "BANUSDT",
@@ -669,7 +669,7 @@
         "baseCoin": "BAN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BARDUSDT": {
         "symbol": "BARDUSDT",
@@ -677,7 +677,7 @@
         "baseCoin": "BARD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BATUSDT": {
         "symbol": "BATUSDT",
@@ -685,7 +685,7 @@
         "baseCoin": "BAT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BBUSDT": {
         "symbol": "BBUSDT",
@@ -693,7 +693,7 @@
         "baseCoin": "BB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BCHUSDT": {
         "symbol": "BCHUSDT",
@@ -701,7 +701,7 @@
         "baseCoin": "BCH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BEAMUSDT": {
         "symbol": "BEAMUSDT",
@@ -709,7 +709,7 @@
         "baseCoin": "BEAM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BEATUSDT": {
         "symbol": "BEATUSDT",
@@ -717,7 +717,7 @@
         "baseCoin": "BEAT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BELUSDT": {
         "symbol": "BELUSDT",
@@ -725,7 +725,7 @@
         "baseCoin": "BEL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BERAUSDT": {
         "symbol": "BERAUSDT",
@@ -733,7 +733,7 @@
         "baseCoin": "BERA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BICOUSDT": {
         "symbol": "BICOUSDT",
@@ -741,7 +741,7 @@
         "baseCoin": "BICO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BIGTIMEUSDT": {
         "symbol": "BIGTIMEUSDT",
@@ -749,7 +749,7 @@
         "baseCoin": "BIGTIME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BIOUSDT": {
         "symbol": "BIOUSDT",
@@ -757,7 +757,7 @@
         "baseCoin": "BIO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BIRBUSDT": {
         "symbol": "BIRBUSDT",
@@ -765,7 +765,7 @@
         "baseCoin": "BIRB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BLASTUSDT": {
         "symbol": "BLASTUSDT",
@@ -773,7 +773,7 @@
         "baseCoin": "BLAST",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BLESSUSDT": {
         "symbol": "BLESSUSDT",
@@ -781,7 +781,7 @@
         "baseCoin": "BLESS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BLUAIUSDT": {
         "symbol": "BLUAIUSDT",
@@ -789,7 +789,7 @@
         "baseCoin": "BLUAI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BLURUSDT": {
         "symbol": "BLURUSDT",
@@ -797,7 +797,7 @@
         "baseCoin": "BLUR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BMTUSDT": {
         "symbol": "BMTUSDT",
@@ -805,7 +805,7 @@
         "baseCoin": "BMT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BNBUSDT": {
         "symbol": "BNBUSDT",
@@ -813,7 +813,7 @@
         "baseCoin": "BNB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BNTUSDT": {
         "symbol": "BNTUSDT",
@@ -821,7 +821,7 @@
         "baseCoin": "BNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BOBAUSDT": {
         "symbol": "BOBAUSDT",
@@ -829,7 +829,7 @@
         "baseCoin": "BOBA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BOBBOBUSDT": {
         "symbol": "BOBBOBUSDT",
@@ -837,7 +837,7 @@
         "baseCoin": "BOBBOB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BOMEUSDT": {
         "symbol": "BOMEUSDT",
@@ -845,7 +845,7 @@
         "baseCoin": "BOME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BRETTUSDT": {
         "symbol": "BRETTUSDT",
@@ -853,7 +853,7 @@
         "baseCoin": "BRETT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BREVUSDT": {
         "symbol": "BREVUSDT",
@@ -861,7 +861,7 @@
         "baseCoin": "BREV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BROCCOLIUSDT": {
         "symbol": "BROCCOLIUSDT",
@@ -869,7 +869,7 @@
         "baseCoin": "BROCCOLI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BRUSDT": {
         "symbol": "BRUSDT",
@@ -877,7 +877,7 @@
         "baseCoin": "BR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BSUUSDT": {
         "symbol": "BSUUSDT",
@@ -885,7 +885,7 @@
         "baseCoin": "BSU",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BSVUSDT": {
         "symbol": "BSVUSDT",
@@ -893,7 +893,7 @@
         "baseCoin": "BSV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BTRUSDT": {
         "symbol": "BTRUSDT",
@@ -901,7 +901,7 @@
         "baseCoin": "BTR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "BUSDT": {
         "symbol": "BUSDT",
@@ -909,7 +909,7 @@
         "baseCoin": "B",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "C98USDT": {
         "symbol": "C98USDT",
@@ -917,7 +917,7 @@
         "baseCoin": "C98",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CAKEUSDT": {
         "symbol": "CAKEUSDT",
@@ -925,7 +925,7 @@
         "baseCoin": "CAKE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CAMPUSDT": {
         "symbol": "CAMPUSDT",
@@ -933,7 +933,7 @@
         "baseCoin": "CAMP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CARVUSDT": {
         "symbol": "CARVUSDT",
@@ -941,7 +941,7 @@
         "baseCoin": "CARV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CATIUSDT": {
         "symbol": "CATIUSDT",
@@ -949,7 +949,7 @@
         "baseCoin": "CATI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CCUSDT": {
         "symbol": "CCUSDT",
@@ -957,7 +957,7 @@
         "baseCoin": "CC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CELOUSDT": {
         "symbol": "CELOUSDT",
@@ -965,7 +965,7 @@
         "baseCoin": "CELO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CETUSUSDT": {
         "symbol": "CETUSUSDT",
@@ -973,7 +973,15 @@
         "baseCoin": "CETUS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
+    },
+    "CFGUSDT": {
+        "symbol": "CFGUSDT",
+        "category": "linear",
+        "baseCoin": "CFG",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CFXUSDT": {
         "symbol": "CFXUSDT",
@@ -981,7 +989,7 @@
         "baseCoin": "CFX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CGPTUSDT": {
         "symbol": "CGPTUSDT",
@@ -989,7 +997,7 @@
         "baseCoin": "CGPT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CHILLGUYUSDT": {
         "symbol": "CHILLGUYUSDT",
@@ -997,7 +1005,7 @@
         "baseCoin": "CHILLGUY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CHRUSDT": {
         "symbol": "CHRUSDT",
@@ -1005,7 +1013,7 @@
         "baseCoin": "CHR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CHZUSDT": {
         "symbol": "CHZUSDT",
@@ -1013,7 +1021,7 @@
         "baseCoin": "CHZ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CKBUSDT": {
         "symbol": "CKBUSDT",
@@ -1021,7 +1029,7 @@
         "baseCoin": "CKB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CLANKERUSDT": {
         "symbol": "CLANKERUSDT",
@@ -1029,7 +1037,7 @@
         "baseCoin": "CLANKER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CLOUDUSDT": {
         "symbol": "CLOUDUSDT",
@@ -1037,7 +1045,7 @@
         "baseCoin": "CLOUD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CLOUSDT": {
         "symbol": "CLOUSDT",
@@ -1045,7 +1053,7 @@
         "baseCoin": "CLO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COAIUSDT": {
         "symbol": "COAIUSDT",
@@ -1053,7 +1061,7 @@
         "baseCoin": "COAI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COMPUSDT": {
         "symbol": "COMPUSDT",
@@ -1061,7 +1069,7 @@
         "baseCoin": "COMP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COOKIEUSDT": {
         "symbol": "COOKIEUSDT",
@@ -1069,7 +1077,7 @@
         "baseCoin": "COOKIE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COOKUSDT": {
         "symbol": "COOKUSDT",
@@ -1077,7 +1085,7 @@
         "baseCoin": "COOK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COREUSDT": {
         "symbol": "COREUSDT",
@@ -1085,7 +1093,7 @@
         "baseCoin": "CORE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COTIUSDT": {
         "symbol": "COTIUSDT",
@@ -1093,7 +1101,7 @@
         "baseCoin": "COTI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "COWUSDT": {
         "symbol": "COWUSDT",
@@ -1101,7 +1109,7 @@
         "baseCoin": "COW",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CROSSUSDT": {
         "symbol": "CROSSUSDT",
@@ -1109,7 +1117,7 @@
         "baseCoin": "CROSS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CROUSDT": {
         "symbol": "CROUSDT",
@@ -1117,7 +1125,7 @@
         "baseCoin": "CRO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CRVUSDT": {
         "symbol": "CRVUSDT",
@@ -1125,7 +1133,7 @@
         "baseCoin": "CRV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CTCUSDT": {
         "symbol": "CTCUSDT",
@@ -1133,7 +1141,7 @@
         "baseCoin": "CTC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CTKUSDT": {
         "symbol": "CTKUSDT",
@@ -1141,15 +1149,7 @@
         "baseCoin": "CTK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
-    },
-    "CTSIUSDT": {
-        "symbol": "CTSIUSDT",
-        "category": "linear",
-        "baseCoin": "CTSI",
-        "quoteCoin": "USDT",
-        "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CUSDT": {
         "symbol": "CUSDT",
@@ -1157,7 +1157,7 @@
         "baseCoin": "C",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CVCUSDT": {
         "symbol": "CVCUSDT",
@@ -1165,7 +1165,7 @@
         "baseCoin": "CVC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CVXUSDT": {
         "symbol": "CVXUSDT",
@@ -1173,7 +1173,7 @@
         "baseCoin": "CVX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CYBERUSDT": {
         "symbol": "CYBERUSDT",
@@ -1181,7 +1181,7 @@
         "baseCoin": "CYBER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "CYSUSDT": {
         "symbol": "CYSUSDT",
@@ -1189,7 +1189,7 @@
         "baseCoin": "CYS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DASHUSDT": {
         "symbol": "DASHUSDT",
@@ -1197,7 +1197,7 @@
         "baseCoin": "DASH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DBRUSDT": {
         "symbol": "DBRUSDT",
@@ -1205,7 +1205,7 @@
         "baseCoin": "DBR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DEEPUSDT": {
         "symbol": "DEEPUSDT",
@@ -1213,7 +1213,7 @@
         "baseCoin": "DEEP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DEGENUSDT": {
         "symbol": "DEGENUSDT",
@@ -1221,7 +1221,7 @@
         "baseCoin": "DEGEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DEXEUSDT": {
         "symbol": "DEXEUSDT",
@@ -1229,7 +1229,7 @@
         "baseCoin": "DEXE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DIAUSDT": {
         "symbol": "DIAUSDT",
@@ -1237,7 +1237,7 @@
         "baseCoin": "DIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOGEUSDT": {
         "symbol": "DOGEUSDT",
@@ -1245,23 +1245,23 @@
         "baseCoin": "DOGE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "DOGEUSDT-13MAR26": {
-        "symbol": "DOGEUSDT-13MAR26",
+    "DOGEUSDT-03APR26": {
+        "symbol": "DOGEUSDT-03APR26",
         "category": "linear",
         "baseCoin": "DOGE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "DOGEUSDT-20MAR26": {
-        "symbol": "DOGEUSDT-20MAR26",
+    "DOGEUSDT-10APR26": {
+        "symbol": "DOGEUSDT-10APR26",
         "category": "linear",
         "baseCoin": "DOGE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOGEUSDT-24APR26": {
         "symbol": "DOGEUSDT-24APR26",
@@ -1269,7 +1269,7 @@
         "baseCoin": "DOGE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOGEUSDT-27MAR26": {
         "symbol": "DOGEUSDT-27MAR26",
@@ -1277,7 +1277,7 @@
         "baseCoin": "DOGE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOGUSDT": {
         "symbol": "DOGUSDT",
@@ -1285,7 +1285,7 @@
         "baseCoin": "DOG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOLOUSDT": {
         "symbol": "DOLOUSDT",
@@ -1293,7 +1293,7 @@
         "baseCoin": "DOLO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOODUSDT": {
         "symbol": "DOODUSDT",
@@ -1301,7 +1301,7 @@
         "baseCoin": "DOOD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DOTUSDT": {
         "symbol": "DOTUSDT",
@@ -1309,7 +1309,7 @@
         "baseCoin": "DOT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DRIFTUSDT": {
         "symbol": "DRIFTUSDT",
@@ -1317,7 +1317,7 @@
         "baseCoin": "DRIFT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DUSKUSDT": {
         "symbol": "DUSKUSDT",
@@ -1325,7 +1325,7 @@
         "baseCoin": "DUSK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DYDXUSDT": {
         "symbol": "DYDXUSDT",
@@ -1333,7 +1333,7 @@
         "baseCoin": "DYDX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "DYMUSDT": {
         "symbol": "DYMUSDT",
@@ -1341,7 +1341,7 @@
         "baseCoin": "DYM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EDENUSDT": {
         "symbol": "EDENUSDT",
@@ -1349,7 +1349,7 @@
         "baseCoin": "EDEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EDUUSDT": {
         "symbol": "EDUUSDT",
@@ -1357,7 +1357,7 @@
         "baseCoin": "EDU",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EGLDUSDT": {
         "symbol": "EGLDUSDT",
@@ -1365,7 +1365,7 @@
         "baseCoin": "EGLD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EIGENUSDT": {
         "symbol": "EIGENUSDT",
@@ -1373,7 +1373,7 @@
         "baseCoin": "EIGEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ELSAUSDT": {
         "symbol": "ELSAUSDT",
@@ -1381,7 +1381,7 @@
         "baseCoin": "ELSA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ENAUSDT": {
         "symbol": "ENAUSDT",
@@ -1389,7 +1389,7 @@
         "baseCoin": "ENA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ENJUSDT": {
         "symbol": "ENJUSDT",
@@ -1397,7 +1397,7 @@
         "baseCoin": "ENJ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ENSOUSDT": {
         "symbol": "ENSOUSDT",
@@ -1405,7 +1405,7 @@
         "baseCoin": "ENSO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ENSUSDT": {
         "symbol": "ENSUSDT",
@@ -1413,7 +1413,7 @@
         "baseCoin": "ENS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EPICUSDT": {
         "symbol": "EPICUSDT",
@@ -1421,7 +1421,7 @@
         "baseCoin": "EPIC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ERAUSDT": {
         "symbol": "ERAUSDT",
@@ -1429,7 +1429,7 @@
         "baseCoin": "ERA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ESPORTSUSDT": {
         "symbol": "ESPORTSUSDT",
@@ -1437,7 +1437,7 @@
         "baseCoin": "ESPORTS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ESPUSDT": {
         "symbol": "ESPUSDT",
@@ -1445,7 +1445,7 @@
         "baseCoin": "ESP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ESUSDT": {
         "symbol": "ESUSDT",
@@ -1453,7 +1453,7 @@
         "baseCoin": "ES",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ETCUSDT": {
         "symbol": "ETCUSDT",
@@ -1461,7 +1461,7 @@
         "baseCoin": "ETC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ETHBTCUSDT": {
         "symbol": "ETHBTCUSDT",
@@ -1469,7 +1469,7 @@
         "baseCoin": "ETHBTC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ETHFIUSDT": {
         "symbol": "ETHFIUSDT",
@@ -1477,7 +1477,7 @@
         "baseCoin": "ETHFI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EULUSDT": {
         "symbol": "EULUSDT",
@@ -1485,7 +1485,7 @@
         "baseCoin": "EUL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "EVAAUSDT": {
         "symbol": "EVAAUSDT",
@@ -1493,7 +1493,7 @@
         "baseCoin": "EVAA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FARTCOINUSDT": {
         "symbol": "FARTCOINUSDT",
@@ -1501,7 +1501,7 @@
         "baseCoin": "FARTCOIN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FFUSDT": {
         "symbol": "FFUSDT",
@@ -1509,7 +1509,7 @@
         "baseCoin": "FF",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FHEUSDT": {
         "symbol": "FHEUSDT",
@@ -1517,7 +1517,7 @@
         "baseCoin": "FHE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FIDAUSDT": {
         "symbol": "FIDAUSDT",
@@ -1525,7 +1525,7 @@
         "baseCoin": "FIDA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FIGHTUSDT": {
         "symbol": "FIGHTUSDT",
@@ -1533,7 +1533,7 @@
         "baseCoin": "FIGHT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FILUSDT": {
         "symbol": "FILUSDT",
@@ -1541,7 +1541,7 @@
         "baseCoin": "FIL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FIOUSDT": {
         "symbol": "FIOUSDT",
@@ -1549,7 +1549,7 @@
         "baseCoin": "FIO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FLOCKUSDT": {
         "symbol": "FLOCKUSDT",
@@ -1557,7 +1557,7 @@
         "baseCoin": "FLOCK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FLOWUSDT": {
         "symbol": "FLOWUSDT",
@@ -1565,7 +1565,7 @@
         "baseCoin": "FLOW",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FLRUSDT": {
         "symbol": "FLRUSDT",
@@ -1573,7 +1573,7 @@
         "baseCoin": "FLR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FLUIDUSDT": {
         "symbol": "FLUIDUSDT",
@@ -1581,7 +1581,7 @@
         "baseCoin": "FLUID",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FLUXUSDT": {
         "symbol": "FLUXUSDT",
@@ -1589,7 +1589,7 @@
         "baseCoin": "FLUX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FOGOUSDT": {
         "symbol": "FOGOUSDT",
@@ -1597,7 +1597,7 @@
         "baseCoin": "FOGO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FOLKSUSDT": {
         "symbol": "FOLKSUSDT",
@@ -1605,7 +1605,7 @@
         "baseCoin": "FOLKS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FORMUSDT": {
         "symbol": "FORMUSDT",
@@ -1613,7 +1613,7 @@
         "baseCoin": "FORM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "FUSDT": {
         "symbol": "FUSDT",
@@ -1621,7 +1621,7 @@
         "baseCoin": "F",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GALAUSDT": {
         "symbol": "GALAUSDT",
@@ -1629,7 +1629,7 @@
         "baseCoin": "GALA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GASUSDT": {
         "symbol": "GASUSDT",
@@ -1637,7 +1637,7 @@
         "baseCoin": "GAS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GIGAUSDT": {
         "symbol": "GIGAUSDT",
@@ -1645,7 +1645,7 @@
         "baseCoin": "GIGA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GIGGLEUSDT": {
         "symbol": "GIGGLEUSDT",
@@ -1653,7 +1653,7 @@
         "baseCoin": "GIGGLE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GLMUSDT": {
         "symbol": "GLMUSDT",
@@ -1661,7 +1661,7 @@
         "baseCoin": "GLM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GMTUSDT": {
         "symbol": "GMTUSDT",
@@ -1669,7 +1669,7 @@
         "baseCoin": "GMT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GMXUSDT": {
         "symbol": "GMXUSDT",
@@ -1677,7 +1677,7 @@
         "baseCoin": "GMX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GNOUSDT": {
         "symbol": "GNOUSDT",
@@ -1685,7 +1685,7 @@
         "baseCoin": "GNO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GOATUSDT": {
         "symbol": "GOATUSDT",
@@ -1693,7 +1693,7 @@
         "baseCoin": "GOAT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GODSUSDT": {
         "symbol": "GODSUSDT",
@@ -1701,7 +1701,7 @@
         "baseCoin": "GODS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GPSUSDT": {
         "symbol": "GPSUSDT",
@@ -1709,7 +1709,7 @@
         "baseCoin": "GPS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GRASSUSDT": {
         "symbol": "GRASSUSDT",
@@ -1717,7 +1717,7 @@
         "baseCoin": "GRASS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GRIFFAINUSDT": {
         "symbol": "GRIFFAINUSDT",
@@ -1725,7 +1725,7 @@
         "baseCoin": "GRIFFAIN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GRTUSDT": {
         "symbol": "GRTUSDT",
@@ -1733,7 +1733,7 @@
         "baseCoin": "GRT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "GUNUSDT": {
         "symbol": "GUNUSDT",
@@ -1741,7 +1741,7 @@
         "baseCoin": "GUN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HAEDALUSDT": {
         "symbol": "HAEDALUSDT",
@@ -1749,7 +1749,7 @@
         "baseCoin": "HAEDAL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HANAUSDT": {
         "symbol": "HANAUSDT",
@@ -1757,7 +1757,7 @@
         "baseCoin": "HANA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HBARUSDT": {
         "symbol": "HBARUSDT",
@@ -1765,7 +1765,7 @@
         "baseCoin": "HBAR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HEIUSDT": {
         "symbol": "HEIUSDT",
@@ -1773,7 +1773,7 @@
         "baseCoin": "HEI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HEMIUSDT": {
         "symbol": "HEMIUSDT",
@@ -1781,7 +1781,7 @@
         "baseCoin": "HEMI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HFTUSDT": {
         "symbol": "HFTUSDT",
@@ -1789,7 +1789,7 @@
         "baseCoin": "HFT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HIGHUSDT": {
         "symbol": "HIGHUSDT",
@@ -1797,7 +1797,7 @@
         "baseCoin": "HIGH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HIPPOUSDT": {
         "symbol": "HIPPOUSDT",
@@ -1805,7 +1805,7 @@
         "baseCoin": "HIPPO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HIVEUSDT": {
         "symbol": "HIVEUSDT",
@@ -1813,7 +1813,7 @@
         "baseCoin": "HIVE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HMSTRUSDT": {
         "symbol": "HMSTRUSDT",
@@ -1821,7 +1821,7 @@
         "baseCoin": "HMSTR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HNTUSDT": {
         "symbol": "HNTUSDT",
@@ -1829,7 +1829,7 @@
         "baseCoin": "HNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HOLOUSDT": {
         "symbol": "HOLOUSDT",
@@ -1837,7 +1837,7 @@
         "baseCoin": "HOLO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HOMEUSDT": {
         "symbol": "HOMEUSDT",
@@ -1845,7 +1845,7 @@
         "baseCoin": "HOME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HOOKUSDT": {
         "symbol": "HOOKUSDT",
@@ -1853,7 +1853,7 @@
         "baseCoin": "HOOK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HPOS10IUSDT": {
         "symbol": "HPOS10IUSDT",
@@ -1861,7 +1861,7 @@
         "baseCoin": "HPOS10I",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HUMAUSDT": {
         "symbol": "HUMAUSDT",
@@ -1869,7 +1869,7 @@
         "baseCoin": "HUMA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HUSDT": {
         "symbol": "HUSDT",
@@ -1877,7 +1877,7 @@
         "baseCoin": "H",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HYPERUSDT": {
         "symbol": "HYPERUSDT",
@@ -1885,7 +1885,7 @@
         "baseCoin": "HYPER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "HYPEUSDT": {
         "symbol": "HYPEUSDT",
@@ -1893,7 +1893,7 @@
         "baseCoin": "HYPE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ICNTUSDT": {
         "symbol": "ICNTUSDT",
@@ -1901,7 +1901,7 @@
         "baseCoin": "ICNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ICPUSDT": {
         "symbol": "ICPUSDT",
@@ -1909,7 +1909,7 @@
         "baseCoin": "ICP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ICXUSDT": {
         "symbol": "ICXUSDT",
@@ -1917,7 +1917,7 @@
         "baseCoin": "ICX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IDUSDT": {
         "symbol": "IDUSDT",
@@ -1925,7 +1925,7 @@
         "baseCoin": "ID",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ILVUSDT": {
         "symbol": "ILVUSDT",
@@ -1933,7 +1933,7 @@
         "baseCoin": "ILV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IMXUSDT": {
         "symbol": "IMXUSDT",
@@ -1941,7 +1941,7 @@
         "baseCoin": "IMX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "INITUSDT": {
         "symbol": "INITUSDT",
@@ -1949,7 +1949,7 @@
         "baseCoin": "INIT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "INJUSDT": {
         "symbol": "INJUSDT",
@@ -1957,7 +1957,7 @@
         "baseCoin": "INJ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "INUSDT": {
         "symbol": "INUSDT",
@@ -1965,7 +1965,7 @@
         "baseCoin": "IN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "INXUSDT": {
         "symbol": "INXUSDT",
@@ -1973,7 +1973,7 @@
         "baseCoin": "INX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IOSTUSDT": {
         "symbol": "IOSTUSDT",
@@ -1981,7 +1981,7 @@
         "baseCoin": "IOST",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IOTAUSDT": {
         "symbol": "IOTAUSDT",
@@ -1989,7 +1989,7 @@
         "baseCoin": "IOTA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IOTXUSDT": {
         "symbol": "IOTXUSDT",
@@ -1997,7 +1997,7 @@
         "baseCoin": "IOTX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IOUSDT": {
         "symbol": "IOUSDT",
@@ -2005,7 +2005,7 @@
         "baseCoin": "IO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IPUSDT": {
         "symbol": "IPUSDT",
@@ -2013,7 +2013,7 @@
         "baseCoin": "IP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "IRYSUSDT": {
         "symbol": "IRYSUSDT",
@@ -2021,7 +2021,7 @@
         "baseCoin": "IRYS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "JASMYUSDT": {
         "symbol": "JASMYUSDT",
@@ -2029,7 +2029,7 @@
         "baseCoin": "JASMY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "JCTUSDT": {
         "symbol": "JCTUSDT",
@@ -2037,7 +2037,7 @@
         "baseCoin": "JCT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "JELLYJELLYUSDT": {
         "symbol": "JELLYJELLYUSDT",
@@ -2045,7 +2045,7 @@
         "baseCoin": "JELLYJELLY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "JSTUSDT": {
         "symbol": "JSTUSDT",
@@ -2053,7 +2053,7 @@
         "baseCoin": "JST",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "JTOUSDT": {
         "symbol": "JTOUSDT",
@@ -2061,7 +2061,7 @@
         "baseCoin": "JTO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "JUPUSDT": {
         "symbol": "JUPUSDT",
@@ -2069,7 +2069,7 @@
         "baseCoin": "JUP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KAIAUSDT": {
         "symbol": "KAIAUSDT",
@@ -2077,7 +2077,7 @@
         "baseCoin": "KAIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KAITOUSDT": {
         "symbol": "KAITOUSDT",
@@ -2085,7 +2085,7 @@
         "baseCoin": "KAITO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KASUSDT": {
         "symbol": "KASUSDT",
@@ -2093,7 +2093,15 @@
         "baseCoin": "KAS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
+    },
+    "KATUSDT": {
+        "symbol": "KATUSDT",
+        "category": "linear",
+        "baseCoin": "KAT",
+        "quoteCoin": "USDT",
+        "status": "Trading",
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KAVAUSDT": {
         "symbol": "KAVAUSDT",
@@ -2101,7 +2109,7 @@
         "baseCoin": "KAVA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KERNELUSDT": {
         "symbol": "KERNELUSDT",
@@ -2109,7 +2117,7 @@
         "baseCoin": "KERNEL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KGENUSDT": {
         "symbol": "KGENUSDT",
@@ -2117,7 +2125,7 @@
         "baseCoin": "KGEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KITEUSDT": {
         "symbol": "KITEUSDT",
@@ -2125,7 +2133,7 @@
         "baseCoin": "KITE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KMNOUSDT": {
         "symbol": "KMNOUSDT",
@@ -2133,7 +2141,7 @@
         "baseCoin": "KMNO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KNCUSDT": {
         "symbol": "KNCUSDT",
@@ -2141,7 +2149,7 @@
         "baseCoin": "KNC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "KSMUSDT": {
         "symbol": "KSMUSDT",
@@ -2149,7 +2157,7 @@
         "baseCoin": "KSM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "L3USDT": {
         "symbol": "L3USDT",
@@ -2157,7 +2165,7 @@
         "baseCoin": "L3",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LABUSDT": {
         "symbol": "LABUSDT",
@@ -2165,7 +2173,7 @@
         "baseCoin": "LAB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LAUSDT": {
         "symbol": "LAUSDT",
@@ -2173,7 +2181,7 @@
         "baseCoin": "LA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LDOUSDT": {
         "symbol": "LDOUSDT",
@@ -2181,7 +2189,7 @@
         "baseCoin": "LDO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LIGHTUSDT": {
         "symbol": "LIGHTUSDT",
@@ -2189,7 +2197,7 @@
         "baseCoin": "LIGHT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LINEAUSDT": {
         "symbol": "LINEAUSDT",
@@ -2197,7 +2205,7 @@
         "baseCoin": "LINEA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LINKUSDT": {
         "symbol": "LINKUSDT",
@@ -2205,7 +2213,7 @@
         "baseCoin": "LINK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LISTAUSDT": {
         "symbol": "LISTAUSDT",
@@ -2213,7 +2221,7 @@
         "baseCoin": "LISTA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LITUSDT": {
         "symbol": "LITUSDT",
@@ -2221,7 +2229,7 @@
         "baseCoin": "LIT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LPTUSDT": {
         "symbol": "LPTUSDT",
@@ -2229,7 +2237,7 @@
         "baseCoin": "LPT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LQTYUSDT": {
         "symbol": "LQTYUSDT",
@@ -2237,7 +2245,7 @@
         "baseCoin": "LQTY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LRCUSDT": {
         "symbol": "LRCUSDT",
@@ -2245,7 +2253,7 @@
         "baseCoin": "LRC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LSKUSDT": {
         "symbol": "LSKUSDT",
@@ -2253,7 +2261,7 @@
         "baseCoin": "LSK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LTCUSDT": {
         "symbol": "LTCUSDT",
@@ -2261,7 +2269,7 @@
         "baseCoin": "LTC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LUMIAUSDT": {
         "symbol": "LUMIAUSDT",
@@ -2269,7 +2277,7 @@
         "baseCoin": "LUMIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LUNA2USDT": {
         "symbol": "LUNA2USDT",
@@ -2277,7 +2285,7 @@
         "baseCoin": "LUNA2",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "LYNUSDT": {
         "symbol": "LYNUSDT",
@@ -2285,7 +2293,7 @@
         "baseCoin": "LYN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MAGICUSDT": {
         "symbol": "MAGICUSDT",
@@ -2293,7 +2301,7 @@
         "baseCoin": "MAGIC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MAGMAUSDT": {
         "symbol": "MAGMAUSDT",
@@ -2301,7 +2309,7 @@
         "baseCoin": "MAGMA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MANAUSDT": {
         "symbol": "MANAUSDT",
@@ -2309,7 +2317,7 @@
         "baseCoin": "MANA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MANTAUSDT": {
         "symbol": "MANTAUSDT",
@@ -2317,7 +2325,7 @@
         "baseCoin": "MANTA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MASKUSDT": {
         "symbol": "MASKUSDT",
@@ -2325,7 +2333,7 @@
         "baseCoin": "MASK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MAVIAUSDT": {
         "symbol": "MAVIAUSDT",
@@ -2333,7 +2341,7 @@
         "baseCoin": "MAVIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MAVUSDT": {
         "symbol": "MAVUSDT",
@@ -2341,7 +2349,7 @@
         "baseCoin": "MAV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MBOXUSDT": {
         "symbol": "MBOXUSDT",
@@ -2349,7 +2357,7 @@
         "baseCoin": "MBOX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MELANIAUSDT": {
         "symbol": "MELANIAUSDT",
@@ -2357,7 +2365,7 @@
         "baseCoin": "MELANIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MEMEUSDT": {
         "symbol": "MEMEUSDT",
@@ -2365,7 +2373,7 @@
         "baseCoin": "MEME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MERLUSDT": {
         "symbol": "MERLUSDT",
@@ -2373,7 +2381,7 @@
         "baseCoin": "MERL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "METISUSDT": {
         "symbol": "METISUSDT",
@@ -2381,7 +2389,7 @@
         "baseCoin": "METIS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "METUSDT": {
         "symbol": "METUSDT",
@@ -2389,7 +2397,7 @@
         "baseCoin": "MET",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MEUSDT": {
         "symbol": "MEUSDT",
@@ -2397,7 +2405,7 @@
         "baseCoin": "ME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MEWUSDT": {
         "symbol": "MEWUSDT",
@@ -2405,7 +2413,7 @@
         "baseCoin": "MEW",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MINAUSDT": {
         "symbol": "MINAUSDT",
@@ -2413,7 +2421,7 @@
         "baseCoin": "MINA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MIRAUSDT": {
         "symbol": "MIRAUSDT",
@@ -2421,7 +2429,7 @@
         "baseCoin": "MIRA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MITOUSDT": {
         "symbol": "MITOUSDT",
@@ -2429,7 +2437,7 @@
         "baseCoin": "MITO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MLNUSDT": {
         "symbol": "MLNUSDT",
@@ -2437,7 +2445,7 @@
         "baseCoin": "MLN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MMTUSDT": {
         "symbol": "MMTUSDT",
@@ -2445,7 +2453,7 @@
         "baseCoin": "MMT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MNTUSDT": {
         "symbol": "MNTUSDT",
@@ -2453,23 +2461,23 @@
         "baseCoin": "MNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "MNTUSDT-13MAR26": {
-        "symbol": "MNTUSDT-13MAR26",
+    "MNTUSDT-03APR26": {
+        "symbol": "MNTUSDT-03APR26",
         "category": "linear",
         "baseCoin": "MNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "MNTUSDT-20MAR26": {
-        "symbol": "MNTUSDT-20MAR26",
+    "MNTUSDT-10APR26": {
+        "symbol": "MNTUSDT-10APR26",
         "category": "linear",
         "baseCoin": "MNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MNTUSDT-24APR26": {
         "symbol": "MNTUSDT-24APR26",
@@ -2477,7 +2485,7 @@
         "baseCoin": "MNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MNTUSDT-27MAR26": {
         "symbol": "MNTUSDT-27MAR26",
@@ -2485,7 +2493,7 @@
         "baseCoin": "MNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MOCAUSDT": {
         "symbol": "MOCAUSDT",
@@ -2493,7 +2501,7 @@
         "baseCoin": "MOCA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MONUSDT": {
         "symbol": "MONUSDT",
@@ -2501,7 +2509,7 @@
         "baseCoin": "MON",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MOODENGUSDT": {
         "symbol": "MOODENGUSDT",
@@ -2509,7 +2517,7 @@
         "baseCoin": "MOODENG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MORPHOUSDT": {
         "symbol": "MORPHOUSDT",
@@ -2517,7 +2525,7 @@
         "baseCoin": "MORPHO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MOVEUSDT": {
         "symbol": "MOVEUSDT",
@@ -2525,7 +2533,7 @@
         "baseCoin": "MOVE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MOVRUSDT": {
         "symbol": "MOVRUSDT",
@@ -2533,7 +2541,7 @@
         "baseCoin": "MOVR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MTLUSDT": {
         "symbol": "MTLUSDT",
@@ -2541,7 +2549,7 @@
         "baseCoin": "MTL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MUBARAKUSDT": {
         "symbol": "MUBARAKUSDT",
@@ -2549,7 +2557,7 @@
         "baseCoin": "MUBARAK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MUSDT": {
         "symbol": "MUSDT",
@@ -2557,7 +2565,7 @@
         "baseCoin": "M",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "MYXUSDT": {
         "symbol": "MYXUSDT",
@@ -2565,7 +2573,7 @@
         "baseCoin": "MYX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NAORISUSDT": {
         "symbol": "NAORISUSDT",
@@ -2573,7 +2581,7 @@
         "baseCoin": "NAORIS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NEARUSDT": {
         "symbol": "NEARUSDT",
@@ -2581,7 +2589,7 @@
         "baseCoin": "NEAR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NEOUSDT": {
         "symbol": "NEOUSDT",
@@ -2589,7 +2597,7 @@
         "baseCoin": "NEO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NEWTUSDT": {
         "symbol": "NEWTUSDT",
@@ -2597,7 +2605,7 @@
         "baseCoin": "NEWT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NFPUSDT": {
         "symbol": "NFPUSDT",
@@ -2605,7 +2613,7 @@
         "baseCoin": "NFP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NIGHTUSDT": {
         "symbol": "NIGHTUSDT",
@@ -2613,7 +2621,7 @@
         "baseCoin": "NIGHT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NILUSDT": {
         "symbol": "NILUSDT",
@@ -2621,7 +2629,7 @@
         "baseCoin": "NIL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NMRUSDT": {
         "symbol": "NMRUSDT",
@@ -2629,7 +2637,7 @@
         "baseCoin": "NMR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NOMUSDT": {
         "symbol": "NOMUSDT",
@@ -2637,7 +2645,7 @@
         "baseCoin": "NOM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NOTUSDT": {
         "symbol": "NOTUSDT",
@@ -2645,7 +2653,7 @@
         "baseCoin": "NOT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NTRNUSDT": {
         "symbol": "NTRNUSDT",
@@ -2653,7 +2661,7 @@
         "baseCoin": "NTRN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "NXPCUSDT": {
         "symbol": "NXPCUSDT",
@@ -2661,7 +2669,7 @@
         "baseCoin": "NXPC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OGNUSDT": {
         "symbol": "OGNUSDT",
@@ -2669,7 +2677,7 @@
         "baseCoin": "OGN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OGUSDT": {
         "symbol": "OGUSDT",
@@ -2677,7 +2685,7 @@
         "baseCoin": "OG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OKBUSDT": {
         "symbol": "OKBUSDT",
@@ -2685,7 +2693,7 @@
         "baseCoin": "OKB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OLUSDT": {
         "symbol": "OLUSDT",
@@ -2693,7 +2701,7 @@
         "baseCoin": "OL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ONDOUSDT": {
         "symbol": "ONDOUSDT",
@@ -2701,7 +2709,7 @@
         "baseCoin": "ONDO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ONEUSDT": {
         "symbol": "ONEUSDT",
@@ -2709,7 +2717,7 @@
         "baseCoin": "ONE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ONGUSDT": {
         "symbol": "ONGUSDT",
@@ -2717,7 +2725,7 @@
         "baseCoin": "ONG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ONTUSDT": {
         "symbol": "ONTUSDT",
@@ -2725,7 +2733,7 @@
         "baseCoin": "ONT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OPENUSDT": {
         "symbol": "OPENUSDT",
@@ -2733,7 +2741,7 @@
         "baseCoin": "OPEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OPNUSDT": {
         "symbol": "OPNUSDT",
@@ -2741,7 +2749,7 @@
         "baseCoin": "OPN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OPUSDT": {
         "symbol": "OPUSDT",
@@ -2749,7 +2757,7 @@
         "baseCoin": "OP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ORBSUSDT": {
         "symbol": "ORBSUSDT",
@@ -2757,7 +2765,7 @@
         "baseCoin": "ORBS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ORCAUSDT": {
         "symbol": "ORCAUSDT",
@@ -2765,7 +2773,7 @@
         "baseCoin": "ORCA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ORDERUSDT": {
         "symbol": "ORDERUSDT",
@@ -2773,7 +2781,7 @@
         "baseCoin": "ORDER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ORDIUSDT": {
         "symbol": "ORDIUSDT",
@@ -2781,7 +2789,7 @@
         "baseCoin": "ORDI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "OXTUSDT": {
         "symbol": "OXTUSDT",
@@ -2789,7 +2797,7 @@
         "baseCoin": "OXT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PARTIUSDT": {
         "symbol": "PARTIUSDT",
@@ -2797,7 +2805,7 @@
         "baseCoin": "PARTI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PAXGUSDT": {
         "symbol": "PAXGUSDT",
@@ -2805,7 +2813,7 @@
         "baseCoin": "PAXG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PEAQUSDT": {
         "symbol": "PEAQUSDT",
@@ -2813,7 +2821,7 @@
         "baseCoin": "PEAQ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PENDLEUSDT": {
         "symbol": "PENDLEUSDT",
@@ -2821,7 +2829,7 @@
         "baseCoin": "PENDLE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PENGUUSDT": {
         "symbol": "PENGUUSDT",
@@ -2829,7 +2837,7 @@
         "baseCoin": "PENGU",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PEOPLEUSDT": {
         "symbol": "PEOPLEUSDT",
@@ -2837,7 +2845,7 @@
         "baseCoin": "PEOPLE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PHAUSDT": {
         "symbol": "PHAUSDT",
@@ -2845,7 +2853,7 @@
         "baseCoin": "PHA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PIEVERSEUSDT": {
         "symbol": "PIEVERSEUSDT",
@@ -2853,7 +2861,7 @@
         "baseCoin": "PIEVERSE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PIPPINUSDT": {
         "symbol": "PIPPINUSDT",
@@ -2861,7 +2869,7 @@
         "baseCoin": "PIPPIN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PIXELUSDT": {
         "symbol": "PIXELUSDT",
@@ -2869,7 +2877,7 @@
         "baseCoin": "PIXEL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PLAYSOUTUSDT": {
         "symbol": "PLAYSOUTUSDT",
@@ -2877,7 +2885,7 @@
         "baseCoin": "PLAYSOUT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PLUMEUSDT": {
         "symbol": "PLUMEUSDT",
@@ -2885,7 +2893,7 @@
         "baseCoin": "PLUME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PNUTUSDT": {
         "symbol": "PNUTUSDT",
@@ -2893,7 +2901,7 @@
         "baseCoin": "PNUT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "POLUSDT": {
         "symbol": "POLUSDT",
@@ -2901,7 +2909,7 @@
         "baseCoin": "POL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "POLYXUSDT": {
         "symbol": "POLYXUSDT",
@@ -2909,7 +2917,7 @@
         "baseCoin": "POLYX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PONKEUSDT": {
         "symbol": "PONKEUSDT",
@@ -2917,7 +2925,7 @@
         "baseCoin": "PONKE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "POPCATUSDT": {
         "symbol": "POPCATUSDT",
@@ -2925,7 +2933,7 @@
         "baseCoin": "POPCAT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PORTALUSDT": {
         "symbol": "PORTALUSDT",
@@ -2933,7 +2941,7 @@
         "baseCoin": "PORTAL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "POWERUSDT": {
         "symbol": "POWERUSDT",
@@ -2941,7 +2949,7 @@
         "baseCoin": "POWER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "POWRUSDT": {
         "symbol": "POWRUSDT",
@@ -2949,7 +2957,7 @@
         "baseCoin": "POWR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PROMPTUSDT": {
         "symbol": "PROMPTUSDT",
@@ -2957,7 +2965,7 @@
         "baseCoin": "PROMPT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PROMUSDT": {
         "symbol": "PROMUSDT",
@@ -2965,7 +2973,7 @@
         "baseCoin": "PROM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PROVEUSDT": {
         "symbol": "PROVEUSDT",
@@ -2973,7 +2981,7 @@
         "baseCoin": "PROVE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PTBUSDT": {
         "symbol": "PTBUSDT",
@@ -2981,7 +2989,7 @@
         "baseCoin": "PTB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PUFFERUSDT": {
         "symbol": "PUFFERUSDT",
@@ -2989,7 +2997,7 @@
         "baseCoin": "PUFFER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PUMPBTCUSDT": {
         "symbol": "PUMPBTCUSDT",
@@ -2997,7 +3005,7 @@
         "baseCoin": "PUMPBTC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PUMPFUNUSDT": {
         "symbol": "PUMPFUNUSDT",
@@ -3005,7 +3013,7 @@
         "baseCoin": "PUMPFUN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PUNDIXUSDT": {
         "symbol": "PUNDIXUSDT",
@@ -3013,7 +3021,7 @@
         "baseCoin": "PUNDIX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PYRUSDT": {
         "symbol": "PYRUSDT",
@@ -3021,7 +3029,7 @@
         "baseCoin": "PYR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "PYTHUSDT": {
         "symbol": "PYTHUSDT",
@@ -3029,7 +3037,7 @@
         "baseCoin": "PYTH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "QNTUSDT": {
         "symbol": "QNTUSDT",
@@ -3037,7 +3045,7 @@
         "baseCoin": "QNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "QTUMUSDT": {
         "symbol": "QTUMUSDT",
@@ -3045,7 +3053,7 @@
         "baseCoin": "QTUM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "QUSDT": {
         "symbol": "QUSDT",
@@ -3053,7 +3061,7 @@
         "baseCoin": "Q",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RAREUSDT": {
         "symbol": "RAREUSDT",
@@ -3061,7 +3069,7 @@
         "baseCoin": "RARE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RAVEUSDT": {
         "symbol": "RAVEUSDT",
@@ -3069,7 +3077,7 @@
         "baseCoin": "RAVE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RAYDIUMUSDT": {
         "symbol": "RAYDIUMUSDT",
@@ -3077,7 +3085,7 @@
         "baseCoin": "RAYDIUM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RDNTUSDT": {
         "symbol": "RDNTUSDT",
@@ -3085,7 +3093,7 @@
         "baseCoin": "RDNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RECALLUSDT": {
         "symbol": "RECALLUSDT",
@@ -3093,7 +3101,7 @@
         "baseCoin": "RECALL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "REDUSDT": {
         "symbol": "REDUSDT",
@@ -3101,7 +3109,7 @@
         "baseCoin": "RED",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RENDERUSDT": {
         "symbol": "RENDERUSDT",
@@ -3109,7 +3117,7 @@
         "baseCoin": "RENDER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "REQUSDT": {
         "symbol": "REQUSDT",
@@ -3117,7 +3125,7 @@
         "baseCoin": "REQ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RESOLVUSDT": {
         "symbol": "RESOLVUSDT",
@@ -3125,7 +3133,7 @@
         "baseCoin": "RESOLV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "REZUSDT": {
         "symbol": "REZUSDT",
@@ -3133,7 +3141,7 @@
         "baseCoin": "REZ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RIVERUSDT": {
         "symbol": "RIVERUSDT",
@@ -3141,7 +3149,7 @@
         "baseCoin": "RIVER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RLCUSDT": {
         "symbol": "RLCUSDT",
@@ -3149,7 +3157,7 @@
         "baseCoin": "RLC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RLSUSDT": {
         "symbol": "RLSUSDT",
@@ -3157,7 +3165,7 @@
         "baseCoin": "RLS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RLUSDUSDT": {
         "symbol": "RLUSDUSDT",
@@ -3165,7 +3173,7 @@
         "baseCoin": "RLUSD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ROAMUSDT": {
         "symbol": "ROAMUSDT",
@@ -3173,7 +3181,7 @@
         "baseCoin": "ROAM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ROBOUSDT": {
         "symbol": "ROBOUSDT",
@@ -3181,7 +3189,7 @@
         "baseCoin": "ROBO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RONINUSDT": {
         "symbol": "RONINUSDT",
@@ -3189,7 +3197,7 @@
         "baseCoin": "RONIN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ROSEUSDT": {
         "symbol": "ROSEUSDT",
@@ -3197,7 +3205,7 @@
         "baseCoin": "ROSE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RPLUSDT": {
         "symbol": "RPLUSDT",
@@ -3205,7 +3213,7 @@
         "baseCoin": "RPL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RSRUSDT": {
         "symbol": "RSRUSDT",
@@ -3213,7 +3221,7 @@
         "baseCoin": "RSR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RUNEUSDT": {
         "symbol": "RUNEUSDT",
@@ -3221,7 +3229,7 @@
         "baseCoin": "RUNE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "RVNUSDT": {
         "symbol": "RVNUSDT",
@@ -3229,7 +3237,7 @@
         "baseCoin": "RVN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SAFEUSDT": {
         "symbol": "SAFEUSDT",
@@ -3237,7 +3245,7 @@
         "baseCoin": "SAFE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SAGAUSDT": {
         "symbol": "SAGAUSDT",
@@ -3245,7 +3253,7 @@
         "baseCoin": "SAGA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SAHARAUSDT": {
         "symbol": "SAHARAUSDT",
@@ -3253,7 +3261,7 @@
         "baseCoin": "SAHARA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SANDUSDT": {
         "symbol": "SANDUSDT",
@@ -3261,7 +3269,7 @@
         "baseCoin": "SAND",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SAPIENUSDT": {
         "symbol": "SAPIENUSDT",
@@ -3269,7 +3277,7 @@
         "baseCoin": "SAPIEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SCRTUSDT": {
         "symbol": "SCRTUSDT",
@@ -3277,7 +3285,7 @@
         "baseCoin": "SCRT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SCRUSDT": {
         "symbol": "SCRUSDT",
@@ -3285,7 +3293,7 @@
         "baseCoin": "SCR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SCUSDT": {
         "symbol": "SCUSDT",
@@ -3293,7 +3301,7 @@
         "baseCoin": "SC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SEIUSDT": {
         "symbol": "SEIUSDT",
@@ -3301,7 +3309,7 @@
         "baseCoin": "SEI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SENTUSDT": {
         "symbol": "SENTUSDT",
@@ -3309,7 +3317,7 @@
         "baseCoin": "SENT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SFPUSDT": {
         "symbol": "SFPUSDT",
@@ -3317,7 +3325,7 @@
         "baseCoin": "SFP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SHELLUSDT": {
         "symbol": "SHELLUSDT",
@@ -3325,7 +3333,7 @@
         "baseCoin": "SHELL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SHIB1000USDT": {
         "symbol": "SHIB1000USDT",
@@ -3333,7 +3341,7 @@
         "baseCoin": "SHIB1000",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SIGNUSDT": {
         "symbol": "SIGNUSDT",
@@ -3341,7 +3349,7 @@
         "baseCoin": "SIGN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SIRENUSDT": {
         "symbol": "SIRENUSDT",
@@ -3349,7 +3357,7 @@
         "baseCoin": "SIREN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SKLUSDT": {
         "symbol": "SKLUSDT",
@@ -3357,7 +3365,7 @@
         "baseCoin": "SKL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SKRUSDT": {
         "symbol": "SKRUSDT",
@@ -3365,7 +3373,7 @@
         "baseCoin": "SKR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SKYUSDT": {
         "symbol": "SKYUSDT",
@@ -3373,7 +3381,7 @@
         "baseCoin": "SKY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SLPUSDT": {
         "symbol": "SLPUSDT",
@@ -3381,7 +3389,7 @@
         "baseCoin": "SLP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SNTUSDT": {
         "symbol": "SNTUSDT",
@@ -3389,7 +3397,7 @@
         "baseCoin": "SNT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SNXUSDT": {
         "symbol": "SNXUSDT",
@@ -3397,7 +3405,7 @@
         "baseCoin": "SNX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOLAYERUSDT": {
         "symbol": "SOLAYERUSDT",
@@ -3405,7 +3413,7 @@
         "baseCoin": "SOLAYER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOLUSDT": {
         "symbol": "SOLUSDT",
@@ -3413,23 +3421,23 @@
         "baseCoin": "SOL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "SOLUSDT-13MAR26": {
-        "symbol": "SOLUSDT-13MAR26",
+    "SOLUSDT-03APR26": {
+        "symbol": "SOLUSDT-03APR26",
         "category": "linear",
         "baseCoin": "SOL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "SOLUSDT-20MAR26": {
-        "symbol": "SOLUSDT-20MAR26",
+    "SOLUSDT-10APR26": {
+        "symbol": "SOLUSDT-10APR26",
         "category": "linear",
         "baseCoin": "SOL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOLUSDT-24APR26": {
         "symbol": "SOLUSDT-24APR26",
@@ -3437,7 +3445,7 @@
         "baseCoin": "SOL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOLUSDT-27MAR26": {
         "symbol": "SOLUSDT-27MAR26",
@@ -3445,7 +3453,7 @@
         "baseCoin": "SOL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOLVUSDT": {
         "symbol": "SOLVUSDT",
@@ -3453,7 +3461,7 @@
         "baseCoin": "SOLV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOMIUSDT": {
         "symbol": "SOMIUSDT",
@@ -3461,7 +3469,7 @@
         "baseCoin": "SOMI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SONICUSDT": {
         "symbol": "SONICUSDT",
@@ -3469,7 +3477,7 @@
         "baseCoin": "SONIC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOONUSDT": {
         "symbol": "SOONUSDT",
@@ -3477,7 +3485,7 @@
         "baseCoin": "SOON",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOPHUSDT": {
         "symbol": "SOPHUSDT",
@@ -3485,7 +3493,7 @@
         "baseCoin": "SOPH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SOSOUSDT": {
         "symbol": "SOSOUSDT",
@@ -3493,7 +3501,7 @@
         "baseCoin": "SOSO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SPACEUSDT": {
         "symbol": "SPACEUSDT",
@@ -3501,7 +3509,7 @@
         "baseCoin": "SPACE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SPELLUSDT": {
         "symbol": "SPELLUSDT",
@@ -3509,7 +3517,7 @@
         "baseCoin": "SPELL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SPKUSDT": {
         "symbol": "SPKUSDT",
@@ -3517,7 +3525,7 @@
         "baseCoin": "SPK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SPORTFUNUSDT": {
         "symbol": "SPORTFUNUSDT",
@@ -3525,7 +3533,7 @@
         "baseCoin": "SPORTFUN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SPXUSDT": {
         "symbol": "SPXUSDT",
@@ -3533,7 +3541,7 @@
         "baseCoin": "SPX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SQDUSDT": {
         "symbol": "SQDUSDT",
@@ -3541,7 +3549,7 @@
         "baseCoin": "SQD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SSVUSDT": {
         "symbol": "SSVUSDT",
@@ -3549,7 +3557,7 @@
         "baseCoin": "SSV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STABLEUSDT": {
         "symbol": "STABLEUSDT",
@@ -3557,7 +3565,7 @@
         "baseCoin": "STABLE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STBLUSDT": {
         "symbol": "STBLUSDT",
@@ -3565,7 +3573,7 @@
         "baseCoin": "STBL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STEEMUSDT": {
         "symbol": "STEEMUSDT",
@@ -3573,7 +3581,7 @@
         "baseCoin": "STEEM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STGUSDT": {
         "symbol": "STGUSDT",
@@ -3581,7 +3589,7 @@
         "baseCoin": "STG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STORJUSDT": {
         "symbol": "STORJUSDT",
@@ -3589,7 +3597,7 @@
         "baseCoin": "STORJ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STOUSDT": {
         "symbol": "STOUSDT",
@@ -3597,7 +3605,7 @@
         "baseCoin": "STO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STRKUSDT": {
         "symbol": "STRKUSDT",
@@ -3605,7 +3613,7 @@
         "baseCoin": "STRK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "STXUSDT": {
         "symbol": "STXUSDT",
@@ -3613,7 +3621,7 @@
         "baseCoin": "STX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SUIUSDT": {
         "symbol": "SUIUSDT",
@@ -3621,7 +3629,7 @@
         "baseCoin": "SUI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SUNUSDT": {
         "symbol": "SUNUSDT",
@@ -3629,7 +3637,7 @@
         "baseCoin": "SUN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SUPERUSDT": {
         "symbol": "SUPERUSDT",
@@ -3637,7 +3645,7 @@
         "baseCoin": "SUPER",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SUSDT": {
         "symbol": "SUSDT",
@@ -3645,7 +3653,7 @@
         "baseCoin": "S",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SUSHIUSDT": {
         "symbol": "SUSHIUSDT",
@@ -3653,7 +3661,7 @@
         "baseCoin": "SUSHI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SWARMSUSDT": {
         "symbol": "SWARMSUSDT",
@@ -3661,7 +3669,7 @@
         "baseCoin": "SWARMS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SXPUSDT": {
         "symbol": "SXPUSDT",
@@ -3669,7 +3677,7 @@
         "baseCoin": "SXP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SXTUSDT": {
         "symbol": "SXTUSDT",
@@ -3677,7 +3685,7 @@
         "baseCoin": "SXT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SYNUSDT": {
         "symbol": "SYNUSDT",
@@ -3685,7 +3693,7 @@
         "baseCoin": "SYN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SYRUPUSDT": {
         "symbol": "SYRUPUSDT",
@@ -3693,7 +3701,7 @@
         "baseCoin": "SYRUP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "SYSUSDT": {
         "symbol": "SYSUSDT",
@@ -3701,7 +3709,7 @@
         "baseCoin": "SYS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TACUSDT": {
         "symbol": "TACUSDT",
@@ -3709,7 +3717,7 @@
         "baseCoin": "TAC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TAIKOUSDT": {
         "symbol": "TAIKOUSDT",
@@ -3717,15 +3725,7 @@
         "baseCoin": "TAIKO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
-    },
-    "TAIUSDT": {
-        "symbol": "TAIUSDT",
-        "category": "linear",
-        "baseCoin": "TAI",
-        "quoteCoin": "USDT",
-        "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TAOUSDT": {
         "symbol": "TAOUSDT",
@@ -3733,7 +3733,7 @@
         "baseCoin": "TAO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TAUSDT": {
         "symbol": "TAUSDT",
@@ -3741,7 +3741,7 @@
         "baseCoin": "TA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "THETAUSDT": {
         "symbol": "THETAUSDT",
@@ -3749,7 +3749,7 @@
         "baseCoin": "THETA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "THEUSDT": {
         "symbol": "THEUSDT",
@@ -3757,7 +3757,7 @@
         "baseCoin": "THE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TIAUSDT": {
         "symbol": "TIAUSDT",
@@ -3765,7 +3765,7 @@
         "baseCoin": "TIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TLMUSDT": {
         "symbol": "TLMUSDT",
@@ -3773,7 +3773,7 @@
         "baseCoin": "TLM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TNSRUSDT": {
         "symbol": "TNSRUSDT",
@@ -3781,7 +3781,7 @@
         "baseCoin": "TNSR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TONUSDT": {
         "symbol": "TONUSDT",
@@ -3789,7 +3789,7 @@
         "baseCoin": "TON",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TOWNSUSDT": {
         "symbol": "TOWNSUSDT",
@@ -3797,7 +3797,7 @@
         "baseCoin": "TOWNS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRBUSDT": {
         "symbol": "TRBUSDT",
@@ -3805,7 +3805,7 @@
         "baseCoin": "TRB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TREEUSDT": {
         "symbol": "TREEUSDT",
@@ -3813,7 +3813,7 @@
         "baseCoin": "TREE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRIAUSDT": {
         "symbol": "TRIAUSDT",
@@ -3821,7 +3821,7 @@
         "baseCoin": "TRIA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRUMPUSDT": {
         "symbol": "TRUMPUSDT",
@@ -3829,7 +3829,7 @@
         "baseCoin": "TRUMP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRUSTUSDT": {
         "symbol": "TRUSTUSDT",
@@ -3837,7 +3837,7 @@
         "baseCoin": "TRUST",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRUTHUSDT": {
         "symbol": "TRUTHUSDT",
@@ -3845,7 +3845,7 @@
         "baseCoin": "TRUTH",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRUUSDT": {
         "symbol": "TRUUSDT",
@@ -3853,7 +3853,7 @@
         "baseCoin": "TRU",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TRXUSDT": {
         "symbol": "TRXUSDT",
@@ -3861,7 +3861,7 @@
         "baseCoin": "TRX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TSTBSCUSDT": {
         "symbol": "TSTBSCUSDT",
@@ -3869,7 +3869,7 @@
         "baseCoin": "TSTBSC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TURTLEUSDT": {
         "symbol": "TURTLEUSDT",
@@ -3877,7 +3877,7 @@
         "baseCoin": "TURTLE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TUSDT": {
         "symbol": "TUSDT",
@@ -3885,7 +3885,7 @@
         "baseCoin": "T",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TUTUSDT": {
         "symbol": "TUTUSDT",
@@ -3893,7 +3893,7 @@
         "baseCoin": "TUT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "TWTUSDT": {
         "symbol": "TWTUSDT",
@@ -3901,7 +3901,7 @@
         "baseCoin": "TWT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "UAIUSDT": {
         "symbol": "UAIUSDT",
@@ -3909,7 +3909,7 @@
         "baseCoin": "UAI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "UBUSDT": {
         "symbol": "UBUSDT",
@@ -3917,7 +3917,7 @@
         "baseCoin": "UB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "UMAUSDT": {
         "symbol": "UMAUSDT",
@@ -3925,7 +3925,7 @@
         "baseCoin": "UMA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "UNIUSDT": {
         "symbol": "UNIUSDT",
@@ -3933,7 +3933,7 @@
         "baseCoin": "UNI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USD1USDT": {
         "symbol": "USD1USDT",
@@ -3941,7 +3941,7 @@
         "baseCoin": "USD1",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USDCUSDT": {
         "symbol": "USDCUSDT",
@@ -3949,7 +3949,7 @@
         "baseCoin": "USDC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USDEUSDT": {
         "symbol": "USDEUSDT",
@@ -3957,7 +3957,7 @@
         "baseCoin": "USDE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USELESSUSDT": {
         "symbol": "USELESSUSDT",
@@ -3965,7 +3965,7 @@
         "baseCoin": "USELESS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USTCUSDT": {
         "symbol": "USTCUSDT",
@@ -3973,7 +3973,7 @@
         "baseCoin": "USTC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USUALUSDT": {
         "symbol": "USUALUSDT",
@@ -3981,7 +3981,7 @@
         "baseCoin": "USUAL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "USUSDT": {
         "symbol": "USUSDT",
@@ -3989,7 +3989,7 @@
         "baseCoin": "US",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VANAUSDT": {
         "symbol": "VANAUSDT",
@@ -3997,7 +3997,7 @@
         "baseCoin": "VANA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VANRYUSDT": {
         "symbol": "VANRYUSDT",
@@ -4005,7 +4005,7 @@
         "baseCoin": "VANRY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VELODROMEUSDT": {
         "symbol": "VELODROMEUSDT",
@@ -4013,7 +4013,7 @@
         "baseCoin": "VELODROME",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VELOUSDT": {
         "symbol": "VELOUSDT",
@@ -4021,7 +4021,7 @@
         "baseCoin": "VELO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VELVETUSDT": {
         "symbol": "VELVETUSDT",
@@ -4029,7 +4029,7 @@
         "baseCoin": "VELVET",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VETUSDT": {
         "symbol": "VETUSDT",
@@ -4037,7 +4037,7 @@
         "baseCoin": "VET",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VFYUSDT": {
         "symbol": "VFYUSDT",
@@ -4045,7 +4045,7 @@
         "baseCoin": "VFY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VINEUSDT": {
         "symbol": "VINEUSDT",
@@ -4053,7 +4053,7 @@
         "baseCoin": "VINE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VIRTUALUSDT": {
         "symbol": "VIRTUALUSDT",
@@ -4061,7 +4061,7 @@
         "baseCoin": "VIRTUAL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "VVVUSDT": {
         "symbol": "VVVUSDT",
@@ -4069,7 +4069,7 @@
         "baseCoin": "VVV",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WALUSDT": {
         "symbol": "WALUSDT",
@@ -4077,7 +4077,7 @@
         "baseCoin": "WAL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WAVESUSDT": {
         "symbol": "WAVESUSDT",
@@ -4085,7 +4085,7 @@
         "baseCoin": "WAVES",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WAXPUSDT": {
         "symbol": "WAXPUSDT",
@@ -4093,7 +4093,7 @@
         "baseCoin": "WAXP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WCTUSDT": {
         "symbol": "WCTUSDT",
@@ -4101,7 +4101,7 @@
         "baseCoin": "WCT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WETUSDT": {
         "symbol": "WETUSDT",
@@ -4109,7 +4109,7 @@
         "baseCoin": "WET",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WHITEWHALEUSDT": {
         "symbol": "WHITEWHALEUSDT",
@@ -4117,7 +4117,7 @@
         "baseCoin": "WHITEWHALE",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WIFUSDT": {
         "symbol": "WIFUSDT",
@@ -4125,7 +4125,7 @@
         "baseCoin": "WIF",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WLDUSDT": {
         "symbol": "WLDUSDT",
@@ -4133,7 +4133,7 @@
         "baseCoin": "WLD",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WLFIUSDT": {
         "symbol": "WLFIUSDT",
@@ -4141,7 +4141,7 @@
         "baseCoin": "WLFI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WOOUSDT": {
         "symbol": "WOOUSDT",
@@ -4149,7 +4149,7 @@
         "baseCoin": "WOO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "WUSDT": {
         "symbol": "WUSDT",
@@ -4157,7 +4157,7 @@
         "baseCoin": "W",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XAGUSDT": {
         "symbol": "XAGUSDT",
@@ -4165,7 +4165,7 @@
         "baseCoin": "XAG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XAIUSDT": {
         "symbol": "XAIUSDT",
@@ -4173,7 +4173,7 @@
         "baseCoin": "XAI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XANUSDT": {
         "symbol": "XANUSDT",
@@ -4181,7 +4181,7 @@
         "baseCoin": "XAN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XAUTUSDT": {
         "symbol": "XAUTUSDT",
@@ -4189,7 +4189,7 @@
         "baseCoin": "XAUT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XAUUSDT": {
         "symbol": "XAUUSDT",
@@ -4197,15 +4197,7 @@
         "baseCoin": "XAU",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
-    },
-    "XCHUSDT": {
-        "symbol": "XCHUSDT",
-        "category": "linear",
-        "baseCoin": "XCH",
-        "quoteCoin": "USDT",
-        "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XCNUSDT": {
         "symbol": "XCNUSDT",
@@ -4213,7 +4205,7 @@
         "baseCoin": "XCN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XDCUSDT": {
         "symbol": "XDCUSDT",
@@ -4221,7 +4213,7 @@
         "baseCoin": "XDC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XIONUSDT": {
         "symbol": "XIONUSDT",
@@ -4229,7 +4221,7 @@
         "baseCoin": "XION",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XLMUSDT": {
         "symbol": "XLMUSDT",
@@ -4237,7 +4229,7 @@
         "baseCoin": "XLM",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XMRUSDT": {
         "symbol": "XMRUSDT",
@@ -4245,7 +4237,7 @@
         "baseCoin": "XMR",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XNYUSDT": {
         "symbol": "XNYUSDT",
@@ -4253,7 +4245,7 @@
         "baseCoin": "XNY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XPINUSDT": {
         "symbol": "XPINUSDT",
@@ -4261,7 +4253,7 @@
         "baseCoin": "XPIN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XPLUSDT": {
         "symbol": "XPLUSDT",
@@ -4269,7 +4261,7 @@
         "baseCoin": "XPL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XRPUSDT": {
         "symbol": "XRPUSDT",
@@ -4277,23 +4269,23 @@
         "baseCoin": "XRP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "XRPUSDT-13MAR26": {
-        "symbol": "XRPUSDT-13MAR26",
+    "XRPUSDT-03APR26": {
+        "symbol": "XRPUSDT-03APR26",
         "category": "linear",
         "baseCoin": "XRP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
-    "XRPUSDT-20MAR26": {
-        "symbol": "XRPUSDT-20MAR26",
+    "XRPUSDT-10APR26": {
+        "symbol": "XRPUSDT-10APR26",
         "category": "linear",
         "baseCoin": "XRP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XRPUSDT-24APR26": {
         "symbol": "XRPUSDT-24APR26",
@@ -4301,7 +4293,7 @@
         "baseCoin": "XRP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XRPUSDT-27MAR26": {
         "symbol": "XRPUSDT-27MAR26",
@@ -4309,7 +4301,7 @@
         "baseCoin": "XRP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XTZUSDT": {
         "symbol": "XTZUSDT",
@@ -4317,7 +4309,7 @@
         "baseCoin": "XTZ",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XVGUSDT": {
         "symbol": "XVGUSDT",
@@ -4325,7 +4317,7 @@
         "baseCoin": "XVG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "XVSUSDT": {
         "symbol": "XVSUSDT",
@@ -4333,7 +4325,7 @@
         "baseCoin": "XVS",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "YBUSDT": {
         "symbol": "YBUSDT",
@@ -4341,7 +4333,7 @@
         "baseCoin": "YB",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "YFIUSDT": {
         "symbol": "YFIUSDT",
@@ -4349,7 +4341,7 @@
         "baseCoin": "YFI",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "YGGUSDT": {
         "symbol": "YGGUSDT",
@@ -4357,7 +4349,7 @@
         "baseCoin": "YGG",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "YZYUSDT": {
         "symbol": "YZYUSDT",
@@ -4365,7 +4357,7 @@
         "baseCoin": "YZY",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZAMAUSDT": {
         "symbol": "ZAMAUSDT",
@@ -4373,7 +4365,7 @@
         "baseCoin": "ZAMA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZBCNUSDT": {
         "symbol": "ZBCNUSDT",
@@ -4381,7 +4373,7 @@
         "baseCoin": "ZBCN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZBTUSDT": {
         "symbol": "ZBTUSDT",
@@ -4389,7 +4381,7 @@
         "baseCoin": "ZBT",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZECUSDT": {
         "symbol": "ZECUSDT",
@@ -4397,7 +4389,7 @@
         "baseCoin": "ZEC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZENUSDT": {
         "symbol": "ZENUSDT",
@@ -4405,7 +4397,7 @@
         "baseCoin": "ZEN",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZEREBROUSDT": {
         "symbol": "ZEREBROUSDT",
@@ -4413,7 +4405,7 @@
         "baseCoin": "ZEREBRO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZETAUSDT": {
         "symbol": "ZETAUSDT",
@@ -4421,7 +4413,7 @@
         "baseCoin": "ZETA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZILUSDT": {
         "symbol": "ZILUSDT",
@@ -4429,7 +4421,7 @@
         "baseCoin": "ZIL",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZKCUSDT": {
         "symbol": "ZKCUSDT",
@@ -4437,7 +4429,7 @@
         "baseCoin": "ZKC",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZKPUSDT": {
         "symbol": "ZKPUSDT",
@@ -4445,7 +4437,7 @@
         "baseCoin": "ZKP",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZKUSDT": {
         "symbol": "ZKUSDT",
@@ -4453,7 +4445,7 @@
         "baseCoin": "ZK",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZORAUSDT": {
         "symbol": "ZORAUSDT",
@@ -4461,7 +4453,7 @@
         "baseCoin": "ZORA",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZROUSDT": {
         "symbol": "ZROUSDT",
@@ -4469,7 +4461,7 @@
         "baseCoin": "ZRO",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     },
     "ZRXUSDT": {
         "symbol": "ZRXUSDT",
@@ -4477,6 +4469,6 @@
         "baseCoin": "ZRX",
         "quoteCoin": "USDT",
         "status": "Trading",
-        "ts": "2026-03-12T17:47:40+00:00"
+        "ts": "2026-03-21T10:40:02+00:00"
     }
 }

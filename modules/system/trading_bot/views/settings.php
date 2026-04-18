@@ -16,11 +16,16 @@ $tab = 'settings';
 $cfg = $this->config ?? [];
 
 // --- Module
-$mode = (string)($cfg['module']['mode'] ?? 'dry');
+$mode = (string)($cfg['module']['mode'] ?? 'paper');
 $enabled = (bool)($cfg['module']['enabled'] ?? false);
 $accountId = (string)($cfg['module']['account_id'] ?? 'trading_bot');
 $maxPositions = (int)($cfg['module']['max_concurrent_positions'] ?? 10);
 $reconcileBeforeAction = (bool)($cfg['module']['reconcile_before_action'] ?? true);
+
+// --- Demo credentials (local — NOT KeyCenter)
+$demoApiKey    = (string)($cfg['module']['credentials']['demo']['api_key']      ?? '');
+$demoApiSecret = (string)($cfg['module']['credentials']['demo']['api_secret']   ?? '');
+$demoBaseUrl   = (string)($cfg['module']['credentials']['demo']['api_base_url'] ?? 'https://api-demo.bybit.com');
 
 // --- Exchange
 $exchangeCategory = (string)($cfg['exchange']['category'] ?? 'linear');
@@ -68,6 +73,22 @@ $commandsMaxPerRun = (int)($cfg['execution']['commands_max_per_run'] ?? 100);
 $dumbTrailingEnabled = (bool)($cfg['execution']['dumb_trailing_enabled'] ?? false);
 $enableTrailingOnOpen = (bool)($cfg['execution']['enable_trailing_on_open'] ?? true);
 $dumbTrailingEpsPct = (float)($cfg['execution']['dumb_trailing_activation_epsilon_pct'] ?? 0.2);
+
+// --- Profit Add-On
+$profitAddonEnabled = (bool)($cfg['execution']['profit_addon_enabled'] ?? false);
+$profitAddonBudgetPct = (float)($cfg['execution']['profit_addon_budget_pct'] ?? 0.0);
+
+// V3: Detect Brain-controlled mode from last_run.json for deprecation notices
+$_brainModeActive = false;
+if (isset($this->storageDir)) {
+    $_lastRunPath = $this->storageDir . '/last_run.json';
+    if (is_file($_lastRunPath)) {
+        $_lastRunData = @json_decode((string)@file_get_contents($_lastRunPath), true);
+        if (is_array($_lastRunData)) {
+            $_brainModeActive = (bool)($_lastRunData['trailing_controlled_by_brain'] ?? false);
+        }
+    }
+}
 
 // --- Balance
 $balanceCoin = (string)($cfg['execution']['balance_coin'] ?? 'USDT');
@@ -119,18 +140,30 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 
                     <h6 class="mb-3">Основное</h6>
 
+                    <!-- ══════════════════════════════════════════════════
+                         MODE SELECTOR — CURRENT MODE IS ALWAYS VISIBLE
+                         ══════════════════════════════════════════════════ -->
                     <div class="mb-3">
-                        <label class="form-label">
-                            Режим
-                            <?= sprintf($helpIcon, htmlspecialchars('dry — без реальных ордеров. live — реальные ордера на биржу.')) ?>
+                        <label class="form-label fw-bold">
+                            Режим бота
+                            <?= sprintf($helpIcon, htmlspecialchars('demo — реальные API-вызовы на Bybit Demo аккаунт (не влияет на реальные деньги). live — реальный аккаунт. paper — локальная симуляция без ордеров (legacy).')) ?>
                         </label>
-                        <select class="form-select" name="mode" id="mode">
-                            <option value="dry" <?= $mode === 'dry' ? 'selected' : '' ?>>dry — тестовый (без ордеров)</option>
-                            <option value="live" <?= $mode === 'live' ? 'selected' : '' ?>>live — боевой (реальные ордера)</option>
+                        <select class="form-select fw-bold" name="mode" id="mode" onchange="onModeChange(this.value)">
+                            <option value="demo"  <?= $mode === 'demo'  ? 'selected' : '' ?>>🟡 DEMO — Bybit Demo аккаунт (реальное API, без реальных денег)</option>
+                            <option value="live"  <?= $mode === 'live'  ? 'selected' : '' ?>>🔴 LIVE — Реальный аккаунт (БОЕВЫЕ ДЕНЬГИ)</option>
+                            <option value="paper" <?= ($mode === 'paper' || $mode === 'dry') ? 'selected' : '' ?>>⚪ PAPER — локальная симуляция (legacy, без ордеров)</option>
                         </select>
-                        <div class="form-text text-warning">
-                            Внимание: в режиме <b>live</b> бот отправляет реальные ордера на биржу.
-                        </div>
+                    </div>
+
+                    <!-- Current mode badge (always visible) -->
+                    <div id="modeBadgeDemo"  class="alert alert-warning fw-bold mb-3 py-2 <?= $mode === 'demo'  ? '' : 'd-none' ?>">
+                        🟡 DEMO MODE — API-вызовы идут на Bybit Demo аккаунт. Реальные деньги не затрагиваются.
+                    </div>
+                    <div id="modeBadgeLive"  class="alert alert-danger  fw-bold mb-3 py-2 <?= $mode === 'live'  ? '' : 'd-none' ?>">
+                        🔴 LIVE MODE — ВНИМАНИЕ! Бот торгует реальными деньгами на биржу Bybit!
+                    </div>
+                    <div id="modeBadgePaper" class="alert alert-secondary fw-bold mb-3 py-2 <?= ($mode === 'paper' || $mode === 'dry') ? '' : 'd-none' ?>">
+                        ⚪ PAPER MODE — симуляция, ордера не отправляются.
                     </div>
 
                     <div class="mb-3">
@@ -143,18 +176,72 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">
-                            Account ID (KeyCenter)
-                            <?= sprintf($helpIcon, htmlspecialchars('ID аккаунта в KeyCenter (Admin → KeyCenter). Используется для подписи запросов к Bybit.')) ?>
-                        </label>
-                        <select class="form-select" name="account_id" id="account_id">
-                            <?php foreach ($availableAccounts as $acc): ?>
-                                <option value="<?= htmlspecialchars($acc) ?>" <?= $accountId === $acc ? 'selected' : '' ?>><?= htmlspecialchars($acc) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="form-text">
-                            Если ключи были зашифрованы другим storage/.encryption_key — будет <code>decryption failed</code>.
+                    <!-- ══════════════════════════════════════════════════
+                         DEMO CREDENTIALS SECTION (local, NOT KeyCenter)
+                         ══════════════════════════════════════════════════ -->
+                    <div id="demoCreds" class="card border-warning mb-3 <?= $mode !== 'demo' ? 'd-none' : '' ?>">
+                        <div class="card-header bg-warning bg-opacity-25 fw-bold">
+                            🟡 DEMO — API credentials (локально, не в KeyCenter)
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-2">
+                                Demo-ключи хранятся <strong>только</strong> в конфиге бота (<code>config/bot.json</code>) и <strong>никогда</strong> не попадают в KeyCenter.
+                                Создайте Demo API ключ в <a href="https://www.bybit.com/app/user/api-management" target="_blank">Bybit → API</a> с типом аккаунта <b>Demo Trading</b>.
+                            </p>
+                            <div class="mb-2">
+                                <label class="form-label">Demo API Key</label>
+                                <input type="text" class="form-control" id="demo_api_key" name="demo_api_key"
+                                    value="<?= htmlspecialchars($demoApiKey) ?>"
+                                    autocomplete="off" spellcheck="false"
+                                    placeholder="Вставьте Demo API Key">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Demo API Secret</label>
+                                <input type="password" class="form-control" id="demo_api_secret" name="demo_api_secret"
+                                    value=""
+                                    autocomplete="new-password" spellcheck="false"
+                                    placeholder="<?= $demoApiSecret !== '' ? '(сохранён — оставьте пустым чтобы не менять, введите новый чтобы заменить)' : 'Вставьте Demo API Secret' ?>"
+                                    data-has-value="<?= $demoApiSecret !== '' ? '1' : '0' ?>">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Demo API Base URL</label>
+                                <input type="text" class="form-control" id="demo_api_base_url" name="demo_api_base_url"
+                                    value="<?= htmlspecialchars($demoBaseUrl) ?>"
+                                    autocomplete="off">
+                                <div class="form-text">По умолчанию: <code>https://api-demo.bybit.com</code></div>
+                            </div>
+                            <div class="alert alert-warning py-1 px-2 mb-0 small">
+                                <i class="bi bi-shield-exclamation me-1"></i>
+                                Demo-ключи имеют доступ только к Demo Trading аккаунту — они <strong>не могут</strong> управлять реальными средствами.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ══════════════════════════════════════════════════
+                         LIVE CREDENTIALS SECTION (KeyCenter)
+                         ══════════════════════════════════════════════════ -->
+                    <div id="liveCreds" class="card border-danger mb-3 <?= $mode !== 'live' ? 'd-none' : '' ?>">
+                        <div class="card-header bg-danger bg-opacity-25 fw-bold text-danger">
+                            🔴 LIVE — API credentials (KeyCenter)
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-danger fw-bold py-2 mb-2">
+                                ⚠️ В режиме LIVE бот отправляет РЕАЛЬНЫЕ ордера. Убедитесь, что ключ настроен в KeyCenter.
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">
+                                    Account ID (KeyCenter)
+                                    <?= sprintf($helpIcon, htmlspecialchars('ID аккаунта в KeyCenter (Admin → KeyCenter). Используется для подписи запросов к Bybit в режиме LIVE.')) ?>
+                                </label>
+                                <select class="form-select" name="account_id" id="account_id">
+                                    <?php foreach ($availableAccounts as $acc): ?>
+                                        <option value="<?= htmlspecialchars($acc) ?>" <?= $accountId === $acc ? 'selected' : '' ?>><?= htmlspecialchars($acc) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">
+                                    Если ключи были зашифрованы другим <code>storage/.encryption_key</code> — будет <code>decryption failed</code>.
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -185,19 +272,26 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                         
                     <div class="row g-3 mt-0">
                         <div class="col-md-8">
+                            <div class="alert alert-warning py-2 px-3 mb-2" style="font-size: 0.82rem;">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>DEPRECATED — Brain-controlled:</strong>
+                                Стратегические контролы ниже (reverse_side, force_side, symbol_overrides)
+                                теперь управляются из Smart Brain → User Config → Live Trading Control.
+                                Здесь они работают только как legacy-fallback, если Brain не отправляет live_intents.
+                            </div>
                             <div class="form-check form-switch mt-2">
                                 <input class="form-check-input" type="checkbox" id="reverse_side_enabled" name="reverse_side_enabled" <?= $reverseSideEnabled ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="reverse_side_enabled">
-                                    Инвертировать направление (LONG ↔ SHORT)
-                                    <?= sprintf($helpIcon, htmlspecialchars('Для тестов: бот будет открывать противоположную сторону от сигнала Brain (LONG→SHORT, SHORT→LONG). В intent добавит side_original для прозрачности.')) ?>
+                                    Инвертировать направление (LONG ↔ SHORT) <span class="badge bg-secondary">deprecated</span>
+                                    <?= sprintf($helpIcon, htmlspecialchars('DEPRECATED: Теперь Brain контролирует reverse_side через live_reverse_side_enabled в User Config. Bot-local toggle работает только в legacy mode.')) ?>
                                 </label>
                             </div>
 
                             <div class="mt-3 p-3 rounded" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color);">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <div>
-                                        <strong>Переопределения по символам</strong>
-                                        <span class="text-muted">(точечно, приоритетнее общего режима)</span>
+                                        <strong>Переопределения по символам</strong> <span class="badge bg-secondary">deprecated</span>
+                                        <span class="text-muted">(legacy fallback — Brain теперь контролирует selection mode)</span>
                                         <?= sprintf($helpIcon, htmlspecialchars('Позволяет точечно включать/выключать торговлю по символу и (опционально) инвертировать сторону только для конкретных тикеров. Это лучше, чем общий "переворот" для всех.')) ?>
                                     </div>
                                     <div class="d-flex align-items-center gap-2">
@@ -599,13 +693,25 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 
                     <h6 class="mb-3">Trailing (Dumb / On-Open)</h6>
 
+<?php if ($_brainModeActive): ?>
+                    <div class="alert alert-info py-2 mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>Brain-controlled mode active:</strong>
+                        These local trailing toggles (<code>dumb_trailing_enabled</code>, <code>enable_trailing_on_open</code>)
+                        are <strong>overridden</strong> by Brain trailing contract.
+                        Trailing enabled/disabled is determined by normalized Brain <code>risk.trailing</code>.
+                        Local toggles are used only in legacy (non-Brain) mode.
+                    </div>
+<?php endif; ?>
+
                     <div class="row g-3">
                         <div class="col-md-6">
                             <div class="form-check form-switch mt-2">
                                 <input class="form-check-input" type="checkbox" id="dumb_trailing_enabled" name="dumb_trailing_enabled" <?= $dumbTrailingEnabled ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="dumb_trailing_enabled">
                                     Dumb Trailing включён
-                                    <?= sprintf($helpIcon, htmlspecialchars('Простой trailing по последней цене. Рекомендуется держать OFF и использовать StepTrailing/ProfitManager.')) ?>
+                                    <?php if ($_brainModeActive): ?><span class="badge bg-secondary ms-1">overridden</span><?php endif; ?>
+                                    <?= sprintf($helpIcon, htmlspecialchars('Простой trailing по последней цене. В Brain-controlled mode этот toggle игнорируется — trailing управляется Brain контрактом.')) ?>
                                 </label>
                             </div>
 
@@ -618,7 +724,8 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                                 <input class="form-check-input" type="checkbox" id="enable_trailing_on_open" name="enable_trailing_on_open" <?= $enableTrailingOnOpen ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="enable_trailing_on_open">
                                     Включать trailing сразу при открытии
-                                    <?= sprintf($helpIcon, htmlspecialchars('Если true — бот может активировать trailing настройки сразу после open (если allow).')) ?>
+                                    <?php if ($_brainModeActive): ?><span class="badge bg-secondary ms-1">overridden</span><?php endif; ?>
+                                    <?= sprintf($helpIcon, htmlspecialchars('Если true — бот активирует trailing при open. В Brain-controlled mode этот toggle игнорируется — Brain контракт решает.')) ?>
                                 </label>
                             </div>
 
@@ -643,6 +750,124 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                     </div>
 
 </div>
+                    </div>
+
+                    <!-- ROI-Based Trailing Presets (price_distance_floor mode) -->
+                    <div class="card mb-3">
+                        <div class="card-header py-2">
+                            <strong>🎯 Trailing Presets</strong>
+                            <small class="text-muted ms-2">(price_distance_floor mode)</small>
+                        </div>
+                        <div class="card-body py-2">
+                            <div class="alert alert-secondary py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                Distance ROI is converted to price distance using leverage.<br>
+                                <code>price_distance_pct = distance_roi / leverage / 100</code>
+                            </div>
+                            <?php
+                                $cfgPresetMode = (string)($config['execution']['trailing_preset_mode'] ?? 'medium');
+                                $cfgPresets = $config['execution']['trailing_presets'] ?? [];
+                            ?>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-4">
+                                    <label class="form-label">Preset Mode</label>
+                                    <select class="form-select form-select-sm" id="trailing_preset_mode" name="trailing_preset_mode">
+                                        <option value="soft" <?= $cfgPresetMode === 'soft' ? 'selected' : '' ?>>Soft (conservative)</option>
+                                        <option value="medium" <?= $cfgPresetMode === 'medium' ? 'selected' : '' ?>>Medium (balanced)</option>
+                                        <option value="hard" <?= $cfgPresetMode === 'hard' ? 'selected' : '' ?>>Hard (tight)</option>
+                                        <option value="custom" <?= $cfgPresetMode === 'custom' ? 'selected' : '' ?>>Custom (Brain values)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <table class="table table-sm table-bordered mb-0" style="font-size:0.75rem;">
+                                <thead><tr><th>Preset</th><th>Activation ROI</th><th>Floor Lock ROI</th><th>Distance ROI</th></tr></thead>
+                                <tbody>
+                                <?php foreach (['soft', 'medium', 'hard'] as $pName):
+                                    $pVals = $cfgPresets[$pName] ?? [];
+                                    $isActive = ($cfgPresetMode === $pName);
+                                ?>
+                                    <tr class="<?= $isActive ? 'table-primary' : '' ?>">
+                                        <td><strong><?= $pName ?></strong> <?= $isActive ? '✅' : '' ?></td>
+                                        <td><?= (float)($pVals['activation_roi'] ?? 0) ?></td>
+                                        <td><?= (float)($pVals['floor_lock_roi'] ?? 0) ?></td>
+                                        <td><?= (float)($pVals['distance_roi'] ?? 0) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Profit Add-On (one-time scale-in into winning position) -->
+                    <div class="card mb-3">
+                        <div class="card-header py-2">
+                            <strong>💰 Profit Add-On</strong>
+                            <small class="text-muted ms-2">(one-time scale-in into winning trade)</small>
+                        </div>
+                        <div class="card-body py-2">
+                            <div class="alert alert-info py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                ℹ️ <strong>Configured in Brain Trailing Block.</strong>
+                                Set <code>profit_addon_enabled</code> and <code>profit_addon_budget_pct</code> in the Brain settings trailing section.
+                                Bot reads these values from the Brain-resolved trailing contract.
+                            </div>
+                            <?php
+                                $profitAddonEnabledDisplay = (bool)($config['execution']['profit_addon_enabled'] ?? false);
+                                $profitAddonBudgetPctDisplay = (float)($config['execution']['profit_addon_budget_pct'] ?? 0.0);
+                            ?>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mt-2 text-muted">
+                                        <input class="form-check-input" type="checkbox" disabled <?= $profitAddonEnabledDisplay ? 'checked' : '' ?>>
+                                        <label class="form-check-label">
+                                            Profit Add-On (bot fallback default)
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-muted">Add-On Budget % (bot fallback default)</label>
+                                    <input type="number" step="0.1" min="0" max="500" class="form-control" disabled value="<?= htmlspecialchars((string)$profitAddonBudgetPctDisplay) ?>">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trend-Reversal Soft Ladder (TEST MODE) -->
+                    <div class="card mb-3 border-warning">
+                        <div class="card-header py-2 bg-warning bg-opacity-10">
+                            <strong>🔬 Trend-Reversal Soft Ladder</strong>
+                            <span class="badge bg-warning text-dark ms-2" style="font-size:0.65rem;">TEST MODE</span>
+                            <small class="text-muted ms-2">(short V2/V3 only — step_mode: trend_reversal_soft_ladder_short)</small>
+                        </div>
+                        <div class="card-body py-2">
+                            <div class="alert alert-warning py-1 px-2 mb-2" style="font-size:0.78rem;">
+                                ⚠️ <strong>TEST MODE — fixed constants, not freely configurable in v1.</strong><br>
+                                Short V2/V3 only. Activates by peak ROI ladder in short-only test mode. No long reversal signal required.<br>
+                                Soft ROI ladder: once peak ROI ≥ 10, locks profit gradually instead of aggressively.
+                            </div>
+                            <table class="table table-sm table-bordered mb-2" style="font-size:0.75rem;">
+                                <thead><tr><th colspan="2" class="table-secondary">Fixed Test Constants</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Activation Peak ROI</td><td><strong>10</strong> ROI%</td></tr>
+                                    <tr><td>Base Lock ROI</td><td><strong>5</strong> ROI%</td></tr>
+                                    <tr><td>Main Step ROI</td><td><strong>3</strong> ROI%</td></tr>
+                                    <tr><td>Lock Step ROI</td><td><strong>1</strong> ROI%</td></tr>
+                                </tbody>
+                            </table>
+                            <table class="table table-sm table-bordered mb-2" style="font-size:0.75rem;">
+                                <thead><tr><th>Peak ROI</th><th>Lock ROI</th></tr></thead>
+                                <tbody>
+                                    <tr><td>&lt; 10</td><td>0 (dormant)</td></tr>
+                                    <tr><td>10.0 – 12.9</td><td>5</td></tr>
+                                    <tr><td>13.0 – 15.9</td><td>6</td></tr>
+                                    <tr><td>16.0 – 18.9</td><td>7</td></tr>
+                                    <tr><td>19.0 – 21.9</td><td>8</td></tr>
+                                </tbody>
+                            </table>
+                            <div class="text-muted" style="font-size:0.72rem;">
+                                <strong>Scope:</strong> double_top_contextual_v2, double_top_contextual_v3 (short source)<br>
+                                <strong>Activation:</strong> peak_roi &ge; 10 (short-only, no long reversal required)<br>
+                                <strong>Enable:</strong> set <code>trailing_step_mode = trend_reversal_soft_ladder_short</code> in Brain trailing contract.
+                            </div>
+                        </div>
                     </div>
 
                     <hr class="my-4">
@@ -744,8 +969,30 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
                     </tr>
                     <tr>
                         <td class="text-muted">Mode</td>
-                        <td><?= htmlspecialchars($mode) ?></td>
+                        <td>
+                            <?php if ($mode === 'demo'): ?>
+                                <span class="badge bg-warning text-dark fw-bold">🟡 DEMO</span>
+                            <?php elseif ($mode === 'live'): ?>
+                                <span class="badge bg-danger fw-bold">🔴 LIVE</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">⚪ <?= htmlspecialchars($mode) ?></span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
+                    <tr>
+                        <td class="text-muted">Storage</td>
+                        <td><code><?php
+                            if ($mode === 'live') echo 'storage_live/';
+                            elseif ($mode === 'demo') echo 'storage_demo/';
+                            else echo 'storage_paper/';
+                        ?></code></td>
+                    </tr>
+                    <?php if ($mode === 'demo'): ?>
+                    <tr>
+                        <td class="text-muted">Demo API URL</td>
+                        <td><code><?= htmlspecialchars($demoBaseUrl) ?></code></td>
+                    </tr>
+                    <?php endif; ?>
                     <tr>
                         <td class="text-muted">Category</td>
                         <td><?= htmlspecialchars($exchangeCategory) ?></td>
@@ -813,6 +1060,21 @@ $helpIcon = '<i class="bi bi-question-circle ms-1 text-muted" title="%s"></i>';
 </div>
 
 <script>
+/**
+ * Mode switching: show/hide demo/live credential sections and badges
+ */
+function onModeChange(mode) {
+    const isDemo  = mode === 'demo';
+    const isLive  = mode === 'live';
+    const isPaper = !isDemo && !isLive;
+
+    document.getElementById('demoCreds').classList.toggle('d-none', !isDemo);
+    document.getElementById('liveCreds').classList.toggle('d-none', !isLive);
+    document.getElementById('modeBadgeDemo').classList.toggle('d-none', !isDemo);
+    document.getElementById('modeBadgeLive').classList.toggle('d-none', !isLive);
+    document.getElementById('modeBadgePaper').classList.toggle('d-none', !isPaper);
+}
+
 /**
  * Symbol overrides UI helpers
  */
@@ -914,10 +1176,23 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     const config = {
         enabled: document.getElementById('enabled').checked,
         mode: document.getElementById('mode').value,
-        account_id: document.getElementById('account_id').value,
+        account_id: (document.getElementById('account_id') || {value: '<?= htmlspecialchars($accountId) ?>'}).value,
         max_positions: num(document.getElementById('max_positions').value, <?= (int)$maxPositions ?>),
         safety_stop_errors: num(document.getElementById('safety_stop_errors').value, <?= (int)$safetyStopErrors ?>),
         reconcile_before_action: document.getElementById('reconcile_before_action').checked,
+
+        credentials: {
+            demo: {
+                api_key: (document.getElementById('demo_api_key') || {value: ''}).value,
+                api_secret: (() => {
+                    const el = document.getElementById('demo_api_secret');
+                    if (!el) return '';
+                    // Empty value means "keep existing secret unchanged" (server merges)
+                    return el.value.trim();
+                })(),
+                api_base_url: (document.getElementById('demo_api_base_url') || {value: 'https://api-demo.bybit.com'}).value,
+            }
+        },
 
         symbol_overrides: collectSymbolOverrides(),
 
@@ -960,6 +1235,10 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
             dumb_trailing_enabled: document.getElementById('dumb_trailing_enabled').checked,
             enable_trailing_on_open: document.getElementById('enable_trailing_on_open').checked,
             dumb_trailing_activation_epsilon_pct: flt(document.getElementById('dumb_trailing_activation_epsilon_pct').value, <?= (float)$dumbTrailingEpsPct ?>),
+
+            // profit add-on (now controlled by Brain trailing block; bot uses Brain contract value at runtime)
+            profit_addon_enabled: <?= $profitAddonEnabled ? 'true' : 'false' ?>,
+            profit_addon_budget_pct: <?= (float)$profitAddonBudgetPct ?>,
 
             // balance
             balance_coin: document.getElementById('balance_coin').value,

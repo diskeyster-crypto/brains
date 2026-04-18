@@ -1,0 +1,39 @@
+{
+    "computed_at": "2026-04-16T09:38:07+00:00",
+    "attribution_note": "Атрибуция по статусу Win Universe НА МОМЕНТ создания интента. Символы без записи в журнале атрибуции отображаются как «no_attribution».",
+    "groups": {
+        "qualified_at_entry": {
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "winrate": null,
+            "avg_roi": null,
+            "median_roi": null,
+            "avg_time_to_close_min": null,
+            "small_sample_warning": true,
+            "sample_note": "Мало данных (0 сд.) — статистика ненадёжна"
+        },
+        "nonqualified_at_entry": {
+            "trade_count": 0,
+            "win_count": 0,
+            "loss_count": 0,
+            "winrate": null,
+            "avg_roi": null,
+            "median_roi": null,
+            "avg_time_to_close_min": null,
+            "small_sample_warning": true,
+            "sample_note": "Мало данных (0 сд.) — статистика ненадёжна"
+        },
+        "no_attribution": {
+            "trade_count": 2,
+            "win_count": 0,
+            "loss_count": 2,
+            "winrate": 0,
+            "avg_roi": -0.0107,
+            "median_roi": -0.0107,
+            "avg_time_to_close_min": 2.5,
+            "small_sample_warning": true,
+            "sample_note": "Мало данных (2 сд.) — статистика ненадёжна"
+        }
+    }
+}

@@ -16,6 +16,8 @@
         },
         "pattern_algorithms": {
             "enabled": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3",
                 "double_top_contextual_v2",
                 "double_top_contextual_v3"
             ],
@@ -78,9 +80,9 @@
             "override_fields": []
         },
         "user_limits": {
-            "max_budget_per_coin": 6,
+            "max_budget_per_coin": 9,
             "max_active_tasks": 50,
-            "max_leverage": 10,
+            "max_leverage": 15,
             "brain_mode": "balanced",
             "bootstrap_enabled": true,
             "bootstrap_max_signals": 100,
@@ -92,7 +94,7 @@
             "stop_floor_value": 0.29999999999999999,
             "brain_may_tighten_stop": true,
             "trailing_enabled": true,
-            "trailing_activation_roi": 0.070000000000000007,
+            "trailing_activation_roi": 0.064000000000000001,
             "trailing_min_lock_roi": 0.021999999999999999,
             "trailing_min_step": 0.01,
             "brain_may_delay_trailing": true,
@@ -137,6 +139,8 @@
             "v2_live_min_confirmation_score": 0.59999999999999998,
             "v2_live_min_pattern_confidence": 0.55000000000000004,
             "v2_live_min_trend_match_score": 0.45000000000000001,
+            "v2_cleanup_medium_min_conf": 0.56999999999999995,
+            "v2_cleanup_medium_min_eq": 0.59999999999999998,
             "sniper_v3_live_filter_enabled": true,
             "sniper_v3_min_confirmation_score": 0.71999999999999997,
             "sniper_v3_min_pattern_confidence": 0.59999999999999998,
@@ -151,12 +155,15 @@
             "sniper_v3_min_trend_match_score_short": 0.34999999999999998,
             "sniper_v3_min_entry_quality_score_short": 0.59999999999999998,
             "sniper_v3_min_corridor_fit_score_short": 0.59999999999999998,
+            "slot_priority_enabled": true,
+            "freshness_decay_enabled": true,
+            "slot_priority_freshness_window_minutes": 30,
             "execution_profile": "sniper_lite",
             "pattern_profile_mode": "manual_override",
             "trailing_mode": "price_distance_floor",
             "trailing_preset_mode": "custom",
             "trailing_price_distance_pct": 0.02,
-            "trailing_activation_floor_roi": 0.089999999999999997,
+            "trailing_activation_floor_roi": 0.127,
             "trailing_floor_lock_roi": 0.029999999999999999,
             "trailing_distance_roi": 5,
             "profit_addon_enabled": false,
@@ -166,7 +173,7 @@
             "trailing_step_pct_max": 0.02,
             "trailing_step_roi": 1.5,
             "leverage_mode": "manual",
-            "manual_leverage": 5,
+            "manual_leverage": 15,
             "symbol_intelligence_enabled": true,
             "symbol_filter_mode": "all",
             "whitelist_min_trades": 3,
@@ -185,12 +192,14 @@
             "manual_symbol_mode": "manual_only",
             "live_trading_enabled": true,
             "live_signal_selection_mode": "all",
-            "live_max_positions": 5,
+            "live_max_positions": 4,
             "live_one_trade_per_symbol": true,
             "live_entry_policy": "enter_now",
             "live_reverse_side_enabled": false,
             "patterns": {
                 "enabled": [
+                    "double_bottom_contextual_v2",
+                    "double_bottom_contextual_v3",
                     "double_top_contextual_v2",
                     "double_top_contextual_v3"
                 ],
@@ -201,7 +210,10 @@
             "v3_zone_widen_weak_pct": 0.40000000000000002,
             "v3_zone_widen_medium_pct": 0.55000000000000004,
             "v3_zone_widen_strong_pct": 0.69999999999999996,
-            "v3_zone_widen_max_cap_pct": 0.75
+            "v3_zone_widen_max_cap_pct": 0.75,
+            "sniper_v3_min_trend_match_score_long": 0.34999999999999998,
+            "sniper_v3_min_entry_quality_score_long": 0.59999999999999998,
+            "sniper_v3_min_corridor_fit_score_long": 0.59999999999999998
         }
     },
     "simulator": {
@@ -238,15 +250,8 @@
         }
     },
     "ui": {
-        "mode": "manual",
-        "settings": {
-            "title": "Smart Brain",
-            "refresh_seconds": 7
-        },
-        "auto_rules": {
-            "allow_brain_override": false,
-            "override_fields": []
-        }
+        "title": "Smart Brain",
+        "refresh_seconds": 5
     },
-    "updated_at": "2026-03-31T20:19:09+01:00"
+    "updated_at": "2026-04-18T12:10:14+01:00"
 }

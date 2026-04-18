@@ -828,6 +828,14 @@ final class SmartBrainCore
             'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
             'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
             'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
+            // Stabilized cycle relaxation diagnostics
+            'stabilized_cycle_relaxation_used'             => (int)($liveIntentResult['stabilized_cycle_relaxation_used']            ?? 0),
+            'stabilized_cycle_relaxation_applied'          => (int)($liveIntentResult['stabilized_cycle_relaxation_applied']         ?? 0),
+            'stabilized_cycle_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_live_pass_total'] ?? 0),
+            'stabilized_cycle_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_cycle_relaxation_demo_total']      ?? 0),
+            'stabilized_cycle_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_cycle_relaxation_reject_total']    ?? 0),
+            'stabilized_cycle_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_no_effect_total'] ?? 0),
+            'stabilized_cycle_relaxation_reason_distribution' => $liveIntentResult['stabilized_cycle_relaxation_reason_distribution'] ?? [],
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1030,6 +1038,14 @@ final class SmartBrainCore
             'cycle_model_support_no_effect_total'  => (int)($liveIntentResult['cycle_model_support_no_effect_total'] ?? 0),
             // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
             'cycle_model_support_preview'         => $liveIntentResult['cycle_model_support_preview'] ?? [],
+            // Stabilized cycle relaxation diagnostics
+            'stabilized_cycle_relaxation_used'             => (int)($liveIntentResult['stabilized_cycle_relaxation_used']            ?? 0),
+            'stabilized_cycle_relaxation_applied'          => (int)($liveIntentResult['stabilized_cycle_relaxation_applied']         ?? 0),
+            'stabilized_cycle_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_live_pass_total'] ?? 0),
+            'stabilized_cycle_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_cycle_relaxation_demo_total']      ?? 0),
+            'stabilized_cycle_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_cycle_relaxation_reject_total']    ?? 0),
+            'stabilized_cycle_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_no_effect_total'] ?? 0),
+            'stabilized_cycle_relaxation_reason_distribution' => $liveIntentResult['stabilized_cycle_relaxation_reason_distribution'] ?? [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => (int)($liveIntentResult['cycle_eligibility_refine_total']      ?? 0),
             'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
@@ -1282,6 +1298,14 @@ final class SmartBrainCore
             'cycle_model_support_no_effect_total'  => 0,
             // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
             'cycle_model_support_preview'         => [],
+            // Stabilized cycle relaxation diagnostics (post-stabilization narrow soft rescue for V2 rescued signals)
+            'stabilized_cycle_relaxation_used'             => 0,
+            'stabilized_cycle_relaxation_applied'          => 0,
+            'stabilized_cycle_relaxation_live_pass_total'  => 0,
+            'stabilized_cycle_relaxation_demo_total'       => 0,
+            'stabilized_cycle_relaxation_reject_total'     => 0,
+            'stabilized_cycle_relaxation_no_effect_total'  => 0,
+            'stabilized_cycle_relaxation_reason_distribution' => [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => 0,
             'cycle_eligibility_upgrade_total'     => 0,
@@ -1786,6 +1810,9 @@ final class SmartBrainCore
             $patternAlgo = (string)($signal['pattern_algorithm'] ?? '');
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
             $v2QualityFloorEnabled = (bool)($userLimits['v2_live_quality_floor_enabled'] ?? true);
+            // Tracks whether this signal was rescued by the stabilized V2 floor soft relaxation.
+            // Initialized here so it is always in scope for the downstream cycle model relax check.
+            $stabRelaxApplied = false;
 
             if (($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') && $v2QualityFloorEnabled) {
                 $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
@@ -1806,7 +1833,6 @@ final class SmartBrainCore
 
                 // Feature flag for stabilized narrow relaxation
                 $stabRelaxEnabled = (bool)($userLimits['stabilized_v2_floor_relaxation_enabled'] ?? true);
-                $stabRelaxApplied = false;
 
                 if (!$v2FloorResult['eligible']) {
                     $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
@@ -2105,15 +2131,43 @@ final class SmartBrainCore
                         $result['cycle_model_support_borderline_total']++;
                         // Do NOT continue — signal survives into passport gate
                     } else {
-                        $cycleModelVetoApplied = true;
-                        $cycleModelVetoReason  = 'cycle_model_demote_demo';
-                        $result['cycle_model_veto_total']++;
-                        $result['cycle_model_demote_demo_total']++;
-                        if ($side === 'long') {
-                            $result['long_cycle_veto_total']++;
+                        // === STABILIZED CYCLE RELAXATION (Coin Core Step 11-R) ===
+                        // Narrow soft rescue for already-rescued borderline-clean contextual V2
+                        // signals that would otherwise be demoted only because of non_live_bias
+                        // while the underlying cycle conditions are safe (actionable, not high_risk,
+                        // no warning). This is the softest cycle demotion reason — the only issue
+                        // is the model's preference, not a genuine risk signal.
+                        // Never fires for clearly bad cases (hard veto conditions block above).
+                        // Feature-flagged and guarded by: $stabRelaxApplied (V2 floor rescue).
+                        $stabCycleRelaxEnabled = (bool)($userLimits['stabilized_cycle_relaxation_enabled'] ?? true);
+                        $stabCycleRescued = false;
+                        if ($stabCycleRelaxEnabled && $stabRelaxApplied) {
+                            $result['stabilized_cycle_relaxation_used']++;
+                            if ($cmActionability === 'actionable' && $cmRisk !== 'high_risk' && !$cmWarnFlag) {
+                                $stabCycleRescued = true;
+                                $rescueReasonCycle = 'non_live_bias_soft_demote_v2_rescued_borderline';
+                                $result['stabilized_cycle_relaxation_applied']++;
+                                $result['stabilized_cycle_relaxation_live_pass_total']++;
+                                $result['stabilized_cycle_relaxation_reason_distribution'][$rescueReasonCycle] =
+                                    ($result['stabilized_cycle_relaxation_reason_distribution'][$rescueReasonCycle] ?? 0) + 1;
+                                // Do NOT continue — signal survives into passport gate
+                            } else {
+                                $result['stabilized_cycle_relaxation_reject_total']++;
+                            }
                         }
-                        $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
-                        continue;
+                        // === END STABILIZED CYCLE RELAXATION ===
+
+                        if (!$stabCycleRescued) {
+                            $cycleModelVetoApplied = true;
+                            $cycleModelVetoReason  = 'cycle_model_demote_demo';
+                            $result['cycle_model_veto_total']++;
+                            $result['cycle_model_demote_demo_total']++;
+                            if ($side === 'long') {
+                                $result['long_cycle_veto_total']++;
+                            }
+                            $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_demote_demo', $selectionMode);
+                            continue;
+                        }
                     }
                 }
 
@@ -2150,6 +2204,12 @@ final class SmartBrainCore
                     }
                 }
                 $result['cycle_model_no_effect_total']++;
+                // Stabilized cycle relaxation: no-effect counter for signals that passed
+                // cycle model without needing rescue.
+                $stabCycleRelaxEnabledCheck = (bool)($userLimits['stabilized_cycle_relaxation_enabled'] ?? true);
+                if ($stabCycleRelaxEnabledCheck && $stabRelaxApplied) {
+                    $result['stabilized_cycle_relaxation_no_effect_total']++;
+                }
             } else {
                 // Cycle model unavailable for this symbol — no veto applied
                 $result['cycle_model_unavailable_total']++;

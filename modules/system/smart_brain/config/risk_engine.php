@@ -126,5 +126,10 @@ return [
         // Multiple metric failures are never rescued. Feature-flagged.
         'stabilized_v2_floor_relaxation_enabled' => true,
         'stabilized_v2_floor_soft_tolerance'     => 0.05,
+        // Stabilized cycle relaxation — narrow soft rescue for already-rescued borderline-clean
+        // contextual V2 signals that hit the non_live_bias soft demote while remaining actionable,
+        // not high_risk, and without a warning flag. Never rescues hard veto cases.
+        // Only fires when stabilized_v2_floor_relaxation_applied is true for the signal.
+        'stabilized_cycle_relaxation_enabled'    => true,
     ],
 ];

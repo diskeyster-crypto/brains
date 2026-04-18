@@ -1,0 +1,564 @@
+{
+    "generated_at": "2026-04-18T08:08:13+01:00",
+    "params": {
+        "live_trading_enabled": {
+            "key": "live_trading_enabled",
+            "label": "Live Trading Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "brain_user_config",
+            "source_path": "live_trading_enabled",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": true,
+                "brain_effective": true
+            },
+            "notes": "Master on/off for live trading"
+        },
+        "live_max_positions": {
+            "key": "live_max_positions",
+            "label": "Max Live Positions",
+            "type": "operational",
+            "value": 5,
+            "source": "brain_user_config",
+            "source_path": "live_max_positions",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 5,
+                "brain_effective": 20
+            },
+            "notes": "Maximum concurrent live positions"
+        },
+        "live_signal_selection_mode": {
+            "key": "live_signal_selection_mode",
+            "label": "Signal Selection Mode",
+            "type": "operational",
+            "value": "all",
+            "source": "brain_user_config",
+            "source_path": "live_signal_selection_mode",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "all",
+                "brain_effective": "all"
+            },
+            "notes": "all / sniper / etc"
+        },
+        "live_one_trade_per_symbol": {
+            "key": "live_one_trade_per_symbol",
+            "label": "One Trade Per Symbol",
+            "type": "operational",
+            "value": true,
+            "source": "brain_user_config",
+            "source_path": "live_one_trade_per_symbol",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": true,
+                "brain_effective": true
+            },
+            "notes": "Prevents duplicate open positions on same symbol"
+        },
+        "live_entry_policy": {
+            "key": "live_entry_policy",
+            "label": "Live Entry Policy",
+            "type": "operational",
+            "value": "enter_now",
+            "source": "brain_user_config",
+            "source_path": "live_entry_policy",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "enter_now",
+                "brain_effective": "enter_now"
+            },
+            "notes": "enter_now | wait_retrace"
+        },
+        "live_reverse_side_enabled": {
+            "key": "live_reverse_side_enabled",
+            "label": "Reverse Side (Long↔Short)",
+            "type": "operational",
+            "value": false,
+            "source": "brain_user_config",
+            "source_path": "live_reverse_side_enabled",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": false
+            },
+            "notes": "Invert trade direction before live emit"
+        },
+        "leverage_mode": {
+            "key": "leverage_mode",
+            "label": "Leverage Mode",
+            "type": "operational",
+            "value": "manual",
+            "source": "brain_user_config",
+            "source_path": "leverage_mode",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "manual",
+                "brain_effective": "manual"
+            },
+            "notes": "manual | auto"
+        },
+        "manual_leverage": {
+            "key": "manual_leverage",
+            "label": "Manual Leverage",
+            "type": "operational",
+            "value": 5,
+            "source": "brain_user_config",
+            "source_path": "manual_leverage",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 5,
+                "brain_effective": 15
+            },
+            "notes": "Fixed leverage applied when leverage_mode=manual"
+        },
+        "max_leverage": {
+            "key": "max_leverage",
+            "label": "Max Leverage Cap",
+            "type": "operational",
+            "value": 10,
+            "source": "brain_user_config",
+            "source_path": "max_leverage",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 10
+            },
+            "notes": "Hard cap; Brain and Bot both respect this"
+        },
+        "max_budget_per_coin": {
+            "key": "max_budget_per_coin",
+            "label": "Budget Per Trade (USDT)",
+            "type": "operational",
+            "value": 6,
+            "source": "brain_user_config",
+            "source_path": "max_budget_per_coin",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 6
+            },
+            "notes": "Max USDT allocated per signal/intent"
+        },
+        "stop_control_mode": {
+            "key": "stop_control_mode",
+            "label": "Stop Control Mode",
+            "type": "operational",
+            "value": "entry_roi",
+            "source": "brain_user_config",
+            "source_path": "stop_control_mode",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "entry_roi",
+                "brain_effective": "entry_roi"
+            },
+            "notes": "auto (liq-based) | entry_roi (entry-based)"
+        },
+        "stop_loss_from_entry_roi": {
+            "key": "stop_loss_from_entry_roi",
+            "label": "Stop Loss (ROI from entry)",
+            "type": "operational",
+            "value": 0.01,
+            "source": "brain_user_config",
+            "source_path": "stop_loss_from_entry_roi",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 0.01,
+                "brain_effective": 0.01
+            },
+            "notes": "Used when stop_control_mode=entry_roi"
+        },
+        "trailing_enabled": {
+            "key": "trailing_enabled",
+            "label": "Trailing Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "brain_user_config",
+            "source_path": "trailing_enabled",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": true,
+                "bot_runtime": true
+            },
+            "notes": "Brain and Bot must both agree; bot_runtime takes precedence for execution"
+        },
+        "trailing_mode": {
+            "key": "trailing_mode",
+            "label": "Trailing Mode",
+            "type": "operational",
+            "value": "price_distance_floor",
+            "source": "brain_user_config",
+            "source_path": "trailing_mode",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "price_distance_floor"
+            },
+            "notes": "price_distance_floor | fixed_roi_ladder | trend_reversal_soft_ladder_short"
+        },
+        "trailing_activation_roi": {
+            "key": "trailing_activation_roi",
+            "label": "Trailing Activation ROI",
+            "type": "operational",
+            "value": 0.070000000000000007,
+            "source": "brain_user_config",
+            "source_path": "trailing_activation_roi",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 0.070000000000000007
+            },
+            "notes": "Position ROI at which trailing stop activates"
+        },
+        "trailing_activation_floor_roi": {
+            "key": "trailing_activation_floor_roi",
+            "label": "Trailing Floor Activation ROI",
+            "type": "operational",
+            "value": 0.089999999999999997,
+            "source": "brain_user_config",
+            "source_path": "trailing_activation_floor_roi",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 0.089999999999999997
+            },
+            "notes": "ROI at which floor-lock activates"
+        },
+        "break_even_enabled": {
+            "key": "break_even_enabled",
+            "label": "Break-Even Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "brain_user_config",
+            "source_path": "break_even_enabled",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": true,
+                "bot_runtime": true
+            },
+            "notes": "Brain and Bot both define this; conflicts tracked"
+        },
+        "break_even_activation_roi": {
+            "key": "break_even_activation_roi",
+            "label": "Break-Even Activation ROI",
+            "type": "operational",
+            "value": 0.025000000000000001,
+            "source": "brain_user_config",
+            "source_path": "break_even_activation_roi",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": 0.025000000000000001
+            },
+            "notes": "ROI at which break-even stop is placed"
+        },
+        "patterns_enabled": {
+            "key": "patterns_enabled",
+            "label": "Enabled Patterns",
+            "type": "operational",
+            "value": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3",
+                "double_top_contextual_v2",
+                "double_top_contextual_v3"
+            ],
+            "source": "brain_user_config",
+            "source_path": "patterns.enabled",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": [
+                    "double_bottom_contextual_v2",
+                    "double_bottom_contextual_v3",
+                    "double_top_contextual_v2",
+                    "double_top_contextual_v3"
+                ],
+                "brain_effective": [
+                    "double_bottom_contextual_v2",
+                    "double_bottom_contextual_v3",
+                    "double_top_contextual_v2",
+                    "double_top_contextual_v3"
+                ]
+            },
+            "notes": "List of active pattern algorithm IDs"
+        },
+        "patterns_mode": {
+            "key": "patterns_mode",
+            "label": "Pattern Match Mode",
+            "type": "operational",
+            "value": "any",
+            "source": "brain_user_config",
+            "source_path": "patterns.mode",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "any",
+                "brain_effective": "any"
+            },
+            "notes": "any = match any enabled pattern; all = require all"
+        },
+        "execution_profile": {
+            "key": "execution_profile",
+            "label": "Execution Profile",
+            "type": "operational",
+            "value": "sniper_lite",
+            "source": "brain_user_config",
+            "source_path": "execution_profile",
+            "source_file": "modules/system/smart_brain/runtime/user_config.json",
+            "all_values": {
+                "brain_user_config": "sniper_lite",
+                "brain_effective": {
+                    "execution_profile": "sniper_lite",
+                    "execution_profile_label": "Sniper Lite",
+                    "execution_profile_description": "Moderately selective V3-only live policy. Strong confirmations and selected medium confirmations allowed. Higher signal count than Sniper, lower target precision.",
+                    "execution_profile_mode": "preset",
+                    "active_profile_managed_fields": [
+                        "v2_confirmation_weak_max",
+                        "v2_confirmation_strong_min",
+                        "v2_zone_widen_weak_pct",
+                        "v2_zone_widen_medium_pct",
+                        "v2_zone_widen_strong_pct",
+                        "v2_zone_widen_max_cap_pct",
+                        "strong_confirmation_enter_now_enabled",
+                        "medium_confirmation_wait_retrace_enabled",
+                        "weak_confirmation_live_enabled",
+                        "v2_hold_quality_min",
+                        "v2_post_reclaim_stability_min",
+                        "v2_zone_defense_min",
+                        "v2_trend_match_min",
+                        "v2_price_position_max",
+                        "v3_strong_enter_now_enabled",
+                        "v3_zone_widen_weak_pct",
+                        "v3_zone_widen_medium_pct",
+                        "v3_zone_widen_strong_pct",
+                        "v3_zone_widen_max_cap_pct",
+                        "sniper_v3_live_filter_enabled",
+                        "sniper_v3_min_confirmation_score",
+                        "sniper_v3_min_pattern_confidence",
+                        "sniper_v3_min_trend_match_score",
+                        "sniper_v3_min_entry_quality_score",
+                        "sniper_v3_min_corridor_fit_score",
+                        "sniper_v3_max_price_position",
+                        "sniper_v3_min_reclaim_strength_score",
+                        "sniper_v3_min_hold_quality_score",
+                        "sniper_v3_min_post_reclaim_stability_score",
+                        "sniper_v3_min_zone_defense_score",
+                        "sniper_v3_min_trend_match_score_short",
+                        "sniper_v3_min_entry_quality_score_short",
+                        "sniper_v3_min_corridor_fit_score_short",
+                        "sniper_v3_min_trend_match_score_long",
+                        "sniper_v3_min_entry_quality_score_long",
+                        "sniper_v3_min_corridor_fit_score_long",
+                        "v2_live_quality_floor_enabled",
+                        "v2_live_min_confirmation_score",
+                        "v2_live_min_pattern_confidence",
+                        "v2_live_min_trend_match_score",
+                        "v2_live_min_trend_match_score_short"
+                    ],
+                    "active_values": {
+                        "v2_confirmation_weak_max": 0.45000000000000001,
+                        "v2_confirmation_strong_min": 0.80000000000000004,
+                        "v2_zone_widen_weak_pct": 0.5,
+                        "v2_zone_widen_medium_pct": 0.59999999999999998,
+                        "v2_zone_widen_strong_pct": 0.75,
+                        "v2_zone_widen_max_cap_pct": 0.75,
+                        "strong_confirmation_enter_now_enabled": true,
+                        "medium_confirmation_wait_retrace_enabled": true,
+                        "weak_confirmation_live_enabled": false,
+                        "v2_hold_quality_min": 0.69999999999999996,
+                        "v2_post_reclaim_stability_min": 0.69999999999999996,
+                        "v2_zone_defense_min": 0.34999999999999998,
+                        "v2_trend_match_min": 0.55000000000000004,
+                        "v2_price_position_max": 0.88,
+                        "v3_strong_enter_now_enabled": true,
+                        "v3_zone_widen_weak_pct": 0.40000000000000002,
+                        "v3_zone_widen_medium_pct": 0.55000000000000004,
+                        "v3_zone_widen_strong_pct": 0.69999999999999996,
+                        "v3_zone_widen_max_cap_pct": 0.75,
+                        "sniper_v3_live_filter_enabled": true,
+                        "sniper_v3_min_confirmation_score": 0.71999999999999997,
+                        "sniper_v3_min_pattern_confidence": 0.59999999999999998,
+                        "sniper_v3_min_trend_match_score": 0.5,
+                        "sniper_v3_min_entry_quality_score": 0.75,
+                        "sniper_v3_min_corridor_fit_score": 0.75,
+                        "sniper_v3_max_price_position": 0.84999999999999998,
+                        "sniper_v3_min_reclaim_strength_score": 0.69999999999999996,
+                        "sniper_v3_min_hold_quality_score": 0.75,
+                        "sniper_v3_min_post_reclaim_stability_score": 0.65000000000000002,
+                        "sniper_v3_min_zone_defense_score": 0.34999999999999998,
+                        "sniper_v3_min_trend_match_score_short": 0.34999999999999998,
+                        "sniper_v3_min_entry_quality_score_short": 0.59999999999999998,
+                        "sniper_v3_min_corridor_fit_score_short": 0.59999999999999998,
+                        "sniper_v3_min_trend_match_score_long": 0.34999999999999998,
+                        "sniper_v3_min_entry_quality_score_long": 0.59999999999999998,
+                        "sniper_v3_min_corridor_fit_score_long": 0.59999999999999998,
+                        "v2_live_quality_floor_enabled": true,
+                        "v2_live_min_confirmation_score": 0.59999999999999998,
+                        "v2_live_min_pattern_confidence": 0.55000000000000004,
+                        "v2_live_min_trend_match_score": 0.45000000000000001,
+                        "v2_live_min_trend_match_score_short": 0.44
+                    },
+                    "pattern_profile_mode": "manual_override",
+                    "pattern_policy": {
+                        "live_patterns": [
+                            "double_bottom_contextual_v2",
+                            "double_bottom_contextual_v3",
+                            "double_top_contextual_v2",
+                            "double_top_contextual_v3"
+                        ],
+                        "shadow_patterns": [],
+                        "disabled_patterns": [
+                            "double_bottom",
+                            "double_top",
+                            "pullback_trend_continue",
+                            "double_bottom_confirm_v2",
+                            "double_top_confirm_v2"
+                        ],
+                        "canonical_source": "manual_override",
+                        "fallback_used": false,
+                        "fallback_reason": ""
+                    }
+                }
+            },
+            "notes": "balanced | sniper_lite | sniper_75_attempt | custom"
+        },
+        "bot_mode": {
+            "key": "bot_mode",
+            "label": "Bot Mode",
+            "type": "operational",
+            "value": "demo",
+            "source": "bot_runtime",
+            "source_path": "module.mode",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": "demo",
+                "bot_config": "paper"
+            },
+            "notes": "live | demo | paper"
+        },
+        "bot_enabled": {
+            "key": "bot_enabled",
+            "label": "Bot Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "bot_runtime",
+            "source_path": "enabled",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": true,
+                "bot_config": true
+            },
+            "notes": "Trading Bot on/off switch"
+        },
+        "max_intents_per_run": {
+            "key": "max_intents_per_run",
+            "label": "Max Intents Per Run",
+            "type": "operational",
+            "value": 1,
+            "source": "bot_runtime",
+            "source_path": "execution.max_intents_per_run",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": 1,
+                "bot_config": 1
+            },
+            "notes": "Max live opens attempted per cron tick"
+        },
+        "max_concurrent_positions": {
+            "key": "max_concurrent_positions",
+            "label": "Max Concurrent Positions",
+            "type": "operational",
+            "value": 50,
+            "source": "bot_runtime",
+            "source_path": "max_positions",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": 50
+            },
+            "notes": "Bot-side concurrent position cap (0 = unlimited)"
+        },
+        "bot_brain_controlled": {
+            "key": "bot_brain_controlled",
+            "label": "Brain-Controlled Mode",
+            "type": "operational",
+            "value": true,
+            "source": "bot_runtime",
+            "source_path": "sources.brain_source_enabled",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": true
+            },
+            "notes": "Whether bot operates exclusively on Brain-issued live intents"
+        },
+        "pm_trailing_owner": {
+            "key": "pm_trailing_owner",
+            "label": "Trailing Owner",
+            "type": "operational",
+            "value": "profit_manager",
+            "source": "bot_runtime",
+            "source_path": "execution.trailing_owner",
+            "source_file": "modules/system/trading_bot/config/bot.json",
+            "all_values": {
+                "bot_runtime": "profit_manager"
+            },
+            "notes": "bot | profit_manager | profit_manager_shadow"
+        },
+        "pm_enabled": {
+            "key": "pm_enabled",
+            "label": "Profit Manager Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "bot_config",
+            "source_path": "profit_manager.module.enabled",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "all_values": {
+                "bot_config": true
+            },
+            "notes": "PM on/off (reads from bot config profit_manager block)"
+        },
+        "cp_enabled": {
+            "key": "cp_enabled",
+            "label": "Coin Passport Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Master on/off switch for the Coin Passport module"
+        },
+        "cp_rebuild_all_enabled": {
+            "key": "cp_rebuild_all_enabled",
+            "label": "CP: Full Rebuild Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.rebuild_all_enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Enable/disable the rebuildAll cron task"
+        },
+        "cp_rebuild_recent_enabled": {
+            "key": "cp_rebuild_recent_enabled",
+            "label": "CP: Rebuild Recent Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.rebuild_recent_enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Enable/disable the rebuildRecentSymbols cron task"
+        },
+        "cp_cycle_profiles_enabled": {
+            "key": "cp_cycle_profiles_enabled",
+            "label": "CP: Cycle Profiles Enabled",
+            "type": "operational",
+            "value": true,
+            "source": "cp_config",
+            "source_path": "module.cycle_profiles_enabled",
+            "source_file": "modules/system/coin_passport/config/config.php",
+            "all_values": {
+                "cp_config": true
+            },
+            "notes": "Enable/disable the buildCycleProfiles cron task"
+        }
+    }
+}

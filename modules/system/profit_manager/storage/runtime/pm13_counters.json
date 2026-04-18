@@ -1,0 +1,10 @@
+{
+    "read_model_symbols_total": 13,
+    "read_model_records_total": 1000,
+    "read_model_apply_records_total": 123,
+    "read_model_skip_records_total": 77,
+    "read_model_noop_records_total": 800,
+    "read_model_generated_ok": 5674,
+    "read_model_generation_error_total": 0,
+    "updated_at": "2026-04-18T08:13:04+01:00"
+}

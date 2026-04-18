@@ -1,9 +1,9 @@
 {
-    "ts": "2026-03-21T10:40:02+00:00",
+    "ts": "2026-04-18T11:10:07+01:00",
     "categories": {
         "linear": {
-            "raw": 647,
-            "normalized": 647
+            "raw": 640,
+            "normalized": 640
         }
     },
     "registry": {
@@ -548,13 +548,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "AVLUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "AVL",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "AVNTPERP",
                 "category": "linear",
                 "status": "Trading",
@@ -657,6 +650,13 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "BARD",
+                "quoteCoin": "USDT"
+            },
+            {
+                "symbol": "BASEDUSDT",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "BASED",
                 "quoteCoin": "USDT"
             },
             {
@@ -849,6 +849,13 @@
                 "quoteCoin": "USDT"
             },
             {
+                "symbol": "BSBUSDT",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "BSB",
+                "quoteCoin": "USDT"
+            },
+            {
                 "symbol": "BSUUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -877,14 +884,14 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "BTCUSDT-03APR26",
+                "symbol": "BTCUSDT-01MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "BTC",
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "BTCUSDT-10APR26",
+                "symbol": "BTCUSDT-08MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "BTC",
@@ -919,7 +926,7 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "BTCUSDT-27MAR26",
+                "symbol": "BTCUSDT-26MAR27",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "BTC",
@@ -958,13 +965,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "CAKE",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "CAMPUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "CAMP",
                 "quoteCoin": "USDT"
             },
             {
@@ -1073,6 +1073,13 @@
                 "quoteCoin": "USDT"
             },
             {
+                "symbol": "CLUSDT",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "CL",
+                "quoteCoin": "USDT"
+            },
+            {
                 "symbol": "COAIUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -1091,13 +1098,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "COOKIE",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "COOKUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "COOK",
                 "quoteCoin": "USDT"
             },
             {
@@ -1255,14 +1255,14 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "DOGEUSDT-03APR26",
+                "symbol": "DOGEUSDT-01MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "DOGE",
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "DOGEUSDT-10APR26",
+                "symbol": "DOGEUSDT-08MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "DOGE",
@@ -1276,7 +1276,7 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "DOGEUSDT-27MAR26",
+                "symbol": "DOGEUSDT-29MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "DOGE",
@@ -1350,6 +1350,13 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "EDEN",
+                "quoteCoin": "USDT"
+            },
+            {
+                "symbol": "EDGEUSDT",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "EDGE",
                 "quoteCoin": "USDT"
             },
             {
@@ -1507,14 +1514,14 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "ETHUSDT-03APR26",
+                "symbol": "ETHUSDT-01MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "ETH",
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "ETHUSDT-10APR26",
+                "symbol": "ETHUSDT-08MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "ETH",
@@ -1549,7 +1556,7 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "ETHUSDT-27MAR26",
+                "symbol": "ETHUSDT-26MAR27",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "ETH",
@@ -1717,6 +1724,13 @@
                 "quoteCoin": "USDT"
             },
             {
+                "symbol": "GENIUSUSDT",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "GENIUS",
+                "quoteCoin": "USDT"
+            },
+            {
                 "symbol": "GIGAUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -1864,13 +1878,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "HIPPOUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "HIPPO",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "HIVEUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -1903,13 +1910,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "HOME",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "HOOKUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "HOOK",
                 "quoteCoin": "USDT"
             },
             {
@@ -2228,13 +2228,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "L3USDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "L3",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "LABUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -2281,13 +2274,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "LINK",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "LISTAUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "LISTA",
                 "quoteCoin": "USDT"
             },
             {
@@ -2522,14 +2508,14 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "MNTUSDT-03APR26",
+                "symbol": "MNTUSDT-01MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "MNT",
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "MNTUSDT-10APR26",
+                "symbol": "MNTUSDT-08MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "MNT",
@@ -2543,7 +2529,7 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "MNTUSDT-27MAR26",
+                "symbol": "MNTUSDT-29MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "MNT",
@@ -2655,13 +2641,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "NFPUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "NFP",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "NIGHTPERP",
                 "category": "linear",
                 "status": "Trading",
@@ -2711,13 +2690,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "NTRNUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "NTRN",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "NXPCUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -2764,13 +2736,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "ONDO",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "ONEUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "ONE",
                 "quoteCoin": "USDT"
             },
             {
@@ -2998,13 +2963,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "PONKEUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "PONKE",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "POPCATPERP",
                 "category": "linear",
                 "status": "Trading",
@@ -3037,6 +2995,13 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "POWR",
+                "quoteCoin": "USDT"
+            },
+            {
+                "symbol": "PRLUSDT",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "PRL",
                 "quoteCoin": "USDT"
             },
             {
@@ -3229,13 +3194,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "RLSUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "RLS",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "RLUSDUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -3383,13 +3341,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "SFPUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "SFP",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "SHELLUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -3488,14 +3439,14 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "SOLUSDT-03APR26",
+                "symbol": "SOLUSDT-01MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "SOL",
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "SOLUSDT-10APR26",
+                "symbol": "SOLUSDT-08MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "SOL",
@@ -3509,7 +3460,7 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "SOLUSDT-27MAR26",
+                "symbol": "SOLUSDT-29MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "SOL",
@@ -3562,13 +3513,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "SPACE",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "SPELLUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "SPELL",
                 "quoteCoin": "USDT"
             },
             {
@@ -3726,13 +3670,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "SXPUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "SXP",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "SXTUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -3751,13 +3688,6 @@
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "SYRUP",
-                "quoteCoin": "USDT"
-            },
-            {
-                "symbol": "SYSUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "SYS",
                 "quoteCoin": "USDT"
             },
             {
@@ -4097,13 +4027,6 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "VFYUSDT",
-                "category": "linear",
-                "status": "Trading",
-                "baseCoin": "VFY",
-                "quoteCoin": "USDT"
-            },
-            {
                 "symbol": "VINEUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -4265,6 +4188,34 @@
                 "quoteCoin": "USDT"
             },
             {
+                "symbol": "XAUTUSDT-01MAY26",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "XAUT",
+                "quoteCoin": "USDT"
+            },
+            {
+                "symbol": "XAUTUSDT-08MAY26",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "XAUT",
+                "quoteCoin": "USDT"
+            },
+            {
+                "symbol": "XAUTUSDT-24APR26",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "XAUT",
+                "quoteCoin": "USDT"
+            },
+            {
+                "symbol": "XAUTUSDT-29MAY26",
+                "category": "linear",
+                "status": "Trading",
+                "baseCoin": "XAUT",
+                "quoteCoin": "USDT"
+            },
+            {
                 "symbol": "XAUUSDT",
                 "category": "linear",
                 "status": "Trading",
@@ -4363,14 +4314,14 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "XRPUSDT-03APR26",
+                "symbol": "XRPUSDT-01MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "XRP",
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "XRPUSDT-10APR26",
+                "symbol": "XRPUSDT-08MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "XRP",
@@ -4384,7 +4335,7 @@
                 "quoteCoin": "USDT"
             },
             {
-                "symbol": "XRPUSDT-27MAR26",
+                "symbol": "XRPUSDT-29MAY26",
                 "category": "linear",
                 "status": "Trading",
                 "baseCoin": "XRP",

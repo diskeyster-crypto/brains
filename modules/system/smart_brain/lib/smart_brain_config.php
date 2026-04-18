@@ -1872,36 +1872,34 @@ final class SmartBrainConfig
      * Evaluate the fast-coin long entry gate for a single signal/candidate.
      *
      * Applied only to fast / impulse-sensitive long setups when the signal's symbol
-     * is in the configured fast_coin_symbols list (or fast_coin_gate_enabled is true
-     * with class-based selection).
+     * is in the configured fast_coin_symbols list.
+     *
+     * This is the EARLY gate — runs on raw signal data before slot priority is computed.
+     * It handles hard anti-patterns and hard anti-profile blocking only.
+     * Quality/score-based tier admission is handled by evaluateFastCoinLongTierGate()
+     * which runs post-slot when slot_priority_score is fully computed.
+     *
+     * wave_speed_state is computed inline from trend_match_score + volatility using the
+     * same formula as the wave filter, since the signal payload does not pre-populate it.
      *
      * Outcomes:
-     *   live_pass  → signal is high-quality enough to proceed to live as-is
-     *   demo       → signal should be demoted to demo; do NOT silently pass to live
-     *   reject     → signal is blocked by a hard anti-pattern
+     *   live_pass  → passes early gate; tier gate will apply final admission
+     *   demo       → hard anti-profile fired (normal wave + bad quality/micro_accel)
+     *   reject     → hard anti-pattern fired (wait_retrace, low_conf, breakout_not_held)
      *
-     * V2 long thresholds (double_bottom_contextual_v2):
-     *   entry_action = enter_now, confirmation_result = confirmed,
-     *   wave_speed_state = slow, quality_score >= 0.75, signal_strength >= 0.65,
-     *   scenario_score >= 0.76, slot_priority_score >= 72,
-     *   breakout hold: livePrice >= entry_zone_high * (1 - breakout_hold_buffer_pct),
-     *   micro-acceleration: livePrice >= entry_zone_high * (1 + micro_accel_min_pct)
-     *
-     * V3 long exception (double_bottom_contextual_v3):
-     *   wave_speed_state = slow, quality_score >= 0.85,
-     *   signal_strength >= 0.60, slot_priority_score >= 71,
-     *   breakout hold + micro-acceleration (same mechanics as V2)
-     *
-     * Hard anti-patterns that force demo/reject:
+     * Hard anti-patterns (→ reject):
      *   entry_action = wait_retrace, pattern_confidence < 0.60,
-     *   v2_priority_score < 0.60, wave_speed_state = normal
+     *   v2_priority_score < 0.60 (V2 only), breakout not held
+     *
+     * Hard anti-profile for normal wave (→ demo):
+     *   wave_speed_state = normal AND (quality_score < 0.70 OR micro_accel missing)
      *
      * All numeric thresholds are configurable via userLimits (fast_coin_gate_* keys).
      *
      * @param array<string,mixed> $signal     Signal or intent candidate payload
      * @param array<string,mixed> $userLimits Effective user limits
      * @param float               $livePrice  Current live price for breakout hold / micro-accel checks (0.0 = skip checks)
-     * @return array{outcome:string,gate_applied:bool,reject_reasons:list<string>,anti_patterns:list<string>,checked_values:array<string,mixed>,is_v2_long:bool,is_v3_long:bool,breakout_hold_ok:bool,micro_accel_ok:bool}
+     * @return array{outcome:string,gate_applied:bool,reject_reasons:list<string>,anti_patterns:list<string>,checked_values:array<string,mixed>,is_v2_long:bool,is_v3_long:bool,breakout_hold_ok:bool,micro_accel_ok:bool,wave_speed_computed:string}
      */
     public static function evaluateFastCoinLongGate(array $signal, array $userLimits, float $livePrice = 0.0): array
     {
@@ -1911,13 +1909,25 @@ final class SmartBrainConfig
         $side               = strtolower(trim((string)($signal['side'] ?? '')));
         $entryAction        = (string)($signal['entry_action'] ?? 'wait_retrace');
         $confirmationResult = (string)($signal['confirmation_result'] ?? '');
-        $waveSpeedState     = (string)($signal['wave_speed_state'] ?? 'normal');
         $qualityScore       = (float)($signal['quality_score'] ?? $signal['entry_quality_score'] ?? 0.0);
         $signalStrength     = (float)($signal['signal_strength'] ?? $signal['pattern_confidence'] ?? 0.0);
         $scenarioScore      = (float)($signal['scenario_score'] ?? $signal['v2_priority_score'] ?? 0.0);
         $slotPriorityScore  = (float)($signal['slot_priority_score'] ?? 0.0);
         $patternConfidence  = (float)($signal['pattern_confidence'] ?? 0.0);
         $v2PriorityScore    = (float)($signal['v2_priority_score'] ?? 0.0);
+
+        // ── Inline wave_speed_state computation ───────────────────────────
+        // Computes wave speed from available signal fields using the same formula as the
+        // wave filter layer, since raw signal payloads do not pre-populate wave_speed_state.
+        // Pre-populated values (from intent payloads) are respected when present and non-empty.
+        $waveSpeedPreset  = (string)($signal['wave_speed_state'] ?? '');
+        $trendMatchScore  = (float)($signal['trend_match_score'] ?? 0.0);
+        $volatilityVal    = (float)($signal['volatility'] ?? 0.0);
+        $volNorm          = min(1.0, $volatilityVal / 0.005);
+        $speedProxy       = ($trendMatchScore * 0.7 + $volNorm * 0.3);
+        $waveSpeedComputed = $speedProxy >= 0.68 ? 'fast' : ($speedProxy >= 0.38 ? 'normal' : 'slow');
+        // Use pre-populated value when available; fall back to inline computation
+        $waveSpeedState   = ($waveSpeedPreset !== '') ? $waveSpeedPreset : $waveSpeedComputed;
 
         // Breakout reference: upper bound of the long entry zone (= corridor breakout level)
         $entryZoneHigh = (float)($signal['entry_zone_high'] ?? $signal['corridor_high'] ?? 0.0);
@@ -1949,6 +1959,9 @@ final class SmartBrainConfig
             'entry_action'                => $entryAction,
             'confirmation_result'         => $confirmationResult,
             'wave_speed_state'            => $waveSpeedState,
+            'wave_speed_computed'         => $waveSpeedComputed,
+            'wave_speed_preset'           => $waveSpeedPreset !== '' ? $waveSpeedPreset : null,
+            'wave_speed_proxy'            => round($speedProxy, 4),
             'quality_score'               => round($qualityScore, 4),
             'signal_strength'             => round($signalStrength, 4),
             'scenario_score'              => round($scenarioScore, 4),
@@ -1968,7 +1981,8 @@ final class SmartBrainConfig
             'micro_accel_ok'              => $microAccelOk,
         ];
 
-        // ── Hard anti-patterns (override all other gates) ─────────────────
+        // ── Hard anti-patterns (override all other gates) → hard reject ───
+        // These block any signal regardless of tier. Do NOT weaken these.
         $antiPatterns = [];
 
         if ($entryAction === 'wait_retrace') {
@@ -1987,10 +2001,6 @@ final class SmartBrainConfig
         }
         $checkedValues['min_v2_priority_score_threshold'] = round($minV2Priority, 4);
 
-        if ($waveSpeedState === 'normal') {
-            $antiPatterns[] = 'fast_coin_anti_normal_wave_speed_impulse_chase';
-        }
-
         // Hard anti-pattern: breakout not held (live price below breakout reference minus buffer)
         if (!$breakoutHoldOk) {
             $antiPatterns[] = 'fast_coin_anti_breakout_not_held';
@@ -1998,157 +2008,380 @@ final class SmartBrainConfig
 
         if (!empty($antiPatterns)) {
             return [
-                'outcome'         => 'reject',
-                'gate_applied'    => true,
-                'reject_reasons'  => $antiPatterns,
-                'anti_patterns'   => $antiPatterns,
-                'checked_values'  => $checkedValues,
-                'is_v2_long'      => $isV2Long,
-                'is_v3_long'      => $isV3Long,
-                'breakout_hold_ok' => $breakoutHoldOk,
-                'micro_accel_ok'  => $microAccelOk,
+                'outcome'            => 'reject',
+                'gate_applied'       => true,
+                'reject_reasons'     => $antiPatterns,
+                'anti_patterns'      => $antiPatterns,
+                'checked_values'     => $checkedValues,
+                'is_v2_long'         => $isV2Long,
+                'is_v3_long'         => $isV3Long,
+                'breakout_hold_ok'   => $breakoutHoldOk,
+                'micro_accel_ok'     => $microAccelOk,
+                'wave_speed_computed' => $waveSpeedComputed,
             ];
         }
 
-        // ── V3 long exception ─────────────────────────────────────────────
-        if ($isV3Long) {
-            $rejectReasons = [];
+        // ── Hard anti-profile for normal wave (→ demo, not hard reject) ──
+        // Normal wave is allowed for Tier B (elite exception), but only when quality
+        // and micro-acceleration are adequate.  Catch the worst cases early before
+        // the tier gate runs post-slot.
+        if ($waveSpeedState === 'normal' && ($isV2Long || $isV3Long)) {
+            $antiProfileReasons = [];
 
-            if ($waveSpeedState !== 'slow') {
-                $rejectReasons[] = 'fast_coin_v3_reject_wave_speed_not_slow';
+            $antiProfileMinQuality = (float)($userLimits['fast_coin_gate_anti_profile_min_quality'] ?? 0.70);
+            if ($qualityScore + $epsilon < $antiProfileMinQuality) {
+                $antiProfileReasons[] = 'fast_coin_anti_hard_profile_quality_too_low';
             }
+            $checkedValues['anti_profile_min_quality_threshold'] = round($antiProfileMinQuality, 4);
 
-            $minQuality = (float)($userLimits['fast_coin_gate_v3_min_quality_score'] ?? 0.85);
-            if ($qualityScore + $epsilon < $minQuality) {
-                $rejectReasons[] = 'fast_coin_v3_reject_quality_score_too_low';
-            }
-            $checkedValues['v3_min_quality_score_threshold'] = round($minQuality, 4);
-
-            $minStrength = (float)($userLimits['fast_coin_gate_v3_min_signal_strength'] ?? 0.60);
-            if ($signalStrength + $epsilon < $minStrength) {
-                $rejectReasons[] = 'fast_coin_v3_reject_signal_strength_too_low';
-            }
-            $checkedValues['v3_min_signal_strength_threshold'] = round($minStrength, 4);
-
-            $minSlotV3 = (float)($userLimits['fast_coin_gate_v3_min_slot_priority_score'] ?? 71.0);
-            if ($slotPriorityScore + $epsilon < $minSlotV3) {
-                $rejectReasons[] = 'fast_coin_v3_reject_slot_priority_too_low';
-            }
-            $checkedValues['v3_min_slot_priority_threshold'] = round($minSlotV3, 4);
-
-            // Micro-acceleration: require at least micro_accel_min_pct above breakout ref
             if (!$microAccelOk) {
-                $rejectReasons[] = 'fast_coin_v3_reject_micro_accel_missing';
+                $antiProfileReasons[] = 'fast_coin_anti_hard_profile_micro_accel_missing';
             }
 
-            if (!empty($rejectReasons)) {
+            if (!empty($antiProfileReasons)) {
                 return [
-                    'outcome'         => 'demo',
-                    'gate_applied'    => true,
-                    'reject_reasons'  => $rejectReasons,
-                    'anti_patterns'   => [],
-                    'checked_values'  => $checkedValues,
-                    'is_v2_long'      => $isV2Long,
-                    'is_v3_long'      => $isV3Long,
-                    'breakout_hold_ok' => $breakoutHoldOk,
-                    'micro_accel_ok'  => $microAccelOk,
+                    'outcome'            => 'demo',
+                    'gate_applied'       => true,
+                    'reject_reasons'     => $antiProfileReasons,
+                    'anti_patterns'      => [],
+                    'checked_values'     => $checkedValues,
+                    'is_v2_long'         => $isV2Long,
+                    'is_v3_long'         => $isV3Long,
+                    'breakout_hold_ok'   => $breakoutHoldOk,
+                    'micro_accel_ok'     => $microAccelOk,
+                    'wave_speed_computed' => $waveSpeedComputed,
                 ];
             }
-
-            return [
-                'outcome'         => 'live_pass',
-                'gate_applied'    => true,
-                'reject_reasons'  => [],
-                'anti_patterns'   => [],
-                'checked_values'  => $checkedValues,
-                'is_v2_long'      => $isV2Long,
-                'is_v3_long'      => $isV3Long,
-                'breakout_hold_ok' => $breakoutHoldOk,
-                'micro_accel_ok'  => $microAccelOk,
-            ];
         }
 
-        // ── V2 long gate ──────────────────────────────────────────────────
-        if ($isV2Long) {
-            $rejectReasons = [];
-
-            if ($entryAction !== 'enter_now') {
-                $rejectReasons[] = 'fast_coin_v2_reject_entry_action_not_enter_now';
-            }
-
-            if ($confirmationResult !== 'confirmed') {
-                $rejectReasons[] = 'fast_coin_v2_reject_confirmation_not_confirmed';
-            }
-
-            if ($waveSpeedState !== 'slow') {
-                $rejectReasons[] = 'fast_coin_v2_reject_wave_speed_not_slow';
-            }
-
-            $minQuality = (float)($userLimits['fast_coin_gate_v2_min_quality_score'] ?? 0.75);
-            if ($qualityScore + $epsilon < $minQuality) {
-                $rejectReasons[] = 'fast_coin_v2_reject_quality_score_too_low';
-            }
-            $checkedValues['v2_min_quality_score_threshold'] = round($minQuality, 4);
-
-            $minStrength = (float)($userLimits['fast_coin_gate_v2_min_signal_strength'] ?? 0.65);
-            if ($signalStrength + $epsilon < $minStrength) {
-                $rejectReasons[] = 'fast_coin_v2_reject_signal_strength_too_low';
-            }
-            $checkedValues['v2_min_signal_strength_threshold'] = round($minStrength, 4);
-
-            $minScenario = (float)($userLimits['fast_coin_gate_v2_min_scenario_score'] ?? 0.76);
-            if ($scenarioScore + $epsilon < $minScenario) {
-                $rejectReasons[] = 'fast_coin_v2_reject_scenario_score_too_low';
-            }
-            $checkedValues['v2_min_scenario_score_threshold'] = round($minScenario, 4);
-
-            $minSlotV2 = (float)($userLimits['fast_coin_gate_v2_min_slot_priority_score'] ?? 72.0);
-            if ($slotPriorityScore + $epsilon < $minSlotV2) {
-                $rejectReasons[] = 'fast_coin_v2_reject_slot_priority_too_low';
-            }
-            $checkedValues['v2_min_slot_priority_threshold'] = round($minSlotV2, 4);
-
-            // Micro-acceleration: require at least micro_accel_min_pct above breakout ref
-            if (!$microAccelOk) {
-                $rejectReasons[] = 'fast_coin_v2_reject_micro_accel_missing';
-            }
-
-            if (!empty($rejectReasons)) {
-                return [
-                    'outcome'         => 'demo',
-                    'gate_applied'    => true,
-                    'reject_reasons'  => $rejectReasons,
-                    'anti_patterns'   => [],
-                    'checked_values'  => $checkedValues,
-                    'is_v2_long'      => $isV2Long,
-                    'is_v3_long'      => $isV3Long,
-                    'breakout_hold_ok' => $breakoutHoldOk,
-                    'micro_accel_ok'  => $microAccelOk,
-                ];
-            }
-
+        // ── V2 or V3 long → gate applied, passes to tier gate ────────────
+        // Quality-threshold and slot_priority admission is deferred to
+        // evaluateFastCoinLongTierGate() which runs after slot_priority_score
+        // is fully computed.  Here we just mark the gate as applied for V2/V3 longs.
+        if ($isV2Long || $isV3Long) {
             return [
-                'outcome'         => 'live_pass',
-                'gate_applied'    => true,
-                'reject_reasons'  => [],
-                'anti_patterns'   => [],
-                'checked_values'  => $checkedValues,
-                'is_v2_long'      => $isV2Long,
-                'is_v3_long'      => $isV3Long,
-                'breakout_hold_ok' => $breakoutHoldOk,
-                'micro_accel_ok'  => $microAccelOk,
+                'outcome'            => 'live_pass',
+                'gate_applied'       => true,
+                'reject_reasons'     => [],
+                'anti_patterns'      => [],
+                'checked_values'     => $checkedValues,
+                'is_v2_long'         => $isV2Long,
+                'is_v3_long'         => $isV3Long,
+                'breakout_hold_ok'   => $breakoutHoldOk,
+                'micro_accel_ok'     => $microAccelOk,
+                'wave_speed_computed' => $waveSpeedComputed,
             ];
         }
 
         // ── Neither V2 long nor V3 long — gate not applicable ────────────
         return [
-            'outcome'          => 'live_pass',
-            'gate_applied'     => false,
-            'reject_reasons'   => [],
-            'anti_patterns'    => [],
+            'outcome'            => 'live_pass',
+            'gate_applied'       => false,
+            'reject_reasons'     => [],
+            'anti_patterns'      => [],
+            'checked_values'     => $checkedValues,
+            'is_v2_long'         => $isV2Long,
+            'is_v3_long'         => $isV3Long,
+            'breakout_hold_ok'   => $breakoutHoldOk,
+            'micro_accel_ok'     => $microAccelOk,
+            'wave_speed_computed' => $waveSpeedComputed,
+        ];
+    }
+
+    /**
+     * Two-tier fast-coin long live admission gate.
+     *
+     * Runs AFTER slot_priority_score is fully computed (post-slot stage).
+     * Applies only to intents that are:
+     *   - in the configured fast_coin_symbols list
+     *   - side = long
+     *   - pattern = double_bottom_contextual_v2 or _v3
+     *
+     * Tier A — slow baseline live pass:
+     *   wave_speed_state = slow, confirmation_result = confirmed (when applicable),
+     *   quality_score >= 0.75, signal_strength >= 0.66, scenario_score >= 0.78,
+     *   slot_priority_score >= 73, breakout hold OK, micro-acceleration OK
+     *
+     * Tier B — elite normal exception:
+     *   wave_speed_state = normal, confirmation_result = confirmed (when applicable),
+     *   quality_score >= 0.74, signal_strength >= 0.70, scenario_score >= 0.80,
+     *   slot_priority_score >= 82, breakout hold OK, micro-acceleration OK
+     *
+     * Hard anti-profile (→ demo):
+     *   wave_speed_state = normal AND one of:
+     *   quality_score < 0.70, slot_priority_score < 72, breakout not held,
+     *   micro-acceleration missing
+     *
+     * All thresholds configurable via userLimits (fast_long_tier_* keys).
+     *
+     * @param array<string,mixed> $intent     Intent or candidate (must have slot_priority_score, wave_speed_state, etc.)
+     * @param array<string,mixed> $userLimits Effective user limits
+     * @param float               $livePrice  Current live price for breakout hold / micro-accel recheck (0.0 = skip)
+     * @return array{outcome:string,tier_rule_used:bool,tier_rule_result:string,tier_rule_reason:string,reject_reasons:list<string>,checked_values:array<string,mixed>,breakout_hold_ok:bool,micro_accel_ok:bool}
+     */
+    public static function evaluateFastCoinLongTierGate(array $intent, array $userLimits, float $livePrice = 0.0): array
+    {
+        $epsilon = 0.005;
+
+        $patternAlgo        = (string)($intent['pattern_algorithm'] ?? '');
+        $side               = strtolower(trim((string)($intent['side'] ?? '')));
+        $confirmationResult = (string)($intent['confirmation_result'] ?? '');
+        $waveSpeedState     = (string)($intent['wave_speed_state'] ?? 'normal');
+        $qualityScore       = (float)($intent['quality_score'] ?? $intent['entry_quality_score'] ?? 0.0);
+        $signalStrength     = (float)($intent['signal_strength'] ?? $intent['pattern_confidence'] ?? 0.0);
+        $scenarioScore      = (float)($intent['scenario_score'] ?? $intent['v2_priority_score'] ?? 0.0);
+        $slotPriorityScore  = (float)($intent['slot_priority_score'] ?? 0.0);
+
+        $isV2Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v2');
+        $isV3Long = ($side === 'long' && $patternAlgo === 'double_bottom_contextual_v3');
+
+        // ── Breakout hold + micro-acceleration recheck ────────────────────
+        // Recomputed from live price so the tier decision uses the most current market data.
+        $entryZoneHigh         = (float)($intent['entry_zone_high'] ?? $intent['corridor_high'] ?? 0.0);
+        $breakoutHoldBufferPct = max(0.0, (float)($userLimits['fast_coin_breakout_hold_buffer_pct'] ?? 0.002));
+        $microAccelMinPct      = max(0.0, (float)($userLimits['fast_coin_micro_accel_min_pct']      ?? 0.003));
+
+        $breakoutHoldOk        = true;
+        $microAccelOk          = true;
+        $breakoutHoldThreshold = 0.0;
+        $microAccelThreshold   = 0.0;
+
+        if ($livePrice > 0.0 && $entryZoneHigh > 0.0) {
+            $breakoutHoldThreshold = $entryZoneHigh * (1.0 - $breakoutHoldBufferPct);
+            $microAccelThreshold   = $entryZoneHigh * (1.0 + $microAccelMinPct);
+            $breakoutHoldOk = ($livePrice >= $breakoutHoldThreshold);
+            $microAccelOk   = ($livePrice >= $microAccelThreshold);
+        } elseif ($livePrice <= 0.0) {
+            // No live price — use pre-computed values from intent when available
+            $breakoutHoldOk = (bool)($intent['fast_coin_breakout_hold_ok'] ?? true);
+            $microAccelOk   = (bool)($intent['fast_coin_micro_accel_ok']   ?? true);
+        }
+
+        // ── Confirmation check helper ─────────────────────────────────────
+        // "(when confirmation applies)" means: only enforce confirmed when the confirmation
+        // layer ran for this signal (confirmation_result is a known active value).
+        // 'not_applicable' and empty mean confirmation layer did not apply → skip check.
+        $confirmationApplies  = ($confirmationResult !== '' && $confirmationResult !== 'not_applicable');
+        $confirmationOk       = !$confirmationApplies || ($confirmationResult === 'confirmed');
+
+        $checkedValues = [
+            'pattern_algorithm'           => $patternAlgo,
+            'side'                        => $side,
+            'wave_speed_state'            => $waveSpeedState,
+            'confirmation_result'         => $confirmationResult,
+            'confirmation_applies'        => $confirmationApplies,
+            'confirmation_ok'             => $confirmationOk,
+            'quality_score'               => round($qualityScore, 4),
+            'signal_strength'             => round($signalStrength, 4),
+            'scenario_score'              => round($scenarioScore, 4),
+            'slot_priority_score'         => round($slotPriorityScore, 4),
+            'is_v2_long'                  => $isV2Long,
+            'is_v3_long'                  => $isV3Long,
+            'live_price'                  => $livePrice > 0.0 ? round($livePrice, 8) : null,
+            'entry_zone_high'             => $entryZoneHigh > 0.0 ? round($entryZoneHigh, 8) : null,
+            'breakout_hold_buffer_pct'    => round($breakoutHoldBufferPct, 6),
+            'breakout_hold_threshold'     => $breakoutHoldThreshold > 0.0 ? round($breakoutHoldThreshold, 8) : null,
+            'breakout_hold_ok'            => $breakoutHoldOk,
+            'micro_accel_min_pct'         => round($microAccelMinPct, 6),
+            'micro_accel_threshold'       => $microAccelThreshold > 0.0 ? round($microAccelThreshold, 8) : null,
+            'micro_accel_ok'              => $microAccelOk,
+            'epsilon_used'                => $epsilon,
+        ];
+
+        // Only applies to V2/V3 fast-coin longs
+        if (!$isV2Long && !$isV3Long) {
+            return [
+                'outcome'          => 'live_pass',
+                'tier_rule_used'   => false,
+                'tier_rule_result' => 'not_applicable',
+                'tier_rule_reason' => 'pattern_not_v2_or_v3_long',
+                'reject_reasons'   => [],
+                'checked_values'   => $checkedValues,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'   => $microAccelOk,
+            ];
+        }
+
+        // ── Hard anti-profile for normal wave (→ demo) ────────────────────
+        // Catches normal-wave entries that have definitively bad quality or
+        // missing market conditions. Checked here using fully computed slot_priority.
+        if ($waveSpeedState === 'normal') {
+            $antiProfileReasons = [];
+
+            $apMinQuality = (float)($userLimits['fast_coin_gate_anti_profile_min_quality'] ?? 0.70);
+            if ($qualityScore + $epsilon < $apMinQuality) {
+                $antiProfileReasons[] = 'fast_long_anti_profile_quality_too_low';
+            }
+            $checkedValues['anti_profile_min_quality'] = round($apMinQuality, 4);
+
+            $apMinSlot = (float)($userLimits['fast_coin_gate_anti_profile_min_slot'] ?? 72.0);
+            if ($slotPriorityScore + $epsilon < $apMinSlot) {
+                $antiProfileReasons[] = 'fast_long_anti_profile_slot_too_low';
+            }
+            $checkedValues['anti_profile_min_slot'] = round($apMinSlot, 4);
+
+            if (!$breakoutHoldOk) {
+                $antiProfileReasons[] = 'fast_long_anti_profile_breakout_not_held';
+            }
+
+            if (!$microAccelOk) {
+                $antiProfileReasons[] = 'fast_long_anti_profile_micro_accel_missing';
+            }
+
+            if (!empty($antiProfileReasons)) {
+                return [
+                    'outcome'          => 'demo',
+                    'tier_rule_used'   => true,
+                    'tier_rule_result' => 'hard_anti_profile',
+                    'tier_rule_reason' => implode(', ', $antiProfileReasons),
+                    'reject_reasons'   => $antiProfileReasons,
+                    'checked_values'   => $checkedValues,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'   => $microAccelOk,
+                ];
+            }
+        }
+
+        // ── Tier A — slow baseline live pass ──────────────────────────────
+        if ($waveSpeedState === 'slow' || $waveSpeedState === 'fast') {
+            $tierAReasons = [];
+
+            if (!$confirmationOk) {
+                $tierAReasons[] = 'fast_long_tier_a_confirmation_not_confirmed';
+            }
+
+            $taMinQuality = (float)($userLimits['fast_long_tier_a_min_quality_score'] ?? 0.75);
+            if ($qualityScore + $epsilon < $taMinQuality) {
+                $tierAReasons[] = 'fast_long_tier_a_quality_too_low';
+            }
+            $checkedValues['tier_a_min_quality'] = round($taMinQuality, 4);
+
+            $taMinStrength = (float)($userLimits['fast_long_tier_a_min_signal_strength'] ?? 0.66);
+            if ($signalStrength + $epsilon < $taMinStrength) {
+                $tierAReasons[] = 'fast_long_tier_a_signal_strength_too_low';
+            }
+            $checkedValues['tier_a_min_signal_strength'] = round($taMinStrength, 4);
+
+            $taMinScenario = (float)($userLimits['fast_long_tier_a_min_scenario_score'] ?? 0.78);
+            if ($scenarioScore + $epsilon < $taMinScenario) {
+                $tierAReasons[] = 'fast_long_tier_a_scenario_score_too_low';
+            }
+            $checkedValues['tier_a_min_scenario'] = round($taMinScenario, 4);
+
+            $taMinSlot = (float)($userLimits['fast_long_tier_a_min_slot_priority_score'] ?? 73.0);
+            if ($slotPriorityScore + $epsilon < $taMinSlot) {
+                $tierAReasons[] = 'fast_long_tier_a_slot_priority_too_low';
+            }
+            $checkedValues['tier_a_min_slot'] = round($taMinSlot, 4);
+
+            if (!$breakoutHoldOk) {
+                $tierAReasons[] = 'fast_long_tier_a_breakout_not_held';
+            }
+
+            if (!$microAccelOk) {
+                $tierAReasons[] = 'fast_long_tier_a_micro_accel_missing';
+            }
+
+            if (empty($tierAReasons)) {
+                return [
+                    'outcome'          => 'live_pass',
+                    'tier_rule_used'   => true,
+                    'tier_rule_result' => 'tier_a_slow_baseline',
+                    'tier_rule_reason' => 'slow_wave_all_thresholds_met',
+                    'reject_reasons'   => [],
+                    'checked_values'   => $checkedValues,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'   => $microAccelOk,
+                ];
+            }
+
+            // Tier A failed — demo (do not hard reject; preserve funnel for slight misses)
+            return [
+                'outcome'          => 'demo',
+                'tier_rule_used'   => true,
+                'tier_rule_result' => 'tier_a_failed',
+                'tier_rule_reason' => implode(', ', $tierAReasons),
+                'reject_reasons'   => $tierAReasons,
+                'checked_values'   => $checkedValues,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'   => $microAccelOk,
+            ];
+        }
+
+        // ── Tier B — elite normal exception ───────────────────────────────
+        if ($waveSpeedState === 'normal') {
+            $tierBReasons = [];
+
+            if (!$confirmationOk) {
+                $tierBReasons[] = 'fast_long_tier_b_confirmation_not_confirmed';
+            }
+
+            $tbMinQuality = (float)($userLimits['fast_long_tier_b_min_quality_score'] ?? 0.74);
+            if ($qualityScore + $epsilon < $tbMinQuality) {
+                $tierBReasons[] = 'fast_long_tier_b_quality_too_low';
+            }
+            $checkedValues['tier_b_min_quality'] = round($tbMinQuality, 4);
+
+            $tbMinStrength = (float)($userLimits['fast_long_tier_b_min_signal_strength'] ?? 0.70);
+            if ($signalStrength + $epsilon < $tbMinStrength) {
+                $tierBReasons[] = 'fast_long_tier_b_signal_strength_too_low';
+            }
+            $checkedValues['tier_b_min_signal_strength'] = round($tbMinStrength, 4);
+
+            $tbMinScenario = (float)($userLimits['fast_long_tier_b_min_scenario_score'] ?? 0.80);
+            if ($scenarioScore + $epsilon < $tbMinScenario) {
+                $tierBReasons[] = 'fast_long_tier_b_scenario_score_too_low';
+            }
+            $checkedValues['tier_b_min_scenario'] = round($tbMinScenario, 4);
+
+            $tbMinSlot = (float)($userLimits['fast_long_tier_b_min_slot_priority_score'] ?? 82.0);
+            if ($slotPriorityScore + $epsilon < $tbMinSlot) {
+                $tierBReasons[] = 'fast_long_tier_b_slot_priority_too_low';
+            }
+            $checkedValues['tier_b_min_slot'] = round($tbMinSlot, 4);
+
+            if (!$breakoutHoldOk) {
+                $tierBReasons[] = 'fast_long_tier_b_breakout_not_held';
+            }
+
+            if (!$microAccelOk) {
+                $tierBReasons[] = 'fast_long_tier_b_micro_accel_missing';
+            }
+
+            if (empty($tierBReasons)) {
+                return [
+                    'outcome'          => 'live_pass',
+                    'tier_rule_used'   => true,
+                    'tier_rule_result' => 'tier_b_elite_normal',
+                    'tier_rule_reason' => 'normal_wave_elite_thresholds_met',
+                    'reject_reasons'   => [],
+                    'checked_values'   => $checkedValues,
+                    'breakout_hold_ok' => $breakoutHoldOk,
+                    'micro_accel_ok'   => $microAccelOk,
+                ];
+            }
+
+            // Tier B failed — demo (normal wave did not meet elite exception thresholds)
+            return [
+                'outcome'          => 'demo',
+                'tier_rule_used'   => true,
+                'tier_rule_result' => 'tier_b_failed',
+                'tier_rule_reason' => implode(', ', $tierBReasons),
+                'reject_reasons'   => $tierBReasons,
+                'checked_values'   => $checkedValues,
+                'breakout_hold_ok' => $breakoutHoldOk,
+                'micro_accel_ok'   => $microAccelOk,
+            ];
+        }
+
+        // Unrecognised wave_speed_state — fail safely (demo)
+        return [
+            'outcome'          => 'demo',
+            'tier_rule_used'   => true,
+            'tier_rule_result' => 'tier_unknown_wave_speed',
+            'tier_rule_reason' => 'wave_speed_state_unrecognised:' . $waveSpeedState,
+            'reject_reasons'   => ['fast_long_tier_unknown_wave_speed'],
             'checked_values'   => $checkedValues,
-            'is_v2_long'       => $isV2Long,
-            'is_v3_long'       => $isV3Long,
             'breakout_hold_ok' => $breakoutHoldOk,
             'micro_accel_ok'   => $microAccelOk,
         ];

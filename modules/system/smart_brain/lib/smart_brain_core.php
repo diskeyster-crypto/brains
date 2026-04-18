@@ -840,6 +840,15 @@ final class SmartBrainCore
             'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
             'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
             'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
+            // Fast-coin long two-tier admission gate diagnostics (post-slot)
+            'fast_long_tier_rule_used'            => (bool)($liveIntentResult['fast_long_tier_rule_used']            ?? false),
+            'fast_long_slow_baseline_pass_total'  => (int)($liveIntentResult['fast_long_slow_baseline_pass_total']   ?? 0),
+            'fast_long_normal_elite_pass_total'   => (int)($liveIntentResult['fast_long_normal_elite_pass_total']    ?? 0),
+            'fast_long_normal_reject_total'       => (int)($liveIntentResult['fast_long_normal_reject_total']        ?? 0),
+            'fast_long_normal_demo_total'         => (int)($liveIntentResult['fast_long_normal_demo_total']          ?? 0),
+            'fast_long_tier_a_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_a_fail_demo_total']     ?? 0),
+            'fast_long_tier_b_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_b_fail_demo_total']     ?? 0),
+            'fast_long_tier_not_applicable_total' => (int)($liveIntentResult['fast_long_tier_not_applicable_total']  ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1143,7 +1152,15 @@ final class SmartBrainCore
             'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
             'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
             'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
-            // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
+            // Fast-coin long two-tier admission gate diagnostics (post-slot)
+            'fast_long_tier_rule_used'            => (bool)($liveIntentResult['fast_long_tier_rule_used']            ?? false),
+            'fast_long_slow_baseline_pass_total'  => (int)($liveIntentResult['fast_long_slow_baseline_pass_total']   ?? 0),
+            'fast_long_normal_elite_pass_total'   => (int)($liveIntentResult['fast_long_normal_elite_pass_total']    ?? 0),
+            'fast_long_normal_reject_total'       => (int)($liveIntentResult['fast_long_normal_reject_total']        ?? 0),
+            'fast_long_normal_demo_total'         => (int)($liveIntentResult['fast_long_normal_demo_total']          ?? 0),
+            'fast_long_tier_a_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_a_fail_demo_total']     ?? 0),
+            'fast_long_tier_b_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_b_fail_demo_total']     ?? 0),
+            'fast_long_tier_not_applicable_total' => (int)($liveIntentResult['fast_long_tier_not_applicable_total']  ?? 0),
             'leverage_chain_config' => (static function (
                 array $userLimits,
                 array $profilesCfg
@@ -1422,6 +1439,17 @@ final class SmartBrainCore
             'fast_confirmed_slow_exception_demo_total'      => 0,
             'fast_confirmed_slow_exception_reject_total'    => 0,
             'fast_confirmed_slow_exception_no_effect_total' => 0,
+            // Fast-coin long two-tier admission gate diagnostics (post-slot stage)
+            // Tracks Tier A (slow baseline), Tier B (elite normal exception), hard anti-profile,
+            // and overall tier gate activity.
+            'fast_long_tier_rule_used'              => false,
+            'fast_long_slow_baseline_pass_total'    => 0,
+            'fast_long_normal_elite_pass_total'     => 0,
+            'fast_long_normal_reject_total'         => 0,
+            'fast_long_normal_demo_total'           => 0,
+            'fast_long_tier_a_fail_demo_total'      => 0,
+            'fast_long_tier_b_fail_demo_total'      => 0,
+            'fast_long_tier_not_applicable_total'   => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1846,12 +1874,13 @@ final class SmartBrainCore
             // ── Per-signal fast-coin diagnostics (initialised once per iteration) ──────
             // Carried through to intent construction for audit trail.
             $fcgDiagnostic = [
-                'fast_coin_gate_used'        => false,
-                'fast_coin_gate_applied'     => false,
-                'fast_coin_gate_result'      => null,
-                'fast_coin_gate_reason'      => [],
-                'fast_coin_breakout_hold_ok' => null,
-                'fast_coin_micro_accel_ok'   => null,
+                'fast_coin_gate_used'           => false,
+                'fast_coin_gate_applied'        => false,
+                'fast_coin_gate_result'         => null,
+                'fast_coin_gate_reason'         => [],
+                'fast_coin_breakout_hold_ok'    => null,
+                'fast_coin_micro_accel_ok'      => null,
+                'fast_coin_wave_speed_computed' => null,
             ];
             $fastConfSlowExcDiagnostic = [
                 'fast_confirmed_slow_exception_used'    => false,
@@ -2156,6 +2185,7 @@ final class SmartBrainCore
                             'fast_coin_gate_reason'      => [],
                             'fast_coin_breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
                             'fast_coin_micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
+                            'fast_coin_wave_speed_computed' => $fcgResult['wave_speed_computed'] ?? null,
                         ];
                     } else {
                         // gate_applied = false: non-V2/V3 long on a fast coin — no effect
@@ -3653,17 +3683,24 @@ final class SmartBrainCore
             }
 
             // Attach fast-coin gate observability fields
-            $intent['fast_coin_gate_used']        = $fcgDiagnostic['fast_coin_gate_used'];
-            $intent['fast_coin_gate_applied']     = $fcgDiagnostic['fast_coin_gate_applied'];
-            $intent['fast_coin_gate_result']      = $fcgDiagnostic['fast_coin_gate_result'];
-            $intent['fast_coin_gate_reason']      = $fcgDiagnostic['fast_coin_gate_reason'];
-            $intent['fast_coin_breakout_hold_ok'] = $fcgDiagnostic['fast_coin_breakout_hold_ok'];
-            $intent['fast_coin_micro_accel_ok']   = $fcgDiagnostic['fast_coin_micro_accel_ok'];
+            $intent['fast_coin_gate_used']            = $fcgDiagnostic['fast_coin_gate_used'];
+            $intent['fast_coin_gate_applied']         = $fcgDiagnostic['fast_coin_gate_applied'];
+            $intent['fast_coin_gate_result']          = $fcgDiagnostic['fast_coin_gate_result'];
+            $intent['fast_coin_gate_reason']          = $fcgDiagnostic['fast_coin_gate_reason'];
+            $intent['fast_coin_breakout_hold_ok']     = $fcgDiagnostic['fast_coin_breakout_hold_ok'];
+            $intent['fast_coin_micro_accel_ok']       = $fcgDiagnostic['fast_coin_micro_accel_ok'];
+            $intent['fast_coin_wave_speed_computed']  = $fcgDiagnostic['fast_coin_wave_speed_computed'] ?? null;
 
             // Attach fast-confirmed-slow exception path observability fields
             $intent['fast_confirmed_slow_exception_used']    = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'];
             $intent['fast_confirmed_slow_exception_applied'] = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'];
             $intent['fast_confirmed_slow_exception_reason']  = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'];
+
+            // Tier gate fields — initialized here; populated by evaluateFastCoinLongTierGate()
+            // in the post-slot pass when fast_coin_gate_enabled=true and symbol is in fast_coin_symbols.
+            $intent['fast_long_tier_rule_used']   = false;
+            $intent['fast_long_tier_rule_result'] = 'pending';
+            $intent['fast_long_tier_rule_reason'] = '';
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
@@ -4268,6 +4305,99 @@ final class SmartBrainCore
             }
             $result['win_universe_bonus_preview'] = $wuPreview;
         }
+
+        // ── Fast-coin long two-tier admission gate (post-slot) ──────────────
+        // Applies the precision two-tier live admission rule to configured fast-coin long
+        // intents after slot_priority_score is fully computed.  Tier A (slow baseline) and
+        // Tier B (elite normal exception) define the only paths to live_pass for fast-coin
+        // V2/V3 long entries; all other cases are demoted to demo (funnel-safe, not hard reject).
+        // Runs only when fast_coin_gate_enabled = true and at least one fast_coin_symbol is set.
+        {
+            $tgGateEnabled   = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
+            $tgRawSymbols    = (string)($userLimits['fast_coin_symbols'] ?? '');
+            $tgFastCoinSymbols = array_values(array_filter(
+                array_map('trim', explode(',', strtoupper($tgRawSymbols)))
+            ));
+
+            if ($tgGateEnabled && !empty($tgFastCoinSymbols)) {
+                $tierGateIntents = [];
+                foreach ($intents as $tgIntent) {
+                    $tgSymbol  = strtoupper((string)($tgIntent['symbol'] ?? ''));
+                    $tgSide    = (string)($tgIntent['side'] ?? '');
+                    $tgPattern = (string)($tgIntent['pattern_algorithm'] ?? '');
+
+                    // Only apply to fast-coin long V2/V3 intents
+                    $tgIsFastCoin = in_array($tgSymbol, $tgFastCoinSymbols, true);
+                    $tgIsLong     = ($tgSide === 'long');
+                    $tgIsV2orV3   = ($tgPattern === 'double_bottom_contextual_v2'
+                                     || $tgPattern === 'double_bottom_contextual_v3');
+
+                    if (!$tgIsFastCoin || !$tgIsLong || !$tgIsV2orV3) {
+                        // Not in scope → pass through unchanged
+                        $tgIntent['fast_long_tier_rule_used']   = false;
+                        $tgIntent['fast_long_tier_rule_result'] = 'not_applicable';
+                        $tgIntent['fast_long_tier_rule_reason'] = 'symbol_or_pattern_not_in_scope';
+                        $result['fast_long_tier_not_applicable_total']++;
+                        $tierGateIntents[] = $tgIntent;
+                        continue;
+                    }
+
+                    $result['fast_long_tier_rule_used'] = true;
+
+                    // Live price for recomputing breakout hold + micro-accel
+                    $tgLivePrice = (float)($prices[$tgSymbol] ?? 0.0);
+
+                    $tgTierResult = SmartBrainConfig::evaluateFastCoinLongTierGate(
+                        $tgIntent,
+                        $userLimits,
+                        $tgLivePrice
+                    );
+
+                    $tgOutcome      = (string)($tgTierResult['outcome']          ?? 'demo');
+                    $tgTierUsed     = (bool)($tgTierResult['tier_rule_used']     ?? false);
+                    $tgTierRuleRes  = (string)($tgTierResult['tier_rule_result'] ?? '');
+                    $tgTierRuleRsn  = (string)($tgTierResult['tier_rule_reason'] ?? '');
+
+                    $tgIntent['fast_long_tier_rule_used']   = $tgTierUsed;
+                    $tgIntent['fast_long_tier_rule_result'] = $tgTierRuleRes;
+                    $tgIntent['fast_long_tier_rule_reason'] = $tgTierRuleRsn;
+
+                    if ($tgOutcome === 'live_pass') {
+                        // Tier passed — keep in live intents
+                        match ($tgTierRuleRes) {
+                            'tier_a_slow_baseline' => $result['fast_long_slow_baseline_pass_total']++,
+                            'tier_b_elite_normal'  => $result['fast_long_normal_elite_pass_total']++,
+                            default => null,
+                        };
+                        $tierGateIntents[] = $tgIntent;
+                    } else {
+                        // Tier failed → demote to demo (funnel-safe, not hard reject)
+                        match ($tgTierRuleRes) {
+                            'hard_anti_profile' => $result['fast_long_normal_demo_total']++,
+                            'tier_a_failed'     => $result['fast_long_tier_a_fail_demo_total']++,
+                            'tier_b_failed'     => $result['fast_long_tier_b_fail_demo_total']++,
+                            default             => $result['fast_long_normal_demo_total']++,
+                        };
+                        $this->rejectLiveSignal(
+                            $result,
+                            $tgSymbol,
+                            (string)($tgIntent['signal_id'] ?? ''),
+                            'fast_long_tier_gate_' . $tgTierRuleRes,
+                            $selectionMode
+                        );
+                    }
+                }
+                $intents = $tierGateIntents;
+
+                // Update derived counters post-tier-gate
+                $result['intents_created']            = count($intents);
+                $result['long_intents_created_count'] = count(array_filter(
+                    $intents,
+                    static fn($i) => ($i['side'] ?? '') === 'long'
+                ));
+            }
+        }
+        // ── End Fast-coin long two-tier admission gate ──────────────────────
 
         // ── Win Universe entry-attribution log (best-effort, non-fatal) ─────
         // Append one record per new intent to win_universe/storage/runtime/win_universe_intent_attribution.ndjson.

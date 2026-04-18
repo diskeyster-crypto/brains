@@ -1,0 +1,17 @@
+{
+    "trade_id": "HNTUSDT_short",
+    "symbol": "HNTUSDT",
+    "side": "short",
+    "owner_mode": "profit_manager_shadow",
+    "current_roi": 1.1902999999999999,
+    "peak_roi": 3.0255000000000001,
+    "trailing_armed": false,
+    "proposed_lock_roi": 0,
+    "proposed_stop_price": 0,
+    "last_lock_roi": 0,
+    "last_move_ts": 0,
+    "proposed_action": "hold",
+    "cooldown_active": false,
+    "min_distance_blocked": false,
+    "updated_at": "2026-04-09T06:37:05+01:00"
+}

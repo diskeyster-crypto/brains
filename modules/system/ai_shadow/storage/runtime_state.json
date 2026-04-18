@@ -1,12 +1,8 @@
 {
     "last_run_status": "ok",
-    "last_run_at": 1775036582,
-    "last_run_mode": "replay",
+    "last_run_at": 1776509710,
     "last_provider_error": null,
-    "last_connection_test_at": 1775036582,
-    "last_connection_test_ok": true,
-    "last_connection_test_status": "mock_provider_always_available",
-    "last_connection_test_error": null,
-    "mirrored_signals": 14,
-    "errors": 0
+    "mirrored_signals": 8,
+    "errors": 0,
+    "last_run_mode": "replay"
 }

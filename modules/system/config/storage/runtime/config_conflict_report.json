@@ -1,0 +1,138 @@
+{
+    "generated_at": "2026-04-18T08:08:13+01:00",
+    "conflict_count": 3,
+    "duplicate_count": 8,
+    "conflicts": [
+        {
+            "key": "live_max_positions",
+            "type": "operational",
+            "primary": "brain_user_config",
+            "win_reason": "User override — highest runtime precedence",
+            "migration_target": "operational_master",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "file": "modules/system/smart_brain/runtime/user_config.json",
+                    "value": 5
+                },
+                {
+                    "source": "brain_effective",
+                    "file": "modules/system/smart_brain/runtime/effective_config.json",
+                    "value": 20
+                }
+            ]
+        },
+        {
+            "key": "manual_leverage",
+            "type": "operational",
+            "primary": "brain_user_config",
+            "win_reason": "User override — highest runtime precedence",
+            "migration_target": "operational_master",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "file": "modules/system/smart_brain/runtime/user_config.json",
+                    "value": 5
+                },
+                {
+                    "source": "brain_effective",
+                    "file": "modules/system/smart_brain/runtime/effective_config.json",
+                    "value": 15
+                }
+            ]
+        },
+        {
+            "key": "bot_mode",
+            "type": "operational",
+            "primary": "bot_runtime",
+            "win_reason": "Bot runtime config (bot.json override)",
+            "migration_target": "operational_master",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "file": "modules/system/trading_bot/config/bot.json",
+                    "value": "demo"
+                },
+                {
+                    "source": "bot_config",
+                    "file": "modules/system/trading_bot/config/config.php",
+                    "value": "paper"
+                }
+            ]
+        }
+    ],
+    "duplicates": [
+        {
+            "key": "live_trading_enabled",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "live_signal_selection_mode",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "live_one_trade_per_symbol",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "stop_control_mode",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "stop_loss_from_entry_roi",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "brain_effective"
+            ]
+        },
+        {
+            "key": "trailing_enabled",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "bot_runtime"
+            ]
+        },
+        {
+            "key": "break_even_enabled",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "brain_user_config",
+                "bot_runtime"
+            ]
+        },
+        {
+            "key": "max_intents_per_run",
+            "type": "operational",
+            "migration_target": "operational_master",
+            "sources": [
+                "bot_runtime",
+                "bot_config"
+            ]
+        }
+    ]
+}

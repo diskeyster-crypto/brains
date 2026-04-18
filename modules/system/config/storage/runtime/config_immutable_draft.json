@@ -1,0 +1,168 @@
+{
+    "generated_at": "2026-04-18T08:08:13+01:00",
+    "params": {
+        "risk_levels": {
+            "key": "risk_levels",
+            "label": "Risk Level Table (corridor→leverage)",
+            "type": "immutable",
+            "value": [
+                {
+                    "max_corridor_width": 0.01,
+                    "leverage": 6,
+                    "budget_factor": 0.90000000000000002
+                },
+                {
+                    "max_corridor_width": 0.025000000000000001,
+                    "leverage": 5,
+                    "budget_factor": 0.75
+                },
+                {
+                    "max_corridor_width": 0.050000000000000003,
+                    "leverage": 4,
+                    "budget_factor": 0.59999999999999998
+                },
+                {
+                    "max_corridor_width": 1,
+                    "leverage": 3,
+                    "budget_factor": 0.45000000000000001
+                }
+            ],
+            "source": "brain_risk_engine",
+            "source_file": "modules/system/smart_brain/config/risk_engine.php",
+            "notes": "Internal: corridor width brackets mapped to leverage and budget factors"
+        },
+        "brain_stop_corridor_factor": {
+            "key": "brain_stop_corridor_factor",
+            "label": "Brain Stop Corridor Factor",
+            "type": "immutable",
+            "value": 0.25,
+            "source": "brain_risk_engine",
+            "source_file": "modules/system/smart_brain/config/risk_engine.php",
+            "notes": "Internal coefficient: stop distance relative to corridor width"
+        },
+        "brain_stop_volatility_factor": {
+            "key": "brain_stop_volatility_factor",
+            "label": "Brain Stop Volatility Factor",
+            "type": "immutable",
+            "value": 0.5,
+            "source": "brain_risk_engine",
+            "source_file": "modules/system/smart_brain/config/risk_engine.php",
+            "notes": "Internal coefficient: volatility weight in SL formula"
+        },
+        "brain_stop_liq_safety_factor": {
+            "key": "brain_stop_liq_safety_factor",
+            "label": "Brain Stop Liq Safety Factor",
+            "type": "immutable",
+            "value": 0.29999999999999999,
+            "source": "brain_risk_engine",
+            "source_file": "modules/system/smart_brain/config/risk_engine.php",
+            "notes": "Internal coefficient: liquidation-price safety margin in SL formula"
+        },
+        "exchange_category": {
+            "key": "exchange_category",
+            "label": "Exchange Category",
+            "type": "immutable",
+            "value": "linear",
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "Bybit product category (linear = USDT perps)"
+        },
+        "exchange_settle_coin": {
+            "key": "exchange_settle_coin",
+            "label": "Settlement Coin",
+            "type": "immutable",
+            "value": "USDT",
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "USDT (do not change)"
+        },
+        "exchange_tpsl_mode": {
+            "key": "exchange_tpsl_mode",
+            "label": "TP/SL Mode",
+            "type": "immutable",
+            "value": "Full",
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "Full | Partial — controls how stops are applied"
+        },
+        "exchange_sl_trigger_by": {
+            "key": "exchange_sl_trigger_by",
+            "label": "SL Trigger Price Type",
+            "type": "immutable",
+            "value": "IndexPrice",
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "MarkPrice | IndexPrice | LastPrice"
+        },
+        "post_open_reconcile_retries": {
+            "key": "post_open_reconcile_retries",
+            "label": "Post-Open Reconcile Retries",
+            "type": "immutable",
+            "value": 3,
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "How many times bot retries position fetch after open"
+        },
+        "safety_stop_on_errors": {
+            "key": "safety_stop_on_errors",
+            "label": "Safety Stop Error Threshold",
+            "type": "immutable",
+            "value": 3,
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "Number of errors before execution safety stop fires"
+        },
+        "signal_schema_version": {
+            "key": "signal_schema_version",
+            "label": "Signal Schema Version",
+            "type": "immutable",
+            "value": "clean_signal_v1",
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "Expected Brain signal schema (clean_signal_v1)"
+        },
+        "v2_live_quality_floor_enabled": {
+            "key": "v2_live_quality_floor_enabled",
+            "label": "V2 Live Quality Floor",
+            "type": "immutable",
+            "value": true,
+            "source": "brain_risk_engine",
+            "source_file": "modules/system/smart_brain/config/risk_engine.php",
+            "notes": "Internal: whether V2 quality scoring gate is active"
+        },
+        "sniper_v3_live_filter_enabled": {
+            "key": "sniper_v3_live_filter_enabled",
+            "label": "Sniper V3 Live Filter",
+            "type": "immutable",
+            "value": true,
+            "source": "brain_risk_engine",
+            "source_file": "modules/system/smart_brain/config/risk_engine.php",
+            "notes": "Internal: Sniper V3 hard quality gate for live signals"
+        },
+        "trailing_presets": {
+            "key": "trailing_presets",
+            "label": "Trailing Presets (soft/medium/hard)",
+            "type": "immutable",
+            "value": {
+                "soft": {
+                    "activation_roi": 2,
+                    "floor_lock_roi": 2,
+                    "distance_roi": 0.5
+                },
+                "medium": {
+                    "activation_roi": 3,
+                    "floor_lock_roi": 3,
+                    "distance_roi": 0.80000000000000004
+                },
+                "hard": {
+                    "activation_roi": 4,
+                    "floor_lock_roi": 4,
+                    "distance_roi": 1
+                }
+            },
+            "source": "bot_config",
+            "source_file": "modules/system/trading_bot/config/config.php",
+            "notes": "Internal: preset ROI bracket tables for trailing modes"
+        }
+    }
+}

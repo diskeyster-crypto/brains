@@ -851,6 +851,15 @@ final class SmartBrainCore
             'stabilized_non_actionable_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_non_actionable_relaxation_no_effect_total']  ?? 0),
             'stabilized_non_actionable_relaxation_reason_distribution' => $liveIntentResult['stabilized_non_actionable_relaxation_reason_distribution'] ?? [],
             'stabilized_non_actionable_relaxation_preview'          => $liveIntentResult['stabilized_non_actionable_relaxation_preview']          ?? [],
+            // Zero live flow restore diagnostics (mirrors stabilized_non_actionable_relaxation path under a decisional name)
+            'zero_live_flow_restore_used'              => (int)($liveIntentResult['zero_live_flow_restore_used']              ?? 0),
+            'zero_live_flow_restore_applied'           => (int)($liveIntentResult['zero_live_flow_restore_applied']           ?? 0),
+            'zero_live_flow_restore_live_pass_total'   => (int)($liveIntentResult['zero_live_flow_restore_live_pass_total']   ?? 0),
+            'zero_live_flow_restore_demo_total'        => (int)($liveIntentResult['zero_live_flow_restore_demo_total']        ?? 0),
+            'zero_live_flow_restore_reject_total'      => (int)($liveIntentResult['zero_live_flow_restore_reject_total']      ?? 0),
+            'zero_live_flow_restore_no_effect_total'   => (int)($liveIntentResult['zero_live_flow_restore_no_effect_total']   ?? 0),
+            'zero_live_flow_restore_reason_distribution' => $liveIntentResult['zero_live_flow_restore_reason_distribution'] ?? [],
+            'zero_live_flow_restore_preview'           => $liveIntentResult['zero_live_flow_restore_preview']           ?? [],
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1076,8 +1085,16 @@ final class SmartBrainCore
             'stabilized_non_actionable_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_non_actionable_relaxation_no_effect_total']  ?? 0),
             'stabilized_non_actionable_relaxation_reason_distribution' => $liveIntentResult['stabilized_non_actionable_relaxation_reason_distribution'] ?? [],
             'stabilized_non_actionable_relaxation_preview'          => $liveIntentResult['stabilized_non_actionable_relaxation_preview']          ?? [],
+            // Zero live flow restore diagnostics (mirrors stabilized_non_actionable_relaxation path under a decisional name)
+            'zero_live_flow_restore_used'              => (int)($liveIntentResult['zero_live_flow_restore_used']              ?? 0),
+            'zero_live_flow_restore_applied'           => (int)($liveIntentResult['zero_live_flow_restore_applied']           ?? 0),
+            'zero_live_flow_restore_live_pass_total'   => (int)($liveIntentResult['zero_live_flow_restore_live_pass_total']   ?? 0),
+            'zero_live_flow_restore_demo_total'        => (int)($liveIntentResult['zero_live_flow_restore_demo_total']        ?? 0),
+            'zero_live_flow_restore_reject_total'      => (int)($liveIntentResult['zero_live_flow_restore_reject_total']      ?? 0),
+            'zero_live_flow_restore_no_effect_total'   => (int)($liveIntentResult['zero_live_flow_restore_no_effect_total']   ?? 0),
+            'zero_live_flow_restore_reason_distribution' => $liveIntentResult['zero_live_flow_restore_reason_distribution'] ?? [],
+            'zero_live_flow_restore_preview'           => $liveIntentResult['zero_live_flow_restore_preview']           ?? [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
-            'cycle_eligibility_refine_total'      => (int)($liveIntentResult['cycle_eligibility_refine_total']      ?? 0),
             'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
             'cycle_eligibility_downgrade_total'   => (int)($liveIntentResult['cycle_eligibility_downgrade_total']   ?? 0),
             'cycle_eligibility_no_effect_total'   => (int)($liveIntentResult['cycle_eligibility_no_effect_total']   ?? 0),
@@ -1351,6 +1368,15 @@ final class SmartBrainCore
             'stabilized_non_actionable_relaxation_no_effect_total'  => 0,
             'stabilized_non_actionable_relaxation_reason_distribution' => [],
             'stabilized_non_actionable_relaxation_preview'          => [],
+            // Zero live flow restore diagnostics (mirrors stabilized_non_actionable_relaxation path under a decisional name)
+            'zero_live_flow_restore_used'              => 0,
+            'zero_live_flow_restore_applied'           => 0,
+            'zero_live_flow_restore_live_pass_total'   => 0,
+            'zero_live_flow_restore_demo_total'        => 0,
+            'zero_live_flow_restore_reject_total'      => 0,
+            'zero_live_flow_restore_no_effect_total'   => 0,
+            'zero_live_flow_restore_reason_distribution' => [],
+            'zero_live_flow_restore_preview'           => [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => 0,
             'cycle_eligibility_upgrade_total'     => 0,
@@ -2230,6 +2256,7 @@ final class SmartBrainCore
                     $isContextualV2 = ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2');
                     if ($stabNonActRelaxEnabled && $isContextualV2) {
                         $result['stabilized_non_actionable_relaxation_used']++;
+                        $result['zero_live_flow_restore_used']++;
 
                         // Support profile evaluation — at least one score must meet its floor
                         $eqScore  = $signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? null;
@@ -2276,8 +2303,12 @@ final class SmartBrainCore
                             $result['stabilized_non_actionable_relaxation_live_pass_total']++;
                             $result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActRescueReason] =
                                 ($result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActRescueReason] ?? 0) + 1;
+                            $result['zero_live_flow_restore_applied']++;
+                            $result['zero_live_flow_restore_live_pass_total']++;
+                            $result['zero_live_flow_restore_reason_distribution'][$stabNonActRescueReason] =
+                                ($result['zero_live_flow_restore_reason_distribution'][$stabNonActRescueReason] ?? 0) + 1;
                             if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
-                                $result['stabilized_non_actionable_relaxation_preview'][] = [
+                                $previewEntry = [
                                     'symbol'                               => $symbol,
                                     'side'                                 => $side,
                                     'pattern_algorithm'                    => $patternAlgo,
@@ -2298,6 +2329,10 @@ final class SmartBrainCore
                                     'rescue_result'                       => 'live_pass',
                                     'rescue_reason'                       => $stabNonActRescueReason,
                                 ];
+                                $result['stabilized_non_actionable_relaxation_preview'][] = $previewEntry;
+                                if (count($result['zero_live_flow_restore_preview']) < 10) {
+                                    $result['zero_live_flow_restore_preview'][] = $previewEntry;
+                                }
                             }
                             // Do NOT continue — signal falls through to passport gate normally
                         } else {
@@ -2305,8 +2340,11 @@ final class SmartBrainCore
                             $result['stabilized_non_actionable_relaxation_reject_total']++;
                             $result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] =
                                 ($result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
+                            $result['zero_live_flow_restore_reject_total']++;
+                            $result['zero_live_flow_restore_reason_distribution']['reject_' . $stabNonActRejectReason] =
+                                ($result['zero_live_flow_restore_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
                             if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
-                                $result['stabilized_non_actionable_relaxation_preview'][] = [
+                                $rejectEntry = [
                                     'symbol'                               => $symbol,
                                     'side'                                 => $side,
                                     'pattern_algorithm'                    => $patternAlgo,
@@ -2327,6 +2365,10 @@ final class SmartBrainCore
                                     'rescue_result'                       => 'rejected',
                                     'rescue_reason'                       => $stabNonActRejectReason,
                                 ];
+                                $result['stabilized_non_actionable_relaxation_preview'][] = $rejectEntry;
+                                if (count($result['zero_live_flow_restore_preview']) < 10) {
+                                    $result['zero_live_flow_restore_preview'][] = $rejectEntry;
+                                }
                             }
                         }
                     }

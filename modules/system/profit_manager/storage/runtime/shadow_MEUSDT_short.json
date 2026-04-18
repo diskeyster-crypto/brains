@@ -1,0 +1,17 @@
+{
+    "trade_id": "MEUSDT_short",
+    "symbol": "MEUSDT",
+    "side": "short",
+    "owner_mode": "profit_manager_shadow",
+    "current_roi": 4.1509999999999998,
+    "peak_roi": 8.3972999999999995,
+    "trailing_armed": true,
+    "proposed_lock_roi": 7,
+    "proposed_stop_price": 0.10271162,
+    "last_lock_roi": 7,
+    "last_move_ts": 1775693283,
+    "proposed_action": "hold",
+    "cooldown_active": false,
+    "min_distance_blocked": false,
+    "updated_at": "2026-04-09T03:39:05+01:00"
+}

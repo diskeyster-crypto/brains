@@ -2122,6 +2122,20 @@ final class SmartBrainCore
                 $cmLiveBias      = (string)($cycleDecisionDebug['model_live_bias']     ?? 'non_live_bias');
                 $cmWarnFlag      = (bool)($cycleDecisionDebug['model_warning_flag']        ?? false);
                 $cmLowConf       = (bool)($cycleDecisionDebug['model_low_confidence_flag'] ?? false);
+                $cmWarnReason    = (string)($cycleDecisionDebug['model_warning_reason']       ?? '');
+                $cmLowConfReason = (string)($cycleDecisionDebug['model_low_confidence_reason'] ?? '');
+                // Derive warning severity: severe keywords indicate a structurally unsafe condition.
+                // A soft/non-severe warning may be present in borderline-clean contextual V2 rescues;
+                // a severe warning is never rescued regardless of other fields.
+                $cmWarnSevere = $cmWarnFlag && (
+                    str_contains($cmWarnReason, 'critical')      ||
+                    str_contains($cmWarnReason, 'severe')        ||
+                    str_contains($cmWarnReason, 'breakdown')     ||
+                    str_contains($cmWarnReason, 'terminal')      ||
+                    str_contains($cmWarnReason, 'reversal_conf') ||
+                    str_contains($cmWarnReason, 'crash')         ||
+                    str_contains($cmWarnReason, 'failed_struct')
+                );
 
                 // Step 12: pre-compute support eligibility — explicit favorable conditions required.
                 // Used by condition 3 and the no-veto support evaluation below.
@@ -2139,6 +2153,8 @@ final class SmartBrainCore
                 // that land in a non_actionable cycle state, so the next archive can answer:
                 // "are these borderline-clean or clearly bad?"
                 // Does NOT change any routing decision.
+                $auditIsBorderline   = false;
+                $auditBorderlineReason = '';
                 if ($cmActionability === 'non_actionable'
                     && ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2')
                 ) {
@@ -2192,24 +2208,70 @@ final class SmartBrainCore
                     continue;
                 }
 
-                // Hard veto → skip: model explicitly non_actionable with state weak or unavailable
+                // Hard veto → skip: model explicitly non_actionable with state weak, unavailable, or cautious.
                 // === STABILIZED NON-ACTIONABLE RELAXATION (Coin Core Step 11-NR) ===
-                // Very narrow rescue for borderline-clean contextual V2 signals that are
-                // non_actionable with state=weak (not unavailable — missing data is never rescued)
-                // and otherwise clean: not high_risk, no warning flag, no low_confidence flag.
-                // Signals that are truly dirty (high_risk, unavailable, warn+lowconf) are never
-                // rescued — branch 1 above already guards high_risk.
+                // Narrow rescue for borderline-clean contextual V2 signals whose non_actionable
+                // condition is driven by cycle_state ∈ {weak, unavailable, cautious} — the real
+                // borderline cluster seen in runtime.  Rescue criteria are deliberately strict so
+                // only a tiny subset passes; all other cases are still hard-vetoed below.
+                //
+                // Rescue requires ALL of:
+                //   • contextual V2 pattern (double_bottom or double_top)
+                //   • audit marked borderline_candidate = true
+                //   • cycle_risk = medium_risk only (high_risk is already blocked in branch 1 above)
+                //   • warning may be active only if non-severe ($cmWarnSevere = false)
+                //   • NOT both warning AND low_confidence at once
+                //   • support profile healthy: at least one score meets a bounded floor
+                //
                 // Feature-flagged. Rescued signals fall through to passport gate normally.
-                if ($cmActionability === 'non_actionable' && in_array($cmState, ['weak', 'unavailable'], true)) {
+                if ($cmActionability === 'non_actionable' && in_array($cmState, ['weak', 'unavailable', 'cautious'], true)) {
                     $stabNonActRelaxEnabled = (bool)($userLimits['stabilized_non_actionable_relaxation_enabled'] ?? true);
                     $stabNonActRescued = false;
                     $isContextualV2 = ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2');
                     if ($stabNonActRelaxEnabled && $isContextualV2) {
                         $result['stabilized_non_actionable_relaxation_used']++;
-                        // Rescue only if: state=weak (not unavailable), no risk, no warning, no low_confidence
-                        if ($cmState === 'weak' && $cmRisk !== 'high_risk' && !$cmWarnFlag && !$cmLowConf) {
+
+                        // Support profile evaluation — at least one score must meet its floor
+                        $eqScore  = $signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? null;
+                        $pcScore  = $signal['pattern_confidence'] ?? null;
+                        $ssScore  = $signal['scenario_score'] ?? null;
+                        $tmsScore = $signal['trend_match_score'] ?? null;
+                        $supportProfileOk = (
+                            ($eqScore  !== null && $eqScore  >= 0.45) ||
+                            ($pcScore  !== null && $pcScore  >= 0.50) ||
+                            ($ssScore  !== null && $ssScore  >= 0.45) ||
+                            ($tmsScore !== null && $tmsScore >= 0.45)
+                        );
+                        // Explicitly poor: both primary scores below 0.30 when both are available
+                        $supportScorePoor = (
+                            $eqScore !== null && $eqScore < 0.30 &&
+                            $pcScore !== null && $pcScore < 0.30
+                        );
+                        if ($supportScorePoor) {
+                            $supportProfileOk = false;
+                        }
+
+                        // Derive warning severity label for observability
+                        $warnSeverityLabel = !$cmWarnFlag ? 'none' : ($cmWarnSevere ? 'severe' : 'soft');
+
+                        // Evaluate rescue eligibility and classify reject reason
+                        $stabNonActRejectReason = null;
+                        if (!$auditIsBorderline) {
+                            $stabNonActRejectReason = 'not_borderline_candidate';
+                        } elseif ($cmRisk !== 'medium_risk') {
+                            $stabNonActRejectReason = 'not_medium_risk_risk_' . $cmRisk;
+                        } elseif ($cmWarnSevere) {
+                            $stabNonActRejectReason = 'severe_warning';
+                        } elseif ($cmWarnFlag && $cmLowConf) {
+                            $stabNonActRejectReason = 'warn_and_low_conf';
+                        } elseif (!$supportProfileOk) {
+                            $stabNonActRejectReason = 'poor_support_profile';
+                        }
+
+                        if ($stabNonActRejectReason === null) {
+                            // All criteria met — rescue
                             $stabNonActRescued = true;
-                            $stabNonActRescueReason = 'non_actionable_weak_borderline_v2_rescued';
+                            $stabNonActRescueReason = 'non_actionable_' . $cmState . '_medium_risk_borderline_v2_rescued';
                             $result['stabilized_non_actionable_relaxation_applied']++;
                             $result['stabilized_non_actionable_relaxation_live_pass_total']++;
                             $result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActRescueReason] =
@@ -2223,21 +2285,49 @@ final class SmartBrainCore
                                     'cycle_state'                         => $cmState,
                                     'cycle_risk'                          => $cmRisk,
                                     'cycle_warning_flag'                  => $cmWarnFlag,
+                                    'warning_severity'                    => $warnSeverityLabel,
                                     'cycle_low_confidence'                => $cmLowConf,
-                                    'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
-                                    'entry_quality_score'                 => $signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? null,
-                                    'pattern_confidence'                  => $signal['pattern_confidence'] ?? null,
-                                    'scenario_score'                      => $signal['scenario_score'] ?? null,
-                                    'trend_match_score'                   => $signal['trend_match_score'] ?? null,
-                                    'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
                                     'borderline_candidate'                => true,
-                                    'borderline_reason'                   => $stabNonActRescueReason,
+                                    'borderline_reason'                   => $auditBorderlineReason,
+                                    'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                                    'entry_quality_score'                 => $eqScore,
+                                    'pattern_confidence'                  => $pcScore,
+                                    'scenario_score'                      => $ssScore,
+                                    'trend_match_score'                   => $tmsScore,
+                                    'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
                                     'rescue_result'                       => 'live_pass',
+                                    'rescue_reason'                       => $stabNonActRescueReason,
                                 ];
                             }
                             // Do NOT continue — signal falls through to passport gate normally
                         } else {
+                            // Rescue criteria not met — record why for observability
                             $result['stabilized_non_actionable_relaxation_reject_total']++;
+                            $result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] =
+                                ($result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
+                            if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
+                                $result['stabilized_non_actionable_relaxation_preview'][] = [
+                                    'symbol'                               => $symbol,
+                                    'side'                                 => $side,
+                                    'pattern_algorithm'                    => $patternAlgo,
+                                    'cycle_actionability'                  => $cmActionability,
+                                    'cycle_state'                         => $cmState,
+                                    'cycle_risk'                          => $cmRisk,
+                                    'cycle_warning_flag'                  => $cmWarnFlag,
+                                    'warning_severity'                    => $warnSeverityLabel,
+                                    'cycle_low_confidence'                => $cmLowConf,
+                                    'borderline_candidate'                => $auditIsBorderline,
+                                    'borderline_reason'                   => $auditBorderlineReason,
+                                    'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                                    'entry_quality_score'                 => $eqScore,
+                                    'pattern_confidence'                  => $pcScore,
+                                    'scenario_score'                      => $ssScore,
+                                    'trend_match_score'                   => $tmsScore,
+                                    'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
+                                    'rescue_result'                       => 'rejected',
+                                    'rescue_reason'                       => $stabNonActRejectReason,
+                                ];
+                            }
                         }
                     }
                     // === END STABILIZED NON-ACTIONABLE RELAXATION ===

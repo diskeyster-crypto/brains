@@ -2161,6 +2161,12 @@ final class SmartBrainCore
                                 'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
                                 'checked'          => $fcgResult['checked_values'] ?? [],
                             ];
+                            // Track early hard anti-profile demotion for normal-wave entries
+                            $hasEarlyAntiProfile = in_array('fast_coin_anti_hard_profile_quality_too_low', $fcgRejectReasons, true)
+                                || in_array('fast_coin_anti_hard_profile_micro_accel_missing', $fcgRejectReasons, true);
+                            if ($hasEarlyAntiProfile) {
+                                $result['fast_long_normal_reject_total']++;
+                            }
                             if ($fastConfSlowExcWasApplied) {
                                 $result['fast_confirmed_slow_exception_demo_total']++;
                                 $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =

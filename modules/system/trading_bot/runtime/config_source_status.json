@@ -1,0 +1,87 @@
+{
+    "module": "trading_bot",
+    "switch_wave": "v1_operational_params",
+    "unified_config_available": true,
+    "unified_config_master_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_master.json",
+    "unified_config_draft_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_draft.json",
+    "source": "unified_config_operational_master",
+    "partially_migrated": false,
+    "first_wave_total": 6,
+    "migrated_count": 6,
+    "fallback_count": 0,
+    "switched_params": [
+        "bot_enabled",
+        "bot_mode",
+        "max_intents_per_run",
+        "max_concurrent_positions",
+        "bot_brain_controlled",
+        "pm_trailing_owner"
+    ],
+    "fallback_params": [],
+    "switched_params_detail": {
+        "bot_enabled": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "trading_bot",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "bot_mode": {
+            "value": "live",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "trading_bot",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "max_intents_per_run": {
+            "value": 1,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "trading_bot",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "max_concurrent_positions": {
+            "value": 50,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "trading_bot",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "bot_brain_controlled": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "trading_bot",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "pm_trailing_owner": {
+            "value": "profit_manager",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "trading_bot",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        }
+    },
+    "fallback_params_detail": [],
+    "recorded_at": "2026-04-18T12:17:06+01:00",
+    "unified_config_master_saved_at": "2026-04-18T11:10:07+01:00",
+    "unified_config_generated_at": "2026-04-18T12:11:45+01:00"
+}

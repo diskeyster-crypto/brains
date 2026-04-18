@@ -1941,14 +1941,18 @@ final class SmartBrainCore
                     // === STABILIZED V2 FLOOR RELAXATION ===
                     // Narrow soft rescue for contextual V2 signals that missed the main floor
                     // by exactly one metric (or two with stricter tolerance and clean support).
-                    // Signals with ≥3 metric failures, missing trend data, or poor support profile
-                    // are never rescued.  Rescued signals still pass through cycle_model and passport.
+                    // Trend-match near-miss uses its own wider tolerance (stabilized_v2_trend_match_soft_tolerance).
+                    // Trend-match missing may be rescued only with an unusually strong support profile.
+                    // Rescued signals still pass through cycle_model and passport gates.
                     if ($stabRelaxEnabled) {
                         $result['stabilized_v2_floor_relaxation_used']++;
-                        $cv            = $v2FloorResult['checked_values'];
-                        $failCount     = count($v2FloorResult['reject_reasons']);
-                        $stabSoftTol   = max(0.0, (float)($userLimits['stabilized_v2_floor_soft_tolerance']   ?? 0.05));
-                        $stabStrictTol = max(0.0, (float)($userLimits['stabilized_v2_floor_strict_tolerance']  ?? 0.03));
+                        $cv             = $v2FloorResult['checked_values'];
+                        $failCount      = count($v2FloorResult['reject_reasons']);
+                        $stabSoftTol    = max(0.0, (float)($userLimits['stabilized_v2_floor_soft_tolerance']            ?? 0.05));
+                        $stabStrictTol  = max(0.0, (float)($userLimits['stabilized_v2_floor_strict_tolerance']          ?? 0.03));
+                        // Trend-match has its own (wider) single-miss tolerance and an independent on/off flag
+                        $trendRelaxEnabled = (bool)($userLimits['stabilized_v2_trend_match_soft_relaxation_enabled'] ?? true);
+                        $trendSoftTol      = max(0.0, (float)($userLimits['stabilized_v2_trend_match_soft_tolerance']   ?? 0.08));
 
                         // Support profile health — entry_quality_score / scenario_score
                         $floorEqScore = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
@@ -1968,10 +1972,19 @@ final class SmartBrainCore
                             ($floorHasEq && $floorEqScore >= 0.50) ||
                             ($floorHasSs && $floorSsScore >= 0.50)
                         );
+                        // Extra-strict: both dimensions must be high — required for trend_match_missing rescue
+                        $supportProfileExtraStrict = (
+                            $floorHasEq && $floorEqScore >= 0.55 &&
+                            $floorHasSs && $floorSsScore >= 0.50
+                        );
 
-                        $rescued      = false;
-                        $rescueReason = '';
-                        $rejectKey    = '';
+                        $rescued             = false;
+                        $rescueReason        = '';
+                        $rejectKey           = '';
+                        $toleranceUsed       = null;
+                        $primaryMissMetric   = null;
+                        $primaryMissSize     = null;
+                        $isTrendMatchMissing = false;
 
                         if (!$supportProfileOk) {
                             $rejectKey = 'reject_poor_support_profile';
@@ -1979,28 +1992,55 @@ final class SmartBrainCore
                             $singleMiss = $v2FloorResult['reject_reasons'][0];
                             $missOk     = false;
                             if (str_contains($singleMiss, 'confirmation_score') || str_contains($singleMiss, 'confirmation_too_low')) {
+                                $primaryMissMetric = 'confirmation_score';
+                                $primaryMissSize   = $v2FloorResult['miss_sizes']['confirmation_score'] ?? null;
                                 $thr = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
+                                $toleranceUsed = $stabSoftTol;
                                 $missOk = ((float)($cv['confirmation_score'] ?? 0.0) + $stabSoftTol >= $thr);
                             } elseif (str_contains($singleMiss, 'pattern_confidence') || str_contains($singleMiss, 'pattern_conf_too_low')) {
+                                $primaryMissMetric = 'pattern_confidence';
+                                $primaryMissSize   = $v2FloorResult['miss_sizes']['pattern_confidence'] ?? null;
                                 $thr = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
+                                $toleranceUsed = $stabSoftTol;
                                 $missOk = ((float)($cv['pattern_confidence'] ?? 0.0) + $stabSoftTol >= $thr);
                             } elseif (str_contains($singleMiss, 'trend_match_too_low')) {
+                                // Trend-match near-miss uses its own wider tolerance
+                                $primaryMissMetric = 'trend_match_score';
+                                $primaryMissSize   = $v2FloorResult['miss_sizes']['trend_match_score'] ?? null;
                                 $minTrendLong  = (float)($userLimits['v2_live_min_trend_match_score']       ?? 0.40);
                                 $minTrendShort = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendLong);
                                 $thr = ($signalSide === 'short') ? $minTrendShort : $minTrendLong;
-                                $missOk = ((float)($cv['trend_match_score'] ?? 0.0) + $stabSoftTol >= $thr);
+                                $activeTrendTol = $trendRelaxEnabled ? $trendSoftTol : $stabSoftTol;
+                                $toleranceUsed  = $activeTrendTol;
+                                $missOk = ((float)($cv['trend_match_score'] ?? 0.0) + $activeTrendTol >= $thr);
+                            } elseif (str_contains($singleMiss, 'trend_match_missing')) {
+                                // Trend-match missing: rescue only when trend relaxation is on AND support is extra-strict
+                                $primaryMissMetric   = 'trend_match_score';
+                                $isTrendMatchMissing = true;
+                                $primaryMissSize     = 'missing';
+                                $toleranceUsed       = null;
+                                if ($trendRelaxEnabled && $supportProfileExtraStrict) {
+                                    $rescued      = true;
+                                    $rescueReason = 'single_miss_trend_match_missing_strong_support_profile';
+                                } else {
+                                    $rejectKey = $trendRelaxEnabled
+                                        ? 'reject_trend_match_missing_support_not_strong'
+                                        : 'reject_trend_match_missing_relax_disabled';
+                                }
                             }
-                            // trend_match_missing is never rescued — absent data is never OK
-                            if ($missOk) {
-                                $rescued      = true;
-                                $rescueReason = 'single_miss_within_tolerance_' . $singleMiss;
-                            } else {
-                                $rejectKey = 'reject_single_miss_tolerance_exceeded_' . $singleMiss;
+                            // For non-missing metrics, apply tolerance result
+                            if (!$rescued && empty($rejectKey)) {
+                                if ($missOk) {
+                                    $rescued      = true;
+                                    $rescueReason = 'single_miss_within_tolerance_' . $singleMiss;
+                                } else {
+                                    $rejectKey = 'reject_single_miss_tolerance_exceeded_' . $singleMiss;
+                                }
                             }
                         } elseif ($failCount === 2 && $supportProfileStrict) {
                             // Two-metric near-miss: both misses must be within the stricter tolerance.
                             // Requires unusually clean support profile.
-                            $reasons   = $v2FloorResult['reject_reasons'];
+                            $reasons    = $v2FloorResult['reject_reasons'];
                             $bothWithin = true;
                             $reasonParts = [];
                             foreach ($reasons as $miss) {
@@ -2036,19 +2076,23 @@ final class SmartBrainCore
                         }
 
                         $floorPreviewEntry = [
-                            'symbol'              => $symbol,
-                            'side'                => $signalSide,
-                            'pattern_algorithm'   => $patternAlgo,
-                            'fail_count'          => $failCount,
-                            'failed_metrics'      => $v2FloorResult['reject_reasons'],
-                            'miss_sizes'          => $v2FloorResult['miss_sizes'] ?? [],
-                            'entry_quality_score' => $floorHasEq ? round($floorEqScore, 4) : null,
-                            'scenario_score'      => $floorHasSs ? round($floorSsScore, 4) : null,
-                            'pattern_confidence'  => round((float)($cv['pattern_confidence'] ?? 0.0), 4),
-                            'trend_match_score'   => $cv['trend_match_score'] ?? null,
-                            'confirmation_score'  => round((float)($cv['confirmation_score'] ?? 0.0), 4),
-                            'rescue_result'       => $rescued ? 'live_pass' : 'rejected',
-                            'rescue_reason'       => $rescued ? $rescueReason : $rejectKey,
+                            'symbol'               => $symbol,
+                            'side'                 => $signalSide,
+                            'pattern_algorithm'    => $patternAlgo,
+                            'fail_count'           => $failCount,
+                            'failed_metrics'       => $v2FloorResult['reject_reasons'],
+                            'failed_metric'        => $primaryMissMetric,
+                            'miss_sizes'           => $v2FloorResult['miss_sizes'] ?? [],
+                            'miss_size'            => $primaryMissSize,
+                            'tolerance_used'       => $toleranceUsed,
+                            'trend_match_score'    => $cv['trend_match_score'] ?? null,
+                            'trend_match_missing'  => $isTrendMatchMissing,
+                            'entry_quality_score'  => $floorHasEq ? round($floorEqScore, 4) : null,
+                            'scenario_score'       => $floorHasSs ? round($floorSsScore, 4) : null,
+                            'pattern_confidence'   => round((float)($cv['pattern_confidence'] ?? 0.0), 4),
+                            'confirmation_score'   => round((float)($cv['confirmation_score'] ?? 0.0), 4),
+                            'rescue_result'        => $rescued ? 'live_pass' : 'rejected',
+                            'rescue_reason'        => $rescued ? $rescueReason : $rejectKey,
                         ];
 
                         if ($rescued) {

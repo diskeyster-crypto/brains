@@ -1,0 +1,21 @@
+{
+    "extracted_at": "2026-04-18T08:08:13+01:00",
+    "status": "ok",
+    "errors": [],
+    "warnings": [],
+    "artefacts_saved": {
+        "ownership": true,
+        "conflicts": true,
+        "operational": true,
+        "immutable": true,
+        "preview": true
+    },
+    "counts": {
+        "ownership_entries": 44,
+        "conflicts": 3,
+        "duplicates": 8,
+        "operational_params": 32,
+        "immutable_params": 14,
+        "preview_sections": 4
+    }
+}

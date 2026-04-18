@@ -154,6 +154,13 @@ return [
         'late_entry_freshness_window_seconds' => 180,
         'late_entry_freshness_bonus_pct' => 0.20,
         'late_entry_short_enter_now_bonus_pct' => 0.25,
+        // Soft relaxation: narrow extra buffer for recovered V2 contextual short enter_now intents
+        // that are only slightly beyond the standard threshold.
+        // Only applies when: feature flag enabled, V2 contextual pattern, short enter_now, intent is fresh.
+        // Disable quickly if next archive shows noisy chasing.
+        'late_entry_soft_relaxation_enabled' => true,
+        'late_entry_v2_soft_relaxation_buffer_pct' => 0.65,
+        'late_entry_v2_soft_relaxation_max_age_seconds' => 60,
         'retrace_slack_pct' => 0.05,
 
         // Stale claimed intent finalization

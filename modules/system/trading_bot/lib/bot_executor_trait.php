@@ -4291,7 +4291,29 @@ private function checkLateEntry(array $intent, string $mode = 'live'): array
             $demoExtraBonus = (float)($this->config['execution']['demo_late_entry_tolerance_extra_pct'] ?? 0.0);
         }
 
-        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus + $shortEnterNowBonus + $demoExtraBonus;
+        // === LATE ENTRY SOFT RELAXATION (V2 contextual short enter_now) ===
+        // Narrow extra buffer for fresh recovered V2 contextual short enter_now intents
+        // that are only slightly beyond the standard effective threshold.
+        // Conditions: feature flag enabled, V2 pattern, short enter_now, intent is very fresh.
+        // Never applies to stale intents, non-V2 patterns, long side, or wait_retrace.
+        $softRelaxEnabled = (bool)($this->config['execution']['late_entry_soft_relaxation_enabled'] ?? true);
+        $softRelaxBuffer = 0.0;
+        $softRelaxApplied = false;
+        $softRelaxReason = '';
+        $patternAlgoStr = (string)($intent['pattern_algorithm'] ?? $intent['source_schema_version'] ?? '');
+        $isV2Contextual = in_array($patternAlgoStr, ['double_bottom_contextual_v2', 'double_top_contextual_v2'], true);
+        if ($softRelaxEnabled && $isV2Contextual && $side === 'short' && $entryAction === 'enter_now') {
+            $maxAgeForRelax = (int)($this->config['execution']['late_entry_v2_soft_relaxation_max_age_seconds'] ?? 60);
+            $v2SoftBuffer   = (float)($this->config['execution']['late_entry_v2_soft_relaxation_buffer_pct'] ?? 0.65);
+            if ($intentAgeSec <= $maxAgeForRelax) {
+                $softRelaxBuffer = $v2SoftBuffer;
+                $softRelaxApplied = true;
+                $softRelaxReason = 'v2_contextual_short_enter_now_fresh_age_' . $intentAgeSec . 's';
+            }
+        }
+        // === END LATE ENTRY SOFT RELAXATION ===
+
+        $effectiveThreshold = $baseThreshold + $bufferPct + $freshnessBonus + $shortEnterNowBonus + $demoExtraBonus + $softRelaxBuffer;
 
         $priceDiff = abs($currentPrice - $entryPrice) / $entryPrice * 100;
         $priceDiffRound = round($priceDiff, 4);
@@ -4312,10 +4334,21 @@ private function checkLateEntry(array $intent, string $mode = 'live'): array
             'freshness_bonus_pct' => round($freshnessBonus, 4),
             'short_enter_now_bonus_pct' => round($shortEnterNowBonus, 4),
             'demo_extra_tolerance_pct' => round($demoExtraBonus, 4),
+            'soft_relaxation_buffer_pct' => round($softRelaxBuffer, 4),
             'effective_threshold_pct' => $effectiveThresholdRound,
             'intent_age_seconds' => $intentAgeSec,
             'created_ts' => $createdTs,
             'threshold_source' => isset($intent['late_threshold_pct']) ? 'intent' : (($sideOverride !== null) ? 'side_override' : 'config_default'),
+            // Enhanced late-entry guard observability
+            'late_entry_guard_used' => true,
+            'late_entry_guard_result' => null, // filled below after check
+            'late_entry_guard_reason' => null, // filled below after check
+            'late_entry_effective_threshold_pct' => $effectiveThresholdRound,
+            'late_entry_move_pct' => $priceDiffRound,
+            'late_entry_extra_buffer_applied' => $softRelaxApplied,
+            'late_entry_extra_buffer_reason' => $softRelaxReason,
+            'late_entry_intent_age_seconds' => $intentAgeSec,
+            'late_entry_pattern_context' => $patternAlgoStr,
         ];
         $result['diagnostics'] = $diag;
 
@@ -4346,7 +4379,7 @@ private function checkLateEntry(array $intent, string $mode = 'live'): array
             $result['ok'] = false;
             $result['subreason'] = $subreason;
             $result['reason'] = sprintf(
-                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%% + short_enter_now=%.2f%% + demo_extra=%.2f%%)",
+                "Price moved %s %.4f%% > effective threshold %.4f%% (base=%.2f%% + buffer=%.2f%% + freshness=%.2f%% + short_enter_now=%.2f%% + demo_extra=%.2f%% + soft_relax=%.2f%%)",
                 $moveDirection,
                 $priceDiffRound,
                 $effectiveThresholdRound,
@@ -4354,8 +4387,15 @@ private function checkLateEntry(array $intent, string $mode = 'live'): array
                 $bufferPct,
                 $freshnessBonus,
                 $shortEnterNowBonus,
-                $demoExtraBonus
+                $demoExtraBonus,
+                $softRelaxBuffer
             );
+            $result['diagnostics']['late_entry_guard_result'] = 'rejected';
+            $result['diagnostics']['late_entry_guard_reason'] = $subreason;
+        } else {
+            $guardResult = $isMoveAgainstEntry ? 'pass_borderline' : 'pass_no_adverse_move';
+            $result['diagnostics']['late_entry_guard_result'] = $guardResult;
+            $result['diagnostics']['late_entry_guard_reason'] = $softRelaxApplied ? 'soft_relaxation_applied' : 'within_threshold';
         }
 
         return $result;

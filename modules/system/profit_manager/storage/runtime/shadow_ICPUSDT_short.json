@@ -1,0 +1,18 @@
+{
+    "trade_id": "ICPUSDT_short",
+    "symbol": "ICPUSDT",
+    "side": "short",
+    "owner_mode": "profit_manager_shadow",
+    "current_roi": -0.99960000000000004,
+    "peak_roi": 0.79969999999999997,
+    "trailing_armed": false,
+    "proposed_lock_roi": 0,
+    "proposed_stop_price": 0,
+    "last_lock_roi": 0,
+    "last_move_ts": 0,
+    "proposed_action": "hold",
+    "cooldown_active": false,
+    "min_distance_blocked": false,
+    "updated_at": "2026-04-09T14:31:05+01:00",
+    "comparison_unavailable_reason": "no_matching_bot_trade"
+}

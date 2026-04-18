@@ -120,5 +120,11 @@ return [
         'confirmation_target_patterns'          => ['double_top_contextual_v2', 'double_bottom_contextual_v2'],
         // Max age for a pending confirmation entry before it expires.
         'confirmation_max_age_seconds'          => 900,
+        // Stabilized V2 floor relaxation — narrow soft rescue for contextual V2 signals that
+        // failed the main quality floor by exactly one borderline metric miss.
+        // Only applies to double_top_contextual_v2 short and double_bottom_contextual_v2 long.
+        // Multiple metric failures are never rescued. Feature-flagged.
+        'stabilized_v2_floor_relaxation_enabled' => true,
+        'stabilized_v2_floor_soft_tolerance'     => 0.05,
     ],
 ];

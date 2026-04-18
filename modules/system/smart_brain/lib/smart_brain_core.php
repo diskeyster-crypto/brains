@@ -806,7 +806,14 @@ final class SmartBrainCore
             'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
             'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
             'v2_live_quality_floor_rejected_preview' => $liveIntentResult['v2_live_quality_floor_rejected_preview'] ?? [],
-            // Short enter_now live diagnostics
+            // Stabilized V2 floor relaxation diagnostics
+            'stabilized_v2_floor_relaxation_used'             => (int)($liveIntentResult['stabilized_v2_floor_relaxation_used']            ?? 0),
+            'stabilized_v2_floor_relaxation_applied'          => (int)($liveIntentResult['stabilized_v2_floor_relaxation_applied']         ?? 0),
+            'stabilized_v2_floor_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_v2_floor_relaxation_live_pass_total'] ?? 0),
+            'stabilized_v2_floor_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_v2_floor_relaxation_demo_total']      ?? 0),
+            'stabilized_v2_floor_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_v2_floor_relaxation_reject_total']    ?? 0),
+            'stabilized_v2_floor_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_v2_floor_relaxation_no_effect_total'] ?? 0),
+            'stabilized_v2_floor_relaxation_reason_distribution' => $liveIntentResult['stabilized_v2_floor_relaxation_reason_distribution'] ?? [],
             'short_enter_now_live_applied_count' => (int)($liveIntentResult['short_enter_now_live_applied_count'] ?? 0),
             'short_enter_now_live_approved_count' => (int)($liveIntentResult['short_enter_now_live_approved_count'] ?? 0),
             'short_enter_now_live_rejected_count' => (int)($liveIntentResult['short_enter_now_live_rejected_count'] ?? 0),
@@ -978,7 +985,14 @@ final class SmartBrainCore
             'v2_live_quality_floor_rejected_count' => (int)($liveIntentResult['v2_live_quality_floor_rejected_count'] ?? 0),
             'v2_live_quality_floor_passed_count' => (int)($liveIntentResult['v2_live_quality_floor_passed_count'] ?? 0),
             'v2_live_quality_floor_reject_reason_distribution' => $liveIntentResult['v2_live_quality_floor_reject_reason_distribution'] ?? [],
-            // Manual Blacklist diagnostics
+            // Stabilized V2 floor relaxation diagnostics
+            'stabilized_v2_floor_relaxation_used'             => (int)($liveIntentResult['stabilized_v2_floor_relaxation_used']            ?? 0),
+            'stabilized_v2_floor_relaxation_applied'          => (int)($liveIntentResult['stabilized_v2_floor_relaxation_applied']         ?? 0),
+            'stabilized_v2_floor_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_v2_floor_relaxation_live_pass_total'] ?? 0),
+            'stabilized_v2_floor_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_v2_floor_relaxation_demo_total']      ?? 0),
+            'stabilized_v2_floor_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_v2_floor_relaxation_reject_total']    ?? 0),
+            'stabilized_v2_floor_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_v2_floor_relaxation_no_effect_total'] ?? 0),
+            'stabilized_v2_floor_relaxation_reason_distribution' => $liveIntentResult['stabilized_v2_floor_relaxation_reason_distribution'] ?? [],
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
             'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
@@ -1204,6 +1218,14 @@ final class SmartBrainCore
             'v2_live_quality_floor_passed_count' => 0,
             'v2_live_quality_floor_reject_reason_distribution' => [],
             'v2_live_quality_floor_rejected_preview' => [],
+            // Stabilized V2 floor relaxation diagnostics (post-stabilization narrow soft rescue)
+            'stabilized_v2_floor_relaxation_used'             => 0,
+            'stabilized_v2_floor_relaxation_applied'          => 0,
+            'stabilized_v2_floor_relaxation_live_pass_total'  => 0,
+            'stabilized_v2_floor_relaxation_demo_total'       => 0,
+            'stabilized_v2_floor_relaxation_reject_total'     => 0,
+            'stabilized_v2_floor_relaxation_no_effect_total'  => 0,
+            'stabilized_v2_floor_relaxation_reason_distribution' => [],
             // Short enter_now live diagnostics
             'short_enter_now_live_applied_count' => 0,
             'short_enter_now_live_approved_count' => 0,
@@ -1781,6 +1803,11 @@ final class SmartBrainCore
                 }
 
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
+
+                // Feature flag for stabilized narrow relaxation
+                $stabRelaxEnabled = (bool)($userLimits['stabilized_v2_floor_relaxation_enabled'] ?? true);
+                $stabRelaxApplied = false;
+
                 if (!$v2FloorResult['eligible']) {
                     $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
                     // Track reject reasons in result
@@ -1811,19 +1838,81 @@ final class SmartBrainCore
                     if ($signalSide === 'long') {
                         $result['long_quality_floor_reject_total']++;
                     }
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
-                    continue;
-                }
-                $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
-                // Track short/long enter_now quality floor pass
-                if ($isShortEnterNow) {
-                    $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
-                    if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
-                        $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
+
+                    // === STABILIZED V2 FLOOR RELAXATION ===
+                    // Narrow soft rescue for contextual V2 signals that missed the main floor
+                    // by exactly ONE metric within a configurable soft tolerance.
+                    // Weak/dirty setups (multiple metric failures) are never rescued.
+                    // Rescued signals still pass through cycle_model and passport gates.
+                    if ($stabRelaxEnabled) {
+                        $result['stabilized_v2_floor_relaxation_used']++;
+                        if (count($v2FloorResult['reject_reasons']) === 1) {
+                            $stabSoftTol    = max(0.0, (float)($userLimits['stabilized_v2_floor_soft_tolerance'] ?? 0.05));
+                            $cv             = $v2FloorResult['checked_values'];
+                            $singleMiss     = $v2FloorResult['reject_reasons'][0];
+                            $rescued        = false;
+                            $rescueReason   = '';
+
+                            if (str_contains($singleMiss, 'confirmation_score')) {
+                                $floorThreshold = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
+                                if ((float)($cv['confirmation_score'] ?? 0.0) + $stabSoftTol >= $floorThreshold) {
+                                    $rescued      = true;
+                                    $rescueReason = 'single_miss_confirmation_score_within_tolerance';
+                                }
+                            } elseif (str_contains($singleMiss, 'pattern_confidence')) {
+                                $floorThreshold = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
+                                if ((float)($cv['pattern_confidence'] ?? 0.0) + $stabSoftTol >= $floorThreshold) {
+                                    $rescued      = true;
+                                    $rescueReason = 'single_miss_pattern_confidence_within_tolerance';
+                                }
+                            } elseif (str_contains($singleMiss, 'trend_match')) {
+                                $minTrendLong   = (float)($userLimits['v2_live_min_trend_match_score']       ?? 0.40);
+                                $minTrendShort  = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendLong);
+                                $floorThreshold = ($signalSide === 'short') ? $minTrendShort : $minTrendLong;
+                                $actualTrend    = (float)($cv['trend_match_score'] ?? 0.0);
+                                if ($actualTrend + $stabSoftTol >= $floorThreshold) {
+                                    $rescued      = true;
+                                    $rescueReason = 'single_miss_trend_match_within_tolerance';
+                                }
+                            }
+
+                            if ($rescued) {
+                                $stabRelaxApplied = true;
+                                $result['stabilized_v2_floor_relaxation_applied']++;
+                                $result['stabilized_v2_floor_relaxation_live_pass_total']++;
+                                $result['stabilized_v2_floor_relaxation_reason_distribution'][$rescueReason] =
+                                    ($result['stabilized_v2_floor_relaxation_reason_distribution'][$rescueReason] ?? 0) + 1;
+                            } else {
+                                $result['stabilized_v2_floor_relaxation_reject_total']++;
+                            }
+                        } else {
+                            // Multiple metric failures — not eligible for rescue
+                            $result['stabilized_v2_floor_relaxation_reject_total']++;
+                        }
                     }
-                }
-                if ($isLongEnterNow) {
-                    $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
+                    // === END STABILIZED V2 FLOOR RELAXATION ===
+
+                    if (!$stabRelaxApplied) {
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
+                        continue;
+                    }
+                    // $stabRelaxApplied = true: signal falls through to cycle_model and passport gates
+                } else {
+                    // Signal passed the main V2 floor
+                    $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                    // Track short/long enter_now quality floor pass
+                    if ($isShortEnterNow) {
+                        $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
+                        if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
+                            $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
+                        }
+                    }
+                    if ($isLongEnterNow) {
+                        $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
+                    }
+                    if ($stabRelaxEnabled) {
+                        $result['stabilized_v2_floor_relaxation_no_effect_total']++;
+                    }
                 }
             }
 

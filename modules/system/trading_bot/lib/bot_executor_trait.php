@@ -200,34 +200,21 @@ trait BotExecutorTrait
                                 $result['orphan_size']           = $exSize;
                                 $result['deferred_to_reconcile'] = true;
                             } else {
-                                // Live mode: exchange has a position for this symbol but no local
-                                // trade owns it — this is a true orphan with no valid local live
-                                // owner.  Surface as recoverable (not opaque hard block) so the
-                                // next reconcile cycle can adopt and resolve it.
                                 $orphanReason = 'skipped_exchange_position_exists';
                             }
                             return $this->rejectIntent($intent, $orphanReason,
                                 ($mode === 'demo')
                                     ? "Exchange orphan detected for {$symbol} (size={$exSize}) — deferred to reconcile"
-                                    : "Orphan position on exchange for {$symbol} (size={$exSize}) — no local owner, recovery needed",
+                                    : "Orphan position on exchange for {$symbol} (size={$exSize})",
                                 $result, [
-                                    'blocked_symbol'             => $symbol,
-                                    'orphan_reason'              => $orphanReason,
-                                    'orphan_detected'            => true,
-                                    'orphan_symbol'              => $exSymbol,
-                                    'orphan_side'                => $exPos['side'] ?? 'unknown',
-                                    'orphan_size'                => $exSize,
-                                    'deferred_to_reconcile'      => $mode === 'demo',
-                                    'exchange_position_detected' => true,
-                                    'local_trade_detected'       => false,
-                                    'blocker_type'               => 'exchange_orphan_no_local_owner',
-                                    'blocker_reason'             => 'exchange_has_open_position_symbol_not_in_local_trades',
-                                    'symbol_busy_source'         => 'exchange_orphan',
-                                    'recovery_needed'            => true,
-                                    'recovery_action'            => $mode === 'demo'
-                                        ? 'deferred_to_reconcile_for_adoption'
-                                        : 'reconcile_required_to_adopt_or_close_orphan',
-                                    'exchange_position'          => [
+                                    'blocked_symbol'        => $symbol,
+                                    'orphan_reason'         => $orphanReason,
+                                    'orphan_detected'       => $mode === 'demo',
+                                    'orphan_symbol'         => $exSymbol,
+                                    'orphan_side'           => $exPos['side'] ?? 'unknown',
+                                    'orphan_size'           => $exSize,
+                                    'deferred_to_reconcile' => $mode === 'demo',
+                                    'exchange_position'     => [
                                         'symbol'   => $exSymbol,
                                         'side'     => $exPos['side'] ?? 'unknown',
                                         'size'     => $exSize,
@@ -264,30 +251,14 @@ trait BotExecutorTrait
                                         'related_active_trade_id'         => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
                                         'related_position_symbol'         => $symbol,
                                         'open_since'                      => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
-                                        'exchange_position_detected'      => true,
-                                        'local_trade_detected'            => true,
-                                        'orphan_detected'                 => false,
-                                        'blocker_type'                    => 'true_active_local_owner',
-                                        'blocker_reason'                  => 'adopted_orphan_local_trade_active',
-                                        'symbol_busy_source'              => 'local_adopted_trade',
-                                        'recovery_needed'                 => false,
-                                        'recovery_action'                 => 'none_local_owner_active',
                                     ]);
                             }
                             return $this->rejectIntent($intent, 'skipped_symbol_busy',
                                 "symbol_busy:{$symbol} — already has active exchange position and local trade", $result, [
-                                    'blocked_symbol'             => $symbol,
-                                    'related_active_trade_id'    => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
-                                    'related_position_symbol'    => $symbol,
-                                    'open_since'                 => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
-                                    'exchange_position_detected' => true,
-                                    'local_trade_detected'       => true,
-                                    'orphan_detected'            => false,
-                                    'blocker_type'               => 'true_active_local_owner',
-                                    'blocker_reason'             => 'symbol_has_exchange_and_local_active_trade',
-                                    'symbol_busy_source'         => 'local_active_trade',
-                                    'recovery_needed'            => false,
-                                    'recovery_action'            => 'none_local_owner_active',
+                                    'blocked_symbol'          => $symbol,
+                                    'related_active_trade_id' => $relatedTrade['trade_id'] ?? $relatedTrade['id'] ?? null,
+                                    'related_position_symbol' => $symbol,
+                                    'open_since'              => $relatedTrade['opened_at'] ?? $relatedTrade['created_at'] ?? null,
                                 ]);
                         }
                     }
@@ -477,70 +448,24 @@ trait BotExecutorTrait
                     // If gateway could not fetch balance (auth/config/network), we must NOT label it as insufficient.
                     $rejectStatus = 'rejected_insufficient_balance';
                     $reason = (string)($balanceCheck['reason'] ?? 'unknown');
-                    $isFetchFailed = in_array($reason, [
-                        'balance_fetch_failed', 'wallet_balance_failed', 'wallet_balance_auth_missing',
-                        'gateway_not_ready', 'client_not_initialized',
-                    ], true);
-                    $isBelowMinimum    = ($reason === 'balance_below_minimum_threshold');
-                    $isInsufficientMargin = ($reason === 'insufficient_margin');
-                    if ($isFetchFailed) {
+                    if ($reason === 'balance_fetch_failed' || $reason === 'wallet_balance_failed' || $reason === 'wallet_balance_auth_missing' || $reason === 'gateway_not_ready' || $reason === 'client_not_initialized') {
                         $rejectStatus = 'rejected_balance_unavailable';
-                    } elseif ($isBelowMinimum) {
+                    } elseif ($reason === 'balance_below_minimum_threshold') {
                         $rejectStatus = 'rejected_balance_below_minimum';
                     }
-
-                    // Derive structured blocker fields for clear per-case diagnostics.
-                    $balanceBlockerType = $isFetchFailed ? 'balance_unavailable'
-                        : ($isBelowMinimum ? 'balance_below_minimum' : 'balance_insufficient_margin');
-                    $balanceRecoveryNeeded = $isFetchFailed || $isBelowMinimum;
-                    $balanceRecoveryAction = $isFetchFailed
-                        ? 'check_gateway_auth_and_connectivity'
-                        : ($isBelowMinimum ? 'add_funds_above_reject_threshold' : 'reduce_budget_or_add_funds');
-                    $budgetRequested = (float)($balanceCheck['budget']   ?? 0.0);
-                    $budgetAfterBuf  = (float)($balanceCheck['required'] ?? 0.0); // budget * (1 + buffer%)
-
-                    // Estimate quantity attempted for diagnostics (best-effort, pre-rounding).
-                    // Uses intent entry_price and leverage from risk block; null when price is unavailable.
-                    $balDiagEntryPrice = (float)($intent['entry_price'] ?? 0.0);
-                    $balDiagLeverage   = max(1, (int)($risk['leverage'] ?? 1));
-                    $balDiagQtyAttempted = ($balDiagEntryPrice > 0 && $budgetRequested > 0)
-                        ? round(($budgetRequested * $balDiagLeverage) / $balDiagEntryPrice, 8)
-                        : null;
 
                     // P6.8.1: Pass full context with required/available/snapshot for debugging
                     $balanceCtx = [
                         'context' => [
-                            'blocker_type'          => $balanceBlockerType,
-                            'blocker_reason'        => $reason,
-                            // Four distinct balance cases (problem statement requirement §2):
-                            //   fetch_failed          → gateway could not retrieve balance
-                            //   below_exchange_minimum → available < exchange reject_below threshold
-                            //   below_budget_target   → available < required (budget * buffer)
-                            //   other                 → any other margin shortfall
-                            'balance_case'          => $isFetchFailed ? 'fetch_failed'
-                                : ($isBelowMinimum ? 'below_exchange_minimum'
-                                : ($isInsufficientMargin ? 'below_budget_target' : 'other')),
-                            'available_usdt'        => (float)($balanceCheck['available'] ?? 0.0),
-                            'required_usdt'         => $budgetAfterBuf,
-                            'budget_requested_usdt' => $budgetRequested,
-                            'budget_after_limits_usdt' => $budgetAfterBuf,
-                            'buffer_pct'            => (int)($balanceCheck['buffer_pct'] ?? 5),
-                            'budget_usdt_per_trade' => $budgetRequested,
-                            'reject_below_usdt'     => $balanceCheck['reject_below_usdt'] ?? null,
-                            'shortfall'             => $balanceCheck['shortfall'] ?? null,
-                            // Sizing diagnostics: pre-rounding quantity estimate and price used.
-                            // min_notional_required / min_qty_required require exchange instrument
-                            // info not available at balance-check stage; set null as explicit marker.
-                            'symbol_price_used'     => $balDiagEntryPrice > 0 ? $balDiagEntryPrice : null,
-                            'quantity_attempted'    => $balDiagQtyAttempted,
-                            'min_notional_required' => null,
-                            'min_qty_required'      => null,
-                            'recovery_needed'       => $balanceRecoveryNeeded,
-                            'recovery_action'       => $balanceRecoveryAction,
-                            'account_type'          => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),
-                            'coin'                  => $balanceCheck['coin'] ?? 'USDT',
-                            'balance_snapshot'      => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
-                            'balance_diagnostics'   => $balanceCheck['balance_diagnostics'] ?? null,
+                            'required_usdt' => (float)($balanceCheck['required'] ?? 0.0),
+                            'available_usdt' => (float)($balanceCheck['available'] ?? 0.0),
+                            'buffer_pct' => (int)($balanceCheck['buffer_pct'] ?? 5),
+                            'budget_usdt_per_trade' => (float)($balanceCheck['budget'] ?? 0.0),
+                            'account_type' => (string)($this->config['exchange']['account_type'] ?? 'UNIFIED'),
+                            'balance_snapshot' => $balanceCheck['balance_snapshot'] ?? $this->balanceCache ?? null,
+                            'coin' => $balanceCheck['coin'] ?? 'USDT',
+                            'shortfall' => $balanceCheck['shortfall'] ?? null,
+                            'balance_diagnostics' => $balanceCheck['balance_diagnostics'] ?? null,
                         ],
                         'balance_check' => $balanceCheck, // Keep full result for backward compat
                     ];

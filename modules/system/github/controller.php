@@ -54,9 +54,6 @@ use Modules\System\GitHub\Services\UpdateService;
 class GithubController
 {
     private const STORAGE_KEY = 'system/github';
-    private const SAFE_TREE_MAX_DEPTH = 4;
-    private const ALL_FILES_TREE_MAX_DEPTH = 10;
-    private const SAFE_TREE_MAX_FILE_SIZE = 10 * 1024 * 1024;
     
     private static ?self $instance = null;
     
@@ -793,10 +790,9 @@ class GithubController
         }
         
         $settings = $this->getSettings();
-        $includeAll = $this->resolveIncludeAllFiles($_GET['include_all_files'] ?? null);
         
         // Get server files tree
-        $serverFiles = $this->getServerFileTree(System::path('root'), '', 0, $includeAll);
+        $serverFiles = $this->getServerFileTree(System::path('root'));
         
         // Check for flash messages
         if (session_status() === PHP_SESSION_NONE) {
@@ -819,7 +815,6 @@ class GithubController
         return $this->render('upload', [
             'title' => 'Загрузка файлов',
             'settings' => $settings,
-            'include_all_files' => $includeAll,
             'server_files' => $serverFiles,
             'success' => $success,
             'error' => $error,
@@ -872,7 +867,8 @@ class GithubController
         
         // Security check - block sensitive files UNLESS include_all_files is enabled
         // When include_all_files is checked, user explicitly wants to upload everything
-        $includeAll = $this->resolveIncludeAllFiles($_POST['include_all_files'] ?? null);
+        $settings = $this->getSettings();
+        $includeAll = !empty($settings['include_all_files']);
         
         if (!$includeAll) {
             // Only block truly sensitive files like .htaccess, .htpasswd, .env
@@ -928,15 +924,10 @@ class GithubController
     /**
      * Build server file tree for upload page
      */
-    private function getServerFileTree(
-        string $rootPath,
-        string $subPath = '',
-        int $depth = 0,
-        bool $includeAll = false
-    ): array
+    private function getServerFileTree(string $rootPath, string $subPath = '', int $depth = 0): array
     {
         $tree = [];
-        $maxDepth = $includeAll ? self::ALL_FILES_TREE_MAX_DEPTH : self::SAFE_TREE_MAX_DEPTH;
+        $maxDepth = 4; // Limit recursion depth
         
         if ($depth > $maxDepth) {
             return $tree;
@@ -948,13 +939,18 @@ class GithubController
             return $tree;
         }
         
-        // Skip lists for safe mode only
-        $skipDirs = [];
-        if (!$includeAll) {
-            $alwaysSkipDirs = ['vendor', 'node_modules', '.git', '.idea', '.vscode'];
-            $protectedDirs = ['storage', 'runtime', 'config'];
-            $skipDirs = array_merge($alwaysSkipDirs, $protectedDirs);
-        }
+        // Check if include_all_files is enabled in settings
+        $settings = $this->getSettings();
+        $includeAll = !empty($settings['include_all_files']);
+        
+        // Directories to always skip (regardless of setting)
+        $alwaysSkipDirs = ['vendor', 'node_modules', '.git', '.idea', '.vscode'];
+        
+        // Additional directories to skip when include_all_files is disabled
+        $protectedDirs = ['storage', 'runtime', 'config'];
+        
+        // Combine skip lists based on setting
+        $skipDirs = $includeAll ? $alwaysSkipDirs : array_merge($alwaysSkipDirs, $protectedDirs);
         
         $items = scandir($currentPath);
         
@@ -963,21 +959,23 @@ class GithubController
                 continue;
             }
             
-            // Skip hidden files/dirs in safe mode
-            if (!$includeAll && strpos($item, '.') === 0) {
-                continue;
+            // Skip hidden files/dirs (but allow if include_all_files is enabled and not .git)
+            if (strpos($item, '.') === 0) {
+                if (!$includeAll || $item === '.git') {
+                    continue;
+                }
             }
             
             $itemPath = $currentPath . '/' . $item;
             $relativePath = $subPath ? $subPath . '/' . $item : $item;
             
             if (is_dir($itemPath)) {
-                // Skip certain directories in safe mode
-                if (!$includeAll && in_array($item, $skipDirs, true)) {
+                // Skip certain directories
+                if (in_array($item, $skipDirs)) {
                     continue;
                 }
                 
-                $children = $this->getServerFileTree($rootPath, $relativePath, $depth + 1, $includeAll);
+                $children = $this->getServerFileTree($rootPath, $relativePath, $depth + 1);
                 
                 $tree[$item] = [
                     'type' => 'dir',
@@ -985,16 +983,9 @@ class GithubController
                     'children' => $children,
                 ];
             } else {
+                // Skip very large files
                 $size = filesize($itemPath);
-                if ($size === false) {
-                    System::log('system', 'GitHub upload tree: failed to read file size', [
-                        'path' => $relativePath,
-                    ]);
-                    continue;
-                }
-                
-                // Skip very large files in safe mode
-                if (!$includeAll && $size > self::SAFE_TREE_MAX_FILE_SIZE) {
+                if ($size > 10 * 1024 * 1024) { // 10MB limit
                     continue;
                 }
                 
@@ -1017,22 +1008,6 @@ class GithubController
         });
         
         return $tree;
-    }
-
-    /**
-     * Resolve include_all_files mode from request value or stored settings.
-     */
-    private function resolveIncludeAllFiles(mixed $rawValue): bool
-    {
-        if ($rawValue !== null) {
-            if (!is_scalar($rawValue)) {
-                return false;
-            }
-            return in_array(strtolower((string) $rawValue), ['1', 'true', 'on', 'yes'], true);
-        }
-        
-        $settings = $this->getSettings();
-        return !empty($settings['include_all_files']);
     }
     
     // =========================================================================

@@ -13,10 +13,10 @@
             "drop_reason": "no_candidates_shaped"
         },
         "double_bottom_contextual_v2": {
-            "candidates_shaped_count": 0,
-            "candidates_selected_count": 0,
+            "candidates_shaped_count": 11,
+            "candidates_selected_count": 11,
             "candidates_dropped_by_rank_count": 0,
-            "drop_reason": "no_candidates_shaped"
+            "drop_reason": "all_selected"
         },
         "double_bottom_contextual_v3": {
             "candidates_shaped_count": 0,
@@ -25,64 +25,64 @@
             "drop_reason": "no_candidates_shaped"
         },
         "double_top_contextual_v2": {
-            "candidates_shaped_count": 13,
-            "candidates_selected_count": 13,
+            "candidates_shaped_count": 6,
+            "candidates_selected_count": 6,
             "candidates_dropped_by_rank_count": 0,
             "drop_reason": "all_selected"
         },
         "double_top_contextual_v3": {
-            "candidates_shaped_count": 1,
-            "candidates_selected_count": 1,
+            "candidates_shaped_count": 0,
+            "candidates_selected_count": 0,
             "candidates_dropped_by_rank_count": 0,
-            "drop_reason": "all_selected"
+            "drop_reason": "no_candidates_shaped"
         }
     },
     "debug_preview": [
         {
-            "symbol": "MERLUSDT",
-            "pattern_algorithm": "double_top_contextual_v2",
-            "side": "short",
-            "analyzer_score": 0.74039999999999995,
-            "pattern_confidence": 0.76000000000000001,
+            "symbol": "ICNTUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.73009999999999997,
+            "pattern_confidence": 0.73999999999999999,
             "stage": "final_output",
             "selected": true
         },
         {
-            "symbol": "TRIAUSDT",
-            "pattern_algorithm": "double_top_contextual_v2",
-            "side": "short",
-            "analyzer_score": 0.73460000000000003,
-            "pattern_confidence": 0.72999999999999998,
+            "symbol": "PLAYSOUTUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.72650000000000003,
+            "pattern_confidence": 0.75,
             "stage": "final_output",
             "selected": true
         },
         {
-            "symbol": "WCTUSDT",
+            "symbol": "PROMUSDT",
+            "pattern_algorithm": "double_bottom_contextual_v2",
+            "side": "long",
+            "analyzer_score": 0.72040000000000004,
+            "pattern_confidence": 0.75,
+            "stage": "final_output",
+            "selected": true
+        },
+        {
+            "symbol": "MOVRUSDT",
             "pattern_algorithm": "double_top_contextual_v2",
             "side": "short",
-            "analyzer_score": 0.69979999999999998,
+            "analyzer_score": 0.71319999999999995,
             "pattern_confidence": 0.70999999999999996,
             "stage": "final_output",
             "selected": true
         },
         {
-            "symbol": "FORMUSDT",
+            "symbol": "BREVUSDT",
             "pattern_algorithm": "double_top_contextual_v2",
             "side": "short",
-            "analyzer_score": 0.69210000000000005,
-            "pattern_confidence": 0.67000000000000004,
-            "stage": "final_output",
-            "selected": true
-        },
-        {
-            "symbol": "KAITOUSDT",
-            "pattern_algorithm": "double_top_contextual_v2",
-            "side": "short",
-            "analyzer_score": 0.69189999999999996,
-            "pattern_confidence": 0.70999999999999996,
+            "analyzer_score": 0.71120000000000005,
+            "pattern_confidence": 0.69999999999999996,
             "stage": "final_output",
             "selected": true
         }
     ],
-    "updated_at": "2026-03-31T20:19:06+01:00"
+    "updated_at": "2026-04-18T12:10:12+01:00"
 }

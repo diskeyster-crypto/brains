@@ -836,6 +836,12 @@ final class SmartBrainCore
             'stabilized_cycle_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_cycle_relaxation_reject_total']    ?? 0),
             'stabilized_cycle_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_no_effect_total'] ?? 0),
             'stabilized_cycle_relaxation_reason_distribution' => $liveIntentResult['stabilized_cycle_relaxation_reason_distribution'] ?? [],
+            // Cycle non-actionable audit (contextual V2 only, read-only)
+            'cycle_non_actionable_audit_total'             => (int)($liveIntentResult['cycle_non_actionable_audit_total']             ?? 0),
+            'cycle_non_actionable_audit_borderline_total'  => (int)($liveIntentResult['cycle_non_actionable_audit_borderline_total']  ?? 0),
+            'cycle_non_actionable_audit_clearly_bad_total' => (int)($liveIntentResult['cycle_non_actionable_audit_clearly_bad_total'] ?? 0),
+            'cycle_non_actionable_audit_reason_distribution' => $liveIntentResult['cycle_non_actionable_audit_reason_distribution'] ?? [],
+            'cycle_non_actionable_audit_preview'           => $liveIntentResult['cycle_non_actionable_audit_preview']           ?? [],
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1046,6 +1052,12 @@ final class SmartBrainCore
             'stabilized_cycle_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_cycle_relaxation_reject_total']    ?? 0),
             'stabilized_cycle_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_no_effect_total'] ?? 0),
             'stabilized_cycle_relaxation_reason_distribution' => $liveIntentResult['stabilized_cycle_relaxation_reason_distribution'] ?? [],
+            // Cycle non-actionable audit (contextual V2 only, read-only)
+            'cycle_non_actionable_audit_total'             => (int)($liveIntentResult['cycle_non_actionable_audit_total']             ?? 0),
+            'cycle_non_actionable_audit_borderline_total'  => (int)($liveIntentResult['cycle_non_actionable_audit_borderline_total']  ?? 0),
+            'cycle_non_actionable_audit_clearly_bad_total' => (int)($liveIntentResult['cycle_non_actionable_audit_clearly_bad_total'] ?? 0),
+            'cycle_non_actionable_audit_reason_distribution' => $liveIntentResult['cycle_non_actionable_audit_reason_distribution'] ?? [],
+            'cycle_non_actionable_audit_preview'           => $liveIntentResult['cycle_non_actionable_audit_preview']           ?? [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => (int)($liveIntentResult['cycle_eligibility_refine_total']      ?? 0),
             'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
@@ -1306,6 +1318,12 @@ final class SmartBrainCore
             'stabilized_cycle_relaxation_reject_total'     => 0,
             'stabilized_cycle_relaxation_no_effect_total'  => 0,
             'stabilized_cycle_relaxation_reason_distribution' => [],
+            // Cycle non-actionable audit (contextual V2 only, read-only diagnostics, no routing effect)
+            'cycle_non_actionable_audit_total'             => 0,
+            'cycle_non_actionable_audit_borderline_total'  => 0,
+            'cycle_non_actionable_audit_clearly_bad_total' => 0,
+            'cycle_non_actionable_audit_reason_distribution' => [],
+            'cycle_non_actionable_audit_preview'           => [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => 0,
             'cycle_eligibility_upgrade_total'     => 0,
@@ -2087,6 +2105,51 @@ final class SmartBrainCore
                     && !$cmWarnFlag
                     && !$cmLowConf
                 );
+
+                // === CYCLE NON-ACTIONABLE AUDIT (contextual V2 only, read-only, no routing effect) ===
+                // Runs before both non_actionable veto branches. Captures compact diagnostics for
+                // double_bottom_contextual_v2 long and double_top_contextual_v2 short candidates
+                // that land in a non_actionable cycle state, so the next archive can answer:
+                // "are these borderline-clean or clearly bad?"
+                // Does NOT change any routing decision.
+                if ($cmActionability === 'non_actionable'
+                    && ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2')
+                ) {
+                    $result['cycle_non_actionable_audit_total']++;
+                    // Borderline: NOT high_risk AND NOT (warning + low_confidence together)
+                    $auditIsBorderline = ($cmRisk !== 'high_risk' && !($cmWarnFlag && $cmLowConf));
+                    if ($auditIsBorderline) {
+                        $result['cycle_non_actionable_audit_borderline_total']++;
+                        $auditBorderlineReason = 'non_actionable_state_' . $cmState . '_risk_' . $cmRisk;
+                    } else {
+                        $result['cycle_non_actionable_audit_clearly_bad_total']++;
+                        $auditBorderlineReason = ($cmRisk === 'high_risk') ? 'high_risk' : 'warn_and_low_conf';
+                    }
+                    $auditDistKey = 'non_actionable_' . $cmState . '_risk_' . $cmRisk;
+                    $result['cycle_non_actionable_audit_reason_distribution'][$auditDistKey] =
+                        ($result['cycle_non_actionable_audit_reason_distribution'][$auditDistKey] ?? 0) + 1;
+                    if (count($result['cycle_non_actionable_audit_preview']) < 10) {
+                        $result['cycle_non_actionable_audit_preview'][] = [
+                            'symbol'                               => $symbol,
+                            'side'                                 => $side,
+                            'pattern_algorithm'                    => $patternAlgo,
+                            'cycle_actionability'                  => $cmActionability,
+                            'cycle_state'                         => $cmState,
+                            'cycle_risk'                          => $cmRisk,
+                            'cycle_warning_flag'                  => $cmWarnFlag,
+                            'cycle_low_confidence'                => $cmLowConf,
+                            'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                            'entry_quality_score'                 => $signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? null,
+                            'pattern_confidence'                  => $signal['pattern_confidence'] ?? null,
+                            'scenario_score'                      => $signal['scenario_score'] ?? null,
+                            'trend_match_score'                   => $signal['trend_match_score'] ?? null,
+                            'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
+                            'borderline_candidate'                => $auditIsBorderline,
+                            'borderline_reason'                   => $auditBorderlineReason,
+                        ];
+                    }
+                }
+                // === END CYCLE NON-ACTIONABLE AUDIT ===
 
                 // Hard veto → skip: non_actionable AND high_risk together signal a clearly
                 // unfavorable entry window; skip is the appropriate outcome.

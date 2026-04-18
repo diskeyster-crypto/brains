@@ -52651,3 +52651,782 @@
 2026-03-12T17:47:45+00:00 [INFO] [CronManager] Cron task executed: brain:runPipeline
 2026-03-12T17:47:45+00:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
 2026-03-12T17:47:46+00:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:14:09+01:00 [INFO] [CronManager] Cron task executed: pattern_engine:execute
+2026-04-18T08:14:10+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:14:10+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:14:10+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:14:11+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:14:12+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:14:15+01:00 [INFO] [CronManager] Cron task executed: smart_brain:execute
+2026-04-18T08:14:15+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:14:16+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:14:36+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:15:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:16:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:16:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:16:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:16:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:16:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:17:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:17:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:17:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:17:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:17:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:18:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:18:04+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:18:05+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:18:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:19:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:19:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:19:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:19:07+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:20:06+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:20:07+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:20:07+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:20:07+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:20:08+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:21:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:21:05+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:22:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:22:04+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:22:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:23:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:23:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:23:05+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:23:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:23:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:24:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:24:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:24:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:24:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:25:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:25:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:25:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:25:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:25:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:26:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:26:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:26:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:26:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:26:05+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:27:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:27:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:27:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:27:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:28:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:28:04+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:28:04+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:29:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:29:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:29:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:29:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:29:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:30:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:30:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:30:06+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:30:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:31:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:31:05+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:31:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:32:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:32:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:32:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:32:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:32:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:32:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:32:06+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:33:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:33:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:33:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:33:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:34:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:34:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:34:06+01:00 [INFO] [CronManager] Cron task executed: delist_parser0:execute
+2026-04-18T08:34:06+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:34:07+01:00 [INFO] [CronManager] Cron task executed: coin_passport:rebuildRecentSymbols
+2026-04-18T08:34:08+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:34:08+01:00 [INFO] [CronManager] Cron task failed: coin_passport:buildCycleReadModel {"error":"Handler not found: CoinPassportService::buildCycleReadModel"}
+2026-04-18T08:35:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:35:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:36:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:36:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:36:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:36:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:36:05+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:36:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:37:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:38:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:38:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:38:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:38:06+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:38:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:38:07+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:38:08+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:39:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:40:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:40:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:40:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:40:06+01:00 [INFO] [CronManager] Cron task failed: win_universe:run {"error":"Module service not found: win_universe"}
+2026-04-18T08:41:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:41:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:41:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:41:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:41:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:42:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:42:04+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:42:06+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:43:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:43:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:43:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:44:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:44:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:44:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:44:05+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:44:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:44:07+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:45:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:46:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:46:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:46:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:46:06+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:46:06+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:46:07+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:46:08+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:47:04+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:47:04+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:48:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:48:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:48:06+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:48:06+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:48:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:48:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:49:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:49:05+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:49:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}
+2026-04-18T08:50:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:50:05+01:00 [INFO] [CronManager] Cron task failed: pattern_engine:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/pattern_engine\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:50:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:50:05+01:00 [INFO] [CronManager] Cron task executed: parser3_manager_behavior:execute
+2026-04-18T08:50:06+01:00 [INFO] [CronManager] Cron task executed: profit_manager:execute
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task executed: trading_bot:execute
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_downstream_funnel {"error":"Handler not found: SmartBrainService::v2_downstream_funnel"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_warnings {"error":"Handler not found: SmartBrainService::config_warnings"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:config_source_proof {"error":"Handler not found: SmartBrainService::config_source_proof"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:pattern_policy {"error":"Handler not found: SmartBrainService::pattern_policy"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reasons {"error":"Handler not found: SmartBrainService::live_rejection_reasons"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_rejection_reason_stats {"error":"Handler not found: SmartBrainService::live_rejection_reason_stats"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_signal_id_source_stats {"error":"Handler not found: SmartBrainService::live_signal_id_source_stats"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_counters {"error":"Handler not found: SmartBrainService::lifecycle_counters"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:lifecycle_summary {"error":"Handler not found: SmartBrainService::lifecycle_summary"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_distribution {"error":"Handler not found: SmartBrainService::late_entry_rejected_distribution"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:late_entry_rejected_preview {"error":"Handler not found: SmartBrainService::late_entry_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:live_debug_preview {"error":"Handler not found: SmartBrainService::live_debug_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_execution_limits {"error":"Handler not found: SmartBrainService::effective_execution_limits"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:effective_trailing_contract {"error":"Handler not found: SmartBrainService::effective_trailing_contract"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_mae_symbols_preview {"error":"Handler not found: SmartBrainService::passport_mae_symbols_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:mae_stop_debug_preview {"error":"Handler not found: SmartBrainService::mae_stop_debug_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_reject_reason_distribution {"error":"Handler not found: SmartBrainService::sniper_v3_reject_reason_distribution"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:sniper_v3_rejected_preview {"error":"Handler not found: SmartBrainService::sniper_v3_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:v2_live_quality_floor_reject_reason_distribution {"error":"Handler not found: SmartBrainService::v2_live_quality_floor_reject_reason_distribution"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:manual_blacklist_rejected_preview {"error":"Handler not found: SmartBrainService::manual_blacklist_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_reject_reason_distribution {"error":"Handler not found: SmartBrainService::passport_gate_reject_reason_distribution"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:passport_gate_rejected_preview {"error":"Handler not found: SmartBrainService::passport_gate_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:cycle_model_support_preview {"error":"Handler not found: SmartBrainService::cycle_model_support_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:slot_priority_rejected_preview {"error":"Handler not found: SmartBrainService::slot_priority_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:entry_quality_filter_rejected_preview {"error":"Handler not found: SmartBrainService::entry_quality_filter_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:wave_filter_rejected_preview {"error":"Handler not found: SmartBrainService::wave_filter_rejected_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:confirmation_state_preview {"error":"Handler not found: SmartBrainService::confirmation_state_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:win_universe_bonus_preview {"error":"Handler not found: SmartBrainService::win_universe_bonus_preview"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:fast_coin_gate_reason {"error":"Handler not found: SmartBrainService::fast_coin_gate_reason"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: smart_brain:leverage_chain_config {"error":"Handler not found: SmartBrainService::leverage_chain_config"}
+2026-04-18T08:50:07+01:00 [INFO] [CronManager] Cron task failed: config:extract {"error":"Module service not found: config"}
+2026-04-18T08:51:05+01:00 [INFO] [CronManager] Error loading cron.php from module smart_brain {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/smart_brain\/lib\/patterns\/pattern_detector_interface.php' (include_path='.:')"}
+2026-04-18T08:51:05+01:00 [INFO] [CronManager] Cron task executed: parser2_history_accumulator:execute
+2026-04-18T08:51:05+01:00 [INFO] [CronManager] Cron task failed: ai_shadow:execute {"error":"Failed opening required '\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/ai_shadow\/config\/config.php' (include_path='.:')"}
+2026-04-18T08:51:05+01:00 [INFO] [CronManager] Cron task failed: smart_brain:execute {"error":"Handler not found: SmartBrainService::execute"}

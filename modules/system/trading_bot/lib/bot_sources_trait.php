@@ -324,17 +324,6 @@ trait BotSourcesTrait
             $result['duplicate_skipped_records'] = $duplicateSkippedRecords;
             $result['lifecycle_skipped'] = $lifecycleSkipped;
             $result['live_intents_path'] = $liveIntentsPath;
-            // Handoff observability: timestamps and total counts from the Brain-written file.
-            $result['brain_intents_generated_at']  = $data['generated_at'] ?? null;
-            $result['live_intents_total_in_file']  = count($intents); // all intents before lifecycle filter
-            // Derive latest_intent_created_at from the newest created_ts in valid intents.
-            $latestTs = 0;
-            foreach ($validIntents as $_vi) {
-                $viTs = (int)($_vi['created_ts'] ?? 0);
-                if ($viTs > $latestTs) { $latestTs = $viTs; }
-            }
-            $result['latest_intent_created_at'] = $latestTs > 0 ? date('c', $latestTs) : null;
-            $result['latest_intent_created_ts']  = $latestTs > 0 ? $latestTs : null;
 
             if (count($validIntents) === 0) {
                 if (($lifecycleSkipped['expired'] ?? 0) > 0 && $duplicateSkipped === 0) {

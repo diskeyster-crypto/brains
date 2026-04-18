@@ -1,0 +1,10 @@
+{
+    "trade_id": "MIRAUSDT_short",
+    "symbol": "MIRAUSDT",
+    "side": "short",
+    "peak_roi": 1.3351,
+    "trailing_armed": true,
+    "last_lock_roi": 0,
+    "last_applied_stop_price": 0,
+    "updated_at": "2026-04-18T08:13:04+01:00"
+}

@@ -1,0 +1,845 @@
+{
+    "generated_at": "2026-04-18T08:08:13+01:00",
+    "parameters": [
+        {
+            "key": "live_trading_enabled",
+            "type": "operational",
+            "notes": "Master live trading on/off switch",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "live_trading_enabled",
+                    "value": true,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "live_trading.live_trading_enabled",
+                    "value": true,
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "live_max_positions",
+            "type": "operational",
+            "notes": "Max concurrent live positions",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "live_max_positions",
+                    "value": 5,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "live_trading.live_max_positions",
+                    "value": 20,
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": true,
+            "unused": false,
+            "migration_readiness": "blocked_by_conflict"
+        },
+        {
+            "key": "live_signal_selection_mode",
+            "type": "operational",
+            "notes": "Signal selection mode (all/sniper/etc)",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "live_signal_selection_mode",
+                    "value": "all",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "live_trading.live_signal_selection_mode",
+                    "value": "all",
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "live_one_trade_per_symbol",
+            "type": "operational",
+            "notes": "One trade per symbol constraint",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "live_one_trade_per_symbol",
+                    "value": true,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "live_trading.live_one_trade_per_symbol",
+                    "value": true,
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "live_entry_policy",
+            "type": "operational",
+            "notes": "Live entry policy (enter_now/wait_retrace)",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "live_entry_policy",
+                    "value": "enter_now",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "live_reverse_side_enabled",
+            "type": "operational",
+            "notes": "Invert long↔short before live emit",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "live_reverse_side_enabled",
+                    "value": false,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "leverage_mode",
+            "type": "operational",
+            "notes": "manual | auto",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "leverage_mode",
+                    "value": "manual",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "manual_leverage",
+            "type": "operational",
+            "notes": "Fixed leverage when leverage_mode=manual",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "manual_leverage",
+                    "value": 5,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "leverage_control.manual_leverage",
+                    "value": 15,
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": true,
+            "unused": false,
+            "migration_readiness": "blocked_by_conflict"
+        },
+        {
+            "key": "max_leverage",
+            "type": "operational",
+            "notes": "Hard cap on leverage",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "max_leverage",
+                    "value": 10,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "max_budget_per_coin",
+            "type": "operational",
+            "notes": "Max USDT per symbol (risk block)",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "max_budget_per_coin",
+                    "value": 6,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "stop_control_mode",
+            "type": "operational",
+            "notes": "auto | entry_roi",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "stop_control_mode",
+                    "value": "entry_roi",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "stop_control.stop_control_mode",
+                    "value": "entry_roi",
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "stop_loss_from_entry_roi",
+            "type": "operational",
+            "notes": "SL distance from entry in ROI terms",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "stop_loss_from_entry_roi",
+                    "value": 0.01,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "brain_effective",
+                    "path": "stop_control.stop_loss_from_entry_roi",
+                    "value": 0.01,
+                    "file": "modules/system/smart_brain/runtime/effective_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "trailing_enabled",
+            "type": "operational",
+            "notes": "Brain-side trailing toggle",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "trailing_enabled",
+                    "value": true,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "bot_runtime",
+                    "path": "execution.trailing_enabled",
+                    "value": true,
+                    "file": "modules/system/trading_bot/config/bot.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "trailing_mode",
+            "type": "operational",
+            "notes": "price_distance_floor | fixed_roi_ladder | etc",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "trailing_mode",
+                    "value": "price_distance_floor",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "trailing_activation_roi",
+            "type": "operational",
+            "notes": "ROI at which trailing activates",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "trailing_activation_roi",
+                    "value": 0.070000000000000007,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "trailing_activation_floor_roi",
+            "type": "operational",
+            "notes": "Floor-lock activation ROI",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "trailing_activation_floor_roi",
+                    "value": 0.089999999999999997,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "trailing_floor_lock_roi",
+            "type": "operational",
+            "notes": "Minimum ROI to lock in",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "trailing_floor_lock_roi",
+                    "value": 0.029999999999999999,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "break_even_enabled",
+            "type": "operational",
+            "notes": "Break-even stop toggle",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "break_even_enabled",
+                    "value": true,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                },
+                {
+                    "source": "bot_runtime",
+                    "path": "execution.break_even_enabled",
+                    "value": true,
+                    "file": "modules/system/trading_bot/config/bot.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "break_even_activation_roi",
+            "type": "operational",
+            "notes": "ROI threshold for break-even",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "break_even_activation_roi",
+                    "value": 0.025000000000000001,
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "patterns_enabled",
+            "type": "operational",
+            "notes": "List of enabled pattern algorithms",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "patterns.enabled",
+                    "value": [
+                        "double_bottom_contextual_v2",
+                        "double_bottom_contextual_v3",
+                        "double_top_contextual_v2",
+                        "double_top_contextual_v3"
+                    ],
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "patterns_mode",
+            "type": "operational",
+            "notes": "any | all",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "patterns.mode",
+                    "value": "any",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "execution_profile",
+            "type": "operational",
+            "notes": "balanced | sniper_lite | sniper_75_attempt | etc",
+            "sources": [
+                {
+                    "source": "brain_user_config",
+                    "path": "execution_profile",
+                    "value": "sniper_lite",
+                    "file": "modules/system/smart_brain/runtime/user_config.json"
+                }
+            ],
+            "primary": "brain_user_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "bot_mode",
+            "type": "operational",
+            "notes": "live | demo | paper",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "path": "module.mode",
+                    "value": "demo",
+                    "file": "modules/system/trading_bot/config/bot.json"
+                },
+                {
+                    "source": "bot_config",
+                    "path": "module.mode",
+                    "value": "paper",
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_runtime",
+            "conflict": true,
+            "unused": false,
+            "migration_readiness": "blocked_by_conflict"
+        },
+        {
+            "key": "bot_enabled",
+            "type": "operational",
+            "notes": "Bot on/off switch",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "path": "enabled",
+                    "value": true,
+                    "file": "modules/system/trading_bot/config/bot.json"
+                }
+            ],
+            "primary": "bot_runtime",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "max_intents_per_run",
+            "type": "operational",
+            "notes": "Max new live opens per cron tick",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "path": "execution.max_intents_per_run",
+                    "value": 1,
+                    "file": "modules/system/trading_bot/config/bot.json"
+                },
+                {
+                    "source": "bot_config",
+                    "path": "execution.max_intents_per_run",
+                    "value": 1,
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_runtime",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "max_concurrent_positions",
+            "type": "operational",
+            "notes": "Bot-side concurrent position cap",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "path": "max_positions",
+                    "value": 50,
+                    "file": "modules/system/trading_bot/config/bot.json"
+                }
+            ],
+            "primary": "bot_runtime",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "bot_brain_controlled",
+            "type": "operational",
+            "notes": "Brain-controlled mode flag",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "path": "sources.brain_source_enabled",
+                    "value": true,
+                    "file": "modules/system/trading_bot/config/bot.json"
+                }
+            ],
+            "primary": "bot_runtime",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "pm_trailing_owner",
+            "type": "operational",
+            "notes": "bot | profit_manager | profit_manager_shadow",
+            "sources": [
+                {
+                    "source": "bot_runtime",
+                    "path": "execution.trailing_owner",
+                    "value": "profit_manager",
+                    "file": "modules/system/trading_bot/config/bot.json"
+                }
+            ],
+            "primary": "bot_runtime",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "ready_for_soft_switch"
+        },
+        {
+            "key": "pm_enabled",
+            "type": "operational",
+            "notes": "Profit Manager on/off",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "profit_manager.module.enabled",
+                    "value": true,
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_enabled",
+            "type": "operational",
+            "notes": "Coin Passport master on/off switch",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_rebuild_all_enabled",
+            "type": "operational",
+            "notes": "Full rebuildAll cron task enabled",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.rebuild_all_enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_rebuild_recent_enabled",
+            "type": "operational",
+            "notes": "rebuildRecentSymbols cron task enabled",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.rebuild_recent_enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "cp_cycle_profiles_enabled",
+            "type": "operational",
+            "notes": "buildCycleProfiles cron task enabled",
+            "sources": [
+                {
+                    "source": "cp_config",
+                    "path": "module.cycle_profiles_enabled",
+                    "value": true,
+                    "file": "modules/system/coin_passport/config/config.php"
+                }
+            ],
+            "primary": "cp_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "risk_levels",
+            "type": "immutable",
+            "notes": "Corridor-width → leverage coefficient table",
+            "sources": [
+                {
+                    "source": "brain_risk_engine",
+                    "path": "settings.risk_levels",
+                    "value": [
+                        {
+                            "max_corridor_width": 0.01,
+                            "leverage": 6,
+                            "budget_factor": 0.90000000000000002
+                        },
+                        {
+                            "max_corridor_width": 0.025000000000000001,
+                            "leverage": 5,
+                            "budget_factor": 0.75
+                        },
+                        {
+                            "max_corridor_width": 0.050000000000000003,
+                            "leverage": 4,
+                            "budget_factor": 0.59999999999999998
+                        },
+                        {
+                            "max_corridor_width": 1,
+                            "leverage": 3,
+                            "budget_factor": 0.45000000000000001
+                        }
+                    ],
+                    "file": "modules/system/smart_brain/config/risk_engine.php"
+                }
+            ],
+            "primary": "brain_risk_engine",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "brain_stop_corridor_factor",
+            "type": "immutable",
+            "notes": "Internal SL corridor coefficient",
+            "sources": [
+                {
+                    "source": "brain_risk_engine",
+                    "path": "user_limits.brain_stop_corridor_factor",
+                    "value": 0.25,
+                    "file": "modules/system/smart_brain/config/risk_engine.php"
+                }
+            ],
+            "primary": "brain_risk_engine",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "brain_stop_volatility_factor",
+            "type": "immutable",
+            "notes": "",
+            "sources": [
+                {
+                    "source": "brain_risk_engine",
+                    "path": "user_limits.brain_stop_volatility_factor",
+                    "value": 0.5,
+                    "file": "modules/system/smart_brain/config/risk_engine.php"
+                }
+            ],
+            "primary": "brain_risk_engine",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "brain_stop_liq_safety_factor",
+            "type": "immutable",
+            "notes": "",
+            "sources": [
+                {
+                    "source": "brain_risk_engine",
+                    "path": "user_limits.brain_stop_liq_safety_factor",
+                    "value": 0.29999999999999999,
+                    "file": "modules/system/smart_brain/config/risk_engine.php"
+                }
+            ],
+            "primary": "brain_risk_engine",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "exchange_category",
+            "type": "immutable",
+            "notes": "Bybit product category (linear)",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "exchange.category",
+                    "value": "linear",
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "exchange_settle_coin",
+            "type": "immutable",
+            "notes": "Settlement coin (USDT)",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "exchange.settle_coin",
+                    "value": "USDT",
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "exchange_tpsl_mode",
+            "type": "immutable",
+            "notes": "Full | Partial",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "exchange.tpsl_mode",
+                    "value": "Full",
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "exchange_sl_trigger_by",
+            "type": "immutable",
+            "notes": "MarkPrice | IndexPrice | LastPrice",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "exchange.sl_trigger_by",
+                    "value": "IndexPrice",
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "post_open_reconcile_retries",
+            "type": "immutable",
+            "notes": "Position fetch retries after open",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "execution.post_open_reconcile_retries",
+                    "value": 3,
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "safety_stop_on_errors",
+            "type": "immutable",
+            "notes": "Error count before execution safety stop",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "execution.safety_stop_on_errors",
+                    "value": 3,
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        },
+        {
+            "key": "signal_schema_version",
+            "type": "immutable",
+            "notes": "Expected Brain signal schema version",
+            "sources": [
+                {
+                    "source": "bot_config",
+                    "path": "validation.signal_schema_version",
+                    "value": "clean_signal_v1",
+                    "file": "modules/system/trading_bot/config/config.php"
+                }
+            ],
+            "primary": "bot_config",
+            "conflict": false,
+            "unused": false,
+            "migration_readiness": "blocked_by_legacy_dependency"
+        }
+    ]
+}

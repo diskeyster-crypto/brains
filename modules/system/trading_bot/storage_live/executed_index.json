@@ -369,11 +369,11 @@
         "dedupe_basis": "intent_id"
     },
     "li_sig_d2c7c1c3b9937bb6_520eae4e": {
-        "executed_at": "2026-04-18T11:35:07+01:00",
+        "executed_at": "2026-04-18T11:41:06+01:00",
         "result": "rejected_late_entry",
         "order_id": null,
         "trade_id": null,
-        "error": "Price moved down 3.1665% > effective threshold 2.3500% (base=1.75% + buffer=0.15% + freshness=0.20% + short_enter_now=0.25% + demo_extra=0.00%)",
+        "error": "Price moved down 3.0699% > effective threshold 2.3500% (base=1.75% + buffer=0.15% + freshness=0.20% + short_enter_now=0.25% + demo_extra=0.00%)",
         "execution_identity_key": "li_sig_d2c7c1c3b9937bb6_520eae4e",
         "dedupe_basis": "intent_id"
     },
@@ -393,6 +393,24 @@
         "trade_id": "sig_dbde7995091ba185",
         "error": null,
         "execution_identity_key": "li_sig_dbde7995091ba185_3e551ffa",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_487660f982d0ab65_2b1f2d33": {
+        "executed_at": "2026-04-18T11:47:07+01:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved down 3.2898% > effective threshold 2.3500% (base=1.75% + buffer=0.15% + freshness=0.20% + short_enter_now=0.25% + demo_extra=0.00%)",
+        "execution_identity_key": "li_sig_487660f982d0ab65_2b1f2d33",
+        "dedupe_basis": "intent_id"
+    },
+    "li_sig_2d3487f6447eebe0_6f425c00": {
+        "executed_at": "2026-04-18T12:13:18+01:00",
+        "result": "rejected_late_entry",
+        "order_id": null,
+        "trade_id": null,
+        "error": "Price moved down 3.1457% > effective threshold 2.3500% (base=1.75% + buffer=0.15% + freshness=0.20% + short_enter_now=0.25% + demo_extra=0.00%)",
+        "execution_identity_key": "li_sig_2d3487f6447eebe0_6f425c00",
         "dedupe_basis": "intent_id"
     }
 }

@@ -1,0 +1,11 @@
+{
+    "adaptive_mode_weak_continuation_total": 3287,
+    "adaptive_mode_steady_continuation_total": 13264,
+    "adaptive_mode_strong_continuation_total": 1148,
+    "adaptive_mode_shallow_pullback_total": 12368,
+    "adaptive_mode_flat_carry_total": 1278,
+    "adaptive_adjustment_applied_total": 16803,
+    "adaptive_adjustment_noop_total": 14542,
+    "adaptive_bounds_hit_total": 181,
+    "updated_at": "2026-04-18T08:13:04+01:00"
+}

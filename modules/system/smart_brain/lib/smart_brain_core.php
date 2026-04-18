@@ -368,7 +368,7 @@ final class SmartBrainCore
         // and produces live_intents.json for the Trading Bot executor.
         // ================================================================
         $liveConfig = $this->config->buildLiveConfig();
-        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits, $prices);
+        $liveIntentResult = $this->generateLiveIntents($signals, $liveConfig, $userLimits);
 
         // Simulator uses real prices for entry trigger / ROI / MAE / MFE / SL / TP
         $simulator = new SimulatorEngine($simulatorCfg, $this->state);
@@ -821,34 +821,6 @@ final class SmartBrainCore
             'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
             'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
             'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
-            // Fast-coin gate diagnostics
-            'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
-            'fast_coin_symbols'              => (string)($userLimits['fast_coin_symbols']              ?? ''),
-            'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
-            'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
-            'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
-            'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
-            'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
-            'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
-            'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
-            'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
-            'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
-            // Fast-confirmed-slow exception path diagnostics
-            'fast_confirmed_slow_exception_used'            => (bool)($liveIntentResult['fast_confirmed_slow_exception_used']            ?? false),
-            'fast_confirmed_slow_exception_applied'         => (int)($liveIntentResult['fast_confirmed_slow_exception_applied']          ?? 0),
-            'fast_confirmed_slow_exception_live_pass_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_live_pass_total']   ?? 0),
-            'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
-            'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
-            'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
-            // Fast-coin long two-tier admission gate diagnostics (post-slot)
-            'fast_long_tier_rule_used'            => (bool)($liveIntentResult['fast_long_tier_rule_used']            ?? false),
-            'fast_long_slow_baseline_pass_total'  => (int)($liveIntentResult['fast_long_slow_baseline_pass_total']   ?? 0),
-            'fast_long_normal_elite_pass_total'   => (int)($liveIntentResult['fast_long_normal_elite_pass_total']    ?? 0),
-            'fast_long_normal_reject_total'       => (int)($liveIntentResult['fast_long_normal_reject_total']        ?? 0),
-            'fast_long_normal_demo_total'         => (int)($liveIntentResult['fast_long_normal_demo_total']          ?? 0),
-            'fast_long_tier_a_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_a_fail_demo_total']     ?? 0),
-            'fast_long_tier_b_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_b_fail_demo_total']     ?? 0),
-            'fast_long_tier_not_applicable_total' => (int)($liveIntentResult['fast_long_tier_not_applicable_total']  ?? 0),
             // Manual blacklist diagnostics
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
@@ -1084,35 +1056,6 @@ final class SmartBrainCore
             'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
             'v2_cleanup_demo_total'            => (int)($liveIntentResult['v2_cleanup_demo_total']            ?? 0),
             'v2_cleanup_no_effect_total'       => (int)($liveIntentResult['v2_cleanup_no_effect_total']       ?? 0),
-            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
-            'confirmation_total'               => (int)($liveIntentResult['confirmation_total']               ?? 0),
-            'confirmation_confirmed_total'     => (int)($liveIntentResult['confirmation_confirmed_total']     ?? 0),
-            'confirmation_demo_total'          => (int)($liveIntentResult['confirmation_demo_total']          ?? 0),
-            'confirmation_reject_total'        => (int)($liveIntentResult['confirmation_reject_total']        ?? 0),
-            'confirmation_fakeout_total'       => (int)($liveIntentResult['confirmation_fakeout_total']       ?? 0),
-            'confirmation_expired_total'       => (int)($liveIntentResult['confirmation_expired_total']       ?? 0),
-            'confirmation_state_preview'       => $liveIntentResult['confirmation_state_preview']             ?? [],
-            // Side-separated V2 confirmation counters
-            'short_v2_confirmation_total'           => (int)($liveIntentResult['short_v2_confirmation_total']           ?? 0),
-            'short_v2_confirmation_confirmed_total'  => (int)($liveIntentResult['short_v2_confirmation_confirmed_total']  ?? 0),
-            'short_v2_confirmation_demo_total'       => (int)($liveIntentResult['short_v2_confirmation_demo_total']       ?? 0),
-            'short_v2_confirmation_reject_total'     => (int)($liveIntentResult['short_v2_confirmation_reject_total']     ?? 0),
-            'short_v2_confirmation_fakeout_total'    => (int)($liveIntentResult['short_v2_confirmation_fakeout_total']    ?? 0),
-            'short_v2_confirmation_expired_total'    => (int)($liveIntentResult['short_v2_confirmation_expired_total']    ?? 0),
-            'long_v2_confirmation_total'            => (int)($liveIntentResult['long_v2_confirmation_total']            ?? 0),
-            'long_v2_confirmation_confirmed_total'   => (int)($liveIntentResult['long_v2_confirmation_confirmed_total']   ?? 0),
-            'long_v2_confirmation_demo_total'        => (int)($liveIntentResult['long_v2_confirmation_demo_total']        ?? 0),
-            'long_v2_confirmation_reject_total'      => (int)($liveIntentResult['long_v2_confirmation_reject_total']      ?? 0),
-            'long_v2_confirmation_fakeout_total'     => (int)($liveIntentResult['long_v2_confirmation_fakeout_total']     ?? 0),
-            'long_v2_confirmation_expired_total'     => (int)($liveIntentResult['long_v2_confirmation_expired_total']     ?? 0),
-            // Post-confirm quality gate diagnostics (weak+normal long V2 only)
-            'post_confirm_quality_gate_total'           => (int)($liveIntentResult['post_confirm_quality_gate_total']           ?? 0),
-            'post_confirm_quality_gate_applied'         => (int)($liveIntentResult['post_confirm_quality_gate_applied']         ?? 0),
-            'post_confirm_quality_gate_used'            => (bool)($liveIntentResult['post_confirm_quality_gate_used']           ?? false),
-            'post_confirm_quality_gate_live_pass_total' => (int)($liveIntentResult['post_confirm_quality_gate_live_pass_total'] ?? 0),
-            'post_confirm_quality_gate_demo_total'      => (int)($liveIntentResult['post_confirm_quality_gate_demo_total']      ?? 0),
-            'post_confirm_quality_gate_reject_total'    => (int)($liveIntentResult['post_confirm_quality_gate_reject_total']    ?? 0),
-            'post_confirm_quality_gate_no_effect_total' => (int)($liveIntentResult['post_confirm_quality_gate_no_effect_total'] ?? 0),
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1132,35 +1075,7 @@ final class SmartBrainCore
             'win_universe_last_run_mode'               => $liveIntentResult['win_universe_last_run_mode']                     ?? null,
             'win_universe_pool_size'                   => (int)($liveIntentResult['win_universe_pool_size']                   ?? 0),
             'win_universe_bonus_preview'               => $liveIntentResult['win_universe_bonus_preview']                     ?? [],
-            // Fast-coin long entry gate diagnostics
-            'fast_coin_gate_enabled'         => (bool)($userLimits['fast_coin_gate_enabled']         ?? false),
-            'fast_coin_symbols'              => (string)($userLimits['fast_coin_symbols']              ?? ''),
-            'fast_coin_gate_used'            => (bool)($liveIntentResult['fast_coin_gate_used']          ?? false),
-            'fast_coin_gate_applied'         => (int)($liveIntentResult['fast_coin_gate_applied']         ?? 0),
-            'fast_coin_gate_total'           => (int)($liveIntentResult['fast_coin_gate_total']           ?? 0),
-            'fast_coin_gate_reason'          => $liveIntentResult['fast_coin_gate_reason']                ?? [],
-            'fast_coin_gate_live_pass_total' => (int)($liveIntentResult['fast_coin_gate_live_pass_total'] ?? 0),
-            'fast_coin_gate_demo_total'      => (int)($liveIntentResult['fast_coin_gate_demo_total']      ?? 0),
-            'fast_coin_gate_reject_total'    => (int)($liveIntentResult['fast_coin_gate_reject_total']    ?? 0),
-            'fast_coin_gate_no_effect_total' => (int)($liveIntentResult['fast_coin_gate_no_effect_total'] ?? 0),
-            'fast_coin_breakout_hold_ok_total' => (int)($liveIntentResult['fast_coin_breakout_hold_ok_total'] ?? 0),
-            'fast_coin_micro_accel_ok_total'   => (int)($liveIntentResult['fast_coin_micro_accel_ok_total']   ?? 0),
-            // Fast-confirmed-slow exception path diagnostics
-            'fast_confirmed_slow_exception_used'            => (bool)($liveIntentResult['fast_confirmed_slow_exception_used']            ?? false),
-            'fast_confirmed_slow_exception_applied'         => (int)($liveIntentResult['fast_confirmed_slow_exception_applied']          ?? 0),
-            'fast_confirmed_slow_exception_live_pass_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_live_pass_total']   ?? 0),
-            'fast_confirmed_slow_exception_demo_total'      => (int)($liveIntentResult['fast_confirmed_slow_exception_demo_total']        ?? 0),
-            'fast_confirmed_slow_exception_reject_total'    => (int)($liveIntentResult['fast_confirmed_slow_exception_reject_total']      ?? 0),
-            'fast_confirmed_slow_exception_no_effect_total' => (int)($liveIntentResult['fast_confirmed_slow_exception_no_effect_total']   ?? 0),
-            // Fast-coin long two-tier admission gate diagnostics (post-slot)
-            'fast_long_tier_rule_used'            => (bool)($liveIntentResult['fast_long_tier_rule_used']            ?? false),
-            'fast_long_slow_baseline_pass_total'  => (int)($liveIntentResult['fast_long_slow_baseline_pass_total']   ?? 0),
-            'fast_long_normal_elite_pass_total'   => (int)($liveIntentResult['fast_long_normal_elite_pass_total']    ?? 0),
-            'fast_long_normal_reject_total'       => (int)($liveIntentResult['fast_long_normal_reject_total']        ?? 0),
-            'fast_long_normal_demo_total'         => (int)($liveIntentResult['fast_long_normal_demo_total']          ?? 0),
-            'fast_long_tier_a_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_a_fail_demo_total']     ?? 0),
-            'fast_long_tier_b_fail_demo_total'    => (int)($liveIntentResult['fast_long_tier_b_fail_demo_total']     ?? 0),
-            'fast_long_tier_not_applicable_total' => (int)($liveIntentResult['fast_long_tier_not_applicable_total']  ?? 0),
+            // Leverage chain config proof — shows every cap layer so operators can diagnose silent crushing
             'leverage_chain_config' => (static function (
                 array $userLimits,
                 array $profilesCfg
@@ -1226,7 +1141,7 @@ final class SmartBrainCore
      * @param array  $userLimits User limits from config
      * @return array Live stage audit result
      */
-    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits, array $prices = []): array
+    private function generateLiveIntents(array $signals, array $liveConfig, array $userLimits): array
     {
         $result = [
             'live_stage_runtime_signature' => self::LIVE_STAGE_VERSION,
@@ -1368,39 +1283,6 @@ final class SmartBrainCore
             'v2_cleanup_reject_total'          => 0,
             'v2_cleanup_demo_total'            => 0,
             'v2_cleanup_no_effect_total'       => 0,
-            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
-            'confirmation_total'               => 0,
-            'confirmation_confirmed_total'     => 0,
-            'confirmation_demo_total'          => 0,
-            'confirmation_reject_total'        => 0,
-            'confirmation_fakeout_total'       => 0,
-            'confirmation_expired_total'       => 0,
-            // Confirmation Layer observability: preview of all pending entries and their current state.
-            // Includes setup_detected, waiting, confirmed, fakeout, expired events this cycle.
-            'confirmation_state_preview'       => [],
-            // Side-separated V2 confirmation counters (short V2 = double_top_contextual_v2, long V2 = double_bottom_contextual_v2)
-            'short_v2_confirmation_total'          => 0,
-            'short_v2_confirmation_confirmed_total' => 0,
-            'short_v2_confirmation_demo_total'      => 0,
-            'short_v2_confirmation_reject_total'    => 0,
-            'short_v2_confirmation_fakeout_total'   => 0,
-            'short_v2_confirmation_expired_total'   => 0,
-            'long_v2_confirmation_total'           => 0,
-            'long_v2_confirmation_confirmed_total'  => 0,
-            'long_v2_confirmation_demo_total'       => 0,
-            'long_v2_confirmation_reject_total'     => 0,
-            'long_v2_confirmation_fakeout_total'    => 0,
-            'long_v2_confirmation_expired_total'    => 0,
-            // Post-confirm quality gate diagnostics (weak+normal long V2 only)
-            // Applied after confirmation_result=confirmed for double_bottom_contextual_v2 long
-            // signals with wave_amplitude_state=weak and wave_speed_state=normal.
-            'post_confirm_quality_gate_total'           => 0,
-            'post_confirm_quality_gate_applied'         => 0,
-            'post_confirm_quality_gate_used'            => false,
-            'post_confirm_quality_gate_live_pass_total' => 0,
-            'post_confirm_quality_gate_demo_total'      => 0,
-            'post_confirm_quality_gate_reject_total'    => 0,
-            'post_confirm_quality_gate_no_effect_total' => 0,
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -1420,36 +1302,6 @@ final class SmartBrainCore
             'win_universe_last_run_mode'            => null,
             'win_universe_pool_size'                => 0,
             'win_universe_bonus_preview'            => [],
-            // Fast-coin long entry gate diagnostics
-            'fast_coin_gate_used'              => false,
-            'fast_coin_gate_applied'           => 0,
-            'fast_coin_gate_total'             => 0,
-            'fast_coin_gate_reason'            => [],
-            'fast_coin_gate_live_pass_total'   => 0,
-            'fast_coin_gate_demo_total'        => 0,
-            'fast_coin_gate_reject_total'      => 0,
-            'fast_coin_gate_no_effect_total'   => 0,
-            'fast_coin_breakout_hold_ok_total' => 0,
-            'fast_coin_micro_accel_ok_total'   => 0,
-            // Fast-confirmed-slow exception path (narrow v2 quality-floor bypass for strong
-            // confirmed slow fast-coin long setups; fast_coin_gate still evaluates afterward)
-            'fast_confirmed_slow_exception_used'            => false,
-            'fast_confirmed_slow_exception_applied'         => 0,
-            'fast_confirmed_slow_exception_live_pass_total' => 0,
-            'fast_confirmed_slow_exception_demo_total'      => 0,
-            'fast_confirmed_slow_exception_reject_total'    => 0,
-            'fast_confirmed_slow_exception_no_effect_total' => 0,
-            // Fast-coin long two-tier admission gate diagnostics (post-slot stage)
-            // Tracks Tier A (slow baseline), Tier B (elite normal exception), hard anti-profile,
-            // and overall tier gate activity.
-            'fast_long_tier_rule_used'              => false,
-            'fast_long_slow_baseline_pass_total'    => 0,
-            'fast_long_normal_elite_pass_total'     => 0,
-            'fast_long_normal_reject_total'         => 0,
-            'fast_long_normal_demo_total'           => 0,
-            'fast_long_tier_a_fail_demo_total'      => 0,
-            'fast_long_tier_b_fail_demo_total'      => 0,
-            'fast_long_tier_not_applicable_total'   => 0,
         ];
 
         // If live trading is disabled, write empty intents and return
@@ -1636,16 +1488,6 @@ final class SmartBrainCore
         $result['win_universe_mode_sync_ok']    = ($wuLastRunMode === null || $wuLastRunMode === $wuMode);
         $result['win_universe_last_run_mode']   = $wuLastRunMode;
         $result['win_universe_pool_size']       = $wuPoolSize;
-
-        // ── Confirmation Layer pre-load ──────────────────────────────────────────
-        // Load persistent confirmation pending store (survives across cron cycles).
-        $confLayerEnabled        = (bool)($userLimits['confirmation_layer_enabled']         ?? false);
-        $confWaitCycles          = max(1, (int)($userLimits['confirmation_wait_cycles']      ?? 3));
-        $confReclaimTolPct       = max(0.0, (float)($userLimits['confirmation_reclaim_tolerance_pct'] ?? 0.005));
-        $confTargetPatterns      = (array)($userLimits['confirmation_target_patterns']       ?? ['double_top_contextual_v2']);
-        $confMaxAgeSeconds       = max(60, (int)($userLimits['confirmation_max_age_seconds'] ?? 480));
-        $confPending             = $this->state->readJson('storage/confirmation_pending.json', []);
-        $confNow                 = time();
 
         $intents = [];
 
@@ -1871,95 +1713,6 @@ final class SmartBrainCore
             $execProfile = (string)($userLimits['execution_profile'] ?? 'custom');
             $v2QualityFloorEnabled = (bool)($userLimits['v2_live_quality_floor_enabled'] ?? true);
 
-            // ── Per-signal fast-coin diagnostics (initialised once per iteration) ──────
-            // Carried through to intent construction for audit trail.
-            $fcgDiagnostic = [
-                'fast_coin_gate_used'           => false,
-                'fast_coin_gate_applied'        => false,
-                'fast_coin_gate_result'         => null,
-                'fast_coin_gate_reason'         => [],
-                'fast_coin_breakout_hold_ok'    => null,
-                'fast_coin_micro_accel_ok'      => null,
-                'fast_coin_wave_speed_computed' => null,
-            ];
-            $fastConfSlowExcDiagnostic = [
-                'fast_confirmed_slow_exception_used'    => false,
-                'fast_confirmed_slow_exception_applied' => false,
-                'fast_confirmed_slow_exception_reason'  => null,
-            ];
-
-            // ── Fast-confirmed-slow exception eligibility check ───────────────────────
-            // Evaluated BEFORE the v2 quality floor so that a clean confirmed-slow fast-coin
-            // long V2 setup can bypass an overly-broad floor rejection.
-            // Conditions (ALL must be true):
-            //   symbol in fast_coin_symbols, pattern = double_bottom_contextual_v2, side = long,
-            //   confirmation_result = confirmed, wave_speed_state = slow,
-            //   breakout hold ok (live price above breakout ref − buffer),
-            //   micro-acceleration ok (live price above breakout ref + micro_accel_min_pct).
-            // Bounded support thresholds (quality_score, signal_strength, scenario_score) are
-            // checked here; the fast_coin_gate will run its own quality check afterward.
-            $fastConfSlowExcWasApplied = false;
-            $fastCoinGateEnabledHere   = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
-            $fastConfSlowExcEnabled    = (bool)($userLimits['fast_confirmed_slow_exception_enabled'] ?? false);
-            // Internal: tracks whether exception conditions are met, so the v2 floor bypass can
-            // activate. Set separately from $fastConfSlowExcWasApplied (which only becomes true
-            // when the bypass is actually needed and used).
-            $fastConfSlowExcEligible   = false;
-
-            if ($fastCoinGateEnabledHere && $fastConfSlowExcEnabled
-                && $patternAlgo === 'double_bottom_contextual_v2'
-                && $side === 'long'
-                && (string)($signal['confirmation_result'] ?? '') === 'confirmed'
-                && (string)($signal['wave_speed_state'] ?? '') === 'slow'
-            ) {
-                $rawFastSymsExc    = (string)($userLimits['fast_coin_symbols'] ?? '');
-                $fastSymListExc    = array_filter(array_map('trim', explode(',', strtoupper($rawFastSymsExc))));
-                $isFastCoinExcSym  = !empty($fastSymListExc) && in_array(strtoupper($symbol), $fastSymListExc, true);
-
-                if ($isFastCoinExcSym) {
-                    $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'] = true;
-                    $result['fast_confirmed_slow_exception_used'] = true;
-
-                    // Compute breakout hold and micro-acceleration inline
-                    $fcExcPrice        = isset($prices[$symbol]) && $prices[$symbol] > 0.0 ? (float)$prices[$symbol] : 0.0;
-                    $fcExcZoneHigh     = (float)($signal['entry_zone_high'] ?? $signal['corridor_high'] ?? 0.0);
-                    $fcExcHoldBufPct   = max(0.0, (float)($userLimits['fast_coin_breakout_hold_buffer_pct'] ?? 0.002));
-                    $fcExcMicroAccPct  = max(0.0, (float)($userLimits['fast_coin_micro_accel_min_pct'] ?? 0.003));
-                    $fcExcBrkHoldOk    = true;
-                    $fcExcMicroAccOk   = true;
-                    if ($fcExcPrice > 0.0 && $fcExcZoneHigh > 0.0) {
-                        $fcExcBrkHoldOk  = ($fcExcPrice >= $fcExcZoneHigh * (1.0 - $fcExcHoldBufPct));
-                        $fcExcMicroAccOk = ($fcExcPrice >= $fcExcZoneHigh * (1.0 + $fcExcMicroAccPct));
-                    }
-
-                    if ($fcExcBrkHoldOk && $fcExcMicroAccOk) {
-                        // Breakout and micro-accel satisfied — check bounded support thresholds
-                        $excMinQuality  = (float)($userLimits['fast_confirmed_slow_v2_min_quality_score']   ?? 0.68);
-                        $excMinStrength = (float)($userLimits['fast_confirmed_slow_v2_min_signal_strength'] ?? 0.58);
-                        $excMinScenario = (float)($userLimits['fast_confirmed_slow_v2_min_scenario_score']  ?? 0.65);
-                        $excQuality     = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
-                        $excStrength    = (float)($signal['pattern_confidence'] ?? 0.0);
-                        $excScenario    = (float)($signal['v2_priority_score'] ?? 0.0);
-
-                        if ($excQuality >= $excMinQuality && $excStrength >= $excMinStrength && $excScenario >= $excMinScenario) {
-                            // All conditions met — eligible to bypass v2 floor if it would reject
-                            $fastConfSlowExcEligible = true;
-                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
-                                'fast_confirmed_slow_v2_exception_eligible';
-                        } else {
-                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
-                                'fast_confirmed_slow_v2_exc_thresholds_not_met';
-                            $result['fast_confirmed_slow_exception_no_effect_total']++;
-                        }
-                    } else {
-                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] = !$fcExcBrkHoldOk
-                            ? 'fast_confirmed_slow_exc_breakout_not_held'
-                            : 'fast_confirmed_slow_exc_micro_accel_missing';
-                        $result['fast_confirmed_slow_exception_no_effect_total']++;
-                    }
-                }
-            }
-
             if (($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') && $v2QualityFloorEnabled) {
                 $result['v2_live_quality_floor_applied_count'] = ($result['v2_live_quality_floor_applied_count'] ?? 0) + 1;
 
@@ -1977,65 +1730,48 @@ final class SmartBrainCore
 
                 $v2FloorResult = SmartBrainConfig::evaluateV2LiveQualityFloor($signal, $userLimits);
                 if (!$v2FloorResult['eligible']) {
-                    if ($fastConfSlowExcEligible) {
-                        // === FAST-CONFIRMED-SLOW EXCEPTION: bypass v2 floor rejection ===
-                        // The fast_coin_gate runs next and will apply its own quality check.
-                        $fastConfSlowExcWasApplied = true;
-                        $result['fast_confirmed_slow_exception_applied']++;
-                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'] = true;
-                        $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason']  =
-                            'fast_confirmed_slow_v2_exception_bypassed_floor';
-                        // Count as a floor pass so downstream diagnostics are correct
-                        $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
-                        if ($isLongEnterNow) {
-                            $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
-                        }
-                        // Fall through — do NOT rejectLiveSignal, do NOT continue
-                    } else {
-                        $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
-                        // Track reject reasons in result
-                        foreach ($v2FloorResult['reject_reasons'] as $vr) {
-                            $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
-                                ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
-                        }
-                        // Record preview for diagnostics (first 10)
-                        if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
-                            $result['v2_live_quality_floor_rejected_preview'][] = [
-                                'symbol' => $symbol,
-                                'reject_reasons' => $v2FloorResult['reject_reasons'],
-                                'checked_values' => $v2FloorResult['checked_values'],
-                            ];
-                        }
-                        // Track short/long enter_now rejection with explicit reason
-                        if ($isShortEnterNow) {
-                            $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
-                            foreach ($v2FloorResult['reject_reasons'] as $vr) {
-                                $result['short_enter_now_live_reject_reasons'][$vr] =
-                                    ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
-                            }
-                        }
-                        if ($isLongEnterNow) {
-                            $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
-                        }
-                        // Long-path funnel observability
-                        if ($signalSide === 'long') {
-                            $result['long_quality_floor_reject_total']++;
-                        }
-                        $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
-                        continue;
+                    $result['v2_live_quality_floor_rejected_count'] = ($result['v2_live_quality_floor_rejected_count'] ?? 0) + 1;
+                    // Track reject reasons in result
+                    foreach ($v2FloorResult['reject_reasons'] as $vr) {
+                        $result['v2_live_quality_floor_reject_reason_distribution'][$vr] =
+                            ($result['v2_live_quality_floor_reject_reason_distribution'][$vr] ?? 0) + 1;
                     }
-                } else {
-                    $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
-                    // Track short/long enter_now quality floor pass
+                    // Record preview for diagnostics (first 10)
+                    if (count($result['v2_live_quality_floor_rejected_preview'] ?? []) < 10) {
+                        $result['v2_live_quality_floor_rejected_preview'][] = [
+                            'symbol' => $symbol,
+                            'reject_reasons' => $v2FloorResult['reject_reasons'],
+                            'checked_values' => $v2FloorResult['checked_values'],
+                        ];
+                    }
+                    // Track short/long enter_now rejection with explicit reason
                     if ($isShortEnterNow) {
-                        $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
-                        if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
-                            $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
+                        $result['short_enter_now_live_rejected_count'] = ($result['short_enter_now_live_rejected_count'] ?? 0) + 1;
+                        foreach ($v2FloorResult['reject_reasons'] as $vr) {
+                            $result['short_enter_now_live_reject_reasons'][$vr] =
+                                ($result['short_enter_now_live_reject_reasons'][$vr] ?? 0) + 1;
                         }
                     }
                     if ($isLongEnterNow) {
-                        $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
+                        $result['long_enter_now_live_rejected_count'] = ($result['long_enter_now_live_rejected_count'] ?? 0) + 1;
                     }
+                    // Long-path funnel observability
+                    if ($signalSide === 'long') {
+                        $result['long_quality_floor_reject_total']++;
+                    }
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
+                    continue;
+                }
+                $result['v2_live_quality_floor_passed_count'] = ($result['v2_live_quality_floor_passed_count'] ?? 0) + 1;
+                // Track short/long enter_now quality floor pass
+                if ($isShortEnterNow) {
+                    $result['short_enter_now_live_approved_count'] = ($result['short_enter_now_live_approved_count'] ?? 0) + 1;
+                    if (!empty($v2FloorResult['checked_values']['trend_match_floor_borderline_pass'])) {
+                        $result['short_enter_now_live_borderline_pass_count'] = ($result['short_enter_now_live_borderline_pass_count'] ?? 0) + 1;
+                    }
+                }
+                if ($isLongEnterNow) {
+                    $result['long_enter_now_live_approved_count'] = ($result['long_enter_now_live_approved_count'] ?? 0) + 1;
                 }
             }
 
@@ -2094,110 +1830,6 @@ final class SmartBrainCore
                 }
                 if (!empty($sniperFilterResult['long_v3_threshold_applied'])) {
                     $result['sniper_v3_long_live_eligible_count'] = ($result['sniper_v3_long_live_eligible_count'] ?? 0) + 1;
-                }
-            }
-
-            // === FAST-COIN LONG ENTRY GATE ===
-            // Prevents raw impulse-chase entries on fast / impulse-sensitive long setups.
-            // Applied only when:
-            //   1. fast_coin_gate_enabled = true in userLimits
-            //   2. The signal's symbol is in the configured fast_coin_symbols list
-            //      (comma-separated; stored under userLimits['fast_coin_symbols']).
-            //   3. The signal is a long (double_bottom_contextual_v2 or _v3).
-            //
-            // Outcomes: live_pass → no change; demo → rejectLiveSignal (demoted);
-            //           reject → rejectLiveSignal (hard block).
-            // Gate is a no-op for shorts, non-fast symbols, and other patterns.
-            $fastCoinGateEnabled = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
-            if ($fastCoinGateEnabled && $side === 'long') {
-                $rawFastSymbols = (string)($userLimits['fast_coin_symbols'] ?? '');
-                $fastSymbolList = array_filter(array_map('trim', explode(',', strtoupper($rawFastSymbols))));
-                $isFastCoin = !empty($fastSymbolList) && in_array(strtoupper($symbol), $fastSymbolList, true);
-
-                if ($isFastCoin) {
-                    $fcgLivePrice = isset($prices[$symbol]) && $prices[$symbol] > 0.0 ? (float)$prices[$symbol] : 0.0;
-                    $fcgResult = SmartBrainConfig::evaluateFastCoinLongGate($signal, $userLimits, $fcgLivePrice);
-                    $result['fast_coin_gate_total']++;
-                    if ($fcgResult['gate_applied']) {
-                        $result['fast_coin_gate_used']  = true;
-                        $result['fast_coin_gate_applied']++;
-                        $fcgOutcome = $fcgResult['outcome'];
-                        $fcgRejectReasons = array_merge($fcgResult['reject_reasons'], $fcgResult['anti_patterns']);
-
-                        // Track per-eval breakout hold and micro-accel results
-                        if (!empty($fcgResult['breakout_hold_ok'])) {
-                            $result['fast_coin_breakout_hold_ok_total']++;
-                        }
-                        if (!empty($fcgResult['micro_accel_ok'])) {
-                            $result['fast_coin_micro_accel_ok_total']++;
-                        }
-
-                        if ($fcgOutcome === 'reject') {
-                            $result['fast_coin_gate_reject_total']++;
-                            $result['fast_coin_gate_reason'][] = [
-                                'symbol'           => $symbol,
-                                'outcome'          => 'reject',
-                                'reasons'          => $fcgRejectReasons,
-                                'breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
-                                'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
-                                'checked'          => $fcgResult['checked_values'] ?? [],
-                            ];
-                            if ($fastConfSlowExcWasApplied) {
-                                $result['fast_confirmed_slow_exception_reject_total']++;
-                                $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
-                                    'fast_confirmed_slow_exc_gate_rejected';
-                            }
-                            $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_reject', $selectionMode);
-                            continue;
-                        }
-
-                        if ($fcgOutcome === 'demo') {
-                            $result['fast_coin_gate_demo_total']++;
-                            $result['fast_coin_gate_reason'][] = [
-                                'symbol'           => $symbol,
-                                'outcome'          => 'demo',
-                                'reasons'          => $fcgRejectReasons,
-                                'breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
-                                'micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
-                                'checked'          => $fcgResult['checked_values'] ?? [],
-                            ];
-                            // Track early hard anti-profile demotion for normal-wave entries
-                            $hasEarlyAntiProfile = in_array('fast_coin_anti_hard_profile_quality_too_low', $fcgRejectReasons, true)
-                                || in_array('fast_coin_anti_hard_profile_micro_accel_missing', $fcgRejectReasons, true);
-                            if ($hasEarlyAntiProfile) {
-                                $result['fast_long_normal_reject_total']++;
-                            }
-                            if ($fastConfSlowExcWasApplied) {
-                                $result['fast_confirmed_slow_exception_demo_total']++;
-                                $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
-                                    'fast_confirmed_slow_exc_gate_demoted';
-                            }
-                            $this->rejectLiveSignal($result, $symbol, $signalId, 'fast_coin_gate_demo', $selectionMode);
-                            continue;
-                        }
-
-                        // live_pass — gate satisfied, signal proceeds normally
-                        $result['fast_coin_gate_live_pass_total']++;
-                        if ($fastConfSlowExcWasApplied) {
-                            $result['fast_confirmed_slow_exception_live_pass_total']++;
-                            $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'] =
-                                'fast_confirmed_slow_exc_gate_live_pass';
-                        }
-                        // Capture gate result for intent-level diagnostics
-                        $fcgDiagnostic = [
-                            'fast_coin_gate_used'        => true,
-                            'fast_coin_gate_applied'     => true,
-                            'fast_coin_gate_result'      => 'live_pass',
-                            'fast_coin_gate_reason'      => [],
-                            'fast_coin_breakout_hold_ok' => $fcgResult['breakout_hold_ok'] ?? null,
-                            'fast_coin_micro_accel_ok'   => $fcgResult['micro_accel_ok'] ?? null,
-                            'fast_coin_wave_speed_computed' => $fcgResult['wave_speed_computed'] ?? null,
-                        ];
-                    } else {
-                        // gate_applied = false: non-V2/V3 long on a fast coin — no effect
-                        $result['fast_coin_gate_no_effect_total']++;
-                        $fcgDiagnostic['fast_coin_gate_used'] = true;
-                    }
                 }
             }
 
@@ -3122,338 +2754,6 @@ final class SmartBrainCore
             }
             // === END V2 CLEANUP FILTER ===
 
-            // === CONFIRMATION LAYER ===
-            // Post-pattern wait window for targeted patterns before allowing live entry.
-            // V2 rollout scope: double_top_contextual_v2 short, double_bottom_contextual_v2 long.
-            // Does NOT touch V3 or any other pattern.
-            // Direction is derived from pattern name: double_top → short, double_bottom → long.
-            $confLayerResult = [
-                'confirmation_layer_used'       => false,
-                'confirmation_setup_detected'   => false,
-                'confirmation_wait_cycles_used' => 0,
-                'confirmation_result'           => 'not_applicable',
-                'confirmation_reason'           => '',
-                'confirmation_side'             => $side,
-            ];
-
-            // Derive the expected side from pattern name so double_top always maps to short
-            // and double_bottom always maps to long, without hardcoding per-call.
-            $confPatternAlgoKey = (string)($signal['pattern_algorithm'] ?? '');
-            $confExpectedSide   = str_contains($confPatternAlgoKey, 'double_top')    ? 'short'
-                : (str_contains($confPatternAlgoKey, 'double_bottom') ? 'long' : '');
-
-            if ($confLayerEnabled
-                && $confExpectedSide !== ''
-                && in_array($confPatternAlgoKey, $confTargetPatterns, true)
-                && $side === $confExpectedSide
-            ) {
-                $confLayerResult['confirmation_layer_used'] = true;
-                $result['confirmation_total']++;
-
-                // Side-separated counter key: short_v2 for double_top short, long_v2 for double_bottom long.
-                $confSideCounterKey = ($confPatternAlgoKey === 'double_top_contextual_v2'    && $side === 'short') ? 'short_v2'
-                    : (($confPatternAlgoKey === 'double_bottom_contextual_v2' && $side === 'long')  ? 'long_v2' : '');
-                if ($confSideCounterKey !== '') {
-                    $result[$confSideCounterKey . '_confirmation_total']++;
-                }
-
-                // Build a precise lineage key: prefer signal_id (stable identity) when it is
-                // a real upstream ID (not a fallback we generated ourselves this run).
-                // Fallback: stable zone-hash anchored to setup geometry + side so a new setup
-                // at a different price level or opposite side gets its own slot.
-                $confZoneHigh = (float)($signal['entry_zone_high'] ?? 0.0);
-                $confZoneLow  = (float)($signal['entry_zone_low']  ?? 0.0);
-                $patternAlgoConf = $confPatternAlgoKey;
-                if ($signalIdSource === 'original' && $signalId !== '') {
-                    $confKey = 'sid_' . $signalId;
-                } else {
-                    $zoneHash = substr(md5($symbol . '|' . $patternAlgoConf . '|' . $side . '|' . $confZoneHigh . '|' . $confZoneLow), 0, 12);
-                    $confKey = $symbol . '_' . $patternAlgoConf . '_' . $side . '_' . $zoneHash;
-                }
-
-                // Current live price for continuation proof.
-                $currentLivePrice = (float)($prices[$symbol] ?? 0.0);
-
-                if (!isset($confPending[$confKey])) {
-                    // First time seeing this lineage → record setup, hold this cycle.
-                    $confPending[$confKey] = [
-                        'symbol'            => $symbol,
-                        'pattern_algorithm' => $patternAlgoConf,
-                        'side'              => $side,
-                        'conf_key'          => $confKey,
-                        'setup_detected_at' => date('c'),
-                        'setup_ts'          => $confNow,
-                        'cycles_seen'       => 1,
-                        'setup_zone_high'   => $confZoneHigh,
-                        'setup_zone_low'    => $confZoneLow,
-                        'setup_live_price'  => $currentLivePrice,
-                    ];
-                    $confLayerResult['confirmation_setup_detected'] = true;
-                    $confLayerResult['confirmation_result']         = 'setup_detected';
-                    $confLayerResult['confirmation_reason']         = 'first_detection_hold';
-                    $confLayerResult['confirmation_wait_cycles_used'] = 1;
-                    $result['confirmation_state_preview'][] = [
-                        'symbol'            => $symbol,
-                        'pattern_algorithm' => $patternAlgoConf,
-                        'side'              => $side,
-                        'state'             => 'setup_detected',
-                        'result'            => 'setup_detected',
-                        'reason'            => 'first_detection_hold',
-                        'wait_cycles_used'  => 1,
-                        'setup_zone_high'   => $confZoneHigh,
-                        'setup_zone_low'    => $confZoneLow,
-                        'live_price'        => $currentLivePrice,
-                    ];
-                    // Skip to next signal — do not create a live intent this cycle.
-                    continue;
-                }
-
-                // Seen before: increment cycle count and check fakeout / continuation / confirmation.
-                $confPending[$confKey]['cycles_seen']++;
-                $cyclesSeen = (int)$confPending[$confKey]['cycles_seen'];
-                $confLayerResult['confirmation_wait_cycles_used'] = $cyclesSeen;
-
-                $setupZoneHigh = (float)($confPending[$confKey]['setup_zone_high'] ?? 0.0);
-                $setupZoneLow  = (float)($confPending[$confKey]['setup_zone_low']  ?? 0.0);
-
-                if ($side === 'short') {
-                    // Fakeout check for short: if current entry_zone_high drifted significantly
-                    // above the setup zone high, the top was reclaimed → fakeout.
-                    $fakeoutThreshold = $setupZoneHigh > 0.0
-                        ? $setupZoneHigh * (1.0 + $confReclaimTolPct)
-                        : 0.0;
-                    $isFakeout = ($fakeoutThreshold > 0.0 && $confZoneHigh > $fakeoutThreshold);
-                    $fakeoutReason = 'zone_high_reclaimed_above_setup';
-
-                    // Continuation proof for short: price must be strictly below setup zone high.
-                    $hasContinuation = ($currentLivePrice > 0.0 && $setupZoneHigh > 0.0)
-                        ? ($currentLivePrice < $setupZoneHigh)
-                        : false;
-                    $continuationReason    = 'wait_cycles_and_downside_continuation';
-                    $noContinuationReason  = 'no_downside_continuation_at_expiry';
-                } else {
-                    // Fakeout check for long: if current entry_zone_low drifted significantly
-                    // below the setup zone low, the bottom was reclaimed → fakeout.
-                    $fakeoutThreshold = $setupZoneLow > 0.0
-                        ? $setupZoneLow * (1.0 - $confReclaimTolPct)
-                        : 0.0;
-                    $isFakeout = ($fakeoutThreshold > 0.0 && $confZoneLow < $fakeoutThreshold);
-                    $fakeoutReason = 'zone_low_reclaimed_below_setup';
-
-                    // Continuation proof for long: price must be strictly above setup zone low.
-                    $hasContinuation = ($currentLivePrice > 0.0 && $setupZoneLow > 0.0)
-                        ? ($currentLivePrice > $setupZoneLow)
-                        : false;
-                    $continuationReason    = 'wait_cycles_and_upside_continuation';
-                    $noContinuationReason  = 'no_upside_continuation_at_expiry';
-                }
-
-                if ($isFakeout) {
-                    // Fakeout detected — remove from pending, route to demo.
-                    unset($confPending[$confKey]);
-                    $confLayerResult['confirmation_result'] = 'fakeout';
-                    $confLayerResult['confirmation_reason'] = $fakeoutReason;
-                    $result['confirmation_fakeout_total']++;
-                    $result['confirmation_demo_total']++;
-                    if ($confSideCounterKey !== '') {
-                        $result[$confSideCounterKey . '_confirmation_fakeout_total']++;
-                        $result[$confSideCounterKey . '_confirmation_demo_total']++;
-                    }
-                    $result['confirmation_state_preview'][] = [
-                        'symbol'            => $symbol,
-                        'pattern_algorithm' => $patternAlgoConf,
-                        'side'              => $side,
-                        'state'             => 'fakeout',
-                        'result'            => 'fakeout',
-                        'reason'            => $fakeoutReason,
-                        'wait_cycles_used'  => $cyclesSeen,
-                        'setup_zone_high'   => $setupZoneHigh,
-                        'setup_zone_low'    => $setupZoneLow,
-                        'current_zone_high' => $confZoneHigh,
-                        'current_zone_low'  => $confZoneLow,
-                        'live_price'        => $currentLivePrice,
-                    ];
-                    $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_fakeout', $selectionMode);
-                    continue;
-                }
-
-                if ($cyclesSeen >= $confWaitCycles) {
-                    // Enough cycles elapsed without fakeout — require explicit continuation proof
-                    // in the intended direction. Do NOT auto-confirm on wait-cycle expiry alone.
-                    if ($hasContinuation) {
-                        // Confirmed: wait elapsed AND price moved in the intended direction.
-                        unset($confPending[$confKey]);
-                        $confLayerResult['confirmation_result'] = 'confirmed';
-                        $confLayerResult['confirmation_reason'] = $continuationReason;
-                        $result['confirmation_confirmed_total']++;
-                        if ($confSideCounterKey !== '') {
-                            $result[$confSideCounterKey . '_confirmation_confirmed_total']++;
-                        }
-                        $result['confirmation_state_preview'][] = [
-                            'symbol'            => $symbol,
-                            'pattern_algorithm' => $patternAlgoConf,
-                            'side'              => $side,
-                            'state'             => 'confirmed',
-                            'result'            => 'confirmed',
-                            'reason'            => $continuationReason,
-                            'wait_cycles_used'  => $cyclesSeen,
-                            'setup_zone_high'   => $setupZoneHigh,
-                            'setup_zone_low'    => $setupZoneLow,
-                            'live_price'        => $currentLivePrice,
-                        ];
-                        // Fall through — signal proceeds to live intent.
-                    } else {
-                        // Wait elapsed but no continuation proof — reject (not fakeout).
-                        // Prefer demo on soft rollout; remove from pending to unblock next fresh setup.
-                        unset($confPending[$confKey]);
-                        $confLayerResult['confirmation_result'] = 'reject';
-                        $confLayerResult['confirmation_reason'] = $noContinuationReason;
-                        $result['confirmation_reject_total']++;
-                        $result['confirmation_demo_total']++;
-                        if ($confSideCounterKey !== '') {
-                            $result[$confSideCounterKey . '_confirmation_reject_total']++;
-                            $result[$confSideCounterKey . '_confirmation_demo_total']++;
-                        }
-                        $result['confirmation_state_preview'][] = [
-                            'symbol'            => $symbol,
-                            'pattern_algorithm' => $patternAlgoConf,
-                            'side'              => $side,
-                            'state'             => 'reject',
-                            'result'            => 'reject',
-                            'reason'            => $noContinuationReason,
-                            'wait_cycles_used'  => $cyclesSeen,
-                            'setup_zone_high'   => $setupZoneHigh,
-                            'setup_zone_low'    => $setupZoneLow,
-                            'live_price'        => $currentLivePrice,
-                        ];
-                        $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_no_continuation', $selectionMode);
-                        continue;
-                    }
-                } else {
-                    // Still waiting: hold this cycle.
-                    $confLayerResult['confirmation_result'] = 'waiting';
-                    $confLayerResult['confirmation_reason'] = 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen);
-                    $result['confirmation_state_preview'][] = [
-                        'symbol'            => $symbol,
-                        'pattern_algorithm' => $patternAlgoConf,
-                        'side'              => $side,
-                        'state'             => 'waiting',
-                        'result'            => 'waiting',
-                        'reason'            => 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen),
-                        'wait_cycles_used'  => $cyclesSeen,
-                        'cycles_needed'     => $confWaitCycles,
-                        'setup_zone_high'   => $setupZoneHigh,
-                        'setup_zone_low'    => $setupZoneLow,
-                        'live_price'        => $currentLivePrice,
-                    ];
-                    continue;
-                }
-            }
-            // === END CONFIRMATION LAYER ===
-
-            // === POST-CONFIRM QUALITY GATE (weak+normal long V2) ===
-            // Runs ONLY when all five conditions are true:
-            //   1. pattern_algorithm = double_bottom_contextual_v2
-            //   2. side = long
-            //   3. confirmation_result = confirmed
-            //   4. wave_amplitude_state = weak
-            //   5. wave_speed_state = normal
-            // Uses a bounded multi-signal gate: at least min_signals_pass of three primary
-            // score checks must pass. Signals that fail are demoted to demo (safe fallback —
-            // not hard reject) so the funnel stays alive for strong confirmed long V2.
-            {
-                $pcGateEnabled = (bool)($userLimits['post_confirm_wn_long_v2_gate_enabled'] ?? true);
-                $pcGateResult  = [
-                    'post_confirm_quality_gate_used'    => false,
-                    'post_confirm_quality_gate_applied' => false,
-                    'post_confirm_quality_gate_reason'  => '',
-                    'post_confirm_quality_gate_outcome' => 'not_applicable',
-                    'post_confirm_quality_gate_result'  => 'not_applicable',
-                    'post_confirm_quality_gate_inputs'  => null,
-                ];
-
-                $pcIsTarget = ($pcGateEnabled
-                    && $confPatternAlgoKey === 'double_bottom_contextual_v2'
-                    && $side === 'long'
-                    && $confLayerResult['confirmation_result'] === 'confirmed'
-                    && isset($wfAmplitudeState)
-                    && $wfAmplitudeState === 'weak'
-                    && isset($wfSpeedState)
-                    && $wfSpeedState === 'normal'
-                );
-
-                // total / no_effect only count when the gate actually evaluates a signal
-                // (pcIsTarget = true). Non-targeted signals do not update any gate counter,
-                // which prevents no_effect > 0 while total stays 0.
-                if ($pcIsTarget) {
-                    $result['post_confirm_quality_gate_total']++;
-                    $result['post_confirm_quality_gate_used'] = true;
-                    $pcGateResult['post_confirm_quality_gate_used'] = true;
-
-                    $pcMinEq   = (float)($userLimits['post_confirm_wn_long_v2_min_entry_quality']      ?? 0.58);
-                    $pcMinCf   = (float)($userLimits['post_confirm_wn_long_v2_min_corridor_fit']       ?? 0.52);
-                    $pcMinTm   = (float)($userLimits['post_confirm_wn_long_v2_min_trend_match']        ?? 0.48);
-                    $pcMinPc   = (float)($userLimits['post_confirm_wn_long_v2_min_pattern_confidence'] ?? 0.52);
-                    $pcMinPass = (int)($userLimits['post_confirm_wn_long_v2_min_signals_pass']         ?? 2);
-
-                    $pcEq = (float)($signal['entry_quality_score']  ?? 0.0);
-                    $pcCf = (float)($signal['corridor_fit_score']   ?? 0.0);
-                    $pcTm = (float)($signal['trend_match_score']    ?? 0.0);
-                    $pcPc = (float)($signal['pattern_confidence']   ?? 0.0);
-
-                    $pcPass = 0;
-                    if ($pcEq >= $pcMinEq) { $pcPass++; }
-                    if ($pcCf >= $pcMinCf) { $pcPass++; }
-                    if ($pcTm >= $pcMinTm) { $pcPass++; }
-
-                    $pcPatternConfPass = ($pcPc >= $pcMinPc);
-                    $pcGateFail = ($pcPass < $pcMinPass || !$pcPatternConfPass);
-
-                    // Compact inputs snapshot for per-intent diagnostics.
-                    $pcGateResult['post_confirm_quality_gate_inputs'] = [
-                        'entry_quality_score'    => $pcEq,
-                        'corridor_fit_score'     => $pcCf,
-                        'trend_match_score'      => $pcTm,
-                        'pattern_confidence'     => $pcPc,
-                        'min_entry_quality'      => $pcMinEq,
-                        'min_corridor_fit'       => $pcMinCf,
-                        'min_trend_match'        => $pcMinTm,
-                        'min_pattern_confidence' => $pcMinPc,
-                        'signals_passed'         => $pcPass,
-                        'min_signals_pass'       => $pcMinPass,
-                        'pattern_conf_pass'      => $pcPatternConfPass,
-                    ];
-
-                    if ($pcGateFail) {
-                        $pcFailReason = !$pcPatternConfPass
-                            ? 'post_confirm_wn_long_v2_pattern_confidence_below_floor'
-                            : 'post_confirm_wn_long_v2_multi_signal_below_floor';
-                        $result['post_confirm_quality_gate_applied']++;
-                        $result['post_confirm_quality_gate_demo_total']++;
-                        $pcGateResult['post_confirm_quality_gate_applied'] = true;
-                        $pcGateResult['post_confirm_quality_gate_reason']  = $pcFailReason;
-                        $pcGateResult['post_confirm_quality_gate_outcome'] = 'demo';
-                        $pcGateResult['post_confirm_quality_gate_result']  = 'demoted_to_demo';
-                        // Prefer demo (not hard reject) as safe fallback.
-                        // Signal is tagged for observability and removed from live flow.
-                        $this->rejectLiveSignal($result, $symbol, $signalId, $pcFailReason, $selectionMode);
-                        continue;
-                    }
-
-                    // Gate passed — strong enough to proceed as live.
-                    // no_effect increments here (gate evaluated, routing unchanged).
-                    $result['post_confirm_quality_gate_live_pass_total']++;
-                    $result['post_confirm_quality_gate_no_effect_total']++;
-                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'live_pass';
-                    $pcGateResult['post_confirm_quality_gate_result']  = 'live_pass';
-                } else {
-                    // Gate not applicable for this signal — no counter updates.
-                    $pcGateResult['post_confirm_quality_gate_outcome'] = 'not_applicable';
-                    $pcGateResult['post_confirm_quality_gate_result']  = 'not_applicable';
-                }
-            }
-            // === END POST-CONFIRM QUALITY GATE ===
-
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -3669,44 +2969,6 @@ final class SmartBrainCore
             $intent['v2_cleanup_reason']       = $v2cFilterResult['v2_cleanup_reason'];
             $intent['v2_cleanup_wave_state']   = $v2cFilterResult['v2_cleanup_wave_state'];
             $intent['v2_cleanup_quality_band'] = $v2cFilterResult['v2_cleanup_quality_band'];
-
-            // Attach confirmation layer observability fields
-            $intent['confirmation_layer_used']       = $confLayerResult['confirmation_layer_used'];
-            $intent['confirmation_setup_detected']   = $confLayerResult['confirmation_setup_detected'];
-            $intent['confirmation_wait_cycles_used'] = $confLayerResult['confirmation_wait_cycles_used'];
-            $intent['confirmation_result']           = $confLayerResult['confirmation_result'];
-            $intent['confirmation_reason']           = $confLayerResult['confirmation_reason'];
-            $intent['confirmation_side']             = $confLayerResult['confirmation_side'];
-
-            // Attach post-confirm quality gate observability fields
-            $intent['post_confirm_quality_gate_used']    = $pcGateResult['post_confirm_quality_gate_used'];
-            $intent['post_confirm_quality_gate_applied'] = $pcGateResult['post_confirm_quality_gate_applied'];
-            $intent['post_confirm_quality_gate_reason']  = $pcGateResult['post_confirm_quality_gate_reason'];
-            $intent['post_confirm_quality_gate_outcome'] = $pcGateResult['post_confirm_quality_gate_outcome'];
-            $intent['post_confirm_quality_gate_result']  = $pcGateResult['post_confirm_quality_gate_result']  ?? $pcGateResult['post_confirm_quality_gate_outcome'];
-            if (isset($pcGateResult['post_confirm_quality_gate_inputs'])) {
-                $intent['post_confirm_quality_gate_inputs'] = $pcGateResult['post_confirm_quality_gate_inputs'];
-            }
-
-            // Attach fast-coin gate observability fields
-            $intent['fast_coin_gate_used']            = $fcgDiagnostic['fast_coin_gate_used'];
-            $intent['fast_coin_gate_applied']         = $fcgDiagnostic['fast_coin_gate_applied'];
-            $intent['fast_coin_gate_result']          = $fcgDiagnostic['fast_coin_gate_result'];
-            $intent['fast_coin_gate_reason']          = $fcgDiagnostic['fast_coin_gate_reason'];
-            $intent['fast_coin_breakout_hold_ok']     = $fcgDiagnostic['fast_coin_breakout_hold_ok'];
-            $intent['fast_coin_micro_accel_ok']       = $fcgDiagnostic['fast_coin_micro_accel_ok'];
-            $intent['fast_coin_wave_speed_computed']  = $fcgDiagnostic['fast_coin_wave_speed_computed'] ?? null;
-
-            // Attach fast-confirmed-slow exception path observability fields
-            $intent['fast_confirmed_slow_exception_used']    = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_used'];
-            $intent['fast_confirmed_slow_exception_applied'] = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_applied'];
-            $intent['fast_confirmed_slow_exception_reason']  = $fastConfSlowExcDiagnostic['fast_confirmed_slow_exception_reason'];
-
-            // Tier gate fields — initialized here; populated by evaluateFastCoinLongTierGate()
-            // in the post-slot pass when fast_coin_gate_enabled=true and symbol is in fast_coin_symbols.
-            $intent['fast_long_tier_rule_used']   = false;
-            $intent['fast_long_tier_rule_result'] = 'pending';
-            $intent['fast_long_tier_rule_reason'] = '';
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
@@ -4029,39 +3291,6 @@ final class SmartBrainCore
         }
         // ── End Win Universe Bonus Layer ────────────────────────────────────
 
-        // ── Confirmation Layer: expire stale pending entries and persist ──────
-        // Remove entries that have exceeded the max age window (no update in too long).
-        if ($confLayerEnabled) {
-            foreach ($confPending as $ck => $ce) {
-                $setupTs = (int)($ce['setup_ts'] ?? 0);
-                if ($setupTs > 0 && ($confNow - $setupTs) > $confMaxAgeSeconds) {
-                    $cePattern = (string)($ce['pattern_algorithm'] ?? '');
-                    $ceSide    = (string)($ce['side'] ?? '');
-                    $ceSideKey = ($cePattern === 'double_top_contextual_v2'    && $ceSide === 'short') ? 'short_v2'
-                        : (($cePattern === 'double_bottom_contextual_v2' && $ceSide === 'long')  ? 'long_v2' : '');
-                    $result['confirmation_state_preview'][] = [
-                        'symbol'            => (string)($ce['symbol'] ?? ''),
-                        'pattern_algorithm' => $cePattern,
-                        'side'              => $ceSide,
-                        'state'             => 'expired',
-                        'result'            => 'expired',
-                        'reason'            => 'max_age_exceeded',
-                        'wait_cycles_used'  => (int)($ce['cycles_seen'] ?? 0),
-                        'setup_zone_high'   => (float)($ce['setup_zone_high'] ?? 0.0),
-                        'setup_zone_low'    => (float)($ce['setup_zone_low']  ?? 0.0),
-                        'age_seconds'       => $confNow - $setupTs,
-                    ];
-                    unset($confPending[$ck]);
-                    $result['confirmation_expired_total']++;
-                    if ($ceSideKey !== '') {
-                        $result[$ceSideKey . '_confirmation_expired_total']++;
-                    }
-                }
-            }
-            $this->state->writeJson('storage/confirmation_pending.json', $confPending);
-        }
-        // ── End Confirmation Layer persist ───────────────────────────────────
-
         // ── Slot Priority Layer ─────────────────────────────────────────────
         // Time-aware candidate ranking for limited live slots.
         // Applied AFTER all existing gates, BEFORE lifecycle merge.
@@ -4311,99 +3540,6 @@ final class SmartBrainCore
             }
             $result['win_universe_bonus_preview'] = $wuPreview;
         }
-
-        // ── Fast-coin long two-tier admission gate (post-slot) ──────────────
-        // Applies the precision two-tier live admission rule to configured fast-coin long
-        // intents after slot_priority_score is fully computed.  Tier A (slow baseline) and
-        // Tier B (elite normal exception) define the only paths to live_pass for fast-coin
-        // V2/V3 long entries; all other cases are demoted to demo (funnel-safe, not hard reject).
-        // Runs only when fast_coin_gate_enabled = true and at least one fast_coin_symbol is set.
-        {
-            $tgGateEnabled   = (bool)($userLimits['fast_coin_gate_enabled'] ?? false);
-            $tgRawSymbols    = (string)($userLimits['fast_coin_symbols'] ?? '');
-            $tgFastCoinSymbols = array_values(array_filter(
-                array_map('trim', explode(',', strtoupper($tgRawSymbols)))
-            ));
-
-            if ($tgGateEnabled && !empty($tgFastCoinSymbols)) {
-                $tierGateIntents = [];
-                foreach ($intents as $tgIntent) {
-                    $tgSymbol  = strtoupper((string)($tgIntent['symbol'] ?? ''));
-                    $tgSide    = (string)($tgIntent['side'] ?? '');
-                    $tgPattern = (string)($tgIntent['pattern_algorithm'] ?? '');
-
-                    // Only apply to fast-coin long V2/V3 intents
-                    $tgIsFastCoin = in_array($tgSymbol, $tgFastCoinSymbols, true);
-                    $tgIsLong     = ($tgSide === 'long');
-                    $tgIsV2orV3   = ($tgPattern === 'double_bottom_contextual_v2'
-                                     || $tgPattern === 'double_bottom_contextual_v3');
-
-                    if (!$tgIsFastCoin || !$tgIsLong || !$tgIsV2orV3) {
-                        // Not in scope → pass through unchanged
-                        $tgIntent['fast_long_tier_rule_used']   = false;
-                        $tgIntent['fast_long_tier_rule_result'] = 'not_applicable';
-                        $tgIntent['fast_long_tier_rule_reason'] = 'symbol_or_pattern_not_in_scope';
-                        $result['fast_long_tier_not_applicable_total']++;
-                        $tierGateIntents[] = $tgIntent;
-                        continue;
-                    }
-
-                    $result['fast_long_tier_rule_used'] = true;
-
-                    // Live price for recomputing breakout hold + micro-accel
-                    $tgLivePrice = (float)($prices[$tgSymbol] ?? 0.0);
-
-                    $tgTierResult = SmartBrainConfig::evaluateFastCoinLongTierGate(
-                        $tgIntent,
-                        $userLimits,
-                        $tgLivePrice
-                    );
-
-                    $tgOutcome      = (string)($tgTierResult['outcome']          ?? 'demo');
-                    $tgTierUsed     = (bool)($tgTierResult['tier_rule_used']     ?? false);
-                    $tgTierRuleRes  = (string)($tgTierResult['tier_rule_result'] ?? '');
-                    $tgTierRuleRsn  = (string)($tgTierResult['tier_rule_reason'] ?? '');
-
-                    $tgIntent['fast_long_tier_rule_used']   = $tgTierUsed;
-                    $tgIntent['fast_long_tier_rule_result'] = $tgTierRuleRes;
-                    $tgIntent['fast_long_tier_rule_reason'] = $tgTierRuleRsn;
-
-                    if ($tgOutcome === 'live_pass') {
-                        // Tier passed — keep in live intents
-                        match ($tgTierRuleRes) {
-                            'tier_a_slow_baseline' => $result['fast_long_slow_baseline_pass_total']++,
-                            'tier_b_elite_normal'  => $result['fast_long_normal_elite_pass_total']++,
-                            default => null,
-                        };
-                        $tierGateIntents[] = $tgIntent;
-                    } else {
-                        // Tier failed → demote to demo (funnel-safe, not hard reject)
-                        match ($tgTierRuleRes) {
-                            'hard_anti_profile' => $result['fast_long_normal_demo_total']++,
-                            'tier_a_failed'     => $result['fast_long_tier_a_fail_demo_total']++,
-                            'tier_b_failed'     => $result['fast_long_tier_b_fail_demo_total']++,
-                            default             => $result['fast_long_normal_demo_total']++,
-                        };
-                        $this->rejectLiveSignal(
-                            $result,
-                            $tgSymbol,
-                            (string)($tgIntent['signal_id'] ?? ''),
-                            'fast_long_tier_gate_' . $tgTierRuleRes,
-                            $selectionMode
-                        );
-                    }
-                }
-                $intents = $tierGateIntents;
-
-                // Update derived counters post-tier-gate
-                $result['intents_created']            = count($intents);
-                $result['long_intents_created_count'] = count(array_filter(
-                    $intents,
-                    static fn($i) => ($i['side'] ?? '') === 'long'
-                ));
-            }
-        }
-        // ── End Fast-coin long two-tier admission gate ──────────────────────
 
         // ── Win Universe entry-attribution log (best-effort, non-fatal) ─────
         // Append one record per new intent to win_universe/storage/runtime/win_universe_intent_attribution.ndjson.

@@ -790,9 +790,10 @@ class GithubController
         }
         
         $settings = $this->getSettings();
+        $includeAll = $this->resolveIncludeAllFiles($_GET['include_all_files'] ?? null);
         
         // Get server files tree
-        $serverFiles = $this->getServerFileTree(System::path('root'));
+        $serverFiles = $this->getServerFileTree(System::path('root'), '', 0, $includeAll);
         
         // Check for flash messages
         if (session_status() === PHP_SESSION_NONE) {
@@ -815,6 +816,7 @@ class GithubController
         return $this->render('upload', [
             'title' => 'Загрузка файлов',
             'settings' => $settings,
+            'include_all_files' => $includeAll,
             'server_files' => $serverFiles,
             'success' => $success,
             'error' => $error,
@@ -867,8 +869,7 @@ class GithubController
         
         // Security check - block sensitive files UNLESS include_all_files is enabled
         // When include_all_files is checked, user explicitly wants to upload everything
-        $settings = $this->getSettings();
-        $includeAll = !empty($settings['include_all_files']);
+        $includeAll = $this->resolveIncludeAllFiles($_POST['include_all_files'] ?? null);
         
         if (!$includeAll) {
             // Only block truly sensitive files like .htaccess, .htpasswd, .env
@@ -924,12 +925,17 @@ class GithubController
     /**
      * Build server file tree for upload page
      */
-    private function getServerFileTree(string $rootPath, string $subPath = '', int $depth = 0): array
+    private function getServerFileTree(
+        string $rootPath,
+        string $subPath = '',
+        int $depth = 0,
+        bool $includeAll = false
+    ): array
     {
         $tree = [];
-        $maxDepth = 4; // Limit recursion depth
+        $maxDepth = 4; // Limit recursion depth in safe mode only
         
-        if ($depth > $maxDepth) {
+        if (!$includeAll && $depth > $maxDepth) {
             return $tree;
         }
         
@@ -939,18 +945,10 @@ class GithubController
             return $tree;
         }
         
-        // Check if include_all_files is enabled in settings
-        $settings = $this->getSettings();
-        $includeAll = !empty($settings['include_all_files']);
-        
-        // Directories to always skip (regardless of setting)
+        // Skip lists for safe mode only
         $alwaysSkipDirs = ['vendor', 'node_modules', '.git', '.idea', '.vscode'];
-        
-        // Additional directories to skip when include_all_files is disabled
         $protectedDirs = ['storage', 'runtime', 'config'];
-        
-        // Combine skip lists based on setting
-        $skipDirs = $includeAll ? $alwaysSkipDirs : array_merge($alwaysSkipDirs, $protectedDirs);
+        $skipDirs = array_merge($alwaysSkipDirs, $protectedDirs);
         
         $items = scandir($currentPath);
         
@@ -959,23 +957,21 @@ class GithubController
                 continue;
             }
             
-            // Skip hidden files/dirs (but allow if include_all_files is enabled and not .git)
-            if (strpos($item, '.') === 0) {
-                if (!$includeAll || $item === '.git') {
-                    continue;
-                }
+            // Skip hidden files/dirs in safe mode
+            if (!$includeAll && strpos($item, '.') === 0) {
+                continue;
             }
             
             $itemPath = $currentPath . '/' . $item;
             $relativePath = $subPath ? $subPath . '/' . $item : $item;
             
             if (is_dir($itemPath)) {
-                // Skip certain directories
-                if (in_array($item, $skipDirs)) {
+                // Skip certain directories in safe mode
+                if (!$includeAll && in_array($item, $skipDirs, true)) {
                     continue;
                 }
                 
-                $children = $this->getServerFileTree($rootPath, $relativePath, $depth + 1);
+                $children = $this->getServerFileTree($rootPath, $relativePath, $depth + 1, $includeAll);
                 
                 $tree[$item] = [
                     'type' => 'dir',
@@ -983,9 +979,13 @@ class GithubController
                     'children' => $children,
                 ];
             } else {
-                // Skip very large files
                 $size = filesize($itemPath);
-                if ($size > 10 * 1024 * 1024) { // 10MB limit
+                if ($size === false) {
+                    continue;
+                }
+                
+                // Skip very large files in safe mode
+                if (!$includeAll && $size > 10 * 1024 * 1024) { // 10MB limit
                     continue;
                 }
                 
@@ -1008,6 +1008,19 @@ class GithubController
         });
         
         return $tree;
+    }
+
+    /**
+     * Resolve include_all_files mode from request value or stored settings.
+     */
+    private function resolveIncludeAllFiles($rawValue): bool
+    {
+        if ($rawValue !== null) {
+            return in_array(strtolower((string) $rawValue), ['1', 'true', 'on', 'yes'], true);
+        }
+        
+        $settings = $this->getSettings();
+        return !empty($settings['include_all_files']);
     }
     
     // =========================================================================

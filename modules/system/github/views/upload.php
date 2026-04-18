@@ -6,6 +6,7 @@
  * @var array $settings
  * @var string $csrf_token
  * @var array $server_files
+ * @var bool $include_all_files
  * @var string|null $error
  * @var string|null $success
  */
@@ -79,6 +80,21 @@
                                placeholder="/" value="">
                         <small class="text-muted">Оставьте пустым для корня репозитория</small>
                     </div>
+                    <div class="form-check mb-2">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="include-all-files-toggle"
+                            <?= !empty($include_all_files) ? 'checked' : '' ?>
+                        >
+                        <label class="form-check-label" for="include-all-files-toggle">
+                            Показать и загружать все файлы проекта без исключений
+                        </label>
+                    </div>
+                    <small class="text-warning d-block">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Внимание: режим может включать скрытые и чувствительные файлы.
+                    </small>
                 </div>
             </div>
             
@@ -239,6 +255,7 @@ function formatSize(int $bytes): string {
 document.addEventListener('DOMContentLoaded', function() {
     const selectedFiles = new Set();
     const csrfToken = '<?= htmlspecialchars($csrf_token) ?>';
+    const includeAllFilesMode = <?= !empty($include_all_files) ? 'true' : 'false' ?>;
     const modalEl = document.getElementById('upload-progress-modal');
     
     // Modal close button handler
@@ -252,6 +269,19 @@ document.addEventListener('DOMContentLoaded', function() {
             modalEl.classList.remove('show');
         }
     });
+
+    const includeAllToggle = document.getElementById('include-all-files-toggle');
+    if (includeAllToggle) {
+        includeAllToggle.addEventListener('change', function() {
+            const url = new URL(window.location.href);
+            if (this.checked) {
+                url.searchParams.set('include_all_files', '1');
+            } else {
+                url.searchParams.delete('include_all_files');
+            }
+            window.location.href = url.toString();
+        });
+    }
     
     // Загрузка репозиториев с таймаутом
     const repoController = new AbortController();
@@ -515,6 +545,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 formData.append('message', message);
                 formData.append('file_path', file);
                 formData.append('dest_path', destPath);
+                formData.append('include_all_files', includeAllFilesMode ? '1' : '0');
                 
                 // Добавляем таймаут 60 секунд на каждый файл
                 const controller = new AbortController();

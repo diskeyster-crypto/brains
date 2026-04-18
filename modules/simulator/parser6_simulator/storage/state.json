@@ -1,12 +1,12 @@
 {
-    "ts": "2026-03-12T17:47:45+00:00",
+    "ts": "2026-04-18T11:09:06+01:00",
     "ok": true,
     "status": "ok",
-    "open_trades": 1,
-    "closed_trades": 7,
+    "open_trades": 0,
+    "closed_trades": 8,
     "signals_seen": 0,
     "signals_skipped": 0,
-    "winrate": 0.42859999999999998,
+    "winrate": 0.5,
     "roi_sum": 0,
     "errors_count": 0,
     "contract": {

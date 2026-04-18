@@ -1,0 +1,17 @@
+{
+    "trade_id": "INITUSDT_short",
+    "symbol": "INITUSDT",
+    "side": "short",
+    "owner_mode": "profit_manager_shadow",
+    "current_roi": 4.0793999999999997,
+    "peak_roi": 6.8590999999999998,
+    "trailing_armed": true,
+    "proposed_lock_roi": 5,
+    "proposed_stop_price": 0.079655799999999999,
+    "last_lock_roi": 5,
+    "last_move_ts": 1775710324,
+    "proposed_action": "hold",
+    "cooldown_active": false,
+    "min_distance_blocked": false,
+    "updated_at": "2026-04-09T06:51:05+01:00"
+}

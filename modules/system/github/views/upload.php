@@ -10,6 +10,8 @@
  * @var string|null $error
  * @var string|null $success
  */
+
+$includeAllFilesEnabled = !empty($include_all_files);
 ?>
 <div class="container-fluid py-4">
     <div class="row mb-4">
@@ -85,7 +87,7 @@
                             class="form-check-input"
                             type="checkbox"
                             id="include-all-files-toggle"
-                            <?= !empty($include_all_files) ? 'checked' : '' ?>
+                            <?= $includeAllFilesEnabled ? 'checked' : '' ?>
                         >
                         <label class="form-check-label" for="include-all-files-toggle">
                             Показать и загружать все файлы проекта без исключений
@@ -256,7 +258,7 @@ function formatSize(int $bytes): string {
 document.addEventListener('DOMContentLoaded', function() {
     const selectedFiles = new Set();
     const csrfToken = '<?= htmlspecialchars($csrf_token) ?>';
-    const includeAllFilesMode = <?= !empty($include_all_files) ? 'true' : 'false' ?>;
+    const includeAllFilesMode = <?= $includeAllFilesEnabled ? 'true' : 'false' ?>;
     const modalEl = document.getElementById('upload-progress-modal');
     
     // Modal close button handler

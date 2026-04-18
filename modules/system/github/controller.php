@@ -987,6 +987,9 @@ class GithubController
             } else {
                 $size = filesize($itemPath);
                 if ($size === false) {
+                    System::log('system', 'GitHub upload tree: failed to read file size', [
+                        'path' => $relativePath,
+                    ]);
                     continue;
                 }
                 

@@ -1,8 +1,8 @@
 {
     "user_limits": {
-        "max_budget_per_coin": 6,
+        "max_budget_per_coin": 9,
         "max_active_tasks": 50,
-        "max_leverage": 10,
+        "max_leverage": 15,
         "brain_mode": "balanced",
         "bootstrap_enabled": true,
         "bootstrap_max_signals": 100,
@@ -14,7 +14,7 @@
         "stop_floor_value": 0.29999999999999999,
         "brain_may_tighten_stop": true,
         "trailing_enabled": true,
-        "trailing_activation_roi": 0.070000000000000007,
+        "trailing_activation_roi": 0.064000000000000001,
         "trailing_min_lock_roi": 0.021999999999999999,
         "trailing_min_step": 0.01,
         "brain_may_delay_trailing": true,
@@ -59,6 +59,8 @@
         "v2_live_min_confirmation_score": 0.59999999999999998,
         "v2_live_min_pattern_confidence": 0.55000000000000004,
         "v2_live_min_trend_match_score": 0.45000000000000001,
+        "v2_cleanup_medium_min_conf": 0.56999999999999995,
+        "v2_cleanup_medium_min_eq": 0.59999999999999998,
         "sniper_v3_live_filter_enabled": true,
         "sniper_v3_min_confirmation_score": 0.71999999999999997,
         "sniper_v3_min_pattern_confidence": 0.59999999999999998,
@@ -73,12 +75,15 @@
         "sniper_v3_min_trend_match_score_short": 0.34999999999999998,
         "sniper_v3_min_entry_quality_score_short": 0.59999999999999998,
         "sniper_v3_min_corridor_fit_score_short": 0.59999999999999998,
+        "slot_priority_enabled": true,
+        "freshness_decay_enabled": true,
+        "slot_priority_freshness_window_minutes": 30,
         "execution_profile": "sniper_lite",
         "pattern_profile_mode": "manual_override",
         "trailing_mode": "price_distance_floor",
         "trailing_preset_mode": "custom",
         "trailing_price_distance_pct": 0.02,
-        "trailing_activation_floor_roi": 0.089999999999999997,
+        "trailing_activation_floor_roi": 0.127,
         "trailing_floor_lock_roi": 0.029999999999999999,
         "trailing_distance_roi": 5,
         "profit_addon_enabled": false,
@@ -88,7 +93,7 @@
         "trailing_step_pct_max": 0.02,
         "trailing_step_roi": 1.5,
         "leverage_mode": "manual",
-        "manual_leverage": 5,
+        "manual_leverage": 15,
         "symbol_intelligence_enabled": true,
         "symbol_filter_mode": "all",
         "whitelist_min_trades": 3,
@@ -107,12 +112,14 @@
         "manual_symbol_mode": "manual_only",
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
-        "live_max_positions": 5,
+        "live_max_positions": 4,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
         "live_reverse_side_enabled": false,
         "patterns": {
             "enabled": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3",
                 "double_top_contextual_v2",
                 "double_top_contextual_v3"
             ],
@@ -123,7 +130,10 @@
         "v3_zone_widen_weak_pct": 0.40000000000000002,
         "v3_zone_widen_medium_pct": 0.55000000000000004,
         "v3_zone_widen_strong_pct": 0.69999999999999996,
-        "v3_zone_widen_max_cap_pct": 0.75
+        "v3_zone_widen_max_cap_pct": 0.75,
+        "sniper_v3_min_trend_match_score_long": 0.34999999999999998,
+        "sniper_v3_min_entry_quality_score_long": 0.59999999999999998,
+        "sniper_v3_min_corridor_fit_score_long": 0.59999999999999998
     },
     "brain_auto": {
         "effective_strength_threshold": 0.40000000000000002,
@@ -143,7 +153,7 @@
             "trailing_enabled": true,
             "break_even_enabled": true,
             "break_even_activation_roi": 0.025000000000000001,
-            "trailing_activation_floor_roi": 0.089999999999999997,
+            "trailing_activation_floor_roi": 0.127,
             "trailing_floor_lock_roi": 0.029999999999999999,
             "trailing_price_distance_pct": 0.02,
             "trailing_step_mode": "trend_reversal_soft_ladder_short",
@@ -164,7 +174,7 @@
         ],
         "legacy_trailing_fields_present": true,
         "legacy_trailing_fields": {
-            "trailing_activation_roi": 0.070000000000000007,
+            "trailing_activation_roi": 0.064000000000000001,
             "trailing_min_lock_roi": 0.021999999999999999,
             "trailing_min_step": 0.01,
             "brain_may_delay_trailing": true
@@ -190,7 +200,8 @@
     },
     "leverage_control": {
         "leverage_mode": "manual",
-        "manual_leverage": 5
+        "manual_leverage": 15,
+        "max_leverage": 15
     },
     "stop_control": {
         "stop_control_mode": "entry_roi",
@@ -229,7 +240,7 @@
     "live_trading": {
         "live_trading_enabled": true,
         "live_signal_selection_mode": "all",
-        "live_max_positions": 5,
+        "live_max_positions": 4,
         "live_one_trade_per_symbol": true,
         "live_entry_policy": "enter_now",
         "live_reverse_side_enabled": false,
@@ -255,6 +266,8 @@
     },
     "pattern_selection": {
         "enabled": [
+            "double_bottom_contextual_v2",
+            "double_bottom_contextual_v3",
             "double_top_contextual_v2",
             "double_top_contextual_v3"
         ],
@@ -277,6 +290,8 @@
         },
         "pattern_algorithms": {
             "enabled": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3",
                 "double_top_contextual_v2",
                 "double_top_contextual_v3"
             ],
@@ -361,6 +376,12 @@
             "sniper_v3_min_hold_quality_score",
             "sniper_v3_min_post_reclaim_stability_score",
             "sniper_v3_min_zone_defense_score",
+            "sniper_v3_min_trend_match_score_short",
+            "sniper_v3_min_entry_quality_score_short",
+            "sniper_v3_min_corridor_fit_score_short",
+            "sniper_v3_min_trend_match_score_long",
+            "sniper_v3_min_entry_quality_score_long",
+            "sniper_v3_min_corridor_fit_score_long",
             "v2_live_quality_floor_enabled",
             "v2_live_min_confirmation_score",
             "v2_live_min_pattern_confidence",
@@ -398,6 +419,12 @@
             "sniper_v3_min_hold_quality_score": 0.75,
             "sniper_v3_min_post_reclaim_stability_score": 0.65000000000000002,
             "sniper_v3_min_zone_defense_score": 0.34999999999999998,
+            "sniper_v3_min_trend_match_score_short": 0.34999999999999998,
+            "sniper_v3_min_entry_quality_score_short": 0.59999999999999998,
+            "sniper_v3_min_corridor_fit_score_short": 0.59999999999999998,
+            "sniper_v3_min_trend_match_score_long": 0.34999999999999998,
+            "sniper_v3_min_entry_quality_score_long": 0.59999999999999998,
+            "sniper_v3_min_corridor_fit_score_long": 0.59999999999999998,
             "v2_live_quality_floor_enabled": true,
             "v2_live_min_confirmation_score": 0.59999999999999998,
             "v2_live_min_pattern_confidence": 0.55000000000000004,
@@ -407,6 +434,8 @@
         "pattern_profile_mode": "manual_override",
         "pattern_policy": {
             "live_patterns": [
+                "double_bottom_contextual_v2",
+                "double_bottom_contextual_v3",
                 "double_top_contextual_v2",
                 "double_top_contextual_v3"
             ],
@@ -416,9 +445,7 @@
                 "double_top",
                 "pullback_trend_continue",
                 "double_bottom_confirm_v2",
-                "double_top_confirm_v2",
-                "double_bottom_contextual_v2",
-                "double_bottom_contextual_v3"
+                "double_top_confirm_v2"
             ],
             "canonical_source": "manual_override",
             "fallback_used": false,
@@ -448,5 +475,238 @@
         "title": "Smart Brain",
         "refresh_seconds": 5
     },
-    "generated_at": "2026-03-31T20:19:01+01:00"
+    "config_source_status": {
+        "module": "smart_brain",
+        "switch_wave": "v1_operational_params",
+        "unified_config_available": true,
+        "unified_config_master_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_master.json",
+        "unified_config_draft_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_draft.json",
+        "source": "unified_config_operational_master",
+        "partially_migrated": true,
+        "first_wave_total": 20,
+        "migrated_count": 19,
+        "fallback_count": 1,
+        "switched_params": [
+            "live_trading_enabled",
+            "live_max_positions",
+            "live_signal_selection_mode",
+            "live_one_trade_per_symbol",
+            "live_entry_policy",
+            "live_reverse_side_enabled",
+            "leverage_mode",
+            "manual_leverage",
+            "max_leverage",
+            "max_budget_per_coin",
+            "stop_control_mode",
+            "stop_loss_from_entry_roi",
+            "trailing_enabled",
+            "trailing_mode",
+            "trailing_activation_roi",
+            "trailing_activation_floor_roi",
+            "break_even_enabled",
+            "break_even_activation_roi",
+            "execution_profile"
+        ],
+        "fallback_params": [
+            "trailing_floor_lock_roi"
+        ],
+        "switched_params_detail": {
+            "live_trading_enabled": {
+                "value": true,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "live_max_positions": {
+                "value": 4,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "live_signal_selection_mode": {
+                "value": "all",
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "live_one_trade_per_symbol": {
+                "value": true,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "live_entry_policy": {
+                "value": "enter_now",
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "live_reverse_side_enabled": {
+                "value": false,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "leverage_mode": {
+                "value": "manual",
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "manual_leverage": {
+                "value": 15,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "max_leverage": {
+                "value": 15,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "max_budget_per_coin": {
+                "value": 9,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "stop_control_mode": {
+                "value": "entry_roi",
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "stop_loss_from_entry_roi": {
+                "value": 0.01,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "trailing_enabled": {
+                "value": true,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "trailing_mode": {
+                "value": "price_distance_floor",
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "trailing_activation_roi": {
+                "value": 0.064000000000000001,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "trailing_activation_floor_roi": {
+                "value": 0.127,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "break_even_enabled": {
+                "value": true,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "break_even_activation_roi": {
+                "value": 0.025000000000000001,
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            },
+            "execution_profile": {
+                "value": "sniper_lite",
+                "original_source": "config_center_save",
+                "original_source_file": null,
+                "via": "unified_config_operational_master",
+                "source_layer": "unified_config_master",
+                "unified_config_used": true,
+                "legacy_fallback_used": false
+            }
+        },
+        "fallback_params_detail": {
+            "trailing_floor_lock_roi": {
+                "value": 0.029999999999999999,
+                "source_layer": "legacy_user_config",
+                "unified_config_used": false,
+                "legacy_fallback_used": true,
+                "fallback_reason": "param_not_in_unified_config",
+                "fallback_source": "brain_user_config (runtime/user_config.json)"
+            }
+        },
+        "recorded_at": "2026-04-18T12:10:10+01:00",
+        "unified_config_master_saved_at": "2026-04-18T11:10:07+01:00",
+        "unified_config_generated_at": "2026-04-18T12:05:07+01:00",
+        "leverage_chain_config": {
+            "leverage_mode": "manual",
+            "requested_manual": 15,
+            "requested_max": 15,
+            "bootstrap_max": 10,
+            "profile_max": 5,
+            "effective_cap": 15,
+            "effective_cap_label": "max_leverage",
+            "manual_would_be_crushed": false,
+            "auto_crushed_by_profile": false
+        }
+    },
+    "generated_at": "2026-04-18T12:10:10+01:00"
 }

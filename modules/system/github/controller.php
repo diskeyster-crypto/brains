@@ -1025,6 +1025,9 @@ class GithubController
     private function resolveIncludeAllFiles(mixed $rawValue): bool
     {
         if ($rawValue !== null) {
+            if (!is_scalar($rawValue)) {
+                return false;
+            }
             return in_array(strtolower((string) $rawValue), ['1', 'true', 'on', 'yes'], true);
         }
         

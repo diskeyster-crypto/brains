@@ -95,7 +95,6 @@ $includeAllFilesEnabled = !empty($include_all_files);
                     </div>
                     <small class="text-warning d-block">
                         <i class="bi bi-exclamation-triangle me-1"></i>
-                        <span class="visually-hidden">Внимание:</span>
                         Режим может включать скрытые и чувствительные файлы.
                     </small>
                 </div>

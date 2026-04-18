@@ -1648,6 +1648,8 @@ final class SmartBrainConfig
     public static function evaluateV2LiveQualityFloor(array $signal, array $userLimits): array
     {
         $rejectReasons = [];
+        // miss_sizes: records threshold - actual for each failed metric (for preview/rescue).
+        $missSizes = [];
 
         // Epsilon for float-boundary safety — prevents microscopic rounding rejects
         $epsilon = 0.005;
@@ -1677,6 +1679,7 @@ final class SmartBrainConfig
             $rejectReasons[] = $side === 'short'
                 ? 'reject_short_enter_now_confirmation_too_low'
                 : 'v2_reject_confirmation_score_too_low';
+            $missSizes['confirmation_score'] = round($minConfScore - $confirmationScore, 4);
         } elseif ($confirmationScore < $minConfScore) {
             $borderlinePass = true;
         }
@@ -1687,6 +1690,7 @@ final class SmartBrainConfig
             $rejectReasons[] = $side === 'short'
                 ? 'reject_short_enter_now_pattern_conf_too_low'
                 : 'v2_reject_pattern_confidence_too_low';
+            $missSizes['pattern_confidence'] = round($minPatternConf - $patternConfidence, 4);
         } elseif ($patternConfidence < $minPatternConf) {
             $borderlinePass = true;
         }
@@ -1703,10 +1707,12 @@ final class SmartBrainConfig
             $rejectReasons[] = $side === 'short'
                 ? 'reject_short_enter_now_trend_match_missing'
                 : 'v2_reject_trend_match_missing';
+            $missSizes['trend_match_score'] = 'missing';
         } elseif ((float)$trendMatchScore + $epsilon < $minTrendMatch) {
             $rejectReasons[] = $side === 'short'
                 ? 'reject_short_enter_now_trend_match_too_low'
                 : 'v2_reject_trend_match_too_low';
+            $missSizes['trend_match_score'] = round($minTrendMatch - (float)$trendMatchScore, 4);
         } elseif ((float)$trendMatchScore < $minTrendMatch) {
             $borderlinePass = true;
         }
@@ -1717,6 +1723,7 @@ final class SmartBrainConfig
             'eligible' => empty($rejectReasons),
             'reject_reasons' => $rejectReasons,
             'checked_values' => $checkedValues,
+            'miss_sizes' => $missSizes,
         ];
     }
 

@@ -814,7 +814,7 @@ final class SmartBrainCore
             'stabilized_v2_floor_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_v2_floor_relaxation_reject_total']    ?? 0),
             'stabilized_v2_floor_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_v2_floor_relaxation_no_effect_total'] ?? 0),
             'stabilized_v2_floor_relaxation_reason_distribution' => $liveIntentResult['stabilized_v2_floor_relaxation_reason_distribution'] ?? [],
-            'short_enter_now_live_applied_count' => (int)($liveIntentResult['short_enter_now_live_applied_count'] ?? 0),
+            'stabilized_v2_floor_relaxation_preview'          => $liveIntentResult['stabilized_v2_floor_relaxation_preview']          ?? [],
             'short_enter_now_live_approved_count' => (int)($liveIntentResult['short_enter_now_live_approved_count'] ?? 0),
             'short_enter_now_live_rejected_count' => (int)($liveIntentResult['short_enter_now_live_rejected_count'] ?? 0),
             'short_enter_now_live_reject_reasons' => $liveIntentResult['short_enter_now_live_reject_reasons'] ?? [],
@@ -1025,6 +1025,7 @@ final class SmartBrainCore
             'stabilized_v2_floor_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_v2_floor_relaxation_reject_total']    ?? 0),
             'stabilized_v2_floor_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_v2_floor_relaxation_no_effect_total'] ?? 0),
             'stabilized_v2_floor_relaxation_reason_distribution' => $liveIntentResult['stabilized_v2_floor_relaxation_reason_distribution'] ?? [],
+            'stabilized_v2_floor_relaxation_preview'          => $liveIntentResult['stabilized_v2_floor_relaxation_preview']          ?? [],
             'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
             'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
@@ -1289,6 +1290,7 @@ final class SmartBrainCore
             'stabilized_v2_floor_relaxation_reject_total'     => 0,
             'stabilized_v2_floor_relaxation_no_effect_total'  => 0,
             'stabilized_v2_floor_relaxation_reason_distribution' => [],
+            'stabilized_v2_floor_relaxation_preview'          => [],
             // Short enter_now live diagnostics
             'short_enter_now_live_applied_count' => 0,
             'short_enter_now_live_approved_count' => 0,
@@ -1938,53 +1940,130 @@ final class SmartBrainCore
 
                     // === STABILIZED V2 FLOOR RELAXATION ===
                     // Narrow soft rescue for contextual V2 signals that missed the main floor
-                    // by exactly ONE metric within a configurable soft tolerance.
-                    // Weak/dirty setups (multiple metric failures) are never rescued.
-                    // Rescued signals still pass through cycle_model and passport gates.
+                    // by exactly one metric (or two with stricter tolerance and clean support).
+                    // Signals with ≥3 metric failures, missing trend data, or poor support profile
+                    // are never rescued.  Rescued signals still pass through cycle_model and passport.
                     if ($stabRelaxEnabled) {
                         $result['stabilized_v2_floor_relaxation_used']++;
-                        if (count($v2FloorResult['reject_reasons']) === 1) {
-                            $stabSoftTol    = max(0.0, (float)($userLimits['stabilized_v2_floor_soft_tolerance'] ?? 0.05));
-                            $cv             = $v2FloorResult['checked_values'];
-                            $singleMiss     = $v2FloorResult['reject_reasons'][0];
-                            $rescued        = false;
-                            $rescueReason   = '';
+                        $cv            = $v2FloorResult['checked_values'];
+                        $failCount     = count($v2FloorResult['reject_reasons']);
+                        $stabSoftTol   = max(0.0, (float)($userLimits['stabilized_v2_floor_soft_tolerance']   ?? 0.05));
+                        $stabStrictTol = max(0.0, (float)($userLimits['stabilized_v2_floor_strict_tolerance']  ?? 0.03));
 
-                            if (str_contains($singleMiss, 'confirmation_score')) {
-                                $floorThreshold = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
-                                if ((float)($cv['confirmation_score'] ?? 0.0) + $stabSoftTol >= $floorThreshold) {
-                                    $rescued      = true;
-                                    $rescueReason = 'single_miss_confirmation_score_within_tolerance';
-                                }
-                            } elseif (str_contains($singleMiss, 'pattern_confidence')) {
-                                $floorThreshold = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
-                                if ((float)($cv['pattern_confidence'] ?? 0.0) + $stabSoftTol >= $floorThreshold) {
-                                    $rescued      = true;
-                                    $rescueReason = 'single_miss_pattern_confidence_within_tolerance';
-                                }
-                            } elseif (str_contains($singleMiss, 'trend_match')) {
-                                $minTrendLong   = (float)($userLimits['v2_live_min_trend_match_score']       ?? 0.40);
-                                $minTrendShort  = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendLong);
-                                $floorThreshold = ($signalSide === 'short') ? $minTrendShort : $minTrendLong;
-                                $actualTrend    = (float)($cv['trend_match_score'] ?? 0.0);
-                                if ($actualTrend + $stabSoftTol >= $floorThreshold) {
-                                    $rescued      = true;
-                                    $rescueReason = 'single_miss_trend_match_within_tolerance';
-                                }
+                        // Support profile health — entry_quality_score / scenario_score
+                        $floorEqScore = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                        $floorSsScore = (float)($signal['scenario_score'] ?? 0.0);
+                        $floorHasEq   = (isset($signal['entry_quality_score']) || isset($signal['hold_quality_score']));
+                        $floorHasSs   = isset($signal['scenario_score']);
+                        $supportProfileOk = (
+                            ($floorHasEq && $floorEqScore >= 0.40) ||
+                            ($floorHasSs && $floorSsScore >= 0.40)
+                        );
+                        // Explicitly poor: both available and both below floor
+                        if ($floorHasEq && $floorHasSs && $floorEqScore < 0.30 && $floorSsScore < 0.30) {
+                            $supportProfileOk = false;
+                        }
+                        // Stricter support required for two-metric rescue
+                        $supportProfileStrict = (
+                            ($floorHasEq && $floorEqScore >= 0.50) ||
+                            ($floorHasSs && $floorSsScore >= 0.50)
+                        );
+
+                        $rescued      = false;
+                        $rescueReason = '';
+                        $rejectKey    = '';
+
+                        if (!$supportProfileOk) {
+                            $rejectKey = 'reject_poor_support_profile';
+                        } elseif ($failCount === 1) {
+                            $singleMiss = $v2FloorResult['reject_reasons'][0];
+                            $missOk     = false;
+                            if (str_contains($singleMiss, 'confirmation_score') || str_contains($singleMiss, 'confirmation_too_low')) {
+                                $thr = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
+                                $missOk = ((float)($cv['confirmation_score'] ?? 0.0) + $stabSoftTol >= $thr);
+                            } elseif (str_contains($singleMiss, 'pattern_confidence') || str_contains($singleMiss, 'pattern_conf_too_low')) {
+                                $thr = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
+                                $missOk = ((float)($cv['pattern_confidence'] ?? 0.0) + $stabSoftTol >= $thr);
+                            } elseif (str_contains($singleMiss, 'trend_match_too_low')) {
+                                $minTrendLong  = (float)($userLimits['v2_live_min_trend_match_score']       ?? 0.40);
+                                $minTrendShort = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendLong);
+                                $thr = ($signalSide === 'short') ? $minTrendShort : $minTrendLong;
+                                $missOk = ((float)($cv['trend_match_score'] ?? 0.0) + $stabSoftTol >= $thr);
                             }
-
-                            if ($rescued) {
-                                $stabRelaxApplied = true;
-                                $result['stabilized_v2_floor_relaxation_applied']++;
-                                $result['stabilized_v2_floor_relaxation_live_pass_total']++;
-                                $result['stabilized_v2_floor_relaxation_reason_distribution'][$rescueReason] =
-                                    ($result['stabilized_v2_floor_relaxation_reason_distribution'][$rescueReason] ?? 0) + 1;
+                            // trend_match_missing is never rescued — absent data is never OK
+                            if ($missOk) {
+                                $rescued      = true;
+                                $rescueReason = 'single_miss_within_tolerance_' . $singleMiss;
                             } else {
-                                $result['stabilized_v2_floor_relaxation_reject_total']++;
+                                $rejectKey = 'reject_single_miss_tolerance_exceeded_' . $singleMiss;
                             }
+                        } elseif ($failCount === 2 && $supportProfileStrict) {
+                            // Two-metric near-miss: both misses must be within the stricter tolerance.
+                            // Requires unusually clean support profile.
+                            $reasons   = $v2FloorResult['reject_reasons'];
+                            $bothWithin = true;
+                            $reasonParts = [];
+                            foreach ($reasons as $miss) {
+                                $within = false;
+                                if (str_contains($miss, 'confirmation_score') || str_contains($miss, 'confirmation_too_low')) {
+                                    $thr = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
+                                    $within = ((float)($cv['confirmation_score'] ?? 0.0) + $stabStrictTol >= $thr);
+                                } elseif (str_contains($miss, 'pattern_confidence') || str_contains($miss, 'pattern_conf_too_low')) {
+                                    $thr = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
+                                    $within = ((float)($cv['pattern_confidence'] ?? 0.0) + $stabStrictTol >= $thr);
+                                } elseif (str_contains($miss, 'trend_match_too_low')) {
+                                    $minTrendLong  = (float)($userLimits['v2_live_min_trend_match_score']       ?? 0.40);
+                                    $minTrendShort = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendLong);
+                                    $thr = ($signalSide === 'short') ? $minTrendShort : $minTrendLong;
+                                    $within = ((float)($cv['trend_match_score'] ?? 0.0) + $stabStrictTol >= $thr);
+                                }
+                                if (!$within) {
+                                    $bothWithin = false;
+                                    break;
+                                }
+                                $reasonParts[] = $miss;
+                            }
+                            if ($bothWithin) {
+                                $rescued      = true;
+                                $rescueReason = 'two_miss_strict_tolerance_' . implode('+', $reasonParts);
+                            } else {
+                                $rejectKey = 'reject_two_miss_tolerance_exceeded';
+                            }
+                        } elseif ($failCount === 2) {
+                            $rejectKey = 'reject_two_miss_support_not_strict';
                         } else {
-                            // Multiple metric failures — not eligible for rescue
+                            $rejectKey = 'reject_multi_fail_count_' . $failCount;
+                        }
+
+                        $floorPreviewEntry = [
+                            'symbol'              => $symbol,
+                            'side'                => $signalSide,
+                            'pattern_algorithm'   => $patternAlgo,
+                            'fail_count'          => $failCount,
+                            'failed_metrics'      => $v2FloorResult['reject_reasons'],
+                            'miss_sizes'          => $v2FloorResult['miss_sizes'] ?? [],
+                            'entry_quality_score' => $floorHasEq ? round($floorEqScore, 4) : null,
+                            'scenario_score'      => $floorHasSs ? round($floorSsScore, 4) : null,
+                            'pattern_confidence'  => round((float)($cv['pattern_confidence'] ?? 0.0), 4),
+                            'trend_match_score'   => $cv['trend_match_score'] ?? null,
+                            'confirmation_score'  => round((float)($cv['confirmation_score'] ?? 0.0), 4),
+                            'rescue_result'       => $rescued ? 'live_pass' : 'rejected',
+                            'rescue_reason'       => $rescued ? $rescueReason : $rejectKey,
+                        ];
+
+                        if ($rescued) {
+                            $stabRelaxApplied = true;
+                            $result['stabilized_v2_floor_relaxation_applied']++;
+                            $result['stabilized_v2_floor_relaxation_live_pass_total']++;
+                            $result['stabilized_v2_floor_relaxation_reason_distribution'][$rescueReason] =
+                                ($result['stabilized_v2_floor_relaxation_reason_distribution'][$rescueReason] ?? 0) + 1;
+                        } else {
                             $result['stabilized_v2_floor_relaxation_reject_total']++;
+                            $result['stabilized_v2_floor_relaxation_reason_distribution'][$rejectKey] =
+                                ($result['stabilized_v2_floor_relaxation_reason_distribution'][$rejectKey] ?? 0) + 1;
+                        }
+                        if (count($result['stabilized_v2_floor_relaxation_preview'] ?? []) < 10) {
+                            $result['stabilized_v2_floor_relaxation_preview'][] = $floorPreviewEntry;
                         }
                     }
                     // === END STABILIZED V2 FLOOR RELAXATION ===

@@ -94,7 +94,7 @@
                     <small class="text-warning d-block">
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         <span class="visually-hidden">Внимание:</span>
-                        Внимание: режим может включать скрытые и чувствительные файлы.
+                        Режим может включать скрытые и чувствительные файлы.
                     </small>
                 </div>
             </div>

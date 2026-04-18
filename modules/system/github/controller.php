@@ -54,6 +54,9 @@ use Modules\System\GitHub\Services\UpdateService;
 class GithubController
 {
     private const STORAGE_KEY = 'system/github';
+    private const SAFE_TREE_MAX_DEPTH = 4;
+    private const ALL_FILES_TREE_MAX_DEPTH = 10;
+    private const SAFE_TREE_MAX_FILE_SIZE = 10 * 1024 * 1024;
     
     private static ?self $instance = null;
     
@@ -933,7 +936,7 @@ class GithubController
     ): array
     {
         $tree = [];
-        $maxDepth = $includeAll ? 10 : 4;
+        $maxDepth = $includeAll ? self::ALL_FILES_TREE_MAX_DEPTH : self::SAFE_TREE_MAX_DEPTH;
         
         if ($depth > $maxDepth) {
             return $tree;
@@ -988,7 +991,7 @@ class GithubController
                 }
                 
                 // Skip very large files in safe mode
-                if (!$includeAll && $size > 10 * 1024 * 1024) { // 10MB limit
+                if (!$includeAll && $size > self::SAFE_TREE_MAX_FILE_SIZE) {
                     continue;
                 }
                 

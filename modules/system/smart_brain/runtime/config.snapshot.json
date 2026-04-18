@@ -1,69 +1,147 @@
 {
     "parser4": {
-        "enabled": true,
-        "profiles_key": "parser.parser3_manager_behavior.storage",
-        "history_key": "parser.parser2_history_accumulator.storage",
-        "corridor_window_minutes": 120,
-        "min_history_points": 40,
-        "strength_threshold": 0.5,
-        "max_candidates": 200
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "profiles_key": "parser.parser3_manager_behavior.storage",
+            "history_key": "parser.parser2_history_accumulator.storage",
+            "corridor_window_minutes": 180,
+            "min_history_points": 80,
+            "strength_threshold": 0.80000000000000004,
+            "max_candidates": 120
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "corridor": {
-        "enabled": true,
-        "entry_zone_percent": 0.20000000000000001,
-        "max_wait_minutes": 60,
-        "rebuild_interval_seconds": 5
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "entry_zone_percent": 0.14999999999999999,
+            "max_wait_minutes": 90,
+            "rebuild_interval_seconds": 10
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "risk_engine": {
-        "enabled": true,
-        "max_leverage": 15,
-        "max_budget_per_coin": 20,
-        "risk_levels": [
-            {
-                "max_corridor_width": 0.01,
-                "leverage": 15,
-                "budget_factor": 1
-            },
-            {
-                "max_corridor_width": 0.029999999999999999,
-                "leverage": 10,
-                "budget_factor": 0.80000000000000004
-            },
-            {
-                "max_corridor_width": 0.059999999999999998,
-                "leverage": 5,
-                "budget_factor": 0.59999999999999998
-            },
-            {
-                "max_corridor_width": 1,
-                "leverage": 3,
-                "budget_factor": 0.40000000000000002
-            }
-        ],
-        "default_stop_loss_percent": 0.050000000000000003
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "risk_levels": [
+                {
+                    "max_corridor_width": 0.0080000000000000002,
+                    "leverage": 5,
+                    "budget_factor": 0.80000000000000004
+                },
+                {
+                    "max_corridor_width": 0.02,
+                    "leverage": 4,
+                    "budget_factor": 0.59999999999999998
+                },
+                {
+                    "max_corridor_width": 0.040000000000000001,
+                    "leverage": 3,
+                    "budget_factor": 0.45000000000000001
+                },
+                {
+                    "max_corridor_width": 1,
+                    "leverage": 2,
+                    "budget_factor": 0.29999999999999999
+                }
+            ],
+            "default_stop_loss_percent": 0.040000000000000001
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        },
+        "user_limits": {
+            "max_budget_per_coin": 30,
+            "max_active_tasks": 3,
+            "max_leverage": 15,
+            "brain_mode": "safe",
+            "bootstrap_enabled": true,
+            "bootstrap_max_signals": 2,
+            "bootstrap_budget_factor": 0.25,
+            "bootstrap_max_leverage": 2,
+            "min_reliability_after_warmup": 0.22,
+            "warmup_min_trades": 12,
+            "exit_mode": "trailing_tp",
+            "stop_floor_type": "corridor_percent",
+            "stop_floor_value": 0.34999999999999998,
+            "brain_may_tighten_stop": true,
+            "trailing_enabled": true,
+            "trailing_activation_roi": 0.064000000000000001,
+            "trailing_min_lock_roi": 0.0040000000000000001,
+            "trailing_min_step": 0.0040000000000000001,
+            "brain_may_delay_trailing": true,
+            "fixed_take_profit_roi": 0.025000000000000001,
+            "hybrid_tp_share": 0.40000000000000002,
+            "break_even_enabled": true,
+            "break_even_activation_roi": 0.025000000000000001,
+            "live_trading_enabled": true,
+            "live_max_positions": 20,
+            "live_signal_selection_mode": "all",
+            "live_one_trade_per_symbol": true,
+            "live_entry_policy": "enter_now",
+            "live_reverse_side_enabled": false,
+            "leverage_mode": "manual",
+            "manual_leverage": 15,
+            "stop_control_mode": "entry_roi",
+            "stop_loss_from_entry_roi": 0.01,
+            "trailing_mode": "price_distance_floor",
+            "trailing_activation_floor_roi": 0.127,
+            "execution_profile": "sniper_lite"
+        }
     },
     "simulator": {
-        "enabled": true,
-        "max_positions": 50,
-        "take_profit_enabled": true,
-        "trailing_enabled": false
+        "mode": "manual",
+        "settings": {
+            "enabled": true,
+            "max_positions": 3,
+            "take_profit_enabled": true,
+            "trailing_enabled": true
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
     "profiles": {
-        "default_profile": "111",
-        "profiles": {
-            "111": {
-                "budget": 15,
-                "max_leverage": 5,
-                "stop_loss_range": 0.20000000000000001,
-                "slippage_bps": 20,
-                "trailing_activate_roi": 0.059999999999999998,
-                "take_profit_roi": 5.5499999999999998
+        "mode": "manual",
+        "settings": {
+            "default_profile": "111",
+            "profiles": {
+                "111": {
+                    "budget": 10,
+                    "max_leverage": 4,
+                    "stop_loss_range": 0.29999999999999999,
+                    "slippage_bps": 20,
+                    "trailing_activate_roi": 0.017999999999999999,
+                    "take_profit_roi": 1.25
+                }
             }
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
         }
     },
     "ui": {
-        "title": "Smart Brain",
-        "refresh_seconds": 5
+        "mode": "manual",
+        "settings": {
+            "title": "Smart Brain",
+            "refresh_seconds": 7
+        },
+        "auto_rules": {
+            "allow_brain_override": false,
+            "override_fields": []
+        }
     },
-    "updated_at": "2026-03-13T13:25:11+00:00"
+    "updated_at": "2026-04-18T08:14:15+01:00"
 }

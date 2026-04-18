@@ -1,0 +1,10 @@
+{
+    "evidence_records_written_total": 31220,
+    "evidence_apply_events_total": 8704,
+    "evidence_skip_events_total": 7562,
+    "evidence_noop_events_total": 14954,
+    "evidence_refinement_events_total": 31220,
+    "evidence_adaptive_mode_events_total": 31220,
+    "evidence_symbols_observed_total": 31220,
+    "updated_at": "2026-04-18T08:13:04+01:00"
+}

@@ -1,15 +1,15 @@
 {
-    "ts": "2026-03-21T10:40:02+00:00",
+    "ts": "2026-04-18T11:10:07+01:00",
     "processed_categories": 1,
     "categories": {
         "linear": {
-            "raw": 647,
-            "normalized": 647
+            "raw": 640,
+            "normalized": 640
         }
     },
-    "active_symbols": 559,
+    "active_symbols": 552,
     "delisted_count": 0,
     "errors_count": 0,
-    "duration_ms": 1732,
+    "duration_ms": 704,
     "success": true
 }

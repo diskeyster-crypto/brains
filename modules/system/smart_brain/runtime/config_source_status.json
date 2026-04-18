@@ -1,0 +1,233 @@
+{
+    "module": "smart_brain",
+    "switch_wave": "v1_operational_params",
+    "unified_config_available": true,
+    "unified_config_master_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_master.json",
+    "unified_config_draft_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_draft.json",
+    "source": "unified_config_operational_master",
+    "partially_migrated": true,
+    "first_wave_total": 20,
+    "migrated_count": 19,
+    "fallback_count": 1,
+    "switched_params": [
+        "live_trading_enabled",
+        "live_max_positions",
+        "live_signal_selection_mode",
+        "live_one_trade_per_symbol",
+        "live_entry_policy",
+        "live_reverse_side_enabled",
+        "leverage_mode",
+        "manual_leverage",
+        "max_leverage",
+        "max_budget_per_coin",
+        "stop_control_mode",
+        "stop_loss_from_entry_roi",
+        "trailing_enabled",
+        "trailing_mode",
+        "trailing_activation_roi",
+        "trailing_activation_floor_roi",
+        "break_even_enabled",
+        "break_even_activation_roi",
+        "execution_profile"
+    ],
+    "fallback_params": [
+        "trailing_floor_lock_roi"
+    ],
+    "switched_params_detail": {
+        "live_trading_enabled": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "live_max_positions": {
+            "value": 20,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "live_signal_selection_mode": {
+            "value": "all",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "live_one_trade_per_symbol": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "live_entry_policy": {
+            "value": "enter_now",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "live_reverse_side_enabled": {
+            "value": false,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "leverage_mode": {
+            "value": "manual",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "manual_leverage": {
+            "value": 15,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "max_leverage": {
+            "value": 15,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "max_budget_per_coin": {
+            "value": 30,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "stop_control_mode": {
+            "value": "entry_roi",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "stop_loss_from_entry_roi": {
+            "value": 0.01,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "trailing_enabled": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "trailing_mode": {
+            "value": "price_distance_floor",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "trailing_activation_roi": {
+            "value": 0.064000000000000001,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "trailing_activation_floor_roi": {
+            "value": 0.127,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "break_even_enabled": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "break_even_activation_roi": {
+            "value": 0.025000000000000001,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "execution_profile": {
+            "value": "sniper_lite",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        }
+    },
+    "fallback_params_detail": {
+        "trailing_floor_lock_roi": {
+            "value": null,
+            "source_layer": "legacy_user_config",
+            "unified_config_used": false,
+            "legacy_fallback_used": true,
+            "fallback_reason": "param_not_in_unified_config",
+            "fallback_source": "brain_user_config (runtime/user_config.json)"
+        }
+    },
+    "recorded_at": "2026-04-18T08:14:12+01:00",
+    "unified_config_master_saved_at": "2026-04-17T19:59:59+01:00",
+    "unified_config_generated_at": "2026-04-18T08:08:13+01:00",
+    "leverage_chain_config": {
+        "leverage_mode": "manual",
+        "requested_manual": 15,
+        "requested_max": 15,
+        "bootstrap_max": 2,
+        "profile_max": 4,
+        "effective_cap": 15,
+        "effective_cap_label": "max_leverage",
+        "manual_would_be_crushed": false,
+        "auto_crushed_by_profile": false
+    }
+}

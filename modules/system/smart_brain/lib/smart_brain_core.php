@@ -1056,6 +1056,27 @@ final class SmartBrainCore
             'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
             'v2_cleanup_demo_total'            => (int)($liveIntentResult['v2_cleanup_demo_total']            ?? 0),
             'v2_cleanup_no_effect_total'       => (int)($liveIntentResult['v2_cleanup_no_effect_total']       ?? 0),
+            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
+            'confirmation_total'               => (int)($liveIntentResult['confirmation_total']               ?? 0),
+            'confirmation_confirmed_total'     => (int)($liveIntentResult['confirmation_confirmed_total']     ?? 0),
+            'confirmation_demo_total'          => (int)($liveIntentResult['confirmation_demo_total']          ?? 0),
+            'confirmation_reject_total'        => (int)($liveIntentResult['confirmation_reject_total']        ?? 0),
+            'confirmation_fakeout_total'       => (int)($liveIntentResult['confirmation_fakeout_total']       ?? 0),
+            'confirmation_expired_total'       => (int)($liveIntentResult['confirmation_expired_total']       ?? 0),
+            'confirmation_state_preview'       => $liveIntentResult['confirmation_state_preview']             ?? [],
+            // Side-separated V2 confirmation counters
+            'short_v2_confirmation_total'            => (int)($liveIntentResult['short_v2_confirmation_total']            ?? 0),
+            'short_v2_confirmation_confirmed_total'  => (int)($liveIntentResult['short_v2_confirmation_confirmed_total']  ?? 0),
+            'short_v2_confirmation_demo_total'       => (int)($liveIntentResult['short_v2_confirmation_demo_total']       ?? 0),
+            'short_v2_confirmation_reject_total'     => (int)($liveIntentResult['short_v2_confirmation_reject_total']     ?? 0),
+            'short_v2_confirmation_fakeout_total'    => (int)($liveIntentResult['short_v2_confirmation_fakeout_total']    ?? 0),
+            'short_v2_confirmation_expired_total'    => (int)($liveIntentResult['short_v2_confirmation_expired_total']    ?? 0),
+            'long_v2_confirmation_total'             => (int)($liveIntentResult['long_v2_confirmation_total']             ?? 0),
+            'long_v2_confirmation_confirmed_total'   => (int)($liveIntentResult['long_v2_confirmation_confirmed_total']   ?? 0),
+            'long_v2_confirmation_demo_total'        => (int)($liveIntentResult['long_v2_confirmation_demo_total']        ?? 0),
+            'long_v2_confirmation_reject_total'      => (int)($liveIntentResult['long_v2_confirmation_reject_total']      ?? 0),
+            'long_v2_confirmation_fakeout_total'     => (int)($liveIntentResult['long_v2_confirmation_fakeout_total']     ?? 0),
+            'long_v2_confirmation_expired_total'     => (int)($liveIntentResult['long_v2_confirmation_expired_total']     ?? 0),
             // Wave Penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => (int)($liveIntentResult['wave_penalty_total']               ?? 0),
             'wave_penalty_applied_total'       => (int)($liveIntentResult['wave_penalty_applied_total']       ?? 0),
@@ -1283,6 +1304,27 @@ final class SmartBrainCore
             'v2_cleanup_reject_total'          => 0,
             'v2_cleanup_demo_total'            => 0,
             'v2_cleanup_no_effect_total'       => 0,
+            // Confirmation Layer diagnostics (post-pattern wait window for targeted patterns)
+            'confirmation_total'               => 0,
+            'confirmation_confirmed_total'     => 0,
+            'confirmation_demo_total'          => 0,
+            'confirmation_reject_total'        => 0,
+            'confirmation_fakeout_total'       => 0,
+            'confirmation_expired_total'       => 0,
+            'confirmation_state_preview'       => [],
+            // Side-separated V2 confirmation counters (short V2 = double_top_contextual_v2, long V2 = double_bottom_contextual_v2)
+            'short_v2_confirmation_total'           => 0,
+            'short_v2_confirmation_confirmed_total' => 0,
+            'short_v2_confirmation_demo_total'      => 0,
+            'short_v2_confirmation_reject_total'    => 0,
+            'short_v2_confirmation_fakeout_total'   => 0,
+            'short_v2_confirmation_expired_total'   => 0,
+            'long_v2_confirmation_total'            => 0,
+            'long_v2_confirmation_confirmed_total'  => 0,
+            'long_v2_confirmation_demo_total'       => 0,
+            'long_v2_confirmation_reject_total'     => 0,
+            'long_v2_confirmation_fakeout_total'    => 0,
+            'long_v2_confirmation_expired_total'    => 0,
             // Wave penalty layer diagnostics (ranking penalty for weak/slow wave candidates)
             'wave_penalty_total'               => 0,
             'wave_penalty_applied_total'       => 0,
@@ -1488,6 +1530,16 @@ final class SmartBrainCore
         $result['win_universe_mode_sync_ok']    = ($wuLastRunMode === null || $wuLastRunMode === $wuMode);
         $result['win_universe_last_run_mode']   = $wuLastRunMode;
         $result['win_universe_pool_size']       = $wuPoolSize;
+
+        // ── Confirmation Layer pre-load ──────────────────────────────────────────
+        // Load persistent confirmation pending store (survives across cron cycles).
+        $confLayerEnabled     = (bool)($userLimits['confirmation_layer_enabled']         ?? false);
+        $confWaitCycles       = max(1, (int)($userLimits['confirmation_wait_cycles']      ?? 3));
+        $confReclaimTolPct    = max(0.0, (float)($userLimits['confirmation_reclaim_tolerance_pct'] ?? 0.005));
+        $confTargetPatterns   = (array)($userLimits['confirmation_target_patterns']       ?? ['double_top_contextual_v2', 'double_bottom_contextual_v2']);
+        $confMaxAgeSeconds    = max(60, (int)($userLimits['confirmation_max_age_seconds'] ?? 900));
+        $confPending          = $this->state->readJson('storage/confirmation_pending.json', []);
+        $confNow              = time();
 
         $intents = [];
 
@@ -2754,6 +2806,235 @@ final class SmartBrainCore
             }
             // === END V2 CLEANUP FILTER ===
 
+            // === CONFIRMATION LAYER ===
+            // Post-pattern wait window for targeted patterns before allowing live entry.
+            // V2 rollout scope: double_top_contextual_v2 short, double_bottom_contextual_v2 long.
+            // Does NOT touch V3 or any other pattern.
+            // Direction is derived from pattern name: double_top → short, double_bottom → long.
+            $confLayerResult = [
+                'confirmation_layer_used'       => false,
+                'confirmation_setup_detected'   => false,
+                'confirmation_wait_cycles_used' => 0,
+                'confirmation_result'           => 'not_applicable',
+                'confirmation_reason'           => '',
+                'confirmation_side'             => $side,
+            ];
+
+            // Derive the expected side from pattern name so double_top always maps to short
+            // and double_bottom always maps to long, without hardcoding per-call.
+            $confPatternAlgoKey = (string)($signal['pattern_algorithm'] ?? '');
+            $confExpectedSide   = str_contains($confPatternAlgoKey, 'double_top')    ? 'short'
+                : (str_contains($confPatternAlgoKey, 'double_bottom') ? 'long' : '');
+
+            if ($confLayerEnabled
+                && $confExpectedSide !== ''
+                && in_array($confPatternAlgoKey, $confTargetPatterns, true)
+                && $side === $confExpectedSide
+            ) {
+                $confLayerResult['confirmation_layer_used'] = true;
+                $result['confirmation_total']++;
+
+                // Side-separated counter key: short_v2 for double_top short, long_v2 for double_bottom long.
+                $confSideCounterKey = ($confPatternAlgoKey === 'double_top_contextual_v2'    && $side === 'short') ? 'short_v2'
+                    : (($confPatternAlgoKey === 'double_bottom_contextual_v2' && $side === 'long') ? 'long_v2' : '');
+                if ($confSideCounterKey !== '') {
+                    $result[$confSideCounterKey . '_confirmation_total']++;
+                }
+
+                // Build a precise lineage key: prefer signal_id (stable identity) when it is
+                // a real upstream ID (not a fallback we generated ourselves this run).
+                // Fallback: stable zone-hash anchored to setup geometry + side so a new setup
+                // at a different price level or opposite side gets its own slot.
+                $confZoneHigh    = (float)($signal['entry_zone_high'] ?? 0.0);
+                $confZoneLow     = (float)($signal['entry_zone_low']  ?? 0.0);
+                $patternAlgoConf = $confPatternAlgoKey;
+                if ($signalIdSource === 'original' && $signalId !== '') {
+                    $confKey = 'sid_' . $signalId;
+                } else {
+                    $zoneHash = substr(md5($symbol . '|' . $patternAlgoConf . '|' . $side . '|' . $confZoneHigh . '|' . $confZoneLow), 0, 12);
+                    $confKey  = $symbol . '_' . $patternAlgoConf . '_' . $side . '_' . $zoneHash;
+                }
+
+                // Current live price for continuation proof.
+                $currentLivePrice = (float)($prices[$symbol] ?? 0.0);
+
+                if (!isset($confPending[$confKey])) {
+                    // First time seeing this lineage → record setup, hold this cycle.
+                    $confPending[$confKey] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'conf_key'          => $confKey,
+                        'setup_detected_at' => date('c'),
+                        'setup_ts'          => $confNow,
+                        'cycles_seen'       => 1,
+                        'setup_zone_high'   => $confZoneHigh,
+                        'setup_zone_low'    => $confZoneLow,
+                        'setup_live_price'  => $currentLivePrice,
+                    ];
+                    $confLayerResult['confirmation_setup_detected']   = true;
+                    $confLayerResult['confirmation_result']           = 'setup_detected';
+                    $confLayerResult['confirmation_reason']           = 'first_detection_hold';
+                    $confLayerResult['confirmation_wait_cycles_used'] = 1;
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'setup_detected',
+                        'result'            => 'setup_detected',
+                        'reason'            => 'first_detection_hold',
+                        'wait_cycles_used'  => 1,
+                        'setup_zone_high'   => $confZoneHigh,
+                        'setup_zone_low'    => $confZoneLow,
+                        'live_price'        => $currentLivePrice,
+                    ];
+                    // Skip to next signal — do not create a live intent this cycle.
+                    continue;
+                }
+
+                // Seen before: increment cycle count and check fakeout / continuation / confirmation.
+                $confPending[$confKey]['cycles_seen']++;
+                $cyclesSeen = (int)$confPending[$confKey]['cycles_seen'];
+                $confLayerResult['confirmation_wait_cycles_used'] = $cyclesSeen;
+
+                $setupZoneHigh = (float)($confPending[$confKey]['setup_zone_high'] ?? 0.0);
+                $setupZoneLow  = (float)($confPending[$confKey]['setup_zone_low']  ?? 0.0);
+
+                if ($side === 'short') {
+                    // Fakeout check for short: if current entry_zone_high drifted significantly
+                    // above the setup zone high, the top was reclaimed → fakeout.
+                    $fakeoutThreshold = $setupZoneHigh > 0.0
+                        ? $setupZoneHigh * (1.0 + $confReclaimTolPct)
+                        : 0.0;
+                    $isFakeout = ($fakeoutThreshold > 0.0 && $confZoneHigh > $fakeoutThreshold);
+                    $fakeoutReason = 'zone_high_reclaimed_above_setup';
+
+                    // Continuation proof for short: price must be strictly below setup zone high.
+                    $hasContinuation = ($currentLivePrice > 0.0 && $setupZoneHigh > 0.0)
+                        ? ($currentLivePrice < $setupZoneHigh)
+                        : false;
+                    $continuationReason   = 'wait_cycles_and_downside_continuation';
+                    $noContinuationReason = 'no_downside_continuation_at_expiry';
+                } else {
+                    // Fakeout check for long: if current entry_zone_low drifted significantly
+                    // below the setup zone low, the bottom was reclaimed → fakeout.
+                    $fakeoutThreshold = $setupZoneLow > 0.0
+                        ? $setupZoneLow * (1.0 - $confReclaimTolPct)
+                        : 0.0;
+                    $isFakeout = ($fakeoutThreshold > 0.0 && $confZoneLow < $fakeoutThreshold);
+                    $fakeoutReason = 'zone_low_reclaimed_below_setup';
+
+                    // Continuation proof for long: price must be strictly above setup zone low.
+                    $hasContinuation = ($currentLivePrice > 0.0 && $setupZoneLow > 0.0)
+                        ? ($currentLivePrice > $setupZoneLow)
+                        : false;
+                    $continuationReason   = 'wait_cycles_and_upside_continuation';
+                    $noContinuationReason = 'no_upside_continuation_at_expiry';
+                }
+
+                if ($isFakeout) {
+                    // Fakeout detected — remove from pending, route to demo.
+                    unset($confPending[$confKey]);
+                    $confLayerResult['confirmation_result'] = 'fakeout';
+                    $confLayerResult['confirmation_reason'] = $fakeoutReason;
+                    $result['confirmation_fakeout_total']++;
+                    $result['confirmation_demo_total']++;
+                    if ($confSideCounterKey !== '') {
+                        $result[$confSideCounterKey . '_confirmation_fakeout_total']++;
+                        $result[$confSideCounterKey . '_confirmation_demo_total']++;
+                    }
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'fakeout',
+                        'result'            => 'fakeout',
+                        'reason'            => $fakeoutReason,
+                        'wait_cycles_used'  => $cyclesSeen,
+                        'setup_zone_high'   => $setupZoneHigh,
+                        'setup_zone_low'    => $setupZoneLow,
+                        'current_zone_high' => $confZoneHigh,
+                        'current_zone_low'  => $confZoneLow,
+                        'live_price'        => $currentLivePrice,
+                    ];
+                    $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_fakeout', $selectionMode);
+                    continue;
+                }
+
+                if ($cyclesSeen >= $confWaitCycles) {
+                    // Enough cycles elapsed without fakeout — require explicit continuation proof
+                    // in the intended direction. Do NOT auto-confirm on wait-cycle expiry alone.
+                    if ($hasContinuation) {
+                        // Confirmed: wait elapsed AND price moved in the intended direction.
+                        unset($confPending[$confKey]);
+                        $confLayerResult['confirmation_result'] = 'confirmed';
+                        $confLayerResult['confirmation_reason'] = $continuationReason;
+                        $result['confirmation_confirmed_total']++;
+                        if ($confSideCounterKey !== '') {
+                            $result[$confSideCounterKey . '_confirmation_confirmed_total']++;
+                        }
+                        $result['confirmation_state_preview'][] = [
+                            'symbol'            => $symbol,
+                            'pattern_algorithm' => $patternAlgoConf,
+                            'side'              => $side,
+                            'state'             => 'confirmed',
+                            'result'            => 'confirmed',
+                            'reason'            => $continuationReason,
+                            'wait_cycles_used'  => $cyclesSeen,
+                            'setup_zone_high'   => $setupZoneHigh,
+                            'setup_zone_low'    => $setupZoneLow,
+                            'live_price'        => $currentLivePrice,
+                        ];
+                        // Fall through — signal proceeds to live intent.
+                    } else {
+                        // Wait elapsed but no continuation proof — reject (not fakeout).
+                        // Prefer demo on soft rollout; remove from pending to unblock next fresh setup.
+                        unset($confPending[$confKey]);
+                        $confLayerResult['confirmation_result'] = 'reject';
+                        $confLayerResult['confirmation_reason'] = $noContinuationReason;
+                        $result['confirmation_reject_total']++;
+                        $result['confirmation_demo_total']++;
+                        if ($confSideCounterKey !== '') {
+                            $result[$confSideCounterKey . '_confirmation_reject_total']++;
+                            $result[$confSideCounterKey . '_confirmation_demo_total']++;
+                        }
+                        $result['confirmation_state_preview'][] = [
+                            'symbol'            => $symbol,
+                            'pattern_algorithm' => $patternAlgoConf,
+                            'side'              => $side,
+                            'state'             => 'reject',
+                            'result'            => 'reject',
+                            'reason'            => $noContinuationReason,
+                            'wait_cycles_used'  => $cyclesSeen,
+                            'setup_zone_high'   => $setupZoneHigh,
+                            'setup_zone_low'    => $setupZoneLow,
+                            'live_price'        => $currentLivePrice,
+                        ];
+                        $this->rejectLiveSignal($result, $symbol, $signalId, 'confirmation_no_continuation', $selectionMode);
+                        continue;
+                    }
+                } else {
+                    // Still waiting: hold this cycle.
+                    $confLayerResult['confirmation_result'] = 'waiting';
+                    $confLayerResult['confirmation_reason'] = 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen);
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => $symbol,
+                        'pattern_algorithm' => $patternAlgoConf,
+                        'side'              => $side,
+                        'state'             => 'waiting',
+                        'result'            => 'waiting',
+                        'reason'            => 'cycles_remaining_' . ($confWaitCycles - $cyclesSeen),
+                        'wait_cycles_used'  => $cyclesSeen,
+                        'cycles_needed'     => $confWaitCycles,
+                        'setup_zone_high'   => $setupZoneHigh,
+                        'setup_zone_low'    => $setupZoneLow,
+                        'live_price'        => $currentLivePrice,
+                    ];
+                    continue;
+                }
+            }
+            // === END CONFIRMATION LAYER ===
+
             // === APPROVED: build bot-ready live intent ===
 
             $sideOriginal = $side;
@@ -2969,6 +3250,14 @@ final class SmartBrainCore
             $intent['v2_cleanup_reason']       = $v2cFilterResult['v2_cleanup_reason'];
             $intent['v2_cleanup_wave_state']   = $v2cFilterResult['v2_cleanup_wave_state'];
             $intent['v2_cleanup_quality_band'] = $v2cFilterResult['v2_cleanup_quality_band'];
+
+            // Attach confirmation layer observability fields
+            $intent['confirmation_layer_used']       = $confLayerResult['confirmation_layer_used'];
+            $intent['confirmation_setup_detected']   = $confLayerResult['confirmation_setup_detected'];
+            $intent['confirmation_wait_cycles_used'] = $confLayerResult['confirmation_wait_cycles_used'];
+            $intent['confirmation_result']           = $confLayerResult['confirmation_result'];
+            $intent['confirmation_reason']           = $confLayerResult['confirmation_reason'];
+            $intent['confirmation_side']             = $confLayerResult['confirmation_side'];
 
             // P7: Attach per-symbol hint metadata for audit trail
             if ($symbolHints['applied']) {
@@ -3620,6 +3909,39 @@ final class SmartBrainCore
             }
         }
         // ── End Win Universe entry-attribution log ──────────────────────────
+
+        // ── Confirmation Layer: expire stale pending entries and persist ──────
+        // Remove entries that have exceeded the max age window (no update in too long).
+        if ($confLayerEnabled) {
+            foreach ($confPending as $ck => $ce) {
+                $setupTs = (int)($ce['setup_ts'] ?? 0);
+                if ($setupTs > 0 && ($confNow - $setupTs) > $confMaxAgeSeconds) {
+                    $cePattern = (string)($ce['pattern_algorithm'] ?? '');
+                    $ceSide    = (string)($ce['side'] ?? '');
+                    $ceSideKey = ($cePattern === 'double_top_contextual_v2'    && $ceSide === 'short') ? 'short_v2'
+                        : (($cePattern === 'double_bottom_contextual_v2' && $ceSide === 'long') ? 'long_v2' : '');
+                    $result['confirmation_state_preview'][] = [
+                        'symbol'            => (string)($ce['symbol'] ?? ''),
+                        'pattern_algorithm' => $cePattern,
+                        'side'              => $ceSide,
+                        'state'             => 'expired',
+                        'result'            => 'expired',
+                        'reason'            => 'max_age_exceeded',
+                        'wait_cycles_used'  => (int)($ce['cycles_seen'] ?? 0),
+                        'setup_zone_high'   => (float)($ce['setup_zone_high'] ?? 0.0),
+                        'setup_zone_low'    => (float)($ce['setup_zone_low']  ?? 0.0),
+                        'age_seconds'       => $confNow - $setupTs,
+                    ];
+                    unset($confPending[$ck]);
+                    $result['confirmation_expired_total']++;
+                    if ($ceSideKey !== '') {
+                        $result[$ceSideKey . '_confirmation_expired_total']++;
+                    }
+                }
+            }
+            $this->state->writeJson('storage/confirmation_pending.json', $confPending);
+        }
+        // ── End Confirmation Layer persist ───────────────────────────────────
 
         // Rebuild rejection_reason_stats to include any slot_priority_lost rejections added above.
         $reasonStats = [];

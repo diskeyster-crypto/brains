@@ -270,8 +270,11 @@ final class RiskEngine
                 $leverageReason = $leverageResult['reason'];
 
                 // Manual leverage override
+                // In manual mode the operator has explicitly requested a leverage level.
+                // bootstrap_max_leverage caps the dynamic (auto) algorithm only — it must NOT
+                // silently crush an explicit manual request. Only max_leverage applies here.
                 if ($leverageMode === 'manual') {
-                    $leverage = max(1, min($manualLeverage, $bootstrapMaxLeverage, $maxLeverage));
+                    $leverage = max(1, min($manualLeverage, $maxLeverage));
                     $leverageReason = 'manual=' . $leverage;
                 }
 

@@ -110,5 +110,15 @@ return [
         'slot_priority_enabled'                 => true,
         'freshness_decay_enabled'               => true,
         'slot_priority_freshness_window_minutes' => 30,
+        // Confirmation Layer — post-pattern wait window for targeted V2 patterns.
+        // Only applies to patterns listed in confirmation_target_patterns.
+        // V2 rollout scope: double_top_contextual_v2 short, double_bottom_contextual_v2 long.
+        // Default: enabled — set confirmation_layer_enabled = false via user config to disable.
+        'confirmation_layer_enabled'            => true,
+        'confirmation_wait_cycles'              => 3,
+        'confirmation_reclaim_tolerance_pct'    => 0.005,
+        'confirmation_target_patterns'          => ['double_top_contextual_v2', 'double_bottom_contextual_v2'],
+        // Max age for a pending confirmation entry before it expires.
+        'confirmation_max_age_seconds'          => 900,
     ],
 ];

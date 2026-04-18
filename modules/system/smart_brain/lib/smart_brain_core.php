@@ -828,7 +828,7 @@ final class SmartBrainCore
             'long_sniper_v3_live_rejected_count' => (int)($liveIntentResult['long_sniper_v3_live_rejected_count'] ?? 0),
             'long_passport_gate_reject_total' => (int)($liveIntentResult['long_passport_gate_reject_total'] ?? 0),
             'long_cycle_veto_total' => (int)($liveIntentResult['long_cycle_veto_total'] ?? 0),
-            // Stabilized cycle relaxation diagnostics
+            // Stabilized cycle relaxation diagnostics (legacy — replaced by stabilized_demote_demo_relaxation)
             'stabilized_cycle_relaxation_used'             => (int)($liveIntentResult['stabilized_cycle_relaxation_used']            ?? 0),
             'stabilized_cycle_relaxation_applied'          => (int)($liveIntentResult['stabilized_cycle_relaxation_applied']         ?? 0),
             'stabilized_cycle_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_live_pass_total'] ?? 0),
@@ -836,6 +836,15 @@ final class SmartBrainCore
             'stabilized_cycle_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_cycle_relaxation_reject_total']    ?? 0),
             'stabilized_cycle_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_no_effect_total'] ?? 0),
             'stabilized_cycle_relaxation_reason_distribution' => $liveIntentResult['stabilized_cycle_relaxation_reason_distribution'] ?? [],
+            // Stabilized demote-demo relaxation diagnostics (narrow rescue for borderline-clean V2 non_live_bias)
+            'stabilized_demote_demo_relaxation_used'             => (int)($liveIntentResult['stabilized_demote_demo_relaxation_used']            ?? 0),
+            'stabilized_demote_demo_relaxation_applied'          => (int)($liveIntentResult['stabilized_demote_demo_relaxation_applied']         ?? 0),
+            'stabilized_demote_demo_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_demote_demo_relaxation_live_pass_total'] ?? 0),
+            'stabilized_demote_demo_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_demote_demo_relaxation_demo_total']      ?? 0),
+            'stabilized_demote_demo_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_demote_demo_relaxation_reject_total']    ?? 0),
+            'stabilized_demote_demo_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_demote_demo_relaxation_no_effect_total'] ?? 0),
+            'stabilized_demote_demo_relaxation_reason_distribution' => $liveIntentResult['stabilized_demote_demo_relaxation_reason_distribution'] ?? [],
+            'stabilized_demote_demo_relaxation_preview'          => $liveIntentResult['stabilized_demote_demo_relaxation_preview']          ?? [],
             // Cycle non-actionable audit (contextual V2 only, read-only)
             'cycle_non_actionable_audit_total'             => (int)($liveIntentResult['cycle_non_actionable_audit_total']             ?? 0),
             'cycle_non_actionable_audit_borderline_total'  => (int)($liveIntentResult['cycle_non_actionable_audit_borderline_total']  ?? 0),
@@ -861,7 +870,6 @@ final class SmartBrainCore
             'zero_live_flow_restore_reason_distribution' => $liveIntentResult['zero_live_flow_restore_reason_distribution'] ?? [],
             'zero_live_flow_restore_preview'           => $liveIntentResult['zero_live_flow_restore_preview']           ?? [],
             // Manual blacklist diagnostics
-            'manual_blacklist_active' => (bool)($liveIntentResult['manual_blacklist_active'] ?? false),
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
             'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
             'manual_blacklist_rejected_preview' => $liveIntentResult['manual_blacklist_rejected_preview'] ?? [],
@@ -1063,7 +1071,7 @@ final class SmartBrainCore
             'cycle_model_support_no_effect_total'  => (int)($liveIntentResult['cycle_model_support_no_effect_total'] ?? 0),
             // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
             'cycle_model_support_preview'         => $liveIntentResult['cycle_model_support_preview'] ?? [],
-            // Stabilized cycle relaxation diagnostics
+            // Stabilized cycle relaxation diagnostics (legacy — replaced by stabilized_demote_demo_relaxation)
             'stabilized_cycle_relaxation_used'             => (int)($liveIntentResult['stabilized_cycle_relaxation_used']            ?? 0),
             'stabilized_cycle_relaxation_applied'          => (int)($liveIntentResult['stabilized_cycle_relaxation_applied']         ?? 0),
             'stabilized_cycle_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_live_pass_total'] ?? 0),
@@ -1071,6 +1079,15 @@ final class SmartBrainCore
             'stabilized_cycle_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_cycle_relaxation_reject_total']    ?? 0),
             'stabilized_cycle_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_cycle_relaxation_no_effect_total'] ?? 0),
             'stabilized_cycle_relaxation_reason_distribution' => $liveIntentResult['stabilized_cycle_relaxation_reason_distribution'] ?? [],
+            // Stabilized demote-demo relaxation diagnostics (narrow rescue for borderline-clean V2 non_live_bias)
+            'stabilized_demote_demo_relaxation_used'             => (int)($liveIntentResult['stabilized_demote_demo_relaxation_used']            ?? 0),
+            'stabilized_demote_demo_relaxation_applied'          => (int)($liveIntentResult['stabilized_demote_demo_relaxation_applied']         ?? 0),
+            'stabilized_demote_demo_relaxation_live_pass_total'  => (int)($liveIntentResult['stabilized_demote_demo_relaxation_live_pass_total'] ?? 0),
+            'stabilized_demote_demo_relaxation_demo_total'       => (int)($liveIntentResult['stabilized_demote_demo_relaxation_demo_total']      ?? 0),
+            'stabilized_demote_demo_relaxation_reject_total'     => (int)($liveIntentResult['stabilized_demote_demo_relaxation_reject_total']    ?? 0),
+            'stabilized_demote_demo_relaxation_no_effect_total'  => (int)($liveIntentResult['stabilized_demote_demo_relaxation_no_effect_total'] ?? 0),
+            'stabilized_demote_demo_relaxation_reason_distribution' => $liveIntentResult['stabilized_demote_demo_relaxation_reason_distribution'] ?? [],
+            'stabilized_demote_demo_relaxation_preview'          => $liveIntentResult['stabilized_demote_demo_relaxation_preview']          ?? [],
             // Cycle non-actionable audit (contextual V2 only, read-only)
             'cycle_non_actionable_audit_total'             => (int)($liveIntentResult['cycle_non_actionable_audit_total']             ?? 0),
             'cycle_non_actionable_audit_borderline_total'  => (int)($liveIntentResult['cycle_non_actionable_audit_borderline_total']  ?? 0),
@@ -1347,7 +1364,7 @@ final class SmartBrainCore
             'cycle_model_support_no_effect_total'  => 0,
             // Coin cycle positive support layer per-symbol proof preview (Coin Core Step 12)
             'cycle_model_support_preview'         => [],
-            // Stabilized cycle relaxation diagnostics (post-stabilization narrow soft rescue for V2 rescued signals)
+            // Stabilized cycle relaxation diagnostics (legacy — replaced by stabilized_demote_demo_relaxation)
             'stabilized_cycle_relaxation_used'             => 0,
             'stabilized_cycle_relaxation_applied'          => 0,
             'stabilized_cycle_relaxation_live_pass_total'  => 0,
@@ -1355,6 +1372,15 @@ final class SmartBrainCore
             'stabilized_cycle_relaxation_reject_total'     => 0,
             'stabilized_cycle_relaxation_no_effect_total'  => 0,
             'stabilized_cycle_relaxation_reason_distribution' => [],
+            // Stabilized demote-demo relaxation diagnostics (narrow rescue for borderline-clean V2 non_live_bias signals)
+            'stabilized_demote_demo_relaxation_used'             => 0,
+            'stabilized_demote_demo_relaxation_applied'          => 0,
+            'stabilized_demote_demo_relaxation_live_pass_total'  => 0,
+            'stabilized_demote_demo_relaxation_demo_total'       => 0,
+            'stabilized_demote_demo_relaxation_reject_total'     => 0,
+            'stabilized_demote_demo_relaxation_no_effect_total'  => 0,
+            'stabilized_demote_demo_relaxation_reason_distribution' => [],
+            'stabilized_demote_demo_relaxation_preview'          => [],
             // Cycle non-actionable audit (contextual V2 only, read-only diagnostics, no routing effect)
             'cycle_non_actionable_audit_total'             => 0,
             'cycle_non_actionable_audit_borderline_total'  => 0,
@@ -2556,33 +2582,104 @@ final class SmartBrainCore
                         $result['cycle_model_support_borderline_total']++;
                         // Do NOT continue — signal survives into passport gate
                     } else {
-                        // === STABILIZED CYCLE RELAXATION (Coin Core Step 11-R) ===
-                        // Narrow soft rescue for already-rescued borderline-clean contextual V2
-                        // signals that would otherwise be demoted only because of non_live_bias
-                        // while the underlying cycle conditions are safe (actionable, not high_risk,
-                        // no warning). This is the softest cycle demotion reason — the only issue
-                        // is the model's preference, not a genuine risk signal.
+                        // === STABILIZED DEMOTE-DEMO RELAXATION (Coin Core Step 11-R) ===
+                        // Narrow soft rescue for already-rescued borderline-clean contextual V2 signals
+                        // that would otherwise be demoted only because of non_live_bias while the
+                        // underlying cycle conditions are safe. This is the softest cycle demotion
+                        // reason — the only issue is the model's preference, not a genuine risk signal.
                         // Never fires for clearly bad cases (hard veto conditions block above).
-                        // Feature-flagged and guarded by: $stabRelaxApplied (V2 floor rescue).
-                        $stabCycleRelaxEnabled = (bool)($userLimits['stabilized_cycle_relaxation_enabled'] ?? true);
-                        $stabCycleRescued = false;
-                        if ($stabCycleRelaxEnabled && $stabRelaxApplied) {
-                            $result['stabilized_cycle_relaxation_used']++;
-                            if ($cmActionability === 'actionable' && $cmRisk !== 'high_risk' && !$cmWarnFlag) {
-                                $stabCycleRescued = true;
-                                $rescueReasonCycle = 'non_live_bias_soft_demote_v2_rescued_borderline';
-                                $result['stabilized_cycle_relaxation_applied']++;
-                                $result['stabilized_cycle_relaxation_live_pass_total']++;
-                                $result['stabilized_cycle_relaxation_reason_distribution'][$rescueReasonCycle] =
-                                    ($result['stabilized_cycle_relaxation_reason_distribution'][$rescueReasonCycle] ?? 0) + 1;
-                                // Do NOT continue — signal survives into passport gate
+                        // Requires a prior rescue: stabilized V2 floor relaxation OR
+                        // zero_live_flow_restore (non_actionable borderline rescue).
+                        // Feature flag: stabilized_demote_demo_relaxation_enabled.
+                        $stabDemoteDemoEnabled = (bool)($userLimits['stabilized_demote_demo_relaxation_enabled'] ?? true);
+                        $stabDemoteDemoRescued = false;
+                        $isDemoteDemoV2 = ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2');
+                        $hasPriorRescue = $stabRelaxApplied || ($stabNonActRescued ?? false);
+
+                        if ($stabDemoteDemoEnabled && $isDemoteDemoV2 && $hasPriorRescue) {
+                            $result['stabilized_demote_demo_relaxation_used']++;
+
+                            // Support profile: at least one score meets a bounded floor
+                            $ddEqScore  = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                            $ddHasEq    = isset($signal['entry_quality_score']) || isset($signal['hold_quality_score']);
+                            $ddPcScore  = (float)($signal['pattern_confidence'] ?? 0.0);
+                            $ddHasPc    = isset($signal['pattern_confidence']);
+                            $ddSsScore  = (float)($signal['scenario_score'] ?? 0.0);
+                            $ddHasSs    = isset($signal['scenario_score']);
+                            $ddTmsScore = $signal['trend_match_score'] ?? null;
+                            $ddSupportOk = (
+                                ($ddHasEq && $ddEqScore  >= 0.40) ||
+                                ($ddHasPc && $ddPcScore  >= 0.50) ||
+                                ($ddHasSs && $ddSsScore  >= 0.40) ||
+                                ($ddTmsScore !== null && (float)$ddTmsScore >= 0.35)
+                            );
+                            // Explicitly poor: both primary scores below 0.30
+                            if ($ddHasEq && $ddEqScore < 0.30 && $ddHasPc && $ddPcScore < 0.30) {
+                                $ddSupportOk = false;
+                            }
+
+                            $ddWarnSeverity    = !$cmWarnFlag ? 'none' : ($cmWarnSevere    ? 'severe' : 'soft');
+                            $ddLowConfSeverity = !$cmLowConf  ? 'none' : ($cmLowConfSevere ? 'severe' : 'soft');
+
+                            // Evaluate rescue eligibility
+                            $ddRejectReason = null;
+                            if ($cmRisk === 'high_risk') {
+                                $ddRejectReason = 'high_risk';
+                            } elseif ($cmWarnSevere) {
+                                $ddRejectReason = 'severe_warning';
+                            } elseif ($cmLowConfSevere) {
+                                $ddRejectReason = 'severe_low_confidence';
+                            } elseif ($cmActionability !== 'actionable') {
+                                $ddRejectReason = 'not_actionable';
+                            } elseif (!$ddSupportOk) {
+                                $ddRejectReason = 'poor_support_profile';
+                            }
+
+                            $ddPreviewEntry = [
+                                'symbol'                                 => $symbol,
+                                'side'                                   => $signalSide,
+                                'pattern_algorithm'                      => $patternAlgo,
+                                'cycle_state'                            => $cmState,
+                                'cycle_risk'                             => $cmRisk,
+                                'cycle_live_bias'                        => $cmLiveBias,
+                                'cycle_actionability'                    => $cmActionability,
+                                'warning_severity'                       => $ddWarnSeverity,
+                                'low_confidence_severity'                => $ddLowConfSeverity,
+                                'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                                'zero_live_flow_restore_applied'         => ($stabNonActRescued ?? false),
+                                'entry_quality_score'                    => $ddHasEq  ? round($ddEqScore,  4) : null,
+                                'pattern_confidence'                     => $ddHasPc  ? round($ddPcScore,  4) : null,
+                                'scenario_score'                         => $ddHasSs  ? round($ddSsScore,  4) : null,
+                                'trend_match_score'                      => $ddTmsScore !== null ? round((float)$ddTmsScore, 4) : null,
+                                'slot_priority_score'                    => $signal['slot_priority_score'] ?? null,
+                                'rescue_result'                          => null,
+                                'rescue_reason'                          => null,
+                            ];
+
+                            if ($ddRejectReason === null) {
+                                $stabDemoteDemoRescued = true;
+                                $ddRescueReason = 'non_live_bias_soft_demote_v2_rescued_' . $cmRisk;
+                                $result['stabilized_demote_demo_relaxation_applied']++;
+                                $result['stabilized_demote_demo_relaxation_live_pass_total']++;
+                                $result['stabilized_demote_demo_relaxation_reason_distribution'][$ddRescueReason] =
+                                    ($result['stabilized_demote_demo_relaxation_reason_distribution'][$ddRescueReason] ?? 0) + 1;
+                                $ddPreviewEntry['rescue_result'] = 'live_pass';
+                                $ddPreviewEntry['rescue_reason'] = $ddRescueReason;
                             } else {
-                                $result['stabilized_cycle_relaxation_reject_total']++;
+                                $ddRejectKey = 'reject_' . $ddRejectReason;
+                                $result['stabilized_demote_demo_relaxation_reject_total']++;
+                                $result['stabilized_demote_demo_relaxation_reason_distribution'][$ddRejectKey] =
+                                    ($result['stabilized_demote_demo_relaxation_reason_distribution'][$ddRejectKey] ?? 0) + 1;
+                                $ddPreviewEntry['rescue_result'] = 'rejected';
+                                $ddPreviewEntry['rescue_reason'] = $ddRejectReason;
+                            }
+                            if (count($result['stabilized_demote_demo_relaxation_preview']) < 10) {
+                                $result['stabilized_demote_demo_relaxation_preview'][] = $ddPreviewEntry;
                             }
                         }
-                        // === END STABILIZED CYCLE RELAXATION ===
+                        // === END STABILIZED DEMOTE-DEMO RELAXATION ===
 
-                        if (!$stabCycleRescued) {
+                        if (!$stabDemoteDemoRescued) {
                             $cycleModelVetoApplied = true;
                             $cycleModelVetoReason  = 'cycle_model_demote_demo';
                             $result['cycle_model_veto_total']++;
@@ -2629,11 +2726,11 @@ final class SmartBrainCore
                     }
                 }
                 $result['cycle_model_no_effect_total']++;
-                // Stabilized cycle relaxation: no-effect counter for signals that passed
-                // cycle model without needing rescue.
-                $stabCycleRelaxEnabledCheck = (bool)($userLimits['stabilized_cycle_relaxation_enabled'] ?? true);
-                if ($stabCycleRelaxEnabledCheck && $stabRelaxApplied) {
-                    $result['stabilized_cycle_relaxation_no_effect_total']++;
+                // Stabilized demote-demo relaxation: no-effect counter for signals that passed
+                // cycle model without needing rescue (V2 floor-rescued signal passed cycle cleanly).
+                $stabDemoteDemoCheck = (bool)($userLimits['stabilized_demote_demo_relaxation_enabled'] ?? true);
+                if ($stabDemoteDemoCheck && ($stabRelaxApplied || ($stabNonActRescued ?? false)) && ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2')) {
+                    $result['stabilized_demote_demo_relaxation_no_effect_total']++;
                 }
             } else {
                 // Cycle model unavailable for this symbol — no veto applied

@@ -1,0 +1,67 @@
+{
+    "ts": "2026-04-18T08:36:05+01:00",
+    "ok": true,
+    "status": "ok",
+    "duration_ms": 1172,
+    "mode": "live",
+    "trailing_owner": "bot",
+    "selected_mode": "exchange_only",
+    "positions_total": 3,
+    "positions_managed": 3,
+    "step_trailing": {
+        "applied": 0,
+        "skipped": 3,
+        "failed": 0
+    },
+    "dumb_trailing": {
+        "applied": 0,
+        "skipped": 3,
+        "failed": 0
+    },
+    "items": [
+        {
+            "symbol": "MIRAUSDT",
+            "side": "short",
+            "roi_pct": -5.6728448378212342,
+            "step_trailing": {
+                "action": "skip",
+                "reason": "below_activation"
+            },
+            "dumb_trailing": {
+                "action": "skip",
+                "reason": "dumb_trailing_disabled"
+            },
+            "errors": []
+        },
+        {
+            "symbol": "SKYUSDT",
+            "side": "long",
+            "roi_pct": -1.5827317577333042,
+            "step_trailing": {
+                "action": "skip",
+                "reason": "below_activation"
+            },
+            "dumb_trailing": {
+                "action": "skip",
+                "reason": "dumb_trailing_disabled"
+            },
+            "errors": []
+        },
+        {
+            "symbol": "SOLUSDT",
+            "side": "long",
+            "roi_pct": -6.4543741404832362,
+            "step_trailing": {
+                "action": "skip",
+                "reason": "below_activation"
+            },
+            "dumb_trailing": {
+                "action": "skip",
+                "reason": "dumb_trailing_disabled"
+            },
+            "errors": []
+        }
+    ],
+    "errors": [],
+    "warnings": []
+}

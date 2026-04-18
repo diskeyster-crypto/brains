@@ -1,0 +1,13 @@
+{
+    "last_cron_run_status": "ok",
+    "last_cron_run_at": "2026-04-18T08:14:08+01:00",
+    "last_cron_run_source": "parser2_internal",
+    "last_cron_run_counts": {
+        "signals_stored": 200,
+        "scenarios_stored": 200,
+        "demo_signals": 0,
+        "shadow_signals": 0,
+        "symbols_scanned": 30
+    },
+    "last_cron_run_error": null
+}

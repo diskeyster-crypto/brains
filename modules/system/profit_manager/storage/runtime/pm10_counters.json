@@ -1,0 +1,8 @@
+{
+    "refinement_first_lock_protection_total": 3318,
+    "refinement_continuation_extension_total": 3505,
+    "refinement_shallow_pullback_protection_total": 1002,
+    "refinement_noop_total": 23615,
+    "refinement_symbols_affected_total": 7825,
+    "updated_at": "2026-04-18T08:13:04+01:00"
+}

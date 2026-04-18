@@ -1,0 +1,17 @@
+{
+    "trade_id": "AXLUSDT_short",
+    "symbol": "AXLUSDT",
+    "side": "short",
+    "owner_mode": "profit_manager_shadow",
+    "current_roi": 12.4922,
+    "peak_roi": 13.666700000000001,
+    "trailing_armed": true,
+    "proposed_lock_roi": 11,
+    "proposed_stop_price": 0.045525900000000001,
+    "last_lock_roi": 11,
+    "last_move_ts": 1775694665,
+    "proposed_action": "hold",
+    "cooldown_active": false,
+    "min_distance_blocked": true,
+    "updated_at": "2026-04-09T02:32:04+01:00"
+}

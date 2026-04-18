@@ -1,0 +1,17 @@
+{
+    "trade_id": "ROBOUSDT_short",
+    "symbol": "ROBOUSDT",
+    "side": "short",
+    "owner_mode": "profit_manager_shadow",
+    "current_roi": -4.3727,
+    "peak_roi": 1.3010999999999999,
+    "trailing_armed": false,
+    "proposed_lock_roi": 0,
+    "proposed_stop_price": 0,
+    "last_lock_roi": 0,
+    "last_move_ts": 0,
+    "proposed_action": "hold",
+    "cooldown_active": false,
+    "min_distance_blocked": false,
+    "updated_at": "2026-04-09T03:51:04+01:00"
+}

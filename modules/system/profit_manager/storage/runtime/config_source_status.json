@@ -1,0 +1,43 @@
+{
+    "module": "profit_manager",
+    "switch_wave": "v1_operational_params",
+    "unified_config_available": true,
+    "unified_config_master_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_master.json",
+    "unified_config_draft_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/config/storage/runtime/config_operational_draft.json",
+    "source": "unified_config_operational_master",
+    "partially_migrated": true,
+    "first_wave_total": 2,
+    "migrated_count": 2,
+    "fallback_count": 0,
+    "switched_params": [
+        "pm_enabled",
+        "pm_trailing_owner"
+    ],
+    "fallback_params": [],
+    "switched_params_detail": {
+        "pm_enabled": {
+            "value": true,
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "profit_manager",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        },
+        "pm_trailing_owner": {
+            "value": "profit_manager",
+            "original_source": "config_center_save",
+            "original_source_file": null,
+            "via": "unified_config_operational_master",
+            "source_layer": "unified_config_master",
+            "source_owner": "profit_manager",
+            "unified_config_used": true,
+            "legacy_fallback_used": false
+        }
+    },
+    "fallback_params_detail": [],
+    "recorded_at": "2026-04-18T08:13:04+01:00",
+    "unified_config_master_saved_at": "2026-04-17T19:59:59+01:00",
+    "unified_config_generated_at": "2026-04-18T08:08:13+01:00"
+}

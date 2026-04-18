@@ -933,9 +933,9 @@ class GithubController
     ): array
     {
         $tree = [];
-        $maxDepth = 4; // Limit recursion depth in safe mode only
+        $maxDepth = $includeAll ? 10 : 4;
         
-        if (!$includeAll && $depth > $maxDepth) {
+        if ($depth > $maxDepth) {
             return $tree;
         }
         
@@ -946,9 +946,12 @@ class GithubController
         }
         
         // Skip lists for safe mode only
-        $alwaysSkipDirs = ['vendor', 'node_modules', '.git', '.idea', '.vscode'];
-        $protectedDirs = ['storage', 'runtime', 'config'];
-        $skipDirs = array_merge($alwaysSkipDirs, $protectedDirs);
+        $skipDirs = [];
+        if (!$includeAll) {
+            $alwaysSkipDirs = ['vendor', 'node_modules', '.git', '.idea', '.vscode'];
+            $protectedDirs = ['storage', 'runtime', 'config'];
+            $skipDirs = array_merge($alwaysSkipDirs, $protectedDirs);
+        }
         
         $items = scandir($currentPath);
         
@@ -1013,7 +1016,7 @@ class GithubController
     /**
      * Resolve include_all_files mode from request value or stored settings.
      */
-    private function resolveIncludeAllFiles($rawValue): bool
+    private function resolveIncludeAllFiles(mixed $rawValue): bool
     {
         if ($rawValue !== null) {
             return in_array(strtolower((string) $rawValue), ['1', 'true', 'on', 'yes'], true);

@@ -875,6 +875,12 @@ final class SmartBrainCore
             'downstream_rescue_handoff_reject_total'      => (int)($liveIntentResult['downstream_rescue_handoff_reject_total']      ?? 0),
             'downstream_rescue_handoff_reason_distribution' => $liveIntentResult['downstream_rescue_handoff_reason_distribution'] ?? [],
             'downstream_rescue_handoff_preview'           => $liveIntentResult['downstream_rescue_handoff_preview']           ?? [],
+            // Passport V2 rescue diagnostics (narrow rescue for already-rescued V2 signals with insufficient-data block)
+            'passport_v2_rescue_used'              => (int)($liveIntentResult['passport_v2_rescue_used']              ?? 0),
+            'passport_v2_rescue_applied'           => (int)($liveIntentResult['passport_v2_rescue_applied']           ?? 0),
+            'passport_v2_rescue_reject_total'      => (int)($liveIntentResult['passport_v2_rescue_reject_total']      ?? 0),
+            'passport_v2_rescue_reason_distribution' => $liveIntentResult['passport_v2_rescue_reason_distribution'] ?? [],
+            'passport_v2_rescue_preview'           => $liveIntentResult['passport_v2_rescue_preview']           ?? [],
             // Manual blacklist diagnostics
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
             'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
@@ -1060,6 +1066,12 @@ final class SmartBrainCore
             'passport_gate_signal_blocked_by_passport_count' => (int)($liveIntentResult['passport_gate_signal_blocked_by_passport_count'] ?? 0),
             'passport_gate_reject_reason_distribution' => $liveIntentResult['passport_gate_reject_reason_distribution'] ?? [],
             'passport_gate_rejected_preview' => $liveIntentResult['passport_gate_rejected_preview'] ?? [],
+            // Passport V2 rescue diagnostics (narrow rescue for already-rescued V2 signals with insufficient-data block)
+            'passport_v2_rescue_used'              => (int)($liveIntentResult['passport_v2_rescue_used']              ?? 0),
+            'passport_v2_rescue_applied'           => (int)($liveIntentResult['passport_v2_rescue_applied']           ?? 0),
+            'passport_v2_rescue_reject_total'      => (int)($liveIntentResult['passport_v2_rescue_reject_total']      ?? 0),
+            'passport_v2_rescue_reason_distribution' => $liveIntentResult['passport_v2_rescue_reason_distribution'] ?? [],
+            'passport_v2_rescue_preview'           => $liveIntentResult['passport_v2_rescue_preview']           ?? [],
             // Coin cycle decision debug observability counters (read-only, does not affect routing)
             'cycle_debug_available_total' => (int)($liveIntentResult['cycle_debug_available_total'] ?? 0),
             'cycle_debug_missing_total' => (int)($liveIntentResult['cycle_debug_missing_total'] ?? 0),
@@ -1359,6 +1371,12 @@ final class SmartBrainCore
             'passport_gate_signal_blocked_by_passport_count' => 0,
             'passport_gate_reject_reason_distribution' => [],
             'passport_gate_rejected_preview' => [],
+            // Passport V2 rescue diagnostics (narrow rescue for already-rescued V2 signals with insufficient-data block)
+            'passport_v2_rescue_used'              => 0,
+            'passport_v2_rescue_applied'           => 0,
+            'passport_v2_rescue_reject_total'      => 0,
+            'passport_v2_rescue_reason_distribution' => [],
+            'passport_v2_rescue_preview'           => [],
             // Coin cycle decision debug observability (read-only, does not affect routing)
             'cycle_debug_available_total' => 0,
             'cycle_debug_missing_total' => 0,
@@ -2988,6 +3006,109 @@ final class SmartBrainCore
                         // sim_only / shadow_only — demote, do not issue live.
                         // passport_gate_demote:sim_only is produced only for these states.
                         // bootstrap_live is explicitly handled above and does NOT reach this branch.
+
+                        // === PASSPORT V2 RESCUE ===
+                        // Narrow exception: if a signal was already rescued by zero_live_flow_restore
+                        // and the ONLY passport block reason is insufficient_total_samples (a data
+                        // quantity issue, not a performance/quality failure), treat it as bootstrap_live.
+                        // All true safety rails (high_risk, severe_warning, severe_low_confidence) were
+                        // already enforced as hard-vetoes above and cannot reach this gate.
+                        // Applies only to double_bottom_contextual_v2 / double_top_contextual_v2.
+                        // Feature flag: passport_v2_rescue_enabled.
+                        $passportV2Rescued   = false;
+                        $pgRescueEnabled     = (bool)($userLimits['passport_v2_rescue_enabled'] ?? true);
+                        $pgIsRescuedSignal   = ($stabNonActRescued ?? false);
+                        $pgIsContextualV2    = ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2');
+                        $pgIsDataInsufficient = (
+                            $passportEligibility === 'sim_only' &&
+                            (
+                                strpos($passportInsufReason, 'insufficient_total_samples') !== false ||
+                                strpos($passportBlockReason,  'insufficient_total_samples') !== false
+                            )
+                        );
+
+                        if ($pgRescueEnabled && $pgIsRescuedSignal && $pgIsContextualV2 && $pgIsDataInsufficient) {
+                            $result['passport_v2_rescue_used']++;
+
+                            // Support profile check — same floor thresholds as zero_live_flow_restore
+                            $pgEqScore  = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                            $pgHasEq    = isset($signal['entry_quality_score']) || isset($signal['hold_quality_score']);
+                            $pgPcScore  = (float)($signal['pattern_confidence'] ?? 0.0);
+                            $pgHasPc    = isset($signal['pattern_confidence']);
+                            $pgSsScore  = (float)($signal['scenario_score'] ?? 0.0);
+                            $pgHasSs    = isset($signal['scenario_score']);
+                            $pgTmsScore = $signal['trend_match_score'] ?? null;
+                            $pgSupportOk = (
+                                ($pgHasEq && $pgEqScore  >= 0.45) ||
+                                ($pgHasPc && $pgPcScore  >= 0.50) ||
+                                ($pgHasSs && $pgSsScore  >= 0.45) ||
+                                ($pgTmsScore !== null && (float)$pgTmsScore >= 0.45)
+                            );
+                            // Explicitly poor: both primary scores below 0.30
+                            if ($pgHasEq && $pgEqScore < 0.30 && $pgHasPc && $pgPcScore < 0.30) {
+                                $pgSupportOk = false;
+                            }
+
+                            $pgRescueRejectReason = null;
+                            if (!$pgSupportOk) {
+                                $pgRescueRejectReason = 'poor_support_profile';
+                            }
+
+                            $pgPreviewEntry = [
+                                'symbol'                          => $symbol,
+                                'side'                            => $side,
+                                'pattern_algorithm'               => $patternAlgo,
+                                'zero_live_flow_restore_applied'  => true,
+                                'passport_eligibility_original'   => $passportEligibility,
+                                'passport_block_reason'           => $passportBlockReason,
+                                'passport_insuf_reason'           => $passportInsufReason ?: null,
+                                'entry_quality_score'             => $pgHasEq ? round($pgEqScore, 4) : null,
+                                'pattern_confidence'              => $pgHasPc ? round($pgPcScore, 4) : null,
+                                'scenario_score'                  => $pgHasSs ? round($pgSsScore, 4) : null,
+                                'trend_match_score'               => $pgTmsScore !== null ? round((float)$pgTmsScore, 4) : null,
+                                'slot_priority_score'             => $signal['slot_priority_score'] ?? null,
+                                'rescue_result'                   => null,
+                                'rescue_reason'                   => null,
+                            ];
+
+                            if ($pgRescueRejectReason === null) {
+                                // Rescue approved — treat as bootstrap_live
+                                $passportV2Rescued = true;
+                                $pgRescueReason    = 'insufficient_total_samples_v2_rescued';
+                                $result['passport_v2_rescue_applied']++;
+                                $result['passport_v2_rescue_reason_distribution'][$pgRescueReason] =
+                                    ($result['passport_v2_rescue_reason_distribution'][$pgRescueReason] ?? 0) + 1;
+                                $pgPreviewEntry['rescue_result'] = 'bootstrap_live';
+                                $pgPreviewEntry['rescue_reason'] = $pgRescueReason;
+                                // Set signal state identically to the bootstrap_live branch above
+                                $signal['passport_gate_result']           = 'bootstrap_live';
+                                $signal['passport_gate_bootstrap']        = true;
+                                $signal['passport_gate_bootstrap_reason'] = 'passport_v2_rescue:' . $pgRescueReason;
+                                $signal['passport_corridor_p75']          = $passportCorridorP75;
+                                $signal['passport_runner_prob']           = $passportRunnerProb;
+                                $signal['passport_noise_score']           = $passportNoiseScore;
+                                $signal['passport_regime_health']         = $passport['market_regime_health_score'] ?? null;
+                                $signal['passport_gate_state']            = 'bootstrap_live';
+                                $signal['passport_gate_decision']         = 'pass_v2_rescue';
+                                $signal['passport_gate_demote_reason_detail'] = $passportInsufReason ?: $passportBlockReason;
+                                $signal['passport_v2_rescue_applied']     = true;
+                                $result['passport_gate_passed_count']++;
+                                $result['passport_gate_bootstrap_live_count']++;
+                            } else {
+                                $pgRejectKey = 'reject_' . $pgRescueRejectReason;
+                                $result['passport_v2_rescue_reject_total']++;
+                                $result['passport_v2_rescue_reason_distribution'][$pgRejectKey] =
+                                    ($result['passport_v2_rescue_reason_distribution'][$pgRejectKey] ?? 0) + 1;
+                                $pgPreviewEntry['rescue_result'] = 'rejected';
+                                $pgPreviewEntry['rescue_reason'] = $pgRescueRejectReason;
+                            }
+                            if (count($result['passport_v2_rescue_preview']) < 10) {
+                                $result['passport_v2_rescue_preview'][] = $pgPreviewEntry;
+                            }
+                        }
+                        // === END PASSPORT V2 RESCUE ===
+
+                        if (!$passportV2Rescued) {
                         $result['passport_gate_signal_blocked_by_passport_count']++;
                         if ($side === 'long') {
                             $result['long_passport_gate_reject_total']++;
@@ -3035,6 +3156,7 @@ final class SmartBrainCore
                         }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'passport_gate_demote:' . $passportEligibility, $selectionMode);
                         continue;
+                        } // end !$passportV2Rescued
                     }
                 }
             }

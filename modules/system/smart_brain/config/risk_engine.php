@@ -136,5 +136,14 @@ return [
         // no warning, no low_confidence). Never rescues high_risk, unavailable, or dirty cases.
         // Only applies to double_bottom_contextual_v2 long and double_top_contextual_v2 short.
         'stabilized_non_actionable_relaxation_enabled' => true,
+        // Upstream V2 borderline restore — feature-flagged two-sub-path rescue for contextual V2
+        // signals blocked too early upstream (v2_live_quality_floor or zero_live_flow_restore).
+        //   Sub-path 1 (floor): two-miss with soft tolerance (0.05) when support is super-strict
+        //                       (entry_quality >= 0.60 OR pattern_confidence >= 0.60).
+        //   Sub-path 2 (cycle): tier-2 borderline rescue for non_actionable+weak signals where
+        //                       the ONLY severe keyword is multi_fail in low_confidence (no warn,
+        //                       no structural failure keywords) and support meets tier-2 floor.
+        // Disable quickly if next archive shows noise.
+        'upstream_v2_borderline_restore_enabled' => true,
     ],
 ];

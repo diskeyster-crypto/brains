@@ -1188,6 +1188,17 @@ final class SmartBrainCore
             'wave_slow_rescue_no_effect_total'      => (int)($liveIntentResult['wave_slow_rescue_no_effect_total']      ?? 0),
             'wave_slow_rescue_reason_distribution'  => $liveIntentResult['wave_slow_rescue_reason_distribution']        ?? [],
             'wave_slow_rescue_preview'              => $liveIntentResult['wave_slow_rescue_preview']                    ?? [],
+            // Rescue chain eligibility audit (contextual V2 only — read-only, no routing effect)
+            'rescue_chain_eligibility_total'                      => (int)($liveIntentResult['rescue_chain_eligibility_total']                      ?? 0),
+            'rescue_chain_eligibility_v2_floor_fail_total'        => (int)($liveIntentResult['rescue_chain_eligibility_v2_floor_fail_total']        ?? 0),
+            'rescue_chain_eligibility_cycle_high_risk_total'      => (int)($liveIntentResult['rescue_chain_eligibility_cycle_high_risk_total']      ?? 0),
+            'rescue_chain_eligibility_cycle_non_actionable_total' => (int)($liveIntentResult['rescue_chain_eligibility_cycle_non_actionable_total'] ?? 0),
+            'rescue_chain_eligibility_not_borderline_total'       => (int)($liveIntentResult['rescue_chain_eligibility_not_borderline_total']       ?? 0),
+            'rescue_chain_eligibility_severe_warning_total'       => (int)($liveIntentResult['rescue_chain_eligibility_severe_warning_total']       ?? 0),
+            'rescue_chain_eligibility_severe_low_conf_total'      => (int)($liveIntentResult['rescue_chain_eligibility_severe_low_conf_total']      ?? 0),
+            'rescue_chain_eligibility_dirty_total'                => (int)($liveIntentResult['rescue_chain_eligibility_dirty_total']                ?? 0),
+            'rescue_chain_eligibility_poor_support_total'         => (int)($liveIntentResult['rescue_chain_eligibility_poor_support_total']         ?? 0),
+            'rescue_chain_eligibility_preview'                    => $liveIntentResult['rescue_chain_eligibility_preview']                          ?? [],
             // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
             'v2_cleanup_total'                 => (int)($liveIntentResult['v2_cleanup_total']                 ?? 0),
             'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
@@ -1516,6 +1527,18 @@ final class SmartBrainCore
             'wave_slow_rescue_no_effect_total'      => 0,
             'wave_slow_rescue_reason_distribution'  => [],
             'wave_slow_rescue_preview'              => [],
+            // Rescue chain eligibility audit (contextual V2 only — read-only, no routing effect)
+            // Exposes exactly why each contextual V2 candidate failed to enter or pass the rescue chain.
+            'rescue_chain_eligibility_total'                      => 0,
+            'rescue_chain_eligibility_v2_floor_fail_total'        => 0,
+            'rescue_chain_eligibility_cycle_high_risk_total'      => 0,
+            'rescue_chain_eligibility_cycle_non_actionable_total' => 0,
+            'rescue_chain_eligibility_not_borderline_total'       => 0,
+            'rescue_chain_eligibility_severe_warning_total'       => 0,
+            'rescue_chain_eligibility_severe_low_conf_total'      => 0,
+            'rescue_chain_eligibility_dirty_total'                => 0,
+            'rescue_chain_eligibility_poor_support_total'         => 0,
+            'rescue_chain_eligibility_preview'                    => [],
             // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
             'v2_cleanup_total'                 => 0,
             'v2_cleanup_reject_total'          => 0,
@@ -2168,7 +2191,52 @@ final class SmartBrainCore
                                 $rejectKey = 'reject_two_miss_tolerance_exceeded';
                             }
                         } elseif ($failCount === 2) {
-                            $rejectKey = 'reject_two_miss_support_not_strict';
+                            // === UPSTREAM V2 BORDERLINE RESTORE — FLOOR TWO-MISS EXTENDED RESCUE ===
+                            // Feature-flagged path: if both misses are within the soft tolerance (0.05)
+                            // and the support profile is super-strict (entry_quality >= 0.60 OR
+                            // pattern_confidence >= 0.60), rescue the signal.
+                            // This handles borderline-clean contextual V2 cases blocked too early
+                            // when both metrics are only marginally below their floors.
+                            $upstreamBorderlineRestoreEnabled = (bool)($userLimits['upstream_v2_borderline_restore_enabled'] ?? true);
+                            $supportSuperStrict = (
+                                ($floorHasEq && $floorEqScore >= 0.60) ||
+                                ($floorHasSs && $floorSsScore >= 0.60) ||
+                                ((float)($cv['pattern_confidence'] ?? 0.0) >= 0.60)
+                            );
+                            if ($upstreamBorderlineRestoreEnabled && $supportSuperStrict) {
+                                $reasons2    = $v2FloorResult['reject_reasons'];
+                                $bothSoft    = true;
+                                $reasonParts2 = [];
+                                foreach ($reasons2 as $miss2) {
+                                    $withinSoft = false;
+                                    if (str_contains($miss2, 'confirmation_score') || str_contains($miss2, 'confirmation_too_low')) {
+                                        $thr2 = (float)($userLimits['v2_live_min_confirmation_score'] ?? 0.55);
+                                        $withinSoft = ((float)($cv['confirmation_score'] ?? 0.0) + $stabSoftTol >= $thr2);
+                                    } elseif (str_contains($miss2, 'pattern_confidence') || str_contains($miss2, 'pattern_conf_too_low')) {
+                                        $thr2 = (float)($userLimits['v2_live_min_pattern_confidence'] ?? 0.50);
+                                        $withinSoft = ((float)($cv['pattern_confidence'] ?? 0.0) + $stabSoftTol >= $thr2);
+                                    } elseif (str_contains($miss2, 'trend_match_too_low')) {
+                                        $minTrendLong2  = (float)($userLimits['v2_live_min_trend_match_score']       ?? 0.40);
+                                        $minTrendShort2 = (float)($userLimits['v2_live_min_trend_match_score_short'] ?? $minTrendLong2);
+                                        $thr2 = ($signalSide === 'short') ? $minTrendShort2 : $minTrendLong2;
+                                        $withinSoft = ((float)($cv['trend_match_score'] ?? 0.0) + $stabSoftTol >= $thr2);
+                                    }
+                                    if (!$withinSoft) {
+                                        $bothSoft = false;
+                                        break;
+                                    }
+                                    $reasonParts2[] = $miss2;
+                                }
+                                if ($bothSoft) {
+                                    $rescued      = true;
+                                    $rescueReason = 'two_miss_soft_tolerance_super_strict_support_' . implode('+', $reasonParts2);
+                                } else {
+                                    $rejectKey = 'reject_two_miss_support_not_strict';
+                                }
+                            } else {
+                                $rejectKey = 'reject_two_miss_support_not_strict';
+                            }
+                            // === END UPSTREAM V2 BORDERLINE RESTORE — FLOOR TWO-MISS EXTENDED RESCUE ===
                         } else {
                             $rejectKey = 'reject_multi_fail_count_' . $failCount;
                         }
@@ -2211,6 +2279,33 @@ final class SmartBrainCore
                     // === END STABILIZED V2 FLOOR RELAXATION ===
 
                     if (!$stabRelaxApplied) {
+                        // Rescue chain eligibility audit: this contextual V2 signal dies at the floor.
+                        $result['rescue_chain_eligibility_total']++;
+                        $result['rescue_chain_eligibility_v2_floor_fail_total']++;
+                        if (count($result['rescue_chain_eligibility_preview']) < 10) {
+                            $result['rescue_chain_eligibility_preview'][] = [
+                                'symbol'                    => $symbol,
+                                'side'                      => $side,
+                                'pattern_algorithm'         => $patternAlgo,
+                                'v2_floor_failed'           => true,
+                                'failed_floor_metric'       => $v2FloorResult['reject_reasons'][0] ?? 'unknown',
+                                'failed_floor_reasons'      => $v2FloorResult['reject_reasons'] ?? [],
+                                'entry_quality_score'       => $floorHasEq ? round($floorEqScore, 4) : null,
+                                'scenario_score'            => $floorHasSs ? round($floorSsScore, 4) : null,
+                                'pattern_confidence'        => round((float)($v2FloorResult['checked_values']['pattern_confidence'] ?? 0.0), 4),
+                                'cycle_state'               => null,
+                                'cycle_risk'                => null,
+                                'cycle_warning_flag'        => null,
+                                'warning_severity'          => null,
+                                'cycle_low_confidence'      => null,
+                                'low_confidence_severity'   => null,
+                                'unavailable_severity'      => null,
+                                'borderline_candidate'      => false,
+                                'eligible_for_rescue_chain' => false,
+                                'rescue_chain_blocker'      => 'v2_live_quality_floor',
+                                'rescue_chain_blocker_reason' => $v2FloorResult['reject_reasons'][0] ?? 'unknown',
+                            ];
+                        }
                         $this->rejectLiveSignal($result, $symbol, $signalId, 'v2_live_quality_floor', $selectionMode);
                         continue;
                     }
@@ -2466,6 +2561,31 @@ final class SmartBrainCore
                     if ($side === 'long') {
                         $result['long_cycle_veto_total']++;
                     }
+                    // Rescue chain eligibility audit: contextual V2 dies at cycle high_risk veto.
+                    if ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2') {
+                        $result['rescue_chain_eligibility_total']++;
+                        $result['rescue_chain_eligibility_cycle_high_risk_total']++;
+                        if (count($result['rescue_chain_eligibility_preview']) < 10) {
+                            $result['rescue_chain_eligibility_preview'][] = [
+                                'symbol'                    => $symbol,
+                                'side'                      => $side,
+                                'pattern_algorithm'         => $patternAlgo,
+                                'v2_floor_failed'           => false,
+                                'failed_floor_metric'       => null,
+                                'cycle_state'               => $cmState,
+                                'cycle_risk'                => $cmRisk,
+                                'cycle_warning_flag'        => $cmWarnFlag,
+                                'warning_severity'          => $cmWarnSevere ? 'severe' : ($cmWarnFlag ? 'soft' : 'none'),
+                                'cycle_low_confidence'      => $cmLowConf,
+                                'low_confidence_severity'   => $cmLowConfSevere ? 'severe' : ($cmLowConf ? 'soft' : 'none'),
+                                'unavailable_severity'      => 'n/a',
+                                'borderline_candidate'      => false,
+                                'eligible_for_rescue_chain' => false,
+                                'rescue_chain_blocker'      => 'cycle_model_veto_high_risk',
+                                'rescue_chain_blocker_reason' => 'non_actionable_high_risk',
+                            ];
+                        }
+                    }
                     $this->rejectLiveSignal($result, $symbol, $signalId, 'cycle_model_veto_high_risk', $selectionMode);
                     continue;
                 }
@@ -2585,40 +2705,174 @@ final class SmartBrainCore
                             }
                             // Do NOT continue — signal falls through to passport gate normally
                         } else {
-                            // Rescue criteria not met — record why for observability
-                            $result['stabilized_non_actionable_relaxation_reject_total']++;
-                            $result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] =
-                                ($result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
-                            $result['zero_live_flow_restore_reject_total']++;
-                            $result['zero_live_flow_restore_reason_distribution']['reject_' . $stabNonActRejectReason] =
-                                ($result['zero_live_flow_restore_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
-                            if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
-                                $rejectEntry = [
-                                    'symbol'                               => $symbol,
-                                    'side'                                 => $side,
-                                    'pattern_algorithm'                    => $patternAlgo,
-                                    'cycle_actionability'                  => $cmActionability,
-                                    'cycle_state'                         => $cmState,
-                                    'cycle_risk'                          => $cmRisk,
-                                    'cycle_warning_flag'                  => $cmWarnFlag,
-                                    'warning_severity'                    => $warnSeverityLabel,
-                                    'cycle_low_confidence'                => $cmLowConf,
-                                    'low_confidence_severity'             => $lowConfSeverityLabel,
-                                    'unavailable_severity'                => $unavailableSeverity,
-                                    'borderline_candidate'                => $auditIsBorderline,
-                                    'borderline_reason'                   => $auditBorderlineReason,
-                                    'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
-                                    'entry_quality_score'                 => $eqScore,
-                                    'pattern_confidence'                  => $pcScore,
-                                    'scenario_score'                      => $ssScore,
-                                    'trend_match_score'                   => $tmsScore,
-                                    'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
-                                    'rescue_result'                       => 'rejected',
-                                    'rescue_reason'                       => $stabNonActRejectReason,
-                                ];
-                                $result['stabilized_non_actionable_relaxation_preview'][] = $rejectEntry;
-                                if (count($result['zero_live_flow_restore_preview']) < 10) {
-                                    $result['zero_live_flow_restore_preview'][] = $rejectEntry;
+                            // === UPSTREAM V2 BORDERLINE RESTORE — TIER-2 CYCLE RESCUE ===
+                            // Feature-flagged tier-2 rescue for contextual V2 signals in
+                            // non_actionable + weak state where the ONLY reason for
+                            // not_borderline_candidate is a multi_fail low_confidence flag
+                            // (no structural failure keywords) AND there is no warning at all.
+                            // The V2 quality floor has already validated metric quality;
+                            // multi_fail in cycle low_confidence for V2 in a weak market is
+                            // a data-sufficiency annotation, not a structural breakdown.
+                            // Requires strictly healthy support profile (tier-2 floor).
+                            $upstreamBorderlineRestoreEnabled = (bool)($userLimits['upstream_v2_borderline_restore_enabled'] ?? true);
+                            $stabNonActTier2Rescued = false;
+                            $stabNonActTier2Reason  = null;
+                            if ($upstreamBorderlineRestoreEnabled
+                                && $stabNonActRejectReason === 'not_borderline_candidate'
+                                && !$cmWarnFlag
+                                && $cmLowConf
+                                && $cmLowConfSevere
+                                && $cmState === 'weak'
+                            ) {
+                                // Check that low_conf severity is ONLY from multi_fail (no structural failures)
+                                $isOnlyMultiFailLowConf = (
+                                    str_contains($cmLowConfReason, 'multi_fail')
+                                    && !str_contains($cmLowConfReason, 'critical')
+                                    && !str_contains($cmLowConfReason, 'severe')
+                                    && !str_contains($cmLowConfReason, 'breakdown')
+                                    && !str_contains($cmLowConfReason, 'terminal')
+                                    && !str_contains($cmLowConfReason, 'reversal_conf')
+                                    && !str_contains($cmLowConfReason, 'crash')
+                                    && !str_contains($cmLowConfReason, 'failed_struct')
+                                    && !str_contains($cmLowConfReason, 'dirty')
+                                );
+                                // Tier-2 support requirement: stricter than standard (needs two dimensions or strong single)
+                                $supportTier2Ok = (
+                                    ($eqScore  !== null && $eqScore  >= 0.52) ||
+                                    ($pcScore  !== null && $pcScore  >= 0.55)
+                                );
+                                if ($isOnlyMultiFailLowConf && $supportTier2Ok) {
+                                    $stabNonActTier2Rescued = true;
+                                    $stabNonActTier2Reason  = 'non_actionable_weak_multi_fail_lc_only_no_warn_tier2_v2_rescued';
+                                } else {
+                                    $stabNonActTier2Reason = $isOnlyMultiFailLowConf
+                                        ? 'tier2_reject_support_below_floor'
+                                        : 'tier2_reject_lc_has_structural_keywords';
+                                }
+                            }
+                            // === END UPSTREAM V2 BORDERLINE RESTORE — TIER-2 CYCLE RESCUE ===
+
+                            if ($stabNonActTier2Rescued) {
+                                $stabNonActRescued      = true;
+                                $stabNonActRescueReason = $stabNonActTier2Reason;
+                                $result['stabilized_non_actionable_relaxation_applied']++;
+                                $result['stabilized_non_actionable_relaxation_live_pass_total']++;
+                                $result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActTier2Reason] =
+                                    ($result['stabilized_non_actionable_relaxation_reason_distribution'][$stabNonActTier2Reason] ?? 0) + 1;
+                                $result['zero_live_flow_restore_applied']++;
+                                $result['zero_live_flow_restore_live_pass_total']++;
+                                $result['zero_live_flow_restore_reason_distribution'][$stabNonActTier2Reason] =
+                                    ($result['zero_live_flow_restore_reason_distribution'][$stabNonActTier2Reason] ?? 0) + 1;
+                                if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
+                                    $tier2PassEntry = [
+                                        'symbol'                               => $symbol,
+                                        'side'                                 => $side,
+                                        'pattern_algorithm'                    => $patternAlgo,
+                                        'cycle_actionability'                  => $cmActionability,
+                                        'cycle_state'                         => $cmState,
+                                        'cycle_risk'                          => $cmRisk,
+                                        'cycle_warning_flag'                  => $cmWarnFlag,
+                                        'warning_severity'                    => $warnSeverityLabel,
+                                        'cycle_low_confidence'                => $cmLowConf,
+                                        'low_confidence_severity'             => $lowConfSeverityLabel,
+                                        'low_confidence_reason'               => $cmLowConfReason,
+                                        'unavailable_severity'                => $unavailableSeverity,
+                                        'borderline_candidate'                => false,
+                                        'tier2_borderline'                    => true,
+                                        'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                                        'entry_quality_score'                 => $eqScore,
+                                        'pattern_confidence'                  => $pcScore,
+                                        'scenario_score'                      => $ssScore,
+                                        'trend_match_score'                   => $tmsScore,
+                                        'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
+                                        'rescue_result'                       => 'live_pass',
+                                        'rescue_reason'                       => $stabNonActTier2Reason,
+                                    ];
+                                    $result['stabilized_non_actionable_relaxation_preview'][] = $tier2PassEntry;
+                                    if (count($result['zero_live_flow_restore_preview']) < 10) {
+                                        $result['zero_live_flow_restore_preview'][] = $tier2PassEntry;
+                                    }
+                                }
+                                // Do NOT continue — signal falls through to passport gate normally
+                            } else {
+                                // Rescue criteria not met — record why for observability
+                                $result['stabilized_non_actionable_relaxation_reject_total']++;
+                                $result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] =
+                                    ($result['stabilized_non_actionable_relaxation_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
+                                $result['zero_live_flow_restore_reject_total']++;
+                                $result['zero_live_flow_restore_reason_distribution']['reject_' . $stabNonActRejectReason] =
+                                    ($result['zero_live_flow_restore_reason_distribution']['reject_' . $stabNonActRejectReason] ?? 0) + 1;
+                                // Rescue chain eligibility audit: record sub-reason for not_borderline rejections
+                                $result['rescue_chain_eligibility_total']++;
+                                $result['rescue_chain_eligibility_cycle_non_actionable_total']++;
+                                if ($stabNonActRejectReason === 'not_borderline_candidate') {
+                                    $result['rescue_chain_eligibility_not_borderline_total']++;
+                                    if ($cmWarnSevere) {
+                                        $result['rescue_chain_eligibility_severe_warning_total']++;
+                                    } elseif ($cmLowConfSevere) {
+                                        $result['rescue_chain_eligibility_severe_low_conf_total']++;
+                                        if (str_contains($cmLowConfReason, 'dirty')) {
+                                            $result['rescue_chain_eligibility_dirty_total']++;
+                                        }
+                                    }
+                                } elseif ($stabNonActRejectReason === 'poor_support_profile') {
+                                    $result['rescue_chain_eligibility_poor_support_total']++;
+                                }
+                                if (count($result['rescue_chain_eligibility_preview']) < 10) {
+                                    $result['rescue_chain_eligibility_preview'][] = [
+                                        'symbol'                    => $symbol,
+                                        'side'                      => $side,
+                                        'pattern_algorithm'         => $patternAlgo,
+                                        'v2_floor_failed'           => false,
+                                        'failed_floor_metric'       => null,
+                                        'cycle_state'               => $cmState,
+                                        'cycle_risk'                => $cmRisk,
+                                        'cycle_warning_flag'        => $cmWarnFlag,
+                                        'warning_severity'          => $warnSeverityLabel,
+                                        'cycle_low_confidence'      => $cmLowConf,
+                                        'low_confidence_severity'   => $lowConfSeverityLabel,
+                                        'low_confidence_reason'     => $cmLowConfReason,
+                                        'unavailable_severity'      => $unavailableSeverity,
+                                        'borderline_candidate'      => $auditIsBorderline,
+                                        'borderline_reason'         => $auditBorderlineReason,
+                                        'entry_quality_score'       => $eqScore,
+                                        'pattern_confidence'        => $pcScore,
+                                        'scenario_score'            => $ssScore,
+                                        'trend_match_score'         => $tmsScore,
+                                        'eligible_for_rescue_chain' => false,
+                                        'rescue_chain_blocker'      => 'cycle_model_veto_non_actionable',
+                                        'rescue_chain_blocker_reason' => $stabNonActRejectReason,
+                                        'tier2_blocker_reason'      => $stabNonActTier2Reason,
+                                    ];
+                                }
+                                if (count($result['stabilized_non_actionable_relaxation_preview']) < 10) {
+                                    $rejectEntry = [
+                                        'symbol'                               => $symbol,
+                                        'side'                                 => $side,
+                                        'pattern_algorithm'                    => $patternAlgo,
+                                        'cycle_actionability'                  => $cmActionability,
+                                        'cycle_state'                         => $cmState,
+                                        'cycle_risk'                          => $cmRisk,
+                                        'cycle_warning_flag'                  => $cmWarnFlag,
+                                        'warning_severity'                    => $warnSeverityLabel,
+                                        'cycle_low_confidence'                => $cmLowConf,
+                                        'low_confidence_severity'             => $lowConfSeverityLabel,
+                                        'unavailable_severity'                => $unavailableSeverity,
+                                        'borderline_candidate'                => $auditIsBorderline,
+                                        'borderline_reason'                   => $auditBorderlineReason,
+                                        'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
+                                        'entry_quality_score'                 => $eqScore,
+                                        'pattern_confidence'                  => $pcScore,
+                                        'scenario_score'                      => $ssScore,
+                                        'trend_match_score'                   => $tmsScore,
+                                        'slot_priority_score'                 => $signal['slot_priority_score'] ?? null,
+                                        'rescue_result'                       => 'rejected',
+                                        'rescue_reason'                       => $stabNonActRejectReason,
+                                    ];
+                                    $result['stabilized_non_actionable_relaxation_preview'][] = $rejectEntry;
+                                    if (count($result['zero_live_flow_restore_preview']) < 10) {
+                                        $result['zero_live_flow_restore_preview'][] = $rejectEntry;
+                                    }
                                 }
                             }
                         }

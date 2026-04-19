@@ -35,7 +35,7 @@ final class BrainController
     }
 
     /**
-     * Main Brain dashboard
+     * Main Brain dashboard — now the Strategy Control Panel
      * GET /admin/brain
      */
     public function index(): string
@@ -45,15 +45,12 @@ final class BrainController
             exit;
         }
 
-        $strategies = $this->service->getStrategies();
-        $stats = $this->service->getStats();
-        $lastRun = $this->service->getLastRun();
-        $config = $this->service->getConfig();
-        $moduleStatus = $this->service->getModuleStatus();
+        // Discover all registered strategy modules
+        $strategyModules = $this->discoverStrategyModules();
         $flash = $this->getFlash();
 
         ob_start();
-        $title = 'Brain - Meta-Orchestrator';
+        $title = 'Strategy Control Panel';
         require SystemPaths::instance()->get('system.brain') . '/views/index.php';
         $content = ob_get_clean();
 
@@ -893,6 +890,135 @@ final class BrainController
         error_reporting($originalErrorReporting);
         
         exit;
+    }
+
+    /**
+     * Discover all strategy modules registered in SystemPaths (category = strategy).
+     *
+     * For each module load:
+     *   - manifest fields (name, title, description)
+     *   - storage/last_run.json  → last_run, status
+     *   - storage/signals.json   → signal count
+     *   - storage/active_orders.json → order count
+     *   - storage/active_positions.json → position count
+     *   - storage/stats.json → errors_count
+     *   - config/runtime_snapshot.php → config_valid, mode
+     *
+     * Returns an array of strategy cards ready for the index view.
+     */
+    private function discoverStrategyModules(): array
+    {
+        $paths   = SystemPaths::instance();
+        $root    = $paths->get('root');
+        $stratDir = $root . '/modules/strategy';
+
+        if (!is_dir($stratDir)) {
+            return [];
+        }
+
+        $modules = [];
+
+        foreach (scandir($stratDir) as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $moduleDir = $stratDir . '/' . $entry;
+            if (!is_dir($moduleDir)) {
+                continue;
+            }
+
+            $manifestPath = $moduleDir . '/manifest.json';
+            if (!file_exists($manifestPath)) {
+                continue;
+            }
+
+            $manifest = json_decode(file_get_contents($manifestPath), true);
+            if (!is_array($manifest)) {
+                continue;
+            }
+
+            $name = $manifest['name'] ?? $entry;
+
+            // Load last_run.json
+            $lastRunData = $this->readJson($moduleDir . '/storage/last_run.json');
+            $lastRun     = $lastRunData['run_at']     ?? null;
+            $lastStatus  = $lastRunData['status']     ?? '—';
+
+            // Load storage counts
+            $signals    = $this->readJsonArray($moduleDir . '/storage/signals.json');
+            $orders     = $this->readJsonArray($moduleDir . '/storage/active_orders.json');
+            $positions  = $this->readJsonArray($moduleDir . '/storage/active_positions.json');
+            $statsData  = $this->readJson($moduleDir . '/storage/stats.json');
+
+            // Load runtime snapshot for config_valid and mode
+            $snapshot = [];
+            $snapshotPath = $moduleDir . '/config/runtime_snapshot.php';
+            if (file_exists($snapshotPath)) {
+                try {
+                    $snp = require $snapshotPath;
+                    $snapshot = is_array($snp) ? $snp : [];
+                } catch (\Throwable) {
+                    $snapshot = [];
+                }
+            }
+
+            $effectiveConfig = $snapshot['effective_config'] ?? [];
+            $mode    = $effectiveConfig['mode']    ?? ($manifest['mode'] ?? 'passive');
+            $enabled = $effectiveConfig['enabled'] ?? false;
+
+            $statusLabel = match (true) {
+                !$enabled             => 'disabled',
+                $mode === 'active'    => 'active',
+                $mode === 'disabled'  => 'disabled',
+                default               => 'passive',
+            };
+
+            $modules[] = [
+                'name'           => $name,
+                'title'          => $manifest['title']       ?? $name,
+                'description'    => $manifest['description'] ?? '',
+                'version'        => $manifest['version']     ?? '',
+                'strategy_id'    => $manifest['name']        ?? $name,
+                'status'         => $statusLabel,
+                'mode'           => $mode,
+                'enabled'        => $enabled,
+                'last_run'       => $lastRun,
+                'last_status'    => $lastStatus,
+                'signals_found'  => count($signals),
+                'active_orders'  => count($orders),
+                'active_positions' => count($positions),
+                'errors_count'   => $statsData['errors_count'] ?? ($lastRunData['errors_count'] ?? 0),
+                'config_valid'   => $snapshot['config_valid'] ?? false,
+                'module_dir'     => $moduleDir,
+            ];
+        }
+
+        return $modules;
+    }
+
+    /**
+     * Read a JSON file and return decoded array. Returns [] on failure.
+     */
+    private function readJson(string $path): array
+    {
+        if (!file_exists($path)) {
+            return [];
+        }
+        $raw = file_get_contents($path);
+        if ($raw === false || trim($raw) === '') {
+            return [];
+        }
+        $data = json_decode($raw, true);
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Read a JSON file expected to contain an array (list). Returns [] on failure.
+     */
+    private function readJsonArray(string $path): array
+    {
+        $data = $this->readJson($path);
+        return array_values(is_array($data) ? $data : []);
     }
 
     /**

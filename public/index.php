@@ -1604,6 +1604,76 @@ Router::post('/admin/smart_brain/config_all/api/save_and_reextract', function ()
 });
 
 // ============================================================
+// STRATEGY MODULE ROUTES — Fish
+// ============================================================
+// Admin UI routes for the fish strategy module.
+// Discovery: strategy.fish SystemPaths key (from manifest.json category=strategy)
+// All pages load from modules/strategy/fish/admin/ and wrap via renderLayout.
+
+Router::get('/admin/strategy/fish', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.fish');
+    ob_start();
+    require $moduleDir . '/admin/page_index.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Fish Strategy', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/fish/config', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.fish');
+    ob_start();
+    require $moduleDir . '/admin/page_config.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Fish — Config', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/fish/stats', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.fish');
+    ob_start();
+    require $moduleDir . '/admin/page_stats.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Fish — Stats', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/fish/runtime', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.fish');
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Fish — Runtime', $content, 'strategy', []);
+});
+
+Router::post('/admin/strategy/fish/ajax', function () {
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.fish');
+    require $moduleDir . '/admin/ajax_fish.php';
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

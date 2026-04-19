@@ -1,0 +1,10 @@
+{
+    "strategy_id": "fish",
+    "total_runs": 0,
+    "successful_runs": 0,
+    "failed_runs": 0,
+    "signals_found_total": 0,
+    "orders_placed_total": 0,
+    "errors_count": 0,
+    "last_updated": null
+}

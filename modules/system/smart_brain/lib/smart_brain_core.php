@@ -1179,6 +1179,15 @@ final class SmartBrainCore
             'wave_rescue_no_effect_total'      => (int)($liveIntentResult['wave_rescue_no_effect_total']      ?? 0),
             'wave_rescue_reason_distribution'  => $liveIntentResult['wave_rescue_reason_distribution']        ?? [],
             'wave_rescue_preview'              => $liveIntentResult['wave_rescue_preview']                    ?? [],
+            // Wave slow rescue diagnostics (narrow rescue for fully-rescued V2 signals blocked by low_amplitude_slow_wave)
+            'wave_slow_rescue_used'                 => (int)($liveIntentResult['wave_slow_rescue_used']                 ?? 0),
+            'wave_slow_rescue_applied'              => (int)($liveIntentResult['wave_slow_rescue_applied']              ?? 0),
+            'wave_slow_rescue_live_pass_total'      => (int)($liveIntentResult['wave_slow_rescue_live_pass_total']      ?? 0),
+            'wave_slow_rescue_demo_total'           => (int)($liveIntentResult['wave_slow_rescue_demo_total']           ?? 0),
+            'wave_slow_rescue_reject_total'         => (int)($liveIntentResult['wave_slow_rescue_reject_total']         ?? 0),
+            'wave_slow_rescue_no_effect_total'      => (int)($liveIntentResult['wave_slow_rescue_no_effect_total']      ?? 0),
+            'wave_slow_rescue_reason_distribution'  => $liveIntentResult['wave_slow_rescue_reason_distribution']        ?? [],
+            'wave_slow_rescue_preview'              => $liveIntentResult['wave_slow_rescue_preview']                    ?? [],
             // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
             'v2_cleanup_total'                 => (int)($liveIntentResult['v2_cleanup_total']                 ?? 0),
             'v2_cleanup_reject_total'          => (int)($liveIntentResult['v2_cleanup_reject_total']          ?? 0),
@@ -1498,6 +1507,15 @@ final class SmartBrainCore
             'wave_rescue_no_effect_total'      => 0,
             'wave_rescue_reason_distribution'  => [],
             'wave_rescue_preview'              => [],
+            // Wave slow rescue diagnostics (narrow rescue for fully-rescued V2 signals blocked by low_amplitude_slow_wave)
+            'wave_slow_rescue_used'                 => 0,
+            'wave_slow_rescue_applied'              => 0,
+            'wave_slow_rescue_live_pass_total'      => 0,
+            'wave_slow_rescue_demo_total'           => 0,
+            'wave_slow_rescue_reject_total'         => 0,
+            'wave_slow_rescue_no_effect_total'      => 0,
+            'wave_slow_rescue_reason_distribution'  => [],
+            'wave_slow_rescue_preview'              => [],
             // V2 Cleanup filter diagnostics (V2-specific weak+slow quality tightening)
             'v2_cleanup_total'                 => 0,
             'v2_cleanup_reject_total'          => 0,
@@ -3639,6 +3657,139 @@ final class SmartBrainCore
                     }
                     // === END WAVE RESCUE ===
 
+                    // === WAVE SLOW RESCUE (narrow, for fully-rescued V2 signals blocked by weak+slow) ===
+                    // Fires only when ALL of:
+                    // 1. wave_slow_rescue_enabled = true (feature flag)
+                    // 2. double_bottom/top_contextual_v2 pattern only
+                    // 3. Full upstream rescue chain: stabNonActRescued OR stabRelaxApplied, AND
+                    //    passport_v2_rescue_applied = true
+                    // 4. cycle_model_route_after_support = live (route was live before wave filter)
+                    // 5. wave filter fired specifically as weak+slow (wave_filter_low_amplitude_slow_wave)
+                    // 6. Cycle safety clear: not high_risk, no severe warning, no severe low confidence,
+                    //    no critical unavailable
+                    // 7. Support profile still healthy (stricter than upstream, compensates for slow wave)
+                    // Purpose: the only remaining blocker after full upstream + passport + cycle rescue
+                    //          is weak amplitude + slow wave; this is thin-volume / low-turnover
+                    //          market structure, not a dirty/broken wave.
+                    $wfSlowRescued       = false;
+                    $wfSlowRescueEnabled = (bool)($userLimits['wave_slow_rescue_enabled'] ?? true);
+
+                    $wfSlowCandidateIsV2 = (
+                        $patternAlgo === 'double_bottom_contextual_v2' ||
+                        $patternAlgo === 'double_top_contextual_v2'
+                    );
+                    // Full upstream rescue chain: either stabNonActRescued (zero_live_flow_restore +
+                    // downstream_rescue_handoff) or stabRelaxApplied (V2 floor relaxation), plus passport rescue.
+                    $wfSlowCandidateUpstream = (
+                        (($stabNonActRescued ?? false) || $stabRelaxApplied) &&
+                        !empty($signal['passport_v2_rescue_applied'])
+                    );
+                    // Route before wave filter must be live
+                    $wfSlowCandidateRoute = ($cycleModelRouteAfterSupport === 'live');
+                    // Wave blocker must specifically be weak+slow (Rule 1 path)
+                    $wfSlowCandidateWave = (
+                        $wfApplied &&
+                        $wfAmplitudeState === 'weak' &&
+                        $wfSpeedState     === 'slow' &&
+                        $wfReason         === 'wave_filter_low_amplitude_slow_wave'
+                    );
+
+                    if ($wfSlowRescueEnabled && $wfSlowCandidateIsV2 && $wfSlowCandidateUpstream
+                        && $wfSlowCandidateRoute && $wfSlowCandidateWave) {
+                        $result['wave_slow_rescue_used']++;
+
+                        // Cycle safety clearance (identical to wave_rescue)
+                        $wfSlowSafety = (
+                            !($cycleModelUsed && $cmRisk       === 'high_risk') &&
+                            !($cycleModelUsed && $cmWarnSevere)                 &&
+                            !($cycleModelUsed && $cmLowConfSevere)              &&
+                            ($unavailableSeverity ?? 'soft') !== 'critical'
+                        );
+
+                        // Support profile: stricter than wave_rescue to compensate for slow speed
+                        $wfSlowEqScore  = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
+                        $wfSlowHasEq    = isset($signal['entry_quality_score']) || isset($signal['hold_quality_score']);
+                        $wfSlowPcScore  = (float)($signal['pattern_confidence'] ?? 0.0);
+                        $wfSlowHasPc    = isset($signal['pattern_confidence']);
+                        $wfSlowSsScore  = (float)($signal['scenario_score'] ?? 0.0);
+                        $wfSlowHasSs    = isset($signal['scenario_score']);
+                        $wfSlowTmsScore = isset($signal['trend_match_score']) ? (float)$signal['trend_match_score'] : null;
+                        // Stricter thresholds: two scores required vs one for wave_rescue
+                        $wfSlowSupportPassCount = 0;
+                        if ($wfSlowHasEq  && $wfSlowEqScore  >= 0.52) $wfSlowSupportPassCount++;
+                        if ($wfSlowHasPc  && $wfSlowPcScore  >= 0.56) $wfSlowSupportPassCount++;
+                        if ($wfSlowHasSs  && $wfSlowSsScore  >= 0.52) $wfSlowSupportPassCount++;
+                        if ($wfSlowTmsScore !== null && $wfSlowTmsScore >= 0.50) $wfSlowSupportPassCount++;
+                        $wfSlowSupportOk = ($wfSlowSupportPassCount >= 2);
+                        // Explicitly poor: either primary score below 0.30 → reject
+                        if (($wfSlowHasEq && $wfSlowEqScore < 0.30) || ($wfSlowHasPc && $wfSlowPcScore < 0.30)) {
+                            $wfSlowSupportOk = false;
+                        }
+
+                        $wfSlowRejectReason = null;
+                        if (!$wfSlowSafety) {
+                            $wfSlowRejectReason = 'safety_not_clear';
+                        } elseif (!$wfSlowSupportOk) {
+                            $wfSlowRejectReason = 'poor_support_profile';
+                        }
+
+                        $wfSlowPreviewEntry = [
+                            'symbol'                                    => $symbol,
+                            'side'                                      => $side,
+                            'pattern_algorithm'                         => $patternAlgo,
+                            'wave_filter_reason_original'               => $wfReason,
+                            'wave_amplitude_state'                      => $wfAmplitudeState,
+                            'wave_speed_state'                          => $wfSpeedState,
+                            'route_before_wave'                         => 'live',
+                            'stabilized_v2_floor_relaxation_applied'    => $stabRelaxApplied,
+                            'zero_live_flow_restore_applied'            => (bool)($stabNonActRescued ?? false),
+                            'stabilized_non_actionable_relaxation_applied' => (bool)($stabNonActRescued ?? false),
+                            'downstream_rescue_handoff_applied'         => (bool)($stabNonActRescued ?? false),
+                            'passport_rescue_applied'                   => !empty($signal['passport_v2_rescue_applied']),
+                            'entry_quality_score'                       => $wfSlowHasEq ? round($wfSlowEqScore, 4) : null,
+                            'pattern_confidence'                        => $wfSlowHasPc ? round($wfSlowPcScore, 4) : null,
+                            'scenario_score'                            => $wfSlowHasSs ? round($wfSlowSsScore, 4) : null,
+                            'trend_match_score'                         => $wfSlowTmsScore !== null ? round($wfSlowTmsScore, 4) : null,
+                            'slot_priority_score'                       => $signal['slot_priority_score'] ?? null,
+                            'support_pass_count'                        => $wfSlowSupportPassCount,
+                            'wave_slow_rescue_result'                   => null,
+                            'wave_slow_rescue_reason'                   => null,
+                            'final_effective_result'                    => null,
+                            'final_effective_blocker'                   => null,
+                        ];
+
+                        if ($wfSlowRejectReason === null) {
+                            // Rescue approved — clear wave filter application so signal proceeds as no_effect
+                            $wfSlowRescued              = true;
+                            $wfSlowAppliedReason        = 'wave_low_amplitude_slow_v2_rescued';
+                            $wfApplied                  = false;
+                            $wfIsDemote                 = false;
+                            $signal['wave_slow_rescue_applied'] = true;
+                            $signal['wave_slow_rescue_reason']  = $wfSlowAppliedReason;
+                            $result['wave_slow_rescue_applied']++;
+                            $result['wave_slow_rescue_live_pass_total']++;
+                            $result['wave_slow_rescue_reason_distribution'][$wfSlowAppliedReason] =
+                                ($result['wave_slow_rescue_reason_distribution'][$wfSlowAppliedReason] ?? 0) + 1;
+                            $wfSlowPreviewEntry['wave_slow_rescue_result'] = 'live_pass';
+                            $wfSlowPreviewEntry['wave_slow_rescue_reason'] = $wfSlowAppliedReason;
+                            $wfSlowPreviewEntry['final_effective_result']  = 'live_pass';
+                            $wfSlowPreviewEntry['final_effective_blocker'] = null;
+                        } else {
+                            $wfSlowRejectKey = 'reject_' . $wfSlowRejectReason;
+                            $result['wave_slow_rescue_reject_total']++;
+                            $result['wave_slow_rescue_reason_distribution'][$wfSlowRejectKey] =
+                                ($result['wave_slow_rescue_reason_distribution'][$wfSlowRejectKey] ?? 0) + 1;
+                            $wfSlowPreviewEntry['wave_slow_rescue_result'] = 'rejected';
+                            $wfSlowPreviewEntry['wave_slow_rescue_reason'] = $wfSlowRejectReason;
+                            $wfSlowPreviewEntry['final_effective_result']  = 'rejected';
+                            $wfSlowPreviewEntry['final_effective_blocker'] = 'wave_filter_low_amplitude_slow_wave';
+                        }
+                        if (count($result['wave_slow_rescue_preview']) < 10) {
+                            $result['wave_slow_rescue_preview'][] = $wfSlowPreviewEntry;
+                        }
+                    }
+                    // === END WAVE SLOW RESCUE ===
+
                     if ($wfApplied && !$wfIsDemote) {
                         // Hard reject: only triggered when BOTH weak amplitude AND slow speed
                         // (Rule 1 without a quality escape). Signal is removed from the live pool.
@@ -3737,10 +3888,11 @@ final class SmartBrainCore
                         $v2cQualityBand = 'low';
                     }
 
-                    if (!empty($signal['wave_rescue_applied'])) {
-                        // Wave-rescued signal: skip V2 cleanup quality rules so they cannot undo
-                        // the rescue. The support profile was already validated in the wave rescue
-                        // block above; reapplying a stricter quality band here would double-block.
+                    if (!empty($signal['wave_rescue_applied']) || !empty($signal['wave_slow_rescue_applied'])) {
+                        // Wave-rescued or wave-slow-rescued signal: skip V2 cleanup quality rules so they
+                        // cannot undo the rescue. The support profile was already validated in the rescue
+                        // block above; reapplying a stricter quality band here would double-block and cause
+                        // contradictory accounting (rescued by wave path, then rejected by v2_cleanup).
                         $result['v2_cleanup_no_effect_total']++;
                     } else {
                     // Strong exception: a V2 weak+slow may survive only when signal is clearly

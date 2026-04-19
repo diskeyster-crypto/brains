@@ -869,6 +869,12 @@ final class SmartBrainCore
             'zero_live_flow_restore_no_effect_total'   => (int)($liveIntentResult['zero_live_flow_restore_no_effect_total']   ?? 0),
             'zero_live_flow_restore_reason_distribution' => $liveIntentResult['zero_live_flow_restore_reason_distribution'] ?? [],
             'zero_live_flow_restore_preview'           => $liveIntentResult['zero_live_flow_restore_preview']           ?? [],
+            // Downstream rescue handoff diagnostics (state handoff from zero_live_flow_restore into stabilized_demote_demo gate)
+            'downstream_rescue_handoff_used'              => (int)($liveIntentResult['downstream_rescue_handoff_used']              ?? 0),
+            'downstream_rescue_handoff_applied'           => (int)($liveIntentResult['downstream_rescue_handoff_applied']           ?? 0),
+            'downstream_rescue_handoff_reject_total'      => (int)($liveIntentResult['downstream_rescue_handoff_reject_total']      ?? 0),
+            'downstream_rescue_handoff_reason_distribution' => $liveIntentResult['downstream_rescue_handoff_reason_distribution'] ?? [],
+            'downstream_rescue_handoff_preview'           => $liveIntentResult['downstream_rescue_handoff_preview']           ?? [],
             // Manual blacklist diagnostics
             'manual_blacklist_count' => (int)($liveIntentResult['manual_blacklist_count'] ?? 0),
             'manual_blacklist_rejected_count' => (int)($liveIntentResult['manual_blacklist_rejected_count'] ?? 0),
@@ -1112,6 +1118,12 @@ final class SmartBrainCore
             'zero_live_flow_restore_no_effect_total'   => (int)($liveIntentResult['zero_live_flow_restore_no_effect_total']   ?? 0),
             'zero_live_flow_restore_reason_distribution' => $liveIntentResult['zero_live_flow_restore_reason_distribution'] ?? [],
             'zero_live_flow_restore_preview'           => $liveIntentResult['zero_live_flow_restore_preview']           ?? [],
+            // Downstream rescue handoff diagnostics (state handoff from zero_live_flow_restore into stabilized_demote_demo gate)
+            'downstream_rescue_handoff_used'              => (int)($liveIntentResult['downstream_rescue_handoff_used']              ?? 0),
+            'downstream_rescue_handoff_applied'           => (int)($liveIntentResult['downstream_rescue_handoff_applied']           ?? 0),
+            'downstream_rescue_handoff_reject_total'      => (int)($liveIntentResult['downstream_rescue_handoff_reject_total']      ?? 0),
+            'downstream_rescue_handoff_reason_distribution' => $liveIntentResult['downstream_rescue_handoff_reason_distribution'] ?? [],
+            'downstream_rescue_handoff_preview'           => $liveIntentResult['downstream_rescue_handoff_preview']           ?? [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_upgrade_total'     => (int)($liveIntentResult['cycle_eligibility_upgrade_total']     ?? 0),
             'cycle_eligibility_downgrade_total'   => (int)($liveIntentResult['cycle_eligibility_downgrade_total']   ?? 0),
@@ -1405,6 +1417,12 @@ final class SmartBrainCore
             'zero_live_flow_restore_no_effect_total'   => 0,
             'zero_live_flow_restore_reason_distribution' => [],
             'zero_live_flow_restore_preview'           => [],
+            // Downstream rescue handoff diagnostics (state handoff from zero_live_flow_restore into stabilized_demote_demo gate)
+            'downstream_rescue_handoff_used'              => 0,
+            'downstream_rescue_handoff_applied'           => 0,
+            'downstream_rescue_handoff_reject_total'      => 0,
+            'downstream_rescue_handoff_reason_distribution' => [],
+            'downstream_rescue_handoff_preview'           => [],
             // Coin cycle eligibility refinement counters (Coin Core Step 13)
             'cycle_eligibility_refine_total'      => 0,
             'cycle_eligibility_upgrade_total'     => 0,
@@ -2595,9 +2613,18 @@ final class SmartBrainCore
                         $stabDemoteDemoRescued = false;
                         $isDemoteDemoV2 = ($patternAlgo === 'double_bottom_contextual_v2' || $patternAlgo === 'double_top_contextual_v2');
                         $hasPriorRescue = $stabRelaxApplied || ($stabNonActRescued ?? false);
+                        // Whether the signal was explicitly rescued from non_actionable state upstream.
+                        // When true, the old non_actionable label is stale for this signal and must not
+                        // be re-used as a rejection reason in this gate.
+                        $isRescuedHandoff = ($stabNonActRescued ?? false);
 
                         if ($stabDemoteDemoEnabled && $isDemoteDemoV2 && $hasPriorRescue) {
                             $result['stabilized_demote_demo_relaxation_used']++;
+
+                            // Track downstream handoff when a zero_live_flow_restore-rescued signal reaches this gate
+                            if ($isRescuedHandoff) {
+                                $result['downstream_rescue_handoff_used']++;
+                            }
 
                             // Support profile: at least one score meets a bounded floor
                             $ddEqScore  = (float)($signal['entry_quality_score'] ?? $signal['hold_quality_score'] ?? 0.0);
@@ -2621,7 +2648,13 @@ final class SmartBrainCore
                             $ddWarnSeverity    = !$cmWarnFlag ? 'none' : ($cmWarnSevere    ? 'severe' : 'soft');
                             $ddLowConfSeverity = !$cmLowConf  ? 'none' : ($cmLowConfSevere ? 'severe' : 'soft');
 
-                            // Evaluate rescue eligibility
+                            // Evaluate rescue eligibility.
+                            // FIX: When $isRescuedHandoff = true the signal was explicitly rescued from
+                            // non_actionable state by zero_live_flow_restore. The $cmActionability field
+                            // still carries the original 'non_actionable' label, but that label has already
+                            // been accepted. Re-rejecting it here for 'not_actionable' is a stale duplicate
+                            // block — skip that check for rescued handoffs.
+                            $ddHandoffOverrodeActionability = false;
                             $ddRejectReason = null;
                             if ($cmRisk === 'high_risk') {
                                 $ddRejectReason = 'high_risk';
@@ -2629,11 +2662,21 @@ final class SmartBrainCore
                                 $ddRejectReason = 'severe_warning';
                             } elseif ($cmLowConfSevere) {
                                 $ddRejectReason = 'severe_low_confidence';
-                            } elseif ($cmActionability !== 'actionable') {
+                            } elseif ($cmActionability !== 'actionable' && !$isRescuedHandoff) {
+                                // Only reject for non-actionable when no prior rescue has already accepted it
                                 $ddRejectReason = 'not_actionable';
-                            } elseif (!$ddSupportOk) {
+                            } elseif ($cmActionability !== 'actionable' && $isRescuedHandoff) {
+                                // Rescued handoff: non_actionable label is stale; record that override happened
+                                $ddHandoffOverrodeActionability = true;
+                            }
+                            if ($ddRejectReason === null && !$ddSupportOk) {
                                 $ddRejectReason = 'poor_support_profile';
                             }
+
+                            // Effective actionability label for observability
+                            $ddCycleActionabilityEffective = ($ddHandoffOverrodeActionability || ($isRescuedHandoff && $ddRejectReason === null))
+                                ? 'accepted_via_rescue_handoff'
+                                : $cmActionability;
 
                             $ddPreviewEntry = [
                                 'symbol'                                 => $symbol,
@@ -2642,11 +2685,13 @@ final class SmartBrainCore
                                 'cycle_state'                            => $cmState,
                                 'cycle_risk'                             => $cmRisk,
                                 'cycle_live_bias'                        => $cmLiveBias,
-                                'cycle_actionability'                    => $cmActionability,
+                                'cycle_actionability_original'           => $cmActionability,
+                                'cycle_actionability_effective'          => $ddCycleActionabilityEffective,
                                 'warning_severity'                       => $ddWarnSeverity,
                                 'low_confidence_severity'                => $ddLowConfSeverity,
                                 'stabilized_v2_floor_relaxation_applied' => $stabRelaxApplied,
-                                'zero_live_flow_restore_applied'         => ($stabNonActRescued ?? false),
+                                'zero_live_flow_restore_applied'         => $isRescuedHandoff,
+                                'downstream_handoff_override_applied'   => $ddHandoffOverrodeActionability,
                                 'entry_quality_score'                    => $ddHasEq  ? round($ddEqScore,  4) : null,
                                 'pattern_confidence'                     => $ddHasPc  ? round($ddPcScore,  4) : null,
                                 'scenario_score'                         => $ddHasSs  ? round($ddSsScore,  4) : null,
@@ -2654,6 +2699,8 @@ final class SmartBrainCore
                                 'slot_priority_score'                    => $signal['slot_priority_score'] ?? null,
                                 'rescue_result'                          => null,
                                 'rescue_reason'                          => null,
+                                'downstream_handoff_result'              => null,
+                                'downstream_handoff_reason'              => null,
                             ];
 
                             if ($ddRejectReason === null) {
@@ -2665,6 +2712,17 @@ final class SmartBrainCore
                                     ($result['stabilized_demote_demo_relaxation_reason_distribution'][$ddRescueReason] ?? 0) + 1;
                                 $ddPreviewEntry['rescue_result'] = 'live_pass';
                                 $ddPreviewEntry['rescue_reason'] = $ddRescueReason;
+                                // Downstream handoff tracking
+                                if ($isRescuedHandoff) {
+                                    $result['downstream_rescue_handoff_applied']++;
+                                    $handoffReason = $ddHandoffOverrodeActionability
+                                        ? 'handoff_override_non_actionable_accepted'
+                                        : 'handoff_passed_no_override_needed';
+                                    $result['downstream_rescue_handoff_reason_distribution'][$handoffReason] =
+                                        ($result['downstream_rescue_handoff_reason_distribution'][$handoffReason] ?? 0) + 1;
+                                    $ddPreviewEntry['downstream_handoff_result'] = 'live_pass';
+                                    $ddPreviewEntry['downstream_handoff_reason'] = $handoffReason;
+                                }
                             } else {
                                 $ddRejectKey = 'reject_' . $ddRejectReason;
                                 $result['stabilized_demote_demo_relaxation_reject_total']++;
@@ -2672,9 +2730,20 @@ final class SmartBrainCore
                                     ($result['stabilized_demote_demo_relaxation_reason_distribution'][$ddRejectKey] ?? 0) + 1;
                                 $ddPreviewEntry['rescue_result'] = 'rejected';
                                 $ddPreviewEntry['rescue_reason'] = $ddRejectReason;
+                                // Downstream handoff tracking
+                                if ($isRescuedHandoff) {
+                                    $result['downstream_rescue_handoff_reject_total']++;
+                                    $result['downstream_rescue_handoff_reason_distribution'][$ddRejectKey] =
+                                        ($result['downstream_rescue_handoff_reason_distribution'][$ddRejectKey] ?? 0) + 1;
+                                    $ddPreviewEntry['downstream_handoff_result'] = 'rejected';
+                                    $ddPreviewEntry['downstream_handoff_reason'] = $ddRejectReason;
+                                }
                             }
                             if (count($result['stabilized_demote_demo_relaxation_preview']) < 10) {
                                 $result['stabilized_demote_demo_relaxation_preview'][] = $ddPreviewEntry;
+                            }
+                            if ($isRescuedHandoff && count($result['downstream_rescue_handoff_preview']) < 10) {
+                                $result['downstream_rescue_handoff_preview'][] = $ddPreviewEntry;
                             }
                         }
                         // === END STABILIZED DEMOTE-DEMO RELAXATION ===

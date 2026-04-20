@@ -63,11 +63,14 @@ final class FishSignal
         array  $config,
         string $detectedAt
     ): array {
-        $levelTime = (int)($level['bar_start_idx'] ?? 0);
-        $signalId  = sprintf(
+        // Stable signal identity: derived from the actual bar open timestamp of the
+        // consolidation pattern, not from transient loop indexes. The same setup
+        // will produce the same signal_id across repeated scanner runs over the same data.
+        $barOpenTime = (int)($level['bar_open_time'] ?? $level['bar_start_idx'] ?? 0);
+        $signalId    = sprintf(
             'fish_%s_%d_%s',
             strtolower($symbol),
-            $levelTime,
+            $barOpenTime,
             $side
         );
 

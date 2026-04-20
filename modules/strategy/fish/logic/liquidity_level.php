@@ -46,21 +46,30 @@ final class FishLiquidityLevel
      * Scan the candle series for all liquidity levels.
      * Levels are returned newest-first so callers can take the best one.
      *
-     * @param  array  $candles         H4 candle series (oldest first)
-     * @param  int    $minBars         Minimum consolidation bar count
-     * @param  int    $maxBars         Maximum consolidation bar count
-     * @param  float  $tolerance       Body range tolerance as a fraction of price
-     * @param  bool   $confirmRequired Require a confirming bar after the pattern
-     * @param  int    $maxAgeBars      Bars after which a level is expired
-     * @return list<array>             Detected levels (newest first)
+     * The confirming bar check is direction-aware:
+     *   - For 'long' setups, the confirm bar must close ABOVE rangeHigh
+     *     (price broke upward out of the consolidation, validating demand).
+     *   - For 'short' setups, the confirm bar must close BELOW rangeLow
+     *     (price broke downward out of the consolidation, validating supply).
+     *   - A break in the wrong direction is rejected with reason 'confirm_wrong_direction'.
+     *
+     * @param  array   $candles         H4 candle series (oldest first)
+     * @param  int     $minBars         Minimum consolidation bar count
+     * @param  int     $maxBars         Maximum consolidation bar count
+     * @param  float   $tolerance       Body range tolerance as a fraction of price
+     * @param  bool    $confirmRequired Require a confirming bar after the pattern
+     * @param  int     $maxAgeBars      Bars after which a level is expired
+     * @param  string  $side            'long' | 'short' — used for direction-aware confirmation
+     * @return list<array>              Detected levels (newest first)
      */
     public function detect(
-        array $candles,
-        int   $minBars,
-        int   $maxBars,
-        float $tolerance,
-        bool  $confirmRequired,
-        int   $maxAgeBars
+        array  $candles,
+        int    $minBars,
+        int    $maxBars,
+        float  $tolerance,
+        bool   $confirmRequired,
+        int    $maxAgeBars,
+        string $side = 'long'
     ): array {
         $count  = count($candles);
         $levels = [];
@@ -103,11 +112,17 @@ final class FishLiquidityLevel
                         $confirmStatus = 'no_confirm_bar';
                     } else {
                         $confirmBar = $candles[$confirmIdx];
-                        if ($this->isConfirmingBar($confirmBar, $rangeHigh, $rangeLow)) {
+                        $breakDir   = $this->confirmBreakDirection($confirmBar, $rangeHigh, $rangeLow);
+
+                        if ($breakDir === null) {
+                            // Close is still inside the range — not a confirming bar
+                            $confirmStatus = 'confirm_failed';
+                        } elseif ($breakDir !== $side) {
+                            // Bar broke in the opposite direction — wrong for this setup
+                            $confirmStatus = 'confirm_wrong_direction';
+                        } else {
                             $confirmStatus = 'confirmed';
                             $ageAnchorIdx  = $confirmIdx;
-                        } else {
-                            $confirmStatus = 'confirm_failed';
                         }
                     }
                 } else {
@@ -123,16 +138,18 @@ final class FishLiquidityLevel
                 $status  = $ageBars <= $maxAgeBars ? 'valid' : 'expired';
 
                 $levels[] = [
-                    'level_price'    => round($midpoint, 8),
-                    'range_high'     => round($rangeHigh, 8),
-                    'range_low'      => round($rangeLow, 8),
-                    'range_size'     => round($rangeSize, 8),
-                    'bar_start_idx'  => $i,
-                    'bar_end_idx'    => $i + $len - 1,
-                    'confirm_idx'    => $confirmRequired ? $confirmIdx : null,
-                    'age_bars'       => $ageBars,
-                    'status'         => $status,
-                    'bar_count'      => $len,
+                    'level_price'     => round($midpoint, 8),
+                    'range_high'      => round($rangeHigh, 8),
+                    'range_low'       => round($rangeLow, 8),
+                    'range_size'      => round($rangeSize, 8),
+                    'bar_start_idx'   => $i,
+                    'bar_end_idx'     => $i + $len - 1,
+                    // Stable identity: open timestamp of the first consolidation bar (ms)
+                    'bar_open_time'   => (int)($candles[$i][0] ?? 0),
+                    'confirm_idx'     => $confirmRequired ? $confirmIdx : null,
+                    'age_bars'        => $ageBars,
+                    'status'          => $status,
+                    'bar_count'       => $len,
                 ];
             }
         }
@@ -171,16 +188,26 @@ final class FishLiquidityLevel
     }
 
     /**
-     * Check if a bar is a confirming bar for a given body range.
-     * A confirming bar closes OUTSIDE the range (above rangeHigh or below rangeLow).
+     * Determine the break direction of a bar relative to the body range.
+     * Returns 'long' if the bar closed above rangeHigh (bullish break),
+     * 'short' if the bar closed below rangeLow (bearish break),
+     * or null if the close is still inside the range (no valid break).
      *
      * @param  array  $bar        Candle bar
      * @param  float  $rangeHigh  Upper bound of the consolidation body range
      * @param  float  $rangeLow   Lower bound of the consolidation body range
+     * @return string|null  'long' | 'short' | null
      */
-    private function isConfirmingBar(array $bar, float $rangeHigh, float $rangeLow): bool
+    private function confirmBreakDirection(array $bar, float $rangeHigh, float $rangeLow): ?string
     {
         $close = (float)($bar[4] ?? 0);
-        return $close > $rangeHigh || $close < $rangeLow;
+
+        if ($close > $rangeHigh) {
+            return 'long';
+        }
+        if ($close < $rangeLow) {
+            return 'short';
+        }
+        return null;
     }
 }

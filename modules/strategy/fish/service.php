@@ -125,18 +125,19 @@ final class FishService
     private function scan(array $config, string $runAt): array
     {
         $diag = [
-            'symbols_total'           => 0,
-            'symbols_scanned'         => 0,
-            'symbols_skipped_no_data' => 0,
-            'symbols_skipped_api_err' => 0,
-            'structures_valid'        => 0,
-            'structures_invalid'      => 0,
-            'levels_found'            => 0,
-            'levels_expired'          => 0,
-            'candidates_valid'        => 0,
-            'candidates_rejected'     => 0,
-            'signals_valid'           => 0,
-            'reject_reasons'          => [],
+            'symbols_total'            => 0,
+            'symbols_scanned'          => 0,
+            'symbols_skipped_no_data'  => 0,
+            'symbols_skipped_api_err'  => 0,
+            'symbols_skipped_window'   => 0,
+            'structures_valid'         => 0,
+            'structures_invalid'       => 0,
+            'levels_found'             => 0,
+            'levels_expired'           => 0,
+            'candidates_valid'         => 0,
+            'candidates_rejected'      => 0,
+            'signals_valid'            => 0,
+            'reject_reasons'           => [],
         ];
 
         // 1. Build universe
@@ -155,17 +156,31 @@ final class FishService
         $riskCalc       = new \Modules\Strategy\Fish\Logic\FishRisk();
         $signalBuilder  = new \Modules\Strategy\Fish\Logic\FishSignal();
 
-        $pivotWindow    = (int)($config['structure_pivot_window']       ?? 3);
-        $minBars        = (int)($config['liquidity_pattern_min_bars']   ?? 3);
-        $maxBars        = (int)($config['liquidity_pattern_max_bars']   ?? 4);
-        $tolerance      = (float)($config['liquidity_level_tolerance']  ?? 0.003);
-        $confirmReq     = (bool)($config['confirm_bar_required']        ?? true);
-        $maxAgeBars     = (int)($config['level_max_age_bars']           ?? 20);
-        $tpMult         = (float)($config['tp_multiplier']              ?? 2.0);
+        $pivotWindow    = (int)($config['structure_pivot_window']         ?? 3);
+        $minBars        = (int)($config['liquidity_pattern_min_bars']     ?? 3);
+        $maxBars        = (int)($config['liquidity_pattern_max_bars']     ?? 4);
+        $tolerance      = (float)($config['liquidity_level_tolerance']    ?? 0.003);
+        $confirmReq     = (bool)($config['confirm_bar_required']          ?? true);
+        $maxAgeBars     = (int)($config['level_max_age_bars']             ?? 20);
+        $tpMult         = (float)($config['tp_multiplier']                ?? 4.0);
         $beMult         = (float)($config['breakeven_trigger_multiplier'] ?? 1.0);
-        $lookback       = (int)($config['lookback_candles']             ?? 100);
-        $bybitBase      = (string)($config['bybit_base_url']            ?? 'https://api.bybit.com');
-        $timeoutSec     = (int)($config['bybit_timeout_sec']            ?? 10);
+        $lookback       = (int)($config['lookback_candles']               ?? 100);
+        $bybitBase      = (string)($config['bybit_base_url']              ?? 'https://api.bybit.com');
+        $timeoutSec     = (int)($config['bybit_timeout_sec']              ?? 10);
+
+        // Trading window — enforce if enabled (single window in v1)
+        $windowEnabled = (bool)($config['window_enabled'] ?? false);
+        $windowStart   = (string)($config['window_start'] ?? '00:00');
+        $windowEnd     = (string)($config['window_end']   ?? '23:59');
+
+        if ($windowEnabled && !$this->isInsideWindow($windowStart, $windowEnd)) {
+            // Current UTC time is outside the allowed trading window — skip all symbols
+            $diag['symbols_skipped_window'] = count($symbols);
+            foreach ($symbols as $_) {
+                $this->bumpRejectReason($diag['reject_reasons'], 'outside_trading_window');
+            }
+            return [[], $diag];
+        }
 
         $allSignals = [];
         // Deduplicate signals by signal_id
@@ -211,9 +226,9 @@ final class FishService
             // Map trend to trade side
             $side = ($trend === 'bullish') ? 'long' : 'short';
 
-            // 4. Detect liquidity levels
+            // 4. Detect liquidity levels (direction-aware confirming bar)
             $levels = $levelDetector->detect(
-                $candles, $minBars, $maxBars, $tolerance, $confirmReq, $maxAgeBars
+                $candles, $minBars, $maxBars, $tolerance, $confirmReq, $maxAgeBars, $side
             );
 
             if (empty($levels)) {
@@ -329,6 +344,32 @@ final class FishService
     private function bumpRejectReason(array &$reasons, string $key): void
     {
         $reasons[$key] = ($reasons[$key] ?? 0) + 1;
+    }
+
+    /**
+     * Check whether the current UTC time falls within the configured trading window.
+     * Both window_start and window_end are expressed as 'HH:MM' in UTC.
+     * If window_end < window_start, the window is treated as overnight (wraps midnight).
+     */
+    private function isInsideWindow(string $windowStart, string $windowEnd): bool
+    {
+        $nowMinutes   = (int)gmdate('H') * 60 + (int)gmdate('i');
+        $startMinutes = $this->parseHHMM($windowStart);
+        $endMinutes   = $this->parseHHMM($windowEnd);
+
+        if ($startMinutes <= $endMinutes) {
+            // Normal window (e.g. 08:00–22:00)
+            return $nowMinutes >= $startMinutes && $nowMinutes < $endMinutes;
+        }
+
+        // Overnight window (e.g. 22:00–06:00)
+        return $nowMinutes >= $startMinutes || $nowMinutes < $endMinutes;
+    }
+
+    private function parseHHMM(string $hhmm): int
+    {
+        $parts = explode(':', $hhmm);
+        return (int)($parts[0] ?? 0) * 60 + (int)($parts[1] ?? 0);
     }
 
     private function failResult(string $message, array $errors, int $startMs, string $runAt): array

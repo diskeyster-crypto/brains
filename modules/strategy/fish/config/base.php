@@ -70,7 +70,7 @@ return [
     'level_max_age_bars'              => 20,
 
     // Take profit: distance from entry = (liquidity pattern range) * tp_multiplier
-    'tp_multiplier'                   => 2.0,
+    'tp_multiplier'                   => 4.0,
 
     // Breakeven trigger: distance from entry = (liquidity pattern range) * breakeven_trigger_multiplier
     'breakeven_trigger_multiplier'    => 1.0,

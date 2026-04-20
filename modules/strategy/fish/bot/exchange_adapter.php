@@ -54,15 +54,160 @@ final class FishExchangeAdapter
     // -------------------------------------------------------------------------
 
     /**
-     * Place a limit order on behalf of Fish.
-     * Smoke mode returns a synthetic accepted response without touching the API.
+     * Submit an internal Fish order contract to the live exchange.
      *
-     * @param  array  $params  Bybit /v5/order/create parameters
+     * Mirrors trading_bot/gateway.php::submitOrder() exactly:
+     * - validates order_type
+     * - normalizes qty to qtyStep via instruments-info
+     * - maps snake_case internal fields → Bybit camelCase params
+     * - strips internal-only fields (_fish_meta, signal_id, created_at, etc.)
+     * - calls client->request('orders.create', $params, true)
+     *
+     * @param  array  $order  Internal order contract from FishOrderBuilder::build()
+     * @return array  Unified result with success/error/order_id
+     */
+    public function submitOrder(array $order): array
+    {
+        if ($this->isSmokeMode()) {
+            return $this->smokeAccepted('submitOrder', $order);
+        }
+
+        if ($this->initError !== null) {
+            return $this->gatewayError('submitOrder', $this->initError);
+        }
+
+        // Validate order_type (required; no fallback — same rule as old gateway)
+        if (empty($order['order_type'])) {
+            return ['success' => false, 'error' => 'missing_field:order_type'];
+        }
+
+        $symbol = (string)($order['symbol'] ?? '');
+
+        // Normalize qty to qtyStep (mirrors gateway.normalizeQty)
+        $qtyNorm = $this->normalizeQty($symbol, (float)($order['qty'] ?? 0));
+        if (!$qtyNorm['ok']) {
+            return [
+                'success' => false,
+                'error'   => 'qty_invalid_step_or_min',
+                'context' => $qtyNorm,
+            ];
+        }
+        $normalizedQty = $qtyNorm['qty'];
+
+        // Build Bybit API params — same mapping as gateway.submitOrder()
+        $params = [
+            'category'    => 'linear',
+            'symbol'      => $symbol,
+            'side'        => $order['side'],
+            'orderType'   => ucfirst(strtolower($order['order_type'])),
+            'qty'         => (string)$normalizedQty,
+            'timeInForce' => $order['time_in_force'] ?? 'GTC',
+        ];
+
+        // Add reduceOnly if specified
+        if (isset($order['reduce_only'])) {
+            $params['reduceOnly'] = (bool)$order['reduce_only'];
+        }
+
+        // Add price for limit orders
+        if (strtolower($order['order_type']) === 'limit' && isset($order['price'])) {
+            $params['price'] = (string)$order['price'];
+        }
+
+        // Add TP/SL if present (from _fish_meta or direct keys)
+        $meta = $order['_fish_meta'] ?? [];
+        $stopLoss   = (float)($order['stop_loss']   ?? $meta['stop_price']        ?? 0);
+        $takeProfit = (float)($order['take_profit']  ?? $meta['take_profit_price'] ?? 0);
+        if ($stopLoss > 0) {
+            $params['stopLoss']   = (string)$stopLoss;
+        }
+        if ($takeProfit > 0) {
+            $params['takeProfit'] = (string)$takeProfit;
+        }
+
+        // Map order_link_id → orderLinkId (same as gateway.submitOrder())
+        if (!empty($order['order_link_id'])) {
+            $params['orderLinkId'] = $this->buildLinkId((string)$order['order_link_id']);
+        }
+
+        // Record diagnostics (safe — no secrets, no API keys)
+        $this->diagnostics['last_internal_order_contract'] = [
+            'symbol'        => $symbol,
+            'side'          => $order['side'] ?? '?',
+            'order_type'    => $order['order_type'],
+            'qty_raw'       => $order['qty'] ?? 0,
+            'qty_norm'      => $normalizedQty,
+            'price'         => $order['price'] ?? null,
+            'time_in_force' => $order['time_in_force'] ?? 'GTC',
+            'order_link_id' => $order['order_link_id'] ?? null,
+            'owner'         => $meta['owner_strategy'] ?? 'fish',
+            'signal_id'     => $meta['owner_signal_id'] ?? ($order['signal_id'] ?? null),
+        ];
+        $this->diagnostics['last_normalized_params'] = array_diff_key($params, ['stopLoss' => 1, 'takeProfit' => 1]);
+
+        $resp = $this->client->request('orders.create', $params, true);
+
+        if (!isset($resp['success']) || $resp['success'] !== true) {
+            $this->diagnostics['last_submit_result']   = 'failed';
+            $this->diagnostics['last_submit_error']    = $resp['error'] ?? $resp['ret_msg'] ?? 'bybit_request_failed';
+            return [
+                'success'       => false,
+                'error'         => $resp['error'] ?? $resp['ret_msg'] ?? 'bybit_request_failed',
+                'response'      => $resp,
+                'normalized_qty' => $normalizedQty,
+            ];
+        }
+
+        $orderId = $resp['result']['orderId'] ?? '';
+        if (empty($orderId)) {
+            $this->diagnostics['last_submit_result'] = 'missing_order_id';
+            return [
+                'success'  => false,
+                'error'    => 'missing_order_id',
+                'response' => $resp,
+            ];
+        }
+
+        $this->diagnostics['last_submit_result'] = 'ok';
+        $this->diagnostics['last_submit_order_id'] = (string)$orderId;
+        return [
+            'success'        => true,
+            'ok'             => true,
+            'order_id'       => (string)$orderId,
+            'result'         => $resp['result'] ?? [],   // passthrough so callers can read result.orderId
+            'response'       => $resp,
+            'normalized_qty' => $normalizedQty,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Order placement (legacy thin wrapper — now delegates to submitOrder)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Place a limit order on behalf of Fish.
+     *
+     * Accepts either:
+     * - an internal order contract from FishOrderBuilder::build() (preferred; has order_type field)
+     * - legacy raw Bybit-style params (smoke mode / backwards compat)
+     *
+     * In smoke mode returns a synthetic accepted response without touching the API.
+     * In live mode delegates to submitOrder() which applies full normalization.
+     *
+     * @param  array  $params  Internal order contract from FishOrderBuilder::build()
      * @return array  Unified gateway response (or smoke-mode synthetic)
      */
     public function placeOrder(array $params): array
     {
-        $params['orderLinkId'] = $this->buildLinkId($params['orderLinkId'] ?? '');
+        // Detect internal contract (has snake_case order_type) vs legacy raw params
+        if (isset($params['order_type'])) {
+            return $this->submitOrder($params);
+        }
+
+        // Legacy / raw Bybit-style params path (smoke or backwards compat)
+        if (!isset($params['orderLinkId']) || $params['orderLinkId'] === '') {
+            $params['orderLinkId'] = $this->buildLinkId('');
+        }
 
         if ($this->isSmokeMode()) {
             return $this->smokeAccepted('placeOrder', $params);
@@ -221,6 +366,101 @@ final class FishExchangeAdapter
     public function getInitError(): ?string
     {
         return $this->initError;
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: order normalization helpers (mirror trading_bot/gateway.php)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Normalize qty to qtyStep via Bybit instruments-info.
+     * Mirrors trading_bot/gateway.php::normalizeQty() exactly.
+     *
+     * @return array ['ok' => bool, 'qty' => float, 'error' => string|null, ...]
+     */
+    private function normalizeQty(string $symbol, float $qty): array
+    {
+        $meta = $this->getInstrumentMeta($symbol);
+
+        if ($meta === null) {
+            // No meta available — return original qty with warning (same as old gateway)
+            return [
+                'ok'      => true,
+                'qty'     => $qty,
+                'error'   => null,
+                'meta'    => null,
+                'warning' => 'no_instrument_meta',
+            ];
+        }
+
+        $qtyStep = (float)($meta['qtyStep']      ?? 0.001);
+        $minQty  = (float)($meta['minOrderQty']  ?? 0.001);
+
+        $normalizedQty = $this->floorToStep($qty, $qtyStep);
+
+        if ($normalizedQty < $minQty) {
+            return [
+                'ok'           => false,
+                'qty'          => $normalizedQty,
+                'error'        => 'qty_below_min',
+                'meta'         => $meta,
+                'min_qty'      => $minQty,
+                'requested_qty' => $qty,
+            ];
+        }
+
+        return [
+            'ok'    => true,
+            'qty'   => $normalizedQty,
+            'error' => null,
+            'meta'  => $meta,
+        ];
+    }
+
+    /**
+     * Fetch instrument meta from Bybit (tickSize, qtyStep, minOrderQty).
+     * Mirrors trading_bot/gateway.php::getInstrumentMeta().
+     */
+    private function getInstrumentMeta(string $symbol): ?array
+    {
+        if ($this->client === null) {
+            return null;
+        }
+
+        try {
+            $resp = $this->client->request('/v5/market/instruments-info', [
+                'category' => 'linear',
+                'symbol'   => $symbol,
+            ], false);
+
+            if (($resp['success'] ?? false) !== true) {
+                return null;
+            }
+
+            $instrument = $resp['result']['list'][0] ?? null;
+            if ($instrument === null) {
+                return null;
+            }
+
+            return [
+                'symbol'       => $symbol,
+                'tickSize'     => (float)($instrument['priceFilter']['tickSize']         ?? 0.01),
+                'qtyStep'      => (float)($instrument['lotSizeFilter']['qtyStep']        ?? 0.001),
+                'minOrderQty'  => (float)($instrument['lotSizeFilter']['minOrderQty']    ?? 0.001),
+                'maxOrderQty'  => (float)($instrument['lotSizeFilter']['maxOrderQty']    ?? 10000),
+            ];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** Floor value to step (mirrors trading_bot/gateway.php::floorToStep) */
+    private function floorToStep(float $value, float $step): float
+    {
+        if ($step <= 0) {
+            return $value;
+        }
+        return floor($value / $step) * $step;
     }
 
     // -------------------------------------------------------------------------

@@ -7,24 +7,35 @@ namespace Modules\Strategy\Fish\Bot;
 /**
  * Fish Bot — Order Builder
  *
- * Converts a Fish signal object into a Bybit /v5/order/create parameter map.
- * All fields are derived from the signal and Fish config — nothing is hardcoded.
+ * Converts a Fish signal object into an internal order contract that mirrors
+ * the old trading_bot buildOrder() format.  This internal contract is then
+ * normalized into Bybit API params by FishExchangeAdapter::submitOrder(),
+ * exactly as trading_bot/gateway.php::submitOrder() does.
  *
- * Ownership fields injected on every order:
- *   orderLinkId   — 'fish_' + first 27 chars of signal_id (exchange-visible)
- *   tag           — 'fish_bot' (Bybit order-link tag, 16-char max)
+ * Internal contract fields (snake_case, matches old bot):
+ *   symbol          — exchange symbol
+ *   side            — 'Buy' | 'Sell'  (Bybit-style, already mapped)
+ *   order_type      — 'limit' (lowercase; normalizer applies ucfirst)
+ *   qty             — float (normalizer applies qtyStep floor)
+ *   price           — float (limit price)
+ *   time_in_force   — 'GTC'
+ *   reduce_only     — false
+ *   order_link_id   — 'fish_' + up to 31 chars of signal_id (max 36 total)
+ *   signal_id       — Fish signal_id (internal, stripped before Bybit submit)
+ *   created_at      — ISO8601 timestamp (internal, stripped before Bybit submit)
+ *   _fish_meta      — Fish ownership/SL/TP metadata (internal, stripped before submit)
  *
- * Only limit entry orders are built in v1.  Stop/TP are stored as metadata
+ * Only limit entry orders are built in v1.  SL/TP are stored in _fish_meta
  * and attached to the position by sl_manager / pm_manager after fill.
  */
 final class FishOrderBuilder
 {
     /**
-     * Build Bybit order creation parameters from a Fish signal.
+     * Build the internal Fish order contract from a Fish signal.
      *
      * @param  array  $signal  Signal from signals.json
      * @param  array  $config  Active Fish config
-     * @return array  Parameter map ready for FishExchangeAdapter::placeOrder()
+     * @return array  Internal order contract ready for FishExchangeAdapter::submitOrder()
      */
     public function build(array $signal, array $config): array
     {
@@ -38,37 +49,40 @@ final class FishOrderBuilder
         $budget   = (float)($config['bot_budget']   ?? 0.0);
         $leverage = (int)($config['bot_leverage']   ?? 1);
 
-        // Bybit side: "Buy" for long, "Sell" for short
+        // Bybit side: "Buy" for long, "Sell" for short (same as old buildOrder())
         $bybitSide = ($side === 'long') ? 'Buy' : 'Sell';
 
-        // Quantity: budget / entry_price (rounded to 3 dp — adjust per symbol if needed)
+        // Raw quantity before normalizeQty (adapter will floor to qtyStep)
         $qty = ($entryPrice > 0 && $budget > 0)
-            ? round($budget * $leverage / $entryPrice, 3)
+            ? ($budget * $leverage / $entryPrice)
             : 0.0;
 
-        // orderLinkId: 'fish_' + up to 31 chars from signal_id (total max 36)
+        // order_link_id: 'fish_' + up to 31 safe chars of signal_id (total max 36)
         $linkId = 'fish_' . substr(preg_replace('/[^a-z0-9_]/', '_', $signalId), 0, 31);
 
+        // Internal contract — snake_case, matches trading_bot buildOrder() shape
         return [
-            'category'    => 'linear',
-            'symbol'      => $symbol,
-            'side'        => $bybitSide,
-            'orderType'   => 'Limit',
-            'qty'         => (string)$qty,
-            'price'       => (string)$entryPrice,
-            'timeInForce' => 'GoodTillCancel',
-            'orderLinkId' => $linkId,
-            // Ownership / traceability fields
-            '_fish_meta'  => [
-                'owner_strategy'      => 'fish',
-                'owner_signal_id'     => $signalId,
+            'symbol'         => $symbol,
+            'side'           => $bybitSide,
+            'order_type'     => 'limit',      // lowercase; normalizer does ucfirst
+            'qty'            => $qty,          // float; normalizer floors to qtyStep
+            'price'          => $entryPrice,   // float
+            'time_in_force'  => 'GTC',         // same as old bot
+            'reduce_only'    => false,
+            'order_link_id'  => $linkId,       // snake_case; normalizer maps to orderLinkId
+            'signal_id'      => $signalId,     // internal only, stripped before Bybit submit
+            'created_at'     => date('c'),     // internal only, stripped before Bybit submit
+            // Fish-specific metadata — internal, stripped before Bybit submit
+            '_fish_meta'     => [
+                'owner_strategy'        => 'fish',
+                'owner_signal_id'       => $signalId,
                 'owner_config_snapshot' => $signal['config_snapshot_id'] ?? '',
-                'stop_price'          => $stopPrice,
-                'take_profit_price'   => $tpPrice,
-                'breakeven_trigger'   => (float)($signal['breakeven_trigger'] ?? 0.0),
-                'rr_ratio'            => (float)($signal['rr_ratio'] ?? 0.0),
-                'leverage'            => $leverage,
-                'budget'              => $budget,
+                'stop_price'            => $stopPrice,
+                'take_profit_price'     => $tpPrice,
+                'breakeven_trigger'     => (float)($signal['breakeven_trigger'] ?? 0.0),
+                'rr_ratio'              => (float)($signal['rr_ratio'] ?? 0.0),
+                'leverage'              => $leverage,
+                'budget'                => $budget,
             ],
         ];
     }

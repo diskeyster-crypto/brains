@@ -98,6 +98,13 @@ return [
     // Should be safely below your cron interval and HTTP timeout.
     'max_runtime_seconds'   => 55,
 
+    // Signal lifetime in minutes.
+    // After this many minutes without being re-seen, a signal is expired and
+    // removed from signals.json on the next finalize.
+    // For large all-universe scans use a value >= full cycle runtime.
+    // For small manual_list runs a tighter value (e.g. 60) is fine.
+    'signal_ttl_minutes'    => 180,
+
     // -----------------------------------------------------------------------
     // Risk / reward geometry validation
     // -----------------------------------------------------------------------

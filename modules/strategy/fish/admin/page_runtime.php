@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * Fish Strategy — Admin Runtime Page
  *
- * Displays the live runtime snapshot, last run info, and feature flags.
+ * Displays the live runtime snapshot, current cycle status, signal TTL diagnostics,
+ * and last run info.
  */
 
 use Core\System\System;
@@ -23,10 +24,11 @@ require_once $moduleDir . '/service.php';
 
 use Modules\Strategy\Fish\FishService;
 
-$service  = FishService::instance($moduleDir);
-$snapshot = $service->getRuntimeSnapshot();
-$lastRun  = $service->getLastRun();
-$config   = $service->getConfig();
+$service   = FishService::instance($moduleDir);
+$snapshot  = $service->getRuntimeSnapshot();
+$lastRun   = $service->getLastRun();
+$config    = $service->getConfig();
+$runState  = $service->getRunState();
 
 $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
 ?>
@@ -40,6 +42,74 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
     </div>
 
     <h5 class="mb-3"><i class="bi bi-activity me-1"></i> Fish — Runtime</h5>
+
+    <!-- Cycle Status -->
+    <?php
+    $cycleId     = $runState['cycle_id']          ?? ($runState['run_id']      ?? null);
+    $cycleStatus = $runState['cycle_status']       ?? ($runState['run_status']  ?? 'idle');
+    $cycleStart  = $runState['cycle_started_at']   ?? ($runState['started_at']  ?? null);
+    $cycleFinish = $runState['cycle_finished_at']  ?? ($runState['finished_at'] ?? null);
+    $prevCycleId = $runState['prev_cycle_id']      ?? null;
+    $totalSym    = $runState['total_symbols']      ?? 0;
+    $processedSym= $runState['processed_symbols']  ?? 0;
+    $remainSym   = $runState['remaining_symbols']  ?? 0;
+    $batchesDone = $runState['batches_completed']  ?? 0;
+    $cycleStatusColor = match($cycleStatus) {
+        'running' => '#22c55e',
+        'queued'  => '#f59e0b',
+        'done'    => '#3b82f6',
+        'failed'  => '#ef4444',
+        default   => '#6b7280',
+    };
+    // Diagnostics from last_run diagnostics block
+    $lastDiag    = $lastRun['diagnostics'] ?? [];
+    $ttlMinutes  = $lastDiag['signal_ttl_minutes']          ?? ($config['signal_ttl_minutes'] ?? 180);
+    $sigsActive  = $lastDiag['signals_active']              ?? null;
+    $sigsExpired = $lastDiag['signals_expired_this_tick']   ?? null;
+    $sigsRefresh = $lastDiag['signals_refreshed_this_tick'] ?? null;
+    $nextReady   = $lastDiag['next_cycle_ready']            ?? null;
+    ?>
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-arrow-repeat me-1"></i> Scan Cycle Status</span>
+            <span class="badge" style="background: <?= $cycleStatusColor ?>;"><?= htmlspecialchars(strtoupper($cycleStatus)) ?></span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-dark mb-0" style="font-size: 12px;">
+                <tbody>
+                    <tr><td style="color:#94a3b8;width:220px;">current_cycle_id</td><td><code><?= htmlspecialchars($cycleId ?? '—') ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">cycle_status</td><td><span class="badge" style="background:<?= $cycleStatusColor ?>;"><?= htmlspecialchars($cycleStatus) ?></span></td></tr>
+                    <tr><td style="color:#94a3b8;">cycle_started_at</td><td><code><?= htmlspecialchars($cycleStart ?? '—') ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">cycle_finished_at</td><td><code><?= htmlspecialchars($cycleFinish ?? '—') ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">prev_cycle_id</td><td><code><?= htmlspecialchars($prevCycleId ?? '—') ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">total_symbols</td><td><code><?= (int)$totalSym ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">processed_symbols</td><td><code><?= (int)$processedSym ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">remaining_symbols</td><td><code><?= (int)$remainSym ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">batches_completed</td><td><code><?= (int)$batchesDone ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">next_cycle_ready</td><td>
+                        <?php if ($nextReady !== null): ?>
+                            <span class="badge" style="background:<?= $nextReady ? '#22c55e' : '#6b7280' ?>;"><?= $nextReady ? 'true' : 'false' ?></span>
+                        <?php else: ?><code>—</code><?php endif; ?>
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Signal TTL Diagnostics (from last finalized cycle) -->
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-hourglass-split me-1"></i> Signal TTL Diagnostics</div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-dark mb-0" style="font-size: 12px;">
+                <tbody>
+                    <tr><td style="color:#94a3b8;width:220px;">signal_ttl_minutes</td><td><code><?= (int)$ttlMinutes ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">signals_active</td><td><code><?= $sigsActive !== null ? (int)$sigsActive : '—' ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">signals_expired_last_cycle</td><td><code><?= $sigsExpired !== null ? (int)$sigsExpired : '—' ?></code></td></tr>
+                    <tr><td style="color:#94a3b8;">signals_refreshed_last_cycle</td><td><code><?= $sigsRefresh !== null ? (int)$sigsRefresh : '—' ?></code></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- Runtime Snapshot -->
     <div class="card mb-3">

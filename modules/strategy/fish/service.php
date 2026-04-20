@@ -111,8 +111,10 @@ final class FishService
         // Load logic modules
         $this->requireLogic();
 
+        $ttlMins = (int)($config['signal_ttl_minutes'] ?? 180);
+
         // Run scanner
-        [$signals, $diagnostics] = $this->scan($config, $runAt);
+        [$signals, $diagnostics] = $this->scan($config, $runAt, $ttlMins);
 
         $result = $this->okResult(
             sprintf(
@@ -124,7 +126,7 @@ final class FishService
         );
         $result['signals_found'] = $diagnostics['signals_valid'];
 
-        $this->persist($result, $config, $signals);
+        $this->persist($result, $config, $signals, $ttlMins);
 
         return $result;
     }
@@ -146,10 +148,16 @@ final class FishService
         $boot   = FishBootstrap::instance($this->moduleDir)->load();
         $config = $boot['config'] ?? [];
 
-        $runId = 'fish_run_' . date('Ymd_His');
+        $cycleId = 'fish_cycle_' . date('Ymd_His');
 
         $state = [
-            'run_id'                      => $runId,
+            'run_id'                      => $cycleId,
+            'cycle_id'                    => $cycleId,
+            'cycle_status'                => 'queued',
+            'cycle_started_at'            => null,
+            'cycle_finished_at'           => null,
+            'prev_cycle_id'               => null,
+            'prev_cycle_finished_at'      => null,
             'run_status'                  => 'queued',
             'universe_mode'               => $config['universe_mode'] ?? 'all',
             'total_symbols'               => 0,
@@ -174,7 +182,7 @@ final class FishService
 
         $this->saveRunState($state);
 
-        return $runId;
+        return $cycleId;
     }
 
     /**
@@ -193,15 +201,7 @@ final class FishService
         $state  = $this->loadRunState();
         $status = $state['run_status'] ?? 'idle';
 
-        if (!in_array($status, ['queued', 'running'], true)) {
-            return [
-                'ok'      => false,
-                'status'  => $status,
-                'message' => 'No active run (current status: ' . $status . ')',
-            ];
-        }
-
-        // Bootstrap config
+        // Bootstrap config — needed for auto-requeue path and normal processing alike.
         require_once $this->moduleDir . '/bootstrap.php';
         $boot = FishBootstrap::instance($this->moduleDir)->load();
 
@@ -214,13 +214,31 @@ final class FishService
             return ['ok' => false, 'status' => 'failed', 'message' => $msg];
         }
 
-        $config      = $boot['config'];
-        $batchSize   = (int)($config['batch_size']          ?? 20);
-        $maxRunSec   = (int)($config['max_runtime_seconds'] ?? 55);
-        $maxSymbols  = (int)($config['max_symbols_per_run'] ?? 0);
-        $tickStart   = microtime(true);
+        $config  = $boot['config'];
+        $ttlMins = (int)($config['signal_ttl_minutes'] ?? 180);
 
-        // Transition: queued → running (load and persist symbol list)
+        // Auto-restart: when a cycle finished (or no cycle exists), begin a new one.
+        // 'done' means "this cycle finished" — not "scanner stopped permanently".
+        if ($status === 'done' || $status === 'idle') {
+            $state  = $this->initNewCycle($state, $config);
+            $status = 'queued';
+        }
+
+        // 'failed' is the only terminal state that does NOT auto-restart.
+        if (!in_array($status, ['queued', 'running'], true)) {
+            return [
+                'ok'      => false,
+                'status'  => $status,
+                'message' => 'Run is in a terminal state (' . $status . '). Resolve the error then re-queue.',
+            ];
+        }
+
+        $batchSize  = (int)($config['batch_size']          ?? 20);
+        $maxRunSec  = (int)($config['max_runtime_seconds'] ?? 55);
+        $maxSymbols = (int)($config['max_symbols_per_run'] ?? 0);
+        $tickStart  = microtime(true);
+
+        // Transition: queued → running (build and persist symbol list)
         if ($status === 'queued') {
             require_once $this->moduleDir . '/logic/universe.php';
             $universe   = new \Modules\Strategy\Fish\Logic\FishUniverse($this->moduleDir);
@@ -232,11 +250,13 @@ final class FishService
             }
 
             $state['run_status']        = 'running';
+            $state['cycle_status']      = 'running';
             $state['total_symbols']     = count($allSymbols);
             $state['remaining_symbols'] = count($allSymbols);
             $state['batch_cursor']      = 0;
             $state['processed_symbols'] = 0;
             $state['started_at']        = date('c');
+            $state['cycle_started_at']  = date('c');
             $state['updated_at']        = date('c');
 
             $this->writeRunSymbols($allSymbols);
@@ -247,7 +267,7 @@ final class FishService
         $cursor     = (int)($state['batch_cursor'] ?? 0);
 
         if ($cursor >= count($allSymbols)) {
-            return $this->finalizeRun($state, $config, $state['started_at'] ?? date('c'));
+            return $this->finalizeRun($state, $config, $state['started_at'] ?? date('c'), $ttlMins);
         }
 
         // Check trading window before processing
@@ -270,56 +290,55 @@ final class FishService
         $this->requireLogic();
 
         // Process one batch
-        $batch        = array_slice($allSymbols, $cursor, $batchSize);
-        $runAt        = $state['started_at'] ?? date('c');
-        [$batchSignals, $batchDiag] = $this->scanSymbols($batch, $config, $runAt);
+        $batch  = array_slice($allSymbols, $cursor, $batchSize);
+        $runAt  = $state['started_at'] ?? date('c');
+        [$batchSignals, $batchDiag] = $this->scanSymbols($batch, $config, $runAt, $ttlMins);
 
         // Accumulate signals
-        $pending   = $this->loadPendingSignals();
-        $pending   = array_merge($pending, $batchSignals);
+        $pending = $this->loadPendingSignals();
+        $pending = array_merge($pending, $batchSignals);
         $this->writePendingSignals($pending);
 
         // Update run state
-        $newCursor                         = $cursor + count($batch);
-        $state['batch_cursor']             = $newCursor;
-        $state['processed_symbols']        = $newCursor;
-        $state['remaining_symbols']        = max(0, count($allSymbols) - $newCursor);
-        $state['current_symbol']           = end($batch) ?: null;
-        $state['signals_found']            = ($state['signals_found'] ?? 0) + count($batchSignals);
-        $state['api_errors']               = ($state['api_errors']    ?? 0) + ($batchDiag['symbols_skipped_api_err'] ?? 0);
-        $state['symbols_skipped']          = ($state['symbols_skipped'] ?? 0) + ($batchDiag['symbols_skipped_no_data'] ?? 0);
-        $state['symbols_scanned']          = ($state['symbols_scanned'] ?? 0) + ($batchDiag['symbols_scanned'] ?? 0);
-        $state['structures_valid']         = ($state['structures_valid'] ?? 0) + ($batchDiag['structures_valid'] ?? 0);
-        $state['structures_invalid']       = ($state['structures_invalid'] ?? 0) + ($batchDiag['structures_invalid'] ?? 0);
-        $state['levels_found']             = ($state['levels_found'] ?? 0) + ($batchDiag['levels_found'] ?? 0);
-        $state['levels_expired']           = ($state['levels_expired'] ?? 0) + ($batchDiag['levels_expired'] ?? 0);
-        $state['candidates_valid']         = ($state['candidates_valid'] ?? 0) + ($batchDiag['candidates_valid'] ?? 0);
-        $state['candidates_rejected']      = ($state['candidates_rejected'] ?? 0) + ($batchDiag['candidates_rejected'] ?? 0);
-        $state['signals_geometry_valid']   = ($state['signals_geometry_valid']   ?? 0) + ($batchDiag['signals_geometry_valid']   ?? 0);
-        $state['signals_geometry_rejected']= ($state['signals_geometry_rejected'] ?? 0) + ($batchDiag['signals_geometry_rejected'] ?? 0);
-        $state['signals_rr_below_min']     = ($state['signals_rr_below_min']     ?? 0) + ($batchDiag['signals_rr_below_min']     ?? 0);
-        $state['signals_stop_side_invalid']= ($state['signals_stop_side_invalid'] ?? 0) + ($batchDiag['signals_stop_side_invalid'] ?? 0);
-        $state['signals_tp_side_invalid']  = ($state['signals_tp_side_invalid']  ?? 0) + ($batchDiag['signals_tp_side_invalid']  ?? 0);
+        $newCursor                          = $cursor + count($batch);
+        $state['batch_cursor']              = $newCursor;
+        $state['processed_symbols']         = $newCursor;
+        $state['remaining_symbols']         = max(0, count($allSymbols) - $newCursor);
+        $state['current_symbol']            = end($batch) ?: null;
+        $state['signals_found']             = ($state['signals_found'] ?? 0) + count($batchSignals);
+        $state['api_errors']                = ($state['api_errors']    ?? 0) + ($batchDiag['symbols_skipped_api_err'] ?? 0);
+        $state['symbols_skipped']           = ($state['symbols_skipped'] ?? 0) + ($batchDiag['symbols_skipped_no_data'] ?? 0);
+        $state['symbols_scanned']           = ($state['symbols_scanned'] ?? 0) + ($batchDiag['symbols_scanned'] ?? 0);
+        $state['structures_valid']          = ($state['structures_valid'] ?? 0) + ($batchDiag['structures_valid'] ?? 0);
+        $state['structures_invalid']        = ($state['structures_invalid'] ?? 0) + ($batchDiag['structures_invalid'] ?? 0);
+        $state['levels_found']              = ($state['levels_found'] ?? 0) + ($batchDiag['levels_found'] ?? 0);
+        $state['levels_expired']            = ($state['levels_expired'] ?? 0) + ($batchDiag['levels_expired'] ?? 0);
+        $state['candidates_valid']          = ($state['candidates_valid'] ?? 0) + ($batchDiag['candidates_valid'] ?? 0);
+        $state['candidates_rejected']       = ($state['candidates_rejected'] ?? 0) + ($batchDiag['candidates_rejected'] ?? 0);
+        $state['signals_geometry_valid']    = ($state['signals_geometry_valid']    ?? 0) + ($batchDiag['signals_geometry_valid']    ?? 0);
+        $state['signals_geometry_rejected'] = ($state['signals_geometry_rejected'] ?? 0) + ($batchDiag['signals_geometry_rejected'] ?? 0);
+        $state['signals_rr_below_min']      = ($state['signals_rr_below_min']      ?? 0) + ($batchDiag['signals_rr_below_min']      ?? 0);
+        $state['signals_stop_side_invalid'] = ($state['signals_stop_side_invalid'] ?? 0) + ($batchDiag['signals_stop_side_invalid'] ?? 0);
+        $state['signals_tp_side_invalid']   = ($state['signals_tp_side_invalid']   ?? 0) + ($batchDiag['signals_tp_side_invalid']   ?? 0);
 
         // Accumulate reject reason distribution
         foreach ($batchDiag['reject_reasons'] ?? [] as $reason => $count) {
             $state['reject_reasons'][$reason] = ($state['reject_reasons'][$reason] ?? 0) + $count;
         }
 
-        $state['batches_completed']        = ($state['batches_completed'] ?? 0) + 1;
-        $state['last_tick_at']             = $tickAt;
-        $state['updated_at']               = date('c');
+        $state['batches_completed'] = ($state['batches_completed'] ?? 0) + 1;
+        $state['last_tick_at']      = $tickAt;
+        $state['updated_at']        = date('c');
 
         $elapsed = microtime(true) - $tickStart;
         $isDone  = ($newCursor >= count($allSymbols));
 
         if ($isDone) {
             $state['last_tick_result'] = 'finalized';
-            return $this->finalizeRun($state, $config, $runAt);
+            return $this->finalizeRun($state, $config, $runAt, $ttlMins);
         }
 
         if ($elapsed >= $maxRunSec) {
-            // Time limit reached — save progress, resume on next tick
             $state['last_tick_result'] = sprintf(
                 'time_limit_reached (%d processed, %d remaining)',
                 $newCursor,
@@ -334,8 +353,9 @@ final class FishService
                     $newCursor,
                     $state['remaining_symbols']
                 ),
-                'processed' => $newCursor,
-                'total'     => count($allSymbols),
+                'processed'  => $newCursor,
+                'total'      => count($allSymbols),
+                'cycle_id'   => $state['cycle_id'] ?? null,
             ];
         }
 
@@ -355,6 +375,7 @@ final class FishService
             ),
             'processed' => $newCursor,
             'total'     => count($allSymbols),
+            'cycle_id'  => $state['cycle_id'] ?? null,
         ];
     }
 
@@ -367,7 +388,7 @@ final class FishService
      *
      * @return array{0: list<array>, 1: array}  [signals, diagnostics]
      */
-    private function scan(array $config, string $runAt): array
+    private function scan(array $config, string $runAt, int $ttlMinutes = 180): array
     {
         $diag = $this->emptyDiag();
 
@@ -394,7 +415,7 @@ final class FishService
             return [[], $diag];
         }
 
-        [$signals, $batchDiag] = $this->scanSymbols($symbols, $config, $runAt);
+        [$signals, $batchDiag] = $this->scanSymbols($symbols, $config, $runAt, $ttlMinutes);
 
         // Merge batch diag (everything except symbols_total / symbols_skipped_window)
         foreach ($batchDiag as $k => $v) {
@@ -417,12 +438,13 @@ final class FishService
      * Scan a symbol slice through the full pipeline (structure → levels → risk → signal).
      * Callers must load logic requires (requireLogic()) before calling this.
      *
-     * @param  array   $symbols  Symbols to process
-     * @param  array   $config   Effective config
-     * @param  string  $runAt    ISO-8601 run timestamp
+     * @param  array   $symbols     Symbols to process
+     * @param  array   $config      Effective config
+     * @param  string  $runAt       ISO-8601 run timestamp
+     * @param  int     $ttlMinutes  Signal lifetime in minutes
      * @return array{0: list<array>, 1: array}  [signals, diagnostics_increment]
      */
-    private function scanSymbols(array $symbols, array $config, string $runAt): array
+    private function scanSymbols(array $symbols, array $config, string $runAt, int $ttlMinutes = 180): array
     {
         $diag = [
             'symbols_scanned'            => 0,
@@ -560,6 +582,12 @@ final class FishService
                     $symbol, $side, $entry, $risk, $level, $structResult, $config, $runAt
                 );
 
+                // Attach TTL fields so signals have explicit freshness tracking
+                $runTs  = strtotime($runAt) ?: time();
+                $signal['created_at']   = $runAt;
+                $signal['last_seen_at'] = $runAt;
+                $signal['expires_at']   = date('c', $runTs + $ttlMinutes * 60);
+
                 $sid = $signal['signal_id'];
                 if (isset($seenSignalIds[$sid])) {
                     continue;  // deduplicate
@@ -578,21 +606,28 @@ final class FishService
     // Batched run helpers
     // =========================================================================
 
-    /** Finalize a batched run: write signals, stats, last_run, clean up temp files. */
-    private function finalizeRun(array $state, array $config, string $runAt): array
+    /** Finalize a batched run: merge/expire signals, write stats, last_run, clean up temp files. */
+    private function finalizeRun(array $state, array $config, string $runAt, int $ttlMinutes = 180): array
     {
         $startMs = isset($state['started_at'])
             ? (int)(strtotime($state['started_at']) * 1000)
             : (int)(microtime(true) * 1000);
 
-        $state['run_status']  = 'done';
-        $state['finished_at'] = date('c');
-        $state['updated_at']  = date('c');
+        $state['run_status']        = 'done';
+        $state['cycle_status']      = 'done';
+        $state['cycle_finished_at'] = date('c');
+        $state['finished_at']       = date('c');
+        $state['updated_at']        = date('c');
         $this->saveRunState($state);
 
-        // Move accumulated signals to signals.json
-        $signals = $this->loadPendingSignals();
-        $this->writeSignals($signals);
+        // Merge pending signals into existing signals.json, refresh duplicates, expire stale.
+        $now         = date('c');
+        $newSignals  = $this->loadPendingSignals();
+        $existing    = $this->loadSignals();
+        [$merged, $expiredCount, $refreshedCount] = $this->mergeAndExpireSignals(
+            $existing, $newSignals, $ttlMinutes, $now
+        );
+        $this->writeSignals($merged);
         $this->clearPendingSignals();
 
         // Build summary result for stats / last_run
@@ -615,13 +650,26 @@ final class FishService
             'signals_stop_side_invalid'  => $state['signals_stop_side_invalid']  ?? 0,
             'signals_tp_side_invalid'    => $state['signals_tp_side_invalid']    ?? 0,
             'reject_reasons'             => $state['reject_reasons']             ?? [],
+            // Cycle + TTL diagnostics
+            'current_cycle_id'           => $state['cycle_id']           ?? null,
+            'current_cycle_status'       => 'done',
+            'cycle_started_at'           => $state['cycle_started_at']   ?? null,
+            'cycle_finished_at'          => $state['cycle_finished_at']  ?? null,
+            'next_cycle_ready'           => true,
+            'signal_ttl_minutes'         => $ttlMinutes,
+            'signals_active'             => count($merged),
+            'signals_expired_this_tick'  => $expiredCount,
+            'signals_refreshed_this_tick'=> $refreshedCount,
         ];
 
         $result = $this->okResult(
             sprintf(
-                'Batched run complete. Processed: %d symbols. Valid signals: %d.',
+                'Cycle %s complete. Processed: %d symbols. Signals active: %d (new/refreshed: %d, expired: %d).',
+                $state['cycle_id'] ?? 'N/A',
                 $state['processed_symbols'] ?? 0,
-                $state['signals_found']     ?? 0
+                count($merged),
+                count($newSignals) - $refreshedCount,
+                $expiredCount
             ),
             $config, $startMs, $runAt, $diag
         );
@@ -632,10 +680,16 @@ final class FishService
         $this->updateStats($result);
 
         return [
-            'ok'        => true,
-            'status'    => 'done',
-            'message'   => $result['message'],
-            'signals'   => count($signals),
+            'ok'                          => true,
+            'status'                      => 'done',
+            'message'                     => $result['message'],
+            'signals_active'              => count($merged),
+            'signals_expired_this_tick'   => $expiredCount,
+            'signals_refreshed_this_tick' => $refreshedCount,
+            'current_cycle_id'            => $state['cycle_id']          ?? null,
+            'cycle_finished_at'           => $state['cycle_finished_at'] ?? null,
+            'next_cycle_ready'            => true,
+            'signal_ttl_minutes'          => $ttlMinutes,
         ];
     }
 
@@ -800,11 +854,13 @@ final class FishService
     // Persistence
     // =========================================================================
 
-    private function persist(array $result, ?array $config, array $signals): void
+    private function persist(array $result, ?array $config, array $newSignals, int $ttlMinutes = 180): void
     {
         $this->writeRuntimeSnapshot($result, $config);
         $this->writeLastRun($result);
-        $this->writeSignals($signals);
+        $existing = $this->loadSignals();
+        [$merged] = $this->mergeAndExpireSignals($existing, $newSignals, $ttlMinutes, $result['run_at']);
+        $this->writeSignals($merged);
         $this->updateStats($result);
     }
 
@@ -960,6 +1016,121 @@ final class FishService
         if (file_exists($path)) {
             @file_put_contents($path, json_encode([]) . "\n");
         }
+    }
+
+    /**
+     * Build a fresh run-state array for a new cycle.
+     * Preserves the previous cycle's ID and finish time for reference.
+     */
+    private function initNewCycle(array $prevState, array $config): array
+    {
+        $cycleId = 'fish_cycle_' . date('Ymd_His');
+
+        return [
+            'run_id'                    => $cycleId,
+            'cycle_id'                  => $cycleId,
+            'cycle_status'              => 'queued',
+            'cycle_started_at'          => null,
+            'cycle_finished_at'         => null,
+            'prev_cycle_id'             => $prevState['cycle_id']          ?? ($prevState['run_id'] ?? null),
+            'prev_cycle_finished_at'    => $prevState['cycle_finished_at'] ?? ($prevState['finished_at'] ?? null),
+            'run_status'                => 'queued',
+            'universe_mode'             => $config['universe_mode'] ?? 'all',
+            'total_symbols'             => 0,
+            'processed_symbols'         => 0,
+            'remaining_symbols'         => 0,
+            'batch_cursor'              => 0,
+            'current_symbol'            => null,
+            'started_at'                => date('c'),
+            'updated_at'                => date('c'),
+            'finished_at'               => null,
+            'last_error'                => null,
+            'signals_found'             => 0,
+            'api_errors'                => 0,
+            'symbols_skipped'           => 0,
+            'signals_geometry_valid'    => 0,
+            'signals_geometry_rejected' => 0,
+            'signals_rr_below_min'      => 0,
+            'signals_stop_side_invalid' => 0,
+            'signals_tp_side_invalid'   => 0,
+            'batch_size'                => (int)($config['batch_size'] ?? 20),
+        ];
+    }
+
+    /**
+     * Merge new signals into existing ones, refreshing duplicates by signal_id
+     * and expiring signals whose expires_at has passed.
+     *
+     * @return array{0: list<array>, 1: int, 2: int}  [merged_signals, expired_count, refreshed_count]
+     */
+    private function mergeAndExpireSignals(
+        array  $existing,
+        array  $newSignals,
+        int    $ttlMinutes,
+        string $now
+    ): array {
+        $nowTs     = strtotime($now) ?: time();
+        $expiresAt = date('c', $nowTs + $ttlMinutes * 60);
+        $byId      = [];
+        $refreshed = 0;
+
+        // Index existing signals by signal_id
+        foreach ($existing as $sig) {
+            $sid = (string)($sig['signal_id'] ?? '');
+            if ($sid !== '') {
+                $byId[$sid] = $sig;
+            }
+        }
+
+        // Merge new signals: refresh if already known, add if new
+        foreach ($newSignals as $sig) {
+            $sid = (string)($sig['signal_id'] ?? '');
+            if ($sid === '') {
+                continue;
+            }
+            if (isset($byId[$sid])) {
+                // Refresh the existing record
+                $byId[$sid]['last_seen_at'] = $now;
+                $byId[$sid]['expires_at']   = $expiresAt;
+                // Update mutable price/geometry fields in case they shifted
+                foreach ([
+                    'entry_price', 'stop_price', 'take_profit_price',
+                    'breakeven_trigger', 'rr_ratio',
+                    'pattern_range', 'risk_distance_abs', 'reward_distance_abs',
+                ] as $f) {
+                    if (array_key_exists($f, $sig)) {
+                        $byId[$sid][$f] = $sig[$f];
+                    }
+                }
+                $refreshed++;
+            } else {
+                $byId[$sid] = $sig;
+            }
+        }
+
+        // Remove signals that have passed their expires_at
+        $expired = 0;
+        foreach (array_keys($byId) as $sid) {
+            $exp = $byId[$sid]['expires_at'] ?? null;
+            if ($exp !== null && (strtotime($exp) ?: PHP_INT_MAX) < $nowTs) {
+                unset($byId[$sid]);
+                $expired++;
+            }
+        }
+
+        return [array_values($byId), $expired, $refreshed];
+    }
+
+    /** Load the current signals.json file. */
+    private function loadSignals(): array
+    {
+        $path = $this->moduleDir . '/storage/signals.json';
+        if (!file_exists($path)) {
+            return [];
+        }
+        $raw  = file_get_contents($path);
+        $data = json_decode((string)$raw, true);
+        return is_array($data) ? $data : [];
     }
 
     // =========================================================================

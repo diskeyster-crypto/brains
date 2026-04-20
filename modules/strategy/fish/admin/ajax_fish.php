@@ -6,7 +6,10 @@ declare(strict_types=1);
  * Fish Strategy — AJAX Handler
  *
  * Handles POST actions from admin pages:
- *   action=run          → trigger a service run
+ *   action=run          → trigger a smoke-test run
+ *                          - universe_mode=all        → queue batched run (async safe)
+ *                          - universe_mode=manual_list → synchronous run (small list)
+ *   action=tick_batch   → advance one batch of a queued/running batched run
  *   action=save_config  → validate and write active.php overrides
  *   action=reset_active → clear active.php back to empty overrides
  *
@@ -103,23 +106,88 @@ switch ($action) {
     // -----------------------------------------------------------------------
     case 'run':
     // -----------------------------------------------------------------------
+        // For all-universe runs: queue the batched path (safe for large universes).
+        // For manual_list: run synchronously (list is small, single HTTP request is fine).
+        $runConfig    = $service->getConfig();
+        $universeMode = $runConfig['universe_mode'] ?? 'all';
+
+        if ($universeMode === 'all') {
+            // Queue and return immediately — the cron (or manual Tick Batch) advances it.
+            try {
+                $runId = $service->queueRun();
+                $msg   = 'Batched run queued (' . $runId . '). Use cron or "Tick Batch" to process symbols.';
+                if ($isAjax) {
+                    header('Content-Type: application/json');
+                    echo json_encode([
+                        'ok'      => true,
+                        'queued'  => true,
+                        'run_id'  => $runId,
+                        'message' => $msg,
+                    ], JSON_UNESCAPED_UNICODE);
+                } else {
+                    fishSetFlash('info', $msg);
+                    header('Location: ' . $configUrl);
+                }
+            } catch (\Throwable $e) {
+                if ($isAjax) {
+                    http_response_code(500);
+                    header('Content-Type: application/json');
+                    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+                } else {
+                    fishSetFlash('danger', 'Queue failed: ' . $e->getMessage());
+                    header('Location: ' . $configUrl);
+                }
+            }
+        } else {
+            // manual_list / smoke_demo — run synchronously
+            try {
+                $result = $service->run();
+            } catch (\Throwable $e) {
+                $result = [
+                    'ok'     => false,
+                    'status' => 'error',
+                    'error'  => $e->getMessage(),
+                ];
+            }
+
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['ok' => true, 'result' => $result], JSON_UNESCAPED_UNICODE);
+            } else {
+                $ok  = ($result['status'] ?? '') !== 'error';
+                $msg = $result['message'] ?? ($ok ? 'Smoke test completed.' : 'Smoke test failed.');
+                fishSetFlash($ok ? 'success' : 'danger', 'Run result: ' . $msg);
+                header('Location: ' . $configUrl);
+            }
+        }
+        break;
+
+    // -----------------------------------------------------------------------
+    case 'tick_batch':
+    // -----------------------------------------------------------------------
+        // Advance one batch of the current queued/running batched run.
+        // Can be called from the admin UI manually or by the cron runner.
         try {
-            $result = $service->run();
+            $result = $service->tickBatch();
         } catch (\Throwable $e) {
-            $result = [
-                'ok'     => false,
-                'status' => 'error',
-                'error'  => $e->getMessage(),
-            ];
+            $result = ['ok' => false, 'status' => 'error', 'message' => $e->getMessage()];
         }
 
         if ($isAjax) {
             header('Content-Type: application/json');
-            echo json_encode(['ok' => true, 'result' => $result], JSON_UNESCAPED_UNICODE);
+            echo json_encode($result, JSON_UNESCAPED_UNICODE);
         } else {
-            $ok  = ($result['status'] ?? '') !== 'error';
-            $msg = $result['message'] ?? ($ok ? 'Smoke test completed.' : 'Smoke test failed.');
-            fishSetFlash($ok ? 'success' : 'danger', 'Run result: ' . $msg);
+            $ok  = $result['ok'] ?? false;
+            $msg = $result['message'] ?? 'Tick completed.';
+            $runState = $service->getRunState();
+            $pct = 0;
+            if (($runState['total_symbols'] ?? 0) > 0) {
+                $pct = (int)round(($runState['processed_symbols'] ?? 0) / $runState['total_symbols'] * 100);
+            }
+            fishSetFlash(
+                $ok ? 'info' : 'danger',
+                'Tick: ' . $msg . ($ok ? " ({$pct}% done)" : '')
+            );
             header('Location: ' . $configUrl);
         }
         break;
@@ -129,9 +197,7 @@ switch ($action) {
     // -----------------------------------------------------------------------
         $p = $_POST;
 
-        // Allowed mode values
-        $allowedModes = ['active', 'passive', 'disabled', 'smoke_demo'];
-        // Allowed universe modes
+        $allowedModes         = ['active', 'passive', 'disabled', 'smoke_demo'];
         $allowedUniverseModes = ['all', 'manual_list'];
 
         $errors    = [];
@@ -203,8 +269,16 @@ switch ($action) {
         // --- sl_profile, pm_profile ---
         $slProfile = trim($p['sl_profile'] ?? 'default');
         $pmProfile = trim($p['pm_profile'] ?? 'default');
-        if ($slProfile === '') { $errors[] = 'sl_profile must not be empty.'; } else { $overrides['sl_profile'] = $slProfile; }
-        if ($pmProfile === '') { $errors[] = 'pm_profile must not be empty.'; } else { $overrides['pm_profile'] = $pmProfile; }
+        if ($slProfile === '') {
+            $errors[] = 'sl_profile must not be empty.';
+        } else {
+            $overrides['sl_profile'] = $slProfile;
+        }
+        if ($pmProfile === '') {
+            $errors[] = 'pm_profile must not be empty.';
+        } else {
+            $overrides['pm_profile'] = $pmProfile;
+        }
 
         if (!empty($errors)) {
             if ($isAjax) {

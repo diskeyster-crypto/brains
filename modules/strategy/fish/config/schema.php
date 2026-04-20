@@ -52,4 +52,12 @@ return [
     'lookback_candles'                => 'int',
     'bybit_base_url'                  => 'string',
     'bybit_timeout_sec'               => 'int',
+
+    // Batched scan / smoke-test run controls
+    'batch_size'                      => 'int',
+    'max_symbols_per_run'             => 'int',
+    'max_runtime_seconds'             => 'int',
+
+    // Risk / reward geometry validation
+    'min_rr_ratio'                    => 'float',
 ];

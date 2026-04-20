@@ -81,4 +81,28 @@ return [
     // Candle data: Bybit API settings
     'bybit_base_url'                  => 'https://api.bybit.com',
     'bybit_timeout_sec'               => 10,
+
+    // -----------------------------------------------------------------------
+    // Batched scan / smoke-test run controls
+    // -----------------------------------------------------------------------
+
+    // Number of symbols to process per cron tick / per tickBatch() call.
+    // Reduce if each symbol takes long; increase if symbols are fast.
+    'batch_size'            => 20,
+
+    // Hard cap on how many symbols will be scanned in a single queued run.
+    // 0 = unlimited (use the full universe).
+    'max_symbols_per_run'   => 0,
+
+    // Abort a cron tick after this many seconds, saving progress for next tick.
+    // Should be safely below your cron interval and HTTP timeout.
+    'max_runtime_seconds'   => 55,
+
+    // -----------------------------------------------------------------------
+    // Risk / reward geometry validation
+    // -----------------------------------------------------------------------
+
+    // Minimum acceptable reward/risk ratio for a signal to be emitted.
+    // Signals with RR below this threshold are rejected as geometry-invalid.
+    'min_rr_ratio'          => 2.0,
 ];

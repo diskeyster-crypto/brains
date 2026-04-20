@@ -5,17 +5,19 @@ declare(strict_types=1);
 /**
  * Fish Strategy — Service
  *
- * Orchestrates one full Рыбалка scanner cycle:
- *   1. Load + validate config via FishBootstrap
- *   2. Build symbol universe (registry or manual_list)
- *   3. For each symbol: fetch H4 candles from Bybit
- *   4. Analyse H4 trend structure (swing highs/lows)
- *   5. Detect liquidity levels (3–4 bar consolidation patterns)
- *   6. For each valid level + trend: calculate entry, stop, TP, BE
- *   7. Assemble signal objects and write signals.json
- *   8. Update stats.json, last_run.json, runtime_snapshot.php
+ * Orchestrates Рыбалка scanner cycles, both synchronous (for manual_list) and
+ * batched/async (for large all-universe runs).
  *
- * No order placement. No Trading Bot wiring. Scanner only.
+ * ── Synchronous path (manual_list / smoke_demo) ──────────────────────────────
+ *   run()         Full scan in one call.  Safe for small manual_list universes.
+ *
+ * ── Batched path (all-universe smoke test) ────────────────────────────────────
+ *   queueRun()    Write run_state.json with status=queued and return immediately.
+ *   tickBatch()   Process one batch (batch_size symbols) from the queued run.
+ *                 Called by the cron runner; can also be triggered manually from
+ *                 the admin UI.  Safe to call repeatedly — resumes from cursor.
+ *
+ * No order placement.  No Trading Bot wiring.  Scanner only.
  */
 
 namespace Modules\Strategy\Fish;
@@ -43,11 +45,13 @@ final class FishService
     }
 
     // =========================================================================
-    // Main run cycle
+    // Public: synchronous run (manual_list / small universes)
     // =========================================================================
 
     /**
-     * Execute one scanner cycle.
+     * Execute one full scanner cycle synchronously.
+     * Use for manual_list universes or direct CLI invocation.
+     * Do NOT call from HTTP for large all-universe scans (use queueRun/tickBatch).
      *
      * @return array  Run result with diagnostics
      */
@@ -77,7 +81,7 @@ final class FishService
 
         $config = $boot['config'];
 
-        // Module disabled or explicitly disabled mode — skip, report clean
+        // Module disabled — skip, report clean
         if (!($config['enabled'] ?? false) || ($config['mode'] ?? 'disabled') === 'disabled') {
             $result = $this->okResult(
                 'Strategy loaded. Config valid. Module is disabled — scanner not run.',
@@ -88,12 +92,7 @@ final class FishService
         }
 
         // Load logic modules
-        require_once $this->moduleDir . '/logic/universe.php';
-        require_once $this->moduleDir . '/logic/structure.php';
-        require_once $this->moduleDir . '/logic/liquidity_level.php';
-        require_once $this->moduleDir . '/logic/entry.php';
-        require_once $this->moduleDir . '/logic/risk.php';
-        require_once $this->moduleDir . '/logic/signal.php';
+        $this->requireLogic();
 
         // Run scanner
         [$signals, $diagnostics] = $this->scan($config, $runAt);
@@ -114,34 +113,222 @@ final class FishService
     }
 
     // =========================================================================
+    // Public: batched/async run lifecycle
+    // =========================================================================
+
+    /**
+     * Queue a batched run.
+     * Writes run_state.json with status=queued and returns the run_id.
+     * The actual processing happens via repeated tickBatch() calls (cron or manual).
+     *
+     * @return string  run_id
+     */
+    public function queueRun(): string
+    {
+        require_once $this->moduleDir . '/bootstrap.php';
+        $boot   = FishBootstrap::instance($this->moduleDir)->load();
+        $config = $boot['config'] ?? [];
+
+        $runId = 'fish_run_' . date('Ymd_His');
+
+        $state = [
+            'run_id'                      => $runId,
+            'run_status'                  => 'queued',
+            'universe_mode'               => $config['universe_mode'] ?? 'all',
+            'total_symbols'               => 0,
+            'processed_symbols'           => 0,
+            'remaining_symbols'           => 0,
+            'batch_cursor'                => 0,
+            'current_symbol'              => null,
+            'started_at'                  => date('c'),
+            'updated_at'                  => date('c'),
+            'finished_at'                 => null,
+            'last_error'                  => null,
+            'signals_found'               => 0,
+            'api_errors'                  => 0,
+            'symbols_skipped'             => 0,
+            'signals_geometry_valid'      => 0,
+            'signals_geometry_rejected'   => 0,
+            'signals_rr_below_min'        => 0,
+            'signals_stop_side_invalid'   => 0,
+            'signals_tp_side_invalid'     => 0,
+            'batch_size'                  => (int)($config['batch_size'] ?? 20),
+        ];
+
+        $this->saveRunState($state);
+
+        return $runId;
+    }
+
+    /**
+     * Process one batch from the current queued/running run.
+     *
+     * - On first call after queueRun(): builds universe, transitions to running.
+     * - Each call processes batch_size symbols from the cursor.
+     * - Stops when max_runtime_seconds is exceeded (saves progress for next tick).
+     * - When all symbols are processed, finalizes and writes signals.json / stats.
+     *
+     * @return array{ok: bool, status: string, message: string, ...}
+     */
+    public function tickBatch(): array
+    {
+        $state  = $this->loadRunState();
+        $status = $state['run_status'] ?? 'idle';
+
+        if (!in_array($status, ['queued', 'running'], true)) {
+            return [
+                'ok'      => false,
+                'status'  => $status,
+                'message' => 'No active run (current status: ' . $status . ')',
+            ];
+        }
+
+        // Bootstrap config
+        require_once $this->moduleDir . '/bootstrap.php';
+        $boot = FishBootstrap::instance($this->moduleDir)->load();
+
+        if (!$boot['valid']) {
+            $msg = 'Config invalid: ' . implode('; ', $boot['errors'] ?? []);
+            $state['run_status'] = 'failed';
+            $state['last_error'] = $msg;
+            $state['updated_at'] = date('c');
+            $this->saveRunState($state);
+            return ['ok' => false, 'status' => 'failed', 'message' => $msg];
+        }
+
+        $config      = $boot['config'];
+        $batchSize   = (int)($config['batch_size']          ?? 20);
+        $maxRunSec   = (int)($config['max_runtime_seconds'] ?? 55);
+        $maxSymbols  = (int)($config['max_symbols_per_run'] ?? 0);
+        $tickStart   = microtime(true);
+
+        // Transition: queued → running (load and persist symbol list)
+        if ($status === 'queued') {
+            require_once $this->moduleDir . '/logic/universe.php';
+            $universe   = new \Modules\Strategy\Fish\Logic\FishUniverse($this->moduleDir);
+            $univResult = $universe->build($config);
+            $allSymbols = $univResult['symbols'];
+
+            if ($maxSymbols > 0) {
+                $allSymbols = array_slice($allSymbols, 0, $maxSymbols);
+            }
+
+            $state['run_status']        = 'running';
+            $state['total_symbols']     = count($allSymbols);
+            $state['remaining_symbols'] = count($allSymbols);
+            $state['batch_cursor']      = 0;
+            $state['processed_symbols'] = 0;
+            $state['started_at']        = date('c');
+            $state['updated_at']        = date('c');
+
+            $this->writeRunSymbols($allSymbols);
+        }
+
+        // Load symbol list (persisted in run_symbols.json)
+        $allSymbols = $this->loadRunSymbols();
+        $cursor     = (int)($state['batch_cursor'] ?? 0);
+
+        if ($cursor >= count($allSymbols)) {
+            return $this->finalizeRun($state, $config, $state['started_at'] ?? date('c'));
+        }
+
+        // Check trading window before processing
+        $windowEnabled = (bool)($config['window_enabled'] ?? false);
+        $windowStart   = (string)($config['window_start'] ?? '00:00');
+        $windowEnd     = (string)($config['window_end']   ?? '23:59');
+
+        if ($windowEnabled && !$this->isInsideWindow($windowStart, $windowEnd)) {
+            $state['last_error'] = 'Outside trading window — skipped this tick.';
+            $state['updated_at'] = date('c');
+            $this->saveRunState($state);
+            return [
+                'ok'      => true,
+                'status'  => 'running',
+                'message' => 'Outside trading window — tick skipped. Run is still queued.',
+            ];
+        }
+
+        // Load logic modules
+        $this->requireLogic();
+
+        // Process one batch
+        $batch        = array_slice($allSymbols, $cursor, $batchSize);
+        $runAt        = $state['started_at'] ?? date('c');
+        [$batchSignals, $batchDiag] = $this->scanSymbols($batch, $config, $runAt);
+
+        // Accumulate signals
+        $pending   = $this->loadPendingSignals();
+        $pending   = array_merge($pending, $batchSignals);
+        $this->writePendingSignals($pending);
+
+        // Update run state
+        $newCursor                         = $cursor + count($batch);
+        $state['batch_cursor']             = $newCursor;
+        $state['processed_symbols']        = $newCursor;
+        $state['remaining_symbols']        = max(0, count($allSymbols) - $newCursor);
+        $state['current_symbol']           = end($batch) ?: null;
+        $state['signals_found']            = ($state['signals_found'] ?? 0) + count($batchSignals);
+        $state['api_errors']               = ($state['api_errors']    ?? 0) + ($batchDiag['symbols_skipped_api_err'] ?? 0);
+        $state['symbols_skipped']          = ($state['symbols_skipped'] ?? 0) + ($batchDiag['symbols_skipped_no_data'] ?? 0);
+        $state['signals_geometry_valid']   = ($state['signals_geometry_valid']   ?? 0) + ($batchDiag['signals_geometry_valid']   ?? 0);
+        $state['signals_geometry_rejected']= ($state['signals_geometry_rejected'] ?? 0) + ($batchDiag['signals_geometry_rejected'] ?? 0);
+        $state['signals_rr_below_min']     = ($state['signals_rr_below_min']     ?? 0) + ($batchDiag['signals_rr_below_min']     ?? 0);
+        $state['signals_stop_side_invalid']= ($state['signals_stop_side_invalid'] ?? 0) + ($batchDiag['signals_stop_side_invalid'] ?? 0);
+        $state['signals_tp_side_invalid']  = ($state['signals_tp_side_invalid']  ?? 0) + ($batchDiag['signals_tp_side_invalid']  ?? 0);
+        $state['updated_at']               = date('c');
+
+        $elapsed = microtime(true) - $tickStart;
+        $isDone  = ($newCursor >= count($allSymbols));
+
+        if ($isDone) {
+            return $this->finalizeRun($state, $config, $runAt);
+        }
+
+        if ($elapsed >= $maxRunSec) {
+            // Time limit reached — save progress, resume on next tick
+            $this->saveRunState($state);
+            return [
+                'ok'        => true,
+                'status'    => 'running',
+                'message'   => sprintf(
+                    'Batch done (%d processed, %d remaining). Time limit reached — resume next tick.',
+                    $newCursor,
+                    $state['remaining_symbols']
+                ),
+                'processed' => $newCursor,
+                'total'     => count($allSymbols),
+            ];
+        }
+
+        $this->saveRunState($state);
+        return [
+            'ok'        => true,
+            'status'    => 'running',
+            'message'   => sprintf(
+                'Batch: %d processed, %d remaining.',
+                $newCursor,
+                $state['remaining_symbols']
+            ),
+            'processed' => $newCursor,
+            'total'     => count($allSymbols),
+        ];
+    }
+
+    // =========================================================================
     // Scanner pipeline
     // =========================================================================
 
     /**
-     * Main scanner: universe → candles → structure → levels → signals.
+     * Full scan (synchronous) — builds universe, checks window, scans all symbols.
      *
      * @return array{0: list<array>, 1: array}  [signals, diagnostics]
      */
     private function scan(array $config, string $runAt): array
     {
-        $diag = [
-            'symbols_total'            => 0,
-            'symbols_scanned'          => 0,
-            'symbols_skipped_no_data'  => 0,
-            'symbols_skipped_api_err'  => 0,
-            'symbols_skipped_window'   => 0,
-            'structures_valid'         => 0,
-            'structures_invalid'       => 0,
-            'levels_found'             => 0,
-            'levels_expired'           => 0,
-            'candidates_valid'         => 0,
-            'candidates_rejected'      => 0,
-            'signals_valid'            => 0,
-            'reject_reasons'           => [],
-        ];
+        $diag = $this->emptyDiag();
 
-        // 1. Build universe
-        $universe = new \Modules\Strategy\Fish\Logic\FishUniverse($this->moduleDir);
+        require_once $this->moduleDir . '/logic/universe.php';
+        $universe   = new \Modules\Strategy\Fish\Logic\FishUniverse($this->moduleDir);
         $univResult = $universe->build($config);
         $symbols    = $univResult['symbols'];
         $diag['symbols_total'] = count($symbols);
@@ -150,31 +337,12 @@ final class FishService
             return [[], $diag];
         }
 
-        $structure      = new \Modules\Strategy\Fish\Logic\FishStructure();
-        $levelDetector  = new \Modules\Strategy\Fish\Logic\FishLiquidityLevel();
-        $entryCalc      = new \Modules\Strategy\Fish\Logic\FishEntry();
-        $riskCalc       = new \Modules\Strategy\Fish\Logic\FishRisk();
-        $signalBuilder  = new \Modules\Strategy\Fish\Logic\FishSignal();
-
-        $pivotWindow    = (int)($config['structure_pivot_window']         ?? 3);
-        $minBars        = (int)($config['liquidity_pattern_min_bars']     ?? 3);
-        $maxBars        = (int)($config['liquidity_pattern_max_bars']     ?? 4);
-        $tolerance      = (float)($config['liquidity_level_tolerance']    ?? 0.003);
-        $confirmReq     = (bool)($config['confirm_bar_required']          ?? true);
-        $maxAgeBars     = (int)($config['level_max_age_bars']             ?? 20);
-        $tpMult         = (float)($config['tp_multiplier']                ?? 4.0);
-        $beMult         = (float)($config['breakeven_trigger_multiplier'] ?? 1.0);
-        $lookback       = (int)($config['lookback_candles']               ?? 100);
-        $bybitBase      = (string)($config['bybit_base_url']              ?? 'https://api.bybit.com');
-        $timeoutSec     = (int)($config['bybit_timeout_sec']              ?? 10);
-
-        // Trading window — enforce if enabled (single window in v1)
+        // Trading window check
         $windowEnabled = (bool)($config['window_enabled'] ?? false);
         $windowStart   = (string)($config['window_start'] ?? '00:00');
         $windowEnd     = (string)($config['window_end']   ?? '23:59');
 
         if ($windowEnabled && !$this->isInsideWindow($windowStart, $windowEnd)) {
-            // Current UTC time is outside the allowed trading window — skip all symbols
             $diag['symbols_skipped_window'] = count($symbols);
             foreach ($symbols as $_) {
                 $this->bumpRejectReason($diag['reject_reasons'], 'outside_trading_window');
@@ -182,12 +350,79 @@ final class FishService
             return [[], $diag];
         }
 
-        $allSignals = [];
-        // Deduplicate signals by signal_id
+        [$signals, $batchDiag] = $this->scanSymbols($symbols, $config, $runAt);
+
+        // Merge batch diag (everything except symbols_total / symbols_skipped_window)
+        foreach ($batchDiag as $k => $v) {
+            if ($k === 'reject_reasons') {
+                foreach ($v as $reason => $count) {
+                    $diag['reject_reasons'][$reason] = ($diag['reject_reasons'][$reason] ?? 0) + $count;
+                }
+            } elseif (isset($diag[$k]) || array_key_exists($k, $diag)) {
+                // Accumulate numeric fields that exist in the parent diag
+                if (is_int($v) || is_float($v)) {
+                    $diag[$k] = ($diag[$k] ?? 0) + $v;
+                }
+            }
+        }
+
+        return [$signals, $diag];
+    }
+
+    /**
+     * Scan a symbol slice through the full pipeline (structure → levels → risk → signal).
+     * Callers must load logic requires (requireLogic()) before calling this.
+     *
+     * @param  array   $symbols  Symbols to process
+     * @param  array   $config   Effective config
+     * @param  string  $runAt    ISO-8601 run timestamp
+     * @return array{0: list<array>, 1: array}  [signals, diagnostics_increment]
+     */
+    private function scanSymbols(array $symbols, array $config, string $runAt): array
+    {
+        $diag = [
+            'symbols_scanned'            => 0,
+            'symbols_skipped_no_data'    => 0,
+            'symbols_skipped_api_err'    => 0,
+            'structures_valid'           => 0,
+            'structures_invalid'         => 0,
+            'levels_found'               => 0,
+            'levels_expired'             => 0,
+            'candidates_valid'           => 0,
+            'candidates_rejected'        => 0,
+            'signals_valid'              => 0,
+            'signals_geometry_valid'     => 0,
+            'signals_geometry_rejected'  => 0,
+            'signals_rr_below_min'       => 0,
+            'signals_stop_side_invalid'  => 0,
+            'signals_tp_side_invalid'    => 0,
+            'reject_reasons'             => [],
+        ];
+
+        $structure     = new \Modules\Strategy\Fish\Logic\FishStructure();
+        $levelDetector = new \Modules\Strategy\Fish\Logic\FishLiquidityLevel();
+        $entryCalc     = new \Modules\Strategy\Fish\Logic\FishEntry();
+        $riskCalc      = new \Modules\Strategy\Fish\Logic\FishRisk();
+        $signalBuilder = new \Modules\Strategy\Fish\Logic\FishSignal();
+
+        $pivotWindow = (int)($config['structure_pivot_window']         ?? 3);
+        $minBars     = (int)($config['liquidity_pattern_min_bars']     ?? 3);
+        $maxBars     = (int)($config['liquidity_pattern_max_bars']     ?? 4);
+        $tolerance   = (float)($config['liquidity_level_tolerance']    ?? 0.003);
+        $confirmReq  = (bool)($config['confirm_bar_required']          ?? true);
+        $maxAgeBars  = (int)($config['level_max_age_bars']             ?? 20);
+        $tpMult      = (float)($config['tp_multiplier']                ?? 4.0);
+        $beMult      = (float)($config['breakeven_trigger_multiplier'] ?? 1.0);
+        $lookback    = (int)($config['lookback_candles']               ?? 100);
+        $bybitBase   = (string)($config['bybit_base_url']              ?? 'https://api.bybit.com');
+        $timeoutSec  = (int)($config['bybit_timeout_sec']              ?? 10);
+        $minRr       = (float)($config['min_rr_ratio']                 ?? 2.0);
+
+        $allSignals    = [];
         $seenSignalIds = [];
 
         foreach ($symbols as $symbol) {
-            // 2. Fetch H4 candles
+            // Fetch H4 candles
             $candles = $this->fetchKlines($symbol, self::H4_INTERVAL, $lookback, $bybitBase, $timeoutSec);
 
             if ($candles === null) {
@@ -204,7 +439,7 @@ final class FishService
 
             $diag['symbols_scanned']++;
 
-            // 3. Analyse trend structure
+            // Trend structure
             $structResult = $structure->analyse($candles, $pivotWindow);
 
             if (!$structResult['valid']) {
@@ -214,7 +449,6 @@ final class FishService
             }
 
             $trend = $structResult['trend_direction'];
-
             if ($trend === 'ranging' || $trend === 'unknown') {
                 $diag['structures_invalid']++;
                 $this->bumpRejectReason($diag['reject_reasons'], 'ranging_or_unknown_trend');
@@ -222,11 +456,9 @@ final class FishService
             }
 
             $diag['structures_valid']++;
-
-            // Map trend to trade side
             $side = ($trend === 'bullish') ? 'long' : 'short';
 
-            // 4. Detect liquidity levels (direction-aware confirming bar)
+            // Detect liquidity levels (direction-aware)
             $levels = $levelDetector->detect(
                 $candles, $minBars, $maxBars, $tolerance, $confirmReq, $maxAgeBars, $side
             );
@@ -245,35 +477,48 @@ final class FishService
 
                 $diag['levels_found']++;
 
-                // 5. Calculate entry
+                // Entry
                 $entry = $entryCalc->calculate($side, $level);
 
-                // 6. Calculate risk
+                // Risk / geometry
                 $risk = $riskCalc->calculate(
                     $side,
                     $entry['entry_price'],
                     $level,
                     $structResult,
                     $tpMult,
-                    $beMult
+                    $beMult,
+                    $minRr
                 );
 
                 if (!$risk['valid']) {
                     $diag['candidates_rejected']++;
-                    $this->bumpRejectReason($diag['reject_reasons'], $risk['reject_reason'] ?? 'risk_invalid');
+                    $reason = $risk['reject_reason'] ?? 'risk_invalid';
+                    $this->bumpRejectReason($diag['reject_reasons'], $reason);
+
+                    // Geometry-specific counters
+                    $diag['signals_geometry_rejected']++;
+                    if ($reason === 'rr_below_min') {
+                        $diag['signals_rr_below_min']++;
+                    } elseif (in_array($reason, ['stop_above_entry', 'stop_below_entry'], true)) {
+                        $diag['signals_stop_side_invalid']++;
+                    } elseif (in_array($reason, ['tp_below_entry', 'tp_above_entry'], true)) {
+                        $diag['signals_tp_side_invalid']++;
+                    }
                     continue;
                 }
 
                 $diag['candidates_valid']++;
+                $diag['signals_geometry_valid']++;
 
-                // 7. Build signal
+                // Build signal
                 $signal = $signalBuilder->build(
                     $symbol, $side, $entry, $risk, $level, $structResult, $config, $runAt
                 );
 
                 $sid = $signal['signal_id'];
                 if (isset($seenSignalIds[$sid])) {
-                    continue;  // skip duplicate
+                    continue;  // deduplicate
                 }
                 $seenSignalIds[$sid] = true;
 
@@ -286,6 +531,71 @@ final class FishService
     }
 
     // =========================================================================
+    // Batched run helpers
+    // =========================================================================
+
+    /** Finalize a batched run: write signals, stats, last_run, clean up temp files. */
+    private function finalizeRun(array $state, array $config, string $runAt): array
+    {
+        $startMs = isset($state['started_at'])
+            ? (int)(strtotime($state['started_at']) * 1000)
+            : (int)(microtime(true) * 1000);
+
+        $state['run_status']  = 'done';
+        $state['finished_at'] = date('c');
+        $state['updated_at']  = date('c');
+        $this->saveRunState($state);
+
+        // Move accumulated signals to signals.json
+        $signals = $this->loadPendingSignals();
+        $this->writeSignals($signals);
+        $this->clearPendingSignals();
+
+        // Build summary result for stats / last_run
+        $diag = [
+            'symbols_total'              => $state['total_symbols']              ?? 0,
+            'symbols_scanned'            => $state['processed_symbols']          ?? 0,
+            'symbols_skipped_api_err'    => $state['api_errors']                 ?? 0,
+            'symbols_skipped_no_data'    => $state['symbols_skipped']            ?? 0,
+            'symbols_skipped_window'     => 0,
+            'structures_valid'           => 0,
+            'structures_invalid'         => 0,
+            'levels_found'               => 0,
+            'levels_expired'             => 0,
+            'candidates_valid'           => 0,
+            'candidates_rejected'        => 0,
+            'signals_valid'              => $state['signals_found']              ?? 0,
+            'signals_geometry_valid'     => $state['signals_geometry_valid']     ?? 0,
+            'signals_geometry_rejected'  => $state['signals_geometry_rejected']  ?? 0,
+            'signals_rr_below_min'       => $state['signals_rr_below_min']       ?? 0,
+            'signals_stop_side_invalid'  => $state['signals_stop_side_invalid']  ?? 0,
+            'signals_tp_side_invalid'    => $state['signals_tp_side_invalid']    ?? 0,
+            'reject_reasons'             => [],
+        ];
+
+        $result = $this->okResult(
+            sprintf(
+                'Batched run complete. Processed: %d symbols. Valid signals: %d.',
+                $state['processed_symbols'] ?? 0,
+                $state['signals_found']     ?? 0
+            ),
+            $config, $startMs, $runAt, $diag
+        );
+        $result['signals_found'] = $state['signals_found'] ?? 0;
+
+        $this->writeRuntimeSnapshot($result, $config);
+        $this->writeLastRun($result);
+        $this->updateStats($result);
+
+        return [
+            'ok'        => true,
+            'status'    => 'done',
+            'message'   => $result['message'],
+            'signals'   => count($signals),
+        ];
+    }
+
+    // =========================================================================
     // Bybit H4 candle fetcher
     // =========================================================================
 
@@ -293,8 +603,6 @@ final class FishService
      * Fetch klines from the Bybit public API.
      * Returns null on any HTTP/parse error.
      * Returns candle array ordered oldest → newest.
-     *
-     * Bybit kline row format: [startTime, open, high, low, close, volume, turnover]
      *
      * @return list<array>|null
      */
@@ -313,7 +621,7 @@ final class FishService
 
         $ctx = stream_context_create([
             'http' => [
-                'timeout' => $timeoutSec,
+                'timeout'       => $timeoutSec,
                 'ignore_errors' => true,
             ],
         ]);
@@ -333,7 +641,7 @@ final class FishService
             return null;
         }
 
-        // Bybit returns newest first — reverse to get oldest first
+        // Bybit returns newest first — reverse to oldest first
         return array_reverse($list);
     }
 
@@ -341,16 +649,44 @@ final class FishService
     // Helpers
     // =========================================================================
 
+    private function requireLogic(): void
+    {
+        require_once $this->moduleDir . '/logic/structure.php';
+        require_once $this->moduleDir . '/logic/liquidity_level.php';
+        require_once $this->moduleDir . '/logic/entry.php';
+        require_once $this->moduleDir . '/logic/risk.php';
+        require_once $this->moduleDir . '/logic/signal.php';
+    }
+
+    private function emptyDiag(): array
+    {
+        return [
+            'symbols_total'              => 0,
+            'symbols_scanned'            => 0,
+            'symbols_skipped_no_data'    => 0,
+            'symbols_skipped_api_err'    => 0,
+            'symbols_skipped_window'     => 0,
+            'structures_valid'           => 0,
+            'structures_invalid'         => 0,
+            'levels_found'               => 0,
+            'levels_expired'             => 0,
+            'candidates_valid'           => 0,
+            'candidates_rejected'        => 0,
+            'signals_valid'              => 0,
+            'signals_geometry_valid'     => 0,
+            'signals_geometry_rejected'  => 0,
+            'signals_rr_below_min'       => 0,
+            'signals_stop_side_invalid'  => 0,
+            'signals_tp_side_invalid'    => 0,
+            'reject_reasons'             => [],
+        ];
+    }
+
     private function bumpRejectReason(array &$reasons, string $key): void
     {
         $reasons[$key] = ($reasons[$key] ?? 0) + 1;
     }
 
-    /**
-     * Check whether the current UTC time falls within the configured trading window.
-     * Both window_start and window_end are expressed as 'HH:MM' in UTC.
-     * If window_end < window_start, the window is treated as overnight (wraps midnight).
-     */
     private function isInsideWindow(string $windowStart, string $windowEnd): bool
     {
         $nowMinutes   = (int)gmdate('H') * 60 + (int)gmdate('i');
@@ -358,7 +694,6 @@ final class FishService
         $endMinutes   = $this->parseHHMM($windowEnd);
 
         if ($startMinutes <= $endMinutes) {
-            // Normal window (e.g. 08:00–22:00)
             return $nowMinutes >= $startMinutes && $nowMinutes < $endMinutes;
         }
 
@@ -371,6 +706,10 @@ final class FishService
         $parts = explode(':', $hhmm);
         return (int)($parts[0] ?? 0) * 60 + (int)($parts[1] ?? 0);
     }
+
+    // =========================================================================
+    // Result builders
+    // =========================================================================
 
     private function failResult(string $message, array $errors, int $startMs, string $runAt): array
     {
@@ -468,21 +807,28 @@ final class FishService
 
     private function updateStats(array $result): void
     {
-        $path = $this->moduleDir . '/storage/stats.json';
+        $path  = $this->moduleDir . '/storage/stats.json';
         $stats = $this->loadStorage('stats.json');
 
         if (empty($stats)) {
             $stats = [
-                'strategy_id'         => 'fish',
-                'total_runs'          => 0,
-                'successful_runs'     => 0,
-                'failed_runs'         => 0,
-                'signals_found_total' => 0,
-                'orders_placed_total' => 0,
-                'errors_count'        => 0,
-                'last_updated'        => null,
+                'strategy_id'                     => 'fish',
+                'total_runs'                      => 0,
+                'successful_runs'                 => 0,
+                'failed_runs'                     => 0,
+                'signals_found_total'             => 0,
+                'orders_placed_total'             => 0,
+                'errors_count'                    => 0,
+                'signals_geometry_valid_total'    => 0,
+                'signals_geometry_rejected_total' => 0,
+                'signals_rr_below_min_total'      => 0,
+                'signals_stop_side_invalid_total' => 0,
+                'signals_tp_side_invalid_total'   => 0,
+                'last_updated'                    => null,
             ];
         }
+
+        $diag = $result['diagnostics'] ?? [];
 
         $stats['total_runs']++;
         if ($result['status'] === 'ok') {
@@ -490,14 +836,86 @@ final class FishService
         } else {
             $stats['failed_runs']++;
         }
-        $stats['signals_found_total'] += ($result['signals_found'] ?? 0);
-        $stats['errors_count']        += ($result['errors_count'] ?? 0);
-        $stats['last_updated']         = $result['run_at'];
+        $stats['signals_found_total']             += ($result['signals_found'] ?? 0);
+        $stats['errors_count']                    += ($result['errors_count']  ?? 0);
+        $stats['signals_geometry_valid_total']    += ($diag['signals_geometry_valid']    ?? 0);
+        $stats['signals_geometry_rejected_total'] += ($diag['signals_geometry_rejected'] ?? 0);
+        $stats['signals_rr_below_min_total']      += ($diag['signals_rr_below_min']      ?? 0);
+        $stats['signals_stop_side_invalid_total'] += ($diag['signals_stop_side_invalid'] ?? 0);
+        $stats['signals_tp_side_invalid_total']   += ($diag['signals_tp_side_invalid']   ?? 0);
+        $stats['last_updated']                     = $result['run_at'];
 
         @file_put_contents(
             $path,
             json_encode($stats, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n"
         );
+    }
+
+    // ─── Run state persistence ───────────────────────────────────────────────
+
+    private function saveRunState(array $state): void
+    {
+        @file_put_contents(
+            $this->moduleDir . '/storage/run_state.json',
+            json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n"
+        );
+    }
+
+    private function loadRunState(): array
+    {
+        $path = $this->moduleDir . '/storage/run_state.json';
+        if (!file_exists($path)) {
+            return ['run_status' => 'idle'];
+        }
+        $raw  = file_get_contents($path);
+        $data = json_decode((string)$raw, true);
+        return is_array($data) ? $data : ['run_status' => 'idle'];
+    }
+
+    private function writeRunSymbols(array $symbols): void
+    {
+        @file_put_contents(
+            $this->moduleDir . '/storage/run_symbols.json',
+            json_encode($symbols, JSON_UNESCAPED_UNICODE) . "\n"
+        );
+    }
+
+    private function loadRunSymbols(): array
+    {
+        $path = $this->moduleDir . '/storage/run_symbols.json';
+        if (!file_exists($path)) {
+            return [];
+        }
+        $raw  = file_get_contents($path);
+        $data = json_decode((string)$raw, true);
+        return is_array($data) ? $data : [];
+    }
+
+    private function loadPendingSignals(): array
+    {
+        $path = $this->moduleDir . '/storage/signals_pending.json';
+        if (!file_exists($path)) {
+            return [];
+        }
+        $raw  = file_get_contents($path);
+        $data = json_decode((string)$raw, true);
+        return is_array($data) ? $data : [];
+    }
+
+    private function writePendingSignals(array $signals): void
+    {
+        @file_put_contents(
+            $this->moduleDir . '/storage/signals_pending.json',
+            json_encode($signals, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n"
+        );
+    }
+
+    private function clearPendingSignals(): void
+    {
+        $path = $this->moduleDir . '/storage/signals_pending.json';
+        if (file_exists($path)) {
+            @file_put_contents($path, json_encode([]) . "\n");
+        }
     }
 
     // =========================================================================
@@ -535,12 +953,14 @@ final class FishService
         if (!file_exists($path)) {
             return [];
         }
-        $raw = file_get_contents($path);
-        if ($raw === false) {
-            return [];
-        }
-        $data = json_decode($raw, true);
+        $raw  = file_get_contents($path);
+        $data = json_decode((string)$raw, true);
         return is_array($data) ? $data : [];
+    }
+
+    public function getRunState(): array
+    {
+        return $this->loadRunState();
     }
 
     public function loadStorage(string $filename): array
@@ -549,7 +969,7 @@ final class FishService
         if (!file_exists($path)) {
             return [];
         }
-        $raw = file_get_contents($path);
+        $raw  = file_get_contents($path);
         if ($raw === false || trim($raw) === '') {
             return [];
         }
@@ -562,4 +982,3 @@ final class FishService
         return $this->loadStorage('stats.json');
     }
 }
-

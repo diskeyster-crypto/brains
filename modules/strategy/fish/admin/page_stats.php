@@ -62,6 +62,9 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
             ['Successful',       $stats['successful_runs']      ?? 0, false],
             ['Failed',           $stats['failed_runs']          ?? 0, true],
             ['Signals (total)',  $stats['signals_found_total']  ?? 0, false],
+            ['Geom Valid',       $stats['signals_geometry_valid_total']    ?? 0, false],
+            ['Geom Rejected',    $stats['signals_geometry_rejected_total'] ?? 0, true],
+            ['RR Below Min',     $stats['signals_rr_below_min_total']      ?? 0, true],
             ['Orders Placed',    $stats['orders_placed_total']  ?? 0, false],
             ['Errors',           $stats['errors_count']         ?? 0, true],
         ];
@@ -139,13 +142,15 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 <thead style="font-size: 10px; text-transform: uppercase; color: #94a3b8;">
                     <tr>
                         <th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th>
-                        <th>TP</th><th>BE Trigger</th><th>Level Age</th>
-                        <th>Trend</th><th>Bars</th><th>Detected</th>
+                        <th>TP</th><th>BE Trigger</th><th>RR</th>
+                        <th>Level Age</th><th>Trend</th><th>Bars</th><th>Detected</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($signals as $sig): ?>
-                    <tr class="fish-signal-row">
+                    <?php $geomOk = (bool)($sig['geometry_valid'] ?? true); ?>
+                    <tr class="fish-signal-row<?= $geomOk ? '' : ' table-danger' ?>"
+                        title="<?= $geomOk ? 'Geometry valid' : htmlspecialchars('Geometry issue: ' . ($sig['geometry_reject_reason'] ?? 'unknown')) ?>">
                         <td><code><?= htmlspecialchars($sig['symbol'] ?? '—') ?></code></td>
                         <td>
                             <span class="badge" style="background: <?= ($sig['side'] ?? '') === 'long' ? '#22c55e' : '#ef4444' ?>;">
@@ -156,6 +161,16 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                         <td><?= htmlspecialchars((string)($sig['stop_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars((string)($sig['take_profit_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars((string)($sig['breakeven_trigger'] ?? '—')) ?></td>
+                        <td>
+                            <?php $rr = $sig['rr_ratio'] ?? null; ?>
+                            <?php if ($rr !== null): ?>
+                                <span style="color: <?= (float)$rr >= 2.0 ? '#22c55e' : '#ef4444' ?>; font-weight: 600;">
+                                    <?= htmlspecialchars(number_format((float)$rr, 2)) ?>
+                                </span>
+                            <?php else: ?>
+                                <span class="text-muted">—</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= htmlspecialchars((string)($sig['level_age_bars'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars($sig['trend_direction'] ?? '—') ?></td>
                         <td><?= htmlspecialchars((string)($sig['liquidity_pattern_bars'] ?? '—')) ?></td>

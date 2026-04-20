@@ -5,8 +5,12 @@ declare(strict_types=1);
 /**
  * Fish Strategy — Cron Entry Point
  *
- * Called by the system cron runner.
- * Bootstraps the module and delegates to FishService::run().
+ * Called by the system cron runner (or directly from CLI / HTTP).
+ * Processes one batch of the current queued/running batched run.
+ * If no run is queued, exits cleanly with a no-op result.
+ *
+ * For small manual_list runs the admin UI calls service->run() directly.
+ * This cron handler is designed for the batched all-universe smoke-test path.
  */
 
 if (!defined('ROOT')) {
@@ -24,9 +28,8 @@ require_once $moduleDir . '/service.php';
 use Modules\Strategy\Fish\FishService;
 
 $service = FishService::instance($moduleDir);
-$result  = $service->run();
+$result  = $service->tickBatch();
 
-// Output result as JSON when called from CLI or HTTP cron endpoint
 if (PHP_SAPI === 'cli') {
     echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 } else {

@@ -27,6 +27,7 @@ use Modules\Strategy\Fish\FishService;
 use Modules\Strategy\Fish\FishBootstrap;
 
 $service  = FishService::instance($moduleDir);
+$runState = $service->getRunState();
 
 // Load effective merged config
 try {
@@ -238,17 +239,33 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
     <div class="card mb-3">
         <div class="card-header"><i class="bi bi-play-circle me-1"></i> Smoke Test</div>
         <div class="card-body" style="font-size: 13px;">
+            <?php $curMode = $config['universe_mode'] ?? 'all'; ?>
             <p class="mb-2 text-muted" style="font-size: 12px;">
-                Runs the scanner once. Writes <code>last_run.json</code>, <code>signals.json</code>, <code>stats.json</code>, and
-                <code>runtime_snapshot.php</code>. Does <strong>not</strong> place any orders.
+                <?php if ($curMode === 'all'): ?>
+                    Universe mode is <strong>all</strong> — clicking Run will <strong>queue</strong> a batched
+                    run (safe for large universes). Use <em>Tick Batch</em> or the cron to advance it.
+                <?php else: ?>
+                    Universe mode is <strong><?= htmlspecialchars($curMode) ?></strong> — clicking Run will
+                    execute synchronously (small list).
+                <?php endif; ?>
+                Does <strong>not</strong> place any orders.
             </p>
-            <div class="d-flex gap-2 align-items-center">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
                 <form method="POST" action="<?= htmlspecialchars($ajaxUrl) ?>">
                     <input type="hidden" name="action" value="run">
                     <button type="submit" class="btn btn-success btn-sm">
-                        <i class="bi bi-lightning-charge me-1"></i> Run Smoke Test
+                        <i class="bi bi-lightning-charge me-1"></i>
+                        <?= ($curMode === 'all') ? 'Queue Smoke Test' : 'Run Smoke Test' ?>
                     </button>
                 </form>
+                <?php if (in_array($runState['run_status'] ?? 'idle', ['queued', 'running'], true)): ?>
+                <form method="POST" action="<?= htmlspecialchars($ajaxUrl) ?>">
+                    <input type="hidden" name="action" value="tick_batch">
+                    <button type="submit" class="btn btn-warning btn-sm">
+                        <i class="bi bi-skip-forward me-1"></i> Tick Batch
+                    </button>
+                </form>
+                <?php endif; ?>
                 <a href="<?= htmlspecialchars($statsUrl) ?>" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-bar-chart me-1"></i> View Stats
                 </a>
@@ -256,6 +273,100 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
                     <i class="bi bi-activity me-1"></i> View Runtime
                 </a>
             </div>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Run State Progress                                                    -->
+    <!-- ------------------------------------------------------------------ -->
+    <?php $rs = $runState['run_status'] ?? 'idle'; ?>
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-speedometer2 me-1"></i> Smoke Test Run State</span>
+            <small class="text-muted">storage/run_state.json</small>
+        </div>
+        <div class="card-body" style="font-size: 13px;">
+            <?php if ($rs === 'idle' || empty($runState)): ?>
+                <span class="text-muted" style="font-size: 12px;">No run recorded. Queue a smoke test to begin.</span>
+            <?php else: ?>
+                <div class="mb-2 d-flex align-items-center gap-2">
+                    <span class="badge <?= match($rs) {
+                        'running' => 'bg-warning text-dark',
+                        'done'    => 'bg-success',
+                        'failed'  => 'bg-danger',
+                        'queued'  => 'bg-info text-dark',
+                        default   => 'bg-secondary'
+                    } ?>"><?= htmlspecialchars(strtoupper($rs)) ?></span>
+                    <code style="font-size: 11px; color: #94a3b8;"><?= htmlspecialchars($runState['run_id'] ?? '—') ?></code>
+                </div>
+
+                <?php if (in_array($rs, ['running', 'done'])): ?>
+                <?php
+                    $rsTotalSym = (int)($runState['total_symbols']     ?? 0);
+                    $rsDoneSym  = (int)($runState['processed_symbols'] ?? 0);
+                    $rsPct      = $rsTotalSym > 0 ? min(100, (int)round($rsDoneSym / $rsTotalSym * 100)) : 0;
+                ?>
+                <div class="progress mb-1" style="height: 7px;">
+                    <div class="progress-bar <?= $rs === 'done' ? 'bg-success' : 'bg-warning' ?>"
+                         style="width: <?= $rsPct ?>%;"></div>
+                </div>
+                <div style="font-size: 11px; color: #94a3b8;" class="mb-2">
+                    <?= $rsDoneSym ?> / <?= $rsTotalSym ?> symbols
+                    &nbsp;·&nbsp; <?= (int)($runState['remaining_symbols'] ?? 0) ?> remaining
+                    &nbsp;·&nbsp; <?= $rsPct ?>%
+                </div>
+                <?php endif; ?>
+
+                <table class="table table-sm table-dark mb-2" style="font-size: 11px;">
+                    <tbody>
+                    <?php
+                    $rsFields = [
+                        'universe_mode'  => 'Universe Mode',
+                        'batch_size'     => 'Batch Size',
+                        'current_symbol' => 'Current Symbol',
+                        'signals_found'  => 'Signals Found',
+                        'signals_geometry_valid'    => 'Geometry Valid',
+                        'signals_geometry_rejected' => 'Geometry Rejected',
+                        'signals_rr_below_min'      => 'RR Below Min',
+                        'api_errors'     => 'API Errors',
+                        'started_at'     => 'Started At',
+                        'updated_at'     => 'Updated At',
+                        'finished_at'    => 'Finished At',
+                        'last_error'     => 'Last Error',
+                    ];
+                    foreach ($rsFields as $rsKey => $rsLabel):
+                        $rsVal = $runState[$rsKey] ?? null;
+                        if ($rsVal === null || $rsVal === '') continue;
+                    ?>
+                    <tr>
+                        <td style="color: #94a3b8; width: 160px;"><?= htmlspecialchars($rsLabel) ?></td>
+                        <td><?= $rsKey === 'last_error'
+                            ? '<span class="text-danger">' . htmlspecialchars((string)$rsVal) . '</span>'
+                            : '<code>' . htmlspecialchars((string)$rsVal) . '</code>'
+                        ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+
+                <?php if (in_array($rs, ['queued', 'running'])): ?>
+                <form method="POST" action="<?= htmlspecialchars($ajaxUrl) ?>" class="d-inline">
+                    <input type="hidden" name="action" value="tick_batch">
+                    <button type="submit" class="btn btn-warning btn-sm">
+                        <i class="bi bi-skip-forward me-1"></i> Tick Batch
+                    </button>
+                </form>
+                <small class="text-muted ms-2">
+                    Processes next <?= htmlspecialchars((string)($runState['batch_size'] ?? 20)) ?> symbols
+                </small>
+                <?php endif; ?>
+
+                <?php if ($rs === 'done'): ?>
+                <a href="<?= htmlspecialchars($statsUrl) ?>" class="btn btn-outline-success btn-sm">
+                    <i class="bi bi-bar-chart me-1"></i> View Results
+                </a>
+                <?php endif; ?>
+            <?php endif; ?>
         </div>
     </div>
 

@@ -60,6 +60,7 @@ final class FishExecutor
     {
         $tickAt     = date('c');
         $mode       = $this->exchange->getExecutionMode();
+        $isLive     = ($mode === 'live');
         $maxOrders  = (int)($this->config['max_active_orders']    ?? 5);
         $maxPos     = (int)($this->config['max_active_positions'] ?? 3);
 
@@ -67,8 +68,33 @@ final class FishExecutor
         $activeOrders    = $this->store->readActiveOrders();
         $activePositions = $this->store->readActivePositions();
 
-        $openOrderCount    = count(array_filter($activeOrders,    fn($o) => ($o['status'] ?? '') === 'open'));
-        $openPositionCount = count(array_filter($activePositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish'));
+        // Mode-aware filtering: smoke orders must never count toward live caps and vice versa.
+        // An order is "current-mode" if its smoke flag matches the current execution context.
+        $isSmokeOrder    = fn($o) => (bool)($o['smoke'] ?? false);
+        $isLiveOrder     = fn($o) => !(bool)($o['smoke'] ?? false);
+        $isSmokePosition = fn($p) => (bool)($p['smoke'] ?? false);
+        $isLivePosition  = fn($p) => !(bool)($p['smoke'] ?? false);
+
+        $relevantOrder = $isLive ? $isLiveOrder : $isSmokeOrder;
+        $relevantPos   = $isLive ? $isLivePosition : $isSmokePosition;
+
+        $openOrdersTotal    = count(array_filter($activeOrders,    fn($o) => ($o['status'] ?? '') === 'open'));
+        $openOrdersCurrent  = count(array_filter($activeOrders,    fn($o) => ($o['status'] ?? '') === 'open' && $relevantOrder($o)));
+        $openOrdersSmoke    = count(array_filter($activeOrders,    fn($o) => ($o['status'] ?? '') === 'open' && $isSmokeOrder($o)));
+        $openOrdersLive     = count(array_filter($activeOrders,    fn($o) => ($o['status'] ?? '') === 'open' && $isLiveOrder($o)));
+
+        $openPosTotal       = count(array_filter($activePositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish'));
+        $openPosCurrent     = count(array_filter($activePositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish' && $relevantPos($p)));
+        $openPosSmoke       = count(array_filter($activePositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish' && $isSmokePosition($p)));
+        $openPosLive        = count(array_filter($activePositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish' && $isLivePosition($p)));
+
+        // Stale cross-mode orders: smoke orders present while running live (and vice versa)
+        $staleSmokeOrders = $isLive ? $openOrdersSmoke : 0;
+        $staleSmokePosns  = $isLive ? $openPosSmoke    : 0;
+
+        // Effective caps apply only to current-mode orders
+        $openOrderCount    = $openOrdersCurrent;
+        $openPositionCount = $openPosCurrent;
 
         $this->journal->botTickStarted($mode, count($queue), $openOrderCount, $openPositionCount);
 
@@ -109,7 +135,7 @@ final class FishExecutor
                     $exchangeOrderId = (string)($response['result']['orderId'] ?? 'smoke_unknown');
                     $isSmoke         = (bool)($response['smoke'] ?? false);
 
-                    // Record active order
+                    // Record active order — tag with execution_mode for future mode-aware filtering
                     $orderRecord = [
                         'fish_order_id'         => $fishOrderId,
                         'exchange_order_id'     => $exchangeOrderId,
@@ -128,6 +154,7 @@ final class FishExecutor
                         'qty'                   => (float)($params['qty']            ?? 0.0),
                         'status'                => 'open',
                         'smoke'                 => $isSmoke,
+                        'execution_mode'        => $mode,
                         'placed_at'             => date('c'),
                         'updated_at'            => date('c'),
                     ];
@@ -167,18 +194,25 @@ final class FishExecutor
         $this->store->writeStats($stats);
 
         $summary = [
-            'intents_processed'    => $intentsProcessed,
-            'orders_placed'        => $ordersPlaced,
-            'orders_rejected'      => $ordersRejected,
-            'execution_errors'     => $errors,
-            'pm_summary'           => $pmSummary,
-            'mode'                 => $mode,
-            'tick_at'              => $tickAt,
-            'active_orders_total'  => count($this->store->readActiveOrders()),
-            'active_positions_total' => count(array_filter(
-                $this->store->readActivePositions(),
-                fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish'
-            )),
+            'intents_processed'              => $intentsProcessed,
+            'orders_placed'                  => $ordersPlaced,
+            'orders_rejected'                => $ordersRejected,
+            'execution_errors'               => $errors,
+            'pm_summary'                     => $pmSummary,
+            'mode'                           => $mode,
+            'tick_at'                        => $tickAt,
+            // Mode-isolation diagnostics
+            'active_orders_total'            => $openOrdersTotal,
+            'active_orders_current_mode'     => $openOrdersCurrent,
+            'active_orders_smoke'            => $openOrdersSmoke,
+            'active_orders_live'             => $openOrdersLive,
+            'active_positions_total'         => $openPosTotal,
+            'active_positions_current_mode'  => $openPosCurrent,
+            'active_positions_smoke'         => $openPosSmoke,
+            'active_positions_live'          => $openPosLive,
+            'mode_isolated_caps_applied'     => true,
+            'stale_smoke_orders_ignored'     => $staleSmokeOrders,
+            'stale_smoke_positions_ignored'  => $staleSmokePosns,
         ];
 
         $this->store->writeLastRun($summary);

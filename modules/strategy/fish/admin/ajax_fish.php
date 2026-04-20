@@ -402,6 +402,33 @@ switch ($action) {
         break;
 
     // -----------------------------------------------------------------------
+    case 'purge_smoke_state':
+    // -----------------------------------------------------------------------
+        // Purge synthetic smoke orders and positions from Fish bot state files.
+        // Safe to call when switching to live mode so old smoke records do not
+        // count toward active-order caps.
+        try {
+            $store = $service->getBotStore();
+            $purgedOrders    = $store->purgeSmokeOrders();
+            $purgedPositions = $store->purgeSmokePositions();
+            $msg  = "Smoke state purged: {$purgedOrders} order(s) and {$purgedPositions} position(s) removed.";
+            $result = ['ok' => true, 'purged_orders' => $purgedOrders, 'purged_positions' => $purgedPositions, 'message' => $msg];
+        } catch (\Throwable $e) {
+            $result = ['ok' => false, 'error' => $e->getMessage()];
+        }
+
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        } else {
+            $ok  = $result['ok'] ?? false;
+            $msg = $result['message'] ?? ($result['error'] ?? 'Purge failed');
+            fishSetFlash($ok ? 'success' : 'danger', $msg);
+            header('Location: ' . $configUrl);
+        }
+        break;
+
+    // -----------------------------------------------------------------------
     default:
     // -----------------------------------------------------------------------
         http_response_code(400);

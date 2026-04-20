@@ -1186,6 +1186,16 @@ final class FishService
         return $this->loadStorage('bot_execution_queue.json');
     }
 
+    /**
+     * Return an initialized FishBotStore for direct access to mode-isolation helpers
+     * (purgeSmokeOrders, purgeSmokePositions, countOpenOrdersByMode).
+     */
+    public function getBotStore(): \Modules\Strategy\Fish\Bot\FishBotStore
+    {
+        $this->requireBotClasses();
+        return new \Modules\Strategy\Fish\Bot\FishBotStore($this->moduleDir);
+    }
+
     // =========================================================================
     // Private: bot class autoloader
     // =========================================================================

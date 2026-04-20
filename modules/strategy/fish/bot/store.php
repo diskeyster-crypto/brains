@@ -176,6 +176,61 @@ final class FishBotStore
     }
 
     // -------------------------------------------------------------------------
+    // Mode-isolation helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Remove all smoke orders (smoke = true) from bot_active_orders.json.
+     * Safe to call when entering live mode to prevent stale smoke records
+     * from accumulating across mode switches.
+     *
+     * @return int Number of records purged
+     */
+    public function purgeSmokeOrders(): int
+    {
+        $orders  = $this->readActiveOrders();
+        $before  = count($orders);
+        $orders  = array_values(array_filter($orders, fn($o) => !(bool)($o['smoke'] ?? false)));
+        $this->writeActiveOrders($orders);
+        return $before - count($orders);
+    }
+
+    /**
+     * Remove all smoke positions (smoke = true) from bot_active_positions.json.
+     *
+     * @return int Number of records purged
+     */
+    public function purgeSmokePositions(): int
+    {
+        $positions = $this->readActivePositions();
+        $before    = count($positions);
+        $positions = array_values(array_filter($positions, fn($p) => !(bool)($p['smoke'] ?? false)));
+        $this->writeActivePositions($positions);
+        return $before - count($positions);
+    }
+
+    /**
+     * Count open orders by mode (smoke=true → 'smoke', smoke=false → 'live').
+     *
+     * @param  string $mode  'smoke' | 'live' | 'all'
+     * @return int
+     */
+    public function countOpenOrdersByMode(string $mode): int
+    {
+        $orders = $this->readActiveOrders();
+        return count(array_filter($orders, function ($o) use ($mode) {
+            if (($o['status'] ?? '') !== 'open') {
+                return false;
+            }
+            if ($mode === 'all') {
+                return true;
+            }
+            $isSmoke = (bool)($o['smoke'] ?? false);
+            return $mode === 'smoke' ? $isSmoke : !$isSmoke;
+        }));
+    }
+
+    // -------------------------------------------------------------------------
     // Order helpers
     // -------------------------------------------------------------------------
 

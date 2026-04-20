@@ -31,9 +31,22 @@ final class FishService
     /** Bybit kline interval string for H4 */
     private const H4_INTERVAL = '240';
 
-    private function __construct(string $moduleDir)
+    /**
+     * Public no-arg constructor — required by CronManager which calls new FishService().
+     * When called without arguments the module directory is resolved via SystemPaths.
+     * When called with an explicit $moduleDir (legacy singleton path) that value is used.
+     */
+    public function __construct(?string $moduleDir = null)
     {
-        $this->moduleDir = rtrim($moduleDir, '/');
+        if ($moduleDir !== null) {
+            $this->moduleDir = rtrim($moduleDir, '/');
+        } else {
+            // CronManager path: resolve via SystemPaths (registered from manifest.json)
+            $this->moduleDir = rtrim(
+                \Core\System\SystemPaths::instance()->get('strategy.fish'),
+                '/'
+            );
+        }
     }
 
     public static function instance(string $moduleDir): self
@@ -172,6 +185,7 @@ final class FishService
      */
     public function tickBatch(): array
     {
+        $tickAt = date('c');
         $state  = $this->loadRunState();
         $status = $state['run_status'] ?? 'idle';
 
@@ -275,17 +289,25 @@ final class FishService
         $state['signals_rr_below_min']     = ($state['signals_rr_below_min']     ?? 0) + ($batchDiag['signals_rr_below_min']     ?? 0);
         $state['signals_stop_side_invalid']= ($state['signals_stop_side_invalid'] ?? 0) + ($batchDiag['signals_stop_side_invalid'] ?? 0);
         $state['signals_tp_side_invalid']  = ($state['signals_tp_side_invalid']  ?? 0) + ($batchDiag['signals_tp_side_invalid']  ?? 0);
+        $state['batches_completed']        = ($state['batches_completed'] ?? 0) + 1;
+        $state['last_tick_at']             = $tickAt;
         $state['updated_at']               = date('c');
 
         $elapsed = microtime(true) - $tickStart;
         $isDone  = ($newCursor >= count($allSymbols));
 
         if ($isDone) {
+            $state['last_tick_result'] = 'finalized';
             return $this->finalizeRun($state, $config, $runAt);
         }
 
         if ($elapsed >= $maxRunSec) {
             // Time limit reached — save progress, resume on next tick
+            $state['last_tick_result'] = sprintf(
+                'time_limit_reached (%d processed, %d remaining)',
+                $newCursor,
+                $state['remaining_symbols']
+            );
             $this->saveRunState($state);
             return [
                 'ok'        => true,
@@ -300,6 +322,11 @@ final class FishService
             ];
         }
 
+        $state['last_tick_result'] = sprintf(
+            'batch_ok (%d processed, %d remaining)',
+            $newCursor,
+            $state['remaining_symbols']
+        );
         $this->saveRunState($state);
         return [
             'ok'        => true,

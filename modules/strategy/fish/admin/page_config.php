@@ -243,7 +243,7 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
             <p class="mb-2 text-muted" style="font-size: 12px;">
                 <?php if ($curMode === 'all'): ?>
                     Universe mode is <strong>all</strong> — clicking Run will <strong>queue</strong> a batched
-                    run (safe for large universes). Use <em>Tick Batch</em> or the cron to advance it.
+                    run. The centralized cron will advance it automatically every minute.
                 <?php else: ?>
                     Universe mode is <strong><?= htmlspecialchars($curMode) ?></strong> — clicking Run will
                     execute synchronously (small list).
@@ -258,14 +258,6 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
                         <?= ($curMode === 'all') ? 'Queue Smoke Test' : 'Run Smoke Test' ?>
                     </button>
                 </form>
-                <?php if (in_array($runState['run_status'] ?? 'idle', ['queued', 'running'], true)): ?>
-                <form method="POST" action="<?= htmlspecialchars($ajaxUrl) ?>">
-                    <input type="hidden" name="action" value="tick_batch">
-                    <button type="submit" class="btn btn-warning btn-sm">
-                        <i class="bi bi-skip-forward me-1"></i> Tick Batch
-                    </button>
-                </form>
-                <?php endif; ?>
                 <a href="<?= htmlspecialchars($statsUrl) ?>" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-bar-chart me-1"></i> View Stats
                 </a>
@@ -321,18 +313,21 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
                     <tbody>
                     <?php
                     $rsFields = [
-                        'universe_mode'  => 'Universe Mode',
-                        'batch_size'     => 'Batch Size',
-                        'current_symbol' => 'Current Symbol',
-                        'signals_found'  => 'Signals Found',
+                        'universe_mode'   => 'Universe Mode',
+                        'batch_size'      => 'Batch Size',
+                        'batches_completed' => 'Batches Completed',
+                        'current_symbol'  => 'Current Symbol',
+                        'signals_found'   => 'Signals Found',
                         'signals_geometry_valid'    => 'Geometry Valid',
                         'signals_geometry_rejected' => 'Geometry Rejected',
                         'signals_rr_below_min'      => 'RR Below Min',
-                        'api_errors'     => 'API Errors',
-                        'started_at'     => 'Started At',
-                        'updated_at'     => 'Updated At',
-                        'finished_at'    => 'Finished At',
-                        'last_error'     => 'Last Error',
+                        'api_errors'      => 'API Errors',
+                        'last_tick_at'    => 'Last Cron Tick',
+                        'last_tick_result' => 'Last Tick Result',
+                        'started_at'      => 'Started At',
+                        'updated_at'      => 'Updated At',
+                        'finished_at'     => 'Finished At',
+                        'last_error'      => 'Last Error',
                     ];
                     foreach ($rsFields as $rsKey => $rsLabel):
                         $rsVal = $runState[$rsKey] ?? null;
@@ -350,15 +345,11 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
                 </table>
 
                 <?php if (in_array($rs, ['queued', 'running'])): ?>
-                <form method="POST" action="<?= htmlspecialchars($ajaxUrl) ?>" class="d-inline">
-                    <input type="hidden" name="action" value="tick_batch">
-                    <button type="submit" class="btn btn-warning btn-sm">
-                        <i class="bi bi-skip-forward me-1"></i> Tick Batch
-                    </button>
-                </form>
-                <small class="text-muted ms-2">
-                    Processes next <?= htmlspecialchars((string)($runState['batch_size'] ?? 20)) ?> symbols
-                </small>
+                <p class="text-muted mb-0" style="font-size: 11px;">
+                    <i class="bi bi-clock me-1"></i>
+                    Cron advances this run automatically every 60 s
+                    (next batch: <?= htmlspecialchars((string)($runState['batch_size'] ?? 20)) ?> symbols).
+                </p>
                 <?php endif; ?>
 
                 <?php if ($rs === 'done'): ?>

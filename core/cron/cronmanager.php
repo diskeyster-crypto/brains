@@ -106,7 +106,7 @@ final class CronManager
         }
         
         // Supported categories for nested structure
-        $categories = ['parser', 'signal', 'trading', 'system', 'simulator'];
+        $categories = ['parser', 'signal', 'trading', 'system', 'simulator', 'strategy'];
         
         $items = scandir($modulesPath);
         
@@ -380,7 +380,7 @@ final class CronManager
                 $modulePath = $task['module_path'] . '/service.php';
             } else {
                 // Try category paths first, then flat
-                $categories = ['parser', 'signal', 'trading', 'system', 'simulator'];
+                $categories = ['parser', 'signal', 'trading', 'system', 'simulator', 'strategy'];
                 $modulePath = System::path('modules') . '/' . $module . '/service.php';
                 
                 foreach ($categories as $cat) {

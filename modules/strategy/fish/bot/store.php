@@ -27,6 +27,35 @@ final class FishBotStore
         $this->storageDir = rtrim($moduleDir, '/') . '/storage';
     }
 
+    /**
+     * Initialize bot storage files on first tick.
+     * Creates the storage directory and any missing bot JSON files so the UI
+     * always has something to read even when no signals have been processed yet.
+     */
+    public function initStorage(): void
+    {
+        if (!is_dir($this->storageDir)) {
+            @mkdir($this->storageDir, 0755, true);
+        }
+
+        $defaults = [
+            'bot_active_orders.json'    => [],
+            'bot_active_positions.json' => [],
+            'bot_execution_queue.json'  => [],
+            'bot_stats.json'            => [],
+        ];
+
+        foreach ($defaults as $file => $emptyValue) {
+            $path = $this->storageDir . '/' . $file;
+            if (!file_exists($path)) {
+                file_put_contents(
+                    $path,
+                    json_encode($emptyValue, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n"
+                );
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Generic helpers
     // -------------------------------------------------------------------------

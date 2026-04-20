@@ -1051,6 +1051,25 @@ final class FishService
         $config = $boot['config'] ?? [];
 
         if (!($config['bot_enabled'] ?? false)) {
+            // Even when disabled, write a visible last_run so the UI shows a clear state.
+            $this->requireBotClasses();
+            $store = new \Modules\Strategy\Fish\Bot\FishBotStore($this->moduleDir);
+            $store->initStorage();
+            $summary = [
+                'bot_enabled'       => false,
+                'execution_mode'    => (string)($config['execution_mode'] ?? 'smoke'),
+                'queue_depth'       => count($store->readExecutionQueue()),
+                'active_orders'     => count($store->readActiveOrders()),
+                'active_positions'  => count($store->readActivePositions()),
+                'signals_enqueued'  => 0,
+                'intents_processed' => 0,
+                'orders_accepted'   => 0,
+                'orders_rejected'   => 0,
+                'last_tick'         => date('Y-m-d H:i:s'),
+                'last_error'        => null,
+                'status'            => 'disabled',
+            ];
+            $store->writeLastRun($summary);
             return [
                 'ok'      => false,
                 'status'  => 'disabled',
@@ -1063,6 +1082,8 @@ final class FishService
         $mode = (string)($config['execution_mode'] ?? 'smoke');
 
         $store   = new \Modules\Strategy\Fish\Bot\FishBotStore($this->moduleDir);
+        $store->initStorage();
+
         $journal = new \Modules\Strategy\Fish\Bot\FishBotJournal($this->moduleDir);
 
         $exchange = new \Modules\Strategy\Fish\Bot\FishExchangeAdapter($mode);
@@ -1103,6 +1124,23 @@ final class FishService
         $tickResult = $executor->tick();
         $tickResult['signals_enqueued'] = $enqueued;
         $tickResult['ok']               = true;
+
+        // Always write bot_last_run.json regardless of queue depth
+        $summary = [
+            'bot_enabled'       => true,
+            'execution_mode'    => $mode,
+            'queue_depth'       => count($store->readExecutionQueue()),
+            'active_orders'     => count($store->readActiveOrders()),
+            'active_positions'  => count($store->readActivePositions()),
+            'signals_enqueued'  => $enqueued,
+            'intents_processed' => (int)($tickResult['intents_processed'] ?? 0),
+            'orders_accepted'   => (int)($tickResult['orders_accepted']   ?? 0),
+            'orders_rejected'   => (int)($tickResult['orders_rejected']   ?? 0),
+            'last_tick'         => date('Y-m-d H:i:s'),
+            'last_error'        => $tickResult['last_error'] ?? null,
+            'status'            => 'ok',
+        ];
+        $store->writeLastRun($summary);
 
         return $tickResult;
     }

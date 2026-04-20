@@ -36,11 +36,14 @@ $diag = $lastRun['diagnostics'] ?? [];
 $config          = $service->getConfig();
 $botEnabled      = (bool)($config['bot_enabled']    ?? false);
 $botMode         = (string)($config['execution_mode'] ?? 'smoke');
+$botBudget       = $config['bot_budget']   ?? 0.0;
+$botLeverage     = $config['bot_leverage'] ?? 1;
 $botLastRun      = $service->getBotLastRun();
 $botStats        = $service->getBotStats();
 $botQueue        = $service->getBotExecutionQueue();
 $botOrders       = $service->getBotActiveOrders();
 $botPositions    = $service->getBotActivePositions();
+$botStorageReady = !empty($botLastRun);
 
 $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
 ?>
@@ -230,13 +233,40 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
             </span>
         </div>
         <div class="card-body">
+
+            <?php if (!$botStorageReady): ?>
+            <div style="font-size: 12px; color: #64748b; margin-bottom: 12px; padding: 8px 12px; background: #1e293b; border-radius: 6px; border: 1px solid #334155;">
+                <i class="bi bi-info-circle me-1"></i>
+                Bot storage not yet initialized.
+                <?php if ($botEnabled): ?>
+                    Trigger a bot tick to initialize runtime files.
+                <?php else: ?>
+                    Enable <code>bot_enabled</code> in Fish config, then run a bot tick.
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <!-- Config summary row -->
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 10px;">
+                Config &rarr;
+                <code>execution_mode=<?= htmlspecialchars($botMode) ?></code>
+                &nbsp;|&nbsp;<code>bot_budget=<?= htmlspecialchars((string)$botBudget) ?></code>
+                &nbsp;|&nbsp;<code>bot_leverage=<?= htmlspecialchars((string)$botLeverage) ?>x</code>
+                &nbsp;&mdash;&nbsp;
+                <a href="<?= $fishUrl ?>/config" style="color: #60a5fa; font-size: 11px;">Edit in Config &rarr;</a>
+            </div>
+
             <!-- Counters row -->
             <div class="fish-diag-grid mb-3">
                 <?php
+                // Use live last_run counts when available, fall back to storage reads
+                $queueDepth   = (int)($botLastRun['queue_depth']      ?? count($botQueue));
+                $activeOrders = (int)($botLastRun['active_orders']     ?? count(array_filter($botOrders,    fn($o) => ($o['status'] ?? '') === 'open')));
+                $activePos    = (int)($botLastRun['active_positions']  ?? count(array_filter($botPositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish')));
                 $botItems = [
-                    ['Execution Queue',    count($botQueue),                                    false],
-                    ['Active Orders',      count(array_filter($botOrders,    fn($o) => ($o['status'] ?? '') === 'open')),   false],
-                    ['Active Positions',   count(array_filter($botPositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish')), false],
+                    ['Execution Queue',    $queueDepth,                                         false],
+                    ['Active Orders',      $activeOrders,                                        false],
+                    ['Active Positions',   $activePos,                                           false],
                     ['Total Ticks',        $botStats['total_bot_ticks']        ?? 0,            false],
                     ['Orders Placed',      $botStats['orders_accepted_total']  ?? 0,            false],
                     ['Orders Rejected',    $botStats['orders_rejected_total']  ?? 0,            true],
@@ -252,18 +282,24 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
             </div>
 
             <!-- Last bot tick info -->
-            <?php if (!empty($botLastRun)): ?>
+            <?php if ($botStorageReady): ?>
             <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">
                 Last bot tick:
-                <code><?= htmlspecialchars(substr($botLastRun['tick_at'] ?? '—', 0, 19)) ?></code>
-                &nbsp;|&nbsp; Mode: <code><?= htmlspecialchars($botLastRun['mode'] ?? '—') ?></code>
-                &nbsp;|&nbsp; Placed: <?= (int)($botLastRun['orders_placed'] ?? 0) ?>
-                &nbsp;|&nbsp; Errors: <span<?= ($botLastRun['execution_errors'] ?? 0) > 0 ? ' style="color:#ef4444;"' : '' ?>><?= (int)($botLastRun['execution_errors'] ?? 0) ?></span>
+                <code><?= htmlspecialchars($botLastRun['last_tick'] ?? ($botLastRun['tick_at'] ?? '—')) ?></code>
+                &nbsp;|&nbsp; Mode: <code><?= htmlspecialchars($botLastRun['execution_mode'] ?? ($botLastRun['mode'] ?? '—')) ?></code>
+                &nbsp;|&nbsp; Status: <code><?= htmlspecialchars($botLastRun['status'] ?? '—') ?></code>
+                &nbsp;|&nbsp; Enqueued: <?= (int)($botLastRun['signals_enqueued'] ?? 0) ?>
+                &nbsp;|&nbsp; Placed: <?= (int)($botLastRun['orders_accepted'] ?? $botLastRun['orders_placed'] ?? 0) ?>
+                &nbsp;|&nbsp; Rejected: <span<?= ($botLastRun['orders_rejected'] ?? 0) > 0 ? ' style="color:#f59e0b;"' : '' ?>><?= (int)($botLastRun['orders_rejected'] ?? 0) ?></span>
             </div>
             <?php endif; ?>
 
-            <?php if (!empty($botStats['last_error'])): ?>
-            <div style="font-size: 11px; color: #ef4444;">Last error: <?= htmlspecialchars($botStats['last_error']) ?></div>
+            <?php
+            $lastErr = $botLastRun['last_error'] ?? ($botStats['last_error'] ?? null);
+            if (!empty($lastErr)): ?>
+            <div style="font-size: 11px; color: #ef4444; margin-bottom: 8px;">
+                <i class="bi bi-exclamation-circle me-1"></i>Last error: <?= htmlspecialchars($lastErr) ?>
+            </div>
             <?php endif; ?>
 
             <!-- Manual bot tick trigger -->
@@ -277,16 +313,20 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
             </form>
             <?php else: ?>
             <div class="mt-2" style="font-size: 12px; color: #64748b;">
-                Bot is disabled. Set <code>bot_enabled = true</code> in Fish config to enable execution.
+                Bot is disabled. Enable <code>bot_enabled</code> in <a href="<?= $fishUrl ?>/config" style="color:#60a5fa;">Fish Config</a> to activate execution.
             </div>
             <?php endif; ?>
         </div>
     </div>
 
     <!-- Bot Active Orders -->
-    <?php if (!empty($botOrders)): ?>
     <div class="card mt-3">
         <div class="card-header"><i class="bi bi-list-check me-1"></i> Fish Bot — Active Orders (<?= count($botOrders) ?>)</div>
+        <?php if (empty($botOrders)): ?>
+        <div class="card-body" style="font-size: 12px; color: #64748b;">
+            <?= $botStorageReady ? 'No active orders.' : 'Storage not initialized — trigger a bot tick first.' ?>
+        </div>
+        <?php else: ?>
         <div class="card-body p-0" style="overflow-x: auto;">
             <table class="table table-sm table-dark mb-0" style="font-size: 11px;">
                 <thead style="color: #94a3b8; text-transform: uppercase;">
@@ -302,20 +342,24 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                         <td><?= htmlspecialchars((string)($ord['stop_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars((string)($ord['take_profit_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars($ord['status'] ?? '—') ?></td>
-                        <td><code><?= htmlspecialchars($ord['smoke'] ? 'smoke' : 'live') ?></code></td>
+                        <td><code><?= htmlspecialchars(isset($ord['smoke']) && $ord['smoke'] ? 'smoke' : 'live') ?></code></td>
                         <td style="color: #64748b;"><?= htmlspecialchars(substr($ord['placed_at'] ?? '—', 0, 16)) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <!-- Bot Active Positions -->
-    <?php if (!empty($botPositions)): ?>
     <div class="card mt-3">
         <div class="card-header"><i class="bi bi-graph-up-arrow me-1"></i> Fish Bot — Active Positions (<?= count($botPositions) ?>)</div>
+        <?php if (empty($botPositions)): ?>
+        <div class="card-body" style="font-size: 12px; color: #64748b;">
+            <?= $botStorageReady ? 'No active positions.' : 'Storage not initialized — trigger a bot tick first.' ?>
+        </div>
+        <?php else: ?>
         <div class="card-body p-0" style="overflow-x: auto;">
             <table class="table table-sm table-dark mb-0" style="font-size: 11px;">
                 <thead style="color: #94a3b8; text-transform: uppercase;">
@@ -339,6 +383,6 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 </tbody>
             </table>
         </div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 </div>

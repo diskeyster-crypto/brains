@@ -280,6 +280,50 @@ switch ($action) {
             $overrides['pm_profile'] = $pmProfile;
         }
 
+        // --- bot_enabled ---
+        $overrides['bot_enabled'] = isset($p['bot_enabled']);
+
+        // --- execution_mode ---
+        $allowedExecModes = ['smoke', 'demo', 'live'];
+        $execMode = trim($p['execution_mode'] ?? 'smoke');
+        if (!in_array($execMode, $allowedExecModes, true)) {
+            $errors[] = 'Invalid execution_mode: ' . htmlspecialchars($execMode);
+        } else {
+            $overrides['execution_mode'] = $execMode;
+        }
+
+        // --- bot_budget ---
+        $botBudgetRaw = trim($p['bot_budget'] ?? '0');
+        if (!is_numeric($botBudgetRaw)) {
+            $errors[] = 'bot_budget must be a numeric value.';
+        } else {
+            $overrides['bot_budget'] = (float)$botBudgetRaw;
+        }
+
+        // --- bot_leverage ---
+        $botLeverageRaw = trim($p['bot_leverage'] ?? '1');
+        if (!ctype_digit($botLeverageRaw) || (int)$botLeverageRaw < 1) {
+            $errors[] = 'bot_leverage must be a positive integer.';
+        } else {
+            $overrides['bot_leverage'] = (int)$botLeverageRaw;
+        }
+
+        // --- bot_sl_profile ---
+        $botSlProfile = trim($p['bot_sl_profile'] ?? 'default');
+        if ($botSlProfile === '') {
+            $errors[] = 'bot_sl_profile must not be empty.';
+        } else {
+            $overrides['bot_sl_profile'] = $botSlProfile;
+        }
+
+        // --- bot_pm_profile ---
+        $botPmProfile = trim($p['bot_pm_profile'] ?? 'default');
+        if ($botPmProfile === '') {
+            $errors[] = 'bot_pm_profile must not be empty.';
+        } else {
+            $overrides['bot_pm_profile'] = $botPmProfile;
+        }
+
         if (!empty($errors)) {
             if ($isAjax) {
                 http_response_code(422);

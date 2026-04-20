@@ -60,4 +60,12 @@ return [
 
     // Risk / reward geometry validation
     'min_rr_ratio'                    => 'float',
+
+    // Fish bot execution runtime
+    'bot_enabled'        => 'bool',
+    'execution_mode'     => 'string',  // smoke | demo | live
+    'bot_budget'         => 'float',
+    'bot_leverage'       => 'int',
+    'bot_sl_profile'     => 'string',
+    'bot_pm_profile'     => 'string',
 ];

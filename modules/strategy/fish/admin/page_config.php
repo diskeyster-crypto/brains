@@ -68,6 +68,14 @@ $fBudget         = (string)($config['budget']        ?? '0');
 $fLeverage       = (string)($config['leverage']      ?? '1');
 $fSlProfile      = (string)($config['sl_profile']    ?? 'default');
 $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
+
+// Bot execution config
+$fBotEnabled    = (bool)($config['bot_enabled']    ?? false);
+$fExecMode      = (string)($config['execution_mode'] ?? 'smoke');
+$fBotBudget     = (string)($config['bot_budget']   ?? '0');
+$fBotLeverage   = (string)($config['bot_leverage'] ?? '1');
+$fBotSlProfile  = (string)($config['bot_sl_profile'] ?? 'default');
+$fBotPmProfile  = (string)($config['bot_pm_profile'] ?? 'default');
 ?>
 <style>
 .fish-label  { font-size: 12px; color: #94a3b8; margin-bottom: 3px; }
@@ -220,6 +228,54 @@ $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
                         <div class="fish-label">PM Profile</div>
                         <input type="text" name="pm_profile" class="form-control form-control-sm"
                                value="<?= htmlspecialchars($fPmProfile) ?>">
+                    </div>
+                </div>
+
+                <!-- Bot Execution Runtime -->
+                <div class="fish-section-title">Bot Execution Runtime</div>
+                <div class="row g-3 mb-2">
+                    <div class="col-md-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="f_bot_enabled" name="bot_enabled"
+                                   <?= $fBotEnabled ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="f_bot_enabled" style="font-size: 13px;">
+                                Bot Enabled &nbsp;
+                                <small class="text-muted">(enable Fish bot execution; must be combined with execution_mode)</small>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fish-label">Execution Mode</div>
+                        <select name="execution_mode" class="form-select form-select-sm">
+                            <?php foreach (['smoke', 'demo', 'live'] as $em): ?>
+                            <option value="<?= $em ?>" <?= $fExecMode === $em ? 'selected' : '' ?>>
+                                <?= strtoupper($em) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                            smoke = log-only &nbsp;|&nbsp; demo = testnet &nbsp;|&nbsp; live = real orders
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="fish-label">Bot Budget (USDT)</div>
+                        <input type="number" name="bot_budget" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fBotBudget) ?>" step="0.01" min="0">
+                    </div>
+                    <div class="col-md-2">
+                        <div class="fish-label">Bot Leverage</div>
+                        <input type="number" name="bot_leverage" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fBotLeverage) ?>" step="1" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <div class="fish-label">Bot SL Profile</div>
+                        <input type="text" name="bot_sl_profile" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fBotSlProfile) ?>">
+                    </div>
+                    <div class="col-md-2">
+                        <div class="fish-label">Bot PM Profile</div>
+                        <input type="text" name="bot_pm_profile" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fBotPmProfile) ?>">
                     </div>
                 </div>
 

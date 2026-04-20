@@ -2,12 +2,9 @@
     "name": "fish",
     "title": "Fish Strategy",
     "version": "0.1.0",
-    "description": "First-generation trend-following strategy module. Config-first skeleton — execution not wired yet.",
+    "description": "Рыбалка — H4 trend-structure strategy. Config-first. No execution wired yet.",
     "author": "Tredercopis",
     "category": "strategy",
-    "owner_strategy": "fish",
-    "order_owner_prefix": "fish_",
-    "position_owner_prefix": "fish_pos_",
     "paths": {
         "storage": "storage",
         "config": "config/base.php",

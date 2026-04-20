@@ -36,7 +36,7 @@ return [
     'window_end'       => '22:00',
 
     // Execution parameters — flat values, not profile references
-    'budget'           => 0,
+    'budget'           => 0.0,  // float — supports fractional amounts
     'leverage'         => 1,
 
     // Profile references — resolved by the executing layer (not implemented yet)
@@ -45,4 +45,40 @@ return [
 
     // Ownership contract (placeholder — execution not wired yet)
     'owner_strategy'   => 'fish',
+
+    // -----------------------------------------------------------------------
+    // Strategy-specific logic parameters (Рыбалка rules)
+    // -----------------------------------------------------------------------
+
+    // Structure detection: number of bars on each side required to confirm a swing extremum
+    'structure_pivot_window'          => 3,
+
+    // Liquidity level: accepted range of consecutive consolidation bars
+    'liquidity_pattern_min_bars'      => 3,
+    'liquidity_pattern_max_bars'      => 4,
+
+    // Liquidity level: maximum body range as a fraction of price (0.003 = 0.3%)
+    // All bar opens/closes must fit within this fraction of the level midpoint
+    'liquidity_level_tolerance'       => 0.003,
+
+    // Confirming bar: require the bar immediately after the consolidation
+    // to close outside the consolidation range before the level is valid
+    'confirm_bar_required'            => true,
+
+    // Level lifetime: a level expires after this many H4 bars have elapsed
+    // since the confirming bar (or last consolidation bar if confirm not required)
+    'level_max_age_bars'              => 20,
+
+    // Take profit: distance from entry = (liquidity pattern range) * tp_multiplier
+    'tp_multiplier'                   => 2.0,
+
+    // Breakeven trigger: distance from entry = (liquidity pattern range) * breakeven_trigger_multiplier
+    'breakeven_trigger_multiplier'    => 1.0,
+
+    // Candle data: how many H4 bars to fetch per symbol for analysis
+    'lookback_candles'                => 100,
+
+    // Candle data: Bybit API settings
+    'bybit_base_url'                  => 'https://api.bybit.com',
+    'bybit_timeout_sec'               => 10,
 ];

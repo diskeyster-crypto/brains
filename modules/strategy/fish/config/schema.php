@@ -30,7 +30,7 @@ return [
     'window_end'       => 'string',   // HH:MM
 
     // Execution parameters
-    'budget'           => 'int',
+    'budget'           => 'float',    // supports decimal amounts (e.g. 250.50)
     'leverage'         => 'int',
 
     // Profile references
@@ -39,4 +39,17 @@ return [
 
     // Ownership contract
     'owner_strategy'   => 'string',
+
+    // Strategy-specific logic parameters
+    'structure_pivot_window'          => 'int',
+    'liquidity_pattern_min_bars'      => 'int',
+    'liquidity_pattern_max_bars'      => 'int',
+    'liquidity_level_tolerance'       => 'float',
+    'confirm_bar_required'            => 'bool',
+    'level_max_age_bars'              => 'int',
+    'tp_multiplier'                   => 'float',
+    'breakeven_trigger_multiplier'    => 'float',
+    'lookback_candles'                => 'int',
+    'bybit_base_url'                  => 'string',
+    'bybit_timeout_sec'               => 'int',
 ];

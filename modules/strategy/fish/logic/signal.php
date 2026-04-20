@@ -111,7 +111,7 @@ final class FishSignal
 
             // Pattern info
             'liquidity_pattern_bars' => $level['bar_count'],
-            'confirming_bar_status'  => $level['status'],
+            'level_confirm_status'   => $level['status'],
 
             // Status
             'signal_status'          => 'valid',

@@ -284,11 +284,24 @@ final class FishService
         $state['signals_found']            = ($state['signals_found'] ?? 0) + count($batchSignals);
         $state['api_errors']               = ($state['api_errors']    ?? 0) + ($batchDiag['symbols_skipped_api_err'] ?? 0);
         $state['symbols_skipped']          = ($state['symbols_skipped'] ?? 0) + ($batchDiag['symbols_skipped_no_data'] ?? 0);
+        $state['symbols_scanned']          = ($state['symbols_scanned'] ?? 0) + ($batchDiag['symbols_scanned'] ?? 0);
+        $state['structures_valid']         = ($state['structures_valid'] ?? 0) + ($batchDiag['structures_valid'] ?? 0);
+        $state['structures_invalid']       = ($state['structures_invalid'] ?? 0) + ($batchDiag['structures_invalid'] ?? 0);
+        $state['levels_found']             = ($state['levels_found'] ?? 0) + ($batchDiag['levels_found'] ?? 0);
+        $state['levels_expired']           = ($state['levels_expired'] ?? 0) + ($batchDiag['levels_expired'] ?? 0);
+        $state['candidates_valid']         = ($state['candidates_valid'] ?? 0) + ($batchDiag['candidates_valid'] ?? 0);
+        $state['candidates_rejected']      = ($state['candidates_rejected'] ?? 0) + ($batchDiag['candidates_rejected'] ?? 0);
         $state['signals_geometry_valid']   = ($state['signals_geometry_valid']   ?? 0) + ($batchDiag['signals_geometry_valid']   ?? 0);
         $state['signals_geometry_rejected']= ($state['signals_geometry_rejected'] ?? 0) + ($batchDiag['signals_geometry_rejected'] ?? 0);
         $state['signals_rr_below_min']     = ($state['signals_rr_below_min']     ?? 0) + ($batchDiag['signals_rr_below_min']     ?? 0);
         $state['signals_stop_side_invalid']= ($state['signals_stop_side_invalid'] ?? 0) + ($batchDiag['signals_stop_side_invalid'] ?? 0);
         $state['signals_tp_side_invalid']  = ($state['signals_tp_side_invalid']  ?? 0) + ($batchDiag['signals_tp_side_invalid']  ?? 0);
+
+        // Accumulate reject reason distribution
+        foreach ($batchDiag['reject_reasons'] ?? [] as $reason => $count) {
+            $state['reject_reasons'][$reason] = ($state['reject_reasons'][$reason] ?? 0) + $count;
+        }
+
         $state['batches_completed']        = ($state['batches_completed'] ?? 0) + 1;
         $state['last_tick_at']             = $tickAt;
         $state['updated_at']               = date('c');
@@ -581,23 +594,23 @@ final class FishService
         // Build summary result for stats / last_run
         $diag = [
             'symbols_total'              => $state['total_symbols']              ?? 0,
-            'symbols_scanned'            => $state['processed_symbols']          ?? 0,
+            'symbols_scanned'            => $state['symbols_scanned']            ?? $state['processed_symbols'] ?? 0,
             'symbols_skipped_api_err'    => $state['api_errors']                 ?? 0,
             'symbols_skipped_no_data'    => $state['symbols_skipped']            ?? 0,
-            'symbols_skipped_window'     => 0,
-            'structures_valid'           => 0,
-            'structures_invalid'         => 0,
-            'levels_found'               => 0,
-            'levels_expired'             => 0,
-            'candidates_valid'           => 0,
-            'candidates_rejected'        => 0,
+            'symbols_skipped_window'     => $state['symbols_skipped_window']     ?? 0,
+            'structures_valid'           => $state['structures_valid']           ?? 0,
+            'structures_invalid'         => $state['structures_invalid']         ?? 0,
+            'levels_found'               => $state['levels_found']               ?? 0,
+            'levels_expired'             => $state['levels_expired']             ?? 0,
+            'candidates_valid'           => $state['candidates_valid']           ?? 0,
+            'candidates_rejected'        => $state['candidates_rejected']        ?? 0,
             'signals_valid'              => $state['signals_found']              ?? 0,
             'signals_geometry_valid'     => $state['signals_geometry_valid']     ?? 0,
             'signals_geometry_rejected'  => $state['signals_geometry_rejected']  ?? 0,
             'signals_rr_below_min'       => $state['signals_rr_below_min']       ?? 0,
             'signals_stop_side_invalid'  => $state['signals_stop_side_invalid']  ?? 0,
             'signals_tp_side_invalid'    => $state['signals_tp_side_invalid']    ?? 0,
-            'reject_reasons'             => [],
+            'reject_reasons'             => $state['reject_reasons']             ?? [],
         ];
 
         $result = $this->okResult(

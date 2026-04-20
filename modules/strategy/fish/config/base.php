@@ -3,43 +3,46 @@
 declare(strict_types=1);
 
 /**
- * Fish Strategy — Base Config
+ * Fish Strategy — Base Config (v1)
  *
  * All working parameter defaults live here.
  * Override individual values in active.php without touching this file.
  * Do NOT put inline logic or hardcoded trading thresholds here — only values.
+ *
+ * Universe modes supported in v1:
+ *   all         — use every active symbol from the market registry
+ *   manual_list — use only symbols listed in `allowed_symbols`
+ *
+ * `excluded_symbols` applies in both modes.
  */
 
 return [
     // Core identity
-    'strategy_id'           => 'fish',
-    'enabled'               => false,
-    'mode'                  => 'passive',  // active | passive | disabled
+    'strategy_id'      => 'fish',
+    'enabled'          => false,
+    'mode'             => 'passive',  // active | passive | disabled
 
-    // Market parameters
-    'market_type'           => 'perp',
-    'universe_mode'         => 'manual',
-    'timeframe'             => '1h',
+    // Timeframe — Рыбалка runs on H4
+    'timeframe'        => 'H4',
+
+    // Universe selection — v1 only supports: all | manual_list
+    'universe_mode'    => 'all',
+    'allowed_symbols'  => [],  // used when universe_mode = manual_list
+    'excluded_symbols' => [],  // always applied regardless of mode
+
+    // Trading window — single window only in v1
+    'window_enabled'   => false,
+    'window_start'     => '08:00',
+    'window_end'       => '22:00',
+
+    // Execution parameters — flat values, not profile references
+    'budget'           => 0,
+    'leverage'         => 1,
 
     // Profile references — resolved by the executing layer (not implemented yet)
-    'budget_profile'        => 'default',
-    'leverage_profile'      => 'conservative',
-    'sl_profile'            => 'default',
-    'pm_profile'            => 'default',
+    'sl_profile'       => 'default',
+    'pm_profile'       => 'default',
 
-    // Signal quality gate: reject signals older than this many seconds
-    'max_signal_age'        => 3600,
-
-    // Ownership contract (placeholders — execution not wired yet)
-    'owner_strategy'        => 'fish',
-    'order_owner_prefix'    => 'fish_',
-    'position_owner_prefix' => 'fish_pos_',
-
-    // Feature flags
-    'feature_flags'         => [
-        'dry_run'               => true,   // No live orders while true
-        'shadow_mode'           => false,
-        'execution_enabled'     => false,  // Master gate — stays off until wired
-        'scan_enabled'          => false,  // Market scanning not implemented yet
-    ],
+    // Ownership contract (placeholder — execution not wired yet)
+    'owner_strategy'   => 'fish',
 ];

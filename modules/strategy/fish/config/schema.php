@@ -3,38 +3,40 @@
 declare(strict_types=1);
 
 /**
- * Fish Strategy — Config Schema
+ * Fish Strategy — Config Schema (v1)
  *
- * Defines allowed config keys and their expected types.
- * Used by bootstrap and service to validate config on startup.
- * Adding a new config key here is mandatory before using it in logic.
+ * Defines allowed config keys and their expected PHP types.
+ * Used by FishBootstrap to validate config on every startup.
+ * Adding a new key here is mandatory before using it anywhere in logic.
  */
 
 return [
     // Core identity
-    'strategy_id'           => 'string',
-    'enabled'               => 'bool',
-    'mode'                  => 'string',   // active | passive | disabled
+    'strategy_id'      => 'string',
+    'enabled'          => 'bool',
+    'mode'             => 'string',   // active | passive | disabled
 
-    // Market parameters
-    'market_type'           => 'string',   // spot | futures | perp
-    'universe_mode'         => 'string',   // manual | dynamic | whitelist
-    'timeframe'             => 'string',   // e.g. 15m, 1h, 4h
+    // Timeframe
+    'timeframe'        => 'string',   // H4
 
-    // Profile references (strings — resolved by the executing layer)
-    'budget_profile'        => 'string',
-    'leverage_profile'      => 'string',
-    'sl_profile'            => 'string',
-    'pm_profile'            => 'string',
+    // Universe — v1 supports: all | manual_list
+    'universe_mode'    => 'string',
+    'allowed_symbols'  => 'array',    // used when universe_mode = manual_list
+    'excluded_symbols' => 'array',    // always applied
 
-    // Signal quality gate
-    'max_signal_age'        => 'int',      // seconds
+    // Trading window (single window only in v1)
+    'window_enabled'   => 'bool',
+    'window_start'     => 'string',   // HH:MM
+    'window_end'       => 'string',   // HH:MM
 
-    // Ownership contract (used by execution layer — not implemented yet)
-    'owner_strategy'        => 'string',
-    'order_owner_prefix'    => 'string',
-    'position_owner_prefix' => 'string',
+    // Execution parameters
+    'budget'           => 'int',
+    'leverage'         => 'int',
 
-    // Feature flags map (key => bool)
-    'feature_flags'         => 'array',
+    // Profile references
+    'sl_profile'       => 'string',
+    'pm_profile'       => 'string',
+
+    // Ownership contract
+    'owner_strategy'   => 'string',
 ];

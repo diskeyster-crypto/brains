@@ -3,15 +3,20 @@
 declare(strict_types=1);
 
 /**
- * Fish Strategy — Active Config Overrides
+ * Fish Strategy — Active Config Overrides (v1)
  *
  * Place operator-level overrides here.
  * Values here take precedence over base.php.
- * Only override what differs from base — keep this file minimal.
+ * Keep this file minimal — only override what differs from base.
+ *
+ * Examples:
+ *   'enabled'         => true,
+ *   'mode'            => 'active',
+ *   'universe_mode'   => 'manual_list',
+ *   'allowed_symbols' => ['BTCUSDT', 'ETHUSDT'],
+ *   'window_enabled'  => true,
+ *   'budget'          => 500,
+ *   'leverage'        => 3,
  */
 
-return [
-    // Example: flip this to true when ready to activate the module
-    // 'enabled' => true,
-    // 'mode'    => 'active',
-];
+return [];

@@ -79,7 +79,7 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 strategy_id: <code><?= htmlspecialchars($strategyId) ?></code>
                 &nbsp;|&nbsp; mode: <code><?= htmlspecialchars($mode) ?></code>
                 &nbsp;|&nbsp; timeframe: <code><?= htmlspecialchars($config['timeframe'] ?? '—') ?></code>
-                &nbsp;|&nbsp; market: <code><?= htmlspecialchars($config['market_type'] ?? '—') ?></code>
+                &nbsp;|&nbsp; universe: <code><?= htmlspecialchars($config['universe_mode'] ?? '—') ?></code>
             </div>
         </div>
         <a href="<?= System::web('admin/brain') ?>" class="btn btn-sm btn-outline-secondary">

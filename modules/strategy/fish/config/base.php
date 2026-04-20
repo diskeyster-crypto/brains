@@ -105,4 +105,34 @@ return [
     // Minimum acceptable reward/risk ratio for a signal to be emitted.
     // Signals with RR below this threshold are rejected as geometry-invalid.
     'min_rr_ratio'          => 2.0,
+
+    // -----------------------------------------------------------------------
+    // Fish Bot — execution runtime config
+    // -----------------------------------------------------------------------
+
+    // Master on/off switch for the Fish bot execution layer.
+    // When false the bot tick is a no-op; scanning / signal generation still runs.
+    'bot_enabled'             => false,
+
+    // Execution mode: smoke | demo | live
+    //   smoke — log-only, no orders sent, safe for testing
+    //   demo  — send orders to Bybit testnet (not supported yet; falls back to smoke)
+    //   live  — send real orders to Bybit mainnet (only when explicitly set)
+    'execution_mode'          => 'smoke',
+
+    // Hard caps
+    'max_active_orders'       => 5,
+    'max_active_positions'    => 3,
+
+    // Per-signal execution budget (base currency, e.g. USDT)
+    'bot_budget'              => 0.0,
+
+    // Leverage applied to each new position (1 = no leverage)
+    'bot_leverage'            => 1,
+
+    // Stop-loss profile name (resolved by sl_manager; 'default' = fixed initial stop)
+    'bot_sl_profile'          => 'default',
+
+    // Position-management profile name (resolved by pm_manager; 'default' = breakeven only)
+    'bot_pm_profile'          => 'default',
 ];

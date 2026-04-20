@@ -327,6 +327,29 @@ switch ($action) {
         break;
 
     // -----------------------------------------------------------------------
+    case 'tick_bot':
+    // -----------------------------------------------------------------------
+        // Run one Fish bot execution cycle (enqueue signals + place orders + PM tick).
+        try {
+            $result = $service->tickBot();
+        } catch (\Throwable $e) {
+            $result = ['ok' => false, 'status' => 'error', 'message' => $e->getMessage()];
+        }
+
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        } else {
+            $ok  = $result['ok']     ?? false;
+            $msg = $result['message'] ?? ('Bot tick: '
+                . ($result['orders_placed'] ?? 0) . ' orders placed, '
+                . ($result['intents_processed'] ?? 0) . ' intents processed.');
+            fishSetFlash($ok ? 'info' : 'warning', $msg);
+            header('Location: ' . $configUrl);
+        }
+        break;
+
+    // -----------------------------------------------------------------------
     default:
     // -----------------------------------------------------------------------
         http_response_code(400);

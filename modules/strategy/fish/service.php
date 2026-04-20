@@ -17,7 +17,11 @@ declare(strict_types=1);
  *                 Called by the cron runner; can also be triggered manually from
  *                 the admin UI.  Safe to call repeatedly — resumes from cursor.
  *
- * No order placement.  No Trading Bot wiring.  Scanner only.
+ * ── Bot execution ────────────────────────────────────────────────────────────
+ *   tickBot()     Run one Fish bot execution cycle.
+ *                 Enqueues any new signals, then calls FishExecutor::tick().
+ *                 Called by the cron runner (120 s interval).
+ *                 Requires bot_enabled = true in Fish config.
  */
 
 namespace Modules\Strategy\Fish;
@@ -1020,5 +1024,144 @@ final class FishService
     public function getStats(): array
     {
         return $this->loadStorage('stats.json');
+    }
+
+    // =========================================================================
+    // Public: Fish Bot tick
+    // =========================================================================
+
+    /**
+     * Run one Fish bot execution cycle.
+     *
+     * Steps:
+     *   1. Load config — if bot_enabled = false, return no-op result.
+     *   2. Load signals.json; enqueue any signal not already in the execution queue.
+     *   3. Instantiate bot components and call FishExecutor::tick().
+     *   4. Return the tick summary.
+     *
+     * This method is called by the cron runner every 120 s.
+     * It may also be triggered manually from the admin AJAX handler.
+     *
+     * @return array  Tick result
+     */
+    public function tickBot(): array
+    {
+        require_once $this->moduleDir . '/bootstrap.php';
+        $boot = FishBootstrap::instance($this->moduleDir)->load();
+        $config = $boot['config'] ?? [];
+
+        if (!($config['bot_enabled'] ?? false)) {
+            return [
+                'ok'      => false,
+                'status'  => 'disabled',
+                'message' => 'Fish bot is disabled (bot_enabled = false in config).',
+            ];
+        }
+
+        $this->requireBotClasses();
+
+        $mode = (string)($config['execution_mode'] ?? 'smoke');
+
+        $store   = new \Modules\Strategy\Fish\Bot\FishBotStore($this->moduleDir);
+        $journal = new \Modules\Strategy\Fish\Bot\FishBotJournal($this->moduleDir);
+
+        $exchange = new \Modules\Strategy\Fish\Bot\FishExchangeAdapter($mode);
+
+        $slManager = new \Modules\Strategy\Fish\Bot\FishSlManager(
+            $exchange, $journal, (string)($config['bot_sl_profile'] ?? 'default')
+        );
+
+        $positionManager = new \Modules\Strategy\Fish\Bot\FishPositionManager(
+            $exchange, $store, $journal, $slManager, (string)($config['bot_pm_profile'] ?? 'default')
+        );
+
+        $pmManager    = new \Modules\Strategy\Fish\Bot\FishPmManager($positionManager, $store, $journal);
+        $orderBuilder = new \Modules\Strategy\Fish\Bot\FishOrderBuilder();
+
+        $executor = new \Modules\Strategy\Fish\Bot\FishExecutor(
+            $exchange, $store, $journal, $orderBuilder, $pmManager, $config
+        );
+
+        // Enqueue any new signals from signals.json
+        $signals   = $this->loadStorage('signals.json');
+        $enqueued  = 0;
+        foreach ($signals as $signal) {
+            $signalId = (string)($signal['signal_id'] ?? '');
+            if ($signalId === '') {
+                continue;
+            }
+            // Merge config execution fields into the signal intent
+            $intent = array_merge($signal, [
+                'owner_strategy' => 'fish',
+                'bot_budget'     => $config['bot_budget']  ?? 0.0,
+                'bot_leverage'   => $config['bot_leverage'] ?? 1,
+            ]);
+            $store->enqueue($intent);
+            $enqueued++;
+        }
+
+        $tickResult = $executor->tick();
+        $tickResult['signals_enqueued'] = $enqueued;
+        $tickResult['ok']               = true;
+
+        return $tickResult;
+    }
+
+    // =========================================================================
+    // Public: Bot read-only accessors
+    // =========================================================================
+
+    public function getBotLastRun(): array
+    {
+        $path = $this->moduleDir . '/storage/bot_last_run.json';
+        if (!file_exists($path)) {
+            return [];
+        }
+        $raw  = file_get_contents($path);
+        $data = json_decode((string)$raw, true);
+        return is_array($data) ? $data : [];
+    }
+
+    public function getBotStats(): array
+    {
+        $this->requireBotClasses();
+        $store = new \Modules\Strategy\Fish\Bot\FishBotStore($this->moduleDir);
+        return $store->readStats();
+    }
+
+    public function getBotActiveOrders(): array
+    {
+        return $this->loadStorage('bot_active_orders.json');
+    }
+
+    public function getBotActivePositions(): array
+    {
+        return $this->loadStorage('bot_active_positions.json');
+    }
+
+    public function getBotExecutionQueue(): array
+    {
+        return $this->loadStorage('bot_execution_queue.json');
+    }
+
+    // =========================================================================
+    // Private: bot class autoloader
+    // =========================================================================
+
+    private function requireBotClasses(): void
+    {
+        $botDir = $this->moduleDir . '/bot/';
+        foreach ([
+            'store.php',
+            'journal.php',
+            'exchange_adapter.php',
+            'order_builder.php',
+            'sl_manager.php',
+            'position_manager.php',
+            'pm_manager.php',
+            'executor.php',
+        ] as $file) {
+            require_once $botDir . $file;
+        }
     }
 }

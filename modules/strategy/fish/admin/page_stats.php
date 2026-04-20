@@ -447,7 +447,7 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
         <div class="card-body p-0" style="overflow-x: auto;">
             <table class="table table-sm table-dark mb-0" style="font-size: 11px;">
                 <thead style="color: #94a3b8; text-transform: uppercase;">
-                    <tr><th>Position ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>TP</th><th>BE Trigger</th><th>Status</th><th>SL/TP</th><th>Attempts</th><th>SL/TP Error</th><th>Opened</th></tr>
+                    <tr><th>Position ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>TP</th><th>BE Trigger</th><th>Status</th><th>SL/TP</th><th>Attempts</th><th>pos_idx</th><th>Mode Mismatch</th><th>SL/TP Error (code)</th><th>Opened</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($botPositions as $pos): ?>
@@ -462,7 +462,9 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                         <td><?= htmlspecialchars($pos['status'] ?? '—') ?></td>
                         <td><?= ($pos['sl_tp_attached'] ?? false) ? '<span style="color:#22c55e;">✓</span>' : '<span style="color:#f59e0b;">✗</span>' ?></td>
                         <td><?= isset($pos['sl_tp_attach_attempts']) ? (int)$pos['sl_tp_attach_attempts'] : '<span style="color:#64748b;">—</span>' ?></td>
-                        <td style="color:#ef4444;font-size:10px;"><?= htmlspecialchars($pos['sl_tp_last_error'] ?? '') ?></td>
+                        <td style="color:#94a3b8;"><?= isset($pos['position_idx']) ? (int)$pos['position_idx'] : '<span style="color:#64748b;">—</span>' ?></td>
+                        <td><?= ($pos['sl_tp_mode_mismatch'] ?? false) ? '<span style="color:#f59e0b;font-weight:bold;">⚠ yes</span>' : '<span style="color:#64748b;">—</span>' ?></td>
+                        <td style="color:#ef4444;font-size:10px;"><?= htmlspecialchars(($pos['sl_tp_last_error'] ?? '') . (isset($pos['sl_tp_last_error_code']) && $pos['sl_tp_last_error_code'] !== null ? ' [' . $pos['sl_tp_last_error_code'] . ']' : '')) ?></td>
                         <td style="color: #64748b;"><?= htmlspecialchars(substr($pos['opened_at'] ?? '—', 0, 16)) ?></td>
                     </tr>
                     <?php endforeach; ?>

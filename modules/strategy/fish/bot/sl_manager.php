@@ -34,28 +34,36 @@ final class FishSlManager
     /**
      * Attach initial SL + TP to a position after it is confirmed open.
      *
+     * positionIdx is read from the position record (stored at open time from config).
+     * Default 0 = one-way mode (matches Bybit new-account default and old bot default).
+     * tpslMode 'Full' is required by Bybit V5 /v5/position/trading-stop.
+     *
+     * Returns a structured result array:
+     *   ['success' => bool, 'error' => string|null, 'error_code' => int|null, 'mode_mismatch' => bool]
+     *
      * @param  array  $position  Fish position record from store
-     * @return bool   True on success (or smoke mode)
+     * @return array  Structured result
      */
-    public function attachInitialSlTp(array $position): bool
+    public function attachInitialSlTp(array $position): array
     {
-        $symbol    = (string)($position['symbol']              ?? '');
-        $side      = (string)($position['side']                ?? 'long');
-        $stopPrice = (float)($position['stop_price']           ?? 0.0);
-        $tpPrice   = (float)($position['take_profit_price']    ?? 0.0);
-        $posId     = (string)($position['fish_position_id']    ?? '');
+        $symbol      = (string)($position['symbol']              ?? '');
+        $side        = (string)($position['side']                ?? 'long');
+        $stopPrice   = (float)($position['stop_price']           ?? 0.0);
+        $tpPrice     = (float)($position['take_profit_price']    ?? 0.0);
+        $posId       = (string)($position['fish_position_id']    ?? '');
+        // Read from position record; default 0 = one-way mode (mirrors old bot config default)
+        $positionIdx = (int)($position['position_idx']           ?? 0);
+        $tpslMode    = (string)($position['tpsl_mode']           ?? 'Full');
 
         if ($symbol === '' || $stopPrice <= 0.0) {
-            return false;
+            return ['success' => false, 'error' => 'missing symbol or stop_price', 'error_code' => null, 'mode_mismatch' => false];
         }
-
-        $bybitSide  = ($side === 'long') ? 'Buy' : 'Sell';
-        $positionIdx = ($side === 'long') ? 1 : 2;
 
         $params = [
             'symbol'        => $symbol,
             'category'      => 'linear',
             'positionIdx'   => $positionIdx,
+            'tpslMode'      => $tpslMode,
             'stopLoss'      => (string)$stopPrice,
         ];
         if ($tpPrice > 0.0) {
@@ -66,16 +74,55 @@ final class FishSlManager
 
         if ($response['success'] ?? false) {
             $this->journal->slTpAttached($posId, $stopPrice, $tpPrice);
-            return true;
+            return ['success' => true, 'error' => null, 'error_code' => null, 'mode_mismatch' => false,
+                    'diagnostics' => [
+                        'symbol'                 => $symbol,
+                        'side'                   => $side,
+                        'position_idx_used'      => $positionIdx,
+                        'tpsl_mode_used'         => $tpslMode,
+                        'sl_tp_attach_result'    => 'ok',
+                    ]];
         }
+
+        $retCode   = (int)($response['ret_code']   ?? -1);
+        $retMsg    = (string)($response['ret_msg']  ?? 'unknown');
+        $errMsg    = 'attachInitialSlTp failed: ' . $retMsg . ' (retCode=' . $retCode . ')';
+
+        // Detect position-mode mismatch (e.g. "position idx(2) not match position mode(0)")
+        // so the caller can refresh the mode before retrying instead of blind hammering.
+        $isModeError = $retCode === 130101
+            || (stripos($retMsg, 'position idx') !== false && stripos($retMsg, 'position mode') !== false)
+            || stripos($retMsg, 'not match position mode') !== false;
 
         $this->journal->executionError(
             $position['owner_signal_id'] ?? '',
-            'attachInitialSlTp failed: ' . ($response['ret_msg'] ?? 'unknown'),
-            ['response' => $response, 'fish_position_id' => $posId]
+            $errMsg,
+            [
+                'fish_position_id'       => $posId,
+                'position_idx_used'      => $positionIdx,
+                'tpsl_mode_used'         => $tpslMode,
+                'ret_code'               => $retCode,
+                'ret_msg'                => $retMsg,
+                'mode_mismatch_detected' => $isModeError,
+            ]
         );
 
-        return false;
+        return [
+            'success'      => false,
+            'error'        => $errMsg,
+            'error_code'   => $retCode,
+            'mode_mismatch' => $isModeError,
+            'diagnostics'  => [
+                'symbol'                 => $symbol,
+                'side'                   => $side,
+                'position_idx_used'      => $positionIdx,
+                'tpsl_mode_used'         => $tpslMode,
+                'sl_tp_attach_result'    => 'failed',
+                'sl_tp_attach_error_code' => $retCode,
+                'sl_tp_attach_error_message' => $retMsg,
+                'sl_tp_mode_mismatch_detected' => $isModeError,
+            ],
+        ];
     }
 
     /**
@@ -113,12 +160,14 @@ final class FishSlManager
         }
 
         $symbol      = (string)($position['symbol']    ?? '');
-        $positionIdx = ($side === 'long') ? 1 : 2;
+        $positionIdx = (int)($position['position_idx'] ?? 0);
+        $tpslMode    = (string)($position['tpsl_mode'] ?? 'Full');
 
         $params = [
             'symbol'      => $symbol,
             'category'    => 'linear',
             'positionIdx' => $positionIdx,
+            'tpslMode'    => $tpslMode,
             'stopLoss'    => (string)$entryPrice,
         ];
 

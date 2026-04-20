@@ -155,6 +155,10 @@ final class FishExecutor
                         'status'                => 'open',
                         'smoke'                 => $isSmoke,
                         'execution_mode'        => $mode,
+                        // Position-mode metadata — needed by SL/TP attach at fill time.
+                        // Mirrors old trading_bot config['exchange']['position_idx'] pattern.
+                        'position_idx'          => (int)($this->config['position_idx'] ?? 0),
+                        'tpsl_mode'             => (string)($this->config['tpsl_mode'] ?? 'Full'),
                         'placed_at'             => date('c'),
                         'updated_at'            => date('c'),
                     ];

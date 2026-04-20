@@ -157,4 +157,14 @@ return [
     // Must match an account stored in KeyCenter (Admin → KeyCenter).
     // Smoke/demo mode ignores this field.
     'account_id'              => '',
+
+    // Position mode: 0 = one-way mode (Bybit default for new accounts),
+    //   1 = hedge-mode Buy side,  2 = hedge-mode Sell side.
+    // This must match the Bybit account/symbol position-mode setting.
+    // Mirrors the old trading_bot config['exchange']['position_idx'] default of 0.
+    'position_idx'            => 0,
+
+    // TPSL mode sent to /v5/position/trading-stop (Bybit V5 required field).
+    // 'Full' = apply SL/TP to the entire position.  Required by Bybit V5.
+    'tpsl_mode'               => 'Full',
 ];

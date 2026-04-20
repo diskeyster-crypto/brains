@@ -85,7 +85,14 @@ final class FishPositionManager
             'sl_tp_attached'        => false,
             'sl_tp_attach_attempts' => 0,
             'sl_tp_last_error'      => null,
+            'sl_tp_last_error_code' => null,
+            'sl_tp_mode_mismatch'   => false,
             'breakeven_reached'     => false,
+            // Position-mode metadata — required for correct setTradingStop positionIdx.
+            // Sourced from the order record (stamped from config at order placement time).
+            'position_idx'          => (int)($orderRecord['position_idx'] ?? 0),
+            'tpsl_mode'             => (string)($orderRecord['tpsl_mode'] ?? 'Full'),
+            'position_mode'         => 'one_way',  // one_way|hedge; default matches positionIdx=0
             'opened_at'             => date('c'),
             'updated_at'            => date('c'),
         ];
@@ -95,15 +102,21 @@ final class FishPositionManager
 
         // Immediately attempt SL/TP attach (attempt 1)
         $position['sl_tp_attach_attempts'] = 1;
-        $attached = $this->slManager->attachInitialSlTp($position);
-        if ($attached) {
-            $position['sl_tp_attached']  = true;
-            $position['sl_tp_last_error'] = null;
-            $position['updated_at']      = date('c');
+        $attachResult = $this->slManager->attachInitialSlTp($position);
+        if ($attachResult['success'] ?? false) {
+            $position['sl_tp_attached']       = true;
+            $position['sl_tp_last_error']     = null;
+            $position['sl_tp_last_error_code'] = null;
+            $position['sl_tp_mode_mismatch']  = false;
+            $position['updated_at']           = date('c');
         } else {
-            $position['sl_tp_last_error'] = 'attachInitialSlTp failed on open (attempt 1)';
-            $position['updated_at']       = date('c');
-            $this->journal->slTpAttachFailed($fishPositionId, 'attachInitialSlTp failed on open', 1);
+            $errMsg  = $attachResult['error']     ?? 'attachInitialSlTp failed on open (attempt 1)';
+            $errCode = $attachResult['error_code'] ?? null;
+            $position['sl_tp_last_error']      = $errMsg;
+            $position['sl_tp_last_error_code'] = $errCode;
+            $position['sl_tp_mode_mismatch']   = $attachResult['mode_mismatch'] ?? false;
+            $position['updated_at']            = date('c');
+            $this->journal->slTpAttachFailed($fishPositionId, $errMsg, 1);
         }
         $this->store->upsertPosition($position);
 
@@ -253,20 +266,43 @@ final class FishPositionManager
             if (!($position['sl_tp_attached'] ?? false)) {
                 $summary['missing_sltp']++;
                 $attempts = (int)($position['sl_tp_attach_attempts'] ?? 0) + 1;
-                $attached = $this->slManager->attachInitialSlTp($position);
-                if ($attached) {
+
+                // If a mode-mismatch was previously detected, attempt to refresh position mode
+                // from exchange before retrying.  This prevents blind retries with wrong positionIdx.
+                $positionForAttach = $position;
+                if ($position['sl_tp_mode_mismatch'] ?? false) {
+                    $refreshed = $this->exchange->getPositionMode($position['symbol'] ?? '');
+                    if ($refreshed['success'] ?? false) {
+                        $positionForAttach['position_idx']   = $refreshed['position_idx'];
+                        $positionForAttach['position_mode']  = $refreshed['position_mode'];
+                        $positions[$i]['position_idx']       = $refreshed['position_idx'];
+                        $positions[$i]['position_mode']      = $refreshed['position_mode'];
+                        $positions[$i]['sl_tp_mode_mismatch'] = false;  // cleared — will try with refreshed idx
+                    }
+                    // If refresh fails we still allow one retry; if it fails again mode_mismatch stays set.
+                }
+
+                $attachResult = $this->slManager->attachInitialSlTp($positionForAttach);
+
+                if ($attachResult['success'] ?? false) {
                     $positions[$i]['sl_tp_attached']        = true;
                     $positions[$i]['sl_tp_attach_attempts'] = $attempts;
                     $positions[$i]['sl_tp_last_error']      = null;
+                    $positions[$i]['sl_tp_last_error_code'] = null;
+                    $positions[$i]['sl_tp_mode_mismatch']   = false;
                     $positions[$i]['updated_at']            = date('c');
                     $summary['sltp_attached']++;
                 } else {
+                    $errMsg  = $attachResult['error']      ?? 'attachInitialSlTp retry #' . $attempts . ' failed';
+                    $errCode = $attachResult['error_code'] ?? null;
                     $positions[$i]['sl_tp_attach_attempts'] = $attempts;
-                    $positions[$i]['sl_tp_last_error']      = 'attachInitialSlTp retry #' . $attempts . ' failed';
+                    $positions[$i]['sl_tp_last_error']      = $errMsg;
+                    $positions[$i]['sl_tp_last_error_code'] = $errCode;
+                    $positions[$i]['sl_tp_mode_mismatch']   = $attachResult['mode_mismatch'] ?? false;
                     $positions[$i]['updated_at']            = date('c');
                     $this->journal->slTpAttachFailed(
                         $position['fish_position_id'] ?? '',
-                        'retry #' . $attempts . ' failed',
+                        $errMsg,
                         $attempts
                     );
                     $summary['sltp_attach_failed']++;

@@ -286,6 +286,74 @@ final class FishExchangeAdapter
     }
 
     /**
+     * Fetch current position mode for a symbol (one-way vs hedge).
+     *
+     * In smoke mode: returns one_way / positionIdx=0 (safe default).
+     * In live mode: queries /v5/position/switch-mode.
+     *
+     * Returns:
+     *   ['success' => bool, 'position_mode' => 'one_way'|'hedge', 'position_idx' => 0|1|2,
+     *    'raw_mode' => int|null, 'smoke' => bool]
+     */
+    public function getPositionMode(string $symbol): array
+    {
+        if ($this->isSmokeMode()) {
+            return [
+                'success'        => true,
+                'smoke'          => true,
+                'position_mode'  => 'one_way',
+                'position_idx'   => 0,
+                'raw_mode'       => 0,
+            ];
+        }
+
+        if ($this->initError !== null) {
+            return $this->gatewayError('getPositionMode', $this->initError);
+        }
+
+        $params = [
+            'category' => 'linear',
+            'symbol'   => $symbol,
+        ];
+
+        try {
+            $resp = $this->client->request('/v5/position/switch-mode', $params, false);
+        } catch (\Throwable $e) {
+            return [
+                'success'       => false,
+                'position_mode' => 'one_way',
+                'position_idx'  => 0,
+                'error'         => 'getPositionMode exception: ' . $e->getMessage(),
+            ];
+        }
+
+        if (!($resp['success'] ?? false)) {
+            // Fall back to one-way (index=0) on failure — matches old bot default
+            return [
+                'success'       => false,
+                'position_mode' => 'one_way',
+                'position_idx'  => 0,
+                'error'         => $resp['ret_msg'] ?? 'switch_mode_query_failed',
+            ];
+        }
+
+        // Bybit returns mode: 0 = one-way, 3 = hedge
+        $rawMode     = (int)($resp['result']['mode'] ?? 0);
+        $isHedge     = ($rawMode === 3);
+        $modeLabel   = $isHedge ? 'hedge' : 'one_way';
+        // positionIdx: 0 for one-way; for hedge, use 0 as default (caller resolves side-specific 1/2)
+        $positionIdx = 0;
+
+        return [
+            'success'        => true,
+            'smoke'          => false,
+            'position_mode'  => $modeLabel,
+            'position_idx'   => $positionIdx,
+            'raw_mode'       => $rawMode,
+        ];
+    }
+
+    /**
      * Set leverage for a symbol.
      */
     public function setLeverage(string $symbol, int $leverage): array

@@ -98,12 +98,22 @@ return [
     // Should be safely below your cron interval and HTTP timeout.
     'max_runtime_seconds'   => 55,
 
-    // Signal lifetime in minutes.
-    // After this many minutes without being re-seen, a signal is expired and
-    // removed from signals.json on the next finalize.
-    // For large all-universe scans use a value >= full cycle runtime.
-    // For small manual_list runs a tighter value (e.g. 60) is fine.
-    'signal_ttl_minutes'    => 180,
+    // Signal freshness: H4 bar-based TTL (primary freshness gate).
+    // A signal whose source level is older than this many H4 bars is rejected
+    // during scanning and will not enter the active signal set.
+    // Fish runs on H4; 2 bars = 8 hours.  Adjust up for large universes where
+    // a full scan cycle takes more than 1–2 bars to complete.
+    'signal_ttl_bars'       => 2,
+
+    // Hard cap: only this many active signals per symbol+side are kept in the
+    // final active signal set.  Excess signals are rejected as duplicates.
+    // Set to 1 to enforce strict uniqueness (recommended for v1).
+    'max_active_signals_per_symbol_side' => 1,
+
+    // Signal lifetime in minutes (safety-net cross-cycle expiry).
+    // Signals that are never re-seen by the scanner are evicted after this
+    // duration.  Derived automatically when 0: signal_ttl_bars * 240 min.
+    'signal_ttl_minutes'    => 0,
 
     // -----------------------------------------------------------------------
     // Risk / reward geometry validation

@@ -111,10 +111,10 @@ final class FishService
         // Load logic modules
         $this->requireLogic();
 
-        $ttlMins = (int)($config['signal_ttl_minutes'] ?? 180);
+        $ttlBars = (int)($config['signal_ttl_bars'] ?? 2);
 
         // Run scanner
-        [$signals, $diagnostics] = $this->scan($config, $runAt, $ttlMins);
+        [$signals, $diagnostics] = $this->scan($config, $runAt, $ttlBars);
 
         $result = $this->okResult(
             sprintf(
@@ -126,7 +126,7 @@ final class FishService
         );
         $result['signals_found'] = $diagnostics['signals_valid'];
 
-        $this->persist($result, $config, $signals, $ttlMins);
+        $this->persist($result, $config, $signals, $ttlBars);
 
         return $result;
     }
@@ -215,7 +215,7 @@ final class FishService
         }
 
         $config  = $boot['config'];
-        $ttlMins = (int)($config['signal_ttl_minutes'] ?? 180);
+        $ttlBars = (int)($config['signal_ttl_bars'] ?? 2);
 
         // Auto-restart: when a cycle finished (or no cycle exists), begin a new one.
         // 'done' means "this cycle finished" — not "scanner stopped permanently".
@@ -267,7 +267,7 @@ final class FishService
         $cursor     = (int)($state['batch_cursor'] ?? 0);
 
         if ($cursor >= count($allSymbols)) {
-            return $this->finalizeRun($state, $config, $state['started_at'] ?? date('c'), $ttlMins);
+            return $this->finalizeRun($state, $config, $state['started_at'] ?? date('c'), $ttlBars);
         }
 
         // Check trading window before processing
@@ -292,7 +292,7 @@ final class FishService
         // Process one batch
         $batch  = array_slice($allSymbols, $cursor, $batchSize);
         $runAt  = $state['started_at'] ?? date('c');
-        [$batchSignals, $batchDiag] = $this->scanSymbols($batch, $config, $runAt, $ttlMins);
+        [$batchSignals, $batchDiag] = $this->scanSymbols($batch, $config, $runAt, $ttlBars);
 
         // Accumulate signals
         $pending = $this->loadPendingSignals();
@@ -320,6 +320,7 @@ final class FishService
         $state['signals_rr_below_min']      = ($state['signals_rr_below_min']      ?? 0) + ($batchDiag['signals_rr_below_min']      ?? 0);
         $state['signals_stop_side_invalid'] = ($state['signals_stop_side_invalid'] ?? 0) + ($batchDiag['signals_stop_side_invalid'] ?? 0);
         $state['signals_tp_side_invalid']   = ($state['signals_tp_side_invalid']   ?? 0) + ($batchDiag['signals_tp_side_invalid']   ?? 0);
+        $state['signals_expired_freshness'] = ($state['signals_expired_freshness'] ?? 0) + ($batchDiag['signals_expired_freshness'] ?? 0);
 
         // Accumulate reject reason distribution
         foreach ($batchDiag['reject_reasons'] ?? [] as $reason => $count) {
@@ -335,7 +336,7 @@ final class FishService
 
         if ($isDone) {
             $state['last_tick_result'] = 'finalized';
-            return $this->finalizeRun($state, $config, $runAt, $ttlMins);
+            return $this->finalizeRun($state, $config, $runAt, $ttlBars);
         }
 
         if ($elapsed >= $maxRunSec) {
@@ -388,7 +389,7 @@ final class FishService
      *
      * @return array{0: list<array>, 1: array}  [signals, diagnostics]
      */
-    private function scan(array $config, string $runAt, int $ttlMinutes = 180): array
+    private function scan(array $config, string $runAt, int $ttlBars = 2): array
     {
         $diag = $this->emptyDiag();
 
@@ -415,7 +416,7 @@ final class FishService
             return [[], $diag];
         }
 
-        [$signals, $batchDiag] = $this->scanSymbols($symbols, $config, $runAt, $ttlMinutes);
+        [$signals, $batchDiag] = $this->scanSymbols($symbols, $config, $runAt, $ttlBars);
 
         // Merge batch diag (everything except symbols_total / symbols_skipped_window)
         foreach ($batchDiag as $k => $v) {
@@ -438,13 +439,13 @@ final class FishService
      * Scan a symbol slice through the full pipeline (structure → levels → risk → signal).
      * Callers must load logic requires (requireLogic()) before calling this.
      *
-     * @param  array   $symbols     Symbols to process
-     * @param  array   $config      Effective config
-     * @param  string  $runAt       ISO-8601 run timestamp
-     * @param  int     $ttlMinutes  Signal lifetime in minutes
+     * @param  array   $symbols   Symbols to process
+     * @param  array   $config    Effective config
+     * @param  string  $runAt     ISO-8601 run timestamp
+     * @param  int     $ttlBars   Signal freshness gate: max level age in H4 bars
      * @return array{0: list<array>, 1: array}  [signals, diagnostics_increment]
      */
-    private function scanSymbols(array $symbols, array $config, string $runAt, int $ttlMinutes = 180): array
+    private function scanSymbols(array $symbols, array $config, string $runAt, int $ttlBars = 2): array
     {
         $diag = [
             'symbols_scanned'            => 0,
@@ -462,6 +463,9 @@ final class FishService
             'signals_rr_below_min'       => 0,
             'signals_stop_side_invalid'  => 0,
             'signals_tp_side_invalid'    => 0,
+            'signals_expired_freshness'  => 0,
+            'signals_before_dedupe'      => 0,
+            'duplicate_signals_rejected' => 0,
             'reject_reasons'             => [],
         ];
 
@@ -582,15 +586,30 @@ final class FishService
                     $symbol, $side, $entry, $risk, $level, $structResult, $config, $runAt
                 );
 
-                // Attach TTL fields so signals have explicit freshness tracking
-                $runTs  = strtotime($runAt) ?: time();
-                $signal['created_at']   = $runAt;
-                $signal['last_seen_at'] = $runAt;
-                $signal['expires_at']   = date('c', $runTs + $ttlMinutes * 60);
+                // ── Bar-based freshness gate (primary TTL) ─────────────────────
+                $levelAgeBars = (int)($signal['level_age_bars'] ?? ($level['age_bars'] ?? 0));
+                if ($levelAgeBars > $ttlBars) {
+                    $diag['signals_expired_freshness']++;
+                    $this->bumpRejectReason($diag['reject_reasons'], 'signal_level_too_old');
+                    // Still attach freshness fields for transparency (won't be emitted)
+                    continue;
+                }
+
+                // ── Freshness fields ────────────────────────────────────────────
+                // expires_at derived from bar count: 1 H4 bar = 4 h = 14 400 s
+                $runTs   = strtotime($runAt) ?: time();
+                $barSecs = 4 * 3600;
+                $signal['signal_ttl_bars']         = $ttlBars;
+                $signal['level_age_bars']           = $levelAgeBars;
+                $signal['freshness_valid']          = true;
+                $signal['freshness_reject_reason']  = null;
+                $signal['created_at']               = $runAt;
+                $signal['last_seen_at']             = $runAt;
+                $signal['expires_at']               = date('c', $runTs + $ttlBars * $barSecs);
 
                 $sid = $signal['signal_id'];
                 if (isset($seenSignalIds[$sid])) {
-                    continue;  // deduplicate
+                    continue;  // deduplicate within-batch by signal_id
                 }
                 $seenSignalIds[$sid] = true;
 
@@ -599,6 +618,12 @@ final class FishService
             }
         }
 
+        // ── Per-batch symbol+side dedupe ────────────────────────────────────────
+        $maxPerSide = (int)($config['max_active_signals_per_symbol_side'] ?? 1);
+        $diag['signals_before_dedupe'] = count($allSignals);
+        [$allSignals, $batchRejected]  = $this->dedupeBySymbolSide($allSignals, $maxPerSide);
+        $diag['duplicate_signals_rejected'] = count($batchRejected);
+
         return [$allSignals, $diag];
     }
 
@@ -606,8 +631,8 @@ final class FishService
     // Batched run helpers
     // =========================================================================
 
-    /** Finalize a batched run: merge/expire signals, write stats, last_run, clean up temp files. */
-    private function finalizeRun(array $state, array $config, string $runAt, int $ttlMinutes = 180): array
+    /** Finalize a batched run: merge/expire signals, dedupe, write stats, last_run, clean up temp files. */
+    private function finalizeRun(array $state, array $config, string $runAt, int $ttlBars = 2): array
     {
         $startMs = isset($state['started_at'])
             ? (int)(strtotime($state['started_at']) * 1000)
@@ -625,51 +650,70 @@ final class FishService
         $newSignals  = $this->loadPendingSignals();
         $existing    = $this->loadSignals();
         [$merged, $expiredCount, $refreshedCount] = $this->mergeAndExpireSignals(
-            $existing, $newSignals, $ttlMinutes, $now
+            $existing, $newSignals, $ttlBars, $now
         );
-        $this->writeSignals($merged);
+
+        // Apply global symbol+side dedupe on the final merged set
+        $maxPerSide = (int)($config['max_active_signals_per_symbol_side'] ?? 1);
+        $signalsBeforeDedupe = count($merged);
+        [$deduped, $dedupeRejected] = $this->dedupeBySymbolSide($merged, $maxPerSide);
+        $duplicateRejectedCount = count($dedupeRejected);
+
+        $this->writeSignals($deduped);
         $this->clearPendingSignals();
+
+        // Aggregate expired/duplicate counts from cycle state
+        $expiredFreshness = ($state['signals_expired_freshness'] ?? 0);
+        $dupRejectedState = ($state['duplicate_signals_rejected'] ?? 0);
+        $expiredTotal     = $expiredFreshness + $expiredCount;
+        $dupTotal         = $dupRejectedState + $duplicateRejectedCount;
 
         // Build summary result for stats / last_run
         $diag = [
-            'symbols_total'              => $state['total_symbols']              ?? 0,
-            'symbols_scanned'            => $state['symbols_scanned']            ?? $state['processed_symbols'] ?? 0,
-            'symbols_skipped_api_err'    => $state['api_errors']                 ?? 0,
-            'symbols_skipped_no_data'    => $state['symbols_skipped']            ?? 0,
-            'symbols_skipped_window'     => $state['symbols_skipped_window']     ?? 0,
-            'structures_valid'           => $state['structures_valid']           ?? 0,
-            'structures_invalid'         => $state['structures_invalid']         ?? 0,
-            'levels_found'               => $state['levels_found']               ?? 0,
-            'levels_expired'             => $state['levels_expired']             ?? 0,
-            'candidates_valid'           => $state['candidates_valid']           ?? 0,
-            'candidates_rejected'        => $state['candidates_rejected']        ?? 0,
-            'signals_valid'              => $state['signals_found']              ?? 0,
-            'signals_geometry_valid'     => $state['signals_geometry_valid']     ?? 0,
-            'signals_geometry_rejected'  => $state['signals_geometry_rejected']  ?? 0,
-            'signals_rr_below_min'       => $state['signals_rr_below_min']       ?? 0,
-            'signals_stop_side_invalid'  => $state['signals_stop_side_invalid']  ?? 0,
-            'signals_tp_side_invalid'    => $state['signals_tp_side_invalid']    ?? 0,
-            'reject_reasons'             => $state['reject_reasons']             ?? [],
-            // Cycle + TTL diagnostics
-            'current_cycle_id'           => $state['cycle_id']           ?? null,
-            'current_cycle_status'       => 'done',
-            'cycle_started_at'           => $state['cycle_started_at']   ?? null,
-            'cycle_finished_at'          => $state['cycle_finished_at']  ?? null,
-            'next_cycle_ready'           => true,
-            'signal_ttl_minutes'         => $ttlMinutes,
-            'signals_active'             => count($merged),
-            'signals_expired_this_tick'  => $expiredCount,
-            'signals_refreshed_this_tick'=> $refreshedCount,
+            'symbols_total'                  => $state['total_symbols']              ?? 0,
+            'symbols_scanned'                => $state['symbols_scanned']            ?? $state['processed_symbols'] ?? 0,
+            'symbols_skipped_api_err'        => $state['api_errors']                 ?? 0,
+            'symbols_skipped_no_data'        => $state['symbols_skipped']            ?? 0,
+            'symbols_skipped_window'         => $state['symbols_skipped_window']     ?? 0,
+            'structures_valid'               => $state['structures_valid']           ?? 0,
+            'structures_invalid'             => $state['structures_invalid']         ?? 0,
+            'levels_found'                   => $state['levels_found']               ?? 0,
+            'levels_expired'                 => $state['levels_expired']             ?? 0,
+            'candidates_valid'               => $state['candidates_valid']           ?? 0,
+            'candidates_rejected'            => $state['candidates_rejected']        ?? 0,
+            'signals_valid'                  => $state['signals_found']              ?? 0,
+            'signals_geometry_valid'         => $state['signals_geometry_valid']     ?? 0,
+            'signals_geometry_rejected'      => $state['signals_geometry_rejected']  ?? 0,
+            'signals_rr_below_min'           => $state['signals_rr_below_min']       ?? 0,
+            'signals_stop_side_invalid'      => $state['signals_stop_side_invalid']  ?? 0,
+            'signals_tp_side_invalid'        => $state['signals_tp_side_invalid']    ?? 0,
+            'reject_reasons'                 => $state['reject_reasons']             ?? [],
+            // Freshness + dedupe diagnostics
+            'signal_ttl_bars'                => $ttlBars,
+            'signals_expired_freshness'      => $expiredFreshness,
+            'expired_signals_rejected_total' => $expiredTotal,
+            'signals_before_dedupe'          => $signalsBeforeDedupe,
+            'signals_after_dedupe'           => count($deduped),
+            'duplicate_signals_rejected_total' => $dupTotal,
+            // Cycle diagnostics
+            'current_cycle_id'               => $state['cycle_id']           ?? null,
+            'current_cycle_status'           => 'done',
+            'cycle_started_at'               => $state['cycle_started_at']   ?? null,
+            'cycle_finished_at'              => $state['cycle_finished_at']  ?? null,
+            'next_cycle_ready'               => true,
+            'signals_active'                 => count($deduped),
+            'signals_expired_this_tick'      => $expiredCount,
+            'signals_refreshed_this_tick'    => $refreshedCount,
         ];
 
         $result = $this->okResult(
             sprintf(
-                'Cycle %s complete. Processed: %d symbols. Signals active: %d (new/refreshed: %d, expired: %d).',
+                'Cycle %s complete. Processed: %d symbols. Active signals: %d (expired: %d, dupes rejected: %d).',
                 $state['cycle_id'] ?? 'N/A',
                 $state['processed_symbols'] ?? 0,
-                count($merged),
-                count($newSignals) - $refreshedCount,
-                $expiredCount
+                count($deduped),
+                $expiredTotal,
+                $dupTotal
             ),
             $config, $startMs, $runAt, $diag
         );
@@ -680,16 +724,20 @@ final class FishService
         $this->updateStats($result);
 
         return [
-            'ok'                          => true,
-            'status'                      => 'done',
-            'message'                     => $result['message'],
-            'signals_active'              => count($merged),
-            'signals_expired_this_tick'   => $expiredCount,
-            'signals_refreshed_this_tick' => $refreshedCount,
-            'current_cycle_id'            => $state['cycle_id']          ?? null,
-            'cycle_finished_at'           => $state['cycle_finished_at'] ?? null,
-            'next_cycle_ready'            => true,
-            'signal_ttl_minutes'          => $ttlMinutes,
+            'ok'                               => true,
+            'status'                           => 'done',
+            'message'                          => $result['message'],
+            'signals_active'                   => count($deduped),
+            'signals_expired_this_tick'        => $expiredCount,
+            'signals_refreshed_this_tick'      => $refreshedCount,
+            'expired_signals_rejected_total'   => $expiredTotal,
+            'duplicate_signals_rejected_total' => $dupTotal,
+            'signals_before_dedupe'            => $signalsBeforeDedupe,
+            'signals_after_dedupe'             => count($deduped),
+            'current_cycle_id'                 => $state['cycle_id']          ?? null,
+            'cycle_finished_at'                => $state['cycle_finished_at'] ?? null,
+            'next_cycle_ready'                 => true,
+            'signal_ttl_bars'                  => $ttlBars,
         ];
     }
 
@@ -759,24 +807,27 @@ final class FishService
     private function emptyDiag(): array
     {
         return [
-            'symbols_total'              => 0,
-            'symbols_scanned'            => 0,
-            'symbols_skipped_no_data'    => 0,
-            'symbols_skipped_api_err'    => 0,
-            'symbols_skipped_window'     => 0,
-            'structures_valid'           => 0,
-            'structures_invalid'         => 0,
-            'levels_found'               => 0,
-            'levels_expired'             => 0,
-            'candidates_valid'           => 0,
-            'candidates_rejected'        => 0,
-            'signals_valid'              => 0,
-            'signals_geometry_valid'     => 0,
-            'signals_geometry_rejected'  => 0,
-            'signals_rr_below_min'       => 0,
-            'signals_stop_side_invalid'  => 0,
-            'signals_tp_side_invalid'    => 0,
-            'reject_reasons'             => [],
+            'symbols_total'                  => 0,
+            'symbols_scanned'                => 0,
+            'symbols_skipped_no_data'        => 0,
+            'symbols_skipped_api_err'        => 0,
+            'symbols_skipped_window'         => 0,
+            'structures_valid'               => 0,
+            'structures_invalid'             => 0,
+            'levels_found'                   => 0,
+            'levels_expired'                 => 0,
+            'candidates_valid'               => 0,
+            'candidates_rejected'            => 0,
+            'signals_valid'                  => 0,
+            'signals_geometry_valid'         => 0,
+            'signals_geometry_rejected'      => 0,
+            'signals_rr_below_min'           => 0,
+            'signals_stop_side_invalid'      => 0,
+            'signals_tp_side_invalid'        => 0,
+            'signals_expired_freshness'      => 0,   // rejected by bar-based TTL during scan
+            'signals_before_dedupe'          => 0,   // candidates before symbol+side dedupe
+            'duplicate_signals_rejected'     => 0,   // dropped by symbol+side dedupe
+            'reject_reasons'                 => [],
         ];
     }
 
@@ -854,13 +905,15 @@ final class FishService
     // Persistence
     // =========================================================================
 
-    private function persist(array $result, ?array $config, array $newSignals, int $ttlMinutes = 180): void
+    private function persist(array $result, ?array $config, array $newSignals, int $ttlBars = 2): void
     {
         $this->writeRuntimeSnapshot($result, $config);
         $this->writeLastRun($result);
         $existing = $this->loadSignals();
-        [$merged] = $this->mergeAndExpireSignals($existing, $newSignals, $ttlMinutes, $result['run_at']);
-        $this->writeSignals($merged);
+        [$merged] = $this->mergeAndExpireSignals($existing, $newSignals, $ttlBars, $result['run_at']);
+        $maxPerSide = (int)(($config['max_active_signals_per_symbol_side'] ?? null) ?? 1);
+        [$deduped]  = $this->dedupeBySymbolSide($merged, $maxPerSide);
+        $this->writeSignals($deduped);
         $this->updateStats($result);
     }
 
@@ -1063,14 +1116,77 @@ final class FishService
      *
      * @return array{0: list<array>, 1: int, 2: int}  [merged_signals, expired_count, refreshed_count]
      */
+    /**
+     * Keep at most $maxPerSide signals per (symbol, side) combination.
+     * Winner priority:
+     *   1. Freshest (lowest level_age_bars)
+     *   2. Highest RR ratio
+     *   3. Latest detected_at timestamp
+     *
+     * @return array{0: list<array>, 1: list<array>}  [kept, rejected]
+     */
+    private function dedupeBySymbolSide(array $signals, int $maxPerSide): array
+    {
+        if ($maxPerSide <= 0) {
+            return [$signals, []];
+        }
+
+        // Group by symbol+side key
+        $groups = [];
+        foreach ($signals as $sig) {
+            $key          = ($sig['symbol'] ?? '') . '|' . ($sig['side'] ?? '');
+            $groups[$key][] = $sig;
+        }
+
+        $kept     = [];
+        $rejected = [];
+
+        foreach ($groups as $group) {
+            // Sort group: freshest first, then highest RR, then latest detected_at
+            usort($group, static function (array $a, array $b): int {
+                $ageA = (int)($a['level_age_bars'] ?? PHP_INT_MAX);
+                $ageB = (int)($b['level_age_bars'] ?? PHP_INT_MAX);
+                if ($ageA !== $ageB) {
+                    return $ageA <=> $ageB;          // lower age wins
+                }
+                $rrA = (float)($a['rr_ratio'] ?? 0.0);
+                $rrB = (float)($b['rr_ratio'] ?? 0.0);
+                if ($rrA !== $rrB) {
+                    return $rrB <=> $rrA;            // higher RR wins
+                }
+                // Latest detected_at wins
+                return strcmp(
+                    (string)($b['detected_at'] ?? ''),
+                    (string)($a['detected_at'] ?? '')
+                );
+            });
+
+            $winnerId = $group[0]['signal_id'] ?? null;
+            foreach ($group as $i => $sig) {
+                if ($i < $maxPerSide) {
+                    $kept[] = $sig;
+                } else {
+                    $sig['final_signal_status']    = 'duplicate';
+                    $sig['duplicate_of_signal_id'] = $winnerId;
+                    $sig['dedupe_reason']          = 'max_active_signals_per_symbol_side';
+                    $rejected[]                    = $sig;
+                }
+            }
+        }
+
+        return [$kept, $rejected];
+    }
+
     private function mergeAndExpireSignals(
         array  $existing,
         array  $newSignals,
-        int    $ttlMinutes,
+        int    $ttlBars,
         string $now
     ): array {
+        // 1 H4 bar = 4 hours = 14 400 seconds
+        $barSecs   = 4 * 3600;
         $nowTs     = strtotime($now) ?: time();
-        $expiresAt = date('c', $nowTs + $ttlMinutes * 60);
+        $expiresAt = date('c', $nowTs + $ttlBars * $barSecs);
         $byId      = [];
         $refreshed = 0;
 

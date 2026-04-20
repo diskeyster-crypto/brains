@@ -110,6 +110,12 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                     ['Candidates Valid',       $diag['candidates_valid']          ?? 0, false],
                     ['Candidates Rejected',    $diag['candidates_rejected']       ?? 0, true],
                     ['Signals Valid',          $diag['signals_valid']             ?? 0, false],
+                    ['Expired (too old)',      $diag['signals_expired_freshness'] ?? 0, true],
+                    ['Before Dedupe',          $diag['signals_before_dedupe']     ?? ($diag['signals_valid'] ?? 0), false],
+                    ['After Dedupe (active)',  $diag['signals_after_dedupe']      ?? ($diag['signals_active'] ?? 0), false],
+                    ['Dupes Rejected',         $diag['duplicate_signals_rejected_total'] ?? ($diag['duplicate_signals_rejected'] ?? 0), true],
+                    ['Expired Total',          $diag['expired_signals_rejected_total']   ?? 0, true],
+                    ['TTL (bars)',             $diag['signal_ttl_bars']           ?? '—', false],
                 ];
                 foreach ($diagItems as [$label, $value, $isErr]):
                 ?>
@@ -156,14 +162,19 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                     <tr>
                         <th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th>
                         <th>TP</th><th>BE Trigger</th><th>RR</th>
-                        <th>Level Age</th><th>Trend</th><th>Bars</th><th>Detected</th>
+                        <th>Level Age</th><th>TTL Bars</th><th>Fresh?</th>
+                        <th>Trend</th><th>Bars</th><th>Detected</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($signals as $sig): ?>
-                    <?php $geomOk = (bool)($sig['geometry_valid'] ?? true); ?>
-                    <tr class="fish-signal-row<?= $geomOk ? '' : ' table-danger' ?>"
-                        title="<?= $geomOk ? 'Geometry valid' : htmlspecialchars('Geometry issue: ' . ($sig['geometry_reject_reason'] ?? 'unknown')) ?>">
+                    <?php
+                        $geomOk    = (bool)($sig['geometry_valid'] ?? true);
+                        $freshOk   = (bool)($sig['freshness_valid'] ?? true);
+                        $freshClass = $freshOk ? '' : ' table-warning';
+                    ?>
+                    <tr class="fish-signal-row<?= ($geomOk ? '' : ' table-danger') . $freshClass ?>"
+                        title="<?= $geomOk ? '' : htmlspecialchars('Geometry: ' . ($sig['geometry_reject_reason'] ?? 'unknown')) ?>">
                         <td><code><?= htmlspecialchars($sig['symbol'] ?? '—') ?></code></td>
                         <td>
                             <span class="badge" style="background: <?= ($sig['side'] ?? '') === 'long' ? '#22c55e' : '#ef4444' ?>;">
@@ -185,6 +196,14 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                             <?php endif; ?>
                         </td>
                         <td><?= htmlspecialchars((string)($sig['level_age_bars'] ?? '—')) ?></td>
+                        <td style="color: #64748b;"><?= htmlspecialchars((string)($sig['signal_ttl_bars'] ?? '—')) ?></td>
+                        <td>
+                            <?php if ($freshOk): ?>
+                                <span style="color:#22c55e; font-size:10px;">✓</span>
+                            <?php else: ?>
+                                <span style="color:#f59e0b; font-size:10px;" title="<?= htmlspecialchars((string)($sig['freshness_reject_reason'] ?? '')) ?>">✗</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= htmlspecialchars($sig['trend_direction'] ?? '—') ?></td>
                         <td><?= htmlspecialchars((string)($sig['liquidity_pattern_bars'] ?? '—')) ?></td>
                         <td style="color: #64748b;"><?= htmlspecialchars(substr($sig['detected_at'] ?? '—', 0, 16)) ?></td>

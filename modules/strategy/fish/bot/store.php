@@ -116,17 +116,21 @@ final class FishBotStore
     public function readStats(): array
     {
         $defaults = [
-            'strategy_id'              => 'fish',
-            'total_bot_ticks'          => 0,
-            'signals_queued_total'     => 0,
-            'orders_attempted_total'   => 0,
-            'orders_accepted_total'    => 0,
-            'orders_rejected_total'    => 0,
-            'positions_opened_total'   => 0,
-            'positions_closed_total'   => 0,
-            'execution_errors_total'   => 0,
-            'last_tick_at'             => null,
-            'last_error'               => null,
+            'strategy_id'                  => 'fish',
+            'total_bot_ticks'              => 0,
+            'signals_queued_total'         => 0,
+            'orders_attempted_total'       => 0,
+            'orders_accepted_total'        => 0,
+            'orders_rejected_total'        => 0,
+            'orders_filled_total'          => 0,
+            'orders_cancelled_total'       => 0,
+            'positions_opened_total'       => 0,
+            'positions_closed_total'       => 0,
+            'sltp_attach_success_total'    => 0,
+            'sltp_attach_failed_total'     => 0,
+            'execution_errors_total'       => 0,
+            'last_tick_at'                 => null,
+            'last_error'                   => null,
         ];
         $stored = $this->read('bot_stats.json');
         return array_merge($defaults, $stored);

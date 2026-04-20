@@ -309,6 +309,72 @@ final class FishExchangeAdapter
     }
 
     /**
+     * Query the current status of a Fish-owned order.
+     *
+     * In smoke mode: always returns 'Filled' — smoke orders have no exchange lifecycle.
+     * In live mode: queries /v5/order/history with orderId.
+     *
+     * @param  string $symbol          Trading pair (e.g. 'BTCUSDT')
+     * @param  string $exchangeOrderId Exchange-assigned order ID
+     * @return array  {success, status, avg_price, qty, smoke, raw?, error?}
+     */
+    public function getOrderStatus(string $symbol, string $exchangeOrderId): array
+    {
+        if ($this->isSmokeMode()) {
+            return [
+                'success'   => true,
+                'smoke'     => true,
+                'status'    => 'Filled',
+                'order_id'  => $exchangeOrderId,
+                'avg_price' => 0.0,
+                'qty'       => 0.0,
+            ];
+        }
+
+        if ($this->initError !== null) {
+            return $this->gatewayError('getOrderStatus', $this->initError);
+        }
+
+        $params = [
+            'category' => 'linear',
+            'symbol'   => $symbol,
+            'orderId'  => $exchangeOrderId,
+        ];
+
+        $resp = $this->client->request('/v5/order/history', $params, true);
+
+        if (!($resp['success'] ?? false)) {
+            return [
+                'success'  => false,
+                'status'   => 'unknown',
+                'error'    => $resp['ret_msg'] ?? 'order_history_failed',
+                'response' => $resp,
+            ];
+        }
+
+        $list  = $resp['result']['list'] ?? [];
+        $order = $list[0] ?? null;
+
+        if ($order === null) {
+            return [
+                'success' => false,
+                'status'  => 'not_found',
+                'error'   => 'order_not_in_history',
+            ];
+        }
+
+        return [
+            'success'   => true,
+            'smoke'     => false,
+            'status'    => $order['orderStatus'] ?? 'Unknown',
+            'order_id'  => $exchangeOrderId,
+            'avg_price' => (float)($order['avgPrice'] ?? 0.0),
+            'qty'       => (float)($order['qty']      ?? 0.0),
+            'raw'       => $order,
+        ];
+    }
+
+    /**
      * Set trading-stop (stop-loss / take-profit) on an open position.
      */
     public function setTradingStop(array $params): array

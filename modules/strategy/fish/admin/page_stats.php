@@ -283,13 +283,18 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 $activeOrders = (int)($botLastRun['active_orders']     ?? count(array_filter($botOrders,    fn($o) => ($o['status'] ?? '') === 'open')));
                 $activePos    = (int)($botLastRun['active_positions']  ?? count(array_filter($botPositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish')));
                 $botItems = [
-                    ['Execution Queue',    $queueDepth,                                         false],
-                    ['Active Orders',      $activeOrders,                                        false],
-                    ['Active Positions',   $activePos,                                           false],
-                    ['Total Ticks',        $botStats['total_bot_ticks']        ?? 0,            false],
-                    ['Orders Placed',      $botStats['orders_accepted_total']  ?? 0,            false],
-                    ['Orders Rejected',    $botStats['orders_rejected_total']  ?? 0,            true],
-                    ['Execution Errors',   $botStats['execution_errors_total'] ?? 0,            true],
+                    ['Execution Queue',     $queueDepth,                                                       false],
+                    ['Active Orders',       $activeOrders,                                                     false],
+                    ['Active Positions',    $activePos,                                                        false],
+                    ['Total Ticks',         $botStats['total_bot_ticks']            ?? 0,                     false],
+                    ['Orders Placed',       $botStats['orders_accepted_total']      ?? 0,                     false],
+                    ['Orders Filled',       $botStats['orders_filled_total']        ?? 0,                     false],
+                    ['Orders Rejected',     $botStats['orders_rejected_total']      ?? 0,                     true],
+                    ['Orders Cancelled',    $botStats['orders_cancelled_total']     ?? 0,                     true],
+                    ['Positions Opened',    $botStats['positions_opened_total']     ?? 0,                     false],
+                    ['SL/TP Attached',      $botStats['sltp_attach_success_total']  ?? 0,                     false],
+                    ['SL/TP Failed',        $botStats['sltp_attach_failed_total']   ?? 0,                     true],
+                    ['Execution Errors',    $botStats['execution_errors_total']     ?? 0,                     true],
                 ];
                 foreach ($botItems as [$label, $value, $isErr]):
                 ?>
@@ -311,6 +316,35 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 &nbsp;|&nbsp; Placed: <?= (int)($botLastRun['orders_accepted'] ?? $botLastRun['orders_placed'] ?? 0) ?>
                 &nbsp;|&nbsp; Rejected: <span<?= ($botLastRun['orders_rejected'] ?? 0) > 0 ? ' style="color:#f59e0b;"' : '' ?>><?= (int)($botLastRun['orders_rejected'] ?? 0) ?></span>
             </div>
+
+            <?php
+            // Fill-detection diagnostics from last tick
+            $fillResult = $botLastRun['last_fill_detect_result'] ?? null;
+            if (is_array($fillResult)):
+            ?>
+            <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">
+                Fill detect (last tick):
+                checked=<code><?= (int)($fillResult['orders_checked'] ?? 0) ?></code>
+                &nbsp;|&nbsp; filled=<code style="color:#22c55e;"><?= (int)($fillResult['orders_filled'] ?? 0) ?></code>
+                &nbsp;|&nbsp; cancelled=<code<?= ($fillResult['orders_cancelled'] ?? 0) > 0 ? ' style="color:#f59e0b;"' : '' ?>><?= (int)($fillResult['orders_cancelled'] ?? 0) ?></code>
+                &nbsp;|&nbsp; positions_opened=<code><?= (int)($fillResult['positions_opened'] ?? 0) ?></code>
+            </div>
+            <?php endif; ?>
+
+            <?php
+            // SL/TP diagnostics from last tick
+            $posOpenedTick  = (int)($botLastRun['positions_opened_this_tick']     ?? 0);
+            $sltpAttTick    = (int)($botLastRun['sltp_attach_attempts_this_tick'] ?? 0);
+            $sltpMissing    = (int)($botLastRun['positions_missing_sltp_total']   ?? 0);
+            if ($posOpenedTick > 0 || $sltpAttTick > 0 || $sltpMissing > 0):
+            ?>
+            <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">
+                SL/TP (last tick):
+                positions_opened=<code><?= $posOpenedTick ?></code>
+                &nbsp;|&nbsp; attach_attempts=<code><?= $sltpAttTick ?></code>
+                &nbsp;|&nbsp; missing_sltp=<code<?= $sltpMissing > 0 ? ' style="color:#f59e0b;"' : '' ?>><?= $sltpMissing ?></code>
+            </div>
+            <?php endif; ?>
 
             <?php
             // Gateway diagnostics (safe, no secrets)
@@ -369,10 +403,19 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
         <div class="card-body p-0" style="overflow-x: auto;">
             <table class="table table-sm table-dark mb-0" style="font-size: 11px;">
                 <thead style="color: #94a3b8; text-transform: uppercase;">
-                    <tr><th>Fish Order ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>TP</th><th>Status</th><th>Mode</th><th>Placed</th></tr>
+                    <tr><th>Fish Order ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>TP</th><th>Status</th><th>Fill Price</th><th>Mode</th><th>Placed</th><th>Filled</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($botOrders as $ord): ?>
+                    <?php
+                    $ordStatus  = $ord['status'] ?? '—';
+                    $statusColor = match($ordStatus) {
+                        'open'     => '#94a3b8',
+                        'filled'   => '#22c55e',
+                        'cancelled', 'rejected', 'expired' => '#f59e0b',
+                        default    => '#64748b',
+                    };
+                    ?>
                     <tr>
                         <td><code style="font-size: 10px;"><?= htmlspecialchars($ord['fish_order_id'] ?? '—') ?></code></td>
                         <td><?= htmlspecialchars($ord['symbol'] ?? '—') ?></td>
@@ -380,9 +423,11 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                         <td><?= htmlspecialchars((string)($ord['entry_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars((string)($ord['stop_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars((string)($ord['take_profit_price'] ?? '—')) ?></td>
-                        <td><?= htmlspecialchars($ord['status'] ?? '—') ?></td>
+                        <td><span style="color:<?= $statusColor ?>;"><?= htmlspecialchars($ordStatus) ?></span></td>
+                        <td><?= isset($ord['fill_avg_price']) && $ord['fill_avg_price'] > 0 ? htmlspecialchars((string)$ord['fill_avg_price']) : '<span style="color:#64748b;">—</span>' ?></td>
                         <td><code><?= htmlspecialchars(isset($ord['smoke']) && $ord['smoke'] ? 'smoke' : 'live') ?></code></td>
                         <td style="color: #64748b;"><?= htmlspecialchars(substr($ord['placed_at'] ?? '—', 0, 16)) ?></td>
+                        <td style="color: #64748b;"><?= isset($ord['filled_at']) ? htmlspecialchars(substr($ord['filled_at'], 0, 16)) : '<span style="color:#64748b;">—</span>' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -402,7 +447,7 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
         <div class="card-body p-0" style="overflow-x: auto;">
             <table class="table table-sm table-dark mb-0" style="font-size: 11px;">
                 <thead style="color: #94a3b8; text-transform: uppercase;">
-                    <tr><th>Position ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>TP</th><th>BE Trigger</th><th>Status</th><th>SL/TP</th><th>Opened</th></tr>
+                    <tr><th>Position ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>TP</th><th>BE Trigger</th><th>Status</th><th>SL/TP</th><th>Attempts</th><th>SL/TP Error</th><th>Opened</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($botPositions as $pos): ?>
@@ -415,7 +460,9 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                         <td><?= htmlspecialchars((string)($pos['take_profit_price'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars((string)($pos['breakeven_trigger'] ?? '—')) ?></td>
                         <td><?= htmlspecialchars($pos['status'] ?? '—') ?></td>
-                        <td><?= ($pos['sl_tp_attached'] ?? false) ? '<span style="color:#22c55e;">✓</span>' : '<span style="color:#94a3b8;">—</span>' ?></td>
+                        <td><?= ($pos['sl_tp_attached'] ?? false) ? '<span style="color:#22c55e;">✓</span>' : '<span style="color:#f59e0b;">✗</span>' ?></td>
+                        <td><?= isset($pos['sl_tp_attach_attempts']) ? (int)$pos['sl_tp_attach_attempts'] : '<span style="color:#64748b;">—</span>' ?></td>
+                        <td style="color:#ef4444;font-size:10px;"><?= htmlspecialchars($pos['sl_tp_last_error'] ?? '') ?></td>
                         <td style="color: #64748b;"><?= htmlspecialchars(substr($pos['opened_at'] ?? '—', 0, 16)) ?></td>
                     </tr>
                     <?php endforeach; ?>

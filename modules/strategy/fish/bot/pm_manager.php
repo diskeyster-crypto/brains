@@ -33,12 +33,26 @@ final class FishPmManager
     /**
      * Run one PM cycle.
      *
+     * Phase 1 — Fill detection:
+     *   Inspect all Fish-owned open orders. Detect fills, cancellations, and
+     *   other terminal states. On fill: create position + attach SL/TP.
+     *
+     * Phase 2 — Position management:
+     *   For each open Fish position: retry SL/TP attach if missing, evaluate
+     *   breakeven condition.
+     *
      * @param  float  $defaultMarkPrice  Used when no live price feed is available
-     * @return array  Tick summary
+     * @return array  Merged tick summary (fill detection + position management)
      */
     public function tick(float $defaultMarkPrice = 0.0): array
     {
-        $summary = $this->positionManager->tick($defaultMarkPrice);
+        // Phase 1: detect fills and transition orders → positions
+        $fillSummary = $this->positionManager->detectAndProcessFills();
+
+        // Phase 2: manage open positions (SL/TP retry, breakeven)
+        $pmSummary = $this->positionManager->tick($defaultMarkPrice);
+
+        $summary = array_merge($fillSummary, $pmSummary);
         $summary['pm_tick_at'] = date('c');
         return $summary;
     }

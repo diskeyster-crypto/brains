@@ -177,42 +177,62 @@ final class FishExecutor
             }
         }
 
-        // PM tick
+        // PM tick (fill detection + position management)
         $pmSummary = $this->pmManager->tick();
 
         // Stats
         $stats = $this->store->readStats();
         $stats['total_bot_ticks']++;
-        $stats['orders_attempted_total']   += $intentsProcessed;
-        $stats['orders_accepted_total']    += $ordersPlaced;
-        $stats['orders_rejected_total']    += $ordersRejected;
-        $stats['execution_errors_total']   += $errors;
-        $stats['last_tick_at']              = $tickAt;
+        $stats['orders_attempted_total']    += $intentsProcessed;
+        $stats['orders_accepted_total']     += $ordersPlaced;
+        $stats['orders_rejected_total']     += $ordersRejected;
+        $stats['orders_filled_total']       += (int)($pmSummary['orders_filled']     ?? 0);
+        $stats['orders_cancelled_total']    += (int)($pmSummary['orders_cancelled']  ?? 0);
+        $stats['positions_opened_total']    += (int)($pmSummary['positions_opened']  ?? 0);
+        $stats['sltp_attach_success_total'] += (int)($pmSummary['sltp_attached']     ?? 0);
+        $stats['sltp_attach_failed_total']  += (int)($pmSummary['sltp_attach_failed'] ?? 0);
+        $stats['execution_errors_total']    += $errors;
+        $stats['last_tick_at']               = $tickAt;
         if ($errors > 0) {
             $stats['last_error'] = 'Errors on tick ' . $tickAt;
         }
         $this->store->writeStats($stats);
 
         $summary = [
-            'intents_processed'              => $intentsProcessed,
-            'orders_placed'                  => $ordersPlaced,
-            'orders_rejected'                => $ordersRejected,
-            'execution_errors'               => $errors,
-            'pm_summary'                     => $pmSummary,
-            'mode'                           => $mode,
-            'tick_at'                        => $tickAt,
+            'intents_processed'                  => $intentsProcessed,
+            'orders_placed'                      => $ordersPlaced,
+            'orders_rejected'                    => $ordersRejected,
+            'execution_errors'                   => $errors,
+            'pm_summary'                         => $pmSummary,
+            'mode'                               => $mode,
+            'tick_at'                            => $tickAt,
             // Mode-isolation diagnostics
-            'active_orders_total'            => $openOrdersTotal,
-            'active_orders_current_mode'     => $openOrdersCurrent,
-            'active_orders_smoke'            => $openOrdersSmoke,
-            'active_orders_live'             => $openOrdersLive,
-            'active_positions_total'         => $openPosTotal,
-            'active_positions_current_mode'  => $openPosCurrent,
-            'active_positions_smoke'         => $openPosSmoke,
-            'active_positions_live'          => $openPosLive,
-            'mode_isolated_caps_applied'     => true,
-            'stale_smoke_orders_ignored'     => $staleSmokeOrders,
-            'stale_smoke_positions_ignored'  => $staleSmokePosns,
+            'active_orders_total'                => $openOrdersTotal,
+            'active_orders_current_mode'         => $openOrdersCurrent,
+            'active_orders_smoke'                => $openOrdersSmoke,
+            'active_orders_live'                 => $openOrdersLive,
+            'active_positions_total'             => $openPosTotal,
+            'active_positions_current_mode'      => $openPosCurrent,
+            'active_positions_smoke'             => $openPosSmoke,
+            'active_positions_live'              => $openPosLive,
+            'mode_isolated_caps_applied'         => true,
+            'stale_smoke_orders_ignored'         => $staleSmokeOrders,
+            'stale_smoke_positions_ignored'      => $staleSmokePosns,
+            // Fill-detection / position / SL-TP diagnostics
+            'active_orders_filled_this_tick'     => (int)($pmSummary['orders_filled']     ?? 0),
+            'active_orders_cancelled_this_tick'  => (int)($pmSummary['orders_cancelled']  ?? 0),
+            'positions_opened_this_tick'         => (int)($pmSummary['positions_opened']  ?? 0),
+            'positions_missing_sltp_total'       => (int)($pmSummary['missing_sltp']      ?? 0),
+            'sltp_attach_attempts_this_tick'     => (int)($pmSummary['sltp_attached']     ?? 0)
+                                                  + (int)($pmSummary['sltp_attach_failed'] ?? 0),
+            'sltp_attach_success_total'          => $stats['sltp_attach_success_total'],
+            'sltp_attach_failed_total'           => $stats['sltp_attach_failed_total'],
+            'last_fill_detect_result'            => [
+                'orders_checked'   => (int)($pmSummary['orders_checked']   ?? 0),
+                'orders_filled'    => (int)($pmSummary['orders_filled']    ?? 0),
+                'orders_cancelled' => (int)($pmSummary['orders_cancelled'] ?? 0),
+                'positions_opened' => (int)($pmSummary['positions_opened'] ?? 0),
+            ],
         ];
 
         $this->store->writeLastRun($summary);

@@ -80,6 +80,35 @@ final class FishBotJournal
         ]);
     }
 
+    public function orderFilled(string $signalId, string $fishOrderId, string $exchangeOrderId, float $avgPrice, bool $smoke): void
+    {
+        $this->append('order_filled', [
+            'signal_id'         => $signalId,
+            'fish_order_id'     => $fishOrderId,
+            'exchange_order_id' => $exchangeOrderId,
+            'avg_price'         => $avgPrice,
+            'smoke'             => $smoke,
+        ]);
+    }
+
+    public function orderCancelled(string $signalId, string $fishOrderId, string $finalStatus): void
+    {
+        $this->append('order_cancelled', [
+            'signal_id'      => $signalId,
+            'fish_order_id'  => $fishOrderId,
+            'final_status'   => $finalStatus,
+        ]);
+    }
+
+    public function slTpAttachFailed(string $fishPositionId, string $reason, int $attempts): void
+    {
+        $this->append('sl_tp_attach_failed', [
+            'fish_position_id' => $fishPositionId,
+            'reason'           => $reason,
+            'attempts'         => $attempts,
+        ]);
+    }
+
     public function positionOpened(string $fishPositionId, string $symbol, string $side, string $ownerSignalId): void
     {
         $this->append('position_opened', [

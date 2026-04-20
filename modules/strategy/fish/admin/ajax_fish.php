@@ -324,6 +324,14 @@ switch ($action) {
             $overrides['bot_pm_profile'] = $botPmProfile;
         }
 
+        // --- account_id (live Bybit account in KeyCenter) ---
+        $accountId = trim($p['account_id'] ?? '');
+        // Required when execution_mode = live; optional otherwise
+        if ($execMode === 'live' && $accountId === '' && empty($errors)) {
+            $errors[] = 'account_id is required when execution_mode = live.';
+        }
+        $overrides['account_id'] = $accountId;
+
         if (!empty($errors)) {
             if ($isAjax) {
                 http_response_code(422);

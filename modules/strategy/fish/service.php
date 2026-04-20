@@ -1086,7 +1086,10 @@ final class FishService
 
         $journal = new \Modules\Strategy\Fish\Bot\FishBotJournal($this->moduleDir);
 
-        $exchange = new \Modules\Strategy\Fish\Bot\FishExchangeAdapter($mode);
+        $exchange = new \Modules\Strategy\Fish\Bot\FishExchangeAdapter(
+            $mode,
+            (string)($config['account_id'] ?? '')
+        );
 
         $slManager = new \Modules\Strategy\Fish\Bot\FishSlManager(
             $exchange, $journal, (string)($config['bot_sl_profile'] ?? 'default')
@@ -1139,6 +1142,7 @@ final class FishService
             'last_tick'         => date('Y-m-d H:i:s'),
             'last_error'        => $tickResult['last_error'] ?? null,
             'status'            => 'ok',
+            'gateway'           => $exchange->getDiagnostics(),
         ];
         $store->writeLastRun($summary);
 

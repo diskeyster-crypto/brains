@@ -76,6 +76,7 @@ $fBotBudget     = (string)($config['bot_budget']   ?? '0');
 $fBotLeverage   = (string)($config['bot_leverage'] ?? '1');
 $fBotSlProfile  = (string)($config['bot_sl_profile'] ?? 'default');
 $fBotPmProfile  = (string)($config['bot_pm_profile'] ?? 'default');
+$fAccountId     = (string)($config['account_id']   ?? '');
 ?>
 <style>
 .fish-label  { font-size: 12px; color: #94a3b8; margin-bottom: 3px; }
@@ -276,6 +277,15 @@ $fBotPmProfile  = (string)($config['bot_pm_profile'] ?? 'default');
                         <div class="fish-label">Bot PM Profile</div>
                         <input type="text" name="bot_pm_profile" class="form-control form-control-sm"
                                value="<?= htmlspecialchars($fBotPmProfile) ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fish-label">Live Account ID <small class="text-muted">(KeyCenter)</small></div>
+                        <input type="text" name="account_id" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fAccountId) ?>"
+                               placeholder="e.g. trading_bot">
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                            Required for <code>live</code> mode. Must match a Bybit account in KeyCenter.
+                        </div>
                     </div>
                 </div>
 

@@ -135,4 +135,9 @@ return [
 
     // Position-management profile name (resolved by pm_manager; 'default' = breakeven only)
     'bot_pm_profile'          => 'default',
+
+    // Bybit KeyCenter account ID used for live order placement.
+    // Must match an account stored in KeyCenter (Admin → KeyCenter).
+    // Smoke/demo mode ignores this field.
+    'account_id'              => '',
 ];

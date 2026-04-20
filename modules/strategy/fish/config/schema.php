@@ -68,4 +68,5 @@ return [
     'bot_leverage'       => 'int',
     'bot_sl_profile'     => 'string',
     'bot_pm_profile'     => 'string',
+    'account_id'         => 'string',  // KeyCenter Bybit account used for live mode
 ];

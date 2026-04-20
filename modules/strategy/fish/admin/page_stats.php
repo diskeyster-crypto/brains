@@ -292,6 +292,26 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 &nbsp;|&nbsp; Placed: <?= (int)($botLastRun['orders_accepted'] ?? $botLastRun['orders_placed'] ?? 0) ?>
                 &nbsp;|&nbsp; Rejected: <span<?= ($botLastRun['orders_rejected'] ?? 0) > 0 ? ' style="color:#f59e0b;"' : '' ?>><?= (int)($botLastRun['orders_rejected'] ?? 0) ?></span>
             </div>
+
+            <?php
+            // Gateway diagnostics (safe, no secrets)
+            $gwDiag = $botLastRun['gateway'] ?? null;
+            if (is_array($gwDiag)):
+                $gwInit   = $gwDiag['client_init'] ?? '—';
+                $gwAcct   = $gwDiag['account_id_used'] ?? '—';
+                $gwErr    = $gwDiag['init_error'] ?? null;
+                $gwMode   = $gwDiag['execution_mode'] ?? '—';
+            ?>
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 8px;">
+                Gateway:
+                <code><?= htmlspecialchars($gwMode) ?></code>
+                &nbsp;|&nbsp; Account: <code><?= htmlspecialchars($gwAcct) ?></code>
+                &nbsp;|&nbsp; Client init: <span style="color: <?= $gwInit === 'ok' ? '#22c55e' : '#ef4444' ?>"><?= htmlspecialchars($gwInit) ?></span>
+                <?php if ($gwErr !== null): ?>
+                &nbsp;|&nbsp; <span style="color: #ef4444;"><?= htmlspecialchars($gwErr) ?></span>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
             <?php endif; ?>
 
             <?php

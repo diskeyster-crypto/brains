@@ -13,17 +13,40 @@ use Core\Gateway\Bybit;
  * Fish bot calls this adapter; it must NEVER copy API-key storage, signing
  * logic, or raw HTTP transport — all of that stays in Core\Gateway\Bybit.
  *
- * In smoke mode every mutating call is intercepted and only logged.
- * In live mode calls are forwarded to Bybit::client('default').
+ * LIVE mode: uses Bybit::client($accountId) where $accountId comes from
+ *   Fish config key `account_id`.  Credentials are resolved by Bybit::client()
+ *   via KeyCenter — identical to the old trading_bot gateway.init() live path.
+ *
+ * SMOKE mode: every mutating call is intercepted and returns a synthetic
+ *   accepted response without touching the network.
  */
 final class FishExchangeAdapter
 {
     private string $executionMode;
+    private string $accountId;
     private string $ownerStrategy = 'fish';
 
-    public function __construct(string $executionMode = 'smoke')
+    /** @var object|null Resolved Bybit client (live only) */
+    private ?object $client = null;
+
+    /** @var string|null Non-null when gateway init failed */
+    private ?string $initError = null;
+
+    /** @var array Runtime diagnostics (safe, no secrets) */
+    private array $diagnostics = [];
+
+    /**
+     * @param string $executionMode  smoke | demo | live
+     * @param string $accountId      KeyCenter Bybit account ID (required for live)
+     */
+    public function __construct(string $executionMode = 'smoke', string $accountId = '')
     {
         $this->executionMode = $executionMode;
+        $this->accountId     = $accountId;
+
+        if ($executionMode === 'live') {
+            $this->initLiveClient();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -32,7 +55,7 @@ final class FishExchangeAdapter
 
     /**
      * Place a limit order on behalf of Fish.
-     * In smoke mode returns a synthetic accepted response without touching the API.
+     * Smoke mode returns a synthetic accepted response without touching the API.
      *
      * @param  array  $params  Bybit /v5/order/create parameters
      * @return array  Unified gateway response (or smoke-mode synthetic)
@@ -45,7 +68,11 @@ final class FishExchangeAdapter
             return $this->smokeAccepted('placeOrder', $params);
         }
 
-        return Bybit::client('default')->request('orders.create', $params, true);
+        if ($this->initError !== null) {
+            return $this->gatewayError('placeOrder', $this->initError);
+        }
+
+        return $this->client->request('orders.create', $params, true);
     }
 
     /**
@@ -64,7 +91,11 @@ final class FishExchangeAdapter
             return $this->smokeAccepted('cancelOrder', $params);
         }
 
-        return Bybit::client('default')->request('orders.cancel', $params, true);
+        if ($this->initError !== null) {
+            return $this->gatewayError('cancelOrder', $this->initError);
+        }
+
+        return $this->client->request('orders.cancel', $params, true);
     }
 
     /**
@@ -81,7 +112,11 @@ final class FishExchangeAdapter
             return $this->smokeRead('getOpenOrders', ['result' => ['list' => []]]);
         }
 
-        return Bybit::client('default')->request('orders.list', $params, true);
+        if ($this->initError !== null) {
+            return $this->gatewayError('getOpenOrders', $this->initError);
+        }
+
+        return $this->client->request('orders.list', $params, true);
     }
 
     /**
@@ -98,7 +133,11 @@ final class FishExchangeAdapter
             return $this->smokeRead('getPositions', ['result' => ['list' => []]]);
         }
 
-        return Bybit::client('default')->request('positions.list', $params, true);
+        if ($this->initError !== null) {
+            return $this->gatewayError('getPositions', $this->initError);
+        }
+
+        return $this->client->request('positions.list', $params, true);
     }
 
     /**
@@ -117,7 +156,11 @@ final class FishExchangeAdapter
             return $this->smokeAccepted('setLeverage', $params);
         }
 
-        return Bybit::client('default')->request('/v5/position/set-leverage', $params, true);
+        if ($this->initError !== null) {
+            return $this->gatewayError('setLeverage', $this->initError);
+        }
+
+        return $this->client->request('/v5/position/set-leverage', $params, true);
     }
 
     /**
@@ -131,11 +174,33 @@ final class FishExchangeAdapter
             return $this->smokeAccepted('setTradingStop', $params);
         }
 
-        return Bybit::client('default')->request('/v5/position/trading-stop', $params, true);
+        if ($this->initError !== null) {
+            return $this->gatewayError('setTradingStop', $this->initError);
+        }
+
+        return $this->client->request('/v5/position/trading-stop', $params, true);
     }
 
     // -------------------------------------------------------------------------
-    // Helpers
+    // Diagnostics (safe — no secrets)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns safe runtime diagnostics for bot_last_run and stats pages.
+     * No API keys or secrets are included.
+     */
+    public function getDiagnostics(): array
+    {
+        return array_merge([
+            'execution_mode'   => $this->executionMode,
+            'account_id_used'  => $this->accountId !== '' ? $this->accountId : '(not set)',
+            'client_init'      => $this->initError === null ? 'ok' : 'failed',
+            'init_error'       => $this->initError,
+        ], $this->diagnostics);
+    }
+
+    // -------------------------------------------------------------------------
+    // State helpers
     // -------------------------------------------------------------------------
 
     public function isLiveMode(): bool
@@ -152,6 +217,77 @@ final class FishExchangeAdapter
     {
         return $this->executionMode;
     }
+
+    public function getInitError(): ?string
+    {
+        return $this->initError;
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: live client initialization (mirrors trading_bot/gateway.php init())
+    // -------------------------------------------------------------------------
+
+    private function initLiveClient(): void
+    {
+        $accountId = $this->accountId;
+
+        if ($accountId === '') {
+            $this->initError = 'account_id_not_set: Fish config key "account_id" is empty. ' .
+                'Set it to a Bybit account configured in KeyCenter (Admin → KeyCenter).';
+            $this->diagnostics['client_init_detail'] = $this->initError;
+            return;
+        }
+
+        if (!class_exists('\\Core\\KeyCenter\\KeyCenter')) {
+            $this->initError = 'KeyCenter class not found';
+            return;
+        }
+
+        if (!class_exists('\\Core\\Gateway\\Bybit')) {
+            $this->initError = 'Core\\Gateway\\Bybit class not found';
+            return;
+        }
+
+        try {
+            $keyCenter = \Core\KeyCenter\KeyCenter::instance();
+
+            $hasCredentials = $keyCenter->hasCredentials('bybit', $accountId);
+
+            if (!$hasCredentials) {
+                $availableAccounts = $keyCenter->listAccounts('bybit');
+                $availableStr = empty($availableAccounts)
+                    ? '(none configured)'
+                    : implode(', ', $availableAccounts);
+
+                $this->initError = "Bybit credentials missing in KeyCenter for account: {$accountId}. " .
+                    "Available Bybit accounts: {$availableStr}. " .
+                    "Configure credentials via Admin → KeyCenter or update Fish config account_id.";
+                $this->diagnostics['available_accounts'] = $availableAccounts ?? [];
+                return;
+            }
+
+            $credentials = $keyCenter->getBybitCredentials($accountId);
+            if (empty($credentials)) {
+                $this->initError = "KeyCenter: Bybit credentials for account '{$accountId}' exist " .
+                    "but are not usable (decryption failed). Restore the encryption key or re-save " .
+                    "the API key/secret in KeyCenter.";
+                return;
+            }
+
+            // Mirror trading_bot gateway: Bybit::client($accountId) loads creds from KeyCenter
+            $this->client = Bybit::client($accountId);
+            $this->diagnostics['account_id_resolved'] = $accountId;
+            $this->diagnostics['client_init'] = 'ok';
+
+        } catch (\Throwable $e) {
+            $this->initError = 'gateway_init_exception: ' . $e->getMessage();
+            $this->diagnostics['client_init_detail'] = $this->initError;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Private: link ID builder, smoke/error helpers
+    // -------------------------------------------------------------------------
 
     /**
      * Prefix Fish's signal-id-based link IDs to ensure exchange-level ownership traceability.
@@ -199,4 +335,25 @@ final class FishExchangeAdapter
             'request_meta' => ['owner_strategy' => $this->ownerStrategy],
         ], $resultOverride);
     }
+
+    private function gatewayError(string $op, string $error): array
+    {
+        return [
+            'success'      => false,
+            'smoke'        => false,
+            'operation'    => $op,
+            'ret_code'     => -1,
+            'ret_msg'      => $error,
+            'http_code'    => 0,
+            'endpoint'     => 'gateway_init_failed/' . $op,
+            'result'       => [],
+            'error_type'   => 'gateway_init_failed',
+            'request_meta' => [
+                'account_id'     => $this->accountId,
+                'owner_strategy' => $this->ownerStrategy,
+                'init_error'     => $error,
+            ],
+        ];
+    }
 }
+

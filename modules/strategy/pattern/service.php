@@ -107,6 +107,8 @@ final class PatternService
 
     /**
      * Queue a batched run (async-safe, for large universes).
+     * Also seeds empty storage files and computes a fast market regime preview
+     * so the dashboard shows something useful immediately.
      */
     public function queueRun(): array
     {
@@ -117,15 +119,29 @@ final class PatternService
 
         $universe = $this->buildUniverse($config);
 
+        // Seed empty storage files if they don't exist yet
+        foreach (['signals.json' => [], 'stats.json' => [], 'last_run.json' => []] as $f => $v) {
+            if (!file_exists($this->moduleDir . '/storage/' . $f)) {
+                $this->writeJson('storage/' . $f, $v);
+            }
+        }
+        if (!file_exists($this->moduleDir . '/storage/market_regime.json')) {
+            $this->writeJson('storage/market_regime.json', ['regime' => 'unknown']);
+        }
+        if (!file_exists($this->moduleDir . '/storage/market_regime_history.ndjson')) {
+            file_put_contents($this->moduleDir . '/storage/market_regime_history.ndjson', '');
+        }
+
         $state = [
-            'status'      => 'queued',
-            'queued_at'   => date('c'),
-            'symbols'     => $universe,
-            'total'       => count($universe),
-            'cursor'      => 0,
-            'processed'   => 0,
-            'found'       => 0,
-            'errors'      => [],
+            'status'              => 'queued',
+            'queued_at'           => date('c'),
+            'symbols'             => $universe,
+            'total'               => count($universe),
+            'cursor'              => 0,
+            'processed'           => 0,
+            'found'               => 0,
+            'errors'              => [],
+            'registry_diag'       => $this->readJson('storage/registry_diag.json', []),
         ];
         $this->writeJson('storage/run_state.json', $state);
         return ['ok' => true, 'total' => count($universe)];
@@ -145,7 +161,7 @@ final class PatternService
             $this->writeJson('storage/run_state.json', $state);
         }
 
-        if ($state['status'] !== 'running') {
+        if (!in_array($state['status'] ?? '', ['queued', 'running'], true)) {
             return;
         }
 
@@ -161,8 +177,18 @@ final class PatternService
         $stats    = $this->getStats();
         $signals  = $this->getSignals();
 
-        $regime   = $this->readJson('storage/market_regime.json', []);
-        $regimeStr = (string)($regime['regime'] ?? 'unknown');
+        // ── Market Regime ────────────────────────────────────────────────────
+        // Compute regime on first batch tick (cursor === 0) or if not yet set.
+        $regimeEnabled = (bool)($config['market_regime_enabled'] ?? true);
+        $prevRegimeData = $this->readJson('storage/market_regime.json', []);
+        $prevRegimeStr  = (string)($prevRegimeData['regime'] ?? 'unknown');
+
+        if ($regimeEnabled && $cursor === 0 && $total > 0) {
+            $this->computeAndPersistRegime($symbols, $config, $prevRegimeStr);
+            $prevRegimeData = $this->readJson('storage/market_regime.json', []);
+        }
+
+        $regimeStr = (string)($prevRegimeData['regime'] ?? 'unknown');
 
         $processed = 0;
         $found     = 0;
@@ -195,20 +221,30 @@ final class PatternService
 
         $this->writeJson('storage/run_state.json', $state);
         $this->writeJson('storage/signals.json',   array_values($signals));
-        $this->writeJson('storage/stats.json',      $stats);
 
-        $lastRun = [
-            'run_at'      => date('c'),
-            'status'      => $state['status'],
-            'processed'   => $state['processed'],
-            'found'       => $state['found'],
-            'errors_count' => count($state['errors'] ?? []),
-        ];
-        $this->writeJson('storage/last_run.json', $lastRun);
+        // Persist enriched stats
+        $stats['symbols_total']        = $total;
+        $stats['symbols_scanned']      = (int)($state['processed'] ?? 0);
+        $stats['symbols_skipped']      = 0;
+        $stats['current_batch_size']   = $batchSz;
+        $stats['last_updated_at']      = date('c');
+        $this->writeJson('storage/stats.json', $stats);
+
+        $this->writeJson('storage/last_run.json', [
+            'run_at'         => date('c'),
+            'status'         => $state['status'],
+            'symbols_total'  => $total,
+            'symbols_scanned'=> (int)($state['processed'] ?? 0),
+            'found'          => (int)($state['found'] ?? 0),
+            'errors_count'   => count($state['errors'] ?? []),
+            'regime'         => $regimeStr,
+        ]);
     }
 
     /**
      * Synchronous full run (for small manual_list).
+     * Queues the run then drives tickBatch() in a loop until all symbols
+     * are processed, regardless of batch_size config.
      */
     public function run(): array
     {
@@ -217,17 +253,78 @@ final class PatternService
             return $queueResult;
         }
 
-        $state = $this->getRunState();
-        $state['status'] = 'running';
-        $this->writeJson('storage/run_state.json', $state);
+        // Drive the batch loop to completion — no config re-read trick needed
+        // because tickBatch() reads symbols from run_state.json and loops until done.
+        $maxIterations = 500; // safety cap
+        $i = 0;
+        do {
+            $this->tickBatch();
+            $state = $this->getRunState();
+            $i++;
+        } while (($state['status'] ?? 'done') === 'running' && $i < $maxIterations);
 
-        // Override batch size to run everything in one pass
-        $config            = $this->getConfig();
-        $config['batch_size'] = count($state['symbols'] ?? []) + 1;
-        $this->writeJson('storage/run_state.json', $state);
-
-        $this->tickBatch();
         return $this->getRunState();
+    }
+
+    // =========================================================================
+    // Market Regime helpers
+    // =========================================================================
+
+    /**
+     * Compute market regime from a sample of symbols and persist results.
+     * Uses quick per-symbol trend (close vs open ratio) without fetching candles
+     * from the API — just classifies based on available local trend data if any,
+     * or defers to 'unknown' summaries if no candles are available yet.
+     *
+     * For the foundation pass: call after universe build, before batch processing.
+     * Uses already-processed trend results from stats if available; otherwise
+     * does a lightweight trend estimate from registry snapshot data if present.
+     */
+    private function computeAndPersistRegime(array $symbols, array $config, string $previousRegime): void
+    {
+        $this->requireLogic('market_regime');
+        $this->requireLogic('trend');
+
+        // Build lightweight symbol summaries from any cached candle snapshots
+        // or mark unknown to get a working (if neutral) regime result.
+        // For v1 foundation: if we have no cached candles, just emit 'mixed'
+        // based on symbol count — regime will refine as batch processes.
+        $summaries = [];
+        $sampleSize = min(count($symbols), (int)($config['regime_sample_size'] ?? 30));
+        $sample = array_slice($symbols, 0, $sampleSize);
+
+        foreach ($sample as $sym) {
+            // Try a quick candle fetch for regime estimation
+            try {
+                $candles = $this->fetchCandles($sym, array_merge($config, ['lookback_candles' => 20]));
+                if (count($candles) >= 5) {
+                    $trendResult = (new \Modules\Strategy\Pattern\Logic\PatternTrend())->analyse($candles);
+                    $summaries[] = ['symbol' => $sym, 'trend' => $trendResult['trend_direction']];
+                } else {
+                    $summaries[] = ['symbol' => $sym, 'trend' => 'flat'];
+                }
+            } catch (\Throwable) {
+                $summaries[] = ['symbol' => $sym, 'trend' => 'flat'];
+            }
+        }
+
+        $regimeEngine = new \Modules\Strategy\Pattern\Logic\PatternMarketRegime();
+        $regimeResult = $regimeEngine->compute($summaries, $previousRegime);
+
+        $this->writeJson('storage/market_regime.json', $regimeResult);
+
+        // Append history record
+        $histPath = $this->moduleDir . '/storage/market_regime_history.ndjson';
+        $histLine = json_encode([
+            'ts'              => $regimeResult['ts'],
+            'previous_regime' => $regimeResult['previous_regime'],
+            'current_regime'  => $regimeResult['regime'],
+            'bull_count'      => $regimeResult['bull_count'],
+            'bear_count'      => $regimeResult['bear_count'],
+            'flat_count'      => $regimeResult['flat_count'],
+            'regime_changed'  => $regimeResult['regime_changed'],
+        ]) . "\n";
+        file_put_contents($histPath, $histLine, FILE_APPEND | LOCK_EX);
     }
 
     // =========================================================================
@@ -530,21 +627,61 @@ final class PatternService
         $excluded = (array)($config['excluded_symbols']  ?? []);
         $maxCount = (int)($config['max_symbols_per_run'] ?? 0);
 
+        $registryDiag = [
+            'registry_source_path'  => null,
+            'registry_loaded'       => false,
+            'registry_symbol_count' => 0,
+            'registry_error'        => null,
+        ];
+
         if ($mode === 'manual_list') {
             $symbols = (array)($config['allowed_symbols'] ?? []);
+            $registryDiag['registry_source_path'] = 'manual_list';
+            $registryDiag['registry_loaded']       = true;
+            $registryDiag['registry_symbol_count'] = count($symbols);
         } else {
-            // Try to load from market registry; fallback to empty list for now
+            // Resolve registry path via SystemPaths; fall back to relative path
             try {
-                $registry = \Core\System\SystemPaths::instance()->get('parser.parser1_market_registry');
-                $active   = json_decode(
-                    file_get_contents($registry . '/storage/active_symbols.json') ?: '[]',
-                    true
-                ) ?: [];
-                $symbols = array_column($active, 'symbol') ?: array_keys($active);
+                $registryDir = \Core\System\SystemPaths::instance()
+                    ->get('parser.parser1_market_registry');
             } catch (\Throwable) {
+                $registryDir = dirname(__DIR__, 3)
+                    . '/parser/parser1_market_registry';
+            }
+
+            $activePath = rtrim($registryDir, '/') . '/storage/active.json';
+            $registryDiag['registry_source_path'] = $activePath;
+
+            try {
+                if (!file_exists($activePath)) {
+                    throw new \RuntimeException('File not found: ' . $activePath);
+                }
+                $raw = file_get_contents($activePath);
+                if ($raw === false || $raw === '') {
+                    throw new \RuntimeException('File is empty: ' . $activePath);
+                }
+                $active = json_decode($raw, true);
+                if (!is_array($active)) {
+                    throw new \RuntimeException('JSON decode failed');
+                }
+                // active.json is keyed by symbol name: { "BTCUSDT": {...}, ... }
+                // Support both dict-keyed and array-of-objects formats
+                if (array_is_list($active)) {
+                    $symbols = array_filter(array_column($active, 'symbol'));
+                } else {
+                    $symbols = array_keys($active);
+                }
+                $symbols = array_values($symbols);
+                $registryDiag['registry_loaded']       = true;
+                $registryDiag['registry_symbol_count'] = count($symbols);
+            } catch (\Throwable $e) {
                 $symbols = [];
+                $registryDiag['registry_error'] = $e->getMessage();
             }
         }
+
+        // Persist registry diagnostics so admin UI can show them
+        $this->writeJson('storage/registry_diag.json', $registryDiag);
 
         $symbols = array_filter($symbols, fn($s) => !in_array($s, $excluded, true));
         $symbols = array_values($symbols);

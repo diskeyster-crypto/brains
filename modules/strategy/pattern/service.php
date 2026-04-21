@@ -220,15 +220,24 @@ final class PatternService
 
                 // Collect pipeline preview row for admin UI
                 $batchPreviewRows[] = [
-                    'symbol'              => $symbol,
-                    'market_regime'       => $result['market_regime']       ?? null,
-                    'trend_direction'     => $result['trend_direction']     ?? null,
-                    'current_bucket'      => $result['current_bucket']      ?? null,
-                    'wave_state'          => $result['wave_state']          ?? null,
-                    'pattern_candidate'   => $result['primary_pattern']     ?? null,
-                    'control_check_status'=> $result['confirm_status']      ?? null,
-                    'final_signal_status' => $result['final_signal_status'] ?? null,
-                    'reject_reason'       => $result['reject_reason']       ?? null,
+                    'symbol'                  => $symbol,
+                    'market_regime'           => $result['market_regime']          ?? null,
+                    'trend_direction'         => $result['trend_direction']        ?? null,
+                    'trend_pass'              => in_array($result['trend_direction'] ?? '', ['bullish', 'bearish'], true),
+                    'current_bucket'          => $result['current_bucket']         ?? null,
+                    'bucket_allowed_long'     => $result['bucket_allowed_long']    ?? false,
+                    'bucket_allowed_short'    => $result['bucket_allowed_short']   ?? false,
+                    'wave_direction'          => $result['wave_direction']         ?? null,
+                    'wave_state'              => $result['wave_state']             ?? null,
+                    'double_bottom_checked'   => $result['double_bottom_checked']  ?? false,
+                    'double_top_checked'      => $result['double_top_checked']     ?? false,
+                    'pattern_candidate'       => $result['primary_pattern']        ?? null,
+                    'candidate_found'         => $result['candidate_found']        ?? false,
+                    'control_check_status'    => $result['confirm_status']         ?? null,
+                    'final_signal_status'     => $result['final_signal_status']    ?? null,
+                    'reject_reason'           => $result['reject_reason']          ?? null,
+                    'long_reject_reason'      => $result['long_reject_reason']     ?? null,
+                    'short_reject_reason'     => $result['short_reject_reason']    ?? null,
                 ];
             } catch (\Throwable $e) {
                 $state['errors'][] = $symbol . ': ' . $e->getMessage();
@@ -293,17 +302,24 @@ final class PatternService
             'registry_symbol_count'    => $stats['registry_symbol_count'],
             'market_regime'            => $regimeSummary,
             'current_stage_summary'    => [
-                'trend_pass'         => $stats['trend_pass_total']            ?? 0,
-                'trend_rejected'     => $stats['trend_rejected_total']        ?? 0,
-                'corridor_pass'      => $stats['corridor_pass_total']         ?? 0,
-                'corridor_rejected'  => $stats['corridor_rejected_total']     ?? 0,
-                'wave_pass'          => $stats['wave_pass_total']             ?? 0,
-                'wave_rejected'      => $stats['wave_rejected_total']         ?? 0,
-                'setup_candidates'   => $stats['setup_candidates_total']      ?? 0,
-                'pattern_rejected'   => $stats['pattern_rejected_total']      ?? 0,
-                'control_check_pass' => $stats['control_check_pass_total']    ?? 0,
-                'control_check_fail' => $stats['control_check_failed_total']  ?? 0,
-                'signals_emitted'    => $stats['final_signals_total']         ?? 0,
+                'trend_pass'              => $stats['trend_pass_total']              ?? 0,
+                'trend_rejected'          => $stats['trend_rejected_total']          ?? 0,
+                'corridor_pass'           => $stats['corridor_pass_total']           ?? 0,
+                'corridor_rejected'       => $stats['corridor_rejected_total']       ?? 0,
+                'bucket_allowed'          => $stats['bucket_allowed_total']          ?? 0,
+                'bucket_rejected'         => $stats['bucket_rejected_total']         ?? 0,
+                'wave_pass'               => $stats['wave_pass_total']               ?? 0,
+                'wave_rejected'           => $stats['wave_rejected_total']           ?? 0,
+                'double_bottom_checked'   => $stats['double_bottom_checked_total']   ?? 0,
+                'double_bottom_found'     => $stats['double_bottom_found_total']     ?? 0,
+                'double_top_checked'      => $stats['double_top_checked_total']      ?? 0,
+                'double_top_found'        => $stats['double_top_found_total']        ?? 0,
+                'setup_candidates'        => $stats['setup_candidates_total']        ?? 0,
+                'pattern_rejected'        => $stats['pattern_rejected_total']        ?? 0,
+                'control_check_pass'      => $stats['control_check_pass_total']      ?? 0,
+                'control_check_fail'      => $stats['control_check_failed_total']    ?? 0,
+                'control_check_expired'   => $stats['control_check_expired_total']   ?? 0,
+                'signals_emitted'         => $stats['final_signals_total']           ?? 0,
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'             => count($state['errors'] ?? []),
@@ -419,46 +435,59 @@ final class PatternService
         $wave = (new \Modules\Strategy\Pattern\Logic\PatternWave())->analyse($candles);
 
         $diagBase = [
-            'market_regime'   => $regimeStr,
-            'trend_direction' => $trendDir,
-            'corridor_low'    => $corridor['corridor_low'],
-            'corridor_high'   => $corridor['corridor_high'],
-            'current_bucket'  => $corridor['current_bucket'],
-            'wave_direction'  => $wave['wave_direction'],
-            'wave_state'      => $wave['wave_state'],
+            'market_regime'        => $regimeStr,
+            'trend_direction'      => $trendDir,
+            'corridor_low'         => $corridor['corridor_low'],
+            'corridor_high'        => $corridor['corridor_high'],
+            'current_bucket'       => $corridor['current_bucket'],
+            'bucket_allowed_long'  => $corridor['bucket_allowed_long'],
+            'bucket_allowed_short' => $corridor['bucket_allowed_short'],
+            'wave_direction'       => $wave['wave_direction'],
+            'wave_state'           => $wave['wave_state'],
         ];
 
         $sideMode       = (string)($config['side_mode'] ?? 'both');
         $enabledPatterns = (array)($config['enabled_patterns'] ?? ['double_bottom', 'double_top']);
 
-        // Attempt long path
+        // Attempt long path; preserve result for diagnostics even on non-emit
+        $longResult = null;
         if (in_array($sideMode, ['long_only', 'both'], true) && in_array('double_bottom', $enabledPatterns, true)) {
-            $result = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
-            if ($result['final_signal_status'] === 'emitted') {
-                return $result;
+            $longResult = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
+            if ($longResult['final_signal_status'] === 'emitted') {
+                return $longResult;
             }
         }
 
-        // Attempt short path
+        // Attempt short path; preserve result for diagnostics even on non-emit
+        $shortResult = null;
         if (in_array($sideMode, ['short_only', 'both'], true) && in_array('double_top', $enabledPatterns, true)) {
-            $result = $this->tryShort($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
-            if ($result['final_signal_status'] === 'emitted') {
-                return $result;
+            $shortResult = $this->tryShort($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
+            if ($shortResult['final_signal_status'] === 'emitted') {
+                return $shortResult;
             }
         }
 
-        // No signal
+        // No signal — return composite diagnostic so accumulateStats has full picture
+        $longRej  = $longResult['reject_reason']        ?? null;
+        $shortRej = $shortResult['reject_reason']       ?? null;
+        $dbChecked = $longResult['double_bottom_checked']  ?? false;
+        $dtChecked = $shortResult['double_top_checked']    ?? false;
+
         return array_merge($diagBase, [
-            'symbol'              => $symbol,
-            'candidate_found'     => false,
-            'candidate_side'      => null,
-            'primary_pattern'     => null,
-            'confirm_status'      => null,
-            'confirm_bars_waited' => 0,
-            'candidate_expired'   => false,
-            'final_signal_status' => 'no_signal',
-            'reject_reason'       => 'no_valid_candidate',
-            'signal'              => null,
+            'symbol'                 => $symbol,
+            'candidate_found'        => false,
+            'candidate_side'         => null,
+            'primary_pattern'        => null,
+            'double_bottom_checked'  => $dbChecked,
+            'double_top_checked'     => $dtChecked,
+            'long_reject_reason'     => $longRej,
+            'short_reject_reason'    => $shortRej,
+            'confirm_status'         => null,
+            'confirm_bars_waited'    => 0,
+            'candidate_expired'      => false,
+            'final_signal_status'    => 'no_signal',
+            'reject_reason'          => $longRej ?? $shortRej ?? 'no_valid_candidate',
+            'signal'                 => null,
         ]);
     }
 
@@ -494,11 +523,11 @@ final class PatternService
             }
         }
 
-        // Pattern
+        // Pattern — reached only when all gates pass
         $this->requireLogic('double_bottom');
-        $candidate = (new \Modules\Strategy\Pattern\Logic\PatternDoubleBottom())->detect($candles);
+        $candidate = (new \Modules\Strategy\Pattern\Logic\PatternDoubleBottom())->detect($candles, $config);
         if (!$candidate['candidate_found']) {
-            return $this->reject($diagBase, $symbol, $side, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom');
+            return $this->reject($diagBase, $symbol, $side, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom', true);
         }
 
         // Control confirmation
@@ -508,16 +537,18 @@ final class PatternService
             $confirm = (new \Modules\Strategy\Pattern\Logic\PatternControlCheck())->check($candidate, $candles, $candIdx, $config);
             if (!$confirm['confirm_pass']) {
                 return array_merge($diagBase, [
-                    'symbol'              => $symbol,
-                    'candidate_found'     => true,
-                    'candidate_side'      => $side,
-                    'primary_pattern'     => 'double_bottom',
-                    'confirm_status'      => $confirm['confirm_status'],
-                    'confirm_bars_waited' => $confirm['confirm_bars_waited'],
-                    'candidate_expired'   => $confirm['candidate_expired'],
-                    'final_signal_status' => 'confirm_pending',
-                    'reject_reason'       => $confirm['reject_reason'],
-                    'signal'              => null,
+                    'symbol'                 => $symbol,
+                    'candidate_found'        => true,
+                    'candidate_side'         => $side,
+                    'primary_pattern'        => 'double_bottom',
+                    'double_bottom_checked'  => true,
+                    'double_top_checked'     => false,
+                    'confirm_status'         => $confirm['confirm_status'],
+                    'confirm_bars_waited'    => $confirm['confirm_bars_waited'],
+                    'candidate_expired'      => $confirm['candidate_expired'],
+                    'final_signal_status'    => 'confirm_pending',
+                    'reject_reason'          => $confirm['reject_reason'],
+                    'signal'                 => null,
                 ]);
             }
         } else {
@@ -533,16 +564,18 @@ final class PatternService
         );
 
         return array_merge($diagBase, [
-            'symbol'              => $symbol,
-            'candidate_found'     => true,
-            'candidate_side'      => $side,
-            'primary_pattern'     => 'double_bottom',
-            'confirm_status'      => 'confirm_pass',
-            'confirm_bars_waited' => $confirm['confirm_bars_waited'] ?? 0,
-            'candidate_expired'   => false,
-            'final_signal_status' => 'emitted',
-            'reject_reason'       => null,
-            'signal'              => $signal,
+            'symbol'                 => $symbol,
+            'candidate_found'        => true,
+            'candidate_side'         => $side,
+            'primary_pattern'        => 'double_bottom',
+            'double_bottom_checked'  => true,
+            'double_top_checked'     => false,
+            'confirm_status'         => 'confirm_pass',
+            'confirm_bars_waited'    => $confirm['confirm_bars_waited'] ?? 0,
+            'candidate_expired'      => false,
+            'final_signal_status'    => 'emitted',
+            'reject_reason'          => null,
+            'signal'                 => $signal,
         ]);
     }
 
@@ -576,9 +609,9 @@ final class PatternService
         }
 
         $this->requireLogic('double_top');
-        $candidate = (new \Modules\Strategy\Pattern\Logic\PatternDoubleTop())->detect($candles);
+        $candidate = (new \Modules\Strategy\Pattern\Logic\PatternDoubleTop())->detect($candles, $config);
         if (!$candidate['candidate_found']) {
-            return $this->reject($diagBase, $symbol, $side, 'double_top', $candidate['reject_reason'] ?? 'no_double_top');
+            return $this->reject($diagBase, $symbol, $side, 'double_top', $candidate['reject_reason'] ?? 'no_double_top', true);
         }
 
         if ((bool)($config['confirm_required'] ?? true)) {
@@ -587,16 +620,18 @@ final class PatternService
             $confirm = (new \Modules\Strategy\Pattern\Logic\PatternControlCheck())->check($candidate, $candles, $candIdx, $config);
             if (!$confirm['confirm_pass']) {
                 return array_merge($diagBase, [
-                    'symbol'              => $symbol,
-                    'candidate_found'     => true,
-                    'candidate_side'      => $side,
-                    'primary_pattern'     => 'double_top',
-                    'confirm_status'      => $confirm['confirm_status'],
-                    'confirm_bars_waited' => $confirm['confirm_bars_waited'],
-                    'candidate_expired'   => $confirm['candidate_expired'],
-                    'final_signal_status' => 'confirm_pending',
-                    'reject_reason'       => $confirm['reject_reason'],
-                    'signal'              => null,
+                    'symbol'                 => $symbol,
+                    'candidate_found'        => true,
+                    'candidate_side'         => $side,
+                    'primary_pattern'        => 'double_top',
+                    'double_bottom_checked'  => false,
+                    'double_top_checked'     => true,
+                    'confirm_status'         => $confirm['confirm_status'],
+                    'confirm_bars_waited'    => $confirm['confirm_bars_waited'],
+                    'candidate_expired'      => $confirm['candidate_expired'],
+                    'final_signal_status'    => 'confirm_pending',
+                    'reject_reason'          => $confirm['reject_reason'],
+                    'signal'                 => null,
                 ]);
             }
         } else {
@@ -611,16 +646,18 @@ final class PatternService
         );
 
         return array_merge($diagBase, [
-            'symbol'              => $symbol,
-            'candidate_found'     => true,
-            'candidate_side'      => $side,
-            'primary_pattern'     => 'double_top',
-            'confirm_status'      => 'confirm_pass',
-            'confirm_bars_waited' => $confirm['confirm_bars_waited'] ?? 0,
-            'candidate_expired'   => false,
-            'final_signal_status' => 'emitted',
-            'reject_reason'       => null,
-            'signal'              => $signal,
+            'symbol'                 => $symbol,
+            'candidate_found'        => true,
+            'candidate_side'         => $side,
+            'primary_pattern'        => 'double_top',
+            'double_bottom_checked'  => false,
+            'double_top_checked'     => true,
+            'confirm_status'         => 'confirm_pass',
+            'confirm_bars_waited'    => $confirm['confirm_bars_waited'] ?? 0,
+            'candidate_expired'      => false,
+            'final_signal_status'    => 'emitted',
+            'reject_reason'          => null,
+            'signal'                 => $signal,
         ]);
     }
 
@@ -628,19 +665,24 @@ final class PatternService
     // Helpers
     // =========================================================================
 
-    private function reject(array $diag, string $symbol, string $side, string $pattern, ?string $reason): array
+    /**
+     * @param  bool $patternChecked  True only when pattern detection stage was actually invoked.
+     */
+    private function reject(array $diag, string $symbol, string $side, string $pattern, ?string $reason, bool $patternChecked = false): array
     {
         return array_merge($diag, [
-            'symbol'              => $symbol,
-            'candidate_found'     => false,
-            'candidate_side'      => $side,
-            'primary_pattern'     => $pattern,
-            'confirm_status'      => null,
-            'confirm_bars_waited' => 0,
-            'candidate_expired'   => false,
-            'final_signal_status' => 'rejected',
-            'reject_reason'       => $reason,
-            'signal'              => null,
+            'symbol'                 => $symbol,
+            'candidate_found'        => false,
+            'candidate_side'         => $side,
+            'primary_pattern'        => $pattern,
+            'double_bottom_checked'  => ($side === 'long'  && $patternChecked),
+            'double_top_checked'     => ($side === 'short' && $patternChecked),
+            'confirm_status'         => null,
+            'confirm_bars_waited'    => 0,
+            'candidate_expired'      => false,
+            'final_signal_status'    => 'rejected',
+            'reject_reason'          => $reason,
+            'signal'                 => null,
         ]);
     }
 
@@ -657,11 +699,16 @@ final class PatternService
 
     private function accumulateStats(array $stats, array $result): array
     {
-        $regime       = $result['market_regime']       ?? 'unknown';
-        $pattern      = $result['primary_pattern']      ?? '';
-        $fss          = $result['final_signal_status']  ?? '';
-        $rejectReason = $result['reject_reason']        ?? null;
+        $regime        = $result['market_regime']       ?? 'unknown';
+        $pattern       = $result['primary_pattern']     ?? '';
+        $fss           = $result['final_signal_status'] ?? '';
+        $rejectReason  = $result['reject_reason']       ?? null;
+        $longRej       = $result['long_reject_reason']  ?? null;
+        $shortRej      = $result['short_reject_reason'] ?? null;
         $confirmStatus = $result['confirm_status']      ?? '';
+        $dbChecked     = (bool)($result['double_bottom_checked'] ?? false);
+        $dtChecked     = (bool)($result['double_top_checked']    ?? false);
+        $candidateFound = (bool)($result['candidate_found']      ?? false);
 
         $inc = static function (array &$s, string $key): void { $s[$key] = ($s[$key] ?? 0) + 1; };
 
@@ -679,40 +726,62 @@ final class PatternService
             $inc($stats, 'trend_rejected_total');
         }
 
-        // ── Corridor ───────────────────────────
-        if (!empty($result['current_bucket'])) {
+        // ── Corridor: passed if current_bucket is non-zero (corridor was computed) ──
+        $bucket = (int)($result['current_bucket'] ?? 0);
+        if ($bucket > 0) {
             $inc($stats, 'corridor_pass_total');
         } else {
             $inc($stats, 'corridor_rejected_total');
         }
 
         // ── Bucket (allowed/rejected per side) ─
-        if ($result['bucket_allowed_long']  ?? false) { $inc($stats, 'bucket_allowed_total'); }
-        if ($result['bucket_allowed_short'] ?? false) { $inc($stats, 'bucket_allowed_total'); }
-        if ($rejectReason !== null && str_contains((string)$rejectReason, 'bucket')) {
+        // Track whether price was in an allowed zone for either side
+        $bucketAllowedLong  = (bool)($result['bucket_allowed_long']  ?? false);
+        $bucketAllowedShort = (bool)($result['bucket_allowed_short'] ?? false);
+        if ($bucketAllowedLong || $bucketAllowedShort) {
+            $inc($stats, 'bucket_allowed_total');
+        } else {
             $inc($stats, 'bucket_rejected_total');
         }
 
-        // ── Wave ───────────────────────────────
-        if (($result['wave_state'] ?? '') === 'corrective') {
+        // ── Wave: passes if wave is corrective for either applicable direction ──
+        $wDir   = $result['wave_direction'] ?? 'unknown';
+        $wState = $result['wave_state']     ?? 'unknown';
+        $waveLongOk  = ($wDir === 'up'   && $wState === 'corrective');
+        $waveShortOk = ($wDir === 'down' && $wState === 'corrective');
+        if ($waveLongOk || $waveShortOk) {
             $inc($stats, 'wave_pass_total');
         } else {
             $inc($stats, 'wave_rejected_total');
         }
 
-        // ── Pattern ────────────────────────────
-        if ($pattern === 'double_bottom')  { $inc($stats, 'double_bottom_found_total'); }
-        if ($pattern === 'double_top')     { $inc($stats, 'double_top_found_total'); }
-        if ($result['candidate_found'] ?? false) {
+        // ── Pattern stage ──────────────────────
+        // double_bottom_checked_total: how many times double_bottom detection was actually called
+        if ($dbChecked) {
+            $inc($stats, 'double_bottom_checked_total');
+        }
+        if ($dtChecked) {
+            $inc($stats, 'double_top_checked_total');
+        }
+        // Found only when candidate_found AND pattern matches
+        if ($candidateFound && $pattern === 'double_bottom') {
+            $inc($stats, 'double_bottom_found_total');
+        }
+        if ($candidateFound && $pattern === 'double_top') {
+            $inc($stats, 'double_top_found_total');
+        }
+        if ($candidateFound) {
             $inc($stats, 'setup_candidates_total');
-        } elseif ($pattern !== '' && $fss === 'rejected') {
+        }
+        // pattern_rejected_total: only when pattern stage was reached but candidate not found
+        if (($dbChecked || $dtChecked) && !$candidateFound && in_array($fss, ['rejected', 'no_signal'], true)) {
             $inc($stats, 'pattern_rejected_total');
         }
 
         // ── Control check ──────────────────────
         if ($confirmStatus === 'confirm_pass')      { $inc($stats, 'control_check_pass_total'); }
         if ($result['candidate_expired'] ?? false)  { $inc($stats, 'control_check_expired_total'); }
-        if ($confirmStatus !== '' && $confirmStatus !== 'confirm_pass') {
+        if ($confirmStatus !== '' && $confirmStatus !== 'confirm_pass' && !($result['candidate_expired'] ?? false)) {
             $inc($stats, 'control_check_failed_total');
         }
 
@@ -720,9 +789,16 @@ final class PatternService
         if ($fss === 'emitted')    { $inc($stats, 'final_signals_total'); }
 
         // ── Reject reason distribution ─────────
+        // Count the primary reject reason (covers the "furthest" path attempted)
         if ($rejectReason !== null && $rejectReason !== '') {
             $dist = (array)($stats['reject_reason_distribution'] ?? []);
             $dist[$rejectReason] = ($dist[$rejectReason] ?? 0) + 1;
+            $stats['reject_reason_distribution'] = $dist;
+        }
+        // For no_signal composites: also count the short-path reason separately if different
+        if ($fss === 'no_signal' && $shortRej !== null && $shortRej !== $rejectReason) {
+            $dist = (array)($stats['reject_reason_distribution'] ?? []);
+            $dist[$shortRej] = ($dist[$shortRej] ?? 0) + 1;
             $stats['reject_reason_distribution'] = $dist;
         }
 
@@ -753,7 +829,9 @@ final class PatternService
             'bucket_rejected_total'        => 0,
             'wave_pass_total'              => 0,
             'wave_rejected_total'          => 0,
+            'double_bottom_checked_total'  => 0,
             'double_bottom_found_total'    => 0,
+            'double_top_checked_total'     => 0,
             'double_top_found_total'       => 0,
             'pattern_rejected_total'       => 0,
             'setup_candidates_total'       => 0,

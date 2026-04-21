@@ -45,6 +45,9 @@ return [
     // Patterns enabled
     'enabled_patterns' => ['double_bottom', 'double_top'],
 
+    // Pattern detection tolerances
+    'pattern_similarity_tolerance' => 0.03,  // max % deviation between the two pivot prices (0.03 = 3%)
+
     // Confirmation
     'confirm_required' => true,
     'confirm_mode'     => 'candle_confirmation',

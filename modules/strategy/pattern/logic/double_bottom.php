@@ -29,11 +29,17 @@ namespace Modules\Strategy\Pattern\Logic;
 final class PatternDoubleBottom
 {
     private const PIVOT_WINDOW   = 3;    // bars each side for pivot detection
-    private const LOW_TOLERANCE  = 0.015; // 1.5% price similarity between the two lows
+    private const DEFAULT_LOW_TOLERANCE = 0.03; // 3% price similarity between the two lows (config-backed)
     private const MIN_PIVOT_GAP  = 4;    // minimum bars between the two lows
 
-    public function detect(array $candles): array
+    /**
+     * @param  array $candles  H4 candles oldest → newest
+     * @param  array $config   Strategy config; reads `pattern_similarity_tolerance`
+     */
+    public function detect(array $candles, array $config = []): array
     {
+        $lowTolerance = (float)($config['pattern_similarity_tolerance'] ?? self::DEFAULT_LOW_TOLERANCE);
+
         $n = count($candles);
         if ($n < self::PIVOT_WINDOW * 2 + self::MIN_PIVOT_GAP + 2) {
             return $this->noCandidate('insufficient_candles');
@@ -59,7 +65,7 @@ final class PatternDoubleBottom
         // Similarity check
         $avgLow    = ($low1['price'] + $low2['price']) / 2.0;
         $deviation = abs($low1['price'] - $low2['price']) / max(1e-8, $avgLow);
-        if ($deviation > self::LOW_TOLERANCE) {
+        if ($deviation > $lowTolerance) {
             return $this->noCandidate('lows_not_similar');
         }
 
@@ -86,7 +92,7 @@ final class PatternDoubleBottom
 
         // Score: symmetry + depth
         $depth = abs($neckline - $avgLow) / max(1e-8, $neckline);  // how deep the "W"
-        $symmetry = 1.0 - ($deviation / self::LOW_TOLERANCE);       // 1 = perfect symmetry
+        $symmetry = 1.0 - ($deviation / max(1e-8, $lowTolerance));  // 1 = perfect symmetry
         $score    = round(min(1.0, ($depth * 10 + $symmetry) / 2.0), 4);
 
         return [

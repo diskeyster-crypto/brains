@@ -29,11 +29,17 @@ namespace Modules\Strategy\Pattern\Logic;
 final class PatternDoubleTop
 {
     private const PIVOT_WINDOW    = 3;
-    private const HIGH_TOLERANCE  = 0.015; // 1.5% similarity between the two highs
+    private const DEFAULT_HIGH_TOLERANCE = 0.03; // 3% similarity between the two highs (config-backed)
     private const MIN_PIVOT_GAP   = 4;
 
-    public function detect(array $candles): array
+    /**
+     * @param  array $candles  H4 candles oldest → newest
+     * @param  array $config   Strategy config; reads `pattern_similarity_tolerance`
+     */
+    public function detect(array $candles, array $config = []): array
     {
+        $highTolerance = (float)($config['pattern_similarity_tolerance'] ?? self::DEFAULT_HIGH_TOLERANCE);
+
         $n = count($candles);
         if ($n < self::PIVOT_WINDOW * 2 + self::MIN_PIVOT_GAP + 2) {
             return $this->noCandidate('insufficient_candles');
@@ -56,7 +62,7 @@ final class PatternDoubleTop
 
         $avgHigh   = ($high1['price'] + $high2['price']) / 2.0;
         $deviation = abs($high1['price'] - $high2['price']) / max(1e-8, $avgHigh);
-        if ($deviation > self::HIGH_TOLERANCE) {
+        if ($deviation > $highTolerance) {
             return $this->noCandidate('highs_not_similar');
         }
 
@@ -82,7 +88,7 @@ final class PatternDoubleTop
         }
 
         $height   = abs($avgHigh - $neckline) / max(1e-8, $avgHigh);
-        $symmetry = 1.0 - ($deviation / self::HIGH_TOLERANCE);
+        $symmetry = 1.0 - ($deviation / max(1e-8, $highTolerance));
         $score    = round(min(1.0, ($height * 10 + $symmetry) / 2.0), 4);
 
         return [

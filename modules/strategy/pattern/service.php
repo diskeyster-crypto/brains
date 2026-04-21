@@ -219,6 +219,47 @@ final class PatternService
                 }
                 $stats = $this->accumulateStats($stats, $result);
 
+                // Derive neckline_distance_status from reject reason for the preview row
+                $rejectR = $result['reject_reason'] ?? null;
+                $longRej = $result['long_reject_reason'] ?? null;
+                $shortRej = $result['short_reject_reason'] ?? null;
+                $neckDistStatus = 'n/a';
+                foreach ([$rejectR, $longRej, $shortRej] as $r) {
+                    if ($r === 'price_too_far_above_neckline') { $neckDistStatus = 'too_far_above'; break; }
+                    if ($r === 'price_too_far_below_neckline') { $neckDistStatus = 'too_far_below'; break; }
+                }
+                if ($neckDistStatus === 'n/a' && ($result['candidate_found'] ?? false)) {
+                    $neckDistStatus = 'ok';
+                }
+
+                // Derive final_stage_reached from what happened in the pipeline
+                $fss = $result['final_signal_status'] ?? '';
+                $finalStage = match (true) {
+                    $fss === 'emitted'                         => 'signal',
+                    $fss === 'confirm_pending'                 => 'confirm',
+                    ($result['candidate_found'] ?? false)      => 'quality',
+                    ($result['double_bottom_checked'] ?? false)
+                        || ($result['double_top_checked'] ?? false) => 'pattern',
+                    (($result['wave_state'] ?? 'unknown') !== 'unknown')
+                        && str_starts_with($rejectR ?? '', 'wave_')    => 'wave',
+                    ($result['current_bucket'] ?? 0) > 0
+                        && str_starts_with($rejectR ?? '', 'bucket_')  => 'bucket',
+                    str_starts_with($rejectR ?? '', 'trend_')          => 'trend',
+                    default                                            => 'pre_trend',
+                };
+
+                // side_allowed: was the side gate passed? (trend gate passes any known trend now)
+                $trendDir = $result['trend_direction'] ?? 'unknown';
+                $sideAllowed = in_array($trendDir, ['bullish', 'bearish', 'flat'], true);
+
+                // bucket_allowed: true if price is in an allowed zone for the attempted side
+                $bucketAllowedLong  = (bool)($result['bucket_allowed_long']  ?? false);
+                $bucketAllowedShort = (bool)($result['bucket_allowed_short'] ?? false);
+                $candSide = $result['candidate_side'] ?? null;
+                $bucketAllowed = $candSide === 'long'  ? $bucketAllowedLong
+                               : ($candSide === 'short' ? $bucketAllowedShort
+                               : ($bucketAllowedLong || $bucketAllowedShort));
+
                 // Collect pipeline preview row for admin UI
                 $batchPreviewRows[] = [
                     'symbol'                  => $symbol,
@@ -226,13 +267,14 @@ final class PatternService
                     'primary_pattern'         => $result['primary_pattern']         ?? null,
                     'market_regime'           => $result['market_regime']          ?? null,
                     'trend_direction'         => $result['trend_direction']        ?? null,
-                    'trend_pass'              => in_array($result['trend_direction'] ?? '', ['bullish', 'bearish', 'flat'], true)
-                                                    && ($result['trend_direction'] ?? '') !== 'flat',
+                    'side_allowed'            => $sideAllowed,
+                    'trend_pass'              => in_array($result['trend_direction'] ?? '', ['bullish', 'bearish', 'flat'], true),
                     'corridor_low'            => $result['corridor_low']           ?? null,
                     'corridor_high'           => $result['corridor_high']          ?? null,
                     'corridor_bucket'         => $result['current_bucket']         ?? null,
-                    'bucket_allowed_long'     => $result['bucket_allowed_long']    ?? false,
-                    'bucket_allowed_short'    => $result['bucket_allowed_short']   ?? false,
+                    'bucket_allowed_long'     => $bucketAllowedLong,
+                    'bucket_allowed_short'    => $bucketAllowedShort,
+                    'bucket_allowed'          => $bucketAllowed,
                     'wave_direction'          => $result['wave_direction']         ?? null,
                     'wave_state'              => $result['wave_state']             ?? null,
                     'double_bottom_checked'   => $result['double_bottom_checked']  ?? false,
@@ -250,6 +292,8 @@ final class PatternService
                                                     ? ($result['reject_reason'] ?? null)
                                                     : null,
                     'candidate_found'         => $result['candidate_found']        ?? false,
+                    'neckline_distance_status'=> $neckDistStatus,
+                    'final_stage_reached'     => $finalStage,
                     // Quality scoring fields
                     'pattern_score'           => $result['pattern_score']           ?? null,
                     'structure_score'         => $result['structure_score']         ?? null,
@@ -262,10 +306,10 @@ final class PatternService
                     // Control check and final status
                     'control_check_checked'   => isset($result['confirm_status']) && $result['confirm_status'] !== null,
                     'control_check_status'    => $result['confirm_status']         ?? null,
-                    'final_signal_status'     => $result['final_signal_status']    ?? null,
-                    'long_reject_reason'      => $result['long_reject_reason']     ?? null,
-                    'short_reject_reason'     => $result['short_reject_reason']    ?? null,
-                    'reject_reason'           => $result['reject_reason']          ?? null,
+                    'final_signal_status'     => $fss,
+                    'long_reject_reason'      => $longRej,
+                    'short_reject_reason'     => $shortRej,
+                    'reject_reason'           => $rejectR,
                     // Winner selection fields — populated after applySignalFilters() below
                     'signal_id'               => $result['signal_id']              ?? null,
                     'winner_selected'         => null,
@@ -396,6 +440,16 @@ final class PatternService
                 'control_check_pass'         => $stats['control_check_pass_total']      ?? 0,
                 'control_check_failed'       => $stats['control_check_failed_total']    ?? 0,
                 'control_check_expired'      => $stats['control_check_expired_total']   ?? 0,
+                // Stage-drop breakdown
+                'rejected_by_trend_side'         => $stats['rejected_by_trend_side_total']        ?? 0,
+                'rejected_by_bucket'             => $stats['rejected_by_bucket_total']            ?? 0,
+                'rejected_by_wave'               => $stats['rejected_by_wave_total']              ?? 0,
+                'rejected_by_pattern'            => $stats['rejected_by_pattern_total']           ?? 0,
+                'rejected_by_neckline_distance'  => $stats['rejected_by_neckline_distance_total'] ?? 0,
+                // Confirm-state breakdown
+                'candidate_waiting_confirm'  => $stats['candidate_waiting_confirm_total']  ?? 0,
+                'candidate_expired'          => $stats['candidate_expired_total']          ?? 0,
+                'candidate_confirm_failed'   => $stats['candidate_confirm_failed_total']   ?? 0,
                 'signals_emitted_total'      => $stats['signals_emitted_total']         ?? 0,
                 'signals_active_final_total' => count($signals),
                 // Winner-selection filter summary
@@ -1185,9 +1239,17 @@ final class PatternService
 
         // ── Control check ──────────────────────
         if ($confirmStatus === 'confirm_pass')      { $inc($stats, 'control_check_pass_total'); }
-        if ($result['candidate_expired'] ?? false)  { $inc($stats, 'control_check_expired_total'); }
-        if ($confirmStatus !== '' && $confirmStatus !== 'confirm_pass' && !($result['candidate_expired'] ?? false)) {
-            $inc($stats, 'control_check_failed_total');
+        if ($result['candidate_expired'] ?? false)  {
+            $inc($stats, 'control_check_expired_total');
+            $inc($stats, 'candidate_expired_total');
+        }
+        if ($confirmStatus === 'confirm_waiting') {
+            $inc($stats, 'candidate_waiting_confirm_total');
+            $inc($stats, 'control_check_failed_total'); // backward-compat
+        }
+        if ($confirmStatus === 'confirm_failed') {
+            $inc($stats, 'candidate_confirm_failed_total');
+            $inc($stats, 'control_check_failed_total'); // backward-compat
         }
 
         // ── Signal ─────────────────────────────
@@ -1205,6 +1267,33 @@ final class PatternService
             $dist = (array)($stats['reject_reason_distribution'] ?? []);
             $dist[$shortRej] = ($dist[$shortRej] ?? 0) + 1;
             $stats['reject_reason_distribution'] = $dist;
+        }
+
+        // ── Explicit stage-drop counters ────────
+        // Inspect both long and short reject reasons to surface the per-stage bottleneck
+        // independently of the mixed reject_reason_distribution bucket.
+        $necklineDistReasons = ['price_too_far_above_neckline', 'price_too_far_below_neckline'];
+        foreach ([$longRej, $shortRej] as $sr) {
+            if ($sr === null || $sr === '') {
+                continue;
+            }
+            if (str_contains($sr, '_side_') && str_contains($sr, '_mismatch') && str_starts_with($sr, 'trend_')) {
+                $inc($stats, 'rejected_by_trend_side_total');
+            } elseif (str_starts_with($sr, 'bucket_rejected_')) {
+                $inc($stats, 'rejected_by_bucket_total');
+            } elseif (str_starts_with($sr, 'wave_') && str_contains($sr, 'rejected')) {
+                $inc($stats, 'rejected_by_wave_total');
+            } elseif (in_array($sr, $necklineDistReasons, true)) {
+                $inc($stats, 'rejected_by_neckline_distance_total');
+            }
+        }
+        // Pattern-stage rejects: when pattern detection ran but found no candidate
+        if (($dbChecked || $dtChecked) && !$candidateFound) {
+            $inc($stats, 'rejected_by_pattern_total');
+        }
+        // Confirm-wait stage drop: valid candidate stalled at confirmation window
+        if ($confirmStatus === 'confirm_waiting') {
+            // already counted above via candidate_waiting_confirm_total; no extra stage counter needed
         }
 
         return $stats;
@@ -1244,9 +1333,19 @@ final class PatternService
             'candidates_after_quality_filter_total'  => 0,
             'candidates_rejected_by_quality_total'   => 0,
             'quality_reject_reason_distribution'     => (object)[],
-            'control_check_pass_total'     => 0,
-            'control_check_expired_total'  => 0,
-            'control_check_failed_total'   => 0,
+            'control_check_pass_total'        => 0,
+            'control_check_expired_total'     => 0,
+            'control_check_failed_total'      => 0,
+            // Explicit stage-drop counters — show where symbols die before candidates form
+            'rejected_by_trend_side_total'        => 0,
+            'rejected_by_bucket_total'            => 0,
+            'rejected_by_wave_total'              => 0,
+            'rejected_by_pattern_total'           => 0,
+            'rejected_by_neckline_distance_total' => 0,
+            // Confirm-state breakdown (replaces mixed control_check_failed_total bucket)
+            'candidate_waiting_confirm_total'  => 0,
+            'candidate_expired_total'          => 0,
+            'candidate_confirm_failed_total'   => 0,
             'signals_emitted_total'        => 0,
             'signals_active_final_total'   => 0,
             'final_signals_total'          => 0,   // backward-compat alias = signals_active_final_total

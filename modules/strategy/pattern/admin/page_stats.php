@@ -55,6 +55,16 @@ $statGroups = [
         'wave_pass_total'       => 'Волна: прошло',
         'wave_rejected_total'   => 'Волна: отклонено',
     ],
+    'Сброс по стадиям (stage-drop)' => [
+        'rejected_by_trend_side_total'        => 'Отклонено: тренд/сторона',
+        'rejected_by_bucket_total'            => 'Отклонено: зона (bucket)',
+        'rejected_by_wave_total'              => 'Отклонено: волна',
+        'rejected_by_pattern_total'           => 'Отклонено: паттерн не найден',
+        'rejected_by_neckline_distance_total' => 'Отклонено: цена далеко от нек-лайна',
+        'candidate_waiting_confirm_total'     => 'Кандидат: ожидает подтверждения',
+        'candidate_expired_total'             => 'Кандидат: истёк TTL',
+        'candidate_confirm_failed_total'      => 'Кандидат: подтверждение не пришло',
+    ],
     'Кандидаты на паттерн' => [
         'double_bottom_checked_total' => 'double_bottom проверено',
         'double_bottom_found_total'   => 'double_bottom найдено',

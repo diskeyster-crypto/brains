@@ -41,8 +41,8 @@ return [
     'corridor_required'       => true,
     'corridor_lookback_hours' => 24,
     'corridor_bucket_count'   => 10,
-    'allowed_long_buckets'    => [1, 2],
-    'allowed_short_buckets'   => [9, 10],
+    'allowed_long_buckets'    => [1, 2, 3],
+    'allowed_short_buckets'   => [8, 9, 10],
 
     // Wave
     'wave_required' => true,
@@ -66,6 +66,10 @@ return [
     'double_bottom_min_neckline_bounce_pct'  => 0.005, // neckline must be >= 0.5% above avg low
     'double_top_similarity_tolerance_pct'    => 0.07,  // max % deviation between the two highs
     'double_top_min_neckline_bounce_pct'     => 0.005, // neckline must be >= 0.5% below avg high
+
+    // Neckline distance gate — current price must be within this % of the neckline to qualify.
+    // 0.02 = price may be up to 2% beyond the neckline and still be considered "near" it.
+    'neckline_distance_tolerance_pct' => 0.02,
 
     // Confirmation
     'confirm_required' => true,

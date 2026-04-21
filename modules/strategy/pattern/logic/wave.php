@@ -94,16 +94,16 @@ final class PatternWave
             return ['pass' => false, 'reason' => 'wave_unknown'];
         }
 
-        // Long: wave direction up, state corrective (we want to buy the dip in an upwave)
-        if ($side === 'long' && $dir === 'up' && $state === 'corrective') {
-            return ['pass' => true, 'reason' => 'wave_up_corrective_long_ok'];
-        }
-        // Short: wave direction down, state corrective (we want to sell the rally in a downwave)
-        if ($side === 'short' && $dir === 'down' && $state === 'corrective') {
-            return ['pass' => true, 'reason' => 'wave_down_corrective_short_ok'];
+        // Impulsive waves (price extending strongly) are not entry contexts.
+        if ($state === 'impulsive') {
+            return ['pass' => false, 'reason' => "wave_{$dir}_impulsive_side_{$side}_rejected"];
         }
 
-        return ['pass' => false, 'reason' => "wave_{$dir}_{$state}_side_{$side}_rejected"];
+        // Any corrective wave passes for both sides.
+        // Continuation context  → wave_up/corrective for long, wave_down/corrective for short.
+        // Reversal context      → wave_down/corrective for long (bottom), wave_up/corrective for short (top).
+        // Both are valid setup contexts: only impulsive and unknown remain blocked.
+        return ['pass' => true, 'reason' => "wave_{$dir}_corrective_{$side}_ok"];
     }
 
     // -------------------------------------------------------------------------

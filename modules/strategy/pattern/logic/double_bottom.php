@@ -44,6 +44,7 @@ final class PatternDoubleBottom
             ?? self::DEFAULT_LOW_TOLERANCE);
         $minNecklineBounce = (float)($config['double_bottom_min_neckline_bounce_pct']
             ?? self::DEFAULT_MIN_NECKLINE_BOUNCE);
+        $necklineDistPct   = (float)($config['neckline_distance_tolerance_pct'] ?? 0.02);
 
         $n = count($candles);
         if ($n < self::PIVOT_WINDOW * 2 + self::MIN_PIVOT_GAP + 2) {
@@ -94,7 +95,7 @@ final class PatternDoubleBottom
         $currentClose = (float)($candles[$n - 1]['close'] ?? 0.0);
 
         // Price must be at or below neckline (still completing the pattern or just breaking)
-        if ($currentClose > $neckline * 1.01) {
+        if ($currentClose > $neckline * (1.0 + $necklineDistPct)) {
             return $this->noCandidate('price_too_far_above_neckline', $deviation);
         }
 

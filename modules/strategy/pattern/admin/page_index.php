@@ -180,8 +180,15 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 <tr>
                     <th>Символ</th>
                     <th>Сторона</th>
+                    <th>Тренд</th>
+                    <th>Сторона✓</th>
+                    <th>Bucket</th>
+                    <th>Зона✓</th>
+                    <th>Волна</th>
+                    <th>Стадия</th>
                     <th>Паттерн</th>
                     <th>Кандидат</th>
+                    <th>Некл.dist</th>
                     <th title="pattern_score">P</th>
                     <th title="structure_score">Str</th>
                     <th title="neckline_score">Nck</th>
@@ -215,12 +222,22 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 $fmtScore = static function(?float $v): string {
                     return $v !== null ? number_format($v, 2) : '—';
                 };
+                $fmtBool = static function(?bool $v): string {
+                    return $v === true ? '<span style="color:#22c55e">✓</span>' : ($v === false ? '<span style="color:#ef4444">✗</span>' : '—');
+                };
             ?>
             <tr style="<?= $rowColor ? "background: {$rowColor}22;" : '' ?>">
                 <td><strong><?= htmlspecialchars($row['symbol'] ?? '') ?></strong></td>
                 <td><?= htmlspecialchars($row['side'] ?? '—') ?></td>
+                <td><?= htmlspecialchars($row['trend_direction'] ?? '—') ?></td>
+                <td><?= $fmtBool($row['side_allowed'] ?? null) ?></td>
+                <td><?= htmlspecialchars((string)($row['corridor_bucket'] ?? '—')) ?></td>
+                <td><?= $fmtBool($row['bucket_allowed'] ?? null) ?></td>
+                <td><?= htmlspecialchars(($row['wave_direction'] ?? '?') . '/' . ($row['wave_state'] ?? '?')) ?></td>
+                <td><code style="font-size:10px;color:#94a3b8;"><?= htmlspecialchars($row['final_stage_reached'] ?? '—') ?></code></td>
                 <td><?= htmlspecialchars($row['primary_pattern'] ?? '—') ?></td>
                 <td><?= ($row['candidate_found'] ?? false) ? '<span style="color:#22c55e">да</span>' : 'нет' ?></td>
+                <td><code style="font-size:10px;"><?= htmlspecialchars($row['neckline_distance_status'] ?? '—') ?></code></td>
                 <td><?= $fmtScore($row['pattern_score']      ?? null) ?></td>
                 <td><?= $fmtScore($row['structure_score']    ?? null) ?></td>
                 <td><?= $fmtScore($row['neckline_score']     ?? null) ?></td>

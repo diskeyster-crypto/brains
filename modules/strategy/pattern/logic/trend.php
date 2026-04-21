@@ -101,11 +101,15 @@ final class PatternTrend
      */
     public function gate(string $trendDirection, string $side): array
     {
-        if ($side === 'long' && $trendDirection === 'bullish') {
-            return ['pass' => true,  'reason' => 'trend_bullish_long_ok'];
-        }
-        if ($side === 'short' && in_array($trendDirection, ['bearish', 'flat'], true)) {
-            return ['pass' => true,  'reason' => "trend_{$trendDirection}_short_ok"];
+        // Double-bottom (long) and double-top (short) are reversal patterns — they form
+        // naturally in any established trend direction.  Blocking longs in bearish/flat
+        // markets or shorts in bullish markets was semantically wrong and created the
+        // trend_flat_side_long_mismatch / trend_bullish_side_short_mismatch choke point.
+        // 'unknown' trend (insufficient candles) still blocks both sides.
+        if (in_array($side, ['long', 'short'], true)
+            && in_array($trendDirection, ['bullish', 'bearish', 'flat'], true)
+        ) {
+            return ['pass' => true,  'reason' => "trend_{$trendDirection}_{$side}_ok"];
         }
         return ['pass' => false, 'reason' => "trend_{$trendDirection}_side_{$side}_mismatch"];
     }

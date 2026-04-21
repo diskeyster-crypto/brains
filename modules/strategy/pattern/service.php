@@ -325,6 +325,7 @@ final class PatternService
                     'signal_id'               => $result['signal_id']              ?? null,
                     'winner_selected'         => null,
                     'winner_reject_reason'    => null,
+                    'final_reject_reason'     => null,
                 ];
             } catch (\Throwable $e) {
                 $state['errors'][] = $symbol . ': ' . $e->getMessage();
@@ -346,21 +347,16 @@ final class PatternService
         // Snapshot counters — overwritten each tick to show current state
         $stats['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
         $stats['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
-        // Final-eligibility counters
+        // Final-eligibility counters — all overwritten each tick (snapshot semantics:
+        // before/after/rejected must be consistent within the same tick and comparable to each other).
         $stats['signals_before_final_eligibility_total']    = $filterStats['before_final_eligibility'];
         $stats['signals_after_final_eligibility_total']     = $filterStats['after_final_eligibility'];
-        $stats['signals_rejected_final_trend_total']        =
-            ($stats['signals_rejected_final_trend_total']        ?? 0) + $filterStats['rejected_final_trend'];
-        $stats['signals_rejected_final_context_total']      =
-            ($stats['signals_rejected_final_context_total']      ?? 0) + $filterStats['rejected_final_context'];
-        $stats['signals_rejected_final_quality_total']      =
-            ($stats['signals_rejected_final_quality_total']      ?? 0) + $filterStats['rejected_final_quality'];
-        $stats['signals_rejected_final_low_neckline_total'] =
-            ($stats['signals_rejected_final_low_neckline_total'] ?? 0) + $filterStats['rejected_final_low_neckline'];
-        $stats['signals_rejected_final_low_quality_total'] =
-            ($stats['signals_rejected_final_low_quality_total'] ?? 0) + $filterStats['rejected_final_low_quality'];
-        $stats['signals_rejected_final_short_path_total'] =
-            ($stats['signals_rejected_final_short_path_total'] ?? 0) + $filterStats['rejected_final_short_path'];
+        $stats['signals_rejected_final_trend_total']        = $filterStats['rejected_final_trend'];
+        $stats['signals_rejected_final_context_total']      = $filterStats['rejected_final_context'];
+        $stats['signals_rejected_final_quality_total']      = $filterStats['rejected_final_quality'];
+        $stats['signals_rejected_final_low_neckline_total'] = $filterStats['rejected_final_low_neckline'];
+        $stats['signals_rejected_final_low_quality_total']  = $filterStats['rejected_final_low_quality'];
+        $stats['signals_rejected_final_short_path_total']   = $filterStats['rejected_final_short_path'];
 
         // Tag preview rows with winner outcome
         foreach ($batchPreviewRows as &$row) {
@@ -368,6 +364,11 @@ final class PatternService
             if ($sigId !== null && isset($signalOutcomeMap[$sigId])) {
                 $row['winner_selected']      = $signalOutcomeMap[$sigId]['winner'];
                 $row['winner_reject_reason'] = $signalOutcomeMap[$sigId]['reason'];
+                // final_reject_reason = the reason this signal did not make it into the final active set
+                // (null for winners; reason string for losers and eligibility-rejected signals)
+                $row['final_reject_reason']  = $signalOutcomeMap[$sigId]['winner']
+                    ? null
+                    : $signalOutcomeMap[$sigId]['reason'];
             }
         }
         unset($row);

@@ -200,6 +200,7 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                     <th>Контроль</th>
                     <th>Статус сигнала</th>
                     <th>Победитель</th>
+                    <th title="final_reject_reason — why this signal was not included in the final active set">Fin.reject</th>
                     <th>Причина отбора</th>
                     <th>Причина отклонения</th>
                 </tr>
@@ -249,6 +250,7 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 <td><?= htmlspecialchars($row['control_check_status'] ?? '—') ?></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($signalStatus ?? '') ?></code></td>
                 <td style="font-weight:700;color:<?= $winnerColor ?>;"><?= $winnerSelected === true ? '✓ победитель' : ($winnerSelected === false ? '✗ отклонён' : '—') ?></td>
+                <td><code style="font-size:10px;color:<?= ($row['final_reject_reason'] ?? null) ? '#ef4444' : '#64748b' ?>;"><?= htmlspecialchars($row['final_reject_reason'] ?? '') ?></code></td>
                 <td><code style="font-size:10px;color:#f59e0b;"><?= htmlspecialchars($row['winner_reject_reason'] ?? '') ?></code></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($row['reject_reason'] ?? $row['pattern_reject_reason'] ?? '') ?></code></td>
             </tr>

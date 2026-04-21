@@ -54,16 +54,17 @@ return [
     // Candidates whose composite quality score is below this threshold are
     // rejected before control confirmation AND at final active-signal selection.
     // Set to 0.0 to disable.
-    // Raised from 0.45 → 0.55: at 0.45 virtually all candidates pass; 0.55
-    // requires solid scores across at least two weighted components.
-    'min_candidate_quality_score' => 0.55,
+    // Raised from 0.45 → 0.55 → 0.58: 0.55 still lets borderline medium candidates
+    // through; 0.58 requires a measurably stronger composite across weighted components.
+    'min_candidate_quality_score' => 0.58,
 
     // Neckline floor — signals whose neckline_score is below this value are
     // purged from the final active signal set after winner selection.
     // neckline_score = depthRatio / DEPTH_SCALE; DEPTH_SCALE = 0.10.
-    // 0.40 → requires ~4% pattern depth (neckline 4% above avg lows / below avg highs).
+    // 0.45 → requires ~4.5% pattern depth (neckline 4.5% above avg lows / below avg highs).
+    // Raised from 0.40 → 0.45 to remove weak-neckline survivors (~0.42–0.44 range).
     // Set to 0.0 to disable.
-    'min_neckline_score' => 0.40,
+    'min_neckline_score' => 0.45,
 
     // Pattern detection tolerances
     'pattern_similarity_tolerance'           => 0.07,  // global fallback (7%)

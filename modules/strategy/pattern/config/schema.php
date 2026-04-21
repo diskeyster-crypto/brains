@@ -27,6 +27,11 @@ return [
     // Market regime gate
     'market_regime_enabled'   => 'bool',
     'market_regime_gate_mode' => 'string',  // soft | hard
+    // Market regime classification thresholds
+    'market_regime_min_sample_count'          => 'int',
+    'market_regime_dominance_ratio'           => 'float',
+    'market_regime_flat_dominance_ratio'      => 'float',
+    'market_regime_transition_flip_threshold' => 'float',
 
     // Trend gate
     'trend_required' => 'bool',

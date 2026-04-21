@@ -98,6 +98,10 @@ $statGroups = [
                 <div class="stat-lbl">Режим</div>
             </div>
             <div class="stat-cell">
+                <div class="stat-num"><?= htmlspecialchars($regime['regime_reason'] ?? '—') ?></div>
+                <div class="stat-lbl">Причина</div>
+            </div>
+            <div class="stat-cell">
                 <div class="stat-num"><?= (int)($regime['bull_count'] ?? 0) ?></div>
                 <div class="stat-lbl">Быков</div>
             </div>
@@ -108,6 +112,22 @@ $statGroups = [
             <div class="stat-cell">
                 <div class="stat-num"><?= (int)($regime['flat_count'] ?? 0) ?></div>
                 <div class="stat-lbl">Флет</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-num"><?= (int)($regime['unknown_count'] ?? 0) ?></div>
+                <div class="stat-lbl">Неизвестно</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-num"><?= number_format((float)($regime['bull_ratio'] ?? 0) * 100, 1) ?>%</div>
+                <div class="stat-lbl">Доля быков</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-num"><?= number_format((float)($regime['bear_ratio'] ?? 0) * 100, 1) ?>%</div>
+                <div class="stat-lbl">Доля медведей</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-num"><?= number_format((float)($regime['flat_ratio'] ?? 0) * 100, 1) ?>%</div>
+                <div class="stat-lbl">Доля флета</div>
             </div>
             <div class="stat-cell">
                 <div class="stat-num"><?= htmlspecialchars($regime['ts'] ?? '—') ?></div>

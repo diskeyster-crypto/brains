@@ -300,12 +300,18 @@ final class PatternService
 
         // Market regime summary for last_run
         $regimeSummary = [
-            'current_regime'  => $prevRegimeData['regime']         ?? 'unknown',
-            'previous_regime' => $prevRegimeData['previous_regime'] ?? 'unknown',
-            'regime_changed'  => $prevRegimeData['regime_changed']  ?? false,
-            'bull_count'      => $prevRegimeData['bull_count']      ?? 0,
-            'bear_count'      => $prevRegimeData['bear_count']      ?? 0,
-            'flat_count'      => $prevRegimeData['flat_count']      ?? 0,
+            'current_regime'   => $prevRegimeData['regime']           ?? 'unknown',
+            'previous_regime'  => $prevRegimeData['previous_regime']  ?? 'unknown',
+            'regime_changed'   => $prevRegimeData['regime_changed']   ?? false,
+            'regime_reason'    => $prevRegimeData['regime_reason']    ?? 'unknown',
+            'bull_count'       => $prevRegimeData['bull_count']       ?? 0,
+            'bear_count'       => $prevRegimeData['bear_count']       ?? 0,
+            'flat_count'       => $prevRegimeData['flat_count']       ?? 0,
+            'unknown_count'    => $prevRegimeData['unknown_count']    ?? 0,
+            'total_count_used' => $prevRegimeData['total_count_used'] ?? 0,
+            'bull_ratio'       => $prevRegimeData['bull_ratio']       ?? 0.0,
+            'bear_ratio'       => $prevRegimeData['bear_ratio']       ?? 0.0,
+            'flat_ratio'       => $prevRegimeData['flat_ratio']       ?? 0.0,
         ];
 
         $this->writeJson('storage/last_run.json', [
@@ -420,20 +426,26 @@ final class PatternService
         }
 
         $regimeEngine = new \Modules\Strategy\Pattern\Logic\PatternMarketRegime();
-        $regimeResult = $regimeEngine->compute($summaries, $previousRegime);
+        $regimeResult = $regimeEngine->compute($summaries, $previousRegime, $config);
 
         $this->writeJson('storage/market_regime.json', $regimeResult);
 
         // Append history record
         $histPath = $this->moduleDir . '/storage/market_regime_history.ndjson';
         $histLine = json_encode([
-            'ts'              => $regimeResult['ts'],
-            'previous_regime' => $regimeResult['previous_regime'],
-            'current_regime'  => $regimeResult['regime'],
-            'bull_count'      => $regimeResult['bull_count'],
-            'bear_count'      => $regimeResult['bear_count'],
-            'flat_count'      => $regimeResult['flat_count'],
-            'regime_changed'  => $regimeResult['regime_changed'],
+            'ts'               => $regimeResult['ts'],
+            'previous_regime'  => $regimeResult['previous_regime'],
+            'current_regime'   => $regimeResult['regime'],
+            'regime_changed'   => $regimeResult['regime_changed'],
+            'regime_reason'    => $regimeResult['regime_reason'],
+            'bull_count'       => $regimeResult['bull_count'],
+            'bear_count'       => $regimeResult['bear_count'],
+            'flat_count'       => $regimeResult['flat_count'],
+            'unknown_count'    => $regimeResult['unknown_count'],
+            'total_count_used' => $regimeResult['total_count_used'],
+            'bull_ratio'       => $regimeResult['bull_ratio'],
+            'bear_ratio'       => $regimeResult['bear_ratio'],
+            'flat_ratio'       => $regimeResult['flat_ratio'],
         ]) . "\n";
         file_put_contents($histPath, $histLine, FILE_APPEND | LOCK_EX);
     }

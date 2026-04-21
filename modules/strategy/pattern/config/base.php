@@ -28,6 +28,11 @@ return [
     // Market regime gate
     'market_regime_enabled'   => true,
     'market_regime_gate_mode' => 'soft',  // soft = warn only; hard = block signal
+    // Market regime classification thresholds
+    'market_regime_min_sample_count'        => 5,    // min symbols required for non-unknown classification
+    'market_regime_dominance_ratio'         => 0.55, // bull/bear ratio needed for dominance
+    'market_regime_flat_dominance_ratio'    => 0.65, // flat ratio needed for flat dominance
+    'market_regime_transition_flip_threshold' => 0.20, // how far below dominance a direction must drop to trigger transition
 
     // Trend gate
     'trend_required' => true,

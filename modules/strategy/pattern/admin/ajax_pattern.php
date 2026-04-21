@@ -82,17 +82,17 @@ if ($action === 'queue_run') {
         echo json_encode($result);
         exit;
     }
-    patternFlash($result['ok'] ? 'Run queued (' . ($result['total'] ?? 0) . ' symbols).' : ($result['error'] ?? 'Error'), $result['ok'] ? 'success' : 'danger');
+    patternFlash($result['ok'] ? 'Запуск поставлен в очередь (' . ($result['total'] ?? 0) . ' символов).' : ($result['error'] ?? 'Ошибка'), $result['ok'] ? 'success' : 'danger');
     patternRedirect($indexUrl);
 }
 
 if ($action === 'tick_batch') {
     try {
         $service->tickBatch();
-        $msg = 'Batch tick executed.';
+        $msg = 'Шаг батча выполнен.';
         $t   = 'success';
     } catch (\Throwable $e) {
-        $msg = 'Error: ' . $e->getMessage();
+        $msg = 'Ошибка: ' . $e->getMessage();
         $t   = 'danger';
     }
     if ($isAjax) {
@@ -160,7 +160,7 @@ if ($action === 'save_config') {
             patternRedirect($configUrl);
         }
     } catch (\Throwable $e) {
-        patternFlash('Config load error: ' . $e->getMessage(), 'danger');
+        patternFlash('Ошибка загрузки конфигурации: ' . $e->getMessage(), 'danger');
         patternRedirect($configUrl);
     }
 
@@ -168,7 +168,7 @@ if ($action === 'save_config') {
     if ($writeErr) {
         patternFlash($writeErr, 'danger');
     } else {
-        patternFlash('Config saved.');
+        patternFlash('Настройки сохранены.');
     }
 
     if ($isAjax) {
@@ -181,7 +181,7 @@ if ($action === 'save_config') {
 
 if ($action === 'reset_active') {
     $err = patternWriteActive($moduleDir, []);
-    patternFlash($err ? $err : 'Active config reset to defaults.', $err ? 'danger' : 'success');
+    patternFlash($err ? $err : 'Конфигурация сброшена к базовым значениям.', $err ? 'danger' : 'success');
     patternRedirect($configUrl);
 }
 
@@ -191,5 +191,5 @@ if ($isAjax) {
     echo json_encode(['ok' => false, 'error' => 'Unknown action: ' . $action]);
     exit;
 }
-patternFlash('Unknown action.', 'danger');
+patternFlash('Неизвестное действие.', 'danger');
 patternRedirect($indexUrl);

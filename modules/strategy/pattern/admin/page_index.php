@@ -37,6 +37,12 @@ $statusLabel = $enabled
     ? ($mode === 'active' ? 'active' : 'passive')
     : 'disabled';
 
+$statusLabelRu = match ($statusLabel) {
+    'active'  => 'АКТИВНО',
+    'passive' => 'ПАССИВНО',
+    default   => 'ОТКЛЮЧЕНО',
+};
+
 $statusColor = match ($statusLabel) {
     'active'  => '#22c55e',
     'passive' => '#f59e0b',
@@ -64,8 +70,8 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
         <div>
             <h4 class="mb-0">
                 <span class="status-dot" style="background: <?= $statusColor ?>;"></span>
-                Pattern Strategy
-                <span class="badge ms-2" style="background: <?= $statusColor ?>; font-size: 11px;"><?= htmlspecialchars(strtoupper($statusLabel)) ?></span>
+                Паттерн-стратегия
+                <span class="badge ms-2" style="background: <?= $statusColor ?>; font-size: 11px;"><?= htmlspecialchars($statusLabelRu) ?></span>
             </h4>
             <div style="font-size: 12px; color: #64748b;">
                 strategy_id: <code><?= htmlspecialchars($strategyId) ?></code>
@@ -75,8 +81,8 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
             </div>
         </div>
         <div class="pt-nav">
-            <a href="<?= $patternUrl ?>/config" class="btn btn-sm btn-outline-secondary">Config</a>
-            <a href="<?= $patternUrl ?>/stats"  class="btn btn-sm btn-outline-secondary">Stats</a>
+            <a href="<?= $patternUrl ?>/config" class="btn btn-sm btn-outline-secondary">Настройки</a>
+            <a href="<?= $patternUrl ?>/stats"  class="btn btn-sm btn-outline-secondary">Статистика</a>
         </div>
     </div>
 
@@ -84,49 +90,49 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
     <div class="pt-card-grid">
         <div class="pt-stat-box">
             <div class="pt-stat-val"><?= count($signals) ?></div>
-            <div class="pt-stat-lbl">Active Signals</div>
+            <div class="pt-stat-lbl">Активные сигналы</div>
         </div>
         <div class="pt-stat-box">
-            <div class="pt-stat-val"><?= (int)($stats['final_signals_total'] ?? 0) ?></div>
-            <div class="pt-stat-lbl">Signals (total)</div>
+            <div class="pt-stat-val"><?= (int)($stats['signals_emitted_total'] ?? $stats['final_signals_total'] ?? 0) ?></div>
+            <div class="pt-stat-lbl">Эмитировано (всего)</div>
         </div>
         <div class="pt-stat-box">
             <div class="pt-stat-val"><?= (int)($stats['double_bottom_found_total'] ?? 0) ?></div>
-            <div class="pt-stat-lbl">Double Bottoms</div>
+            <div class="pt-stat-lbl">Двойных доньев</div>
         </div>
         <div class="pt-stat-box">
             <div class="pt-stat-val"><?= (int)($stats['double_top_found_total'] ?? 0) ?></div>
-            <div class="pt-stat-lbl">Double Tops</div>
+            <div class="pt-stat-lbl">Двойных вершин</div>
         </div>
         <div class="pt-stat-box">
             <div class="pt-stat-val"><?= htmlspecialchars($regime['regime'] ?? '—') ?></div>
-            <div class="pt-stat-lbl">Market Regime</div>
+            <div class="pt-stat-lbl">Рыночный режим</div>
         </div>
         <div class="pt-stat-box">
             <div class="pt-stat-val" style="color: <?= $errCount > 0 ? '#ef4444' : '#22c55e' ?>;"><?= $errCount ?></div>
-            <div class="pt-stat-lbl">Last Run Errors</div>
+            <div class="pt-stat-lbl">Ошибок при запуске</div>
         </div>
     </div>
 
     <!-- Last run info -->
     <div style="background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 13px;">
-        <strong>Last Run</strong>
-        <span class="ms-3">Status: <code><?= htmlspecialchars($lastStatus) ?></code></span>
+        <strong>Последний запуск</strong>
+        <span class="ms-3">Статус: <code><?= htmlspecialchars($lastStatus) ?></code></span>
         <?php if ($lastRunTime): ?>
-        <span class="ms-3">At: <code><?= htmlspecialchars($lastRunTime) ?></code></span>
+        <span class="ms-3">Время: <code><?= htmlspecialchars($lastRunTime) ?></code></span>
         <?php endif; ?>
-        <span class="ms-3">Processed: <code><?= htmlspecialchars((string)($lastRun['processed'] ?? '—')) ?></code></span>
-        <span class="ms-3">Found: <code><?= htmlspecialchars((string)($lastRun['found'] ?? '—')) ?></code></span>
+        <span class="ms-3">Обработано: <code><?= htmlspecialchars((string)($lastRun['processed'] ?? '—')) ?></code></span>
+        <span class="ms-3">Найдено: <code><?= htmlspecialchars((string)($lastRun['found'] ?? '—')) ?></code></span>
     </div>
 
     <!-- Actions -->
     <form method="post" action="<?= $patternUrl ?>/ajax" class="d-inline-block me-2">
         <input type="hidden" name="action" value="queue_run">
-        <button class="btn btn-sm btn-primary" type="submit">Queue Run</button>
+        <button class="btn btn-sm btn-primary" type="submit">Запустить</button>
     </form>
     <form method="post" action="<?= $patternUrl ?>/ajax" class="d-inline-block me-2">
         <input type="hidden" name="action" value="tick_batch">
-        <button class="btn btn-sm btn-outline-secondary" type="submit">Tick Batch</button>
+        <button class="btn btn-sm btn-outline-secondary" type="submit">Шаг батча</button>
     </form>
 
     <?php
@@ -136,28 +142,28 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
     ?>
     <div style="background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 16px; margin-top: 20px; overflow-x: auto;">
         <h6 style="color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-bottom: 12px;">
-            Per-Symbol Pattern Diagnostics (last <?= count($previewRows) ?> rows, newest first)
+            Диагностика паттернов по символу (последних <?= count($previewRows) ?> строк, сначала новые)
         </h6>
         <table class="table table-sm" style="font-size: 11px; white-space: nowrap;">
             <thead>
                 <tr>
-                    <th>Symbol</th>
-                    <th>Side</th>
+                    <th>Символ</th>
+                    <th>Сторона</th>
                     <th>DB✓</th>
                     <th>DT✓</th>
-                    <th>DB Found</th>
-                    <th>DT Found</th>
-                    <th>High1</th>
-                    <th>High2</th>
-                    <th>Low1</th>
-                    <th>Low2</th>
-                    <th>Neckline</th>
-                    <th>Win</th>
-                    <th>SimΔ%</th>
-                    <th>Candidate</th>
-                    <th>Ctrl Check</th>
-                    <th>Pattern Reject</th>
-                    <th>Signal Status</th>
+                    <th>DB Найден</th>
+                    <th>DT Найден</th>
+                    <th>Верх1</th>
+                    <th>Верх2</th>
+                    <th>Низ1</th>
+                    <th>Низ2</th>
+                    <th>Линия шеи</th>
+                    <th>Окно</th>
+                    <th>СимΔ%</th>
+                    <th>Кандидат</th>
+                    <th>Контроль</th>
+                    <th>Причина отклонения</th>
+                    <th>Статус сигнала</th>
                 </tr>
             </thead>
             <tbody>
@@ -186,7 +192,7 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 <td><?= $row['similarity_delta_pct'] !== null
                         ? number_format((float)$row['similarity_delta_pct'] * 100, 2) . '%'
                         : '—' ?></td>
-                <td><?= ($row['candidate_found'] ?? false) ? '<span style="color:#22c55e">yes</span>' : 'no' ?></td>
+                <td><?= ($row['candidate_found'] ?? false) ? '<span style="color:#22c55e">да</span>' : 'нет' ?></td>
                 <td><?= htmlspecialchars($row['control_check_status'] ?? '—') ?></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($row['pattern_reject_reason'] ?? '') ?></code></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($signalStatus ?? '') ?></code></td>
@@ -194,6 +200,10 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
             <?php endforeach; ?>
             </tbody>
         </table>
+    </div>
+    <?php else: ?>
+    <div style="background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 24px; margin-top: 20px; text-align: center; color: #64748b; font-size: 13px;">
+        Нет данных диагностики. Запустите скан для получения результатов.
     </div>
     <?php endif; ?>
 </div>

@@ -29,30 +29,31 @@ $lastRun = $service->getLastRun();
 $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
 
 $statGroups = [
-    'Market Regime' => [
-        'regime_bullish_total'    => 'Bullish cycles',
-        'regime_bearish_total'    => 'Bearish cycles',
-        'regime_mixed_total'      => 'Mixed cycles',
-        'regime_transition_total' => 'Transition cycles',
+    'Рыночный режим' => [
+        'regime_bullish_total'    => 'Бычьих циклов',
+        'regime_bearish_total'    => 'Медвежьих циклов',
+        'regime_mixed_total'      => 'Смешанных циклов',
+        'regime_transition_total' => 'Переходных циклов',
     ],
-    'Pipeline Gates' => [
-        'trend_pass_total'      => 'Trend pass',
-        'corridor_pass_total'   => 'Corridor pass',
-        'bucket_allowed_total'  => 'Bucket allowed',
-        'wave_pass_total'       => 'Wave pass',
-        'wave_rejected_total'   => 'Wave rejected',
+    'Фильтры пайплайна' => [
+        'trend_pass_total'      => 'Тренд: прошло',
+        'corridor_pass_total'   => 'Коридор: прошло',
+        'bucket_allowed_total'  => 'Зона: разрешено',
+        'wave_pass_total'       => 'Волна: прошло',
+        'wave_rejected_total'   => 'Волна: отклонено',
     ],
-    'Pattern Candidates' => [
-        'double_bottom_checked_total' => 'Double bottoms checked',
-        'double_bottom_found_total'   => 'Double bottoms found',
-        'double_top_checked_total'    => 'Double tops checked',
-        'double_top_found_total'      => 'Double tops found',
-        'pattern_rejected_total'      => 'Pattern rejected (checked but no candidate)',
+    'Кандидаты на паттерн' => [
+        'double_bottom_checked_total' => 'double_bottom проверено',
+        'double_bottom_found_total'   => 'double_bottom найдено',
+        'double_top_checked_total'    => 'double_top проверено',
+        'double_top_found_total'      => 'double_top найдено',
+        'pattern_rejected_total'      => 'Паттерн отклонён',
     ],
-    'Confirmation & Signals' => [
-        'control_check_pass_total'    => 'Control check pass',
-        'control_check_expired_total' => 'Candidate expired',
-        'final_signals_total'         => 'Final signals emitted',
+    'Подтверждение и сигналы' => [
+        'control_check_pass_total'    => 'Контроль: прошло',
+        'control_check_expired_total' => 'Кандидат устарел',
+        'signals_emitted_total'       => 'Эмитировано сигналов',
+        'signals_active_final_total'  => 'Активных сигналов',
     ],
 ];
 ?>
@@ -68,36 +69,36 @@ $statGroups = [
 
 <div class="pattern-stats-page">
     <div class="d-flex align-items-center justify-content-between mb-3">
-        <h4 class="mb-0">Pattern — Stats</h4>
+        <h4 class="mb-0">Паттерн — Статистика</h4>
         <div>
-            <a href="<?= $patternUrl ?>"        class="btn btn-sm btn-outline-secondary">← Index</a>
-            <a href="<?= $patternUrl ?>/config"  class="btn btn-sm btn-outline-secondary ms-1">Config</a>
+            <a href="<?= $patternUrl ?>"        class="btn btn-sm btn-outline-secondary">← Главная</a>
+            <a href="<?= $patternUrl ?>/config"  class="btn btn-sm btn-outline-secondary ms-1">Настройки</a>
         </div>
     </div>
 
     <!-- Current regime -->
     <div class="stats-section">
-        <h6>Current Market Regime</h6>
+        <h6>Текущий рыночный режим</h6>
         <div class="stats-grid">
             <div class="stat-cell">
                 <div class="stat-num"><?= htmlspecialchars($regime['regime'] ?? '—') ?></div>
-                <div class="stat-lbl">Regime</div>
+                <div class="stat-lbl">Режим</div>
             </div>
             <div class="stat-cell">
                 <div class="stat-num"><?= (int)($regime['bull_count'] ?? 0) ?></div>
-                <div class="stat-lbl">Bull votes</div>
+                <div class="stat-lbl">Быков</div>
             </div>
             <div class="stat-cell">
                 <div class="stat-num"><?= (int)($regime['bear_count'] ?? 0) ?></div>
-                <div class="stat-lbl">Bear votes</div>
+                <div class="stat-lbl">Медведей</div>
             </div>
             <div class="stat-cell">
                 <div class="stat-num"><?= (int)($regime['flat_count'] ?? 0) ?></div>
-                <div class="stat-lbl">Flat votes</div>
+                <div class="stat-lbl">Флет</div>
             </div>
             <div class="stat-cell">
                 <div class="stat-num"><?= htmlspecialchars($regime['ts'] ?? '—') ?></div>
-                <div class="stat-lbl">Last updated</div>
+                <div class="stat-lbl">Обновлено</div>
             </div>
         </div>
     </div>
@@ -124,9 +125,9 @@ $statGroups = [
         arsort($dist);
     ?>
     <div class="stats-section">
-        <h6>Pattern Reject Reason Distribution</h6>
+        <h6>Распределение причин отклонения</h6>
         <table class="table table-sm" style="font-size: 12px;">
-            <thead><tr><th>Reject Reason</th><th>Count</th></tr></thead>
+            <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
             <tbody>
             <?php foreach ($dist as $reason => $cnt): ?>
             <tr>
@@ -137,19 +138,24 @@ $statGroups = [
             </tbody>
         </table>
     </div>
+    <?php else: ?>
+    <div class="stats-section">
+        <h6>Распределение причин отклонения</h6>
+        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных об отклонениях. Данные появятся после первого запуска.</p>
+    </div>
     <?php endif; ?>
 
     <!-- Active signals list -->
     <div class="stats-section">
-        <h6>Active Signals (<?= count($signals) ?>)</h6>
+        <h6>Активные сигналы (<?= count($signals) ?>)</h6>
         <?php if (empty($signals)): ?>
-        <p class="text-muted mb-0" style="font-size: 13px;">No active signals.</p>
+        <p class="text-muted mb-0" style="font-size: 13px;">Нет активных сигналов.</p>
         <?php else: ?>
         <table class="table table-sm" style="font-size: 12px;">
             <thead>
                 <tr>
-                    <th>Signal ID</th><th>Symbol</th><th>Side</th><th>Pattern</th>
-                    <th>Entry</th><th>Regime</th><th>Trend</th><th>Detected</th>
+                    <th>signal_id</th><th>Символ</th><th>Сторона</th><th>Паттерн</th>
+                    <th>Вход</th><th>Режим</th><th>Тренд</th><th>Обнаружен</th>
                 </tr>
             </thead>
             <tbody>

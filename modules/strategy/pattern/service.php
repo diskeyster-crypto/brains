@@ -283,11 +283,15 @@ final class PatternService
         $this->writeJson('storage/signals.json',   array_values($signals));
 
         // Persist enriched stats with zero-filled skeleton
-        $stats['symbols_total']      = $total;
-        $stats['symbols_scanned']    = $totalProcessed;
-        $stats['symbols_skipped']    = 0;
-        $stats['current_batch_size'] = $batchSz;
-        $stats['last_updated_at']    = date('c');
+        $stats['symbols_total']              = $total;
+        $stats['symbols_scanned']            = $totalProcessed;
+        $stats['symbols_skipped']            = 0;
+        $stats['current_batch_size']         = $batchSz;
+        $stats['last_updated_at']            = date('c');
+        // signals_active_final_total = actual count in signals.json right now
+        $stats['signals_active_final_total'] = count($signals);
+        // final_signals_total kept as backward-compat alias (= active count)
+        $stats['final_signals_total']        = count($signals);
         // Ensure reject_reason_distribution is always a JSON object, not array
         if (empty($stats['reject_reason_distribution'])) {
             $stats['reject_reason_distribution'] = (object)[];
@@ -305,40 +309,46 @@ final class PatternService
         ];
 
         $this->writeJson('storage/last_run.json', [
-            'status'                   => $state['status'],
-            'started_at'               => $state['started_at'] ?? null,
-            'updated_at'               => date('c'),
-            'finished_at'              => $isDone ? ($state['completed_at'] ?? date('c')) : null,
-            'symbols_total'            => $total,
-            'symbols_scanned'          => $totalProcessed,
-            'symbols_remaining'        => max(0, $total - $totalProcessed),
-            'current_batch_size'       => $batchSz,
-            'final_signals_total'      => count($signals),
-            'registry_loaded'          => $stats['registry_loaded'],
-            'registry_symbol_count'    => $stats['registry_symbol_count'],
-            'market_regime'            => $regimeSummary,
-            'current_stage_summary'    => [
-                'trend_pass'              => $stats['trend_pass_total']              ?? 0,
-                'trend_rejected'          => $stats['trend_rejected_total']          ?? 0,
-                'corridor_pass'           => $stats['corridor_pass_total']           ?? 0,
-                'corridor_rejected'       => $stats['corridor_rejected_total']       ?? 0,
-                'bucket_allowed'          => $stats['bucket_allowed_total']          ?? 0,
-                'bucket_rejected'         => $stats['bucket_rejected_total']         ?? 0,
-                'wave_pass'               => $stats['wave_pass_total']               ?? 0,
-                'wave_rejected'           => $stats['wave_rejected_total']           ?? 0,
-                'double_bottom_checked'   => $stats['double_bottom_checked_total']   ?? 0,
-                'double_bottom_found'     => $stats['double_bottom_found_total']     ?? 0,
-                'double_top_checked'      => $stats['double_top_checked_total']      ?? 0,
-                'double_top_found'        => $stats['double_top_found_total']        ?? 0,
-                'setup_candidates'        => $stats['setup_candidates_total']        ?? 0,
-                'pattern_rejected'        => $stats['pattern_rejected_total']        ?? 0,
-                'control_check_pass'      => $stats['control_check_pass_total']      ?? 0,
-                'control_check_fail'      => $stats['control_check_failed_total']    ?? 0,
-                'control_check_expired'   => $stats['control_check_expired_total']   ?? 0,
-                'signals_emitted'         => $stats['final_signals_total']           ?? 0,
+            'status'                     => $state['status'],
+            'started_at'                 => $state['started_at'] ?? null,
+            'updated_at'                 => date('c'),
+            'finished_at'                => $isDone ? ($state['completed_at'] ?? date('c')) : null,
+            'symbols_total'              => $total,
+            'symbols_scanned'            => $totalProcessed,
+            'symbols_remaining'          => max(0, $total - $totalProcessed),
+            'current_batch_size'         => $batchSz,
+            // signals_active_final_total = active count actually present in signals.json
+            'signals_active_final_total' => count($signals),
+            // signals_emitted_total = cumulative emits this run (may differ from active due to dedup/TTL)
+            'signals_emitted_total'      => $stats['signals_emitted_total'] ?? 0,
+            // backward-compat alias (= signals_active_final_total)
+            'final_signals_total'        => count($signals),
+            'registry_loaded'            => $stats['registry_loaded'],
+            'registry_symbol_count'      => $stats['registry_symbol_count'],
+            'market_regime'              => $regimeSummary,
+            'current_stage_summary'      => [
+                'trend_pass'                 => $stats['trend_pass_total']              ?? 0,
+                'trend_rejected'             => $stats['trend_rejected_total']          ?? 0,
+                'corridor_pass'              => $stats['corridor_pass_total']           ?? 0,
+                'corridor_rejected'          => $stats['corridor_rejected_total']       ?? 0,
+                'bucket_allowed'             => $stats['bucket_allowed_total']          ?? 0,
+                'bucket_rejected'            => $stats['bucket_rejected_total']         ?? 0,
+                'wave_pass'                  => $stats['wave_pass_total']               ?? 0,
+                'wave_rejected'              => $stats['wave_rejected_total']           ?? 0,
+                'double_bottom_checked'      => $stats['double_bottom_checked_total']   ?? 0,
+                'double_bottom_found'        => $stats['double_bottom_found_total']     ?? 0,
+                'double_top_checked'         => $stats['double_top_checked_total']      ?? 0,
+                'double_top_found'           => $stats['double_top_found_total']        ?? 0,
+                'setup_candidates'           => $stats['setup_candidates_total']        ?? 0,
+                'pattern_rejected'           => $stats['pattern_rejected_total']        ?? 0,
+                'control_check_pass'         => $stats['control_check_pass_total']      ?? 0,
+                'control_check_failed'       => $stats['control_check_failed_total']    ?? 0,
+                'control_check_expired'      => $stats['control_check_expired_total']   ?? 0,
+                'signals_emitted_total'      => $stats['signals_emitted_total']         ?? 0,
+                'signals_active_final_total' => count($signals),
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
-            'errors_count'             => count($state['errors'] ?? []),
+            'errors_count'               => count($state['errors'] ?? []),
         ]);
     }
 
@@ -841,7 +851,7 @@ final class PatternService
         }
 
         // ── Signal ─────────────────────────────
-        if ($fss === 'emitted')    { $inc($stats, 'final_signals_total'); }
+        if ($fss === 'emitted')    { $inc($stats, 'signals_emitted_total'); }
 
         // ── Reject reason distribution ─────────
         // Count the primary reject reason (covers the "furthest" path attempted)
@@ -893,7 +903,9 @@ final class PatternService
             'control_check_pass_total'     => 0,
             'control_check_expired_total'  => 0,
             'control_check_failed_total'   => 0,
-            'final_signals_total'          => 0,
+            'signals_emitted_total'        => 0,
+            'signals_active_final_total'   => 0,
+            'final_signals_total'          => 0,   // backward-compat alias = signals_active_final_total
             'current_batch_size'           => 0,
             'last_updated_at'              => null,
             'reject_reason_distribution'   => (object)[],

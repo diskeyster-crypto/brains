@@ -62,6 +62,14 @@ final class PatternSignal
             'primary_pattern' => $primaryPattern,
             'candidate_score' => (float)($candidate['candidate_score'] ?? 0.0),
 
+            // Candidate quality scores (from PatternCandidateQuality scorer)
+            'pattern_score'           => (float)($pipeline['pattern_score']           ?? 0.0),
+            'structure_score'         => (float)($pipeline['structure_score']         ?? 0.0),
+            'neckline_score'          => (float)($pipeline['neckline_score']          ?? 0.0),
+            'confirmation_score'      => (float)($pipeline['confirmation_score']      ?? 0.0),
+            'context_score'           => (float)($pipeline['context_score']           ?? 0.0),
+            'candidate_quality_score' => (float)($pipeline['candidate_quality_score'] ?? 0.0),
+
             // Confirmation
             'confirm_status'      => $confirmation['confirm_status']      ?? 'confirm_pass',
             'confirm_bar_close'   => $confirmation['confirm_bar_close']   ?? null,

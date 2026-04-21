@@ -62,6 +62,11 @@ $statGroups = [
         'double_top_found_total'      => 'double_top найдено',
         'pattern_rejected_total'      => 'Паттерн отклонён',
     ],
+    'Фильтр качества кандидатов' => [
+        'candidates_before_quality_filter_total' => 'До фильтра качества',
+        'candidates_after_quality_filter_total'  => 'После фильтра качества',
+        'candidates_rejected_by_quality_total'   => 'Отклонено фильтром качества',
+    ],
     'Подтверждение и сигналы' => [
         'control_check_pass_total'    => 'Контроль: прошло',
         'control_check_expired_total' => 'Кандидат устарел',
@@ -175,6 +180,49 @@ $statGroups = [
     <div class="stats-section">
         <h6>Распределение причин отклонения</h6>
         <p class="text-muted mb-0" style="font-size: 13px;">Нет данных об отклонениях. Данные появятся после первого запуска.</p>
+    </div>
+    <?php endif; ?>
+
+    <!-- Quality reject reason distribution -->
+    <?php
+    $qualDist = (array)($stats['quality_reject_reason_distribution'] ?? []);
+    if (!empty($qualDist)):
+        arsort($qualDist);
+    ?>
+    <div class="stats-section">
+        <h6>Причины отклонения фильтром качества</h6>
+        <table class="table table-sm" style="font-size: 12px;">
+            <thead>
+                <tr>
+                    <th>Причина</th>
+                    <th>Кол-во</th>
+                    <th>Компонент</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php
+            $qualComponentMap = [
+                'quality_weak_structure'    => 'structure_score — симметрия вершин/доньев',
+                'quality_weak_neckline'     => 'neckline_score — глубина паттерна',
+                'quality_weak_confirmation' => 'confirmation_score — компактность формации',
+                'quality_weak_context'      => 'context_score — свежесть волнового пивота',
+                'quality_weak_pattern'      => 'pattern_score — собственный скор детектора',
+            ];
+            foreach ($qualDist as $reason => $cnt):
+            ?>
+            <tr>
+                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
+                <td><?= (int)$cnt ?></td>
+                <td style="color:#94a3b8;font-size:11px;"><?= htmlspecialchars($qualComponentMap[$reason] ?? '—') ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php else: ?>
+    <div class="stats-section">
+        <h6>Причины отклонения фильтром качества</h6>
+        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Данные появятся после запуска при наличии кандидатов.</p>
     </div>
     <?php endif; ?>
 

@@ -358,6 +358,10 @@ final class PatternService
                 'double_top_found'           => $stats['double_top_found_total']        ?? 0,
                 'setup_candidates'           => $stats['setup_candidates_total']        ?? 0,
                 'pattern_rejected'           => $stats['pattern_rejected_total']        ?? 0,
+                'candidates_before_quality_filter' => $stats['candidates_before_quality_filter_total'] ?? 0,
+                'candidates_after_quality_filter'  => $stats['candidates_after_quality_filter_total']  ?? 0,
+                'candidates_rejected_by_quality'   => $stats['candidates_rejected_by_quality_total']   ?? 0,
+                'quality_reject_reason_distribution' => $stats['quality_reject_reason_distribution'] ?? (object)[],
                 'control_check_pass'         => $stats['control_check_pass_total']      ?? 0,
                 'control_check_failed'       => $stats['control_check_failed_total']    ?? 0,
                 'control_check_expired'      => $stats['control_check_expired_total']   ?? 0,
@@ -673,11 +677,18 @@ final class PatternService
             $confirm = ['confirm_status' => 'confirm_pass', 'confirm_bar_close' => null, 'confirm_bars_waited' => 0];
         }
 
-        // Emit signal
+        // Emit signal — include quality scores in pipeline so PatternSignal persists them
         $this->requireLogic('signal');
         $signal = (new \Modules\Strategy\Pattern\Logic\PatternSignal())->build(
             $symbol, $candidate, $confirm,
-            array_merge($diagBase, $corridor, $wave),
+            array_merge($diagBase, $corridor, $wave, [
+                'pattern_score'           => $quality['pattern_score'],
+                'structure_score'         => $quality['structure_score'],
+                'neckline_score'          => $quality['neckline_score'],
+                'confirmation_score'      => $quality['confirmation_score'],
+                'context_score'           => $quality['context_score'],
+                'candidate_quality_score' => $quality['candidate_quality_score'],
+            ]),
             date('c')
         );
 
@@ -826,7 +837,14 @@ final class PatternService
         $this->requireLogic('signal');
         $signal = (new \Modules\Strategy\Pattern\Logic\PatternSignal())->build(
             $symbol, $candidate, $confirm,
-            array_merge($diagBase, $corridor, $wave),
+            array_merge($diagBase, $corridor, $wave, [
+                'pattern_score'           => $quality['pattern_score'],
+                'structure_score'         => $quality['structure_score'],
+                'neckline_score'          => $quality['neckline_score'],
+                'confirmation_score'      => $quality['confirmation_score'],
+                'context_score'           => $quality['context_score'],
+                'candidate_quality_score' => $quality['candidate_quality_score'],
+            ]),
             date('c')
         );
 

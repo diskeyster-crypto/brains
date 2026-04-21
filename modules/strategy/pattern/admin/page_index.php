@@ -180,53 +180,53 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 <tr>
                     <th>Символ</th>
                     <th>Сторона</th>
-                    <th>DB✓</th>
-                    <th>DT✓</th>
-                    <th>DB Найден</th>
-                    <th>DT Найден</th>
-                    <th>Верх1</th>
-                    <th>Верх2</th>
-                    <th>Низ1</th>
-                    <th>Низ2</th>
-                    <th>Линия шеи</th>
-                    <th>Окно</th>
-                    <th>СимΔ%</th>
+                    <th>Паттерн</th>
                     <th>Кандидат</th>
+                    <th title="pattern_score">P</th>
+                    <th title="structure_score">Str</th>
+                    <th title="neckline_score">Nck</th>
+                    <th title="confirmation_score">Conf</th>
+                    <th title="context_score">Ctx</th>
+                    <th title="candidate_quality_score">Качество</th>
+                    <th>Q✓</th>
+                    <th>Причина качества</th>
                     <th>Контроль</th>
-                    <th>Причина отклонения</th>
                     <th>Статус сигнала</th>
+                    <th>Причина отклонения</th>
                 </tr>
             </thead>
             <tbody>
             <?php foreach ($previewRows as $row): ?>
             <?php
                 $signalStatus = $row['final_signal_status'] ?? null;
+                $qualityPass  = $row['quality_pass'] ?? null;
                 $rowColor = match ($signalStatus) {
                     'emitted'         => '#166534',
                     'confirm_pending' => '#92400e',
                     default           => '',
                 };
+                $qualColor = $qualityPass === true ? '#22c55e' : ($qualityPass === false ? '#ef4444' : '#64748b');
+
+                $fmtScore = static function(?float $v): string {
+                    return $v !== null ? number_format($v, 2) : '—';
+                };
             ?>
             <tr style="<?= $rowColor ? "background: {$rowColor}22;" : '' ?>">
                 <td><strong><?= htmlspecialchars($row['symbol'] ?? '') ?></strong></td>
                 <td><?= htmlspecialchars($row['side'] ?? '—') ?></td>
-                <td><?= ($row['double_bottom_checked'] ?? false) ? '✓' : '·' ?></td>
-                <td><?= ($row['double_top_checked']    ?? false) ? '✓' : '·' ?></td>
-                <td><?= ($row['double_bottom_found']   ?? false) ? '<span style="color:#22c55e">✓</span>' : '·' ?></td>
-                <td><?= ($row['double_top_found']      ?? false) ? '<span style="color:#22c55e">✓</span>' : '·' ?></td>
-                <td><?= $row['high1_value']  !== null ? number_format((float)$row['high1_value'],  4) : '—' ?></td>
-                <td><?= $row['high2_value']  !== null ? number_format((float)$row['high2_value'],  4) : '—' ?></td>
-                <td><?= $row['low1_value']   !== null ? number_format((float)$row['low1_value'],   4) : '—' ?></td>
-                <td><?= $row['low2_value']   !== null ? number_format((float)$row['low2_value'],   4) : '—' ?></td>
-                <td><?= $row['neckline_value'] !== null ? number_format((float)$row['neckline_value'], 4) : '—' ?></td>
-                <td><?= $row['pattern_window_size'] ?? '—' ?></td>
-                <td><?= $row['similarity_delta_pct'] !== null
-                        ? number_format((float)$row['similarity_delta_pct'] * 100, 2) . '%'
-                        : '—' ?></td>
+                <td><?= htmlspecialchars($row['primary_pattern'] ?? '—') ?></td>
                 <td><?= ($row['candidate_found'] ?? false) ? '<span style="color:#22c55e">да</span>' : 'нет' ?></td>
+                <td><?= $fmtScore($row['pattern_score']      ?? null) ?></td>
+                <td><?= $fmtScore($row['structure_score']    ?? null) ?></td>
+                <td><?= $fmtScore($row['neckline_score']     ?? null) ?></td>
+                <td><?= $fmtScore($row['confirmation_score'] ?? null) ?></td>
+                <td><?= $fmtScore($row['context_score']      ?? null) ?></td>
+                <td style="font-weight:700;color:<?= $qualColor ?>;"><?= $fmtScore($row['candidate_quality_score'] ?? null) ?></td>
+                <td style="color:<?= $qualColor ?>;"><?= $qualityPass === true ? '✓' : ($qualityPass === false ? '✗' : '—') ?></td>
+                <td><code style="font-size:10px;color:#f59e0b;"><?= htmlspecialchars($row['quality_reject_reason'] ?? '') ?></code></td>
                 <td><?= htmlspecialchars($row['control_check_status'] ?? '—') ?></td>
-                <td><code style="font-size:10px;"><?= htmlspecialchars($row['pattern_reject_reason'] ?? '') ?></code></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($signalStatus ?? '') ?></code></td>
+                <td><code style="font-size:10px;"><?= htmlspecialchars($row['reject_reason'] ?? $row['pattern_reject_reason'] ?? '') ?></code></td>
             </tr>
             <?php endforeach; ?>
             </tbody>

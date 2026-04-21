@@ -44,7 +44,12 @@ final class PatternDoubleTop
             ?? self::DEFAULT_HIGH_TOLERANCE);
         $minNecklineBounce = (float)($config['double_top_min_neckline_bounce_pct']
             ?? self::DEFAULT_MIN_NECKLINE_BOUNCE);
-        $necklineDistPct   = (float)($config['neckline_distance_tolerance_pct'] ?? 0.02);
+        // Use side-specific neckline distance tolerance when present; fall back to shared key.
+        // Default 4% for double_top: crypto H4 candles can close 3-4% below the neckline on
+        // the first breakdown bar, so the shared 2% default would reject valid short setups.
+        $necklineDistPct   = (float)($config['double_top_neckline_distance_tolerance_pct']
+            ?? $config['neckline_distance_tolerance_pct']
+            ?? 0.04);
 
         $n = count($candles);
         if ($n < self::PIVOT_WINDOW * 2 + self::MIN_PIVOT_GAP + 2) {

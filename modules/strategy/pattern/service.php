@@ -404,6 +404,9 @@ final class PatternService
         if (empty($stats['quality_reject_reason_distribution'])) {
             $stats['quality_reject_reason_distribution'] = (object)[];
         }
+        if (empty($stats['pattern_reject_reason_distribution'])) {
+            $stats['pattern_reject_reason_distribution'] = (object)[];
+        }
         $this->writeJson('storage/stats.json', $stats);
 
         // Market regime summary for last_run
@@ -459,6 +462,7 @@ final class PatternService
                 'candidates_after_quality_filter'  => $stats['candidates_after_quality_filter_total']  ?? 0,
                 'candidates_rejected_by_quality'   => $stats['candidates_rejected_by_quality_total']   ?? 0,
                 'quality_reject_reason_distribution' => $stats['quality_reject_reason_distribution'] ?? (object)[],
+                'pattern_reject_reason_distribution' => $stats['pattern_reject_reason_distribution'] ?? (object)[],
                 'control_check_pass'         => $stats['control_check_pass_total']      ?? 0,
                 'control_check_failed'       => $stats['control_check_failed_total']    ?? 0,
                 'control_check_expired'      => $stats['control_check_expired_total']   ?? 0,
@@ -1337,6 +1341,12 @@ final class PatternService
         // pattern_rejected_total: only when pattern stage was reached but candidate not found
         if (($dbChecked || $dtChecked) && !$candidateFound && in_array($fss, ['rejected', 'no_signal'], true)) {
             $inc($stats, 'pattern_rejected_total');
+            // Track the specific pattern-stage reject reason separately
+            if ($rejectReason !== null && $rejectReason !== '') {
+                $pdist = (array)($stats['pattern_reject_reason_distribution'] ?? []);
+                $pdist[$rejectReason] = ($pdist[$rejectReason] ?? 0) + 1;
+                $stats['pattern_reject_reason_distribution'] = $pdist;
+            }
         }
 
         // ── Control check ──────────────────────
@@ -1466,7 +1476,8 @@ final class PatternService
             'signals_rejected_loser_by_quality_total' => 0,
             'current_batch_size'           => 0,
             'last_updated_at'              => null,
-            'reject_reason_distribution'   => (object)[],
+            'reject_reason_distribution'         => (object)[],
+            'pattern_reject_reason_distribution' => (object)[],
         ];
     }
 

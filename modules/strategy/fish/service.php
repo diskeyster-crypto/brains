@@ -1393,12 +1393,22 @@ final class FishService
             $exchange, $store, $journal, $orderBuilder, $pmManager, $config
         );
 
-        // Enqueue any new signals from signals.json
+        // Enqueue any new signals from signals.json — skip signals already owned by
+        // an active order or active position to prevent duplicate placements.
         $signals   = $this->loadStorage('signals.json');
         $enqueued  = 0;
+        $alreadyOwned = 0;
         foreach ($signals as $signal) {
             $signalId = (string)($signal['signal_id'] ?? '');
             if ($signalId === '') {
+                continue;
+            }
+            // Build the same fish_order_id and order_link_id that executor would use
+            $fishOrderId = 'fo_' . substr(md5($signalId), 0, 16);
+            $linkId      = 'fish_' . substr(preg_replace('/[^a-z0-9_]/', '_', $signalId), 0, 31);
+            $ownership   = $store->signalOwnershipReason($signalId, $fishOrderId, $linkId);
+            if ($ownership !== 'none') {
+                $alreadyOwned++;
                 continue;
             }
             // Merge config execution fields into the signal intent
@@ -1412,24 +1422,29 @@ final class FishService
         }
 
         $tickResult = $executor->tick();
-        $tickResult['signals_enqueued'] = $enqueued;
-        $tickResult['ok']               = true;
+        $tickResult['signals_enqueued']          = $enqueued;
+        $tickResult['already_owned_signals_skipped'] = $alreadyOwned;
+        $tickResult['ok']                        = true;
 
         // Always write bot_last_run.json regardless of queue depth
         $summary = [
-            'bot_enabled'       => true,
-            'execution_mode'    => $mode,
-            'queue_depth'       => count($store->readExecutionQueue()),
-            'active_orders'     => count($store->readActiveOrders()),
-            'active_positions'  => count($store->readActivePositions()),
-            'signals_enqueued'  => $enqueued,
-            'intents_processed' => (int)($tickResult['intents_processed'] ?? 0),
-            'orders_accepted'   => (int)($tickResult['orders_accepted']   ?? 0),
-            'orders_rejected'   => (int)($tickResult['orders_rejected']   ?? 0),
-            'last_tick'         => date('Y-m-d H:i:s'),
-            'last_error'        => $tickResult['last_error'] ?? null,
-            'status'            => 'ok',
-            'gateway'           => $exchange->getDiagnostics(),
+            'bot_enabled'                        => true,
+            'execution_mode'                     => $mode,
+            'queue_depth'                        => count($store->readExecutionQueue()),
+            'active_orders'                      => count($store->readActiveOrders()),
+            'active_positions'                   => count($store->readActivePositions()),
+            'signals_enqueued'                   => $enqueued,
+            'already_owned_signals_skipped'      => $alreadyOwned,
+            'intents_processed'                  => (int)($tickResult['intents_processed']           ?? 0),
+            'duplicate_intents_ignored'          => (int)($tickResult['duplicate_intents_ignored']   ?? 0),
+            'last_duplicate_skip_reason'         => (string)($tickResult['last_duplicate_skip_reason'] ?? 'none'),
+            'duplicate_intents_ignored_total'    => (int)($tickResult['duplicate_intents_ignored_total'] ?? 0),
+            'orders_accepted'                    => (int)($tickResult['orders_accepted']              ?? 0),
+            'orders_rejected'                    => (int)($tickResult['orders_rejected']              ?? 0),
+            'last_tick'                          => date('Y-m-d H:i:s'),
+            'last_error'                         => $tickResult['last_error']                         ?? null,
+            'status'                             => 'ok',
+            'gateway'                            => $exchange->getDiagnostics(),
         ];
         $store->writeLastRun($summary);
 

@@ -340,6 +340,22 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
             <?php endif; ?>
 
             <?php
+            $dupIgnored  = (int)($botLastRun['duplicate_intents_ignored']           ?? 0);
+            $dupOwnSkip  = (int)($botLastRun['already_owned_signals_skipped']        ?? 0);
+            $dupTotal    = (int)($botLastRun['duplicate_intents_ignored_total']      ?? ($botStats['duplicate_intents_ignored_total'] ?? 0));
+            $dupReason   = (string)($botLastRun['last_duplicate_skip_reason']        ?? 'none');
+            if ($dupIgnored > 0 || $dupOwnSkip > 0 || $dupTotal > 0):
+            ?>
+            <div style="font-size: 11px; margin-bottom: 8px; color: #f59e0b;">
+                Duplicate guard (last tick):
+                intents_ignored=<code><?= $dupIgnored ?></code>
+                &nbsp;|&nbsp; already_owned_skipped=<code><?= $dupOwnSkip ?></code>
+                &nbsp;|&nbsp; reason=<code><?= htmlspecialchars($dupReason) ?></code>
+                &nbsp;|&nbsp; lifetime_ignored=<code><?= $dupTotal ?></code>
+            </div>
+            <?php endif; ?>
+
+            <?php
             // Fill-detection diagnostics from last tick
             $fillResult = $botLastRun['last_fill_detect_result'] ?? null;
             if (is_array($fillResult)):

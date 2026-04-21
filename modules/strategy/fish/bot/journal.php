@@ -80,6 +80,14 @@ final class FishBotJournal
         ]);
     }
 
+    public function orderSkipped(string $signalId, string $reason): void
+    {
+        $this->append('order_skipped_duplicate', [
+            'signal_id' => $signalId,
+            'reason'    => $reason,
+        ]);
+    }
+
     public function orderFilled(string $signalId, string $fishOrderId, string $exchangeOrderId, float $avgPrice, bool $smoke): void
     {
         $this->append('order_filled', [

@@ -116,21 +116,22 @@ final class FishBotStore
     public function readStats(): array
     {
         $defaults = [
-            'strategy_id'                  => 'fish',
-            'total_bot_ticks'              => 0,
-            'signals_queued_total'         => 0,
-            'orders_attempted_total'       => 0,
-            'orders_accepted_total'        => 0,
-            'orders_rejected_total'        => 0,
-            'orders_filled_total'          => 0,
-            'orders_cancelled_total'       => 0,
-            'positions_opened_total'       => 0,
-            'positions_closed_total'       => 0,
-            'sltp_attach_success_total'    => 0,
-            'sltp_attach_failed_total'     => 0,
-            'execution_errors_total'       => 0,
-            'last_tick_at'                 => null,
-            'last_error'                   => null,
+            'strategy_id'                      => 'fish',
+            'total_bot_ticks'                  => 0,
+            'signals_queued_total'             => 0,
+            'orders_attempted_total'           => 0,
+            'orders_accepted_total'            => 0,
+            'orders_rejected_total'            => 0,
+            'orders_filled_total'              => 0,
+            'orders_cancelled_total'           => 0,
+            'positions_opened_total'           => 0,
+            'positions_closed_total'           => 0,
+            'sltp_attach_success_total'        => 0,
+            'sltp_attach_failed_total'         => 0,
+            'execution_errors_total'           => 0,
+            'duplicate_intents_ignored_total'  => 0,
+            'last_tick_at'                     => null,
+            'last_error'                       => null,
         ];
         $stored = $this->read('bot_stats.json');
         return array_merge($defaults, $stored);
@@ -177,6 +178,42 @@ final class FishBotStore
         $queue = $this->readExecutionQueue();
         $queue = array_values(array_filter($queue, fn($i) => ($i['signal_id'] ?? '') !== $signalId));
         $this->writeExecutionQueue($queue);
+    }
+
+    /**
+     * Check whether a signal is already represented by a Fish-owned active order
+     * or active position (mode-agnostic check — caller decides if mode matters).
+     *
+     * Returns one of:
+     *   'signal_already_has_active_order'
+     *   'signal_already_has_active_position'
+     *   'order_link_id_already_exists'
+     *   'none'
+     */
+    public function signalOwnershipReason(string $signalId, string $fishOrderId, string $orderLinkId): string
+    {
+        $orders = $this->readActiveOrders();
+        foreach ($orders as $o) {
+            if (($o['status'] ?? '') !== 'open') {
+                continue;
+            }
+            if (($o['owner_signal_id'] ?? '') === $signalId) {
+                return 'signal_already_has_active_order';
+            }
+            if (($o['fish_order_id'] ?? '') === $fishOrderId) {
+                return 'order_link_id_already_exists';
+            }
+        }
+        $positions = $this->readActivePositions();
+        foreach ($positions as $p) {
+            if (($p['status'] ?? '') !== 'open') {
+                continue;
+            }
+            if (($p['owner_signal_id'] ?? '') === $signalId || ($p['owner_strategy'] ?? '') === 'fish' && ($p['fish_order_id'] ?? '') === $fishOrderId) {
+                return 'signal_already_has_active_position';
+            }
+        }
+        return 'none';
     }
 
     // -------------------------------------------------------------------------

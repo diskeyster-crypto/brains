@@ -98,12 +98,14 @@ final class FishExecutor
 
         $this->journal->botTickStarted($mode, count($queue), $openOrderCount, $openPositionCount);
 
-        $intentsProcessed   = 0;
-        $ordersPlaced       = 0;
-        $ordersRejected     = 0;
-        $errors             = 0;
+        $intentsProcessed    = 0;
+        $ordersPlaced        = 0;
+        $ordersRejected      = 0;
+        $errors              = 0;
         $intentsBlockedByCap = 0;
         $capBlockReason      = 'none';
+        $duplicatesIgnored   = 0;
+        $lastDuplicateReason = 'none';
 
         foreach ($queue as $intent) {
             // Hard caps — record reason when blocking
@@ -122,6 +124,18 @@ final class FishExecutor
             $symbol   = (string)($intent['symbol']    ?? '');
             $side     = (string)($intent['side']      ?? 'long');
 
+            // Pre-submit duplicate guard: skip if signal is already represented
+            $fishOrderId  = $this->orderBuilder->fishOrderId($signalId);
+            $linkId       = 'fish_' . substr(preg_replace('/[^a-z0-9_]/', '_', $signalId), 0, 31);
+            $ownerReason  = $this->store->signalOwnershipReason($signalId, $fishOrderId, $linkId);
+            if ($ownerReason !== 'none') {
+                $this->store->dequeue($signalId);
+                $this->journal->orderSkipped($signalId, $ownerReason);
+                $duplicatesIgnored++;
+                $lastDuplicateReason = $ownerReason;
+                continue;
+            }
+
             $intentsProcessed++;
 
             try {
@@ -130,7 +144,7 @@ final class FishExecutor
                 $fishMeta   = $params['_fish_meta'];
                 unset($params['_fish_meta']);   // _fish_meta must not be sent to exchange
 
-                $fishOrderId = $this->orderBuilder->fishOrderId($signalId);
+                // $fishOrderId already computed above for the pre-submit guard
 
                 $this->journal->orderAttempt($signalId, $symbol, $params);
 
@@ -202,7 +216,8 @@ final class FishExecutor
         $stats['sltp_attach_success_total'] += (int)($pmSummary['sltp_attached']     ?? 0);
         $stats['sltp_attach_failed_total']  += (int)($pmSummary['sltp_attach_failed'] ?? 0);
         $stats['execution_errors_total']    += $errors;
-        $stats['intents_blocked_by_cap_total'] = ($stats['intents_blocked_by_cap_total'] ?? 0) + $intentsBlockedByCap;
+        $stats['intents_blocked_by_cap_total']      = ($stats['intents_blocked_by_cap_total']      ?? 0) + $intentsBlockedByCap;
+        $stats['duplicate_intents_ignored_total']   = ($stats['duplicate_intents_ignored_total']   ?? 0) + $duplicatesIgnored;
         $stats['last_tick_at']               = $tickAt;
         if ($errors > 0) {
             $stats['last_error'] = 'Errors on tick ' . $tickAt;
@@ -216,6 +231,9 @@ final class FishExecutor
             'intents_blocked_by_cap'             => $intentsBlockedByCap,
             'cap_blocked'                        => $capBlocked,
             'cap_block_reason'                   => $capBlocked ? $capBlockReason : 'none',
+            'duplicate_intents_ignored'          => $duplicatesIgnored,
+            'last_duplicate_skip_reason'         => $lastDuplicateReason,
+            'duplicate_intents_ignored_total'    => $stats['duplicate_intents_ignored_total'],
             'orders_placed'                      => $ordersPlaced,
             'orders_rejected'                    => $ordersRejected,
             'execution_errors'                   => $errors,

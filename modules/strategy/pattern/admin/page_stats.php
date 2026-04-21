@@ -98,6 +98,7 @@ $statGroups = [
         'signals_rejected_final_low_quality_total'  => 'Отклонено: низкий candidate_quality_score',
         'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown)',
         'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
+        'signals_rejected_final_short_path_total'   => 'Отклонено: шорт-путь (тренд не медвежий/боковик)',
     ],
 ];
 ?>

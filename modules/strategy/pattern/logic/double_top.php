@@ -28,7 +28,11 @@ namespace Modules\Strategy\Pattern\Logic;
 
 final class PatternDoubleTop
 {
-    private const PIVOT_WINDOW    = 3;
+    // Reduced from 3 → 2: requires only 2 bars on each side to confirm a swing high.
+    // A window of 3 misses many valid double-top peaks in crypto H4 data (higher
+    // volatility, shorter consolidations). Window of 2 finds more pairs while the
+    // neckline floor and quality gate filter low-quality results downstream.
+    private const PIVOT_WINDOW    = 2;
     private const DEFAULT_HIGH_TOLERANCE      = 0.05; // 5% default (crypto double-tops often differ 3–7%)
     private const DEFAULT_MIN_NECKLINE_BOUNCE = 0.005; // neckline must be at least 0.5% below the avg high
     private const MIN_PIVOT_GAP   = 4;

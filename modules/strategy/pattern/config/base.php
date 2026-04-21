@@ -54,9 +54,9 @@ return [
     // Candidates whose composite quality score is below this threshold are
     // rejected before control confirmation AND at final active-signal selection.
     // Set to 0.0 to disable.
-    // Raised from 0.45 → 0.55 → 0.58: 0.55 still lets borderline medium candidates
-    // through; 0.58 requires a measurably stronger composite across weighted components.
-    'min_candidate_quality_score' => 0.58,
+    // Raised from 0.45 → 0.55 → 0.58 → 0.62: 0.58 still passed all 4 current
+    // candidates; 0.62 creates a real decisional cut without killing the whole flow.
+    'min_candidate_quality_score' => 0.62,
 
     // Neckline floor — signals whose neckline_score is below this value are
     // purged from the final active signal set after winner selection.

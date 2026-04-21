@@ -1148,13 +1148,15 @@ final class PatternService
             }
 
             // 1c. Trend consistency:
-            //     - flat/unknown means no directional context → remove when trend_required.
-            //     - side-vs-trend: long requires bullish context; short requires bearish context.
-            //       A short signal in a bullish market or a long signal in a bearish market
-            //       indicates a context mismatch and must not survive into the final active set.
+            //     - unknown means no directional context → remove when trend_required.
+            //     - side-vs-trend: long requires bullish context; short requires bearish
+            //       or flat context (a double-top in a flat market is a valid reversal
+            //       setup; the trend gate already passes flat, so the final filter must
+            //       be consistent and not kill these signals).
+            //       A short signal in a bullish market must not survive into the final set.
             if ($trendRequired) {
                 $trendDir = (string)($s['trend_direction'] ?? 'unknown');
-                if (!in_array($trendDir, ['bullish', 'bearish'], true)) {
+                if (!in_array($trendDir, ['bullish', 'bearish', 'flat'], true)) {
                     $rejectedFinalTrend++;
                     if ($side === 'short') {
                         $rejectedFinalShortPath++;
@@ -1162,14 +1164,15 @@ final class PatternService
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
                     continue;
                 }
-                // Side-vs-trend: enforce long = bullish, short = bearish
-                if (($side === 'long' && $trendDir !== 'bullish')
-                    || ($side === 'short' && $trendDir !== 'bearish')
-                ) {
+                // Side-vs-trend: long = bullish only; short = bearish or flat
+                if ($side === 'long' && $trendDir !== 'bullish') {
                     $rejectedFinalTrend++;
-                    if ($side === 'short') {
-                        $rejectedFinalShortPath++;
-                    }
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
+                    continue;
+                }
+                if ($side === 'short' && $trendDir === 'bullish') {
+                    $rejectedFinalTrend++;
+                    $rejectedFinalShortPath++;
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }

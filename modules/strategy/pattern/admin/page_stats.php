@@ -28,6 +28,19 @@ $lastRun = $service->getLastRun();
 
 $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
 
+$regimeRu = static function(?string $v): string {
+    return match ($v ?? '') {
+        'bullish'    => 'бычий',
+        'bearish'    => 'медвежий',
+        'mixed'      => 'смешанный',
+        'transition' => 'переходный',
+        'flat'       => 'боковик',
+        'unknown'    => 'неизвестно',
+        ''           => '—',
+        default      => $v,
+    };
+};
+
 $statGroups = [
     'Рыночный режим' => [
         'regime_bullish_total'    => 'Бычьих циклов',
@@ -81,7 +94,7 @@ $statGroups = [
         <h6>Текущий рыночный режим</h6>
         <div class="stats-grid">
             <div class="stat-cell">
-                <div class="stat-num"><?= htmlspecialchars($regime['regime'] ?? '—') ?></div>
+                <div class="stat-num"><?= htmlspecialchars($regimeRu($regime['regime'] ?? null)) ?></div>
                 <div class="stat-lbl">Режим</div>
             </div>
             <div class="stat-cell">
@@ -166,8 +179,8 @@ $statGroups = [
                 <td><?= htmlspecialchars($sig['side'] ?? '') ?></td>
                 <td><?= htmlspecialchars($sig['primary_pattern'] ?? '') ?></td>
                 <td><?= htmlspecialchars((string)($sig['entry_price'] ?? '')) ?></td>
-                <td><?= htmlspecialchars($sig['market_regime'] ?? '') ?></td>
-                <td><?= htmlspecialchars($sig['trend_direction'] ?? '') ?></td>
+                <td><?= htmlspecialchars($regimeRu($sig['market_regime'] ?? null)) ?></td>
+                <td><?= htmlspecialchars($regimeRu($sig['trend_direction'] ?? null)) ?></td>
                 <td><?= htmlspecialchars($sig['detected_at'] ?? '') ?></td>
             </tr>
             <?php endforeach; ?>

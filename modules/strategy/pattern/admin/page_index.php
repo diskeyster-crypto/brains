@@ -49,9 +49,30 @@ $statusColor = match ($statusLabel) {
     default   => '#6b7280',
 };
 
-$lastRunTime = $lastRun['run_at']       ?? null;
-$lastStatus  = $lastRun['status']       ?? '—';
-$errCount    = $lastRun['errors_count'] ?? 0;
+$lastRunTime    = $lastRun['started_at']  ?? $lastRun['updated_at'] ?? null;
+$lastUpdatedAt  = $lastRun['updated_at']  ?? null;
+$lastFinishedAt = $lastRun['finished_at'] ?? null;
+$lastStatus     = $lastRun['status']      ?? '—';
+$errCount       = $lastRun['errors_count'] ?? 0;
+
+$lastStatusRu = match ($lastStatus) {
+    'queued'  => 'в очереди',
+    'running' => 'выполняется',
+    'done'    => 'завершено',
+    'failed'  => 'ошибка',
+    default   => $lastStatus !== '—' ? $lastStatus : '—',
+};
+
+$regimeRaw = $regime['regime'] ?? null;
+$regimeRu = match ($regimeRaw) {
+    'bullish'    => 'бычий',
+    'bearish'    => 'медвежий',
+    'mixed'      => 'смешанный',
+    'transition' => 'переходный',
+    'flat'       => 'боковик',
+    'unknown'    => 'неизвестно',
+    default      => $regimeRaw ?? '—',
+};
 
 $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
 ?>
@@ -90,11 +111,11 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
     <div class="pt-card-grid">
         <div class="pt-stat-box">
             <div class="pt-stat-val"><?= count($signals) ?></div>
-            <div class="pt-stat-lbl">Активные сигналы</div>
+            <div class="pt-stat-lbl">Активных сигналов</div>
         </div>
         <div class="pt-stat-box">
-            <div class="pt-stat-val"><?= (int)($stats['signals_emitted_total'] ?? $stats['final_signals_total'] ?? 0) ?></div>
-            <div class="pt-stat-lbl">Эмитировано (всего)</div>
+            <div class="pt-stat-val"><?= (int)($stats['signals_emitted_total'] ?? 0) ?></div>
+            <div class="pt-stat-lbl">Найдено за цикл</div>
         </div>
         <div class="pt-stat-box">
             <div class="pt-stat-val"><?= (int)($stats['double_bottom_found_total'] ?? 0) ?></div>
@@ -105,7 +126,7 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
             <div class="pt-stat-lbl">Двойных вершин</div>
         </div>
         <div class="pt-stat-box">
-            <div class="pt-stat-val"><?= htmlspecialchars($regime['regime'] ?? '—') ?></div>
+            <div class="pt-stat-val"><?= htmlspecialchars($regimeRu) ?></div>
             <div class="pt-stat-lbl">Рыночный режим</div>
         </div>
         <div class="pt-stat-box">
@@ -116,13 +137,23 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
 
     <!-- Last run info -->
     <div style="background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 13px;">
+        <?php if (empty($lastRun)): ?>
+        <span style="color: #64748b;">Запусков ещё не было.</span>
+        <?php else: ?>
         <strong>Последний запуск</strong>
-        <span class="ms-3">Статус: <code><?= htmlspecialchars($lastStatus) ?></code></span>
+        <span class="ms-3">Статус: <code><?= htmlspecialchars($lastStatusRu) ?></code></span>
         <?php if ($lastRunTime): ?>
-        <span class="ms-3">Время: <code><?= htmlspecialchars($lastRunTime) ?></code></span>
+        <span class="ms-3">Начало: <code><?= htmlspecialchars($lastRunTime) ?></code></span>
         <?php endif; ?>
-        <span class="ms-3">Обработано: <code><?= htmlspecialchars((string)($lastRun['processed'] ?? '—')) ?></code></span>
-        <span class="ms-3">Найдено: <code><?= htmlspecialchars((string)($lastRun['found'] ?? '—')) ?></code></span>
+        <?php if ($lastFinishedAt): ?>
+        <span class="ms-3">Завершено: <code><?= htmlspecialchars($lastFinishedAt) ?></code></span>
+        <?php elseif ($lastUpdatedAt): ?>
+        <span class="ms-3">Обновлено: <code><?= htmlspecialchars($lastUpdatedAt) ?></code></span>
+        <?php endif; ?>
+        <span class="ms-3">Просканировано: <code><?= htmlspecialchars((string)($lastRun['symbols_scanned'] ?? '—')) ?></code></span>
+        <span class="ms-3">Найдено за цикл: <code><?= htmlspecialchars((string)($lastRun['signals_emitted_total'] ?? '—')) ?></code></span>
+        <span class="ms-3">Активных сигналов: <code><?= htmlspecialchars((string)($lastRun['signals_active_final_total'] ?? '—')) ?></code></span>
+        <?php endif; ?>
     </div>
 
     <!-- Actions -->

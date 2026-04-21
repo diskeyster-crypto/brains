@@ -43,8 +43,11 @@ $statGroups = [
         'wave_rejected_total'   => 'Wave rejected',
     ],
     'Pattern Candidates' => [
-        'double_bottom_found_total' => 'Double bottoms found',
-        'double_top_found_total'    => 'Double tops found',
+        'double_bottom_checked_total' => 'Double bottoms checked',
+        'double_bottom_found_total'   => 'Double bottoms found',
+        'double_top_checked_total'    => 'Double tops checked',
+        'double_top_found_total'      => 'Double tops found',
+        'pattern_rejected_total'      => 'Pattern rejected (checked but no candidate)',
     ],
     'Confirmation & Signals' => [
         'control_check_pass_total'    => 'Control check pass',

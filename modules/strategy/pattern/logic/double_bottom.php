@@ -145,7 +145,7 @@ final class PatternDoubleBottom
 
             $isHigh = true;
             for ($j = $i - $w; $j <= $i + $w; $j++) {
-                if ($j !== $i && (float)($candles[$j]['high'] ?? 0.0) >= $high) {
+                if ($j !== $i && (float)($candles[$j]['high'] ?? 0.0) > $high) {
                     $isHigh = false;
                     break;
                 }
@@ -157,7 +157,7 @@ final class PatternDoubleBottom
 
             $isLow = true;
             for ($j = $i - $w; $j <= $i + $w; $j++) {
-                if ($j !== $i && (float)($candles[$j]['low'] ?? 0.0) <= $low) {
+                if ($j !== $i && (float)($candles[$j]['low'] ?? 0.0) < $low) {
                     $isLow = false;
                     break;
                 }

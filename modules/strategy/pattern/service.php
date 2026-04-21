@@ -130,8 +130,11 @@ final class PatternService
                 $this->writeJson('storage/' . $f, $v);
             }
         }
-        if (!file_exists($this->moduleDir . '/storage/market_regime.json')) {
-            $this->writeJson('storage/market_regime.json', ['regime' => 'unknown']);
+        // Seed market_regime.json if missing OR if the file exists but is empty / invalid JSON
+        $regimePath = $this->moduleDir . '/storage/market_regime.json';
+        $regimeRaw  = file_exists($regimePath) ? (string)@file_get_contents($regimePath) : '';
+        if (empty(json_decode($regimeRaw, true))) {
+            $this->writeJson('storage/market_regime.json', ['regime' => 'unknown', 'ts' => date('c')]);
         }
         if (!file_exists($this->moduleDir . '/storage/market_regime_history.ndjson')) {
             file_put_contents($this->moduleDir . '/storage/market_regime_history.ndjson', '');
@@ -192,7 +195,12 @@ final class PatternService
         // Compute regime on first batch tick (cursor === 0) or if not yet set.
         $regimeEnabled = (bool)($config['market_regime_enabled'] ?? true);
         $prevRegimeData = $this->readJson('storage/market_regime.json', []);
-        $prevRegimeStr  = (string)($prevRegimeData['regime'] ?? 'unknown');
+        // Seed market_regime.json if empty — can happen if the file existed but was blank
+        if (empty($prevRegimeData)) {
+            $prevRegimeData = ['regime' => 'unknown', 'ts' => date('c')];
+            $this->writeJson('storage/market_regime.json', $prevRegimeData);
+        }
+        $prevRegimeStr = (string)($prevRegimeData['regime'] ?? 'unknown');
 
         if ($regimeEnabled && $cursor === 0 && $total > 0) {
             $this->computeAndPersistRegime($symbols, $config, $prevRegimeStr);
@@ -335,6 +343,17 @@ final class PatternService
         // Snapshot counters — overwritten each tick to show current state
         $stats['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
         $stats['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
+        // Final-eligibility counters
+        $stats['signals_before_final_eligibility_total']    = $filterStats['before_final_eligibility'];
+        $stats['signals_after_final_eligibility_total']     = $filterStats['after_final_eligibility'];
+        $stats['signals_rejected_final_trend_total']        =
+            ($stats['signals_rejected_final_trend_total']        ?? 0) + $filterStats['rejected_final_trend'];
+        $stats['signals_rejected_final_context_total']      =
+            ($stats['signals_rejected_final_context_total']      ?? 0) + $filterStats['rejected_final_context'];
+        $stats['signals_rejected_final_quality_total']      =
+            ($stats['signals_rejected_final_quality_total']      ?? 0) + $filterStats['rejected_final_quality'];
+        $stats['signals_rejected_final_low_neckline_total'] =
+            ($stats['signals_rejected_final_low_neckline_total'] ?? 0) + $filterStats['rejected_final_low_neckline'];
 
         // Tag preview rows with winner outcome
         foreach ($batchPreviewRows as &$row) {
@@ -381,6 +400,9 @@ final class PatternService
         // Ensure reject_reason_distribution is always a JSON object, not array
         if (empty($stats['reject_reason_distribution'])) {
             $stats['reject_reason_distribution'] = (object)[];
+        }
+        if (empty($stats['quality_reject_reason_distribution'])) {
+            $stats['quality_reject_reason_distribution'] = (object)[];
         }
         $this->writeJson('storage/stats.json', $stats);
 
@@ -458,6 +480,13 @@ final class PatternService
                 'signals_rejected_missing_quality'  => $stats['signals_rejected_missing_quality_total']  ?? 0,
                 'signals_rejected_low_neckline'     => $stats['signals_rejected_low_neckline_total']     ?? 0,
                 'signals_rejected_loser_by_quality' => $stats['signals_rejected_loser_by_quality_total'] ?? 0,
+                // Final-eligibility breakdown
+                'signals_before_final_eligibility'      => $stats['signals_before_final_eligibility_total']    ?? 0,
+                'signals_after_final_eligibility'       => $stats['signals_after_final_eligibility_total']     ?? 0,
+                'signals_rejected_final_trend'          => $stats['signals_rejected_final_trend_total']        ?? 0,
+                'signals_rejected_final_context'        => $stats['signals_rejected_final_context_total']      ?? 0,
+                'signals_rejected_final_quality'        => $stats['signals_rejected_final_quality_total']      ?? 0,
+                'signals_rejected_final_low_neckline'   => $stats['signals_rejected_final_low_neckline_total'] ?? 0,
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
@@ -1015,10 +1044,15 @@ final class PatternService
     }
 
     /**
-     * Apply three-stage signal filtering pipeline:
-     *   1. Purge signals without a complete quality block.
-     *   2. Purge signals whose neckline_score is below min_neckline_score.
-     *   3. Winner selection: one signal per symbol+side by quality ranking.
+     * Apply the full signal filtering pipeline:
+     *   Stage 1 — Final eligibility:
+     *     a. Quality completeness (all score keys present, quality_pass = true)
+     *     b. Neckline floor (neckline_score >= min_neckline_score when configured)
+     *     c. Trend consistency (when trend_required: signal's trend_direction must be
+     *        'bullish' or 'bearish'; flat/unknown are removed from the final active set)
+     *     d. Context consistency (wave_state must be corrective; bucket must be in
+     *        allowed zone for signal side — catches stale/inconsistent snapshots)
+     *   Stage 2 — Winner selection: one signal per symbol+side by quality ranking.
      *
      * Returns [filteredSignals, filterStats, signalOutcomeMap].
      * signalOutcomeMap: signal_id → ['winner' => bool, 'reason' => string|null]
@@ -1033,7 +1067,12 @@ final class PatternService
         array $newlyEmitted,
         array $config
     ): array {
-        $minNeckline = (float)($config['min_neckline_score'] ?? 0.0);
+        $minNeckline      = (float)($config['min_neckline_score']    ?? 0.0);
+        $trendRequired    = (bool)($config['trend_required']         ?? true);
+        $corridorRequired = (bool)($config['corridor_required']      ?? true);
+        $waveRequired     = (bool)($config['wave_required']          ?? true);
+        $allowedLong      = (array)($config['allowed_long_buckets']  ?? [1, 2, 3]);
+        $allowedShort     = (array)($config['allowed_short_buckets'] ?? [8, 9, 10]);
 
         $requiredScoreKeys = [
             'pattern_score', 'structure_score', 'neckline_score',
@@ -1051,13 +1090,11 @@ final class PatternService
                     return false;
                 }
             }
-            // quality_reject_reason key must exist (value may be null — that is correct for passing signals)
+            // quality_reject_reason key must exist (null is correct for passing signals)
             return array_key_exists('quality_reject_reason', $sig);
         };
 
-        $rejectedMissingQuality = 0;
-        $rejectedLowNeckline    = 0;
-        $signalOutcomeMap       = [];
+        $signalOutcomeMap = [];
 
         // Merge existing + new into a keyed map (new signals overwrite by signal_id)
         $merged = [];
@@ -1068,27 +1105,83 @@ final class PatternService
             $merged[$s['signal_id']] = $s;
         }
 
-        // Step 1 + 2: quality completeness and neckline floor
-        $clean = [];
+        $beforeFinalEligibility  = count($merged);
+        $rejectedFinalQuality    = 0;
+        $rejectedFinalLowNeckline = 0;
+        $rejectedFinalTrend      = 0;
+        $rejectedFinalContext    = 0;
+
+        // ── Stage 1: Final eligibility ────────────────────────────────────────
+        $eligible = [];
         foreach ($merged as $id => $s) {
+            $side = (string)($s['side'] ?? '');
+
+            // 1a. Quality completeness
             if (!$isComplete($s)) {
-                $rejectedMissingQuality++;
-                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'missing_quality_block'];
+                $rejectedFinalQuality++;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_quality_fail'];
                 continue;
             }
+
+            // 1b. Neckline floor
             if ($minNeckline > 0.0 && (float)($s['neckline_score'] ?? 0.0) < $minNeckline) {
-                $rejectedLowNeckline++;
-                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'neckline_floor_rejected'];
+                $rejectedFinalLowNeckline++;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_neckline_score'];
                 continue;
             }
-            $clean[$id] = $s;
+
+            // 1c. Trend consistency — the stored trend_direction must be directional
+            //     ('bullish' or 'bearish'); flat/unknown are not valid final contexts.
+            //     Double-bottom in a bearish trend (reversal) is a valid long setup.
+            //     Double-top in a bullish trend (reversal) is a valid short setup.
+            //     Flat/unknown means no established directional context → remove.
+            if ($trendRequired) {
+                $trendDir = (string)($s['trend_direction'] ?? 'unknown');
+                if (!in_array($trendDir, ['bullish', 'bearish'], true)) {
+                    $rejectedFinalTrend++;
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
+                    continue;
+                }
+            }
+
+            // 1d. Context consistency — wave state and bucket zone
+            $contextRejectReason = null;
+
+            // Wave: signal must have been in a corrective wave state when detected
+            if ($waveRequired) {
+                $waveState = (string)($s['wave_state'] ?? '');
+                // Only reject when wave_state is explicitly non-corrective (not when absent)
+                if ($waveState !== '' && $waveState !== 'unknown' && $waveState !== 'corrective') {
+                    $contextRejectReason = 'final_wave_mismatch';
+                }
+            }
+
+            // Bucket: signal's stored corridor_bucket must be in allowed zone
+            if ($contextRejectReason === null && $corridorRequired) {
+                $bucket = (int)($s['corridor_bucket'] ?? 0);
+                if ($bucket > 0) {
+                    if ($side === 'long' && !in_array($bucket, $allowedLong, true)) {
+                        $contextRejectReason = 'final_bucket_mismatch';
+                    } elseif ($side === 'short' && !in_array($bucket, $allowedShort, true)) {
+                        $contextRejectReason = 'final_bucket_mismatch';
+                    }
+                }
+            }
+
+            if ($contextRejectReason !== null) {
+                $rejectedFinalContext++;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => $contextRejectReason];
+                continue;
+            }
+
+            $eligible[$id] = $s;
         }
 
-        $beforeWinner = count($clean);
+        $afterFinalEligibility = count($eligible);
 
-        // Step 3: winner selection — one signal per symbol+side
+        // ── Stage 2: Winner selection — one signal per symbol+side ────────────
         $bySymbolSide = [];
-        foreach ($clean as $s) {
+        foreach ($eligible as $s) {
             $key = ($s['symbol'] ?? '') . '|' . ($s['side'] ?? '');
             $bySymbolSide[$key][] = $s;
         }
@@ -1133,11 +1226,20 @@ final class PatternService
         }
 
         $filterStats = [
-            'rejected_missing_quality' => $rejectedMissingQuality,
-            'rejected_low_neckline'    => $rejectedLowNeckline,
-            'before_winner_selection'  => $beforeWinner,
-            'after_winner_selection'   => count($winnerSignals),
-            'rejected_loser_by_quality'=> $rejectedLoserByQuality,
+            // Final eligibility stage
+            'before_final_eligibility'      => $beforeFinalEligibility,
+            'after_final_eligibility'       => $afterFinalEligibility,
+            'rejected_final_quality'        => $rejectedFinalQuality,
+            'rejected_final_low_neckline'   => $rejectedFinalLowNeckline,
+            'rejected_final_trend'          => $rejectedFinalTrend,
+            'rejected_final_context'        => $rejectedFinalContext,
+            // Winner selection stage
+            'before_winner_selection'       => $afterFinalEligibility,
+            'after_winner_selection'        => count($winnerSignals),
+            'rejected_loser_by_quality'     => $rejectedLoserByQuality,
+            // Backward-compat aliases
+            'rejected_missing_quality'      => $rejectedFinalQuality,
+            'rejected_low_neckline'         => $rejectedFinalLowNeckline,
         ];
 
         return [array_values($winnerSignals), $filterStats, $signalOutcomeMap];
@@ -1349,11 +1451,18 @@ final class PatternService
             'signals_emitted_total'        => 0,
             'signals_active_final_total'   => 0,
             'final_signals_total'          => 0,   // backward-compat alias = signals_active_final_total
-            // Winner-selection filter counters
+            // Final-eligibility filter counters (Stage 1 of applySignalFilters)
+            'signals_before_final_eligibility_total'    => 0,
+            'signals_after_final_eligibility_total'     => 0,
+            'signals_rejected_final_trend_total'        => 0,
+            'signals_rejected_final_context_total'      => 0,
+            'signals_rejected_final_quality_total'      => 0,
+            'signals_rejected_final_low_neckline_total' => 0,
+            // Winner-selection filter counters (Stage 2 of applySignalFilters)
             'signals_before_winner_selection_total'   => 0,
             'signals_after_winner_selection_total'    => 0,
-            'signals_rejected_missing_quality_total'  => 0,
-            'signals_rejected_low_neckline_total'     => 0,
+            'signals_rejected_missing_quality_total'  => 0,  // backward-compat = rejected_final_quality
+            'signals_rejected_low_neckline_total'     => 0,  // backward-compat = rejected_final_low_neckline
             'signals_rejected_loser_by_quality_total' => 0,
             'current_batch_size'           => 0,
             'last_updated_at'              => null,

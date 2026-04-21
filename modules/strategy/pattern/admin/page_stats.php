@@ -90,6 +90,14 @@ $statGroups = [
         'signals_rejected_low_neckline_total'     => 'Отклонено: низкий neckline_score',
         'signals_rejected_loser_by_quality_total' => 'Отклонено: проигравший по качеству',
     ],
+    'Финальная проверка допустимости сигналов' => [
+        'signals_before_final_eligibility_total'    => 'Всего сигналов на входе',
+        'signals_after_final_eligibility_total'     => 'Прошло проверку допустимости',
+        'signals_rejected_final_quality_total'      => 'Отклонено: неполный блок качества',
+        'signals_rejected_final_low_neckline_total' => 'Отклонено: низкий neckline_score',
+        'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown)',
+        'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
+    ],
 ];
 ?>
 <style>

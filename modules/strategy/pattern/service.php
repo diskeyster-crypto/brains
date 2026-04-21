@@ -120,7 +120,12 @@ final class PatternService
         $universe = $this->buildUniverse($config);
 
         // Seed empty storage files if they don't exist yet
-        foreach (['signals.json' => [], 'stats.json' => [], 'last_run.json' => []] as $f => $v) {
+        $zeroStats = $this->zeroStats();
+        foreach ([
+            'signals.json'  => [],
+            'stats.json'    => $zeroStats,
+            'last_run.json' => ['status' => 'queued', 'started_at' => date('c')],
+        ] as $f => $v) {
             if (!file_exists($this->moduleDir . '/storage/' . $f)) {
                 $this->writeJson('storage/' . $f, $v);
             }
@@ -174,8 +179,14 @@ final class PatternService
         $total    = count($symbols);
         $tStart   = time();
 
-        $stats    = $this->getStats();
+        // Merge previous stats on top of a zero skeleton so all keys are present
+        $stats    = array_merge($this->zeroStats(), $this->getStats());
         $signals  = $this->getSignals();
+
+        // Registry diagnostics from the queueRun() pass
+        $regDiag = (array)($state['registry_diag'] ?? []);
+        $stats['registry_loaded']       = (bool)($regDiag['registry_loaded']       ?? false);
+        $stats['registry_symbol_count'] = (int)($regDiag['registry_symbol_count']  ?? 0);
 
         // ── Market Regime ────────────────────────────────────────────────────
         // Compute regime on first batch tick (cursor === 0) or if not yet set.
@@ -192,6 +203,7 @@ final class PatternService
 
         $processed = 0;
         $found     = 0;
+        $batchPreviewRows = [];
 
         while ($cursor < $total && $processed < $batchSz && (time() - $tStart) < $maxSec) {
             $symbol = $symbols[$cursor];
@@ -205,39 +217,96 @@ final class PatternService
                     $found++;
                 }
                 $stats = $this->accumulateStats($stats, $result);
+
+                // Collect pipeline preview row for admin UI
+                $batchPreviewRows[] = [
+                    'symbol'              => $symbol,
+                    'market_regime'       => $result['market_regime']       ?? null,
+                    'trend_direction'     => $result['trend_direction']     ?? null,
+                    'current_bucket'      => $result['current_bucket']      ?? null,
+                    'wave_state'          => $result['wave_state']          ?? null,
+                    'pattern_candidate'   => $result['primary_pattern']     ?? null,
+                    'control_check_status'=> $result['confirm_status']      ?? null,
+                    'final_signal_status' => $result['final_signal_status'] ?? null,
+                    'reject_reason'       => $result['reject_reason']       ?? null,
+                ];
             } catch (\Throwable $e) {
                 $state['errors'][] = $symbol . ': ' . $e->getMessage();
             }
         }
 
-        $state['cursor']    = $cursor;
-        $state['processed'] = (int)($state['processed'] ?? 0) + $processed;
-        $state['found']     = (int)($state['found']     ?? 0) + $found;
+        $totalProcessed = (int)($state['processed'] ?? 0) + $processed;
+        $totalFound     = (int)($state['found']     ?? 0) + $found;
 
-        if ($cursor >= $total) {
+        $state['cursor']    = $cursor;
+        $state['processed'] = $totalProcessed;
+        $state['found']     = $totalFound;
+
+        $isDone = ($cursor >= $total);
+        if ($isDone) {
             $state['status']       = 'done';
             $state['completed_at'] = date('c');
         }
 
+        // Append preview rows to run_state
+        $state['preview_rows'] = array_slice(
+            array_merge((array)($state['preview_rows'] ?? []), $batchPreviewRows),
+            -200   // keep last 200 rows max to avoid unbounded growth
+        );
+
         $this->writeJson('storage/run_state.json', $state);
         $this->writeJson('storage/signals.json',   array_values($signals));
 
-        // Persist enriched stats
-        $stats['symbols_total']        = $total;
-        $stats['symbols_scanned']      = (int)($state['processed'] ?? 0);
-        $stats['symbols_skipped']      = 0;
-        $stats['current_batch_size']   = $batchSz;
-        $stats['last_updated_at']      = date('c');
+        // Persist enriched stats with zero-filled skeleton
+        $stats['symbols_total']      = $total;
+        $stats['symbols_scanned']    = $totalProcessed;
+        $stats['symbols_skipped']    = 0;
+        $stats['current_batch_size'] = $batchSz;
+        $stats['last_updated_at']    = date('c');
+        // Ensure reject_reason_distribution is always a JSON object, not array
+        if (empty($stats['reject_reason_distribution'])) {
+            $stats['reject_reason_distribution'] = (object)[];
+        }
         $this->writeJson('storage/stats.json', $stats);
 
+        // Market regime summary for last_run
+        $regimeSummary = [
+            'current_regime'  => $prevRegimeData['regime']         ?? 'unknown',
+            'previous_regime' => $prevRegimeData['previous_regime'] ?? 'unknown',
+            'regime_changed'  => $prevRegimeData['regime_changed']  ?? false,
+            'bull_count'      => $prevRegimeData['bull_count']      ?? 0,
+            'bear_count'      => $prevRegimeData['bear_count']      ?? 0,
+            'flat_count'      => $prevRegimeData['flat_count']      ?? 0,
+        ];
+
         $this->writeJson('storage/last_run.json', [
-            'run_at'         => date('c'),
-            'status'         => $state['status'],
-            'symbols_total'  => $total,
-            'symbols_scanned'=> (int)($state['processed'] ?? 0),
-            'found'          => (int)($state['found'] ?? 0),
-            'errors_count'   => count($state['errors'] ?? []),
-            'regime'         => $regimeStr,
+            'status'                   => $state['status'],
+            'started_at'               => $state['started_at'] ?? null,
+            'updated_at'               => date('c'),
+            'finished_at'              => $isDone ? ($state['completed_at'] ?? date('c')) : null,
+            'symbols_total'            => $total,
+            'symbols_scanned'          => $totalProcessed,
+            'symbols_remaining'        => max(0, $total - $totalProcessed),
+            'current_batch_size'       => $batchSz,
+            'final_signals_total'      => $stats['final_signals_total'] ?? 0,
+            'registry_loaded'          => $stats['registry_loaded'],
+            'registry_symbol_count'    => $stats['registry_symbol_count'],
+            'market_regime'            => $regimeSummary,
+            'current_stage_summary'    => [
+                'trend_pass'         => $stats['trend_pass_total']            ?? 0,
+                'trend_rejected'     => $stats['trend_rejected_total']        ?? 0,
+                'corridor_pass'      => $stats['corridor_pass_total']         ?? 0,
+                'corridor_rejected'  => $stats['corridor_rejected_total']     ?? 0,
+                'wave_pass'          => $stats['wave_pass_total']             ?? 0,
+                'wave_rejected'      => $stats['wave_rejected_total']         ?? 0,
+                'setup_candidates'   => $stats['setup_candidates_total']      ?? 0,
+                'pattern_rejected'   => $stats['pattern_rejected_total']      ?? 0,
+                'control_check_pass' => $stats['control_check_pass_total']    ?? 0,
+                'control_check_fail' => $stats['control_check_failed_total']  ?? 0,
+                'signals_emitted'    => $stats['final_signals_total']         ?? 0,
+            ],
+            'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
+            'errors_count'             => count($state['errors'] ?? []),
         ]);
     }
 
@@ -588,37 +657,114 @@ final class PatternService
 
     private function accumulateStats(array $stats, array $result): array
     {
-        $regime  = $result['market_regime']  ?? 'unknown';
-        $pattern = $result['primary_pattern'] ?? '';
-        $fss     = $result['final_signal_status'] ?? '';
+        $regime       = $result['market_regime']       ?? 'unknown';
+        $pattern      = $result['primary_pattern']      ?? '';
+        $fss          = $result['final_signal_status']  ?? '';
+        $rejectReason = $result['reject_reason']        ?? null;
+        $confirmStatus = $result['confirm_status']      ?? '';
 
-        $inc = function (array &$s, string $key) { $s[$key] = ($s[$key] ?? 0) + 1; };
+        $inc = static function (array &$s, string $key): void { $s[$key] = ($s[$key] ?? 0) + 1; };
 
-        if ($regime === 'bullish')    { $inc($stats, 'regime_bullish_total'); }
-        elseif ($regime === 'bearish') { $inc($stats, 'regime_bearish_total'); }
-        elseif ($regime === 'mixed')   { $inc($stats, 'regime_mixed_total'); }
-        elseif ($regime === 'transition') { $inc($stats, 'regime_transition_total'); }
+        // ── Market regime vote for this symbol ──
+        if ($regime === 'bullish')         { $inc($stats, 'regime_bullish_total'); }
+        elseif ($regime === 'bearish')     { $inc($stats, 'regime_bearish_total'); }
+        elseif ($regime === 'mixed')       { $inc($stats, 'regime_mixed_total'); }
+        elseif ($regime === 'transition')  { $inc($stats, 'regime_transition_total'); }
 
+        // ── Trend ──────────────────────────────
         $tDir = $result['trend_direction'] ?? 'unknown';
-        if ($tDir !== 'unknown') { $inc($stats, 'trend_pass_total'); }
+        if ($tDir === 'bullish' || $tDir === 'bearish') {
+            $inc($stats, 'trend_pass_total');
+        } else {
+            $inc($stats, 'trend_rejected_total');
+        }
 
-        if (!empty($result['current_bucket'])) { $inc($stats, 'corridor_pass_total'); }
+        // ── Corridor ───────────────────────────
+        if (!empty($result['current_bucket'])) {
+            $inc($stats, 'corridor_pass_total');
+        } else {
+            $inc($stats, 'corridor_rejected_total');
+        }
+
+        // ── Bucket (allowed/rejected per side) ─
         if ($result['bucket_allowed_long']  ?? false) { $inc($stats, 'bucket_allowed_total'); }
         if ($result['bucket_allowed_short'] ?? false) { $inc($stats, 'bucket_allowed_total'); }
+        if ($rejectReason !== null && str_contains((string)$rejectReason, 'bucket')) {
+            $inc($stats, 'bucket_rejected_total');
+        }
 
-        if (($result['wave_state'] ?? '') === 'corrective') { $inc($stats, 'wave_pass_total'); }
-        else { $inc($stats, 'wave_rejected_total'); }
+        // ── Wave ───────────────────────────────
+        if (($result['wave_state'] ?? '') === 'corrective') {
+            $inc($stats, 'wave_pass_total');
+        } else {
+            $inc($stats, 'wave_rejected_total');
+        }
 
-        if ($pattern === 'double_bottom') { $inc($stats, 'double_bottom_found_total'); }
-        if ($pattern === 'double_top')    { $inc($stats, 'double_top_found_total'); }
+        // ── Pattern ────────────────────────────
+        if ($pattern === 'double_bottom')  { $inc($stats, 'double_bottom_found_total'); }
+        if ($pattern === 'double_top')     { $inc($stats, 'double_top_found_total'); }
+        if ($result['candidate_found'] ?? false) {
+            $inc($stats, 'setup_candidates_total');
+        } elseif ($pattern !== '' && $fss === 'rejected') {
+            $inc($stats, 'pattern_rejected_total');
+        }
 
-        $confirmStatus = $result['confirm_status'] ?? '';
-        if ($confirmStatus === 'confirm_pass')    { $inc($stats, 'control_check_pass_total'); }
-        if ($result['candidate_expired'] ?? false) { $inc($stats, 'control_check_expired_total'); }
+        // ── Control check ──────────────────────
+        if ($confirmStatus === 'confirm_pass')      { $inc($stats, 'control_check_pass_total'); }
+        if ($result['candidate_expired'] ?? false)  { $inc($stats, 'control_check_expired_total'); }
+        if ($confirmStatus !== '' && $confirmStatus !== 'confirm_pass') {
+            $inc($stats, 'control_check_failed_total');
+        }
 
-        if ($fss === 'emitted') { $inc($stats, 'final_signals_total'); }
+        // ── Signal ─────────────────────────────
+        if ($fss === 'emitted')    { $inc($stats, 'final_signals_total'); }
+
+        // ── Reject reason distribution ─────────
+        if ($rejectReason !== null && $rejectReason !== '') {
+            $dist = (array)($stats['reject_reason_distribution'] ?? []);
+            $dist[$rejectReason] = ($dist[$rejectReason] ?? 0) + 1;
+            $stats['reject_reason_distribution'] = $dist;
+        }
 
         return $stats;
+    }
+
+    /**
+     * Return a zero-initialised stats skeleton so all counters always appear
+     * even when no symbols have been processed yet.
+     */
+    private function zeroStats(): array
+    {
+        return [
+            'symbols_total'                => 0,
+            'symbols_scanned'              => 0,
+            'symbols_skipped'              => 0,
+            'registry_loaded'              => false,
+            'registry_symbol_count'        => 0,
+            'regime_bullish_total'         => 0,
+            'regime_bearish_total'         => 0,
+            'regime_mixed_total'           => 0,
+            'regime_transition_total'      => 0,
+            'trend_pass_total'             => 0,
+            'trend_rejected_total'         => 0,
+            'corridor_pass_total'          => 0,
+            'corridor_rejected_total'      => 0,
+            'bucket_allowed_total'         => 0,
+            'bucket_rejected_total'        => 0,
+            'wave_pass_total'              => 0,
+            'wave_rejected_total'          => 0,
+            'double_bottom_found_total'    => 0,
+            'double_top_found_total'       => 0,
+            'pattern_rejected_total'       => 0,
+            'setup_candidates_total'       => 0,
+            'control_check_pass_total'     => 0,
+            'control_check_expired_total'  => 0,
+            'control_check_failed_total'   => 0,
+            'final_signals_total'          => 0,
+            'current_batch_size'           => 0,
+            'last_updated_at'              => null,
+            'reject_reason_distribution'   => (object)[],
+        ];
     }
 
     private function buildUniverse(array $config): array

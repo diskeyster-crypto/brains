@@ -29,7 +29,8 @@ namespace Modules\Strategy\Pattern\Logic;
 final class PatternDoubleTop
 {
     private const PIVOT_WINDOW    = 3;
-    private const DEFAULT_HIGH_TOLERANCE = 0.03; // 3% similarity between the two highs (config-backed)
+    private const DEFAULT_HIGH_TOLERANCE      = 0.05; // 5% default (crypto double-tops often differ 3–7%)
+    private const DEFAULT_MIN_NECKLINE_BOUNCE = 0.005; // neckline must be at least 0.5% below the avg high
     private const MIN_PIVOT_GAP   = 4;
 
     /**
@@ -38,7 +39,11 @@ final class PatternDoubleTop
      */
     public function detect(array $candles, array $config = []): array
     {
-        $highTolerance = (float)($config['pattern_similarity_tolerance'] ?? self::DEFAULT_HIGH_TOLERANCE);
+        $highTolerance     = (float)($config['double_top_similarity_tolerance_pct']
+            ?? $config['pattern_similarity_tolerance']
+            ?? self::DEFAULT_HIGH_TOLERANCE);
+        $minNecklineBounce = (float)($config['double_top_min_neckline_bounce_pct']
+            ?? self::DEFAULT_MIN_NECKLINE_BOUNCE);
 
         $n = count($candles);
         if ($n < self::PIVOT_WINDOW * 2 + self::MIN_PIVOT_GAP + 2) {
@@ -47,7 +52,6 @@ final class PatternDoubleTop
 
         $pivots = $this->findPivots($candles);
         $highs  = array_values(array_filter($pivots, fn($p) => $p['type'] === 'high'));
-        $lows   = array_values(array_filter($pivots, fn($p) => $p['type'] === 'low'));
 
         if (count($highs) < 2) {
             return $this->noCandidate('insufficient_swing_highs');
@@ -66,20 +70,24 @@ final class PatternDoubleTop
             return $this->noCandidate('highs_not_similar');
         }
 
-        // Neckline: lowest swing low between the two highs
+        // Neckline: lowest low directly between the two highs (no formal pivot required)
         $necklineLow = null;
-        foreach ($lows as $l) {
-            if ($l['idx'] > $high1['idx'] && $l['idx'] < $high2['idx']) {
-                if ($necklineLow === null || $l['price'] < $necklineLow['price']) {
-                    $necklineLow = $l;
-                }
+        for ($k = $high1['idx'] + 1; $k < $high2['idx']; $k++) {
+            $l = (float)($candles[$k]['low'] ?? 0.0);
+            if ($necklineLow === null || $l < $necklineLow) {
+                $necklineLow = $l;
             }
         }
         if ($necklineLow === null) {
             return $this->noCandidate('no_neckline_between_highs');
         }
 
-        $neckline     = (float)$necklineLow['price'];
+        // Neckline must be meaningfully below the average high
+        if ($necklineLow > $avgHigh * (1.0 - $minNecklineBounce)) {
+            return $this->noCandidate('neckline_too_close');
+        }
+
+        $neckline     = $necklineLow;
         $currentClose = (float)($candles[$n - 1]['close'] ?? 0.0);
 
         // Price must be at or above neckline (still completing pattern or just breaking)
@@ -99,6 +107,7 @@ final class PatternDoubleTop
             'neckline'          => round($neckline, 6),
             'high1_price'       => round((float)$high1['price'], 6),
             'high2_price'       => round((float)$high2['price'], 6),
+            'window_size'       => $high2['idx'] - $high1['idx'],
             'reject_reason'     => null,
         ];
     }
@@ -115,6 +124,7 @@ final class PatternDoubleTop
             'neckline'          => 0.0,
             'high1_price'       => 0.0,
             'high2_price'       => 0.0,
+            'window_size'       => 0,
             'reject_reason'     => $reason,
         ];
     }

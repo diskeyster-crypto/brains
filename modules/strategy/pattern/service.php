@@ -223,21 +223,35 @@ final class PatternService
                     'symbol'                  => $symbol,
                     'market_regime'           => $result['market_regime']          ?? null,
                     'trend_direction'         => $result['trend_direction']        ?? null,
-                    'trend_pass'              => in_array($result['trend_direction'] ?? '', ['bullish', 'bearish'], true),
-                    'current_bucket'          => $result['current_bucket']         ?? null,
+                    'trend_pass'              => in_array($result['trend_direction'] ?? '', ['bullish', 'bearish', 'flat'], true)
+                                                    && ($result['trend_direction'] ?? '') !== 'flat',
+                    'corridor_low'            => $result['corridor_low']           ?? null,
+                    'corridor_high'           => $result['corridor_high']          ?? null,
+                    'corridor_bucket'         => $result['current_bucket']         ?? null,
                     'bucket_allowed_long'     => $result['bucket_allowed_long']    ?? false,
                     'bucket_allowed_short'    => $result['bucket_allowed_short']   ?? false,
                     'wave_direction'          => $result['wave_direction']         ?? null,
                     'wave_state'              => $result['wave_state']             ?? null,
                     'double_bottom_checked'   => $result['double_bottom_checked']  ?? false,
+                    'double_bottom_found'     => ($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_bottom',
                     'double_top_checked'      => $result['double_top_checked']     ?? false,
-                    'pattern_candidate'       => $result['primary_pattern']        ?? null,
+                    'double_top_found'        => ($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_top',
+                    'neckline_value'          => $result['neckline_value']         ?? null,
+                    'low1_value'              => $result['low1_value']             ?? null,
+                    'low2_value'              => $result['low2_value']             ?? null,
+                    'high1_value'             => $result['high1_value']            ?? null,
+                    'high2_value'             => $result['high2_value']            ?? null,
+                    'pattern_window_size'     => $result['pattern_window_size']    ?? null,
+                    'pattern_reject_reason'   => ($result['double_bottom_checked'] ?? false) || ($result['double_top_checked'] ?? false)
+                                                    ? ($result['reject_reason'] ?? null)
+                                                    : null,
                     'candidate_found'         => $result['candidate_found']        ?? false,
+                    'control_check_checked'   => isset($result['confirm_status']) && $result['confirm_status'] !== null,
                     'control_check_status'    => $result['confirm_status']         ?? null,
                     'final_signal_status'     => $result['final_signal_status']    ?? null,
-                    'reject_reason'           => $result['reject_reason']          ?? null,
                     'long_reject_reason'      => $result['long_reject_reason']     ?? null,
                     'short_reject_reason'     => $result['short_reject_reason']    ?? null,
+                    'reject_reason'           => $result['reject_reason']          ?? null,
                 ];
             } catch (\Throwable $e) {
                 $state['errors'][] = $symbol . ': ' . $e->getMessage();
@@ -480,6 +494,12 @@ final class PatternService
             'primary_pattern'        => null,
             'double_bottom_checked'  => $dbChecked,
             'double_top_checked'     => $dtChecked,
+            'neckline_value'         => $longResult['neckline_value']      ?? ($shortResult['neckline_value']      ?? null),
+            'low1_value'             => $longResult['low1_value']          ?? null,
+            'low2_value'             => $longResult['low2_value']          ?? null,
+            'high1_value'            => $shortResult['high1_value']        ?? null,
+            'high2_value'            => $shortResult['high2_value']        ?? null,
+            'pattern_window_size'    => $longResult['pattern_window_size'] ?? ($shortResult['pattern_window_size'] ?? null),
             'long_reject_reason'     => $longRej,
             'short_reject_reason'    => $shortRej,
             'confirm_status'         => null,
@@ -527,7 +547,12 @@ final class PatternService
         $this->requireLogic('double_bottom');
         $candidate = (new \Modules\Strategy\Pattern\Logic\PatternDoubleBottom())->detect($candles, $config);
         if (!$candidate['candidate_found']) {
-            return $this->reject($diagBase, $symbol, $side, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom', true);
+            return $this->reject($diagBase, $symbol, $side, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom', true, [
+                'neckline_value'     => $candidate['neckline']    ?? 0.0,
+                'low1_value'         => $candidate['low1_price']  ?? 0.0,
+                'low2_value'         => $candidate['low2_price']  ?? 0.0,
+                'pattern_window_size' => $candidate['window_size'] ?? 0,
+            ]);
         }
 
         // Control confirmation
@@ -543,6 +568,10 @@ final class PatternService
                     'primary_pattern'        => 'double_bottom',
                     'double_bottom_checked'  => true,
                     'double_top_checked'     => false,
+                    'neckline_value'         => $candidate['neckline']    ?? 0.0,
+                    'low1_value'             => $candidate['low1_price']  ?? 0.0,
+                    'low2_value'             => $candidate['low2_price']  ?? 0.0,
+                    'pattern_window_size'    => $candidate['window_size'] ?? 0,
                     'confirm_status'         => $confirm['confirm_status'],
                     'confirm_bars_waited'    => $confirm['confirm_bars_waited'],
                     'candidate_expired'      => $confirm['candidate_expired'],
@@ -570,6 +599,10 @@ final class PatternService
             'primary_pattern'        => 'double_bottom',
             'double_bottom_checked'  => true,
             'double_top_checked'     => false,
+            'neckline_value'         => $candidate['neckline']    ?? 0.0,
+            'low1_value'             => $candidate['low1_price']  ?? 0.0,
+            'low2_value'             => $candidate['low2_price']  ?? 0.0,
+            'pattern_window_size'    => $candidate['window_size'] ?? 0,
             'confirm_status'         => 'confirm_pass',
             'confirm_bars_waited'    => $confirm['confirm_bars_waited'] ?? 0,
             'candidate_expired'      => false,
@@ -611,7 +644,12 @@ final class PatternService
         $this->requireLogic('double_top');
         $candidate = (new \Modules\Strategy\Pattern\Logic\PatternDoubleTop())->detect($candles, $config);
         if (!$candidate['candidate_found']) {
-            return $this->reject($diagBase, $symbol, $side, 'double_top', $candidate['reject_reason'] ?? 'no_double_top', true);
+            return $this->reject($diagBase, $symbol, $side, 'double_top', $candidate['reject_reason'] ?? 'no_double_top', true, [
+                'neckline_value'      => $candidate['neckline']     ?? 0.0,
+                'high1_value'         => $candidate['high1_price']  ?? 0.0,
+                'high2_value'         => $candidate['high2_price']  ?? 0.0,
+                'pattern_window_size' => $candidate['window_size']  ?? 0,
+            ]);
         }
 
         if ((bool)($config['confirm_required'] ?? true)) {
@@ -626,6 +664,10 @@ final class PatternService
                     'primary_pattern'        => 'double_top',
                     'double_bottom_checked'  => false,
                     'double_top_checked'     => true,
+                    'neckline_value'         => $candidate['neckline']     ?? 0.0,
+                    'high1_value'            => $candidate['high1_price']  ?? 0.0,
+                    'high2_value'            => $candidate['high2_price']  ?? 0.0,
+                    'pattern_window_size'    => $candidate['window_size']  ?? 0,
                     'confirm_status'         => $confirm['confirm_status'],
                     'confirm_bars_waited'    => $confirm['confirm_bars_waited'],
                     'candidate_expired'      => $confirm['candidate_expired'],
@@ -652,6 +694,10 @@ final class PatternService
             'primary_pattern'        => 'double_top',
             'double_bottom_checked'  => false,
             'double_top_checked'     => true,
+            'neckline_value'         => $candidate['neckline']     ?? 0.0,
+            'high1_value'            => $candidate['high1_price']  ?? 0.0,
+            'high2_value'            => $candidate['high2_price']  ?? 0.0,
+            'pattern_window_size'    => $candidate['window_size']  ?? 0,
             'confirm_status'         => 'confirm_pass',
             'confirm_bars_waited'    => $confirm['confirm_bars_waited'] ?? 0,
             'candidate_expired'      => false,
@@ -668,9 +714,9 @@ final class PatternService
     /**
      * @param  bool $patternChecked  True only when pattern detection stage was actually invoked.
      */
-    private function reject(array $diag, string $symbol, string $side, string $pattern, ?string $reason, bool $patternChecked = false): array
+    private function reject(array $diag, string $symbol, string $side, string $pattern, ?string $reason, bool $patternChecked = false, array $extra = []): array
     {
-        return array_merge($diag, [
+        return array_merge($diag, $extra, [
             'symbol'                 => $symbol,
             'candidate_found'        => false,
             'candidate_side'         => $side,

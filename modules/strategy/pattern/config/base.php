@@ -46,7 +46,11 @@ return [
     'enabled_patterns' => ['double_bottom', 'double_top'],
 
     // Pattern detection tolerances
-    'pattern_similarity_tolerance' => 0.03,  // max % deviation between the two pivot prices (0.03 = 3%)
+    'pattern_similarity_tolerance'           => 0.05,  // global fallback (5%)
+    'double_bottom_similarity_tolerance_pct' => 0.05,  // max % deviation between the two lows
+    'double_bottom_min_neckline_bounce_pct'  => 0.005, // neckline must be >= 0.5% above avg low
+    'double_top_similarity_tolerance_pct'    => 0.05,  // max % deviation between the two highs
+    'double_top_min_neckline_bounce_pct'     => 0.005, // neckline must be >= 0.5% below avg high
 
     // Confirmation
     'confirm_required' => true,

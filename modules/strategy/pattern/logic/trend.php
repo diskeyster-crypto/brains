@@ -104,8 +104,8 @@ final class PatternTrend
         if ($side === 'long' && $trendDirection === 'bullish') {
             return ['pass' => true,  'reason' => 'trend_bullish_long_ok'];
         }
-        if ($side === 'short' && $trendDirection === 'bearish') {
-            return ['pass' => true,  'reason' => 'trend_bearish_short_ok'];
+        if ($side === 'short' && in_array($trendDirection, ['bearish', 'flat'], true)) {
+            return ['pass' => true,  'reason' => "trend_{$trendDirection}_short_ok"];
         }
         return ['pass' => false, 'reason' => "trend_{$trendDirection}_side_{$side}_mismatch"];
     }

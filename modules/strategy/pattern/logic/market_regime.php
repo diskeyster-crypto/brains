@@ -117,10 +117,17 @@ final class PatternMarketRegime
             $minSample, $dominanceRatio, $flatDominance, $transitionFlip
         );
 
+        // No-data unknown states (no classified symbols / insufficient sample) are
+        // temporary data gaps, not meaningful market regime flips.  Suppress the
+        // regime_changed flag so callers don't treat each empty tick as a real
+        // transition event.
+        $noDataUnknown = ($regime === 'unknown' &&
+            in_array($reason, ['no_classified_symbols', 'insufficient_data'], true));
+
         return [
             'regime'           => $regime,
             'previous_regime'  => $previousRegime,
-            'regime_changed'   => ($regime !== $previousRegime),
+            'regime_changed'   => !$noDataUnknown && ($regime !== $previousRegime),
             'regime_reason'    => $reason,
             'bull_count'       => $bull,
             'bear_count'       => $bear,

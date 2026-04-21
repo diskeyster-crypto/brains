@@ -70,13 +70,15 @@ $fSlProfile      = (string)($config['sl_profile']    ?? 'default');
 $fPmProfile      = (string)($config['pm_profile']    ?? 'default');
 
 // Bot execution config
-$fBotEnabled    = (bool)($config['bot_enabled']    ?? false);
-$fExecMode      = (string)($config['execution_mode'] ?? 'smoke');
-$fBotBudget     = (string)($config['bot_budget']   ?? '0');
-$fBotLeverage   = (string)($config['bot_leverage'] ?? '1');
-$fBotSlProfile  = (string)($config['bot_sl_profile'] ?? 'default');
-$fBotPmProfile  = (string)($config['bot_pm_profile'] ?? 'default');
-$fAccountId     = (string)($config['account_id']   ?? '');
+$fBotEnabled      = (bool)($config['bot_enabled']        ?? false);
+$fExecMode        = (string)($config['execution_mode']   ?? 'smoke');
+$fBotBudget       = (string)($config['bot_budget']       ?? '0');
+$fBotLeverage     = (string)($config['bot_leverage']     ?? '1');
+$fBotSlProfile    = (string)($config['bot_sl_profile']   ?? 'default');
+$fBotPmProfile    = (string)($config['bot_pm_profile']   ?? 'default');
+$fAccountId       = (string)($config['account_id']       ?? '');
+$fMaxActiveOrders = (string)($config['max_active_orders']    ?? '5');
+$fMaxActivePos    = (string)($config['max_active_positions'] ?? '3');
 ?>
 <style>
 .fish-label  { font-size: 12px; color: #94a3b8; margin-bottom: 3px; }
@@ -285,6 +287,22 @@ $fAccountId     = (string)($config['account_id']   ?? '');
                                placeholder="e.g. trading_bot">
                         <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
                             Required for <code>live</code> mode. Must match a Bybit account in KeyCenter.
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="fish-label">Max Active Orders <small class="text-muted">(cap)</small></div>
+                        <input type="number" name="max_active_orders" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fMaxActiveOrders) ?>" step="1" min="1">
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                            Hard cap on open orders (current mode).
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="fish-label">Max Active Positions <small class="text-muted">(cap)</small></div>
+                        <input type="number" name="max_active_positions" class="form-control form-control-sm"
+                               value="<?= htmlspecialchars($fMaxActivePos) ?>" step="1" min="1">
+                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                            Hard cap on open positions (current mode).
                         </div>
                     </div>
                 </div>

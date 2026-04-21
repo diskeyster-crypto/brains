@@ -280,12 +280,19 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 <?php
                 // Use live last_run counts when available, fall back to storage reads
                 $queueDepth   = (int)($botLastRun['queue_depth']      ?? count($botQueue));
-                $activeOrders = (int)($botLastRun['active_orders']     ?? count(array_filter($botOrders,    fn($o) => ($o['status'] ?? '') === 'open')));
-                $activePos    = (int)($botLastRun['active_positions']  ?? count(array_filter($botPositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish')));
+                $activeOrders = (int)($botLastRun['active_orders_current_mode'] ?? $botLastRun['active_orders'] ?? count(array_filter($botOrders,    fn($o) => ($o['status'] ?? '') === 'open')));
+                $activePos    = (int)($botLastRun['active_positions_current_mode'] ?? $botLastRun['active_positions']  ?? count(array_filter($botPositions, fn($p) => ($p['status'] ?? '') === 'open' && ($p['owner_strategy'] ?? '') === 'fish')));
+                $maxOrders    = (int)($botLastRun['max_active_orders']    ?? $config['max_active_orders']    ?? 5);
+                $maxPos       = (int)($botLastRun['max_active_positions'] ?? $config['max_active_positions'] ?? 3);
+                $capBlocked   = (bool)($botLastRun['cap_blocked'] ?? false);
+                $capReason    = (string)($botLastRun['cap_block_reason'] ?? 'none');
+                $intentsCapped = (int)($botLastRun['intents_blocked_by_cap'] ?? 0);
                 $botItems = [
-                    ['Execution Queue',     $queueDepth,                                                       false],
-                    ['Active Orders',       $activeOrders,                                                     false],
-                    ['Active Positions',    $activePos,                                                        false],
+                    ['Queue Depth',         $queueDepth,                                                       false],
+                    ['Active Orders',       $activeOrders . ' / ' . $maxOrders,                                $activeOrders >= $maxOrders],
+                    ['Active Positions',    $activePos    . ' / ' . $maxPos,                                   $activePos    >= $maxPos],
+                    ['Blocked by Cap',      $capBlocked ? 'YES — ' . htmlspecialchars($capReason) : 'no',      $capBlocked],
+                    ['Intents Blocked',     $intentsCapped,                                                    $intentsCapped > 0],
                     ['Total Ticks',         $botStats['total_bot_ticks']            ?? 0,                     false],
                     ['Orders Placed',       $botStats['orders_accepted_total']      ?? 0,                     false],
                     ['Orders Filled',       $botStats['orders_filled_total']        ?? 0,                     false],
@@ -294,12 +301,13 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                     ['Positions Opened',    $botStats['positions_opened_total']     ?? 0,                     false],
                     ['SL/TP Attached',      $botStats['sltp_attach_success_total']  ?? 0,                     false],
                     ['SL/TP Failed',        $botStats['sltp_attach_failed_total']   ?? 0,                     true],
+                    ['Cap-Blocked (total)', $botLastRun['intents_blocked_by_cap_total'] ?? ($botStats['intents_blocked_by_cap_total'] ?? 0), false],
                     ['Execution Errors',    $botStats['execution_errors_total']     ?? 0,                     true],
                 ];
                 foreach ($botItems as [$label, $value, $isErr]):
                 ?>
                 <div class="fish-stat-card">
-                    <div class="fish-stat-v <?= ($isErr && $value > 0) ? 'fish-stat-err' : '' ?>"><?= (int)$value ?></div>
+                    <div class="fish-stat-v <?= ($isErr && ($value !== 'no' && $value !== '0' && $value !== 0)) ? 'fish-stat-err' : '' ?>"><?= is_int($value) ? (int)$value : htmlspecialchars((string)$value) ?></div>
                     <div class="fish-stat-l"><?= htmlspecialchars($label) ?></div>
                 </div>
                 <?php endforeach; ?>
@@ -316,6 +324,20 @@ $fishUrl = rtrim(System::web('admin/strategy/fish'), '/');
                 &nbsp;|&nbsp; Placed: <?= (int)($botLastRun['orders_accepted'] ?? $botLastRun['orders_placed'] ?? 0) ?>
                 &nbsp;|&nbsp; Rejected: <span<?= ($botLastRun['orders_rejected'] ?? 0) > 0 ? ' style="color:#f59e0b;"' : '' ?>><?= (int)($botLastRun['orders_rejected'] ?? 0) ?></span>
             </div>
+
+            <?php if (isset($botLastRun['cap_blocked'])): ?>
+            <div style="font-size: 11px; margin-bottom: 8px; color: <?= ($botLastRun['cap_blocked'] ?? false) ? '#f59e0b' : '#64748b' ?>;">
+                Cap state:
+                orders=<code><?= htmlspecialchars((string)($botLastRun['active_orders_current_mode'] ?? '?')) ?>/<?= htmlspecialchars((string)($botLastRun['max_active_orders'] ?? '?')) ?></code>
+                &nbsp;|&nbsp; positions=<code><?= htmlspecialchars((string)($botLastRun['active_positions_current_mode'] ?? '?')) ?>/<?= htmlspecialchars((string)($botLastRun['max_active_positions'] ?? '?')) ?></code>
+                &nbsp;|&nbsp; blocked=<strong><?= ($botLastRun['cap_blocked'] ?? false) ? '<span style="color:#f59e0b;">YES</span>' : 'no' ?></strong>
+                <?php if ($botLastRun['cap_blocked'] ?? false): ?>
+                &nbsp;|&nbsp; reason=<code><?= htmlspecialchars($botLastRun['cap_block_reason'] ?? '') ?></code>
+                &nbsp;|&nbsp; intents_blocked=<code><?= (int)($botLastRun['intents_blocked_by_cap'] ?? 0) ?></code>
+                <?php endif; ?>
+                &nbsp;|&nbsp; <a href="<?= $fishUrl ?>/config" style="color:#60a5fa;font-size:10px;">adjust caps &rarr;</a>
+            </div>
+            <?php endif; ?>
 
             <?php
             // Fill-detection diagnostics from last tick

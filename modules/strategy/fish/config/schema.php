@@ -69,4 +69,6 @@ return [
     'bot_sl_profile'     => 'string',
     'bot_pm_profile'     => 'string',
     'account_id'         => 'string',  // KeyCenter Bybit account used for live mode
+    'max_active_orders'  => 'int',     // hard cap on open orders (current mode)
+    'max_active_positions' => 'int',   // hard cap on open positions (current mode)
 ];

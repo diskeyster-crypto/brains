@@ -98,18 +98,24 @@ final class FishExecutor
 
         $this->journal->botTickStarted($mode, count($queue), $openOrderCount, $openPositionCount);
 
-        $intentsProcessed = 0;
-        $ordersPlaced     = 0;
-        $ordersRejected   = 0;
-        $errors           = 0;
+        $intentsProcessed   = 0;
+        $ordersPlaced       = 0;
+        $ordersRejected     = 0;
+        $errors             = 0;
+        $intentsBlockedByCap = 0;
+        $capBlockReason      = 'none';
 
         foreach ($queue as $intent) {
-            // Hard caps
+            // Hard caps — record reason when blocking
             if ($openOrderCount >= $maxOrders) {
-                break;
+                $intentsBlockedByCap++;
+                $capBlockReason = 'max_active_orders_reached';
+                continue;
             }
             if ($openPositionCount >= $maxPos) {
-                break;
+                $intentsBlockedByCap++;
+                $capBlockReason = 'max_active_positions_reached';
+                continue;
             }
 
             $signalId = (string)($intent['signal_id'] ?? '');
@@ -196,20 +202,31 @@ final class FishExecutor
         $stats['sltp_attach_success_total'] += (int)($pmSummary['sltp_attached']     ?? 0);
         $stats['sltp_attach_failed_total']  += (int)($pmSummary['sltp_attach_failed'] ?? 0);
         $stats['execution_errors_total']    += $errors;
+        $stats['intents_blocked_by_cap_total'] = ($stats['intents_blocked_by_cap_total'] ?? 0) + $intentsBlockedByCap;
         $stats['last_tick_at']               = $tickAt;
         if ($errors > 0) {
             $stats['last_error'] = 'Errors on tick ' . $tickAt;
         }
         $this->store->writeStats($stats);
 
+        $capBlocked = $intentsBlockedByCap > 0;
+
         $summary = [
             'intents_processed'                  => $intentsProcessed,
+            'intents_blocked_by_cap'             => $intentsBlockedByCap,
+            'cap_blocked'                        => $capBlocked,
+            'cap_block_reason'                   => $capBlocked ? $capBlockReason : 'none',
             'orders_placed'                      => $ordersPlaced,
             'orders_rejected'                    => $ordersRejected,
             'execution_errors'                   => $errors,
             'pm_summary'                         => $pmSummary,
             'mode'                               => $mode,
             'tick_at'                            => $tickAt,
+            // Cap config
+            'max_active_orders'                  => $maxOrders,
+            'max_active_positions'               => $maxPos,
+            // Queue depth
+            'queue_depth'                        => count($queue),
             // Mode-isolation diagnostics
             'active_orders_total'                => $openOrdersTotal,
             'active_orders_current_mode'         => $openOrdersCurrent,
@@ -231,6 +248,7 @@ final class FishExecutor
                                                   + (int)($pmSummary['sltp_attach_failed'] ?? 0),
             'sltp_attach_success_total'          => $stats['sltp_attach_success_total'],
             'sltp_attach_failed_total'           => $stats['sltp_attach_failed_total'],
+            'intents_blocked_by_cap_total'       => $stats['intents_blocked_by_cap_total'],
             'last_fill_detect_result'            => [
                 'orders_checked'   => (int)($pmSummary['orders_checked']   ?? 0),
                 'orders_filled'    => (int)($pmSummary['orders_filled']    ?? 0),

@@ -332,6 +332,22 @@ switch ($action) {
         }
         $overrides['account_id'] = $accountId;
 
+        // --- max_active_orders ---
+        $maxOrdersRaw = trim($p['max_active_orders'] ?? '5');
+        if (!ctype_digit($maxOrdersRaw) || (int)$maxOrdersRaw < 1) {
+            $errors[] = 'max_active_orders must be a positive integer.';
+        } else {
+            $overrides['max_active_orders'] = (int)$maxOrdersRaw;
+        }
+
+        // --- max_active_positions ---
+        $maxPosRaw = trim($p['max_active_positions'] ?? '3');
+        if (!ctype_digit($maxPosRaw) || (int)$maxPosRaw < 1) {
+            $errors[] = 'max_active_positions must be a positive integer.';
+        } else {
+            $overrides['max_active_positions'] = (int)$maxPosRaw;
+        }
+
         if (!empty($errors)) {
             if ($isAjax) {
                 http_response_code(422);

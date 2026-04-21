@@ -128,4 +128,72 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
         <input type="hidden" name="action" value="tick_batch">
         <button class="btn btn-sm btn-outline-secondary" type="submit">Tick Batch</button>
     </form>
+
+    <?php
+    $runState    = $service->getRunState();
+    $previewRows = array_reverse((array)($runState['preview_rows'] ?? []));
+    if (!empty($previewRows)):
+    ?>
+    <div style="background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 16px; margin-top: 20px; overflow-x: auto;">
+        <h6 style="color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-bottom: 12px;">
+            Per-Symbol Pattern Diagnostics (last <?= count($previewRows) ?> rows, newest first)
+        </h6>
+        <table class="table table-sm" style="font-size: 11px; white-space: nowrap;">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Side</th>
+                    <th>DB✓</th>
+                    <th>DT✓</th>
+                    <th>DB Found</th>
+                    <th>DT Found</th>
+                    <th>High1</th>
+                    <th>High2</th>
+                    <th>Low1</th>
+                    <th>Low2</th>
+                    <th>Neckline</th>
+                    <th>Win</th>
+                    <th>SimΔ%</th>
+                    <th>Candidate</th>
+                    <th>Ctrl Check</th>
+                    <th>Pattern Reject</th>
+                    <th>Signal Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($previewRows as $row): ?>
+            <?php
+                $signalStatus = $row['final_signal_status'] ?? null;
+                $rowColor = match ($signalStatus) {
+                    'emitted'         => '#166534',
+                    'confirm_pending' => '#92400e',
+                    default           => '',
+                };
+            ?>
+            <tr style="<?= $rowColor ? "background: {$rowColor}22;" : '' ?>">
+                <td><strong><?= htmlspecialchars($row['symbol'] ?? '') ?></strong></td>
+                <td><?= htmlspecialchars($row['side'] ?? '—') ?></td>
+                <td><?= ($row['double_bottom_checked'] ?? false) ? '✓' : '·' ?></td>
+                <td><?= ($row['double_top_checked']    ?? false) ? '✓' : '·' ?></td>
+                <td><?= ($row['double_bottom_found']   ?? false) ? '<span style="color:#22c55e">✓</span>' : '·' ?></td>
+                <td><?= ($row['double_top_found']      ?? false) ? '<span style="color:#22c55e">✓</span>' : '·' ?></td>
+                <td><?= $row['high1_value']  !== null ? number_format((float)$row['high1_value'],  4) : '—' ?></td>
+                <td><?= $row['high2_value']  !== null ? number_format((float)$row['high2_value'],  4) : '—' ?></td>
+                <td><?= $row['low1_value']   !== null ? number_format((float)$row['low1_value'],   4) : '—' ?></td>
+                <td><?= $row['low2_value']   !== null ? number_format((float)$row['low2_value'],   4) : '—' ?></td>
+                <td><?= $row['neckline_value'] !== null ? number_format((float)$row['neckline_value'], 4) : '—' ?></td>
+                <td><?= $row['pattern_window_size'] ?? '—' ?></td>
+                <td><?= $row['similarity_delta_pct'] !== null
+                        ? number_format((float)$row['similarity_delta_pct'] * 100, 2) . '%'
+                        : '—' ?></td>
+                <td><?= ($row['candidate_found'] ?? false) ? '<span style="color:#22c55e">yes</span>' : 'no' ?></td>
+                <td><?= htmlspecialchars($row['control_check_status'] ?? '—') ?></td>
+                <td><code style="font-size:10px;"><?= htmlspecialchars($row['pattern_reject_reason'] ?? '') ?></code></td>
+                <td><code style="font-size:10px;"><?= htmlspecialchars($signalStatus ?? '') ?></code></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
 </div>

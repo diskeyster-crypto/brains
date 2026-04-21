@@ -70,7 +70,7 @@ final class PatternDoubleBottom
         $avgLow    = ($low1['price'] + $low2['price']) / 2.0;
         $deviation = abs($low1['price'] - $low2['price']) / max(1e-8, $avgLow);
         if ($deviation > $lowTolerance) {
-            return $this->noCandidate('lows_not_similar');
+            return $this->noCandidate('lows_not_similar', $deviation);
         }
 
         // Find neckline: highest high directly between the two lows (no formal pivot required)
@@ -82,12 +82,12 @@ final class PatternDoubleBottom
             }
         }
         if ($necklineHigh === null) {
-            return $this->noCandidate('no_neckline_between_lows');
+            return $this->noCandidate('no_neckline_between_lows', $deviation);
         }
 
         // Neckline must be meaningfully above the average low
         if ($necklineHigh < $avgLow * (1.0 + $minNecklineBounce)) {
-            return $this->noCandidate('neckline_too_close');
+            return $this->noCandidate('neckline_too_close', $deviation);
         }
 
         $neckline     = $necklineHigh;
@@ -95,7 +95,7 @@ final class PatternDoubleBottom
 
         // Price must be at or below neckline (still completing the pattern or just breaking)
         if ($currentClose > $neckline * 1.01) {
-            return $this->noCandidate('price_too_far_above_neckline');
+            return $this->noCandidate('price_too_far_above_neckline', $deviation);
         }
 
         // Score: symmetry + depth
@@ -104,32 +104,34 @@ final class PatternDoubleBottom
         $score    = round(min(1.0, ($depth * 10 + $symmetry) / 2.0), 4);
 
         return [
-            'candidate_found'   => true,
-            'candidate_side'    => 'long',
-            'candidate_trigger' => round($neckline, 6),
-            'candidate_score'   => $score,
-            'neckline'          => round($neckline, 6),
-            'low1_price'        => round((float)$low1['price'], 6),
-            'low2_price'        => round((float)$low2['price'], 6),
-            'window_size'       => $low2['idx'] - $low1['idx'],
-            'reject_reason'     => null,
+            'candidate_found'      => true,
+            'candidate_side'       => 'long',
+            'candidate_trigger'    => round($neckline, 6),
+            'candidate_score'      => $score,
+            'neckline'             => round($neckline, 6),
+            'low1_price'           => round((float)$low1['price'], 6),
+            'low2_price'           => round((float)$low2['price'], 6),
+            'window_size'          => $low2['idx'] - $low1['idx'],
+            'similarity_delta_pct' => round($deviation, 6),
+            'reject_reason'        => null,
         ];
     }
 
     // -------------------------------------------------------------------------
 
-    private function noCandidate(string $reason): array
+    private function noCandidate(string $reason, float $simDeltaPct = 0.0): array
     {
         return [
-            'candidate_found'   => false,
-            'candidate_side'    => 'long',
-            'candidate_trigger' => 0.0,
-            'candidate_score'   => 0.0,
-            'neckline'          => 0.0,
-            'low1_price'        => 0.0,
-            'low2_price'        => 0.0,
-            'window_size'       => 0,
-            'reject_reason'     => $reason,
+            'candidate_found'      => false,
+            'candidate_side'       => 'long',
+            'candidate_trigger'    => 0.0,
+            'candidate_score'      => 0.0,
+            'neckline'             => 0.0,
+            'low1_price'           => 0.0,
+            'low2_price'           => 0.0,
+            'window_size'          => 0,
+            'similarity_delta_pct' => $simDeltaPct,
+            'reject_reason'        => $reason,
         ];
     }
 

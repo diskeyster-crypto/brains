@@ -117,6 +117,28 @@ $statGroups = [
     </div>
     <?php endforeach; ?>
 
+    <!-- Reject reason distribution -->
+    <?php
+    $dist = (array)($stats['reject_reason_distribution'] ?? []);
+    if (!empty($dist)):
+        arsort($dist);
+    ?>
+    <div class="stats-section">
+        <h6>Pattern Reject Reason Distribution</h6>
+        <table class="table table-sm" style="font-size: 12px;">
+            <thead><tr><th>Reject Reason</th><th>Count</th></tr></thead>
+            <tbody>
+            <?php foreach ($dist as $reason => $cnt): ?>
+            <tr>
+                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
+                <td><?= (int)$cnt ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
+
     <!-- Active signals list -->
     <div class="stats-section">
         <h6>Active Signals (<?= count($signals) ?>)</h6>

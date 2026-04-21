@@ -70,6 +70,7 @@ $statGroups = [
         'double_bottom_found_total'   => 'double_bottom найдено',
         'double_top_checked_total'    => 'double_top проверено',
         'double_top_found_total'      => 'double_top найдено',
+        'double_top_rejected_total'   => 'double_top отклонено детектором',
         'pattern_rejected_total'      => 'Паттерн отклонён',
     ],
     'Фильтр качества кандидатов' => [
@@ -207,6 +208,33 @@ $statGroups = [
     <div class="stats-section">
         <h6>Причины отказа детектора паттернов (pattern_reject_reason_distribution)</h6>
         <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Данные появятся после запуска при наличии символов, достигших стадии паттерна.</p>
+    </div>
+    <?php endif; ?>
+
+    <!-- Double-top detector reject reason distribution -->
+    <?php
+    $dtDist = (array)($stats['double_top_reject_reason_distribution'] ?? []);
+    if (!empty($dtDist)):
+        arsort($dtDist);
+    ?>
+    <div class="stats-section">
+        <h6>Причины отказа double_top детектора (double_top_reject_reason_distribution)</h6>
+        <table class="table table-sm" style="font-size: 12px;">
+            <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
+            <tbody>
+            <?php foreach ($dtDist as $reason => $cnt): ?>
+            <tr>
+                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
+                <td><?= (int)$cnt ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php else: ?>
+    <div class="stats-section">
+        <h6>Причины отказа double_top детектора (double_top_reject_reason_distribution)</h6>
+        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Появятся после запуска при наличии символов, где double_top детектор запускался.</p>
     </div>
     <?php endif; ?>
 

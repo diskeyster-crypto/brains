@@ -415,6 +415,9 @@ final class PatternService
         if (empty($stats['pattern_reject_reason_distribution'])) {
             $stats['pattern_reject_reason_distribution'] = (object)[];
         }
+        if (empty($stats['double_top_reject_reason_distribution'])) {
+            $stats['double_top_reject_reason_distribution'] = (object)[];
+        }
         $this->writeJson('storage/stats.json', $stats);
 
         // Market regime summary for last_run
@@ -1362,6 +1365,17 @@ final class PatternService
         if ($candidateFound && $pattern === 'double_top') {
             $inc($stats, 'double_top_found_total');
         }
+        // Rejected at detection stage: double_top was checked but no candidate found.
+        // Use short_reject_reason (from composite) or primary reject_reason as the reason.
+        if ($dtChecked && !$candidateFound) {
+            $inc($stats, 'double_top_rejected_total');
+            $dtRejectR = ($result['short_reject_reason'] ?? null) ?? $rejectReason;
+            if ($dtRejectR !== null && $dtRejectR !== '') {
+                $dtdist = (array)($stats['double_top_reject_reason_distribution'] ?? []);
+                $dtdist[$dtRejectR] = ($dtdist[$dtRejectR] ?? 0) + 1;
+                $stats['double_top_reject_reason_distribution'] = $dtdist;
+            }
+        }
         if ($candidateFound) {
             $inc($stats, 'setup_candidates_total');
             $inc($stats, 'candidates_before_quality_filter_total');
@@ -1477,8 +1491,10 @@ final class PatternService
             'wave_rejected_total'          => 0,
             'double_bottom_checked_total'  => 0,
             'double_bottom_found_total'    => 0,
-            'double_top_checked_total'     => 0,
-            'double_top_found_total'       => 0,
+            'double_top_checked_total'              => 0,
+            'double_top_found_total'                => 0,
+            'double_top_rejected_total'             => 0,
+            'double_top_reject_reason_distribution' => (object)[],
             'pattern_rejected_total'       => 0,
             'setup_candidates_total'       => 0,
             'candidates_before_quality_filter_total' => 0,

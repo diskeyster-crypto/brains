@@ -49,6 +49,10 @@ return [
     // Patterns
     'enabled_patterns' => 'array',
 
+    // Candidate quality filter
+    'min_candidate_quality_score' => 'float',
+    'min_neckline_score'          => 'float',
+
     // Confirmation
     'confirm_required'  => 'bool',
     'confirm_mode'      => 'string',  // candle_confirmation

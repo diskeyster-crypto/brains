@@ -55,6 +55,11 @@ return [
     // rejected before control confirmation.  Set to 0.0 to disable.
     'min_candidate_quality_score' => 0.30,
 
+    // Neckline floor — signals whose neckline_score is below this value are
+    // purged from the final active signal set after winner selection.
+    // Set to 0.0 to disable.
+    'min_neckline_score' => 0.0,
+
     // Pattern detection tolerances
     'pattern_similarity_tolerance'           => 0.07,  // global fallback (7%)
     'double_bottom_similarity_tolerance_pct' => 0.07,  // max % deviation between the two lows

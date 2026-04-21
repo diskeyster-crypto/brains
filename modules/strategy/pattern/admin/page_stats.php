@@ -73,6 +73,13 @@ $statGroups = [
         'signals_emitted_total'       => 'Эмитировано сигналов',
         'signals_active_final_total'  => 'Активных сигналов',
     ],
+    'Отбор победителей (winner selection)' => [
+        'signals_before_winner_selection_total'   => 'До отбора победителей',
+        'signals_after_winner_selection_total'    => 'После отбора победителей',
+        'signals_rejected_missing_quality_total'  => 'Отклонено: нет блока качества',
+        'signals_rejected_low_neckline_total'     => 'Отклонено: низкий neckline_score',
+        'signals_rejected_loser_by_quality_total' => 'Отклонено: проигравший по качеству',
+    ],
 ];
 ?>
 <style>
@@ -236,17 +243,31 @@ $statGroups = [
             <thead>
                 <tr>
                     <th>signal_id</th><th>Символ</th><th>Сторона</th><th>Паттерн</th>
-                    <th>Вход</th><th>Режим</th><th>Тренд</th><th>Обнаружен</th>
+                    <th>Вход</th>
+                    <th title="candidate_quality_score">Качество</th>
+                    <th title="neckline_score">Nck</th>
+                    <th title="confirmation_score">Conf</th>
+                    <th>Q✓</th>
+                    <th>Режим</th><th>Тренд</th><th>Обнаружен</th>
                 </tr>
             </thead>
             <tbody>
-            <?php foreach ($signals as $sig): ?>
+            <?php foreach ($signals as $sig):
+                $qScore = (float)($sig['candidate_quality_score'] ?? 0.0);
+                $qPass  = ($sig['quality_pass'] ?? null) === true;
+                $qColor = $qPass ? '#22c55e' : '#ef4444';
+                $fmtScore = static fn(?float $v): string => $v !== null ? number_format($v, 2) : '—';
+            ?>
             <tr>
                 <td><code><?= htmlspecialchars($sig['signal_id'] ?? '') ?></code></td>
                 <td><?= htmlspecialchars($sig['symbol'] ?? '') ?></td>
                 <td><?= htmlspecialchars($sig['side'] ?? '') ?></td>
                 <td><?= htmlspecialchars($sig['primary_pattern'] ?? '') ?></td>
                 <td><?= htmlspecialchars((string)($sig['entry_price'] ?? '')) ?></td>
+                <td style="font-weight:700;color:<?= $qColor ?>;"><?= $fmtScore($sig['candidate_quality_score'] ?? null) ?></td>
+                <td><?= $fmtScore($sig['neckline_score'] ?? null) ?></td>
+                <td><?= $fmtScore($sig['confirmation_score'] ?? null) ?></td>
+                <td style="color:<?= $qColor ?>;"><?= $qPass ? '✓' : '✗' ?></td>
                 <td><?= htmlspecialchars($regimeRu($sig['market_regime'] ?? null)) ?></td>
                 <td><?= htmlspecialchars($regimeRu($sig['trend_direction'] ?? null)) ?></td>
                 <td><?= htmlspecialchars($sig['detected_at'] ?? '') ?></td>

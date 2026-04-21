@@ -192,20 +192,25 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                     <th>Причина качества</th>
                     <th>Контроль</th>
                     <th>Статус сигнала</th>
+                    <th>Победитель</th>
+                    <th>Причина отбора</th>
                     <th>Причина отклонения</th>
                 </tr>
             </thead>
             <tbody>
             <?php foreach ($previewRows as $row): ?>
             <?php
-                $signalStatus = $row['final_signal_status'] ?? null;
-                $qualityPass  = $row['quality_pass'] ?? null;
-                $rowColor = match ($signalStatus) {
-                    'emitted'         => '#166534',
-                    'confirm_pending' => '#92400e',
-                    default           => '',
+                $signalStatus  = $row['final_signal_status'] ?? null;
+                $qualityPass   = $row['quality_pass'] ?? null;
+                $winnerSelected = $row['winner_selected'] ?? null;
+                $rowColor = match (true) {
+                    $winnerSelected === true                 => '#166534',
+                    $winnerSelected === false                => '#7f1d1d',
+                    $signalStatus === 'confirm_pending'      => '#92400e',
+                    default                                  => '',
                 };
-                $qualColor = $qualityPass === true ? '#22c55e' : ($qualityPass === false ? '#ef4444' : '#64748b');
+                $qualColor   = $qualityPass === true ? '#22c55e' : ($qualityPass === false ? '#ef4444' : '#64748b');
+                $winnerColor = $winnerSelected === true ? '#22c55e' : ($winnerSelected === false ? '#ef4444' : '#64748b');
 
                 $fmtScore = static function(?float $v): string {
                     return $v !== null ? number_format($v, 2) : '—';
@@ -226,6 +231,8 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 <td><code style="font-size:10px;color:#f59e0b;"><?= htmlspecialchars($row['quality_reject_reason'] ?? '') ?></code></td>
                 <td><?= htmlspecialchars($row['control_check_status'] ?? '—') ?></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($signalStatus ?? '') ?></code></td>
+                <td style="font-weight:700;color:<?= $winnerColor ?>;"><?= $winnerSelected === true ? '✓ победитель' : ($winnerSelected === false ? '✗ отклонён' : '—') ?></td>
+                <td><code style="font-size:10px;color:#f59e0b;"><?= htmlspecialchars($row['winner_reject_reason'] ?? '') ?></code></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($row['reject_reason'] ?? $row['pattern_reject_reason'] ?? '') ?></code></td>
             </tr>
             <?php endforeach; ?>

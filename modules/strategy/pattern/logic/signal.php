@@ -69,6 +69,9 @@ final class PatternSignal
             'confirmation_score'      => (float)($pipeline['confirmation_score']      ?? 0.0),
             'context_score'           => (float)($pipeline['context_score']           ?? 0.0),
             'candidate_quality_score' => (float)($pipeline['candidate_quality_score'] ?? 0.0),
+            // Quality gate outcome — always true/null here: signals are only built after quality passes
+            'quality_pass'            => true,
+            'quality_reject_reason'   => null,
 
             // Confirmation
             'confirm_status'      => $confirmation['confirm_status']      ?? 'confirm_pass',

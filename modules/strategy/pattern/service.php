@@ -204,6 +204,7 @@ final class PatternService
         $processed = 0;
         $found     = 0;
         $batchPreviewRows = [];
+        $newlyEmitted     = [];  // signals emitted this batch tick, before filtering
 
         while ($cursor < $total && $processed < $batchSz && (time() - $tStart) < $maxSec) {
             $symbol = $symbols[$cursor];
@@ -213,7 +214,7 @@ final class PatternService
             try {
                 $result = $this->processSymbol($symbol, $config, $regimeStr);
                 if ($result['final_signal_status'] === 'emitted') {
-                    $signals = $this->mergeSignal($signals, $result['signal']);
+                    $newlyEmitted[] = $result['signal'];
                     $found++;
                 }
                 $stats = $this->accumulateStats($stats, $result);
@@ -265,11 +266,41 @@ final class PatternService
                     'long_reject_reason'      => $result['long_reject_reason']     ?? null,
                     'short_reject_reason'     => $result['short_reject_reason']    ?? null,
                     'reject_reason'           => $result['reject_reason']          ?? null,
+                    // Winner selection fields — populated after applySignalFilters() below
+                    'signal_id'               => $result['signal_id']              ?? null,
+                    'winner_selected'         => null,
+                    'winner_reject_reason'    => null,
                 ];
             } catch (\Throwable $e) {
                 $state['errors'][] = $symbol . ': ' . $e->getMessage();
             }
         }
+
+        // ── Signal filtering + winner selection ──────────────────────────────
+        // Apply quality-completeness check, neckline floor, and per-symbol-side
+        // winner selection to both existing and newly emitted signals.
+        [$signals, $filterStats, $signalOutcomeMap] =
+            $this->applySignalFilters($signals, $newlyEmitted, $config);
+
+        $stats['signals_rejected_missing_quality_total'] =
+            ($stats['signals_rejected_missing_quality_total'] ?? 0) + $filterStats['rejected_missing_quality'];
+        $stats['signals_rejected_low_neckline_total'] =
+            ($stats['signals_rejected_low_neckline_total'] ?? 0) + $filterStats['rejected_low_neckline'];
+        $stats['signals_rejected_loser_by_quality_total'] =
+            ($stats['signals_rejected_loser_by_quality_total'] ?? 0) + $filterStats['rejected_loser_by_quality'];
+        // Snapshot counters — overwritten each tick to show current state
+        $stats['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
+        $stats['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
+
+        // Tag preview rows with winner outcome
+        foreach ($batchPreviewRows as &$row) {
+            $sigId = $row['signal_id'] ?? null;
+            if ($sigId !== null && isset($signalOutcomeMap[$sigId])) {
+                $row['winner_selected']      = $signalOutcomeMap[$sigId]['winner'];
+                $row['winner_reject_reason'] = $signalOutcomeMap[$sigId]['reason'];
+            }
+        }
+        unset($row);
 
         $totalProcessed = (int)($state['processed'] ?? 0) + $processed;
         $totalFound     = (int)($state['found']     ?? 0) + $found;
@@ -367,6 +398,12 @@ final class PatternService
                 'control_check_expired'      => $stats['control_check_expired_total']   ?? 0,
                 'signals_emitted_total'      => $stats['signals_emitted_total']         ?? 0,
                 'signals_active_final_total' => count($signals),
+                // Winner-selection filter summary
+                'signals_before_winner_selection'   => $stats['signals_before_winner_selection_total']   ?? 0,
+                'signals_after_winner_selection'    => $stats['signals_after_winner_selection_total']    ?? 0,
+                'signals_rejected_missing_quality'  => $stats['signals_rejected_missing_quality_total']  ?? 0,
+                'signals_rejected_low_neckline'     => $stats['signals_rejected_low_neckline_total']     ?? 0,
+                'signals_rejected_loser_by_quality' => $stats['signals_rejected_loser_by_quality_total'] ?? 0,
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
@@ -717,6 +754,7 @@ final class PatternService
             'candidate_expired'       => false,
             'final_signal_status'     => 'emitted',
             'reject_reason'           => null,
+            'signal_id'               => $signal['signal_id'],
             'signal'                  => $signal,
         ]);
     }
@@ -873,6 +911,7 @@ final class PatternService
             'candidate_expired'       => false,
             'final_signal_status'     => 'emitted',
             'reject_reason'           => null,
+            'signal_id'               => $signal['signal_id'],
             'signal'                  => $signal,
         ]);
     }
@@ -919,6 +958,135 @@ final class PatternService
         }
         $byId[$key] = $signal;
         return array_values($byId);
+    }
+
+    /**
+     * Apply three-stage signal filtering pipeline:
+     *   1. Purge signals without a complete quality block.
+     *   2. Purge signals whose neckline_score is below min_neckline_score.
+     *   3. Winner selection: one signal per symbol+side by quality ranking.
+     *
+     * Returns [filteredSignals, filterStats, signalOutcomeMap].
+     * signalOutcomeMap: signal_id → ['winner' => bool, 'reason' => string|null]
+     *
+     * @param  array $existingSignals  Currently persisted signals from storage.
+     * @param  array $newlyEmitted     Signals emitted in the current batch tick.
+     * @param  array $config           Effective strategy config.
+     * @return array{0: array, 1: array, 2: array}
+     */
+    private function applySignalFilters(
+        array $existingSignals,
+        array $newlyEmitted,
+        array $config
+    ): array {
+        $minNeckline = (float)($config['min_neckline_score'] ?? 0.0);
+
+        $requiredScoreKeys = [
+            'pattern_score', 'structure_score', 'neckline_score',
+            'confirmation_score', 'context_score', 'candidate_quality_score',
+        ];
+
+        $isComplete = static function (array $sig) use ($requiredScoreKeys): bool {
+            // quality_pass must be explicitly true
+            if (($sig['quality_pass'] ?? null) !== true) {
+                return false;
+            }
+            // All score keys must be present and numeric
+            foreach ($requiredScoreKeys as $k) {
+                if (!array_key_exists($k, $sig) || !is_numeric($sig[$k])) {
+                    return false;
+                }
+            }
+            // quality_reject_reason key must exist (value may be null — that is correct for passing signals)
+            return array_key_exists('quality_reject_reason', $sig);
+        };
+
+        $rejectedMissingQuality = 0;
+        $rejectedLowNeckline    = 0;
+        $signalOutcomeMap       = [];
+
+        // Merge existing + new into a keyed map (new signals overwrite by signal_id)
+        $merged = [];
+        foreach ($existingSignals as $s) {
+            $merged[$s['signal_id']] = $s;
+        }
+        foreach ($newlyEmitted as $s) {
+            $merged[$s['signal_id']] = $s;
+        }
+
+        // Step 1 + 2: quality completeness and neckline floor
+        $clean = [];
+        foreach ($merged as $id => $s) {
+            if (!$isComplete($s)) {
+                $rejectedMissingQuality++;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'missing_quality_block'];
+                continue;
+            }
+            if ($minNeckline > 0.0 && (float)($s['neckline_score'] ?? 0.0) < $minNeckline) {
+                $rejectedLowNeckline++;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'neckline_floor_rejected'];
+                continue;
+            }
+            $clean[$id] = $s;
+        }
+
+        $beforeWinner = count($clean);
+
+        // Step 3: winner selection — one signal per symbol+side
+        $bySymbolSide = [];
+        foreach ($clean as $s) {
+            $key = ($s['symbol'] ?? '') . '|' . ($s['side'] ?? '');
+            $bySymbolSide[$key][] = $s;
+        }
+
+        $rejectedLoserByQuality = 0;
+        $winnerSignals          = [];
+
+        foreach ($bySymbolSide as $group) {
+            if (count($group) === 1) {
+                $w = $group[0];
+                $signalOutcomeMap[$w['signal_id']] = ['winner' => true, 'reason' => null];
+                $winnerSignals[] = $w;
+                continue;
+            }
+            // Sort descending: candidate_quality_score → confirmation_score → newest detected_at
+            usort($group, static function (array $a, array $b): int {
+                $qa = (float)($a['candidate_quality_score'] ?? 0.0);
+                $qb = (float)($b['candidate_quality_score'] ?? 0.0);
+                if ($qa !== $qb) {
+                    return $qb <=> $qa;
+                }
+                $ca = (float)($a['confirmation_score'] ?? 0.0);
+                $cb = (float)($b['confirmation_score'] ?? 0.0);
+                if ($ca !== $cb) {
+                    return $cb <=> $ca;
+                }
+                return strcmp(
+                    (string)($b['detected_at'] ?? ''),
+                    (string)($a['detected_at'] ?? '')
+                );
+            });
+
+            $winner = $group[0];
+            $signalOutcomeMap[$winner['signal_id']] = ['winner' => true, 'reason' => null];
+            $winnerSignals[] = $winner;
+
+            for ($i = 1, $n = count($group); $i < $n; $i++) {
+                $loser = $group[$i];
+                $signalOutcomeMap[$loser['signal_id']] = ['winner' => false, 'reason' => 'loser_by_quality'];
+                $rejectedLoserByQuality++;
+            }
+        }
+
+        $filterStats = [
+            'rejected_missing_quality' => $rejectedMissingQuality,
+            'rejected_low_neckline'    => $rejectedLowNeckline,
+            'before_winner_selection'  => $beforeWinner,
+            'after_winner_selection'   => count($winnerSignals),
+            'rejected_loser_by_quality'=> $rejectedLoserByQuality,
+        ];
+
+        return [array_values($winnerSignals), $filterStats, $signalOutcomeMap];
     }
 
     private function accumulateStats(array $stats, array $result): array
@@ -1082,6 +1250,12 @@ final class PatternService
             'signals_emitted_total'        => 0,
             'signals_active_final_total'   => 0,
             'final_signals_total'          => 0,   // backward-compat alias = signals_active_final_total
+            // Winner-selection filter counters
+            'signals_before_winner_selection_total'   => 0,
+            'signals_after_winner_selection_total'    => 0,
+            'signals_rejected_missing_quality_total'  => 0,
+            'signals_rejected_low_neckline_total'     => 0,
+            'signals_rejected_loser_by_quality_total' => 0,
             'current_batch_size'           => 0,
             'last_updated_at'              => null,
             'reject_reason_distribution'   => (object)[],

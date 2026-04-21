@@ -1674,6 +1674,60 @@ Router::post('/admin/strategy/fish/ajax', function () {
 });
 
 // ============================================================
+// strategy.pattern routes
+// ============================================================
+
+Router::get('/admin/strategy/pattern', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.pattern');
+    ob_start();
+    require $moduleDir . '/admin/page_index.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Pattern Strategy', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/pattern/config', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.pattern');
+    ob_start();
+    require $moduleDir . '/admin/page_config.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Pattern — Config', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/pattern/stats', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.pattern');
+    ob_start();
+    require $moduleDir . '/admin/page_stats.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Pattern — Stats', $content, 'strategy', []);
+});
+
+Router::post('/admin/strategy/pattern/ajax', function () {
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.pattern');
+    require $moduleDir . '/admin/ajax_pattern.php';
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

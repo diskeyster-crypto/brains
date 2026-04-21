@@ -1,0 +1,13 @@
+{
+    "name": "pattern",
+    "title": "Pattern Strategy",
+    "version": "0.1.0",
+    "description": "Pattern-driven setup engine. Pipeline: market_regime → trend → corridor → bucket → wave → pattern → control_check → signal. Foundation only — no bot execution wired.",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php",
+        "logs":    "logs"
+    }
+}

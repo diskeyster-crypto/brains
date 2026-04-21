@@ -50,6 +50,11 @@ return [
     // Patterns enabled
     'enabled_patterns' => ['double_bottom', 'double_top'],
 
+    // Candidate quality filter
+    // Candidates whose composite quality score is below this threshold are
+    // rejected before control confirmation.  Set to 0.0 to disable.
+    'min_candidate_quality_score' => 0.30,
+
     // Pattern detection tolerances
     'pattern_similarity_tolerance'           => 0.07,  // global fallback (7%)
     'double_bottom_similarity_tolerance_pct' => 0.07,  // max % deviation between the two lows

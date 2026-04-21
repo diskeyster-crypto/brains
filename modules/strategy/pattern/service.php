@@ -222,6 +222,7 @@ final class PatternService
                 $batchPreviewRows[] = [
                     'symbol'                  => $symbol,
                     'side'                    => $result['candidate_side']          ?? null,
+                    'primary_pattern'         => $result['primary_pattern']         ?? null,
                     'market_regime'           => $result['market_regime']          ?? null,
                     'trend_direction'         => $result['trend_direction']        ?? null,
                     'trend_pass'              => in_array($result['trend_direction'] ?? '', ['bullish', 'bearish', 'flat'], true)
@@ -248,6 +249,16 @@ final class PatternService
                                                     ? ($result['reject_reason'] ?? null)
                                                     : null,
                     'candidate_found'         => $result['candidate_found']        ?? false,
+                    // Quality scoring fields
+                    'pattern_score'           => $result['pattern_score']           ?? null,
+                    'structure_score'         => $result['structure_score']         ?? null,
+                    'neckline_score'          => $result['neckline_score']          ?? null,
+                    'confirmation_score'      => $result['confirmation_score']      ?? null,
+                    'context_score'           => $result['context_score']           ?? null,
+                    'candidate_quality_score' => $result['candidate_quality_score'] ?? null,
+                    'quality_pass'            => $result['quality_pass']            ?? null,
+                    'quality_reject_reason'   => $result['quality_reject_reason']   ?? null,
+                    // Control check and final status
                     'control_check_checked'   => isset($result['confirm_status']) && $result['confirm_status'] !== null,
                     'control_check_status'    => $result['confirm_status']         ?? null,
                     'final_signal_status'     => $result['final_signal_status']    ?? null,
@@ -525,6 +536,14 @@ final class PatternService
             'high2_value'            => $shortResult['high2_value']           ?? null,
             'pattern_window_size'    => $longResult['pattern_window_size']    ?? ($shortResult['pattern_window_size']    ?? null),
             'similarity_delta_pct'   => $longResult['similarity_delta_pct']  ?? ($shortResult['similarity_delta_pct']  ?? null),
+            'pattern_score'           => null,
+            'structure_score'         => null,
+            'neckline_score'          => null,
+            'confirmation_score'      => null,
+            'context_score'           => null,
+            'candidate_quality_score' => null,
+            'quality_pass'            => null,
+            'quality_reject_reason'   => null,
             'long_reject_reason'     => $longRej,
             'short_reject_reason'    => $shortRej,
             'confirm_status'         => null,
@@ -581,6 +600,41 @@ final class PatternService
             ]);
         }
 
+        // ── Candidate quality scoring ────────────────────────────────────────
+        $this->requireLogic('candidate_quality');
+        $quality = (new \Modules\Strategy\Pattern\Logic\PatternCandidateQuality())->score(
+            $candidate, $wave, $config, $side
+        );
+        if (!$quality['quality_pass']) {
+            return array_merge($diagBase, [
+                'symbol'                  => $symbol,
+                'candidate_found'         => true,
+                'candidate_side'          => $side,
+                'primary_pattern'         => 'double_bottom',
+                'double_bottom_checked'   => true,
+                'double_top_checked'      => false,
+                'neckline_value'          => $candidate['neckline']              ?? 0.0,
+                'low1_value'              => $candidate['low1_price']            ?? 0.0,
+                'low2_value'              => $candidate['low2_price']            ?? 0.0,
+                'pattern_window_size'     => $candidate['window_size']           ?? 0,
+                'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+                'pattern_score'           => $quality['pattern_score'],
+                'structure_score'         => $quality['structure_score'],
+                'neckline_score'          => $quality['neckline_score'],
+                'confirmation_score'      => $quality['confirmation_score'],
+                'context_score'           => $quality['context_score'],
+                'candidate_quality_score' => $quality['candidate_quality_score'],
+                'quality_pass'            => false,
+                'quality_reject_reason'   => $quality['quality_reject_reason'],
+                'confirm_status'          => null,
+                'confirm_bars_waited'     => 0,
+                'candidate_expired'       => false,
+                'final_signal_status'     => 'rejected',
+                'reject_reason'           => $quality['quality_reject_reason'] ?? 'quality_filter',
+                'signal'                  => null,
+            ]);
+        }
+
         // Control confirmation
         if ((bool)($config['confirm_required'] ?? true)) {
             $this->requireLogic('control_check');
@@ -588,23 +642,31 @@ final class PatternService
             $confirm = (new \Modules\Strategy\Pattern\Logic\PatternControlCheck())->check($candidate, $candles, $candIdx, $config);
             if (!$confirm['confirm_pass']) {
                 return array_merge($diagBase, [
-                    'symbol'                 => $symbol,
-                    'candidate_found'        => true,
-                    'candidate_side'         => $side,
-                    'primary_pattern'        => 'double_bottom',
-                    'double_bottom_checked'  => true,
-                    'double_top_checked'     => false,
-                    'neckline_value'         => $candidate['neckline']              ?? 0.0,
-                    'low1_value'             => $candidate['low1_price']            ?? 0.0,
-                    'low2_value'             => $candidate['low2_price']            ?? 0.0,
-                    'pattern_window_size'    => $candidate['window_size']           ?? 0,
-                    'similarity_delta_pct'   => $candidate['similarity_delta_pct'] ?? 0.0,
-                    'confirm_status'         => $confirm['confirm_status'],
-                    'confirm_bars_waited'    => $confirm['confirm_bars_waited'],
-                    'candidate_expired'      => $confirm['candidate_expired'],
-                    'final_signal_status'    => 'confirm_pending',
-                    'reject_reason'          => $confirm['reject_reason'],
-                    'signal'                 => null,
+                    'symbol'                  => $symbol,
+                    'candidate_found'         => true,
+                    'candidate_side'          => $side,
+                    'primary_pattern'         => 'double_bottom',
+                    'double_bottom_checked'   => true,
+                    'double_top_checked'      => false,
+                    'neckline_value'          => $candidate['neckline']              ?? 0.0,
+                    'low1_value'              => $candidate['low1_price']            ?? 0.0,
+                    'low2_value'              => $candidate['low2_price']            ?? 0.0,
+                    'pattern_window_size'     => $candidate['window_size']           ?? 0,
+                    'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+                    'pattern_score'           => $quality['pattern_score'],
+                    'structure_score'         => $quality['structure_score'],
+                    'neckline_score'          => $quality['neckline_score'],
+                    'confirmation_score'      => $quality['confirmation_score'],
+                    'context_score'           => $quality['context_score'],
+                    'candidate_quality_score' => $quality['candidate_quality_score'],
+                    'quality_pass'            => true,
+                    'quality_reject_reason'   => null,
+                    'confirm_status'          => $confirm['confirm_status'],
+                    'confirm_bars_waited'     => $confirm['confirm_bars_waited'],
+                    'candidate_expired'       => $confirm['candidate_expired'],
+                    'final_signal_status'     => 'confirm_pending',
+                    'reject_reason'           => $confirm['reject_reason'],
+                    'signal'                  => null,
                 ]);
             }
         } else {
@@ -620,23 +682,31 @@ final class PatternService
         );
 
         return array_merge($diagBase, [
-            'symbol'                 => $symbol,
-            'candidate_found'        => true,
-            'candidate_side'         => $side,
-            'primary_pattern'        => 'double_bottom',
-            'double_bottom_checked'  => true,
-            'double_top_checked'     => false,
-            'neckline_value'         => $candidate['neckline']              ?? 0.0,
-            'low1_value'             => $candidate['low1_price']            ?? 0.0,
-            'low2_value'             => $candidate['low2_price']            ?? 0.0,
-            'pattern_window_size'    => $candidate['window_size']           ?? 0,
-            'similarity_delta_pct'   => $candidate['similarity_delta_pct'] ?? 0.0,
-            'confirm_status'         => 'confirm_pass',
-            'confirm_bars_waited'    => $confirm['confirm_bars_waited'] ?? 0,
-            'candidate_expired'      => false,
-            'final_signal_status'    => 'emitted',
-            'reject_reason'          => null,
-            'signal'                 => $signal,
+            'symbol'                  => $symbol,
+            'candidate_found'         => true,
+            'candidate_side'          => $side,
+            'primary_pattern'         => 'double_bottom',
+            'double_bottom_checked'   => true,
+            'double_top_checked'      => false,
+            'neckline_value'          => $candidate['neckline']              ?? 0.0,
+            'low1_value'              => $candidate['low1_price']            ?? 0.0,
+            'low2_value'              => $candidate['low2_price']            ?? 0.0,
+            'pattern_window_size'     => $candidate['window_size']           ?? 0,
+            'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+            'pattern_score'           => $quality['pattern_score'],
+            'structure_score'         => $quality['structure_score'],
+            'neckline_score'          => $quality['neckline_score'],
+            'confirmation_score'      => $quality['confirmation_score'],
+            'context_score'           => $quality['context_score'],
+            'candidate_quality_score' => $quality['candidate_quality_score'],
+            'quality_pass'            => true,
+            'quality_reject_reason'   => null,
+            'confirm_status'          => 'confirm_pass',
+            'confirm_bars_waited'     => $confirm['confirm_bars_waited'] ?? 0,
+            'candidate_expired'       => false,
+            'final_signal_status'     => 'emitted',
+            'reject_reason'           => null,
+            'signal'                  => $signal,
         ]);
     }
 
@@ -681,29 +751,72 @@ final class PatternService
             ]);
         }
 
+        // ── Candidate quality scoring ────────────────────────────────────────
+        $this->requireLogic('candidate_quality');
+        $quality = (new \Modules\Strategy\Pattern\Logic\PatternCandidateQuality())->score(
+            $candidate, $wave, $config, $side
+        );
+        if (!$quality['quality_pass']) {
+            return array_merge($diagBase, [
+                'symbol'                  => $symbol,
+                'candidate_found'         => true,
+                'candidate_side'          => $side,
+                'primary_pattern'         => 'double_top',
+                'double_bottom_checked'   => false,
+                'double_top_checked'      => true,
+                'neckline_value'          => $candidate['neckline']              ?? 0.0,
+                'high1_value'             => $candidate['high1_price']           ?? 0.0,
+                'high2_value'             => $candidate['high2_price']           ?? 0.0,
+                'pattern_window_size'     => $candidate['window_size']           ?? 0,
+                'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+                'pattern_score'           => $quality['pattern_score'],
+                'structure_score'         => $quality['structure_score'],
+                'neckline_score'          => $quality['neckline_score'],
+                'confirmation_score'      => $quality['confirmation_score'],
+                'context_score'           => $quality['context_score'],
+                'candidate_quality_score' => $quality['candidate_quality_score'],
+                'quality_pass'            => false,
+                'quality_reject_reason'   => $quality['quality_reject_reason'],
+                'confirm_status'          => null,
+                'confirm_bars_waited'     => 0,
+                'candidate_expired'       => false,
+                'final_signal_status'     => 'rejected',
+                'reject_reason'           => $quality['quality_reject_reason'] ?? 'quality_filter',
+                'signal'                  => null,
+            ]);
+        }
+
         if ((bool)($config['confirm_required'] ?? true)) {
             $this->requireLogic('control_check');
             $candIdx = max(0, count($candles) - 3);
             $confirm = (new \Modules\Strategy\Pattern\Logic\PatternControlCheck())->check($candidate, $candles, $candIdx, $config);
             if (!$confirm['confirm_pass']) {
                 return array_merge($diagBase, [
-                    'symbol'                 => $symbol,
-                    'candidate_found'        => true,
-                    'candidate_side'         => $side,
-                    'primary_pattern'        => 'double_top',
-                    'double_bottom_checked'  => false,
-                    'double_top_checked'     => true,
-                    'neckline_value'         => $candidate['neckline']              ?? 0.0,
-                    'high1_value'            => $candidate['high1_price']           ?? 0.0,
-                    'high2_value'            => $candidate['high2_price']           ?? 0.0,
-                    'pattern_window_size'    => $candidate['window_size']           ?? 0,
-                    'similarity_delta_pct'   => $candidate['similarity_delta_pct'] ?? 0.0,
-                    'confirm_status'         => $confirm['confirm_status'],
-                    'confirm_bars_waited'    => $confirm['confirm_bars_waited'],
-                    'candidate_expired'      => $confirm['candidate_expired'],
-                    'final_signal_status'    => 'confirm_pending',
-                    'reject_reason'          => $confirm['reject_reason'],
-                    'signal'                 => null,
+                    'symbol'                  => $symbol,
+                    'candidate_found'         => true,
+                    'candidate_side'          => $side,
+                    'primary_pattern'         => 'double_top',
+                    'double_bottom_checked'   => false,
+                    'double_top_checked'      => true,
+                    'neckline_value'          => $candidate['neckline']              ?? 0.0,
+                    'high1_value'             => $candidate['high1_price']           ?? 0.0,
+                    'high2_value'             => $candidate['high2_price']           ?? 0.0,
+                    'pattern_window_size'     => $candidate['window_size']           ?? 0,
+                    'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+                    'pattern_score'           => $quality['pattern_score'],
+                    'structure_score'         => $quality['structure_score'],
+                    'neckline_score'          => $quality['neckline_score'],
+                    'confirmation_score'      => $quality['confirmation_score'],
+                    'context_score'           => $quality['context_score'],
+                    'candidate_quality_score' => $quality['candidate_quality_score'],
+                    'quality_pass'            => true,
+                    'quality_reject_reason'   => null,
+                    'confirm_status'          => $confirm['confirm_status'],
+                    'confirm_bars_waited'     => $confirm['confirm_bars_waited'],
+                    'candidate_expired'       => $confirm['candidate_expired'],
+                    'final_signal_status'     => 'confirm_pending',
+                    'reject_reason'           => $confirm['reject_reason'],
+                    'signal'                  => null,
                 ]);
             }
         } else {
@@ -718,23 +831,31 @@ final class PatternService
         );
 
         return array_merge($diagBase, [
-            'symbol'                 => $symbol,
-            'candidate_found'        => true,
-            'candidate_side'         => $side,
-            'primary_pattern'        => 'double_top',
-            'double_bottom_checked'  => false,
-            'double_top_checked'     => true,
-            'neckline_value'         => $candidate['neckline']              ?? 0.0,
-            'high1_value'            => $candidate['high1_price']           ?? 0.0,
-            'high2_value'            => $candidate['high2_price']           ?? 0.0,
-            'pattern_window_size'    => $candidate['window_size']           ?? 0,
-            'similarity_delta_pct'   => $candidate['similarity_delta_pct'] ?? 0.0,
-            'confirm_status'         => 'confirm_pass',
-            'confirm_bars_waited'    => $confirm['confirm_bars_waited'] ?? 0,
-            'candidate_expired'      => false,
-            'final_signal_status'    => 'emitted',
-            'reject_reason'          => null,
-            'signal'                 => $signal,
+            'symbol'                  => $symbol,
+            'candidate_found'         => true,
+            'candidate_side'          => $side,
+            'primary_pattern'         => 'double_top',
+            'double_bottom_checked'   => false,
+            'double_top_checked'      => true,
+            'neckline_value'          => $candidate['neckline']              ?? 0.0,
+            'high1_value'             => $candidate['high1_price']           ?? 0.0,
+            'high2_value'             => $candidate['high2_price']           ?? 0.0,
+            'pattern_window_size'     => $candidate['window_size']           ?? 0,
+            'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+            'pattern_score'           => $quality['pattern_score'],
+            'structure_score'         => $quality['structure_score'],
+            'neckline_score'          => $quality['neckline_score'],
+            'confirmation_score'      => $quality['confirmation_score'],
+            'context_score'           => $quality['context_score'],
+            'candidate_quality_score' => $quality['candidate_quality_score'],
+            'quality_pass'            => true,
+            'quality_reject_reason'   => null,
+            'confirm_status'          => 'confirm_pass',
+            'confirm_bars_waited'     => $confirm['confirm_bars_waited'] ?? 0,
+            'candidate_expired'       => false,
+            'final_signal_status'     => 'emitted',
+            'reject_reason'           => null,
+            'signal'                  => $signal,
         ]);
     }
 
@@ -748,18 +869,26 @@ final class PatternService
     private function reject(array $diag, string $symbol, string $side, string $pattern, ?string $reason, bool $patternChecked = false, array $extra = []): array
     {
         return array_merge($diag, $extra, [
-            'symbol'                 => $symbol,
-            'candidate_found'        => false,
-            'candidate_side'         => $side,
-            'primary_pattern'        => $pattern,
-            'double_bottom_checked'  => ($side === 'long'  && $patternChecked),
-            'double_top_checked'     => ($side === 'short' && $patternChecked),
-            'confirm_status'         => null,
-            'confirm_bars_waited'    => 0,
-            'candidate_expired'      => false,
-            'final_signal_status'    => 'rejected',
-            'reject_reason'          => $reason,
-            'signal'                 => null,
+            'symbol'                  => $symbol,
+            'candidate_found'         => false,
+            'candidate_side'          => $side,
+            'primary_pattern'         => $pattern,
+            'double_bottom_checked'   => ($side === 'long'  && $patternChecked),
+            'double_top_checked'      => ($side === 'short' && $patternChecked),
+            'pattern_score'           => null,
+            'structure_score'         => null,
+            'neckline_score'          => null,
+            'confirmation_score'      => null,
+            'context_score'           => null,
+            'candidate_quality_score' => null,
+            'quality_pass'            => null,
+            'quality_reject_reason'   => null,
+            'confirm_status'          => null,
+            'confirm_bars_waited'     => 0,
+            'candidate_expired'       => false,
+            'final_signal_status'     => 'rejected',
+            'reject_reason'           => $reason,
+            'signal'                  => null,
         ]);
     }
 
@@ -849,6 +978,19 @@ final class PatternService
         }
         if ($candidateFound) {
             $inc($stats, 'setup_candidates_total');
+            $inc($stats, 'candidates_before_quality_filter_total');
+            $qualityPass         = (bool)($result['quality_pass']         ?? true);
+            $qualityRejectReason = $result['quality_reject_reason'] ?? null;
+            if ($qualityPass) {
+                $inc($stats, 'candidates_after_quality_filter_total');
+            } else {
+                $inc($stats, 'candidates_rejected_by_quality_total');
+                if ($qualityRejectReason !== null && $qualityRejectReason !== '') {
+                    $qdist = (array)($stats['quality_reject_reason_distribution'] ?? []);
+                    $qdist[$qualityRejectReason] = ($qdist[$qualityRejectReason] ?? 0) + 1;
+                    $stats['quality_reject_reason_distribution'] = $qdist;
+                }
+            }
         }
         // pattern_rejected_total: only when pattern stage was reached but candidate not found
         if (($dbChecked || $dtChecked) && !$candidateFound && in_array($fss, ['rejected', 'no_signal'], true)) {
@@ -912,6 +1054,10 @@ final class PatternService
             'double_top_found_total'       => 0,
             'pattern_rejected_total'       => 0,
             'setup_candidates_total'       => 0,
+            'candidates_before_quality_filter_total' => 0,
+            'candidates_after_quality_filter_total'  => 0,
+            'candidates_rejected_by_quality_total'   => 0,
+            'quality_reject_reason_distribution'     => (object)[],
             'control_check_pass_total'     => 0,
             'control_check_expired_total'  => 0,
             'control_check_failed_total'   => 0,

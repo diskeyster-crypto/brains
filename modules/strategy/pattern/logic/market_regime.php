@@ -160,6 +160,12 @@ final class PatternMarketRegime
             return ['unknown', 'insufficient_data'];
         }
 
+        // 1b. All symbols are unclassified (unknown) — nothing to classify against
+        $countUsedLocal = $bull + $bear + $flat;
+        if ($countUsedLocal === 0) {
+            return ['unknown', 'no_classified_symbols'];
+        }
+
         // 2. Bull clearly dominates
         if ($bullRatio >= $dominanceRatio) {
             return ['bullish', 'bull_dominance'];

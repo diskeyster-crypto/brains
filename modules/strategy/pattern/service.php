@@ -354,6 +354,10 @@ final class PatternService
             ($stats['signals_rejected_final_quality_total']      ?? 0) + $filterStats['rejected_final_quality'];
         $stats['signals_rejected_final_low_neckline_total'] =
             ($stats['signals_rejected_final_low_neckline_total'] ?? 0) + $filterStats['rejected_final_low_neckline'];
+        $stats['signals_rejected_final_low_quality_total'] =
+            ($stats['signals_rejected_final_low_quality_total'] ?? 0) + $filterStats['rejected_final_low_quality'];
+        $stats['signals_rejected_final_short_path_total'] =
+            ($stats['signals_rejected_final_short_path_total'] ?? 0) + $filterStats['rejected_final_short_path'];
 
         // Tag preview rows with winner outcome
         foreach ($batchPreviewRows as &$row) {
@@ -491,6 +495,8 @@ final class PatternService
                 'signals_rejected_final_context'        => $stats['signals_rejected_final_context_total']      ?? 0,
                 'signals_rejected_final_quality'        => $stats['signals_rejected_final_quality_total']      ?? 0,
                 'signals_rejected_final_low_neckline'   => $stats['signals_rejected_final_low_neckline_total'] ?? 0,
+                'signals_rejected_final_low_quality'    => $stats['signals_rejected_final_low_quality_total']  ?? 0,
+                'signals_rejected_final_short_path'     => $stats['signals_rejected_final_short_path_total']   ?? 0,
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
@@ -1071,12 +1077,13 @@ final class PatternService
         array $newlyEmitted,
         array $config
     ): array {
-        $minNeckline      = (float)($config['min_neckline_score']    ?? 0.0);
-        $trendRequired    = (bool)($config['trend_required']         ?? true);
-        $corridorRequired = (bool)($config['corridor_required']      ?? true);
-        $waveRequired     = (bool)($config['wave_required']          ?? true);
-        $allowedLong      = (array)($config['allowed_long_buckets']  ?? [1, 2, 3]);
-        $allowedShort     = (array)($config['allowed_short_buckets'] ?? [8, 9, 10]);
+        $minNeckline      = (float)($config['min_neckline_score']          ?? 0.0);
+        $minFinalQuality  = (float)($config['min_candidate_quality_score'] ?? 0.0);
+        $trendRequired    = (bool)($config['trend_required']               ?? true);
+        $corridorRequired = (bool)($config['corridor_required']            ?? true);
+        $waveRequired     = (bool)($config['wave_required']                ?? true);
+        $allowedLong      = (array)($config['allowed_long_buckets']        ?? [1, 2, 3]);
+        $allowedShort     = (array)($config['allowed_short_buckets']       ?? [8, 9, 10]);
 
         $requiredScoreKeys = [
             'pattern_score', 'structure_score', 'neckline_score',
@@ -1109,11 +1116,13 @@ final class PatternService
             $merged[$s['signal_id']] = $s;
         }
 
-        $beforeFinalEligibility  = count($merged);
-        $rejectedFinalQuality    = 0;
+        $beforeFinalEligibility   = count($merged);
+        $rejectedFinalQuality     = 0;
         $rejectedFinalLowNeckline = 0;
-        $rejectedFinalTrend      = 0;
-        $rejectedFinalContext    = 0;
+        $rejectedFinalLowQuality  = 0;
+        $rejectedFinalTrend       = 0;
+        $rejectedFinalShortPath   = 0;
+        $rejectedFinalContext     = 0;
 
         // ── Stage 1: Final eligibility ────────────────────────────────────────
         $eligible = [];
@@ -1134,16 +1143,30 @@ final class PatternService
                 continue;
             }
 
-            // 1c. Trend consistency — the stored trend_direction must be directional
-            //     ('bullish' or 'bearish'); flat/unknown are not valid final contexts.
-            //     Double-bottom in a bearish trend (reversal) is a valid long setup.
-            //     Double-top in a bullish trend (reversal) is a valid short setup.
-            //     Flat/unknown means no established directional context → remove.
+            // 1c. Trend consistency:
+            //     - flat/unknown means no directional context → remove when trend_required.
+            //     - side-vs-trend: long requires bullish context; short requires bearish context.
+            //       A short signal in a bullish market or a long signal in a bearish market
+            //       indicates a context mismatch and must not survive into the final active set.
             if ($trendRequired) {
                 $trendDir = (string)($s['trend_direction'] ?? 'unknown');
                 if (!in_array($trendDir, ['bullish', 'bearish'], true)) {
                     $rejectedFinalTrend++;
+                    if ($side === 'short') {
+                        $rejectedFinalShortPath++;
+                    }
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
+                    continue;
+                }
+                // Side-vs-trend: enforce long = bullish, short = bearish
+                if (($side === 'long' && $trendDir !== 'bullish')
+                    || ($side === 'short' && $trendDir !== 'bearish')
+                ) {
+                    $rejectedFinalTrend++;
+                    if ($side === 'short') {
+                        $rejectedFinalShortPath++;
+                    }
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }
             }
@@ -1175,6 +1198,14 @@ final class PatternService
             if ($contextRejectReason !== null) {
                 $rejectedFinalContext++;
                 $signalOutcomeMap[$id] = ['winner' => false, 'reason' => $contextRejectReason];
+                continue;
+            }
+
+            // 1e. Final quality composite floor — catches stale signals emitted under looser
+            //     thresholds and ensures every active signal meets the current quality bar.
+            if ($minFinalQuality > 0.0 && (float)($s['candidate_quality_score'] ?? 0.0) < $minFinalQuality) {
+                $rejectedFinalLowQuality++;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_quality'];
                 continue;
             }
 
@@ -1235,7 +1266,9 @@ final class PatternService
             'after_final_eligibility'       => $afterFinalEligibility,
             'rejected_final_quality'        => $rejectedFinalQuality,
             'rejected_final_low_neckline'   => $rejectedFinalLowNeckline,
+            'rejected_final_low_quality'    => $rejectedFinalLowQuality,
             'rejected_final_trend'          => $rejectedFinalTrend,
+            'rejected_final_short_path'     => $rejectedFinalShortPath,
             'rejected_final_context'        => $rejectedFinalContext,
             // Winner selection stage
             'before_winner_selection'       => $afterFinalEligibility,
@@ -1468,6 +1501,8 @@ final class PatternService
             'signals_rejected_final_context_total'      => 0,
             'signals_rejected_final_quality_total'      => 0,
             'signals_rejected_final_low_neckline_total' => 0,
+            'signals_rejected_final_low_quality_total'  => 0,
+            'signals_rejected_final_short_path_total'   => 0,
             // Winner-selection filter counters (Stage 2 of applySignalFilters)
             'signals_before_winner_selection_total'   => 0,
             'signals_after_winner_selection_total'    => 0,

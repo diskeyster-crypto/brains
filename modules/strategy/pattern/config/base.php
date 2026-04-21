@@ -52,31 +52,34 @@ return [
 
     // Candidate quality filter
     // Candidates whose composite quality score is below this threshold are
-    // rejected before control confirmation.  Set to 0.0 to disable.
-    'min_candidate_quality_score' => 0.40,
+    // rejected before control confirmation AND at final active-signal selection.
+    // Set to 0.0 to disable.
+    'min_candidate_quality_score' => 0.45,
 
     // Neckline floor — signals whose neckline_score is below this value are
     // purged from the final active signal set after winner selection.
-    // A neckline_score of 0.25 requires ~2.5% pattern depth (DEPTH_SCALE = 0.10).
+    // A neckline_score of 0.30 requires ~3% pattern depth (DEPTH_SCALE = 0.10).
     // Set to 0.0 to disable.
-    'min_neckline_score' => 0.25,
+    'min_neckline_score' => 0.30,
 
     // Pattern detection tolerances
     'pattern_similarity_tolerance'           => 0.07,  // global fallback (7%)
     'double_bottom_similarity_tolerance_pct' => 0.07,  // max % deviation between the two lows
     'double_bottom_min_neckline_bounce_pct'  => 0.005, // neckline must be >= 0.5% above avg low
-    'double_top_similarity_tolerance_pct'    => 0.07,  // max % deviation between the two highs
+    // Short path: widened to 10% to allow finding valid double-top pairs in trending markets
+    // where peaks are not perfectly symmetric.
+    'double_top_similarity_tolerance_pct'    => 0.10,  // max % deviation between the two highs
     'double_top_min_neckline_bounce_pct'     => 0.005, // neckline must be >= 0.5% below avg high
 
     // Neckline distance gate — current price must be within this % of the neckline to qualify.
     // Shared fallback: 0.02 = price may be up to 2% beyond the neckline.
     // Side-specific overrides allow tuning without changing the other path.
     // Long (double_bottom): 2% — price must be at or just above neckline (pre-breakout).
-    // Short (double_top):   4% — allows price to have already broken down up to 4%; crypto H4
-    //                            candles can close 3-4% below the neckline on the first breakdown.
+    // Short (double_top):   6% — allows price to have already broken down up to 6%; crypto H4
+    //                            candles can close 3-6% below the neckline on the first breakdown.
     'neckline_distance_tolerance_pct'            => 0.02,
     'double_bottom_neckline_distance_tolerance_pct' => 0.02,
-    'double_top_neckline_distance_tolerance_pct'    => 0.04,
+    'double_top_neckline_distance_tolerance_pct'    => 0.06,
 
     // Confirmation
     'confirm_required' => true,

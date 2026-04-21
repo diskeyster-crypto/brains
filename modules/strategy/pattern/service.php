@@ -119,11 +119,14 @@ final class PatternService
 
         $universe = $this->buildUniverse($config);
 
-        // Seed empty storage files if they don't exist yet
+        // Always reset stats for clean per-run accounting so that final-eligibility
+        // counters (before/after/rejected_*) are semantically truthful within each run
+        // and never carry stale values from a previous scan cycle.
         $zeroStats = $this->zeroStats();
+        $this->writeJson('storage/stats.json', $zeroStats);
+        // Seed other storage files only when they don't exist yet
         foreach ([
             'signals.json'  => [],
-            'stats.json'    => $zeroStats,
             'last_run.json' => ['status' => 'queued', 'started_at' => date('c')],
         ] as $f => $v) {
             if (!file_exists($this->moduleDir . '/storage/' . $f)) {

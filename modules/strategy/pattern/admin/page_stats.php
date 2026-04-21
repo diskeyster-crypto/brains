@@ -95,6 +95,7 @@ $statGroups = [
         'signals_after_final_eligibility_total'     => 'Прошло проверку допустимости',
         'signals_rejected_final_quality_total'      => 'Отклонено: неполный блок качества',
         'signals_rejected_final_low_neckline_total' => 'Отклонено: низкий neckline_score',
+        'signals_rejected_final_low_quality_total'  => 'Отклонено: низкий candidate_quality_score',
         'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown)',
         'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
     ],

@@ -69,13 +69,7 @@ $statGroups = [
         'double_bottom_checked_total' => 'double_bottom проверено',
         'double_bottom_found_total'   => 'double_bottom найдено',
         'double_top_checked_total'    => 'double_top проверено',
-        'double_top_found_total'      => 'double_top найдено (детектор, pre-quality)',
-        'double_top_quality_pass_total' => 'double_top: прошло качество (pre-confirm)',
-        'double_top_rejected_total'   => 'double_top отклонено детектором',
-        'double_top_waiting_confirm_total' => 'double_top: ожидает подтверждения',
-        'double_top_confirm_failed_total'  => 'double_top: подтверждение не пришло',
-        'double_top_expired_total'         => 'double_top: кандидат истёк',
-        'double_top_final_signals_total'   => 'double_top: финальных сигналов',
+        'double_top_found_total'      => 'double_top найдено',
         'pattern_rejected_total'      => 'Паттерн отклонён',
     ],
     'Фильтр качества кандидатов' => [
@@ -97,16 +91,14 @@ $statGroups = [
         'signals_rejected_loser_by_quality_total' => 'Отклонено: проигравший по качеству',
     ],
     'Финальная проверка допустимости сигналов' => [
-        'signals_before_final_eligibility_total'    => 'Всего эмитировано на входе (cumulative)',
-        'signals_after_final_eligibility_total'     => 'Прошло проверку (текущих активных)',
+        'signals_before_final_eligibility_total'    => 'Всего сигналов на входе',
+        'signals_after_final_eligibility_total'     => 'Прошло проверку допустимости',
         'signals_rejected_final_quality_total'      => 'Отклонено: неполный блок качества',
         'signals_rejected_final_low_neckline_total' => 'Отклонено: низкий neckline_score',
         'signals_rejected_final_low_quality_total'  => 'Отклонено: низкий candidate_quality_score',
-        'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown/wrong side)',
+        'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown)',
         'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
-        'signals_rejected_final_short_path_total'   => 'Отклонено: шорт-путь (тренд не медвежий)',
-        'signals_rejected_final_short_trend_total'  => 'Отклонено: шорт при бычьем или боковом тренде',
-        'signals_rejected_during_finalization_total' => 'Отклонено в финализации (из новых эмитов)',
+        'signals_rejected_final_short_path_total'   => 'Отклонено: шорт-путь (тренд не медвежий/боковик)',
     ],
 ];
 ?>
@@ -218,33 +210,6 @@ $statGroups = [
     </div>
     <?php endif; ?>
 
-    <!-- Double-top detector reject reason distribution -->
-    <?php
-    $dtDist = (array)($stats['double_top_reject_reason_distribution'] ?? []);
-    if (!empty($dtDist)):
-        arsort($dtDist);
-    ?>
-    <div class="stats-section">
-        <h6>Причины отказа double_top детектора (double_top_reject_reason_distribution)</h6>
-        <table class="table table-sm" style="font-size: 12px;">
-            <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
-            <tbody>
-            <?php foreach ($dtDist as $reason => $cnt): ?>
-            <tr>
-                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
-                <td><?= (int)$cnt ?></td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-    <?php else: ?>
-    <div class="stats-section">
-        <h6>Причины отказа double_top детектора (double_top_reject_reason_distribution)</h6>
-        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Появятся после запуска при наличии символов, где double_top детектор запускался.</p>
-    </div>
-    <?php endif; ?>
-
     <!-- Reject reason distribution -->
     <?php
     $dist = (array)($stats['reject_reason_distribution'] ?? []);
@@ -312,33 +277,6 @@ $statGroups = [
     <div class="stats-section">
         <h6>Причины отклонения фильтром качества</h6>
         <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Данные появятся после запуска при наличии кандидатов.</p>
-    </div>
-    <?php endif; ?>
-
-    <!-- Final reject reason distribution -->
-    <?php
-    $finalRejectDist = (array)($stats['final_reject_reason_distribution'] ?? []);
-    if (!empty($finalRejectDist)):
-        arsort($finalRejectDist);
-    ?>
-    <div class="stats-section">
-        <h6>Причины отклонения в финализации (final_reject_reason_distribution)</h6>
-        <table class="table table-sm" style="font-size: 12px;">
-            <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
-            <tbody>
-            <?php foreach ($finalRejectDist as $reason => $cnt): ?>
-            <tr>
-                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
-                <td><?= (int)$cnt ?></td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-    <?php else: ?>
-    <div class="stats-section">
-        <h6>Причины отклонения в финализации (final_reject_reason_distribution)</h6>
-        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Появятся после запуска при наличии эмитированных сигналов, не прошедших финальный отбор.</p>
     </div>
     <?php endif; ?>
 

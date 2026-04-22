@@ -300,31 +300,11 @@ $fMode    = (string)($config['mode']  ?? 'passive');
         </div>
 
         <div class="cfg-section">
-            <h6>Выход / трейлинг / тейк-профит</h6>
+            <h6>Выход / тейк-профит</h6>
             <?php
-                $tpEnabled       = (bool)($config['tp_enabled']       ?? false);
-                $trailingEnabled = (bool)($config['trailing_enabled'] ?? false);
-                // Mutual exclusion display note
-                $meNote = ($tpEnabled && $trailingEnabled)
-                    ? '<div class="alert alert-warning py-1 mt-2" style="font-size:12px;">⚠ TP и трейлинг включены одновременно — трейлинг будет принудительно отключён при сохранении.</div>'
-                    : '';
+                $tpEnabled = (bool)($config['tp_enabled'] ?? false);
             ?>
             <div class="row g-3">
-                <div class="col-sm-3">
-                    <label class="form-label">Трейлинг включён</label>
-                    <select name="trailing_enabled" class="form-select form-select-sm" id="trailing_enabled">
-                        <option value="1" <?= $trailingEnabled ? 'selected' : '' ?>>Да</option>
-                        <option value="0" <?= !$trailingEnabled ? 'selected' : '' ?>>Нет</option>
-                    </select>
-                </div>
-                <div class="col-sm-3">
-                    <label class="form-label">Профиль трейлинга</label>
-                    <select name="trailing_profile" class="form-select form-select-sm">
-                        <?php foreach (['oldbot_soft','oldbot_hard','aggressive','custom'] as $tp): ?>
-                        <option value="<?= $tp ?>" <?= ($config['trailing_profile'] ?? 'oldbot_soft') === $tp ? 'selected' : '' ?>><?= $tp ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
                 <div class="col-sm-3">
                     <label class="form-label">Закрытие по реверс-паттерну</label>
                     <select name="reverse_pattern_close_enabled" class="form-select form-select-sm">
@@ -354,9 +334,8 @@ $fMode    = (string)($config['mode']  ?? 'passive');
                     <div style="font-size:11px;color:#64748b;margin-top:3px;">Для fixed_r — кратное R; для fixed_price — абс. цена</div>
                 </div>
             </div>
-            <?= $meNote ?>
             <div style="font-size:11px;color:#64748b;margin-top:8px;">
-                Если TP включён, трейлинг считается неактивным. Параметры выхода сохраняются в конфигурацию; активное исполнение ордеров <strong>не реализовано</strong>.
+                Трейлинг вынесен в отдельный модуль. Выход здесь: TP и реверс-паттерн только. Активное исполнение ордеров <strong>не реализовано</strong>.
             </div>
         </div>
 

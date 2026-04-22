@@ -133,6 +133,19 @@ final class CronManager
                     $modulePath = $itemPath . '/' . $moduleName;
                     if (is_dir($modulePath)) {
                         $this->discoverModuleCron($moduleName, $modulePath);
+                        // Also scan one level deeper (e.g. strategy/pattern/double_bottom_long)
+                        $subItems = @scandir($modulePath);
+                        if ($subItems) {
+                            foreach ($subItems as $subName) {
+                                if ($subName === '.' || $subName === '..') {
+                                    continue;
+                                }
+                                $subPath = $modulePath . '/' . $subName;
+                                if (is_dir($subPath)) {
+                                    $this->discoverModuleCron($subName, $subPath);
+                                }
+                            }
+                        }
                     }
                 }
             } else {

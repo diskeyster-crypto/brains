@@ -374,6 +374,15 @@ final class DoubleBottomLongService
             }
         }
 
+        // Cron diagnostics — persisted so the operator can verify cron is driving the module
+        $state['cron_enabled']            = (bool)($config['enabled'] ?? false);
+        $state['last_tick_at']            = date('c');
+        $state['last_tick_result']        = 'ok';
+        $state['run_status']              = $state['status'];
+        $state['total_symbols']           = $total;
+        $state['remaining_symbols']       = ($isDone && $continuousEnabled) ? $total : max(0, $total - $cursor);
+        $state['continuous_scan_enabled'] = $continuousEnabled;
+
         $state['preview_rows'] = array_slice(
             array_merge((array)($state['preview_rows'] ?? []), $batchPreviewRows),
             -200
@@ -485,13 +494,6 @@ final class DoubleBottomLongService
      */
     private function writeRuntimeSnapshot(array $config, array $state): void
     {
-        $tpEnabled       = (bool)($config['tp_enabled']       ?? false);
-        $trailingEnabled = (bool)($config['trailing_enabled'] ?? false);
-        // Enforce mutual exclusion
-        if ($tpEnabled) {
-            $trailingEnabled = false;
-        }
-
         $snap = [
             'snapshot_at'       => date('c'),
             'strategy_id'       => 'double_bottom_long',
@@ -505,17 +507,15 @@ final class DoubleBottomLongService
             'batch_size'              => $config['batch_size']             ?? 50,
             'max_symbols_per_run'     => $config['max_symbols_per_run']    ?? 0,
             'continuous_scan_enabled' => $config['continuous_scan_enabled'] ?? true,
-            // Stop
-            'stop_mode'                  => $config['stop_mode']                    ?? 'structure',
+            // Stop — fixed_from_liq_zone model
+            'stop_mode'                  => $config['stop_mode']                    ?? 'fixed_from_liq_zone',
             'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,
             'stop_from_liq_buffer_type'  => $config['stop_from_liq_buffer_type']    ?? 'percent',
             'bot_budget'                 => $config['bot_budget']                   ?? 0.0,
             'bot_leverage'               => $config['bot_leverage']                 ?? 1,
-            // Exit
-            'trailing_enabled'              => $trailingEnabled,
-            'trailing_profile'              => $config['trailing_profile']              ?? 'oldbot_soft',
+            // Exit (strategy-owned; no trailing in this module)
             'reverse_pattern_close_enabled' => $config['reverse_pattern_close_enabled'] ?? false,
-            'tp_enabled'                    => $tpEnabled,
+            'tp_enabled'                    => $config['tp_enabled']                    ?? false,
             'tp_mode'                       => $config['tp_mode']                      ?? 'fixed_r',
             'tp_value'                      => $config['tp_value']                     ?? 2.0,
             // Brain-compatible keys for discoverStrategyModules()

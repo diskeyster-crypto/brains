@@ -57,12 +57,10 @@ return [
     'signal_ttl_bars'                    => 'int',
     'max_active_signals_per_symbol_side' => 'int',
 
-    // Stop / trailing
+    // Stop / exit
     'stop_mode'                     => 'string',
     'stop_from_liq_buffer_value'    => 'float',
     'stop_from_liq_buffer_type'     => 'string',
-    'trailing_profile'              => 'string',
-    'trailing_enabled'              => 'bool',
     'reverse_pattern_close_enabled' => 'bool',
     'tp_enabled'                    => 'bool',
     'tp_mode'                       => 'string',

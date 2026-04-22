@@ -156,20 +156,13 @@ if ($action === 'save_config') {
                                                 ? (string)$p['stop_from_liq_buffer_type'] : 'percent',
         'bot_budget'                      => max(0.0, (float)($p['bot_budget']   ?? 0.0)),
         'bot_leverage'                    => max(1, (int)($p['bot_leverage']     ?? 1)),
-        // Exit / trailing
-        'trailing_enabled'                => ($p['trailing_enabled'] ?? '0') === '1',
-        'trailing_profile'                => (string)($p['trailing_profile'] ?? 'oldbot_soft'),
+        // Exit (strategy-owned; trailing removed from this module)
         'reverse_pattern_close_enabled'   => ($p['reverse_pattern_close_enabled'] ?? '0') === '1',
         'tp_enabled'                      => ($p['tp_enabled'] ?? '0') === '1',
         'tp_mode'                         => in_array($p['tp_mode'] ?? '', ['fixed_r','fixed_price'], true)
                                                 ? (string)$p['tp_mode'] : 'fixed_r',
         'tp_value'                        => max(0.0, (float)($p['tp_value'] ?? 2.0)),
     ];
-
-    // Mutual exclusion: tp_enabled and trailing_enabled cannot both be true
-    if ($overrides['tp_enabled'] && $overrides['trailing_enabled']) {
-        $overrides['trailing_enabled'] = false;
-    }
 
     try {
         $merged = array_merge(

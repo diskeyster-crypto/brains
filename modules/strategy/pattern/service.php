@@ -349,17 +349,46 @@ final class PatternService
         // Snapshot counters — overwritten each tick to show current state
         $stats['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
         $stats['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
-        // Final-eligibility counters — all overwritten each tick (snapshot semantics:
-        // before/after/rejected must be consistent within the same tick and comparable to each other).
-        $stats['signals_before_final_eligibility_total']    = $filterStats['before_final_eligibility'];
-        $stats['signals_after_final_eligibility_total']     = $filterStats['after_final_eligibility'];
-        $stats['signals_rejected_final_trend_total']        = $filterStats['rejected_final_trend'];
-        $stats['signals_rejected_final_context_total']      = $filterStats['rejected_final_context'];
-        $stats['signals_rejected_final_quality_total']      = $filterStats['rejected_final_quality'];
-        $stats['signals_rejected_final_low_neckline_total'] = $filterStats['rejected_final_low_neckline'];
-        $stats['signals_rejected_final_low_quality_total']  = $filterStats['rejected_final_low_quality'];
-        $stats['signals_rejected_final_short_path_total']   = $filterStats['rejected_final_short_path'];
-        $stats['signals_rejected_final_short_trend_total']  = $filterStats['rejected_final_short_trend'];
+        // Final-eligibility counters — cumulative semantics aligned with signals_emitted_total.
+        // signals_before_final_eligibility_total counts newly emitted signals entering the filter
+        // each tick (= count($newlyEmitted)), matching signals_emitted_total semantics.
+        // signals_after_final_eligibility_total is a snapshot of the current active count.
+        // All rejection counters use += so they accumulate truthfully across ticks.
+        $stats['signals_before_final_eligibility_total'] =
+            ($stats['signals_before_final_eligibility_total'] ?? 0) + count($newlyEmitted);
+        $stats['signals_after_final_eligibility_total']  = count($signals);
+        $stats['signals_rejected_final_trend_total'] =
+            ($stats['signals_rejected_final_trend_total'] ?? 0) + $filterStats['rejected_final_trend'];
+        $stats['signals_rejected_final_context_total'] =
+            ($stats['signals_rejected_final_context_total'] ?? 0) + $filterStats['rejected_final_context'];
+        $stats['signals_rejected_final_quality_total'] =
+            ($stats['signals_rejected_final_quality_total'] ?? 0) + $filterStats['rejected_final_quality'];
+        $stats['signals_rejected_final_low_neckline_total'] =
+            ($stats['signals_rejected_final_low_neckline_total'] ?? 0) + $filterStats['rejected_final_low_neckline'];
+        $stats['signals_rejected_final_low_quality_total'] =
+            ($stats['signals_rejected_final_low_quality_total'] ?? 0) + $filterStats['rejected_final_low_quality'];
+        $stats['signals_rejected_final_short_path_total'] =
+            ($stats['signals_rejected_final_short_path_total'] ?? 0) + $filterStats['rejected_final_short_path'];
+        $stats['signals_rejected_final_short_trend_total'] =
+            ($stats['signals_rejected_final_short_trend_total'] ?? 0) + $filterStats['rejected_final_short_trend'];
+        // Track final reject reasons for newly emitted signals that did not survive finalization
+        $finalSignalIds = array_flip(array_column($signals, 'signal_id'));
+        $rejDuringFinal = 0;
+        foreach ($newlyEmitted as $emSig) {
+            $emId = $emSig['signal_id'] ?? null;
+            if ($emId === null) {
+                continue;
+            }
+            if (!isset($finalSignalIds[$emId])) {
+                $rejDuringFinal++;
+                $frReason = $signalOutcomeMap[$emId]['reason'] ?? 'unknown_final_reject';
+                $frDist   = (array)($stats['final_reject_reason_distribution'] ?? []);
+                $frDist[$frReason] = ($frDist[$frReason] ?? 0) + 1;
+                $stats['final_reject_reason_distribution'] = $frDist;
+            }
+        }
+        $stats['signals_rejected_during_finalization_total'] =
+            ($stats['signals_rejected_during_finalization_total'] ?? 0) + $rejDuringFinal;
 
         // Tag preview rows with winner outcome
         foreach ($batchPreviewRows as &$row) {
@@ -421,6 +450,9 @@ final class PatternService
         if (empty($stats['double_top_reject_reason_distribution'])) {
             $stats['double_top_reject_reason_distribution'] = (object)[];
         }
+        if (empty($stats['final_reject_reason_distribution'])) {
+            $stats['final_reject_reason_distribution'] = (object)[];
+        }
         $this->writeJson('storage/stats.json', $stats);
 
         // Market regime summary for last_run
@@ -470,6 +502,7 @@ final class PatternService
                 'double_bottom_found'        => $stats['double_bottom_found_total']     ?? 0,
                 'double_top_checked'         => $stats['double_top_checked_total']      ?? 0,
                 'double_top_found'           => $stats['double_top_found_total']        ?? 0,
+                'double_top_quality_pass'    => $stats['double_top_quality_pass_total'] ?? 0,
                 'double_top_waiting_confirm' => $stats['double_top_waiting_confirm_total'] ?? 0,
                 'double_top_confirm_failed'  => $stats['double_top_confirm_failed_total']  ?? 0,
                 'double_top_expired'         => $stats['double_top_expired_total']         ?? 0,
@@ -512,6 +545,8 @@ final class PatternService
                 'signals_rejected_final_low_quality'    => $stats['signals_rejected_final_low_quality_total']  ?? 0,
                 'signals_rejected_final_short_path'     => $stats['signals_rejected_final_short_path_total']   ?? 0,
                 'signals_rejected_final_short_trend'    => $stats['signals_rejected_final_short_trend_total']  ?? 0,
+                'signals_rejected_during_finalization'  => $stats['signals_rejected_during_finalization_total'] ?? 0,
+                'final_reject_reason_distribution'      => $stats['final_reject_reason_distribution']          ?? (object)[],
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
@@ -1392,12 +1427,19 @@ final class PatternService
         // $shortCandFound: true when the double_top detector found a candidate (regardless of
         // quality). Used for detection-level reject tracking.
         // $shortCandQualityPass: true only when detector found AND quality gate passed.
-        // double_top_found_total counts the stricter population: real candidates that passed
-        // both detection and quality — not loose pre-candidates rejected by quality.
+        // double_top_found_total counts detector-found candidates (all, pre-quality) so it
+        // aligns with double_bottom_found_total semantics and the explicit state pipeline:
+        //   checked → found (detector) → quality_pass → waiting_confirm / confirm_failed / emitted.
+        // double_top_quality_pass_total is the narrower post-quality population.
         $shortCandFound       = (bool)($result['short_candidate_found'] ?? false);
         $shortCandQualityPass = $shortCandFound && ($result['quality_pass'] ?? false) === true;
-        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandQualityPass)) {
+        // double_top_found_total = detector found a candidate (pre-quality)
+        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandFound)) {
             $inc($stats, 'double_top_found_total');
+        }
+        // double_top_quality_pass_total = candidate passed quality gate (pre-confirm)
+        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandQualityPass)) {
+            $inc($stats, 'double_top_quality_pass_total');
         }
         // Rejected at detection stage: double_top was checked but no candidate found.
         // Use short_reject_reason (from composite) or primary reject_reason as the reason.
@@ -1577,6 +1619,7 @@ final class PatternService
             'double_top_confirm_failed_total'       => 0,
             'double_top_expired_total'              => 0,
             'double_top_final_signals_total'        => 0,
+            'double_top_quality_pass_total'         => 0,
             'pattern_rejected_total'       => 0,
             'setup_candidates_total'       => 0,
             'candidates_before_quality_filter_total' => 0,
@@ -1609,6 +1652,8 @@ final class PatternService
             'signals_rejected_final_low_quality_total'  => 0,
             'signals_rejected_final_short_path_total'   => 0,
             'signals_rejected_final_short_trend_total'  => 0,  // short rejected: trend_direction = bullish or flat
+            'signals_rejected_during_finalization_total' => 0,
+            'final_reject_reason_distribution'          => (object)[],
             // Winner-selection filter counters (Stage 2 of applySignalFilters)
             'signals_before_winner_selection_total'   => 0,
             'signals_after_winner_selection_total'    => 0,

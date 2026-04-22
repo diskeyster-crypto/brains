@@ -69,7 +69,8 @@ $statGroups = [
         'double_bottom_checked_total' => 'double_bottom проверено',
         'double_bottom_found_total'   => 'double_bottom найдено',
         'double_top_checked_total'    => 'double_top проверено',
-        'double_top_found_total'      => 'double_top найдено (детектор)',
+        'double_top_found_total'      => 'double_top найдено (детектор, pre-quality)',
+        'double_top_quality_pass_total' => 'double_top: прошло качество (pre-confirm)',
         'double_top_rejected_total'   => 'double_top отклонено детектором',
         'double_top_waiting_confirm_total' => 'double_top: ожидает подтверждения',
         'double_top_confirm_failed_total'  => 'double_top: подтверждение не пришло',
@@ -96,8 +97,8 @@ $statGroups = [
         'signals_rejected_loser_by_quality_total' => 'Отклонено: проигравший по качеству',
     ],
     'Финальная проверка допустимости сигналов' => [
-        'signals_before_final_eligibility_total'    => 'Всего сигналов на входе',
-        'signals_after_final_eligibility_total'     => 'Прошло проверку допустимости',
+        'signals_before_final_eligibility_total'    => 'Всего эмитировано на входе (cumulative)',
+        'signals_after_final_eligibility_total'     => 'Прошло проверку (текущих активных)',
         'signals_rejected_final_quality_total'      => 'Отклонено: неполный блок качества',
         'signals_rejected_final_low_neckline_total' => 'Отклонено: низкий neckline_score',
         'signals_rejected_final_low_quality_total'  => 'Отклонено: низкий candidate_quality_score',
@@ -105,6 +106,7 @@ $statGroups = [
         'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
         'signals_rejected_final_short_path_total'   => 'Отклонено: шорт-путь (тренд не медвежий)',
         'signals_rejected_final_short_trend_total'  => 'Отклонено: шорт при бычьем или боковом тренде',
+        'signals_rejected_during_finalization_total' => 'Отклонено в финализации (из новых эмитов)',
     ],
 ];
 ?>
@@ -310,6 +312,33 @@ $statGroups = [
     <div class="stats-section">
         <h6>Причины отклонения фильтром качества</h6>
         <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Данные появятся после запуска при наличии кандидатов.</p>
+    </div>
+    <?php endif; ?>
+
+    <!-- Final reject reason distribution -->
+    <?php
+    $finalRejectDist = (array)($stats['final_reject_reason_distribution'] ?? []);
+    if (!empty($finalRejectDist)):
+        arsort($finalRejectDist);
+    ?>
+    <div class="stats-section">
+        <h6>Причины отклонения в финализации (final_reject_reason_distribution)</h6>
+        <table class="table table-sm" style="font-size: 12px;">
+            <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
+            <tbody>
+            <?php foreach ($finalRejectDist as $reason => $cnt): ?>
+            <tr>
+                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
+                <td><?= (int)$cnt ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php else: ?>
+    <div class="stats-section">
+        <h6>Причины отклонения в финализации (final_reject_reason_distribution)</h6>
+        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Появятся после запуска при наличии эмитированных сигналов, не прошедших финальный отбор.</p>
     </div>
     <?php endif; ?>
 

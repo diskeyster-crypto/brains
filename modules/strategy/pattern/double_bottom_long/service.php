@@ -162,6 +162,22 @@ final class DoubleBottomLongService
         $state  = $this->getRunState();
         $status = $state['status'] ?? 'idle';
 
+        // Auto-queue on first cron tick when the module is enabled with continuous scan.
+        if ($status === 'idle') {
+            $cfg = $this->getConfig();
+            if ((bool)($cfg['enabled'] ?? false) && (bool)($cfg['continuous_scan_enabled'] ?? true)) {
+                $qResult = $this->queueRun();
+                if (!($qResult['ok'] ?? false)) {
+                    return;
+                }
+                $state  = $this->getRunState();
+                $status = $state['status'] ?? 'idle';
+            }
+            if ($status === 'idle') {
+                return;
+            }
+        }
+
         if ($status === 'queued') {
             $state['status']     = 'running';
             $state['started_at'] = date('c');
@@ -182,7 +198,7 @@ final class DoubleBottomLongService
         $tStart  = time();
 
         $stats   = array_merge($this->zeroStats(), $this->getStats());
-        $signals = $this->getSignals();
+        $signals = $this->expireSignals($this->getSignals(), $config);
 
         $regDiag = (array)($state['registry_diag'] ?? []);
         $stats['registry_loaded']       = (bool)($regDiag['registry_loaded']      ?? false);
@@ -1243,6 +1259,30 @@ final class DoubleBottomLongService
             'reject_reason_distribution'         => (object)[],
             'pattern_reject_reason_distribution' => (object)[],
         ];
+    }
+
+    /**
+     * Remove signals from signals.json that have exceeded signal_ttl_bars * H4 seconds.
+     * Expired signals are dropped entirely so signals.json stays coherent across cycles.
+     */
+    private function expireSignals(array $signals, array $config): array
+    {
+        $ttlBars = (int)($config['signal_ttl_bars'] ?? 2);
+        if ($ttlBars <= 0) {
+            return $signals;
+        }
+        $ttlSec = $ttlBars * 4 * 3600;   // H4 bar = 4 hours
+        $now    = time();
+        return array_values(
+            array_filter($signals, static function (array $s) use ($now, $ttlSec): bool {
+                $detectedAt = $s['detected_at'] ?? '';
+                if ($detectedAt === '') {
+                    return false;
+                }
+                $ts = strtotime($detectedAt);
+                return $ts !== false && ($ts + $ttlSec) > $now;
+            })
+        );
     }
 
     private function buildUniverse(array $config): array

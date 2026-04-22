@@ -74,6 +74,11 @@ final class DoubleBottomLongService
         return $this->readJson('storage/stats.json', []);
     }
 
+    public function getCycleStats(): array
+    {
+        return $this->readJson('storage/cycle_stats.json', []);
+    }
+
     public function getSignals(): array
     {
         return $this->readJson('storage/signals.json', []);
@@ -120,8 +125,8 @@ final class DoubleBottomLongService
 
         $universe = $this->buildUniverse($config);
 
-        $zeroStats = $this->zeroStats();
-        $this->writeJson('storage/stats.json', $zeroStats);
+        // Cycle-local stats are reset on each new queue run; cumulative stats.json is never wiped.
+        $this->writeJson('storage/cycle_stats.json', $this->zeroStats());
         foreach ([
             'signals.json'  => [],
             'last_run.json' => ['status' => 'queued', 'started_at' => date('c')],
@@ -137,6 +142,9 @@ final class DoubleBottomLongService
         }
         if (!file_exists($this->moduleDir . '/storage/market_regime_history.ndjson')) {
             file_put_contents($this->moduleDir . '/storage/market_regime_history.ndjson', '');
+        }
+        if (!file_exists($this->moduleDir . '/storage/cycle_history.ndjson')) {
+            file_put_contents($this->moduleDir . '/storage/cycle_history.ndjson', '');
         }
 
         $state = [
@@ -197,18 +205,21 @@ final class DoubleBottomLongService
         $total   = count($symbols);
         $tStart  = time();
 
-        $stats   = array_merge($this->zeroStats(), $this->getStats());
+        $stats      = array_merge($this->zeroStats(), $this->getStats());
+        $cycleStats = array_merge($this->zeroStats(), $this->getCycleStats());
         $signals = $this->expireSignals($this->getSignals(), $config);
 
         $regDiag = (array)($state['registry_diag'] ?? []);
-        $stats['registry_loaded']       = (bool)($regDiag['registry_loaded']      ?? false);
-        $stats['registry_symbol_count'] = (int)($regDiag['registry_symbol_count'] ?? 0);
+        $stats['registry_loaded']            = (bool)($regDiag['registry_loaded']      ?? false);
+        $stats['registry_symbol_count']      = (int)($regDiag['registry_symbol_count'] ?? 0);
+        $cycleStats['registry_loaded']       = (bool)($regDiag['registry_loaded']      ?? false);
+        $cycleStats['registry_symbol_count'] = (int)($regDiag['registry_symbol_count'] ?? 0);
 
-        // Reset stats at the start of a new cycle (after continuous auto-restart)
+        // On cycle rollover: reset only cycle-local stats; cumulative stats.json is never wiped.
         if ($cursor === 0 && !empty($state['reset_stats_on_next_cycle'])) {
-            $stats                           = $this->zeroStats();
-            $stats['registry_loaded']        = (bool)($regDiag['registry_loaded']       ?? false);
-            $stats['registry_symbol_count']  = (int)($regDiag['registry_symbol_count']  ?? 0);
+            $cycleStats                           = $this->zeroStats();
+            $cycleStats['registry_loaded']        = (bool)($regDiag['registry_loaded']       ?? false);
+            $cycleStats['registry_symbol_count']  = (int)($regDiag['registry_symbol_count']  ?? 0);
             unset($state['reset_stats_on_next_cycle']);
         }
 
@@ -243,7 +254,8 @@ final class DoubleBottomLongService
                     $newlyEmitted[] = $result['signal'];
                     $found++;
                 }
-                $stats = $this->accumulateStats($stats, $result);
+                $stats      = $this->accumulateStats($stats,      $result);
+                $cycleStats = $this->accumulateStats($cycleStats, $result);
 
                 $rejectR       = $result['reject_reason']     ?? null;
                 $neckDistStatus = 'n/a';
@@ -320,32 +332,8 @@ final class DoubleBottomLongService
         [$signals, $filterStats, $signalOutcomeMap] =
             $this->applySignalFilters($signals, $newlyEmitted, $config);
 
-        $stats['signals_rejected_missing_quality_total'] =
-            ($stats['signals_rejected_missing_quality_total'] ?? 0) + $filterStats['rejected_missing_quality'];
-        $stats['signals_rejected_low_neckline_total'] =
-            ($stats['signals_rejected_low_neckline_total'] ?? 0) + $filterStats['rejected_low_neckline'];
-        $stats['signals_rejected_loser_by_quality_total'] =
-            ($stats['signals_rejected_loser_by_quality_total'] ?? 0) + $filterStats['rejected_loser_by_quality'];
-        $stats['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
-        $stats['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
-        $stats['signals_before_final_eligibility_total']    = $filterStats['before_final_eligibility'];
-        $stats['signals_after_final_eligibility_total']     = $filterStats['after_final_eligibility'];
-        $stats['signals_rejected_final_trend_total']        = $filterStats['rejected_final_trend'];
-        $stats['signals_rejected_final_context_total']      = $filterStats['rejected_final_context'];
-        $stats['signals_rejected_final_quality_total']      = $filterStats['rejected_final_quality'];
-        $stats['signals_rejected_final_low_neckline_total'] = $filterStats['rejected_final_low_neckline'];
-        $stats['signals_rejected_final_low_quality_total']  = $filterStats['rejected_final_low_quality'];
-        // Cumulative finalization counters
-        $stats['signals_entered_final_eligibility_total'] =
-            ($stats['signals_entered_final_eligibility_total'] ?? 0) + $filterStats['before_final_eligibility'];
-        $stats['signals_rejected_during_finalization_total'] =
-            ($stats['signals_rejected_during_finalization_total'] ?? 0)
-            + max(0, $filterStats['before_final_eligibility'] - $filterStats['after_final_eligibility']);
-        $finalRejDist = (array)($stats['final_reject_reason_distribution'] ?? []);
-        foreach ((array)($filterStats['final_reject_reason_distribution'] ?? []) as $fReason => $fCnt) {
-            $finalRejDist[$fReason] = ($finalRejDist[$fReason] ?? 0) + (int)$fCnt;
-        }
-        $stats['final_reject_reason_distribution'] = empty($finalRejDist) ? (object)[] : $finalRejDist;
+        $stats      = $this->applyFilterStatsDelta($stats,      $filterStats);
+        $cycleStats = $this->applyFilterStatsDelta($cycleStats, $filterStats);
 
         foreach ($batchPreviewRows as &$row) {
             $sigId = $row['signal_id'] ?? null;
@@ -370,8 +358,28 @@ final class DoubleBottomLongService
         $continuousEnabled = (bool)($config['continuous_scan_enabled'] ?? true);
 
         if ($isDone) {
-            $state['cycle_finished_at'] = date('c');
+            $finishedAt = date('c');
+            $state['cycle_finished_at'] = $finishedAt;
             $state['cycle_id']          = (int)($state['cycle_id'] ?? 0) + 1;
+            $state['cumulative_cycles_completed'] = (int)($state['cycle_id']);
+
+            // Append a compact record to cycle_history.ndjson for operator audit trail.
+            $cycleHistoryRecord = json_encode([
+                'cycle_id'                   => (int)($state['cycle_id']),
+                'started_at'                 => $state['cycle_started_at'] ?? $state['started_at'] ?? null,
+                'finished_at'                => $finishedAt,
+                'symbols_total'              => $total,
+                'symbols_scanned'            => $totalProcessed,
+                'signals_emitted_total'      => (int)($cycleStats['signals_emitted_total'] ?? 0),
+                'signals_active_final_total' => count($signals),
+                'reject_reason_distribution' => $cycleStats['reject_reason_distribution'] ?? (object)[],
+                'final_status'               => $continuousEnabled ? 'continuous' : 'done',
+            ]) . "\n";
+            @file_put_contents(
+                $this->moduleDir . '/storage/cycle_history.ndjson',
+                $cycleHistoryRecord,
+                FILE_APPEND | LOCK_EX
+            );
 
             if ($continuousEnabled && $total > 0) {
                 // Auto-restart: reset cursor, keep symbols list, stay running
@@ -381,7 +389,8 @@ final class DoubleBottomLongService
                 $state['found']            = 0;
                 $state['cycle_started_at'] = date('c');
                 $state['next_cycle_ready'] = false;
-                // Mark that stats.json should be reset at the start of the next cycle
+                // Mark that cycle_stats.json should be reset at the start of the next cycle.
+                // Cumulative stats.json is never wiped.
                 $state['reset_stats_on_next_cycle'] = true;
             } else {
                 $state['status']           = 'done';
@@ -399,6 +408,16 @@ final class DoubleBottomLongService
         $state['remaining_symbols']       = ($isDone && $continuousEnabled) ? $total : max(0, $total - $cursor);
         $state['continuous_scan_enabled'] = $continuousEnabled;
 
+        // Runtime diagnostics: separate current-cycle from cumulative
+        $state['current_cycle_id']                    = (int)($state['cycle_id']      ?? 0);
+        $state['current_cycle_started_at']            = $state['cycle_started_at']   ?? null;
+        $state['current_cycle_processed_symbols']     = $totalProcessed;
+        $state['current_cycle_signals_emitted_total'] = (int)($cycleStats['signals_emitted_total'] ?? 0);
+        $state['current_cycle_signals_active_final']  = count($signals);
+        $state['cumulative_signals_emitted_total']    = (int)($stats['signals_emitted_total']       ?? 0);
+        $state['cumulative_signals_active_final']     = count($signals);
+        $state['cumulative_cycles_completed']         = (int)($state['cumulative_cycles_completed'] ?? 0);
+
         $state['preview_rows'] = array_slice(
             array_merge((array)($state['preview_rows'] ?? []), $batchPreviewRows),
             -200
@@ -407,26 +426,10 @@ final class DoubleBottomLongService
         $this->writeJson('storage/run_state.json', $state);
         $this->writeJson('storage/signals.json',   array_values($signals));
 
-        $stats['symbols_total']      = $total;
-        $stats['symbols_scanned']    = $totalProcessed;
-        $stats['symbols_skipped']    = 0;
-        $stats['current_batch_size'] = $batchSz;
-        $stats['last_updated_at']    = date('c');
-        $stats['signals_active_final_total'] = count($signals);
-        $stats['final_signals_total']        = count($signals);
-        if (empty($stats['reject_reason_distribution'])) {
-            $stats['reject_reason_distribution'] = (object)[];
-        }
-        if (empty($stats['quality_reject_reason_distribution'])) {
-            $stats['quality_reject_reason_distribution'] = (object)[];
-        }
-        if (empty($stats['pattern_reject_reason_distribution'])) {
-            $stats['pattern_reject_reason_distribution'] = (object)[];
-        }
-        if (empty($stats['final_reject_reason_distribution'])) {
-            $stats['final_reject_reason_distribution'] = (object)[];
-        }
-        $this->writeJson('storage/stats.json', $stats);
+        $stats      = $this->finalizeStats($stats,      $total, $totalProcessed, $batchSz, count($signals));
+        $cycleStats = $this->finalizeStats($cycleStats, $total, $totalProcessed, $batchSz, count($signals));
+        $this->writeJson('storage/stats.json',       $stats);
+        $this->writeJson('storage/cycle_stats.json', $cycleStats);
 
         $regimeSummary = [
             'current_regime'   => $prevRegimeData['regime']           ?? 'unknown',
@@ -459,44 +462,43 @@ final class DoubleBottomLongService
             'pipeline_summary' => [
                 'symbols_total'            => $total,
                 'symbols_scanned'          => $totalProcessed,
-                'trend_pass_total'         => $stats['trend_pass_total']          ?? 0,
-                'corridor_pass_total'      => $stats['corridor_pass_total']       ?? 0,
-                'bucket_allowed_total'     => $stats['bucket_allowed_total']      ?? 0,
-                'wave_pass_total'          => $stats['wave_pass_total']           ?? 0,
-                'wave_rejected_total'      => $stats['wave_rejected_total']       ?? 0,
-                'double_bottom_checked_total' => $stats['double_bottom_checked_total'] ?? 0,
-                'double_bottom_found_total'   => $stats['double_bottom_found_total']   ?? 0,
-                'pattern_rejected_total'   => $stats['pattern_rejected_total']    ?? 0,
-                'control_check_pass_total' => $stats['control_check_pass_total']  ?? 0,
-                'control_check_expired'    => $stats['control_check_expired_total'] ?? 0,
-                'rejected_by_trend_side'         => $stats['rejected_by_trend_side_total']        ?? 0,
-                'rejected_by_bucket'             => $stats['rejected_by_bucket_total']            ?? 0,
-                'rejected_by_wave'               => $stats['rejected_by_wave_total']              ?? 0,
-                'rejected_by_pattern'            => $stats['rejected_by_pattern_total']           ?? 0,
-                'rejected_by_neckline_distance'  => $stats['rejected_by_neckline_distance_total'] ?? 0,
-                'candidate_waiting_confirm'  => $stats['candidate_waiting_confirm_total']  ?? 0,
-                'candidate_expired'          => $stats['candidate_expired_total']          ?? 0,
-                'candidate_confirm_failed'   => $stats['candidate_confirm_failed_total']   ?? 0,
-                'signals_emitted_total'      => $stats['signals_emitted_total']         ?? 0,
+                'trend_pass_total'         => $cycleStats['trend_pass_total']          ?? 0,
+                'corridor_pass_total'      => $cycleStats['corridor_pass_total']       ?? 0,
+                'bucket_allowed_total'     => $cycleStats['bucket_allowed_total']      ?? 0,
+                'wave_pass_total'          => $cycleStats['wave_pass_total']           ?? 0,
+                'wave_rejected_total'      => $cycleStats['wave_rejected_total']       ?? 0,
+                'double_bottom_checked_total' => $cycleStats['double_bottom_checked_total'] ?? 0,
+                'double_bottom_found_total'   => $cycleStats['double_bottom_found_total']   ?? 0,
+                'pattern_rejected_total'   => $cycleStats['pattern_rejected_total']    ?? 0,
+                'control_check_pass_total' => $cycleStats['control_check_pass_total']  ?? 0,
+                'control_check_expired'    => $cycleStats['control_check_expired_total'] ?? 0,
+                'rejected_by_trend_side'         => $cycleStats['rejected_by_trend_side_total']        ?? 0,
+                'rejected_by_bucket'             => $cycleStats['rejected_by_bucket_total']            ?? 0,
+                'rejected_by_wave'               => $cycleStats['rejected_by_wave_total']              ?? 0,
+                'rejected_by_pattern'            => $cycleStats['rejected_by_pattern_total']           ?? 0,
+                'rejected_by_neckline_distance'  => $cycleStats['rejected_by_neckline_distance_total'] ?? 0,
+                'candidate_waiting_confirm'  => $cycleStats['candidate_waiting_confirm_total']  ?? 0,
+                'candidate_expired'          => $cycleStats['candidate_expired_total']          ?? 0,
+                'candidate_confirm_failed'   => $cycleStats['candidate_confirm_failed_total']   ?? 0,
+                'signals_emitted_total'      => $cycleStats['signals_emitted_total']         ?? 0,
                 'signals_active_final_total' => count($signals),
-                'signals_before_winner_selection'   => $stats['signals_before_winner_selection_total']   ?? 0,
-                'signals_after_winner_selection'    => $stats['signals_after_winner_selection_total']    ?? 0,
-                'signals_rejected_missing_quality'  => $stats['signals_rejected_missing_quality_total']  ?? 0,
-                'signals_rejected_low_neckline'     => $stats['signals_rejected_low_neckline_total']     ?? 0,
-                'signals_rejected_loser_by_quality' => $stats['signals_rejected_loser_by_quality_total'] ?? 0,
-                'signals_before_final_eligibility'      => $stats['signals_before_final_eligibility_total']    ?? 0,
-                'signals_after_final_eligibility'       => $stats['signals_after_final_eligibility_total']     ?? 0,
-                'signals_rejected_final_trend'          => $stats['signals_rejected_final_trend_total']        ?? 0,
-                'signals_rejected_final_context'        => $stats['signals_rejected_final_context_total']      ?? 0,
-                'signals_rejected_final_quality'        => $stats['signals_rejected_final_quality_total']      ?? 0,
-                'signals_rejected_final_low_neckline'   => $stats['signals_rejected_final_low_neckline_total'] ?? 0,
-                'signals_rejected_final_low_quality'    => $stats['signals_rejected_final_low_quality_total']  ?? 0,
-                // Cumulative finalization totals
-                'signals_entered_final_eligibility'  => $stats['signals_entered_final_eligibility_total']    ?? 0,
-                'signals_rejected_during_finalization' => $stats['signals_rejected_during_finalization_total'] ?? 0,
+                'signals_before_winner_selection'   => $cycleStats['signals_before_winner_selection_total']   ?? 0,
+                'signals_after_winner_selection'    => $cycleStats['signals_after_winner_selection_total']    ?? 0,
+                'signals_rejected_missing_quality'  => $cycleStats['signals_rejected_missing_quality_total']  ?? 0,
+                'signals_rejected_low_neckline'     => $cycleStats['signals_rejected_low_neckline_total']     ?? 0,
+                'signals_rejected_loser_by_quality' => $cycleStats['signals_rejected_loser_by_quality_total'] ?? 0,
+                'signals_before_final_eligibility'      => $cycleStats['signals_before_final_eligibility_total']    ?? 0,
+                'signals_after_final_eligibility'       => $cycleStats['signals_after_final_eligibility_total']     ?? 0,
+                'signals_rejected_final_trend'          => $cycleStats['signals_rejected_final_trend_total']        ?? 0,
+                'signals_rejected_final_context'        => $cycleStats['signals_rejected_final_context_total']      ?? 0,
+                'signals_rejected_final_quality'        => $cycleStats['signals_rejected_final_quality_total']      ?? 0,
+                'signals_rejected_final_low_neckline'   => $cycleStats['signals_rejected_final_low_neckline_total'] ?? 0,
+                'signals_rejected_final_low_quality'    => $cycleStats['signals_rejected_final_low_quality_total']  ?? 0,
+                'signals_entered_final_eligibility'    => $cycleStats['signals_entered_final_eligibility_total']    ?? 0,
+                'signals_rejected_during_finalization' => $cycleStats['signals_rejected_during_finalization_total'] ?? 0,
             ],
-            'final_reject_reason_distribution' => $stats['final_reject_reason_distribution'] ?? (object)[],
-            'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
+            'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
+            'reject_reason_distribution' => $cycleStats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
         ]);
 
@@ -1195,6 +1197,64 @@ final class DoubleBottomLongService
         }
 
         return $stats;
+    }
+
+    /**
+     * Apply the batch-level signal-filter deltas to a stats array.
+     * Used for both cumulative (stats.json) and cycle-local (cycle_stats.json).
+     */
+    private function applyFilterStatsDelta(array $s, array $filterStats): array
+    {
+        $s['signals_rejected_missing_quality_total'] =
+            ($s['signals_rejected_missing_quality_total'] ?? 0) + $filterStats['rejected_missing_quality'];
+        $s['signals_rejected_low_neckline_total'] =
+            ($s['signals_rejected_low_neckline_total'] ?? 0) + $filterStats['rejected_low_neckline'];
+        $s['signals_rejected_loser_by_quality_total'] =
+            ($s['signals_rejected_loser_by_quality_total'] ?? 0) + $filterStats['rejected_loser_by_quality'];
+        // Snapshot fields — reflect current tick's filter counts
+        $s['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
+        $s['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
+        $s['signals_before_final_eligibility_total']    = $filterStats['before_final_eligibility'];
+        $s['signals_after_final_eligibility_total']     = $filterStats['after_final_eligibility'];
+        $s['signals_rejected_final_trend_total']        = $filterStats['rejected_final_trend'];
+        $s['signals_rejected_final_context_total']      = $filterStats['rejected_final_context'];
+        $s['signals_rejected_final_quality_total']      = $filterStats['rejected_final_quality'];
+        $s['signals_rejected_final_low_neckline_total'] = $filterStats['rejected_final_low_neckline'];
+        $s['signals_rejected_final_low_quality_total']  = $filterStats['rejected_final_low_quality'];
+        // Running totals (additive)
+        $s['signals_entered_final_eligibility_total'] =
+            ($s['signals_entered_final_eligibility_total'] ?? 0) + $filterStats['before_final_eligibility'];
+        $s['signals_rejected_during_finalization_total'] =
+            ($s['signals_rejected_during_finalization_total'] ?? 0)
+            + max(0, $filterStats['before_final_eligibility'] - $filterStats['after_final_eligibility']);
+        $finalRejDist = (array)($s['final_reject_reason_distribution'] ?? []);
+        foreach ((array)($filterStats['final_reject_reason_distribution'] ?? []) as $fReason => $fCnt) {
+            $finalRejDist[$fReason] = ($finalRejDist[$fReason] ?? 0) + (int)$fCnt;
+        }
+        $s['final_reject_reason_distribution'] = empty($finalRejDist) ? (object)[] : $finalRejDist;
+        return $s;
+    }
+
+    /**
+     * Stamp the per-tick finalization fields onto a stats array.
+     * Used for both cumulative (stats.json) and cycle-local (cycle_stats.json).
+     */
+    private function finalizeStats(array $s, int $total, int $totalProcessed, int $batchSz, int $activeSignals): array
+    {
+        $s['symbols_total']              = $total;
+        $s['symbols_scanned']            = $totalProcessed;
+        $s['symbols_skipped']            = 0;
+        $s['current_batch_size']         = $batchSz;
+        $s['last_updated_at']            = date('c');
+        $s['signals_active_final_total'] = $activeSignals;
+        $s['final_signals_total']        = $activeSignals;
+        foreach (['reject_reason_distribution', 'quality_reject_reason_distribution',
+                  'pattern_reject_reason_distribution', 'final_reject_reason_distribution'] as $k) {
+            if (empty($s[$k])) {
+                $s[$k] = (object)[];
+            }
+        }
+        return $s;
     }
 
     private function zeroStats(): array

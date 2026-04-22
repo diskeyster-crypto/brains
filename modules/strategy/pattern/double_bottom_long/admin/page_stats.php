@@ -20,11 +20,13 @@ require_once $moduleDir . '/service.php';
 
 use Modules\Strategy\DoubleBottomLong\DoubleBottomLongService;
 
-$service = DoubleBottomLongService::instance($moduleDir);
-$stats   = $service->getStats();
-$signals = $service->getSignals();
-$regime  = $service->getMarketRegime();
-$lastRun = $service->getLastRun();
+$service    = DoubleBottomLongService::instance($moduleDir);
+$stats      = $service->getStats();       // cumulative across all cycles
+$cycleStats = $service->getCycleStats();  // current/last cycle only
+$signals    = $service->getSignals();
+$regime     = $service->getMarketRegime();
+$lastRun    = $service->getLastRun();
+$runState   = $service->getRunState();
 
 $dblUrl = rtrim(System::web('admin/strategy/double_bottom_long'), '/');
 
@@ -124,6 +126,42 @@ $statGroups = [
         <div>
             <a href="<?= $dblUrl ?>"        class="btn btn-sm btn-outline-secondary">← Главная</a>
             <a href="<?= $dblUrl ?>/config"  class="btn btn-sm btn-outline-secondary ms-1">Настройки</a>
+        </div>
+    </div>
+
+    <!-- Cycle vs cumulative overview -->
+    <div class="stats-section">
+        <h6>Цикл vs накопительная статистика</h6>
+        <div class="stats-grid">
+            <div class="stat-cell">
+                <div class="stat-num"><?= (int)($runState['cumulative_cycles_completed'] ?? $runState['cycle_id'] ?? 0) ?></div>
+                <div class="stat-lbl">Циклов завершено (всего)</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-num"><?= (int)($runState['current_cycle_id'] ?? $runState['cycle_id'] ?? 0) ?></div>
+                <div class="stat-lbl">Текущий цикл №</div>
+            </div>
+            <div class="stat-cell" title="Накопительно, все циклы">
+                <div class="stat-num" style="color:#22c55e;"><?= (int)($stats['signals_emitted_total'] ?? 0) ?></div>
+                <div class="stat-lbl">Сигналов всего (累计)</div>
+            </div>
+            <div class="stat-cell" title="Только текущий цикл">
+                <div class="stat-num" style="color:#38bdf8;"><?= (int)($cycleStats['signals_emitted_total'] ?? 0) ?></div>
+                <div class="stat-lbl">Сигналов в цикле</div>
+            </div>
+            <div class="stat-cell" title="Накопительно">
+                <div class="stat-num" style="color:#22c55e;"><?= (int)($stats['double_bottom_found_total'] ?? 0) ?></div>
+                <div class="stat-lbl">double_bottom найдено (累计)</div>
+            </div>
+            <div class="stat-cell" title="Только текущий цикл">
+                <div class="stat-num" style="color:#38bdf8;"><?= (int)($cycleStats['double_bottom_found_total'] ?? 0) ?></div>
+                <div class="stat-lbl">double_bottom в цикле</div>
+            </div>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-top:8px;">
+            <span style="color:#22c55e;">●</span> Зелёный = накопительно (stats.json, не сбрасывается).
+            &nbsp;<span style="color:#38bdf8;">●</span> Синий = текущий цикл (cycle_stats.json, сбрасывается при старте нового цикла).
+            &nbsp;<a href="<?= $dblUrl ?>/runtime" style="color:#64748b;">→ Runtime</a>
         </div>
     </div>
 

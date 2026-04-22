@@ -25,7 +25,8 @@ $service  = DoubleBottomLongService::instance($moduleDir);
 $config   = $service->getConfig();
 $runState = $service->getRunState();
 $snap     = $service->getRuntimeSnapshot();
-$stats    = $service->getStats();
+$stats    = $service->getStats();       // cumulative
+$cycleStats = $service->getCycleStats(); // current cycle
 $signals  = $service->getSignals();
 
 $dblUrl = rtrim(System::web('admin/strategy/double_bottom_long'), '/');
@@ -149,6 +150,42 @@ $fmtVal = static function (mixed $v): string {
             Скан не запущен. Нажмите <strong>Запустить</strong> на главной странице модуля.
         </div>
         <?php endif; ?>
+    </div>
+
+    <!-- Cycle vs cumulative runtime diagnostics -->
+    <div class="rt-section">
+        <h6>Цикл vs накопительная статистика (runtime)</h6>
+        <div class="rt-grid">
+            <div class="rt-box">
+                <div class="rt-val"><?= (int)($runState['cumulative_cycles_completed'] ?? $runState['cycle_id'] ?? 0) ?></div>
+                <div class="rt-lbl">Циклов завершено (всего)</div>
+            </div>
+            <div class="rt-box">
+                <div class="rt-val"><?= htmlspecialchars($runState['current_cycle_started_at'] ?? $runState['cycle_started_at'] ?? '—') ?></div>
+                <div class="rt-lbl">Цикл начат</div>
+            </div>
+            <div class="rt-box" title="Только текущий/последний цикл">
+                <div class="rt-val" style="color:#38bdf8;"><?= (int)($runState['current_cycle_processed_symbols'] ?? $runState['processed'] ?? 0) ?></div>
+                <div class="rt-lbl">Просканировано в цикле</div>
+            </div>
+            <div class="rt-box" title="Только текущий/последний цикл">
+                <div class="rt-val" style="color:#38bdf8;"><?= (int)($runState['current_cycle_signals_emitted_total'] ?? $cycleStats['signals_emitted_total'] ?? 0) ?></div>
+                <div class="rt-lbl">Сигналов в цикле (эмит.)</div>
+            </div>
+            <div class="rt-box" title="Накопительно, все циклы">
+                <div class="rt-val" style="color:#22c55e;"><?= (int)($runState['cumulative_signals_emitted_total'] ?? $stats['signals_emitted_total'] ?? 0) ?></div>
+                <div class="rt-lbl">Сигналов всего (累计)</div>
+            </div>
+            <div class="rt-box">
+                <div class="rt-val"><?= count($signals) ?></div>
+                <div class="rt-lbl">Активных сигналов</div>
+            </div>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-top:8px;">
+            <span style="color:#22c55e;">●</span> Зелёный = накопительно (stats.json).
+            &nbsp;<span style="color:#38bdf8;">●</span> Синий = текущий цикл (cycle_stats.json).
+            &nbsp;История циклов: <code>storage/cycle_history.ndjson</code>
+        </div>
     </div>
 
     <!-- Runtime snapshot from last completed cycle -->

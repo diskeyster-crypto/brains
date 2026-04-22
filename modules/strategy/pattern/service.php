@@ -1080,7 +1080,9 @@ final class PatternService
      *     a. Quality completeness (all score keys present, quality_pass = true)
      *     b. Neckline floor (neckline_score >= min_neckline_score when configured)
      *     c. Trend consistency (when trend_required: signal's trend_direction must be
-     *        'bullish' or 'bearish'; flat/unknown are removed from the final active set)
+     *        side-compatible; long requires bullish; short requires bearish only —
+     *        flat/unknown are removed from the final active set for both sides;
+     *        bullish and flat are both rejected for shorts)
      *     d. Context consistency (wave_state must be corrective; bucket must be in
      *        allowed zone for signal side — catches stale/inconsistent snapshots)
      *   Stage 2 — Winner selection: one signal per symbol+side by quality ranking.
@@ -1167,8 +1169,11 @@ final class PatternService
 
             // 1c. Trend consistency:
             //     - unknown means no directional context → remove when trend_required.
-            //     - side-vs-trend: long requires bullish; short requires bearish or flat.
-            //       A short signal in a bullish market must never survive into the final set.
+            //     - side-vs-trend: long = bullish only; short = bearish only.
+            //       flat/unknown are rejected at final eligibility for both sides.
+            //       A short signal with bullish OR flat trend must never survive into the final set.
+            //       (The short candidate pipeline still runs for flat symbols so short-path
+            //       remains alive, but only bearish-trend shorts reach signals.json.)
             if ($trendRequired) {
                 $trendDir = (string)($s['trend_direction'] ?? 'unknown');
                 if (!in_array($trendDir, ['bullish', 'bearish', 'flat'], true)) {
@@ -1179,21 +1184,21 @@ final class PatternService
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
                     continue;
                 }
-                // Side-vs-trend: long = bullish only; short = bearish or flat
+                // Side-vs-trend: long = bullish only; short = bearish only
                 if ($side === 'long' && $trendDir !== 'bullish') {
                     $rejectedFinalTrend++;
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }
-                // Short requires bearish or flat trend context — bullish trend shorts are
-                // always rejected at final eligibility regardless of wave or bucket state.
+                // Short requires bearish trend only — flat and bullish trend shorts are
+                // rejected at final eligibility regardless of wave or bucket state.
                 // The short path remains operational (candidates are found and tracked),
-                // but conflicting short signals do not survive final selection.
-                if ($side === 'short' && $trendDir === 'bullish') {
+                // but only trend-consistent shorts (bearish) survive final selection.
+                if ($side === 'short' && $trendDir !== 'bearish') {
                     $rejectedFinalTrend++;
                     $rejectedFinalShortPath++;
                     $rejectedFinalShortTrend++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_short_trend_mismatch'];
                     continue;
                 }
             }
@@ -1603,7 +1608,7 @@ final class PatternService
             'signals_rejected_final_low_neckline_total' => 0,
             'signals_rejected_final_low_quality_total'  => 0,
             'signals_rejected_final_short_path_total'   => 0,
-            'signals_rejected_final_short_trend_total'  => 0,  // short rejected: trend_direction = bullish
+            'signals_rejected_final_short_trend_total'  => 0,  // short rejected: trend_direction = bullish or flat
             // Winner-selection filter counters (Stage 2 of applySignalFilters)
             'signals_before_winner_selection_total'   => 0,
             'signals_after_winner_selection_total'    => 0,

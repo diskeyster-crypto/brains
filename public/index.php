@@ -1728,6 +1728,60 @@ Router::post('/admin/strategy/pattern/ajax', function () {
 });
 
 // ============================================================
+// strategy.double_bottom_long routes
+// ============================================================
+
+Router::get('/admin/strategy/double_bottom_long', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+    ob_start();
+    require $moduleDir . '/admin/page_index.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Double Bottom Long', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/double_bottom_long/config', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+    ob_start();
+    require $moduleDir . '/admin/page_config.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Double Bottom Long — Config', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/double_bottom_long/stats', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+    ob_start();
+    require $moduleDir . '/admin/page_stats.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Double Bottom Long — Stats', $content, 'strategy', []);
+});
+
+Router::post('/admin/strategy/double_bottom_long/ajax', function () {
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+    require $moduleDir . '/admin/ajax_dbl.php';
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

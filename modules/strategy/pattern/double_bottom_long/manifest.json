@@ -1,0 +1,13 @@
+{
+    "name": "double_bottom_long",
+    "title": "Double Bottom Long Strategy",
+    "version": "0.1.0",
+    "description": "Long-only double-bottom pattern engine. Pipeline: market_regime → trend → corridor → bucket → wave → double_bottom → control_check → signal. Derived from the Pattern module; short path fully removed.",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php",
+        "logs":    "logs"
+    }
+}

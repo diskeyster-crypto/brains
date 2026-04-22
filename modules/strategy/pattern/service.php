@@ -359,6 +359,7 @@ final class PatternService
         $stats['signals_rejected_final_low_neckline_total'] = $filterStats['rejected_final_low_neckline'];
         $stats['signals_rejected_final_low_quality_total']  = $filterStats['rejected_final_low_quality'];
         $stats['signals_rejected_final_short_path_total']   = $filterStats['rejected_final_short_path'];
+        $stats['signals_rejected_final_short_trend_total']  = $filterStats['rejected_final_short_trend'];
 
         // Tag preview rows with winner outcome
         foreach ($batchPreviewRows as &$row) {
@@ -510,6 +511,7 @@ final class PatternService
                 'signals_rejected_final_low_neckline'   => $stats['signals_rejected_final_low_neckline_total'] ?? 0,
                 'signals_rejected_final_low_quality'    => $stats['signals_rejected_final_low_quality_total']  ?? 0,
                 'signals_rejected_final_short_path'     => $stats['signals_rejected_final_short_path_total']   ?? 0,
+                'signals_rejected_final_short_trend'    => $stats['signals_rejected_final_short_trend_total']  ?? 0,
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
@@ -1141,6 +1143,7 @@ final class PatternService
         $rejectedFinalLowQuality  = 0;
         $rejectedFinalTrend       = 0;
         $rejectedFinalShortPath   = 0;
+        $rejectedFinalShortTrend  = 0;  // short rejected specifically because trend_direction = bullish
         $rejectedFinalContext     = 0;
 
         // ── Stage 1: Final eligibility ────────────────────────────────────────
@@ -1164,11 +1167,8 @@ final class PatternService
 
             // 1c. Trend consistency:
             //     - unknown means no directional context → remove when trend_required.
-            //     - side-vs-trend: long requires bullish context; short requires bearish
-            //       or flat context (a double-top in a flat market is a valid reversal
-            //       setup; the trend gate already passes flat, so the final filter must
-            //       be consistent and not kill these signals).
-            //       A short signal in a bullish market must not survive into the final set.
+            //     - side-vs-trend: long requires bullish; short requires bearish or flat.
+            //       A short signal in a bullish market must never survive into the final set.
             if ($trendRequired) {
                 $trendDir = (string)($s['trend_direction'] ?? 'unknown');
                 if (!in_array($trendDir, ['bullish', 'bearish', 'flat'], true)) {
@@ -1185,23 +1185,16 @@ final class PatternService
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }
-                // Short in a bullish market: a double-top is a reversal pattern that forms
-                // at the TOP of a bullish trend.  Allow the signal when it was detected in
-                // the corrective phase (wave_state = 'corrective') AND the price was in the
-                // allowed short bucket at detection time (upper corridor zone).
-                // This is narrow: impulsive-wave shorts in bullish markets are still rejected,
-                // as are shorts detected outside the allowed bucket range.
+                // Short requires bearish or flat trend context — bullish trend shorts are
+                // always rejected at final eligibility regardless of wave or bucket state.
+                // The short path remains operational (candidates are found and tracked),
+                // but conflicting short signals do not survive final selection.
                 if ($side === 'short' && $trendDir === 'bullish') {
-                    $waveAtDetection   = (string)($s['wave_state']      ?? '');
-                    $bucketAtDetection = (int)($s['corridor_bucket']    ?? 0);
-                    $inShortBucket     = !$corridorRequired
-                        || ($bucketAtDetection > 0 && in_array($bucketAtDetection, $allowedShort, true));
-                    if ($waveAtDetection !== 'corrective' || !$inShortBucket) {
-                        $rejectedFinalTrend++;
-                        $rejectedFinalShortPath++;
-                        $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
-                        continue;
-                    }
+                    $rejectedFinalTrend++;
+                    $rejectedFinalShortPath++;
+                    $rejectedFinalShortTrend++;
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
+                    continue;
                 }
             }
 
@@ -1303,6 +1296,7 @@ final class PatternService
             'rejected_final_low_quality'    => $rejectedFinalLowQuality,
             'rejected_final_trend'          => $rejectedFinalTrend,
             'rejected_final_short_path'     => $rejectedFinalShortPath,
+            'rejected_final_short_trend'    => $rejectedFinalShortTrend,
             'rejected_final_context'        => $rejectedFinalContext,
             // Winner selection stage
             'before_winner_selection'       => $afterFinalEligibility,
@@ -1384,16 +1378,20 @@ final class PatternService
         }
         // Found only when candidate_found AND pattern matches.
         // For long: candidate_found comes directly from the emitted tryLong result.
-        // For short: when tryShort did NOT emit (confirm_pending, quality_failed, etc.)
-        //   the composite result has candidate_found=false, but short_candidate_found=true
-        //   when the detector found a valid pattern candidate.  Count both cases so that
-        //   double_top_found_total truly means "detector found a candidate", not just
-        //   "signal was emitted".
+        // For short: double_top_found_total counts detector-found AND quality-passed candidates.
+        //   Quality-rejected detections are not "found" in the strategic sense — they are
+        //   tracked in candidates_rejected_by_quality_total instead.
         if ($candidateFound && $pattern === 'double_bottom') {
             $inc($stats, 'double_bottom_found_total');
         }
-        $shortCandFound = (bool)($result['short_candidate_found'] ?? false);
-        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandFound)) {
+        // $shortCandFound: true when the double_top detector found a candidate (regardless of
+        // quality). Used for detection-level reject tracking.
+        // $shortCandQualityPass: true only when detector found AND quality gate passed.
+        // double_top_found_total counts the stricter population: real candidates that passed
+        // both detection and quality — not loose pre-candidates rejected by quality.
+        $shortCandFound       = (bool)($result['short_candidate_found'] ?? false);
+        $shortCandQualityPass = $shortCandFound && ($result['quality_pass'] ?? false) === true;
+        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandQualityPass)) {
             $inc($stats, 'double_top_found_total');
         }
         // Rejected at detection stage: double_top was checked but no candidate found.
@@ -1427,17 +1425,19 @@ final class PatternService
         // Non-emitted short candidates: the composite result wraps short candidates that passed
         // pattern detection but did not emit (quality_fail, confirm_pending, candidate_expired).
         // Composite sets candidate_found=false but short_candidate_found=true.
-        // Align setup_candidates_total and quality-filter counters with double_top_found_total
-        // so all three counters reflect the same population of detected candidates.
+        // setup_candidates_total aligns with double_top_found_total (quality-pass only).
+        // Detector-found-but-quality-rejected cases are still tracked in quality counters.
         if (!$candidateFound && $dtChecked && $shortCandFound) {
-            $inc($stats, 'setup_candidates_total');
+            // All detected (pre-quality) count toward the before-quality-filter total
             $inc($stats, 'candidates_before_quality_filter_total');
-            $shortQualityPass = $result['quality_pass'] ?? null;
-            $shortQualityRej  = $result['quality_reject_reason'] ?? null;
-            if ($shortQualityPass === true) {
+            if ($shortCandQualityPass) {
+                // Quality passed: genuine setup candidate — aligns with double_top_found_total
+                $inc($stats, 'setup_candidates_total');
                 $inc($stats, 'candidates_after_quality_filter_total');
-            } elseif ($shortQualityPass === false) {
+            } else {
+                // Quality failed: detected but quality-rejected — not a setup candidate
                 $inc($stats, 'candidates_rejected_by_quality_total');
+                $shortQualityRej = $result['quality_reject_reason'] ?? null;
                 if ($shortQualityRej !== null && $shortQualityRej !== '') {
                     $qdist = (array)($stats['quality_reject_reason_distribution'] ?? []);
                     $qdist[$shortQualityRej] = ($qdist[$shortQualityRej] ?? 0) + 1;
@@ -1446,9 +1446,9 @@ final class PatternService
             }
         }
         // Explicit double_top short-side stage counters.
-        // These cover every case where the detector found a candidate, regardless of whether
-        // the result was emitted (direct result) or stalled at quality/confirm (composite).
-        $dtCandActive = ($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandFound);
+        // Only active when detector found a candidate that also passed quality.
+        // (waiting/failed/expired counters cover the confirm-stage states post-quality-pass)
+        $dtCandActive = ($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandQualityPass);
         if ($dtCandActive) {
             $dtConfirmStatus = $result['confirm_status'] ?? '';
             if ($dtConfirmStatus === 'confirm_waiting') {
@@ -1463,8 +1463,10 @@ final class PatternService
         if ($candidateFound && $pattern === 'double_top' && $fss === 'emitted') {
             $inc($stats, 'double_top_final_signals_total');
         }
-        // pattern_rejected_total: only when pattern stage was reached but candidate not found
-        if (($dbChecked || $dtChecked) && !$candidateFound && in_array($fss, ['rejected', 'no_signal'], true)) {
+        // pattern_rejected_total: only when pattern stage was reached and the detector
+        // found NO candidate. Excludes shorts that were detected but quality-rejected
+        // ($shortCandFound = true) — those are quality failures, not pattern failures.
+        if (($dbChecked || $dtChecked) && !$candidateFound && !$shortCandFound && in_array($fss, ['rejected', 'no_signal'], true)) {
             $inc($stats, 'pattern_rejected_total');
             // Track the specific pattern-stage reject reason separately
             if ($rejectReason !== null && $rejectReason !== '') {
@@ -1601,6 +1603,7 @@ final class PatternService
             'signals_rejected_final_low_neckline_total' => 0,
             'signals_rejected_final_low_quality_total'  => 0,
             'signals_rejected_final_short_path_total'   => 0,
+            'signals_rejected_final_short_trend_total'  => 0,  // short rejected: trend_direction = bullish
             // Winner-selection filter counters (Stage 2 of applySignalFilters)
             'signals_before_winner_selection_total'   => 0,
             'signals_after_winner_selection_total'    => 0,

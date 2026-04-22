@@ -101,9 +101,10 @@ $statGroups = [
         'signals_rejected_final_quality_total'      => 'Отклонено: неполный блок качества',
         'signals_rejected_final_low_neckline_total' => 'Отклонено: низкий neckline_score',
         'signals_rejected_final_low_quality_total'  => 'Отклонено: низкий candidate_quality_score',
-        'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown)',
+        'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown/wrong side)',
         'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
         'signals_rejected_final_short_path_total'   => 'Отклонено: шорт-путь (тренд не медвежий/боковик)',
+        'signals_rejected_final_short_trend_total'  => 'Отклонено: шорт при бычьем тренде',
     ],
 ];
 ?>

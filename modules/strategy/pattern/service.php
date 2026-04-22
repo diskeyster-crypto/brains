@@ -469,6 +469,10 @@ final class PatternService
                 'double_bottom_found'        => $stats['double_bottom_found_total']     ?? 0,
                 'double_top_checked'         => $stats['double_top_checked_total']      ?? 0,
                 'double_top_found'           => $stats['double_top_found_total']        ?? 0,
+                'double_top_waiting_confirm' => $stats['double_top_waiting_confirm_total'] ?? 0,
+                'double_top_confirm_failed'  => $stats['double_top_confirm_failed_total']  ?? 0,
+                'double_top_expired'         => $stats['double_top_expired_total']         ?? 0,
+                'double_top_final_signals'   => $stats['double_top_final_signals_total']   ?? 0,
                 'setup_candidates'           => $stats['setup_candidates_total']        ?? 0,
                 'pattern_rejected'           => $stats['pattern_rejected_total']        ?? 0,
                 'candidates_before_quality_filter' => $stats['candidates_before_quality_filter_total'] ?? 0,
@@ -1420,6 +1424,45 @@ final class PatternService
                 }
             }
         }
+        // Non-emitted short candidates: the composite result wraps short candidates that passed
+        // pattern detection but did not emit (quality_fail, confirm_pending, candidate_expired).
+        // Composite sets candidate_found=false but short_candidate_found=true.
+        // Align setup_candidates_total and quality-filter counters with double_top_found_total
+        // so all three counters reflect the same population of detected candidates.
+        if (!$candidateFound && $dtChecked && $shortCandFound) {
+            $inc($stats, 'setup_candidates_total');
+            $inc($stats, 'candidates_before_quality_filter_total');
+            $shortQualityPass = $result['quality_pass'] ?? null;
+            $shortQualityRej  = $result['quality_reject_reason'] ?? null;
+            if ($shortQualityPass === true) {
+                $inc($stats, 'candidates_after_quality_filter_total');
+            } elseif ($shortQualityPass === false) {
+                $inc($stats, 'candidates_rejected_by_quality_total');
+                if ($shortQualityRej !== null && $shortQualityRej !== '') {
+                    $qdist = (array)($stats['quality_reject_reason_distribution'] ?? []);
+                    $qdist[$shortQualityRej] = ($qdist[$shortQualityRej] ?? 0) + 1;
+                    $stats['quality_reject_reason_distribution'] = $qdist;
+                }
+            }
+        }
+        // Explicit double_top short-side stage counters.
+        // These cover every case where the detector found a candidate, regardless of whether
+        // the result was emitted (direct result) or stalled at quality/confirm (composite).
+        $dtCandActive = ($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandFound);
+        if ($dtCandActive) {
+            $dtConfirmStatus = $result['confirm_status'] ?? '';
+            if ($dtConfirmStatus === 'confirm_waiting') {
+                $inc($stats, 'double_top_waiting_confirm_total');
+            } elseif ($dtConfirmStatus === 'confirm_failed') {
+                $inc($stats, 'double_top_confirm_failed_total');
+            }
+            if ($result['candidate_expired'] ?? false) {
+                $inc($stats, 'double_top_expired_total');
+            }
+        }
+        if ($candidateFound && $pattern === 'double_top' && $fss === 'emitted') {
+            $inc($stats, 'double_top_final_signals_total');
+        }
         // pattern_rejected_total: only when pattern stage was reached but candidate not found
         if (($dbChecked || $dtChecked) && !$candidateFound && in_array($fss, ['rejected', 'no_signal'], true)) {
             $inc($stats, 'pattern_rejected_total');
@@ -1523,6 +1566,10 @@ final class PatternService
             'double_top_found_total'                => 0,
             'double_top_rejected_total'             => 0,
             'double_top_reject_reason_distribution' => (object)[],
+            'double_top_waiting_confirm_total'      => 0,
+            'double_top_confirm_failed_total'       => 0,
+            'double_top_expired_total'              => 0,
+            'double_top_final_signals_total'        => 0,
             'pattern_rejected_total'       => 0,
             'setup_candidates_total'       => 0,
             'candidates_before_quality_filter_total' => 0,

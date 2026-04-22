@@ -69,8 +69,12 @@ $statGroups = [
         'double_bottom_checked_total' => 'double_bottom проверено',
         'double_bottom_found_total'   => 'double_bottom найдено',
         'double_top_checked_total'    => 'double_top проверено',
-        'double_top_found_total'      => 'double_top найдено',
+        'double_top_found_total'      => 'double_top найдено (детектор)',
         'double_top_rejected_total'   => 'double_top отклонено детектором',
+        'double_top_waiting_confirm_total' => 'double_top: ожидает подтверждения',
+        'double_top_confirm_failed_total'  => 'double_top: подтверждение не пришло',
+        'double_top_expired_total'         => 'double_top: кандидат истёк',
+        'double_top_final_signals_total'   => 'double_top: финальных сигналов',
         'pattern_rejected_total'      => 'Паттерн отклонён',
     ],
     'Фильтр качества кандидатов' => [

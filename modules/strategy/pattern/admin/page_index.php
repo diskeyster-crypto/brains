@@ -184,16 +184,11 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                     <th>Сторона✓</th>
                     <th>Bucket</th>
                     <th>Зона✓</th>
-                    <th title="bucket_allowed_short — price in allowed short zone">S-зона✓</th>
                     <th>Волна</th>
                     <th>Стадия</th>
                     <th>Паттерн</th>
                     <th>Кандидат</th>
                     <th>Некл.dist</th>
-                    <th title="top1_value (high1_price)">Top1</th>
-                    <th title="top2_value (high2_price)">Top2</th>
-                    <th title="neckline_value (numeric)">Neckline</th>
-                    <th title="similarity_delta_pct — deviation between the two tops">SimΔ%</th>
                     <th title="pattern_score">P</th>
                     <th title="structure_score">Str</th>
                     <th title="neckline_score">Nck</th>
@@ -239,16 +234,11 @@ $patternUrl = rtrim(System::web('admin/strategy/pattern'), '/');
                 <td><?= $fmtBool($row['side_allowed'] ?? null) ?></td>
                 <td><?= htmlspecialchars((string)($row['corridor_bucket'] ?? '—')) ?></td>
                 <td><?= $fmtBool($row['bucket_allowed'] ?? null) ?></td>
-                <td><?= $fmtBool($row['bucket_allowed_short'] ?? null) ?></td>
                 <td><?= htmlspecialchars(($row['wave_direction'] ?? '?') . '/' . ($row['wave_state'] ?? '?')) ?></td>
                 <td><code style="font-size:10px;color:#94a3b8;"><?= htmlspecialchars($row['final_stage_reached'] ?? '—') ?></code></td>
                 <td><?= htmlspecialchars($row['primary_pattern'] ?? '—') ?></td>
                 <td><?= ($row['candidate_found'] ?? false) ? '<span style="color:#22c55e">да</span>' : 'нет' ?></td>
                 <td><code style="font-size:10px;"><?= htmlspecialchars($row['neckline_distance_status'] ?? '—') ?></code></td>
-                <td><code style="font-size:10px;color:#94a3b8;"><?= ($row['high1_value'] ?? null) ? number_format((float)$row['high1_value'], 4) : '—' ?></code></td>
-                <td><code style="font-size:10px;color:#94a3b8;"><?= ($row['high2_value'] ?? null) ? number_format((float)$row['high2_value'], 4) : '—' ?></code></td>
-                <td><code style="font-size:10px;color:#60a5fa;"><?= ($row['neckline_value'] ?? null) ? number_format((float)$row['neckline_value'], 4) : '—' ?></code></td>
-                <td><code style="font-size:10px;color:#f59e0b;"><?= ($row['similarity_delta_pct'] ?? null) !== null ? number_format((float)$row['similarity_delta_pct'] * 100, 2) . '%' : '—' ?></code></td>
                 <td><?= $fmtScore($row['pattern_score']      ?? null) ?></td>
                 <td><?= $fmtScore($row['structure_score']    ?? null) ?></td>
                 <td><?= $fmtScore($row['neckline_score']     ?? null) ?></td>

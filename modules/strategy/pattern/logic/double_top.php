@@ -81,8 +81,6 @@ final class PatternDoubleTop
         $necklineLow = null;
         $avgHigh = 0.0;
 
-        $currentClose = (float)($candles[$n - 1]['close'] ?? 0.0);
-
         $found = false;
         for ($a = $count - 1; $a >= 1 && !$found; $a--) {
             for ($b = $a - 1; $b >= 0 && !$found; $b--) {
@@ -122,15 +120,6 @@ final class PatternDoubleTop
                     continue;
                 }
 
-                // Price must be at or above neckline (still completing pattern or just
-                // breaking down).  Checked inside the loop so that a stale pair (where
-                // price has already moved far below the neckline) is skipped and the
-                // search continues for a more-recent active setup.
-                if ($currentClose < $neck * (1.0 - $necklineDistPct)) {
-                    $lastReason = 'price_too_far_below_neckline';
-                    continue;
-                }
-
                 $high1 = $h1;
                 $high2 = $h2;
                 $chosenDeviation = $dev;
@@ -144,7 +133,13 @@ final class PatternDoubleTop
             return $this->noCandidate($lastReason, $bestSimDelta ?? 0.0);
         }
 
-        $neckline = $necklineLow;
+        $neckline     = $necklineLow;
+        $currentClose = (float)($candles[$n - 1]['close'] ?? 0.0);
+
+        // Price must be at or above neckline (still completing pattern or just breaking)
+        if ($currentClose < $neckline * (1.0 - $necklineDistPct)) {
+            return $this->noCandidate('price_too_far_below_neckline', $chosenDeviation);
+        }
 
         $height   = abs($avgHigh - $neckline) / max(1e-8, $avgHigh);
         $symmetry = 1.0 - ($chosenDeviation / max(1e-8, $highTolerance));

@@ -291,9 +291,7 @@ final class PatternService
                     'double_bottom_checked'   => $result['double_bottom_checked']  ?? false,
                     'double_bottom_found'     => ($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_bottom',
                     'double_top_checked'      => $result['double_top_checked']     ?? false,
-                    // double_top_found = true when the detector found a candidate (emitted OR confirm_pending/quality_fail)
-                    'double_top_found'        => (($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_top')
-                                                    || (bool)($result['short_candidate_found'] ?? false),
+                    'double_top_found'        => ($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_top',
                     'neckline_value'          => $result['neckline_value']         ?? null,
                     'low1_value'              => $result['low1_value']             ?? null,
                     'low2_value'              => $result['low2_value']             ?? null,
@@ -302,7 +300,7 @@ final class PatternService
                     'pattern_window_size'     => $result['pattern_window_size']    ?? null,
                     'similarity_delta_pct'    => $result['similarity_delta_pct']   ?? null,
                     'pattern_reject_reason'   => ($result['double_bottom_checked'] ?? false) || ($result['double_top_checked'] ?? false)
-                                                    ? ($result['short_reject_reason'] ?? $result['reject_reason'] ?? null)
+                                                    ? ($result['reject_reason'] ?? null)
                                                     : null,
                     'candidate_found'         => $result['candidate_found']        ?? false,
                     'neckline_distance_status'=> $neckDistStatus,
@@ -349,46 +347,16 @@ final class PatternService
         // Snapshot counters — overwritten each tick to show current state
         $stats['signals_before_winner_selection_total'] = $filterStats['before_winner_selection'];
         $stats['signals_after_winner_selection_total']  = $filterStats['after_winner_selection'];
-        // Final-eligibility counters — cumulative semantics aligned with signals_emitted_total.
-        // signals_before_final_eligibility_total counts newly emitted signals entering the filter
-        // each tick (= count($newlyEmitted)), matching signals_emitted_total semantics.
-        // signals_after_final_eligibility_total is a snapshot of the current active count.
-        // All rejection counters use += so they accumulate truthfully across ticks.
-        $stats['signals_before_final_eligibility_total'] =
-            ($stats['signals_before_final_eligibility_total'] ?? 0) + count($newlyEmitted);
-        $stats['signals_after_final_eligibility_total']  = count($signals);
-        $stats['signals_rejected_final_trend_total'] =
-            ($stats['signals_rejected_final_trend_total'] ?? 0) + $filterStats['rejected_final_trend'];
-        $stats['signals_rejected_final_context_total'] =
-            ($stats['signals_rejected_final_context_total'] ?? 0) + $filterStats['rejected_final_context'];
-        $stats['signals_rejected_final_quality_total'] =
-            ($stats['signals_rejected_final_quality_total'] ?? 0) + $filterStats['rejected_final_quality'];
-        $stats['signals_rejected_final_low_neckline_total'] =
-            ($stats['signals_rejected_final_low_neckline_total'] ?? 0) + $filterStats['rejected_final_low_neckline'];
-        $stats['signals_rejected_final_low_quality_total'] =
-            ($stats['signals_rejected_final_low_quality_total'] ?? 0) + $filterStats['rejected_final_low_quality'];
-        $stats['signals_rejected_final_short_path_total'] =
-            ($stats['signals_rejected_final_short_path_total'] ?? 0) + $filterStats['rejected_final_short_path'];
-        $stats['signals_rejected_final_short_trend_total'] =
-            ($stats['signals_rejected_final_short_trend_total'] ?? 0) + $filterStats['rejected_final_short_trend'];
-        // Track final reject reasons for newly emitted signals that did not survive finalization
-        $finalSignalIds = array_flip(array_column($signals, 'signal_id'));
-        $rejDuringFinal = 0;
-        foreach ($newlyEmitted as $emSig) {
-            $emId = $emSig['signal_id'] ?? null;
-            if ($emId === null) {
-                continue;
-            }
-            if (!isset($finalSignalIds[$emId])) {
-                $rejDuringFinal++;
-                $frReason = $signalOutcomeMap[$emId]['reason'] ?? 'unknown_final_reject';
-                $frDist   = (array)($stats['final_reject_reason_distribution'] ?? []);
-                $frDist[$frReason] = ($frDist[$frReason] ?? 0) + 1;
-                $stats['final_reject_reason_distribution'] = $frDist;
-            }
-        }
-        $stats['signals_rejected_during_finalization_total'] =
-            ($stats['signals_rejected_during_finalization_total'] ?? 0) + $rejDuringFinal;
+        // Final-eligibility counters — all overwritten each tick (snapshot semantics:
+        // before/after/rejected must be consistent within the same tick and comparable to each other).
+        $stats['signals_before_final_eligibility_total']    = $filterStats['before_final_eligibility'];
+        $stats['signals_after_final_eligibility_total']     = $filterStats['after_final_eligibility'];
+        $stats['signals_rejected_final_trend_total']        = $filterStats['rejected_final_trend'];
+        $stats['signals_rejected_final_context_total']      = $filterStats['rejected_final_context'];
+        $stats['signals_rejected_final_quality_total']      = $filterStats['rejected_final_quality'];
+        $stats['signals_rejected_final_low_neckline_total'] = $filterStats['rejected_final_low_neckline'];
+        $stats['signals_rejected_final_low_quality_total']  = $filterStats['rejected_final_low_quality'];
+        $stats['signals_rejected_final_short_path_total']   = $filterStats['rejected_final_short_path'];
 
         // Tag preview rows with winner outcome
         foreach ($batchPreviewRows as &$row) {
@@ -447,12 +415,6 @@ final class PatternService
         if (empty($stats['pattern_reject_reason_distribution'])) {
             $stats['pattern_reject_reason_distribution'] = (object)[];
         }
-        if (empty($stats['double_top_reject_reason_distribution'])) {
-            $stats['double_top_reject_reason_distribution'] = (object)[];
-        }
-        if (empty($stats['final_reject_reason_distribution'])) {
-            $stats['final_reject_reason_distribution'] = (object)[];
-        }
         $this->writeJson('storage/stats.json', $stats);
 
         // Market regime summary for last_run
@@ -502,11 +464,6 @@ final class PatternService
                 'double_bottom_found'        => $stats['double_bottom_found_total']     ?? 0,
                 'double_top_checked'         => $stats['double_top_checked_total']      ?? 0,
                 'double_top_found'           => $stats['double_top_found_total']        ?? 0,
-                'double_top_quality_pass'    => $stats['double_top_quality_pass_total'] ?? 0,
-                'double_top_waiting_confirm' => $stats['double_top_waiting_confirm_total'] ?? 0,
-                'double_top_confirm_failed'  => $stats['double_top_confirm_failed_total']  ?? 0,
-                'double_top_expired'         => $stats['double_top_expired_total']         ?? 0,
-                'double_top_final_signals'   => $stats['double_top_final_signals_total']   ?? 0,
                 'setup_candidates'           => $stats['setup_candidates_total']        ?? 0,
                 'pattern_rejected'           => $stats['pattern_rejected_total']        ?? 0,
                 'candidates_before_quality_filter' => $stats['candidates_before_quality_filter_total'] ?? 0,
@@ -544,9 +501,6 @@ final class PatternService
                 'signals_rejected_final_low_neckline'   => $stats['signals_rejected_final_low_neckline_total'] ?? 0,
                 'signals_rejected_final_low_quality'    => $stats['signals_rejected_final_low_quality_total']  ?? 0,
                 'signals_rejected_final_short_path'     => $stats['signals_rejected_final_short_path_total']   ?? 0,
-                'signals_rejected_final_short_trend'    => $stats['signals_rejected_final_short_trend_total']  ?? 0,
-                'signals_rejected_during_finalization'  => $stats['signals_rejected_during_finalization_total'] ?? 0,
-                'final_reject_reason_distribution'      => $stats['final_reject_reason_distribution']          ?? (object)[],
             ],
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
@@ -705,11 +659,6 @@ final class PatternService
         $shortRej = $shortResult['reject_reason']       ?? null;
         $dbChecked = $longResult['double_bottom_checked']  ?? false;
         $dtChecked = $shortResult['double_top_checked']    ?? false;
-        // Expose whether the short detector found a candidate even when it did not emit
-        // (e.g. confirm_pending, quality_rejected). Used by accumulateStats to give
-        // double_top_found_total truthful semantics: "detector found a pattern", not
-        // just "signal was emitted".
-        $shortCandFound = ($shortResult !== null) && (bool)($shortResult['candidate_found'] ?? false);
 
         return array_merge($diagBase, [
             'symbol'                 => $symbol,
@@ -718,7 +667,6 @@ final class PatternService
             'primary_pattern'        => null,
             'double_bottom_checked'  => $dbChecked,
             'double_top_checked'     => $dtChecked,
-            'short_candidate_found'  => $shortCandFound,
             'neckline_value'         => $longResult['neckline_value']         ?? ($shortResult['neckline_value']         ?? null),
             'low1_value'             => $longResult['low1_value']             ?? null,
             'low2_value'             => $longResult['low2_value']             ?? null,
@@ -726,19 +674,19 @@ final class PatternService
             'high2_value'            => $shortResult['high2_value']           ?? null,
             'pattern_window_size'    => $longResult['pattern_window_size']    ?? ($shortResult['pattern_window_size']    ?? null),
             'similarity_delta_pct'   => $longResult['similarity_delta_pct']  ?? ($shortResult['similarity_delta_pct']  ?? null),
-            'pattern_score'          => $shortCandFound ? ($shortResult['pattern_score']           ?? null) : null,
-            'structure_score'        => $shortCandFound ? ($shortResult['structure_score']         ?? null) : null,
-            'neckline_score'         => $shortCandFound ? ($shortResult['neckline_score']          ?? null) : null,
-            'confirmation_score'     => $shortCandFound ? ($shortResult['confirmation_score']      ?? null) : null,
-            'context_score'          => $shortCandFound ? ($shortResult['context_score']           ?? null) : null,
-            'candidate_quality_score'=> $shortCandFound ? ($shortResult['candidate_quality_score'] ?? null) : null,
-            'quality_pass'           => $shortCandFound ? ($shortResult['quality_pass']            ?? null) : null,
-            'quality_reject_reason'  => $shortCandFound ? ($shortResult['quality_reject_reason']   ?? null) : null,
+            'pattern_score'           => null,
+            'structure_score'         => null,
+            'neckline_score'          => null,
+            'confirmation_score'      => null,
+            'context_score'           => null,
+            'candidate_quality_score' => null,
+            'quality_pass'            => null,
+            'quality_reject_reason'   => null,
             'long_reject_reason'     => $longRej,
             'short_reject_reason'    => $shortRej,
-            'confirm_status'         => $shortCandFound ? ($shortResult['confirm_status'] ?? null) : null,
-            'confirm_bars_waited'    => $shortCandFound ? ($shortResult['confirm_bars_waited'] ?? 0) : 0,
-            'candidate_expired'      => $shortCandFound ? (bool)($shortResult['candidate_expired'] ?? false) : false,
+            'confirm_status'         => null,
+            'confirm_bars_waited'    => 0,
+            'candidate_expired'      => false,
             'final_signal_status'    => 'no_signal',
             'reject_reason'          => $longRej ?? $shortRej ?? 'no_valid_candidate',
             'signal'                 => null,
@@ -1115,9 +1063,7 @@ final class PatternService
      *     a. Quality completeness (all score keys present, quality_pass = true)
      *     b. Neckline floor (neckline_score >= min_neckline_score when configured)
      *     c. Trend consistency (when trend_required: signal's trend_direction must be
-     *        side-compatible; long requires bullish; short requires bearish only —
-     *        flat/unknown are removed from the final active set for both sides;
-     *        bullish and flat are both rejected for shorts)
+     *        'bullish' or 'bearish'; flat/unknown are removed from the final active set)
      *     d. Context consistency (wave_state must be corrective; bucket must be in
      *        allowed zone for signal side — catches stale/inconsistent snapshots)
      *   Stage 2 — Winner selection: one signal per symbol+side by quality ranking.
@@ -1180,7 +1126,6 @@ final class PatternService
         $rejectedFinalLowQuality  = 0;
         $rejectedFinalTrend       = 0;
         $rejectedFinalShortPath   = 0;
-        $rejectedFinalShortTrend  = 0;  // short rejected specifically because trend_direction = bullish
         $rejectedFinalContext     = 0;
 
         // ── Stage 1: Final eligibility ────────────────────────────────────────
@@ -1204,11 +1149,11 @@ final class PatternService
 
             // 1c. Trend consistency:
             //     - unknown means no directional context → remove when trend_required.
-            //     - side-vs-trend: long = bullish only; short = bearish only.
-            //       flat/unknown are rejected at final eligibility for both sides.
-            //       A short signal with bullish OR flat trend must never survive into the final set.
-            //       (The short candidate pipeline still runs for flat symbols so short-path
-            //       remains alive, but only bearish-trend shorts reach signals.json.)
+            //     - side-vs-trend: long requires bullish context; short requires bearish
+            //       or flat context (a double-top in a flat market is a valid reversal
+            //       setup; the trend gate already passes flat, so the final filter must
+            //       be consistent and not kill these signals).
+            //       A short signal in a bullish market must not survive into the final set.
             if ($trendRequired) {
                 $trendDir = (string)($s['trend_direction'] ?? 'unknown');
                 if (!in_array($trendDir, ['bullish', 'bearish', 'flat'], true)) {
@@ -1219,21 +1164,16 @@ final class PatternService
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
                     continue;
                 }
-                // Side-vs-trend: long = bullish only; short = bearish only
+                // Side-vs-trend: long = bullish only; short = bearish or flat
                 if ($side === 'long' && $trendDir !== 'bullish') {
                     $rejectedFinalTrend++;
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }
-                // Short requires bearish trend only — flat and bullish trend shorts are
-                // rejected at final eligibility regardless of wave or bucket state.
-                // The short path remains operational (candidates are found and tracked),
-                // but only trend-consistent shorts (bearish) survive final selection.
-                if ($side === 'short' && $trendDir !== 'bearish') {
+                if ($side === 'short' && $trendDir === 'bullish') {
                     $rejectedFinalTrend++;
                     $rejectedFinalShortPath++;
-                    $rejectedFinalShortTrend++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_short_trend_mismatch'];
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }
             }
@@ -1336,7 +1276,6 @@ final class PatternService
             'rejected_final_low_quality'    => $rejectedFinalLowQuality,
             'rejected_final_trend'          => $rejectedFinalTrend,
             'rejected_final_short_path'     => $rejectedFinalShortPath,
-            'rejected_final_short_trend'    => $rejectedFinalShortTrend,
             'rejected_final_context'        => $rejectedFinalContext,
             // Winner selection stage
             'before_winner_selection'       => $afterFinalEligibility,
@@ -1416,42 +1355,12 @@ final class PatternService
         if ($dtChecked) {
             $inc($stats, 'double_top_checked_total');
         }
-        // Found only when candidate_found AND pattern matches.
-        // For long: candidate_found comes directly from the emitted tryLong result.
-        // For short: double_top_found_total counts detector-found AND quality-passed candidates.
-        //   Quality-rejected detections are not "found" in the strategic sense — they are
-        //   tracked in candidates_rejected_by_quality_total instead.
+        // Found only when candidate_found AND pattern matches
         if ($candidateFound && $pattern === 'double_bottom') {
             $inc($stats, 'double_bottom_found_total');
         }
-        // $shortCandFound: true when the double_top detector found a candidate (regardless of
-        // quality). Used for detection-level reject tracking.
-        // $shortCandQualityPass: true only when detector found AND quality gate passed.
-        // double_top_found_total counts detector-found candidates (all, pre-quality) so it
-        // aligns with double_bottom_found_total semantics and the explicit state pipeline:
-        //   checked → found (detector) → quality_pass → waiting_confirm / confirm_failed / emitted.
-        // double_top_quality_pass_total is the narrower post-quality population.
-        $shortCandFound       = (bool)($result['short_candidate_found'] ?? false);
-        $shortCandQualityPass = $shortCandFound && ($result['quality_pass'] ?? false) === true;
-        // double_top_found_total = detector found a candidate (pre-quality)
-        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandFound)) {
+        if ($candidateFound && $pattern === 'double_top') {
             $inc($stats, 'double_top_found_total');
-        }
-        // double_top_quality_pass_total = candidate passed quality gate (pre-confirm)
-        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandQualityPass)) {
-            $inc($stats, 'double_top_quality_pass_total');
-        }
-        // Rejected at detection stage: double_top was checked but no candidate found.
-        // Use short_reject_reason (from composite) or primary reject_reason as the reason.
-        // Exclude cases where the short candidate WAS found (those are not detector rejects).
-        if ($dtChecked && !$candidateFound && !$shortCandFound) {
-            $inc($stats, 'double_top_rejected_total');
-            $dtRejectR = ($result['short_reject_reason'] ?? null) ?? $rejectReason;
-            if ($dtRejectR !== null && $dtRejectR !== '') {
-                $dtdist = (array)($stats['double_top_reject_reason_distribution'] ?? []);
-                $dtdist[$dtRejectR] = ($dtdist[$dtRejectR] ?? 0) + 1;
-                $stats['double_top_reject_reason_distribution'] = $dtdist;
-            }
         }
         if ($candidateFound) {
             $inc($stats, 'setup_candidates_total');
@@ -1469,51 +1378,8 @@ final class PatternService
                 }
             }
         }
-        // Non-emitted short candidates: the composite result wraps short candidates that passed
-        // pattern detection but did not emit (quality_fail, confirm_pending, candidate_expired).
-        // Composite sets candidate_found=false but short_candidate_found=true.
-        // setup_candidates_total aligns with double_top_found_total (quality-pass only).
-        // Detector-found-but-quality-rejected cases are still tracked in quality counters.
-        if (!$candidateFound && $dtChecked && $shortCandFound) {
-            // All detected (pre-quality) count toward the before-quality-filter total
-            $inc($stats, 'candidates_before_quality_filter_total');
-            if ($shortCandQualityPass) {
-                // Quality passed: genuine setup candidate — aligns with double_top_found_total
-                $inc($stats, 'setup_candidates_total');
-                $inc($stats, 'candidates_after_quality_filter_total');
-            } else {
-                // Quality failed: detected but quality-rejected — not a setup candidate
-                $inc($stats, 'candidates_rejected_by_quality_total');
-                $shortQualityRej = $result['quality_reject_reason'] ?? null;
-                if ($shortQualityRej !== null && $shortQualityRej !== '') {
-                    $qdist = (array)($stats['quality_reject_reason_distribution'] ?? []);
-                    $qdist[$shortQualityRej] = ($qdist[$shortQualityRej] ?? 0) + 1;
-                    $stats['quality_reject_reason_distribution'] = $qdist;
-                }
-            }
-        }
-        // Explicit double_top short-side stage counters.
-        // Only active when detector found a candidate that also passed quality.
-        // (waiting/failed/expired counters cover the confirm-stage states post-quality-pass)
-        $dtCandActive = ($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandQualityPass);
-        if ($dtCandActive) {
-            $dtConfirmStatus = $result['confirm_status'] ?? '';
-            if ($dtConfirmStatus === 'confirm_waiting') {
-                $inc($stats, 'double_top_waiting_confirm_total');
-            } elseif ($dtConfirmStatus === 'confirm_failed') {
-                $inc($stats, 'double_top_confirm_failed_total');
-            }
-            if ($result['candidate_expired'] ?? false) {
-                $inc($stats, 'double_top_expired_total');
-            }
-        }
-        if ($candidateFound && $pattern === 'double_top' && $fss === 'emitted') {
-            $inc($stats, 'double_top_final_signals_total');
-        }
-        // pattern_rejected_total: only when pattern stage was reached and the detector
-        // found NO candidate. Excludes shorts that were detected but quality-rejected
-        // ($shortCandFound = true) — those are quality failures, not pattern failures.
-        if (($dbChecked || $dtChecked) && !$candidateFound && !$shortCandFound && in_array($fss, ['rejected', 'no_signal'], true)) {
+        // pattern_rejected_total: only when pattern stage was reached but candidate not found
+        if (($dbChecked || $dtChecked) && !$candidateFound && in_array($fss, ['rejected', 'no_signal'], true)) {
             $inc($stats, 'pattern_rejected_total');
             // Track the specific pattern-stage reject reason separately
             if ($rejectReason !== null && $rejectReason !== '') {
@@ -1611,15 +1477,8 @@ final class PatternService
             'wave_rejected_total'          => 0,
             'double_bottom_checked_total'  => 0,
             'double_bottom_found_total'    => 0,
-            'double_top_checked_total'              => 0,
-            'double_top_found_total'                => 0,
-            'double_top_rejected_total'             => 0,
-            'double_top_reject_reason_distribution' => (object)[],
-            'double_top_waiting_confirm_total'      => 0,
-            'double_top_confirm_failed_total'       => 0,
-            'double_top_expired_total'              => 0,
-            'double_top_final_signals_total'        => 0,
-            'double_top_quality_pass_total'         => 0,
+            'double_top_checked_total'     => 0,
+            'double_top_found_total'       => 0,
             'pattern_rejected_total'       => 0,
             'setup_candidates_total'       => 0,
             'candidates_before_quality_filter_total' => 0,
@@ -1651,9 +1510,6 @@ final class PatternService
             'signals_rejected_final_low_neckline_total' => 0,
             'signals_rejected_final_low_quality_total'  => 0,
             'signals_rejected_final_short_path_total'   => 0,
-            'signals_rejected_final_short_trend_total'  => 0,  // short rejected: trend_direction = bullish or flat
-            'signals_rejected_during_finalization_total' => 0,
-            'final_reject_reason_distribution'          => (object)[],
             // Winner-selection filter counters (Stage 2 of applySignalFilters)
             'signals_before_winner_selection_total'   => 0,
             'signals_after_winner_selection_total'    => 0,

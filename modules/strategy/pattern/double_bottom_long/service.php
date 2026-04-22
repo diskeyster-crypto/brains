@@ -188,6 +188,14 @@ final class DoubleBottomLongService
         $stats['registry_loaded']       = (bool)($regDiag['registry_loaded']      ?? false);
         $stats['registry_symbol_count'] = (int)($regDiag['registry_symbol_count'] ?? 0);
 
+        // Reset stats at the start of a new cycle (after continuous auto-restart)
+        if ($cursor === 0 && !empty($state['reset_stats_on_next_cycle'])) {
+            $stats                           = $this->zeroStats();
+            $stats['registry_loaded']        = (bool)($regDiag['registry_loaded']       ?? false);
+            $stats['registry_symbol_count']  = (int)($regDiag['registry_symbol_count']  ?? 0);
+            unset($state['reset_stats_on_next_cycle']);
+        }
+
         $regimeEnabled  = (bool)($config['market_regime_enabled'] ?? true);
         $prevRegimeData = $this->readJson('storage/market_regime.json', []);
         if (empty($prevRegimeData)) {
@@ -343,9 +351,27 @@ final class DoubleBottomLongService
         $state['found']     = $totalFound;
 
         $isDone = ($cursor >= $total);
+        $continuousEnabled = (bool)($config['continuous_scan_enabled'] ?? true);
+
         if ($isDone) {
-            $state['status']       = 'done';
-            $state['completed_at'] = date('c');
+            $state['cycle_finished_at'] = date('c');
+            $state['cycle_id']          = (int)($state['cycle_id'] ?? 0) + 1;
+
+            if ($continuousEnabled && $total > 0) {
+                // Auto-restart: reset cursor, keep symbols list, stay running
+                $state['status']           = 'running';
+                $state['cursor']           = 0;
+                $state['processed']        = 0;
+                $state['found']            = 0;
+                $state['cycle_started_at'] = date('c');
+                $state['next_cycle_ready'] = false;
+                // Mark that stats.json should be reset at the start of the next cycle
+                $state['reset_stats_on_next_cycle'] = true;
+            } else {
+                $state['status']           = 'done';
+                $state['completed_at']     = date('c');
+                $state['next_cycle_ready'] = $continuousEnabled;
+            }
         }
 
         $state['preview_rows'] = array_slice(
@@ -393,13 +419,17 @@ final class DoubleBottomLongService
         ];
 
         $this->writeJson('storage/last_run.json', [
-            'status'       => $isDone ? 'done' : 'running',
-            'started_at'   => $state['started_at']  ?? null,
-            'updated_at'   => date('c'),
-            'finished_at'  => $isDone ? date('c')   : null,
-            'total'        => $total,
-            'processed'    => $totalProcessed,
-            'found'        => $totalFound,
+            'status'            => $isDone && !$continuousEnabled ? 'done' : 'running',
+            'started_at'        => $state['started_at']      ?? null,
+            'updated_at'        => date('c'),
+            'finished_at'       => ($isDone && !$continuousEnabled) ? date('c') : null,
+            'cycle_id'          => $state['cycle_id']         ?? 0,
+            'cycle_started_at'  => $state['cycle_started_at'] ?? null,
+            'cycle_finished_at' => $isDone ? date('c')        : null,
+            'continuous_scan'   => $continuousEnabled,
+            'total'             => $total,
+            'processed'         => $totalProcessed,
+            'found'             => $totalFound,
             'regime'       => $regimeSummary,
             'pipeline_summary' => [
                 'symbols_total'            => $total,
@@ -444,6 +474,61 @@ final class DoubleBottomLongService
             'reject_reason_distribution' => $stats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
         ]);
+
+        if ($isDone) {
+            $this->writeRuntimeSnapshot($config, $state);
+        }
+    }
+
+    /**
+     * Write runtime_snapshot.php with the config values used in the completed cycle.
+     */
+    private function writeRuntimeSnapshot(array $config, array $state): void
+    {
+        $tpEnabled       = (bool)($config['tp_enabled']       ?? false);
+        $trailingEnabled = (bool)($config['trailing_enabled'] ?? false);
+        // Enforce mutual exclusion
+        if ($tpEnabled) {
+            $trailingEnabled = false;
+        }
+
+        $snap = [
+            'snapshot_at'       => date('c'),
+            'strategy_id'       => 'double_bottom_long',
+            'side'              => 'long',
+            'mode'              => $config['mode']      ?? 'passive',
+            'enabled'           => $config['enabled']   ?? false,
+            'timeframe'         => $config['timeframe'] ?? 'H4',
+            'cycle_id'          => $state['cycle_id']   ?? 0,
+            // Scan
+            'universe_mode'           => $config['universe_mode']          ?? 'all',
+            'batch_size'              => $config['batch_size']             ?? 50,
+            'max_symbols_per_run'     => $config['max_symbols_per_run']    ?? 0,
+            'continuous_scan_enabled' => $config['continuous_scan_enabled'] ?? true,
+            // Stop
+            'stop_mode'                  => $config['stop_mode']                    ?? 'structure',
+            'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,
+            'stop_from_liq_buffer_type'  => $config['stop_from_liq_buffer_type']    ?? 'percent',
+            'bot_budget'                 => $config['bot_budget']                   ?? 0.0,
+            'bot_leverage'               => $config['bot_leverage']                 ?? 1,
+            // Exit
+            'trailing_enabled'              => $trailingEnabled,
+            'trailing_profile'              => $config['trailing_profile']              ?? 'oldbot_soft',
+            'reverse_pattern_close_enabled' => $config['reverse_pattern_close_enabled'] ?? false,
+            'tp_enabled'                    => $tpEnabled,
+            'tp_mode'                       => $config['tp_mode']                      ?? 'fixed_r',
+            'tp_value'                      => $config['tp_value']                     ?? 2.0,
+        ];
+
+        $path  = $this->moduleDir . '/config/runtime_snapshot.php';
+        $lines = [
+            "<?php\n\ndeclare(strict_types=1);\n\n",
+            "/**\n * Double Bottom Long — Runtime Snapshot\n",
+            " * Auto-written after each completed scan cycle.\n",
+            " * snapshot_at: " . $snap['snapshot_at'] . "\n */\n\n",
+            "return " . var_export($snap, true) . ";\n",
+        ];
+        @file_put_contents($path, implode('', $lines));
     }
 
     /**

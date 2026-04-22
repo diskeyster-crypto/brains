@@ -28,6 +28,7 @@ $config   = $service->getConfig();
 $stats    = $service->getStats();
 $signals  = $service->getSignals();
 $regime   = $service->getMarketRegime();
+$runState = $service->getRunState();
 
 $strategyId = $config['strategy_id'] ?? 'double_bottom_long';
 $mode       = $config['mode']         ?? 'passive';
@@ -136,19 +137,31 @@ $dblUrl = rtrim(System::web('admin/strategy/double_bottom_long'), '/');
         <?php if (empty($lastRun)): ?>
         <span style="color: #64748b;">Запусков ещё не было.</span>
         <?php else: ?>
+        <?php
+            $runState       = $service->getRunState();
+            $cycleId        = (int)($runState['cycle_id']         ?? $lastRun['cycle_id']         ?? 0);
+            $cycleFinished  = $runState['cycle_finished_at']      ?? null;
+            $continuousScan = (bool)($config['continuous_scan_enabled'] ?? true);
+            $isContinuous   = $lastRun['continuous_scan'] ?? $continuousScan;
+        ?>
         <strong>Последний запуск</strong>
         <span class="ms-3">Статус: <code><?= htmlspecialchars($lastStatusRu) ?></code></span>
+        <?php if ($isContinuous): ?>
+        <span class="ms-2 badge" style="background:#1d4ed8;font-size:10px;">НЕПРЕРЫВНЫЙ СКАН</span>
+        <?php endif; ?>
+        <span class="ms-3">Цикл #<?= $cycleId ?></span>
         <?php if ($lastRunTime): ?>
         <span class="ms-3">Начало: <code><?= htmlspecialchars($lastRunTime) ?></code></span>
         <?php endif; ?>
-        <?php if ($lastFinishedAt): ?>
+        <?php if ($cycleFinished): ?>
+        <span class="ms-3">Цикл завершён: <code><?= htmlspecialchars($cycleFinished) ?></code></span>
+        <?php elseif ($lastFinishedAt): ?>
         <span class="ms-3">Завершено: <code><?= htmlspecialchars($lastFinishedAt) ?></code></span>
         <?php elseif ($lastUpdatedAt): ?>
         <span class="ms-3">Обновлено: <code><?= htmlspecialchars($lastUpdatedAt) ?></code></span>
         <?php endif; ?>
-        <span class="ms-3">Просканировано: <code><?= htmlspecialchars((string)($lastRun['symbols_scanned'] ?? '—')) ?></code></span>
+        <span class="ms-3">Просканировано: <code><?= htmlspecialchars((string)($lastRun['symbols_scanned'] ?? $runState['processed'] ?? '—')) ?></code></span>
         <span class="ms-3">Найдено: <code><?= htmlspecialchars((string)($lastRun['signals_emitted_total'] ?? '—')) ?></code></span>
-        <span class="ms-3">Активных: <code><?= htmlspecialchars((string)($lastRun['signals_active_final_total'] ?? '—')) ?></code></span>
         <?php endif; ?>
     </div>
 
@@ -163,7 +176,6 @@ $dblUrl = rtrim(System::web('admin/strategy/double_bottom_long'), '/');
     </form>
 
     <?php
-    $runState    = $service->getRunState();
     $previewRows = array_reverse((array)($runState['preview_rows'] ?? []));
     if (!empty($previewRows)):
     ?>

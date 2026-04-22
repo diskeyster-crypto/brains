@@ -107,20 +107,69 @@ if ($action === 'tick_batch') {
 if ($action === 'save_config') {
     $p = $_POST;
 
+    // Parse comma/newline separated symbol lists into arrays
+    $parseSymbolList = static function (string $raw): array {
+        $items = preg_split('/[\s,]+/', trim($raw), -1, PREG_SPLIT_NO_EMPTY);
+        return array_values(array_unique(array_filter(array_map('strtoupper', $items))));
+    };
+
+    // Parse comma/newline separated integer list into int[]
+    $parseIntList = static function (string $raw): array {
+        $items = preg_split('/[\s,]+/', trim($raw), -1, PREG_SPLIT_NO_EMPTY);
+        return array_values(array_unique(array_map('intval', array_filter($items, 'is_numeric'))));
+    };
+
     $overrides = [
+        // Core
         'enabled'                  => ($p['enabled']    ?? '0') === '1',
         'mode'                     => (string)($p['mode']     ?? 'passive'),
+        // Market regime
         'market_regime_enabled'    => ($p['market_regime_enabled']    ?? '1') === '1',
         'market_regime_gate_mode'  => (string)($p['market_regime_gate_mode'] ?? 'soft'),
+        // Trend
         'trend_required'           => ($p['trend_required']   ?? '1') === '1',
+        // Corridor
         'corridor_required'        => ($p['corridor_required'] ?? '1') === '1',
         'corridor_lookback_hours'  => (int)($p['corridor_lookback_hours'] ?? 24),
         'corridor_bucket_count'    => (int)($p['corridor_bucket_count']   ?? 10),
+        'allowed_long_buckets'     => $parseIntList((string)($p['allowed_long_buckets'] ?? '')),
+        // Wave
         'wave_required'            => ($p['wave_required']    ?? '1') === '1',
+        // Confirm
         'confirm_required'         => ($p['confirm_required'] ?? '1') === '1',
         'confirm_max_bars'         => (int)($p['confirm_max_bars'] ?? 2),
+        // Signal
         'signal_ttl_bars'          => (int)($p['signal_ttl_bars']  ?? 2),
+        // Universe
+        'universe_mode'            => (string)($p['universe_mode'] ?? 'all'),
+        'allowed_symbols'          => $parseSymbolList((string)($p['allowed_symbols']  ?? '')),
+        'excluded_symbols'         => $parseSymbolList((string)($p['excluded_symbols'] ?? '')),
+        // Scan
+        'batch_size'               => max(1, (int)($p['batch_size']          ?? 50)),
+        'max_symbols_per_run'      => max(0, (int)($p['max_symbols_per_run'] ?? 0)),
+        'max_runtime_seconds'      => max(5, (int)($p['max_runtime_seconds'] ?? 55)),
+        'continuous_scan_enabled'  => ($p['continuous_scan_enabled'] ?? '1') === '1',
+        // Stop
+        'stop_mode'                       => (string)($p['stop_mode'] ?? 'structure'),
+        'stop_from_liq_buffer_value'      => (float)($p['stop_from_liq_buffer_value'] ?? 0.002),
+        'stop_from_liq_buffer_type'       => in_array($p['stop_from_liq_buffer_type'] ?? '', ['absolute','percent'], true)
+                                                ? (string)$p['stop_from_liq_buffer_type'] : 'percent',
+        'bot_budget'                      => max(0.0, (float)($p['bot_budget']   ?? 0.0)),
+        'bot_leverage'                    => max(1, (int)($p['bot_leverage']     ?? 1)),
+        // Exit / trailing
+        'trailing_enabled'                => ($p['trailing_enabled'] ?? '0') === '1',
+        'trailing_profile'                => (string)($p['trailing_profile'] ?? 'oldbot_soft'),
+        'reverse_pattern_close_enabled'   => ($p['reverse_pattern_close_enabled'] ?? '0') === '1',
+        'tp_enabled'                      => ($p['tp_enabled'] ?? '0') === '1',
+        'tp_mode'                         => in_array($p['tp_mode'] ?? '', ['fixed_r','fixed_price'], true)
+                                                ? (string)$p['tp_mode'] : 'fixed_r',
+        'tp_value'                        => max(0.0, (float)($p['tp_value'] ?? 2.0)),
     ];
+
+    // Mutual exclusion: tp_enabled and trailing_enabled cannot both be true
+    if ($overrides['tp_enabled'] && $overrides['trailing_enabled']) {
+        $overrides['trailing_enabled'] = false;
+    }
 
     try {
         $merged = array_merge(

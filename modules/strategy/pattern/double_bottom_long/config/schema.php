@@ -58,11 +58,25 @@ return [
     'max_active_signals_per_symbol_side' => 'int',
 
     // Stop / trailing
-    'stop_mode'        => 'string',
-    'trailing_profile' => 'string',
+    'stop_mode'                     => 'string',
+    'stop_from_liq_buffer_value'    => 'float',
+    'stop_from_liq_buffer_type'     => 'string',
+    'trailing_profile'              => 'string',
+    'trailing_enabled'              => 'bool',
+    'reverse_pattern_close_enabled' => 'bool',
+    'tp_enabled'                    => 'bool',
+    'tp_mode'                       => 'string',
+    'tp_value'                      => 'float',
+
+    // Bot execution parameters
+    'bot_budget'   => 'float',
+    'bot_leverage' => 'int',
 
     // Fibonacci
     'fibo_enabled' => 'bool',
+
+    // Continuous scan
+    'continuous_scan_enabled' => 'bool',
 
     // Batching
     'batch_size'           => 'int',

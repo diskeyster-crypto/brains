@@ -172,6 +172,62 @@ $fMode    = (string)($config['mode']  ?? 'passive');
                     <input type="number" name="corridor_bucket_count" class="form-control form-control-sm"
                            value="<?= (int)($config['corridor_bucket_count'] ?? 10) ?>">
                 </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Разрешённые лонг-зоны</label>
+                    <input type="text" name="allowed_long_buckets" class="form-control form-control-sm"
+                           value="<?= htmlspecialchars(implode(', ', (array)($config['allowed_long_buckets'] ?? [1,2,3]))) ?>"
+                           placeholder="1, 2, 3">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Через запятую</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="cfg-section">
+            <h6>Ограничения сканера</h6>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">Режим вселенной</label>
+                    <select name="universe_mode" class="form-select form-select-sm">
+                        <?php foreach (['all','manual_list','excluded'] as $um): ?>
+                        <option value="<?= $um ?>" <?= ($config['universe_mode'] ?? 'all') === $um ? 'selected' : '' ?>><?= $um ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Размер батча</label>
+                    <input type="number" name="batch_size" class="form-control form-control-sm" min="1"
+                           value="<?= (int)($config['batch_size'] ?? 50) ?>">
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Макс. символов за запуск (0 = все)</label>
+                    <input type="number" name="max_symbols_per_run" class="form-control form-control-sm" min="0"
+                           value="<?= (int)($config['max_symbols_per_run'] ?? 0) ?>">
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Макс. время выполнения (сек)</label>
+                    <input type="number" name="max_runtime_seconds" class="form-control form-control-sm" min="5"
+                           value="<?= (int)($config['max_runtime_seconds'] ?? 55) ?>">
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label">Разрешённые символы</label>
+                    <textarea name="allowed_symbols" class="form-control form-control-sm" rows="3"
+                              placeholder="BTCUSDT, ETHUSDT (пусто = все)"><?= htmlspecialchars(implode(', ', (array)($config['allowed_symbols'] ?? []))) ?></textarea>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Через запятую или с новой строки. Применяется только при universe_mode=manual_list.</div>
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label">Исключённые символы</label>
+                    <textarea name="excluded_symbols" class="form-control form-control-sm" rows="3"
+                              placeholder="XYZUSDT (пусто = ничего)"><?= htmlspecialchars(implode(', ', (array)($config['excluded_symbols'] ?? []))) ?></textarea>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Через запятую или с новой строки.</div>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label">Непрерывное сканирование</label>
+                    <select name="continuous_scan_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['continuous_scan_enabled'] ?? true) ? 'selected' : '' ?>>Включено (автоциклы)</option>
+                        <option value="0" <?= !($config['continuous_scan_enabled'] ?? true) ? 'selected' : '' ?>>Выключено (один цикл)</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Если включено, сканер автоматически перезапускает цикл.</div>
+                </div>
             </div>
         </div>
 
@@ -195,6 +251,112 @@ $fMode    = (string)($config['mode']  ?? 'passive');
                     <input type="number" name="signal_ttl_bars" class="form-control form-control-sm"
                            value="<?= (int)($config['signal_ttl_bars'] ?? 2) ?>">
                 </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+        <a href="<?= $ajaxUrl ?>?action=reset_active" class="btn btn-sm btn-outline-danger ms-2"
+           onclick="return confirm('Сбросить все переопределения к базовым значениям?')">Сброс к базовым</a>
+
+        <div class="cfg-section mt-4">
+            <h6>Стоп / ликвидационная зона</h6>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">Режим стопа</label>
+                    <select name="stop_mode" class="form-select form-select-sm">
+                        <?php foreach (['structure','fixed_from_liq_zone','atr'] as $sm): ?>
+                        <option value="<?= $sm ?>" <?= ($config['stop_mode'] ?? 'structure') === $sm ? 'selected' : '' ?>><?= $sm ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Буфер стопа от лик. зоны</label>
+                    <input type="number" name="stop_from_liq_buffer_value" class="form-control form-control-sm" step="0.0001" min="0"
+                           value="<?= number_format((float)($config['stop_from_liq_buffer_value'] ?? 0.002), 4, '.', '') ?>">
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Тип буфера</label>
+                    <select name="stop_from_liq_buffer_type" class="form-select form-select-sm">
+                        <?php foreach (['percent','absolute'] as $bt): ?>
+                        <option value="<?= $bt ?>" <?= ($config['stop_from_liq_buffer_type'] ?? 'percent') === $bt ? 'selected' : '' ?>><?= $bt ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Бюджет бота (USDT)</label>
+                    <input type="number" name="bot_budget" class="form-control form-control-sm" step="0.01" min="0"
+                           value="<?= number_format((float)($config['bot_budget'] ?? 0.0), 2, '.', '') ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">0 = не задан</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Плечо (x)</label>
+                    <input type="number" name="bot_leverage" class="form-control form-control-sm" step="1" min="1"
+                           value="<?= (int)($config['bot_leverage'] ?? 1) ?>">
+                </div>
+            </div>
+            <div style="font-size:11px;color:#64748b;margin-top:8px;">
+                Параметры стопа сохраняются в конфигурацию и в runtime_snapshot. Активное исполнение ордеров в этом шаге <strong>не реализовано</strong>.
+            </div>
+        </div>
+
+        <div class="cfg-section">
+            <h6>Выход / трейлинг / тейк-профит</h6>
+            <?php
+                $tpEnabled       = (bool)($config['tp_enabled']       ?? false);
+                $trailingEnabled = (bool)($config['trailing_enabled'] ?? false);
+                // Mutual exclusion display note
+                $meNote = ($tpEnabled && $trailingEnabled)
+                    ? '<div class="alert alert-warning py-1 mt-2" style="font-size:12px;">⚠ TP и трейлинг включены одновременно — трейлинг будет принудительно отключён при сохранении.</div>'
+                    : '';
+            ?>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">Трейлинг включён</label>
+                    <select name="trailing_enabled" class="form-select form-select-sm" id="trailing_enabled">
+                        <option value="1" <?= $trailingEnabled ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !$trailingEnabled ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Профиль трейлинга</label>
+                    <select name="trailing_profile" class="form-select form-select-sm">
+                        <?php foreach (['oldbot_soft','oldbot_hard','aggressive','custom'] as $tp): ?>
+                        <option value="<?= $tp ?>" <?= ($config['trailing_profile'] ?? 'oldbot_soft') === $tp ? 'selected' : '' ?>><?= $tp ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Закрытие по реверс-паттерну</label>
+                    <select name="reverse_pattern_close_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['reverse_pattern_close_enabled'] ?? false) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['reverse_pattern_close_enabled'] ?? false) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">TP включён</label>
+                    <select name="tp_enabled" class="form-select form-select-sm" id="tp_enabled">
+                        <option value="1" <?= $tpEnabled ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !$tpEnabled ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Режим TP</label>
+                    <select name="tp_mode" class="form-select form-select-sm">
+                        <?php foreach (['fixed_r','fixed_price'] as $tpm): ?>
+                        <option value="<?= $tpm ?>" <?= ($config['tp_mode'] ?? 'fixed_r') === $tpm ? 'selected' : '' ?>><?= $tpm ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Значение TP</label>
+                    <input type="number" name="tp_value" class="form-control form-control-sm" step="0.1" min="0"
+                           value="<?= number_format((float)($config['tp_value'] ?? 2.0), 2, '.', '') ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Для fixed_r — кратное R; для fixed_price — абс. цена</div>
+                </div>
+            </div>
+            <?= $meNote ?>
+            <div style="font-size:11px;color:#64748b;margin-top:8px;">
+                Если TP включён, трейлинг считается неактивным. Параметры выхода сохраняются в конфигурацию; активное исполнение ордеров <strong>не реализовано</strong>.
             </div>
         </div>
 

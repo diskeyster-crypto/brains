@@ -70,11 +70,25 @@ return [
     'max_active_signals_per_symbol_side' => 1,
 
     // Stop / trailing
-    'stop_mode'        => 'structure',
-    'trailing_profile' => 'oldbot_soft',
+    'stop_mode'                    => 'structure',
+    'stop_from_liq_buffer_value'   => 0.002,
+    'stop_from_liq_buffer_type'    => 'percent',   // absolute | percent
+    'trailing_profile'             => 'oldbot_soft',
+    'trailing_enabled'             => false,
+    'reverse_pattern_close_enabled'=> false,
+    'tp_enabled'                   => false,
+    'tp_mode'                      => 'fixed_r',   // fixed_r | fixed_price
+    'tp_value'                     => 2.0,
+
+    // Bot execution parameters
+    'bot_budget'   => 0.0,
+    'bot_leverage' => 1,
 
     // Fibonacci extensions
     'fibo_enabled' => false,
+
+    // Continuous scan
+    'continuous_scan_enabled' => true,
 
     // Batching / scan run controls
     'batch_size'           => 50,

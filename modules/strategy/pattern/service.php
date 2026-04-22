@@ -291,7 +291,9 @@ final class PatternService
                     'double_bottom_checked'   => $result['double_bottom_checked']  ?? false,
                     'double_bottom_found'     => ($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_bottom',
                     'double_top_checked'      => $result['double_top_checked']     ?? false,
-                    'double_top_found'        => ($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_top',
+                    // double_top_found = true when the detector found a candidate (emitted OR confirm_pending/quality_fail)
+                    'double_top_found'        => (($result['candidate_found'] ?? false) && ($result['primary_pattern'] ?? '') === 'double_top')
+                                                    || (bool)($result['short_candidate_found'] ?? false),
                     'neckline_value'          => $result['neckline_value']         ?? null,
                     'low1_value'              => $result['low1_value']             ?? null,
                     'low2_value'              => $result['low2_value']             ?? null,
@@ -300,7 +302,7 @@ final class PatternService
                     'pattern_window_size'     => $result['pattern_window_size']    ?? null,
                     'similarity_delta_pct'    => $result['similarity_delta_pct']   ?? null,
                     'pattern_reject_reason'   => ($result['double_bottom_checked'] ?? false) || ($result['double_top_checked'] ?? false)
-                                                    ? ($result['reject_reason'] ?? null)
+                                                    ? ($result['short_reject_reason'] ?? $result['reject_reason'] ?? null)
                                                     : null,
                     'candidate_found'         => $result['candidate_found']        ?? false,
                     'neckline_distance_status'=> $neckDistStatus,
@@ -662,6 +664,11 @@ final class PatternService
         $shortRej = $shortResult['reject_reason']       ?? null;
         $dbChecked = $longResult['double_bottom_checked']  ?? false;
         $dtChecked = $shortResult['double_top_checked']    ?? false;
+        // Expose whether the short detector found a candidate even when it did not emit
+        // (e.g. confirm_pending, quality_rejected). Used by accumulateStats to give
+        // double_top_found_total truthful semantics: "detector found a pattern", not
+        // just "signal was emitted".
+        $shortCandFound = ($shortResult !== null) && (bool)($shortResult['candidate_found'] ?? false);
 
         return array_merge($diagBase, [
             'symbol'                 => $symbol,
@@ -670,6 +677,7 @@ final class PatternService
             'primary_pattern'        => null,
             'double_bottom_checked'  => $dbChecked,
             'double_top_checked'     => $dtChecked,
+            'short_candidate_found'  => $shortCandFound,
             'neckline_value'         => $longResult['neckline_value']         ?? ($shortResult['neckline_value']         ?? null),
             'low1_value'             => $longResult['low1_value']             ?? null,
             'low2_value'             => $longResult['low2_value']             ?? null,
@@ -677,19 +685,19 @@ final class PatternService
             'high2_value'            => $shortResult['high2_value']           ?? null,
             'pattern_window_size'    => $longResult['pattern_window_size']    ?? ($shortResult['pattern_window_size']    ?? null),
             'similarity_delta_pct'   => $longResult['similarity_delta_pct']  ?? ($shortResult['similarity_delta_pct']  ?? null),
-            'pattern_score'           => null,
-            'structure_score'         => null,
-            'neckline_score'          => null,
-            'confirmation_score'      => null,
-            'context_score'           => null,
-            'candidate_quality_score' => null,
-            'quality_pass'            => null,
-            'quality_reject_reason'   => null,
+            'pattern_score'          => $shortCandFound ? ($shortResult['pattern_score']           ?? null) : null,
+            'structure_score'        => $shortCandFound ? ($shortResult['structure_score']         ?? null) : null,
+            'neckline_score'         => $shortCandFound ? ($shortResult['neckline_score']          ?? null) : null,
+            'confirmation_score'     => $shortCandFound ? ($shortResult['confirmation_score']      ?? null) : null,
+            'context_score'          => $shortCandFound ? ($shortResult['context_score']           ?? null) : null,
+            'candidate_quality_score'=> $shortCandFound ? ($shortResult['candidate_quality_score'] ?? null) : null,
+            'quality_pass'           => $shortCandFound ? ($shortResult['quality_pass']            ?? null) : null,
+            'quality_reject_reason'  => $shortCandFound ? ($shortResult['quality_reject_reason']   ?? null) : null,
             'long_reject_reason'     => $longRej,
             'short_reject_reason'    => $shortRej,
-            'confirm_status'         => null,
-            'confirm_bars_waited'    => 0,
-            'candidate_expired'      => false,
+            'confirm_status'         => $shortCandFound ? ($shortResult['confirm_status'] ?? null) : null,
+            'confirm_bars_waited'    => $shortCandFound ? ($shortResult['confirm_bars_waited'] ?? 0) : 0,
+            'candidate_expired'      => $shortCandFound ? (bool)($shortResult['candidate_expired'] ?? false) : false,
             'final_signal_status'    => 'no_signal',
             'reject_reason'          => $longRej ?? $shortRej ?? 'no_valid_candidate',
             'signal'                 => null,
@@ -1173,11 +1181,23 @@ final class PatternService
                     $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
                     continue;
                 }
+                // Short in a bullish market: a double-top is a reversal pattern that forms
+                // at the TOP of a bullish trend.  Allow the signal when it was detected in
+                // the corrective phase (wave_state = 'corrective') AND the price was in the
+                // allowed short bucket at detection time (upper corridor zone).
+                // This is narrow: impulsive-wave shorts in bullish markets are still rejected,
+                // as are shorts detected outside the allowed bucket range.
                 if ($side === 'short' && $trendDir === 'bullish') {
-                    $rejectedFinalTrend++;
-                    $rejectedFinalShortPath++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
-                    continue;
+                    $waveAtDetection   = (string)($s['wave_state']      ?? '');
+                    $bucketAtDetection = (int)($s['corridor_bucket']    ?? 0);
+                    $inShortBucket     = !$corridorRequired
+                        || ($bucketAtDetection > 0 && in_array($bucketAtDetection, $allowedShort, true));
+                    if ($waveAtDetection !== 'corrective' || !$inShortBucket) {
+                        $rejectedFinalTrend++;
+                        $rejectedFinalShortPath++;
+                        $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
+                        continue;
+                    }
                 }
             }
 
@@ -1358,16 +1378,24 @@ final class PatternService
         if ($dtChecked) {
             $inc($stats, 'double_top_checked_total');
         }
-        // Found only when candidate_found AND pattern matches
+        // Found only when candidate_found AND pattern matches.
+        // For long: candidate_found comes directly from the emitted tryLong result.
+        // For short: when tryShort did NOT emit (confirm_pending, quality_failed, etc.)
+        //   the composite result has candidate_found=false, but short_candidate_found=true
+        //   when the detector found a valid pattern candidate.  Count both cases so that
+        //   double_top_found_total truly means "detector found a candidate", not just
+        //   "signal was emitted".
         if ($candidateFound && $pattern === 'double_bottom') {
             $inc($stats, 'double_bottom_found_total');
         }
-        if ($candidateFound && $pattern === 'double_top') {
+        $shortCandFound = (bool)($result['short_candidate_found'] ?? false);
+        if (($candidateFound && $pattern === 'double_top') || ($dtChecked && $shortCandFound)) {
             $inc($stats, 'double_top_found_total');
         }
         // Rejected at detection stage: double_top was checked but no candidate found.
         // Use short_reject_reason (from composite) or primary reject_reason as the reason.
-        if ($dtChecked && !$candidateFound) {
+        // Exclude cases where the short candidate WAS found (those are not detector rejects).
+        if ($dtChecked && !$candidateFound && !$shortCandFound) {
             $inc($stats, 'double_top_rejected_total');
             $dtRejectR = ($result['short_reject_reason'] ?? null) ?? $rejectReason;
             if ($dtRejectR !== null && $dtRejectR !== '') {

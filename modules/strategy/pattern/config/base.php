@@ -42,7 +42,10 @@ return [
     'corridor_lookback_hours' => 24,
     'corridor_bucket_count'   => 10,
     'allowed_long_buckets'    => [1, 2, 3],
-    'allowed_short_buckets'   => [8, 9, 10],
+    // Short (double-top reversal): bucket 6-10 — breakdowns occur at the top and into
+    // the mid-corridor as price confirms below the neckline (typically bucket 6-8).
+    // Bucket gate is still backed by the wave gate (corrective) and quality/confirm gates.
+    'allowed_short_buckets'   => [6, 7, 8, 9, 10],
 
     // Wave
     'wave_required' => true,

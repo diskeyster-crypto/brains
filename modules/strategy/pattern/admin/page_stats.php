@@ -90,15 +90,19 @@ $statGroups = [
         'signals_rejected_low_neckline_total'     => 'Отклонено: низкий neckline_score',
         'signals_rejected_loser_by_quality_total' => 'Отклонено: проигравший по качеству',
     ],
-    'Финальная проверка допустимости сигналов' => [
-        'signals_before_final_eligibility_total'    => 'Всего сигналов на входе',
-        'signals_after_final_eligibility_total'     => 'Прошло проверку допустимости',
+    'Финальная проверка допустимости сигналов (snapshot — последний тик)' => [
+        'signals_before_final_eligibility_total'    => 'Всего сигналов на входе (тик)',
+        'signals_after_final_eligibility_total'     => 'Прошло проверку допустимости (тик)',
         'signals_rejected_final_quality_total'      => 'Отклонено: неполный блок качества',
         'signals_rejected_final_low_neckline_total' => 'Отклонено: низкий neckline_score',
         'signals_rejected_final_low_quality_total'  => 'Отклонено: низкий candidate_quality_score',
-        'signals_rejected_final_trend_total'        => 'Отклонено: несовместимый тренд (flat/unknown)',
+        'signals_rejected_final_trend_total'        => 'Отклонено: тренд unknown/мисматч',
         'signals_rejected_final_context_total'      => 'Отклонено: контекст (волна/зона)',
         'signals_rejected_final_short_path_total'   => 'Отклонено: шорт-путь (тренд не медвежий/боковик)',
+    ],
+    'Итоговая фильтрация — накопительные счётчики (весь прогон)' => [
+        'signals_entered_final_eligibility_total'    => 'Итого вошло в фильтр (нарастающим итогом)',
+        'signals_rejected_during_finalization_total' => 'Итого отклонено при финализации',
     ],
 ];
 ?>
@@ -277,6 +281,33 @@ $statGroups = [
     <div class="stats-section">
         <h6>Причины отклонения фильтром качества</h6>
         <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Данные появятся после запуска при наличии кандидатов.</p>
+    </div>
+    <?php endif; ?>
+
+    <!-- Final reject reason distribution -->
+    <?php
+    $finalRejDist = (array)($stats['final_reject_reason_distribution'] ?? []);
+    if (!empty($finalRejDist)):
+        arsort($finalRejDist);
+    ?>
+    <div class="stats-section">
+        <h6>Причины отклонения при финализации (final_reject_reason_distribution)</h6>
+        <table class="table table-sm" style="font-size: 12px;">
+            <thead><tr><th>Причина</th><th>Кол-во</th></tr></thead>
+            <tbody>
+            <?php foreach ($finalRejDist as $reason => $cnt): ?>
+            <tr>
+                <td><code><?= htmlspecialchars((string)$reason) ?></code></td>
+                <td><?= (int)$cnt ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php else: ?>
+    <div class="stats-section">
+        <h6>Причины отклонения при финализации (final_reject_reason_distribution)</h6>
+        <p class="text-muted mb-0" style="font-size: 13px;">Нет данных. Данные появятся после запуска при наличии активных кандидатов.</p>
     </div>
     <?php endif; ?>
 

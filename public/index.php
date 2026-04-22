@@ -1781,6 +1781,19 @@ Router::post('/admin/strategy/double_bottom_long/ajax', function () {
     require $moduleDir . '/admin/ajax_dbl.php';
 });
 
+Router::get('/admin/strategy/double_bottom_long/runtime', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Double Bottom Long — Runtime', $content, 'strategy', []);
+});
+
 // ============================================================
 // DISPATCH
 // ============================================================

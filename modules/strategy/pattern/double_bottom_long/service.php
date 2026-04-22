@@ -518,6 +518,12 @@ final class DoubleBottomLongService
             'tp_enabled'                    => $tpEnabled,
             'tp_mode'                       => $config['tp_mode']                      ?? 'fixed_r',
             'tp_value'                      => $config['tp_value']                     ?? 2.0,
+            // Brain-compatible keys for discoverStrategyModules()
+            'config_valid'     => true,
+            'effective_config' => [
+                'mode'    => $config['mode']    ?? 'passive',
+                'enabled' => $config['enabled'] ?? false,
+            ],
         ];
 
         $path  = $this->moduleDir . '/config/runtime_snapshot.php';

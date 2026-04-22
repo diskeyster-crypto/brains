@@ -103,8 +103,9 @@ $dblUrl = rtrim(System::web('admin/strategy/double_bottom_long'), '/');
             </div>
         </div>
         <div class="pt-nav">
-            <a href="<?= $dblUrl ?>/config" class="btn btn-sm btn-outline-secondary">Настройки</a>
-            <a href="<?= $dblUrl ?>/stats"  class="btn btn-sm btn-outline-secondary">Статистика</a>
+            <a href="<?= $dblUrl ?>/config"   class="btn btn-sm btn-outline-secondary">Настройки</a>
+            <a href="<?= $dblUrl ?>/stats"    class="btn btn-sm btn-outline-secondary">Статистика</a>
+            <a href="<?= $dblUrl ?>/runtime"  class="btn btn-sm btn-outline-secondary">Runtime</a>
         </div>
     </div>
 

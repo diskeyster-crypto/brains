@@ -918,15 +918,30 @@ final class BrainController
 
         $modules = [];
 
+        // Collect candidate module directories: direct children + their subdirectories (two levels)
+        $candidates = [];
         foreach (scandir($stratDir) as $entry) {
             if ($entry === '.' || $entry === '..') {
                 continue;
             }
-            $moduleDir = $stratDir . '/' . $entry;
-            if (!is_dir($moduleDir)) {
+            $dir = $stratDir . '/' . $entry;
+            if (!is_dir($dir)) {
                 continue;
             }
+            $candidates[] = $dir;
+            // One level deeper (e.g. modules/strategy/pattern/double_bottom_long)
+            foreach (scandir($dir) as $subEntry) {
+                if ($subEntry === '.' || $subEntry === '..') {
+                    continue;
+                }
+                $subDir = $dir . '/' . $subEntry;
+                if (is_dir($subDir)) {
+                    $candidates[] = $subDir;
+                }
+            }
+        }
 
+        foreach ($candidates as $moduleDir) {
             $manifestPath = $moduleDir . '/manifest.json';
             if (!file_exists($manifestPath)) {
                 continue;
@@ -937,7 +952,7 @@ final class BrainController
                 continue;
             }
 
-            $name = $manifest['name'] ?? $entry;
+            $name = $manifest['name'] ?? basename($moduleDir);
 
             // Load last_run.json
             $lastRunData = $this->readJson($moduleDir . '/storage/last_run.json');

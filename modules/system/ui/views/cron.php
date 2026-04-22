@@ -7,8 +7,12 @@
 use Core\System\System;
 
 // Variables: $tasks, $log, $due, $total_count, $enabled_count, $flash
+$tasks         = $tasks         ?? [];
+$log           = $log           ?? [];
+$due           = $due           ?? [];
 $total_count   = $total_count   ?? 0;
 $enabled_count = $enabled_count ?? 0;
+$flash         = $flash         ?? null;
 $baseUrl = rtrim(System::baseUrl(), '/');
 $cronUrl = $baseUrl . '/public/cron.php';
 $adminCronUrl = System::web('admin/system/cron');

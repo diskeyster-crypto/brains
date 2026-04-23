@@ -261,6 +261,25 @@ function renderDashboardHub(): string
             $rsCycleId   = (int)($runState['cycle_id']           ?? 0);
             $rsLastTick  = $e((string)($runState['last_tick_at'] ?? '—'));
 
+            // ── strategy last_run for handoff trace ───────────────────────
+            $stratLastRunPath = System::path('root') . '/' . $modulePath . '/storage/last_run.json';
+            $stratLastRun = [];
+            if ($modulePath !== '' && file_exists($stratLastRunPath)) {
+                $slrRaw = file_get_contents($stratLastRunPath);
+                if ($slrRaw !== false) {
+                    $slrDec = json_decode($slrRaw, true);
+                    if (is_array($slrDec)) {
+                        $stratLastRun = $slrDec;
+                    }
+                }
+            }
+            $slrStatus       = $e((string)($stratLastRun['status']                              ?? '—'));
+            $slrCandidates   = (int)($stratLastRun['found']                                     ?? 0);
+            $slrEmitted      = (int)($stratLastRun['current_cycle_signals_emitted_total']        ?? 0);
+            $slrPoolTotal    = (int)($stratLastRun['active_pool_signals_total']                  ?? 0);
+            $slrHandoffReady = (int)($stratLastRun['bot_handoff_ready_total']                    ?? $stratSignals[$stratId] ?? 0);
+            $slrHasData      = $stratLastRun !== [];
+
             $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
 
             // Manual run action buttons — only active for strategies with a wired service.
@@ -349,6 +368,16 @@ BTN;
         <td colspan="3" style="padding:3px 0;">
           <code style="font-size:11px;">{$rsStatus}</code>
           <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">{$rsCursor}/{$rsTotal} · цикл {$rsCycleId} · {$rsLastTick}</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Цикл</td>
+        <td colspan="3" style="padding:3px 0;font-size:11px;">
+          статус <code>{$slrStatus}</code>
+          · кандидатов <code>{$slrCandidates}</code>
+          · сигналов <code>{$slrEmitted}</code>
+          · активных <code>{$slrPoolTotal}</code>
+          · handoff-ready <code>{$slrHandoffReady}</code>
         </td>
       </tr>
     </table>
@@ -460,6 +489,29 @@ HTML;
     if ($mirrorRows === '') {
         $mirrorRows = '<tr><td colspan="7" style="color:var(--ui-text-muted);padding:12px 0;">Нет данных. Стратегии ещё не обнаружены.</td></tr>';
     }
+
+    // ── Bot tab: last-tick trace block ────────────────────────────────────
+    $trSeenTotal   = (int)($lastRun['handoff_signals_processed']                    ?? 0);
+    $trNew         = (int)($lastRun['order_queue_new_total']                        ?? 0);
+    $trRefreshed   = (int)($lastRun['order_queue_refreshed_total']                  ?? 0);
+    $trExpired     = (int)($lastRun['order_queue_expired_total']                    ?? 0);
+    $trWithdrawn   = (int)($lastRun['order_queue_withdrawn_total']                  ?? 0);
+    $trIgnDis      = (int)($lastRun['handoff_signals_ignored_disabled_strategy']    ?? 0);
+    $trIgnPay      = (int)($lastRun['handoff_signals_ignored_invalid_payload']      ?? 0);
+    $trIgnMode     = (int)($lastRun['handoff_signals_ignored_invalid_entry_mode']   ?? 0);
+    $trQueueTotal  = (int)($lastRun['order_queue_total']                            ?? 0);
+
+    $tickTraceRows = <<<ROWS
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;">Сигналов получено</td><td><strong>{$e($trSeenTotal)}</strong></td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ новых в очереди</td><td style="color:#3fb950;"><strong>{$e($trNew)}</strong></td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ обновлено</td><td style="color:#58a6ff;"><strong>{$e($trRefreshed)}</strong></td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ истекло (TTL)</td><td style="color:#f0883e;"><strong>{$e($trExpired)}</strong></td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ отозвано</td><td style="color:#8b949e;"><strong>{$e($trWithdrawn)}</strong></td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: стратегия выкл.</td><td style="color:#8b949e;">{$e($trIgnDis)}</td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: невалид. payload</td><td style="color:#8b949e;">{$e($trIgnPay)}</td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: режим входа</td><td style="color:#8b949e;">{$e($trIgnMode)}</td></tr>
+<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Очередь всего (после тика)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong style="color:#f0883e;">{$e($trQueueTotal)}</strong></td></tr>
+ROWS;
 
     // ── Bot tab: stats rows ───────────────────────────────────────────────
     $statsRows = '';
@@ -607,6 +659,15 @@ HTML;
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
         «Тик бота» запускает полный цикл Bot::tick() — сканирование реестра, применение переопределений, ingestion handoff-очередей. Без биржевого исполнения.
       </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Последний тик — трассировка</div>
+    <div class="card-body" style="padding:12px 16px;">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        {$tickTraceRows}
+      </table>
     </div>
   </div>
 

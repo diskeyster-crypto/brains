@@ -250,8 +250,10 @@ final class BotService
             'handoff_sources_active_total'=> $handoffSourcesActive,
 
             // Signals this tick
-            'handoff_signals_processed'               => $result['signals_seen'],
-            'handoff_signals_ignored_disabled_strategy' => $ignoredSignalsCount,
+            'handoff_signals_processed'                  => $result['signals_seen'],
+            'handoff_signals_ignored_disabled_strategy'  => $ignoredSignalsCount,
+            'handoff_signals_ignored_invalid_payload'    => $result['ignored_invalid_signal_payload'],
+            'handoff_signals_ignored_invalid_entry_mode' => $result['ignored_invalid_entry_mode'],
 
             // Queue changes this tick
             'order_queue_new_total'       => $result['new_total'],
@@ -455,16 +457,19 @@ final class BotService
             }
         }
 
-        $newTotal       = 0;
-        $refreshedTotal = 0;
-        $expiredTotal   = 0;
-        $withdrawnTotal = 0;
-        $result         = [];
-        $activeKeys     = [];
+        $newTotal                  = 0;
+        $refreshedTotal            = 0;
+        $expiredTotal              = 0;
+        $withdrawnTotal            = 0;
+        $ignoredInvalidPayload     = 0;
+        $ignoredInvalidMode        = 0;
+        $result                    = [];
+        $activeKeys                = [];
 
         foreach ($handoffSignals as $signal) {
             $signalId = (string)($signal['signal_id'] ?? '');
             if ($signalId === '') {
+                $ignoredInvalidPayload++;
                 continue;
             }
             $stratId = (string)($signal['strategy_id'] ?? $signal['owner_strategy'] ?? '');
@@ -480,6 +485,7 @@ final class BotService
 
             // Entry mode gate
             if (!in_array($entryMode, $allowedModes, true)) {
+                $ignoredInvalidMode++;
                 continue;
             }
 
@@ -499,24 +505,28 @@ final class BotService
 
                 if (in_array($prevStatus, ['queued', 'ready'], true)) {
                     $item = $this->buildQueueItem($signal, $opOverrides, $tickAt);
-                    $item['entry_mode']        = $entryMode;
-                    $item['queue_status']      = 'ready';
-                    $item['first_queued_at']   = $prev['first_queued_at'] ?? $tickAt;
-                    $item['seen_count']        = (int)($prev['seen_count'] ?? 1) + 1;
-                    $item['last_refreshed_at'] = $tickAt;
-                    $result[$key]              = $item;
+                    $item['entry_mode']            = $entryMode;
+                    $item['queue_status']          = 'ready';
+                    $item['first_queued_at']       = $prev['first_queued_at'] ?? $tickAt;
+                    $item['seen_count']            = (int)($prev['seen_count'] ?? 1) + 1;
+                    $item['last_refreshed_at']     = $tickAt;
+                    $item['last_change_reason']    = 'refreshed_from_handoff';
+                    $item['source_handoff_status'] = (string)($signal['handoff_status'] ?? 'refreshed');
+                    $result[$key]                  = $item;
                     $refreshedTotal++;
                 } else {
                     $result[$key] = $prev;
                 }
             } else {
                 $item = $this->buildQueueItem($signal, $opOverrides, $tickAt);
-                $item['entry_mode']        = $entryMode;
-                $item['queue_status']      = 'queued';
-                $item['first_queued_at']   = $tickAt;
-                $item['seen_count']        = 1;
-                $item['last_refreshed_at'] = $tickAt;
-                $result[$key]              = $item;
+                $item['entry_mode']            = $entryMode;
+                $item['queue_status']          = 'queued';
+                $item['first_queued_at']       = $tickAt;
+                $item['seen_count']            = 1;
+                $item['last_refreshed_at']     = $tickAt;
+                $item['last_change_reason']    = 'new_from_handoff';
+                $item['source_handoff_status'] = (string)($signal['handoff_status'] ?? 'new');
+                $result[$key]                  = $item;
                 $newTotal++;
             }
         }
@@ -538,9 +548,10 @@ final class BotService
             $isExpired = $expiresAt !== ''
                 && strtotime($expiresAt) !== false
                 && time() > strtotime($expiresAt);
-            $prev['queue_status'] = $isExpired ? 'expired' : 'withdrawn';
-            $prev['exit_at']      = $tickAt;
-            $result[$key]         = $prev;
+            $prev['queue_status']       = $isExpired ? 'expired' : 'withdrawn';
+            $prev['exit_at']            = $tickAt;
+            $prev['last_change_reason'] = $isExpired ? 'expired_by_ttl' : 'withdrawn_missing_from_handoff';
+            $result[$key]               = $prev;
             if ($isExpired) {
                 $expiredTotal++;
             } else {
@@ -549,12 +560,14 @@ final class BotService
         }
 
         return [
-            'order_queue'     => array_values($result),
-            'signals_seen'    => count($handoffSignals),
-            'new_total'       => $newTotal,
-            'refreshed_total' => $refreshedTotal,
-            'expired_total'   => $expiredTotal,
-            'withdrawn_total' => $withdrawnTotal,
+            'order_queue'                    => array_values($result),
+            'signals_seen'                   => count($handoffSignals),
+            'new_total'                      => $newTotal,
+            'refreshed_total'                => $refreshedTotal,
+            'expired_total'                  => $expiredTotal,
+            'withdrawn_total'                => $withdrawnTotal,
+            'ignored_invalid_signal_payload' => $ignoredInvalidPayload,
+            'ignored_invalid_entry_mode'     => $ignoredInvalidMode,
         ];
     }
 

@@ -280,7 +280,7 @@ final class DoubleBottomLongService
 
             try {
                 $result = $this->processSymbol($symbol, $config, $regimeStr);
-                if (($result['candidate_found'] ?? false) === true) {
+                if (($result['candidate_found'] ?? false)) {
                     $found++;
                     $foundCandidates = $this->mergeCandidateRecord(
                         $foundCandidates,
@@ -479,7 +479,7 @@ final class DoubleBottomLongService
         $state['current_cycle_id']                    = (int)($state['cycle_id']      ?? 0);
         $state['current_cycle_started_at']            = $state['cycle_started_at']   ?? null;
         $state['current_cycle_processed_symbols']     = $totalProcessed;
-        $state['current_cycle_signals_emitted_total'] = count($emittedCandidates);
+        $state['current_cycle_signals_emitted_total'] = (int)($cycleStats['signals_emitted_total'] ?? 0);
         $state['current_cycle_signals_active_final']  = count($signals);
         $state['cumulative_signals_emitted_total']    = (int)($stats['signals_emitted_total']       ?? 0);
         $state['cumulative_signals_active_final']     = count($signals);

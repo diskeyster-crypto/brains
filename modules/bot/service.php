@@ -40,8 +40,9 @@ final class BotService
         if ($moduleDir !== null) {
             $this->moduleDir = rtrim($moduleDir, '/');
         } else {
+            $paths = \Core\System\SystemPaths::instance();
             $this->moduleDir = rtrim(
-                \Core\System\SystemPaths::instance()->get('bot'),
+                $paths->has('bot.bot') ? $paths->get('bot.bot') : $paths->get('bot'),
                 '/'
             );
         }

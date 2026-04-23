@@ -167,7 +167,10 @@ final class CronManager
         }
         
         try {
+            // Buffer any accidental output from non-module cron.php files (e.g. view files).
+            ob_start();
             $cronConfig = require $cronFile;
+            ob_end_clean();
             
             if (!is_array($cronConfig)) {
                 Logger::cron("Invalid cron.php in module {$moduleName}: must return array");
@@ -196,6 +199,9 @@ final class CronManager
             }
             
         } catch (\Throwable $e) {
+            if (ob_get_level() > 0) {
+                ob_end_clean();
+            }
             Logger::cron("Error loading cron.php from module {$moduleName}", [
                 'error' => $e->getMessage()
             ]);

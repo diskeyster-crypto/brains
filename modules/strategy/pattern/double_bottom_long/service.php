@@ -139,6 +139,11 @@ final class DoubleBottomLongService
         // Current-cycle candidate snapshots are always reset on a new queued cycle.
         $this->writeJson('storage/candidates_found.json', []);
         $this->writeJson('storage/candidates_emitted.json', []);
+        // Bot handoff queue persists across cycles to maintain lifecycle states.
+        // Only initialise the file if it does not yet exist.
+        if (!file_exists($this->moduleDir . '/storage/bot_handoff_queue.json')) {
+            $this->writeJson('storage/bot_handoff_queue.json', []);
+        }
         $regimePath = $this->moduleDir . '/storage/market_regime.json';
         $regimeRaw  = file_exists($regimePath) ? (string)@file_get_contents($regimePath) : '';
         if (empty(json_decode($regimeRaw, true))) {
@@ -372,6 +377,15 @@ final class DoubleBottomLongService
         [$signals, $filterStats, $signalOutcomeMap] =
             $this->applySignalFilters($signals, $newlyEmitted, $config);
 
+        // Count how many signals emitted in this batch survived to become winners in this cycle.
+        $cycleNewWinnerCount = 0;
+        foreach ($newlyEmitted as $s) {
+            $sid = (string)($s['signal_id'] ?? '');
+            if ($sid !== '' && ($signalOutcomeMap[$sid]['winner'] ?? false)) {
+                $cycleNewWinnerCount++;
+            }
+        }
+
         $stats      = $this->applyFilterStatsDelta($stats,      $filterStats);
         $cycleStats = $this->applyFilterStatsDelta($cycleStats, $filterStats);
 
@@ -480,20 +494,38 @@ final class DoubleBottomLongService
         $state['current_cycle_started_at']            = $state['cycle_started_at']   ?? null;
         $state['current_cycle_processed_symbols']     = $totalProcessed;
         $state['current_cycle_signals_emitted_total'] = (int)($cycleStats['signals_emitted_total'] ?? 0);
+        $state['current_cycle_final_signals_total']   = $cycleNewWinnerCount;
         $state['current_cycle_signals_active_final']  = count($signals);
+        // active_pool_signals_total = size of the current rolling winner pool (signals.json)
+        $state['active_pool_signals_total']           = count($signals);
         $state['cumulative_signals_emitted_total']    = (int)($stats['signals_emitted_total']       ?? 0);
         $state['cumulative_signals_active_final']     = count($signals);
         $state['cumulative_cycles_completed']         = (int)($state['cumulative_cycles_completed'] ?? 0);
+        // Bot handoff counters (populated after updateBotHandoff() runs at end of tick)
+        $state['bot_handoff_ready_total']     = 0;
+        $state['bot_handoff_new_total']       = 0;
+        $state['bot_handoff_refreshed_total'] = 0;
+        $state['bot_handoff_expired_total']   = 0;
 
         $state['preview_rows'] = array_slice(
             array_merge((array)($state['preview_rows'] ?? []), $batchPreviewRows),
             -200
         );
 
-        $this->writeJson('storage/run_state.json', $state);
         $this->writeJson('storage/signals.json',   array_values($signals));
         $this->writeJson('storage/candidates_found.json',   array_values($foundCandidates));
         $this->writeJson('storage/candidates_emitted.json', array_values($emittedCandidates));
+
+        // Refresh bot handoff queue with the current active-pool winner signals.
+        $handoffStats = $this->updateBotHandoff($signals, $config);
+
+        // Update state with real handoff counters before writing run_state.json.
+        $state['bot_handoff_ready_total']     = $handoffStats['ready_total'];
+        $state['bot_handoff_new_total']       = $handoffStats['new_total'];
+        $state['bot_handoff_refreshed_total'] = $handoffStats['refreshed_total'];
+        $state['bot_handoff_expired_total']   = $handoffStats['expired_total'];
+
+        $this->writeJson('storage/run_state.json', $state);
 
         $stats      = $this->finalizeStats($stats,      $total, $totalProcessed, $batchSz, count($signals));
         $cycleStats = $this->finalizeStats($cycleStats, $total, $totalProcessed, $batchSz, count($signals));
@@ -536,6 +568,14 @@ final class DoubleBottomLongService
             'signals_semantics' => 'signals.json = active rolling pool across cycles with TTL expiry',
             'signals_emitted_total'      => (int)($stats['signals_emitted_total'] ?? 0),
             'signals_active_final_total' => count($signals),
+            // Explicit semantic separation: cycle-local vs active pool vs handoff
+            'current_cycle_signals_emitted_total' => (int)($cycleStats['signals_emitted_total'] ?? 0),
+            'current_cycle_final_signals_total'   => $cycleNewWinnerCount,
+            'active_pool_signals_total'           => count($signals),
+            'bot_handoff_ready_total'     => $handoffStats['ready_total'],
+            'bot_handoff_new_total'       => $handoffStats['new_total'],
+            'bot_handoff_refreshed_total' => $handoffStats['refreshed_total'],
+            'bot_handoff_expired_total'   => $handoffStats['expired_total'],
             'final_signals_total'        => count($signals),
             'last_cycle_summary' => $state['last_cycle_summary'] ?? null,
             'regime'       => $regimeSummary,
@@ -1710,5 +1750,180 @@ final class DoubleBottomLongService
         }
 
         return $r;
+    }
+
+    // =========================================================================
+    // Bot handoff contract
+    // =========================================================================
+
+    /**
+     * Refresh the bot handoff queue file (storage/bot_handoff_queue.json).
+     *
+     * Merges the current active-pool winner signals into a stable lifecycle-tracked
+     * file intended for future Bot module consumption.
+     *
+     * Lifecycle states:
+     *   new        — signal seen for the first time this tick
+     *   refreshed  — signal was already in the queue and is still active
+     *   expired    — signal left the pool after its TTL elapsed
+     *   withdrawn  — signal left the pool before TTL (lost winner selection, etc.)
+     *
+     * Records are deduplicated by signal_id.
+     * Expired/withdrawn records are retained for audit but excluded from ready_total.
+     *
+     * @param array $activeSignals Current filtered winner signals (signals.json pool)
+     * @param array $config        Module config (for stop/tp/budget/ttl params)
+     * @return array {ready_total, new_total, refreshed_total, expired_total}
+     */
+    private function updateBotHandoff(array $activeSignals, array $config): array
+    {
+        $existing = (array)$this->readJson('storage/bot_handoff_queue.json', []);
+
+        $existingMap = [];
+        foreach ($existing as $r) {
+            $id = (string)($r['signal_id'] ?? '');
+            if ($id !== '') {
+                $existingMap[$id] = $r;
+            }
+        }
+
+        $activeIds      = [];
+        $newTotal       = 0;
+        $refreshedTotal = 0;
+        $expiredTotal   = 0;
+        $result         = [];
+
+        // Process currently-active signals: new or refreshed
+        foreach ($activeSignals as $signal) {
+            $id = (string)($signal['signal_id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $activeIds[$id] = true;
+            $record = $this->buildBotHandoffRecord($signal, $config);
+
+            if (isset($existingMap[$id])) {
+                $prev = $existingMap[$id];
+                $record['detected_at']   = $prev['detected_at']   ?? $record['detected_at'];
+                $record['first_seen_at'] = $prev['first_seen_at'] ?? ($prev['detected_at'] ?? $record['detected_at']);
+                $record['seen_count']    = (int)($prev['seen_count'] ?? 0) + 1;
+                $record['handoff_status'] = 'refreshed';
+                $refreshedTotal++;
+            } else {
+                $record['first_seen_at'] = $record['detected_at'];
+                $record['seen_count']    = 1;
+                $record['handoff_status'] = 'new';
+                $newTotal++;
+            }
+
+            $record['last_refreshed_at'] = date('c');
+            $result[$id] = $record;
+        }
+
+        // Process records that have left the active pool: mark as expired or withdrawn
+        $ttlBars = (int)($config['signal_ttl_bars'] ?? 2);
+        $ttlSec  = $ttlBars * 4 * 3600;  // H4 bar = 4 hours
+
+        foreach ($existingMap as $id => $prev) {
+            if (isset($result[$id])) {
+                continue;  // already updated above
+            }
+            $prevStatus = (string)($prev['handoff_status'] ?? 'active');
+            if (in_array($prevStatus, ['expired', 'withdrawn'], true)) {
+                // Keep already-finalised records for audit trail
+                $result[$id] = $prev;
+                continue;
+            }
+            // Determine exit cause: TTL elapsed → expired, otherwise → withdrawn
+            $detectedAt = $prev['detected_at'] ?? '';
+            $ts = $detectedAt !== '' ? strtotime($detectedAt) : 0;
+            $status = ($ts > 0 && (time() - $ts) > $ttlSec) ? 'expired' : 'withdrawn';
+            $prev['handoff_status'] = $status;
+            $prev['withdrawn_at']   = date('c');
+            $result[$id] = $prev;
+            $expiredTotal++;
+        }
+
+        $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
+
+        $readyTotal = 0;
+        foreach ($result as $r) {
+            if (in_array($r['handoff_status'] ?? '', ['new', 'refreshed'], true)) {
+                $readyTotal++;
+            }
+        }
+
+        return [
+            'ready_total'     => $readyTotal,
+            'new_total'       => $newTotal,
+            'refreshed_total' => $refreshedTotal,
+            'expired_total'   => $expiredTotal,
+        ];
+    }
+
+    /**
+     * Build a stable bot handoff contract record from a winner signal and the
+     * module config.
+     *
+     * This is the strategy-owned signal contract.
+     * It does NOT contain exchange-order fields (those belong to the future Bot module).
+     */
+    private function buildBotHandoffRecord(array $signal, array $config): array
+    {
+        $ttlBars    = (int)($config['signal_ttl_bars'] ?? 2);
+        $ttlSec     = $ttlBars * 4 * 3600;  // H4 bar = 4 hours
+        $detectedAt = (string)($signal['detected_at'] ?? date('c'));
+        $detectedTs = strtotime($detectedAt);
+        $expiresAt  = $detectedTs !== false
+            ? date('c', $detectedTs + $ttlSec)
+            : null;
+
+        return [
+            // Strategy ownership
+            'owner_strategy'  => 'double_bottom_long',
+            'strategy_id'     => 'double_bottom_long',
+
+            // Signal identity
+            'signal_id'       => (string)($signal['signal_id'] ?? ''),
+            'symbol'          => (string)($signal['symbol']    ?? ''),
+            'side'            => 'long',
+            'timeframe'       => (string)($config['timeframe'] ?? 'H4'),
+
+            // Lifecycle (handoff_status is overwritten by the caller)
+            'detected_at'  => $detectedAt,
+            'expires_at'   => $expiresAt,
+            'handoff_status' => 'active',
+
+            // Entry geometry
+            'entry_type'      => (string)($signal['entry_type']      ?? 'breakout'),
+            'entry_price'     => (float)($signal['entry_price']      ?? 0.0),
+            'primary_pattern' => (string)($signal['primary_pattern'] ?? 'double_bottom'),
+
+            // Pipeline context
+            'trend_direction' => (string)($signal['trend_direction'] ?? 'unknown'),
+            'corridor_bucket' => (int)($signal['corridor_bucket']    ?? 0),
+            'wave_state'      => (string)($signal['wave_state']      ?? 'unknown'),
+            'confirm_status'  => (string)($signal['confirm_status']  ?? 'confirm_pass'),
+
+            // Quality scores
+            'pattern_score'           => (float)($signal['pattern_score']           ?? 0.0),
+            'structure_score'         => (float)($signal['structure_score']         ?? 0.0),
+            'neckline_score'          => (float)($signal['neckline_score']          ?? 0.0),
+            'confirmation_score'      => (float)($signal['confirmation_score']      ?? 0.0),
+            'context_score'           => (float)($signal['context_score']           ?? 0.0),
+            'candidate_quality_score' => (float)($signal['candidate_quality_score'] ?? 0.0),
+            'quality_pass'            => (bool)($signal['quality_pass']             ?? true),
+
+            // Execution parameters (strategy-owned; no exchange-order fields yet)
+            'stop_mode'                     => (string)($config['stop_mode']                     ?? 'fixed_from_liq_zone'),
+            'stop_from_liq_buffer_value'    => (float)($config['stop_from_liq_buffer_value']    ?? 0.002),
+            'stop_from_liq_buffer_type'     => (string)($config['stop_from_liq_buffer_type']    ?? 'percent'),
+            'bot_budget'                    => (float)($config['bot_budget']                    ?? 0.0),
+            'bot_leverage'                  => (int)($config['bot_leverage']                    ?? 1),
+            'tp_enabled'                    => (bool)($config['tp_enabled']                     ?? false),
+            'tp_mode'                       => (string)($config['tp_mode']                      ?? 'fixed_r'),
+            'tp_value'                      => (float)($config['tp_value']                      ?? 2.0),
+            'reverse_pattern_close_enabled' => (bool)($config['reverse_pattern_close_enabled']  ?? false),
+        ];
     }
 }

@@ -123,6 +123,7 @@ final class DoubleBottomLongService
             return ['ok' => false, 'error' => 'Config load failed'];
         }
 
+        $prevState = $this->getRunState();
         $universe = $this->buildUniverse($config);
 
         // Cycle-local stats are reset on each new queue run; cumulative stats.json is never wiped.
@@ -135,6 +136,9 @@ final class DoubleBottomLongService
                 $this->writeJson('storage/' . $f, $v);
             }
         }
+        // Current-cycle candidate snapshots are always reset on a new queued cycle.
+        $this->writeJson('storage/candidates_found.json', []);
+        $this->writeJson('storage/candidates_emitted.json', []);
         $regimePath = $this->moduleDir . '/storage/market_regime.json';
         $regimeRaw  = file_exists($regimePath) ? (string)@file_get_contents($regimePath) : '';
         if (empty(json_decode($regimeRaw, true))) {
@@ -147,14 +151,32 @@ final class DoubleBottomLongService
             file_put_contents($this->moduleDir . '/storage/cycle_history.ndjson', '');
         }
 
+        $cycleId = (int)($prevState['cycle_id'] ?? 0);
+        $nowIso  = date('c');
         $state = [
             'status'        => 'queued',
-            'queued_at'     => date('c'),
+            'queued_at'     => $nowIso,
+            'cycle_started_at' => $nowIso,
+            'cycle_id'      => $cycleId,
+            'current_cycle_id' => $cycleId,
+            'cumulative_cycles_completed' => (int)($prevState['cumulative_cycles_completed'] ?? $cycleId),
             'symbols'       => $universe,
             'total'         => count($universe),
             'cursor'        => 0,
             'processed'     => 0,
             'found'         => 0,
+            'processed_symbols' => 0,
+            'total_symbols'     => count($universe),
+            'remaining_symbols' => count($universe),
+            'signals_json_semantics' => 'active_rolling_pool_across_cycles_ttl',
+            'signals_active_final_total' => count($this->getSignals()),
+            'final_signals_total'        => count($this->getSignals()),
+            'signals_emitted_total'      => (int)($this->getStats()['signals_emitted_total'] ?? 0),
+            'cron_enabled'            => (bool)($config['enabled'] ?? false),
+            'last_tick_at'            => $prevState['last_tick_at'] ?? null,
+            'last_tick_result'        => $prevState['last_tick_result'] ?? 'queued',
+            'run_status'              => 'queued',
+            'continuous_scan_enabled' => (bool)($config['continuous_scan_enabled'] ?? true),
             'errors'        => [],
             'registry_diag' => $this->readJson('storage/registry_diag.json', []),
         ];
@@ -242,6 +264,9 @@ final class DoubleBottomLongService
         $found            = 0;
         $batchPreviewRows = [];
         $newlyEmitted     = [];
+        $tickAt           = date('c');
+        $foundCandidates   = (array)$this->readJson('storage/candidates_found.json', []);
+        $emittedCandidates = (array)$this->readJson('storage/candidates_emitted.json', []);
 
         while ($cursor < $total && $processed < $batchSz && (time() - $tStart) < $maxSec) {
             $symbol = $symbols[$cursor];
@@ -250,9 +275,19 @@ final class DoubleBottomLongService
 
             try {
                 $result = $this->processSymbol($symbol, $config, $regimeStr);
+                if (($result['candidate_found'] ?? false) === true) {
+                    $found++;
+                    $foundCandidates = $this->mergeCandidateRecord(
+                        $foundCandidates,
+                        $this->buildFoundCandidateRecord($result, (int)($state['cycle_id'] ?? 0), $tickAt)
+                    );
+                }
                 if ($result['final_signal_status'] === 'emitted') {
                     $newlyEmitted[] = $result['signal'];
-                    $found++;
+                    $emittedCandidates = $this->mergeCandidateRecord(
+                        $emittedCandidates,
+                        $this->buildEmittedCandidateRecord($result, (int)($state['cycle_id'] ?? 0), $tickAt)
+                    );
                 }
                 $stats      = $this->accumulateStats($stats,      $result);
                 $cycleStats = $this->accumulateStats($cycleStats, $result);
@@ -347,6 +382,9 @@ final class DoubleBottomLongService
         }
         unset($row);
 
+        $foundCandidates   = $this->applySignalOutcomeToCandidates($foundCandidates, $signalOutcomeMap, $tickAt);
+        $emittedCandidates = $this->applySignalOutcomeToCandidates($emittedCandidates, $signalOutcomeMap, $tickAt);
+
         $totalProcessed = (int)($state['processed'] ?? 0) + $processed;
         $totalFound     = (int)($state['found']     ?? 0) + $found;
 
@@ -372,7 +410,10 @@ final class DoubleBottomLongService
                 'symbols_scanned'            => $totalProcessed,
                 'signals_emitted_total'      => (int)($cycleStats['signals_emitted_total'] ?? 0),
                 'signals_active_final_total' => count($signals),
+                'candidates_found_total'     => count($foundCandidates),
+                'candidates_emitted_total'   => count($emittedCandidates),
                 'reject_reason_distribution' => $cycleStats['reject_reason_distribution'] ?? (object)[],
+                'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
                 'final_status'               => $continuousEnabled ? 'continuous' : 'done',
             ]) . "\n";
             @file_put_contents(
@@ -389,6 +430,8 @@ final class DoubleBottomLongService
                 $state['found']            = 0;
                 $state['cycle_started_at'] = date('c');
                 $state['next_cycle_ready'] = false;
+                $foundCandidates           = [];
+                $emittedCandidates         = [];
                 // Mark that cycle_stats.json should be reset at the start of the next cycle.
                 // Cumulative stats.json is never wiped.
                 $state['reset_stats_on_next_cycle'] = true;
@@ -401,18 +444,29 @@ final class DoubleBottomLongService
 
         // Cron diagnostics — persisted so the operator can verify cron is driving the module
         $state['cron_enabled']            = (bool)($config['enabled'] ?? false);
-        $state['last_tick_at']            = date('c');
-        $state['last_tick_result']        = 'ok';
+        $state['last_tick_at']            = $tickAt;
+        $state['last_tick_result']        = sprintf(
+            'ok: cycle=%d processed=%d/%d remaining=%d',
+            (int)($state['cycle_id'] ?? 0),
+            $totalProcessed,
+            $total,
+            ($isDone && $continuousEnabled) ? $total : max(0, $total - $cursor)
+        );
         $state['run_status']              = $state['status'];
+        $state['processed_symbols']       = $totalProcessed;
         $state['total_symbols']           = $total;
         $state['remaining_symbols']       = ($isDone && $continuousEnabled) ? $total : max(0, $total - $cursor);
         $state['continuous_scan_enabled'] = $continuousEnabled;
+        $state['signals_json_semantics']  = 'active_rolling_pool_across_cycles_ttl';
+        $state['signals_active_final_total'] = count($signals);
+        $state['final_signals_total']        = count($signals);
+        $state['signals_emitted_total']      = (int)($stats['signals_emitted_total'] ?? 0);
 
         // Runtime diagnostics: separate current-cycle from cumulative
         $state['current_cycle_id']                    = (int)($state['cycle_id']      ?? 0);
         $state['current_cycle_started_at']            = $state['cycle_started_at']   ?? null;
         $state['current_cycle_processed_symbols']     = $totalProcessed;
-        $state['current_cycle_signals_emitted_total'] = (int)($cycleStats['signals_emitted_total'] ?? 0);
+        $state['current_cycle_signals_emitted_total'] = count($emittedCandidates);
         $state['current_cycle_signals_active_final']  = count($signals);
         $state['cumulative_signals_emitted_total']    = (int)($stats['signals_emitted_total']       ?? 0);
         $state['cumulative_signals_active_final']     = count($signals);
@@ -425,6 +479,8 @@ final class DoubleBottomLongService
 
         $this->writeJson('storage/run_state.json', $state);
         $this->writeJson('storage/signals.json',   array_values($signals));
+        $this->writeJson('storage/candidates_found.json',   array_values($foundCandidates));
+        $this->writeJson('storage/candidates_emitted.json', array_values($emittedCandidates));
 
         $stats      = $this->finalizeStats($stats,      $total, $totalProcessed, $batchSz, count($signals));
         $cycleStats = $this->finalizeStats($cycleStats, $total, $totalProcessed, $batchSz, count($signals));
@@ -458,6 +514,10 @@ final class DoubleBottomLongService
             'total'             => $total,
             'processed'         => $totalProcessed,
             'found'             => $totalFound,
+            'signals_semantics' => 'signals.json = active rolling pool across cycles with TTL expiry',
+            'signals_emitted_total'      => (int)($stats['signals_emitted_total'] ?? 0),
+            'signals_active_final_total' => count($signals),
+            'final_signals_total'        => count($signals),
             'regime'       => $regimeSummary,
             'pipeline_summary' => [
                 'symbols_total'            => $total,
@@ -958,8 +1018,8 @@ final class DoubleBottomLongService
             // 1a. Quality completeness
             if (!$isComplete($s)) {
                 $rejectedFinalQuality++;
-                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_quality_fail'];
-                $finalRejectDist['final_quality_fail'] = ($finalRejectDist['final_quality_fail'] ?? 0) + 1;
+                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_quality'];
+                $finalRejectDist['final_low_quality'] = ($finalRejectDist['final_low_quality'] ?? 0) + 1;
                 continue;
             }
 
@@ -982,8 +1042,8 @@ final class DoubleBottomLongService
                 }
                 if ($trendDir !== 'bullish') {
                     $rejectedFinalTrend++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_side_trend_conflict'];
-                    $finalRejectDist['final_side_trend_conflict'] = ($finalRejectDist['final_side_trend_conflict'] ?? 0) + 1;
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
+                    $finalRejectDist['final_trend_mismatch'] = ($finalRejectDist['final_trend_mismatch'] ?? 0) + 1;
                     continue;
                 }
             }
@@ -993,13 +1053,13 @@ final class DoubleBottomLongService
             if ($waveRequired) {
                 $waveState = (string)($s['wave_state'] ?? '');
                 if ($waveState !== '' && $waveState !== 'unknown' && $waveState !== 'corrective') {
-                    $contextRejectReason = 'final_wave_mismatch';
+                    $contextRejectReason = 'final_context_inconsistent';
                 }
             }
             if ($contextRejectReason === null && $corridorRequired) {
                 $bucket = (int)($s['corridor_bucket'] ?? 0);
                 if ($bucket > 0 && !in_array($bucket, $allowedLong, true)) {
-                    $contextRejectReason = 'final_bucket_mismatch';
+                    $contextRejectReason = 'final_context_inconsistent';
                 }
             }
             if ($contextRejectReason !== null) {
@@ -1061,9 +1121,9 @@ final class DoubleBottomLongService
 
             for ($i = 1, $n = count($group); $i < $n; $i++) {
                 $loser = $group[$i];
-                $signalOutcomeMap[$loser['signal_id']] = ['winner' => false, 'reason' => 'final_winner_lost'];
+                $signalOutcomeMap[$loser['signal_id']] = ['winner' => false, 'reason' => 'final_duplicate_removed'];
                 $rejectedLoserByQuality++;
-                $finalRejectDist['final_winner_lost'] = ($finalRejectDist['final_winner_lost'] ?? 0) + 1;
+                $finalRejectDist['final_duplicate_removed'] = ($finalRejectDist['final_duplicate_removed'] ?? 0) + 1;
             }
         }
 
@@ -1246,6 +1306,7 @@ final class DoubleBottomLongService
         $s['symbols_skipped']            = 0;
         $s['current_batch_size']         = $batchSz;
         $s['last_updated_at']            = date('c');
+        $s['signals_json_semantics']     = 'active_rolling_pool_across_cycles_ttl';
         $s['signals_active_final_total'] = $activeSignals;
         $s['final_signals_total']        = $activeSignals;
         foreach (['reject_reason_distribution', 'quality_reject_reason_distribution',
@@ -1485,5 +1546,149 @@ final class DoubleBottomLongService
             mkdir($dir, 0755, true);
         }
         file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    }
+
+    private function buildFoundCandidateRecord(array $result, int $cycleId, string $tickAt): array
+    {
+        $candidateKey = $this->candidateStableKey($result);
+        $finalRejectReason = $this->normalizeFinalRejectReason(
+            $result['final_reject_reason'] ?? null,
+            $result['reject_reason'] ?? null
+        );
+
+        return [
+            'candidate_key'         => $candidateKey,
+            'signal_id'             => $result['signal_id'] ?? null,
+            'symbol'                => (string)($result['symbol'] ?? ''),
+            'side'                  => 'long',
+            'primary_pattern'       => $result['primary_pattern'] ?? 'double_bottom',
+            'cycle_id'              => $cycleId,
+            'final_signal_status'   => $result['final_signal_status'] ?? null,
+            'reject_reason'         => $result['reject_reason'] ?? null,
+            'final_reject_reason'   => $finalRejectReason,
+            'neckline_value'        => $result['neckline_value'] ?? null,
+            'low1_value'            => $result['low1_value'] ?? null,
+            'low2_value'            => $result['low2_value'] ?? null,
+            'pattern_window_size'   => $result['pattern_window_size'] ?? null,
+            'similarity_delta_pct'  => $result['similarity_delta_pct'] ?? null,
+            'pattern_score'         => $result['pattern_score'] ?? null,
+            'structure_score'       => $result['structure_score'] ?? null,
+            'neckline_score'        => $result['neckline_score'] ?? null,
+            'confirmation_score'    => $result['confirmation_score'] ?? null,
+            'context_score'         => $result['context_score'] ?? null,
+            'candidate_quality_score' => $result['candidate_quality_score'] ?? null,
+            'quality_pass'          => $result['quality_pass'] ?? null,
+            'quality_reject_reason' => $result['quality_reject_reason'] ?? null,
+            'detected_at'           => $result['signal']['detected_at'] ?? $tickAt,
+            'last_seen_at'          => $tickAt,
+            'seen_count'            => 1,
+        ];
+    }
+
+    private function buildEmittedCandidateRecord(array $result, int $cycleId, string $tickAt): array
+    {
+        $signal = (array)($result['signal'] ?? []);
+        $signal['candidate_key']       = $this->candidateStableKey($result);
+        $signal['cycle_id']            = $cycleId;
+        $signal['final_signal_status'] = $signal['final_signal_status'] ?? 'emitted';
+        $signal['final_reject_reason'] = $signal['final_reject_reason'] ?? null;
+        $signal['last_seen_at']        = $tickAt;
+        $signal['seen_count']          = 1;
+        return $signal;
+    }
+
+    private function mergeCandidateRecord(array $records, array $record): array
+    {
+        $id = (string)($record['candidate_key'] ?? '');
+        if ($id === '') {
+            return $records;
+        }
+
+        $map = [];
+        foreach ($records as $r) {
+            $k = (string)($r['candidate_key'] ?? '');
+            if ($k !== '') {
+                $map[$k] = $r;
+            }
+        }
+
+        if (isset($map[$id])) {
+            $prev = $map[$id];
+            $record['detected_at'] = $prev['detected_at'] ?? ($record['detected_at'] ?? null);
+            $record['seen_count']  = (int)($prev['seen_count'] ?? 0) + 1;
+        }
+        $map[$id] = array_merge($map[$id] ?? [], $record);
+
+        return array_values($map);
+    }
+
+    private function applySignalOutcomeToCandidates(array $records, array $signalOutcomeMap, string $tickAt): array
+    {
+        foreach ($records as &$record) {
+            $signalId = (string)($record['signal_id'] ?? '');
+            if ($signalId !== '' && isset($signalOutcomeMap[$signalId])) {
+                $winner = (bool)($signalOutcomeMap[$signalId]['winner'] ?? false);
+                $reason = $signalOutcomeMap[$signalId]['reason'] ?? null;
+                $record['final_signal_status'] = $winner ? 'active' : 'rejected_final';
+                $record['final_reject_reason'] = $winner ? null : $this->normalizeFinalRejectReason($reason, $record['reject_reason'] ?? null);
+            } elseif (($record['final_reject_reason'] ?? null) === null) {
+                $record['final_reject_reason'] = $this->normalizeFinalRejectReason(null, $record['reject_reason'] ?? null);
+            }
+            $record['last_seen_at'] = $tickAt;
+        }
+        unset($record);
+
+        return $records;
+    }
+
+    private function candidateStableKey(array $result): string
+    {
+        $signalId = (string)($result['signal_id'] ?? '');
+        if ($signalId !== '') {
+            return $signalId;
+        }
+
+        $symbol   = strtolower((string)($result['symbol'] ?? ''));
+        $pattern  = (string)($result['primary_pattern'] ?? 'double_bottom');
+        $neckline = number_format((float)($result['neckline_value'] ?? 0.0), 6, '.', '');
+        $low1     = number_format((float)($result['low1_value'] ?? 0.0), 6, '.', '');
+        $low2     = number_format((float)($result['low2_value'] ?? 0.0), 6, '.', '');
+        return sprintf('cand_%s_%s_%s_%s_%s', $symbol, $pattern, $neckline, $low1, $low2);
+    }
+
+    private function normalizeFinalRejectReason(?string $reason, ?string $fallbackRejectReason): ?string
+    {
+        $r = (string)($reason ?? '');
+        if ($r === '') {
+            $r = (string)($fallbackRejectReason ?? '');
+        }
+        if ($r === '') {
+            return null;
+        }
+
+        if (in_array($r, ['final_low_neckline', 'price_too_far_above_neckline', 'price_too_far_below_neckline'], true)) {
+            return 'final_low_neckline';
+        }
+        if (in_array($r, ['final_low_quality', 'final_quality_fail'], true)
+            || str_contains($r, 'quality')
+            || str_contains($r, 'confirm')
+            || str_contains($r, 'candidate_expired')) {
+            return 'final_low_quality';
+        }
+        if (in_array($r, ['final_trend_mismatch', 'final_side_trend_conflict'], true)
+            || str_starts_with($r, 'trend_')) {
+            return 'final_trend_mismatch';
+        }
+        if (in_array($r, ['final_context_inconsistent', 'final_wave_mismatch', 'final_bucket_mismatch'], true)
+            || str_starts_with($r, 'wave_')
+            || str_starts_with($r, 'bucket_')
+            || str_contains($r, 'context')) {
+            return 'final_context_inconsistent';
+        }
+        if (in_array($r, ['final_duplicate_removed', 'final_winner_lost'], true)) {
+            return 'final_duplicate_removed';
+        }
+
+        return $r;
     }
 }

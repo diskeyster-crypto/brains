@@ -175,7 +175,8 @@ $errorCount    = count(array_filter($strategyModules ?? [], fn($m) => ($m['error
             'passive' => 'bi-pause-circle',
             default   => 'bi-dash-circle',
         };
-        $modUrl = rtrim(System::web('admin/strategy/' . $mod['name']), '/');
+        $modRoute = (string)($mod['admin_route'] ?? ('/admin/strategy/' . ($mod['name'] ?? '')));
+        $modUrl = rtrim(System::web(ltrim($modRoute, '/')), '/');
         $errColor = $mod['errors_count'] > 0 ? '#ef4444' : '#22c55e';
     ?>
     <div class="strategy-card">

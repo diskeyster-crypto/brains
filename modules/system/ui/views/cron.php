@@ -13,8 +13,7 @@ $due           = $due           ?? [];
 $total_count   = $total_count   ?? 0;
 $enabled_count = $enabled_count ?? 0;
 $flash         = $flash         ?? null;
-$baseUrl = rtrim(System::baseUrl(), '/');
-$cronUrl = $baseUrl . '/public/cron.php';
+$cronUrl = System::web('cron/run');
 $adminCronUrl = System::web('admin/system/cron');
 ?>
 

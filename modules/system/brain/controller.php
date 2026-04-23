@@ -953,6 +953,11 @@ final class BrainController
             }
 
             $name = $manifest['name'] ?? basename($moduleDir);
+            $moduleBaseName = basename($moduleDir);
+            $adminRoute = '/admin/strategy/' . $moduleBaseName;
+            if ($moduleBaseName === 'double_bottom_long') {
+                $adminRoute = '/admin/strategy/double_bottom_long';
+            }
 
             // Load last_run.json
             $lastRunData = $this->readJson($moduleDir . '/storage/last_run.json');
@@ -994,6 +999,7 @@ final class BrainController
                 'description'    => $manifest['description'] ?? '',
                 'version'        => $manifest['version']     ?? '',
                 'strategy_id'    => $manifest['name']        ?? $name,
+                'admin_route'    => $adminRoute,
                 'status'         => $statusLabel,
                 'mode'           => $mode,
                 'enabled'        => $enabled,

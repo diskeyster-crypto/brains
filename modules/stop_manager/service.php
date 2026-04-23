@@ -301,7 +301,7 @@ final class StopManagerService
                             'side'           => $pos['side']           ?? '',
                             'entry_price'    => (float)($pos['entry_price'] ?? 0.0),
                             'liq_source'     => 'missing',
-                            'execution_mode' => $pos['execution_mode'] ?? 'paper',
+                            'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
                             'reason'         => 'stop_skipped_missing_liq',
                         ]);
                     }
@@ -334,7 +334,7 @@ final class StopManagerService
                         'liq_price'      => $liqPrice,
                         'liq_source'     => $liqSource,
                         'stop_price'     => $stopPrice,
-                        'execution_mode' => $pos['execution_mode'] ?? 'paper',
+                        'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
                         'reason'         => $initEventType,
                     ]);
                 } else {
@@ -385,7 +385,7 @@ final class StopManagerService
                                 'current_price'  => $currentPrice,
                                 'roi'            => $roi,
                                 'stop_price'     => $stopPrice,
-                                'execution_mode' => $pos['execution_mode'] ?? 'paper',
+                                'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
                                 'reason'         => 'breakeven_applied',
                             ]);
                         }
@@ -405,7 +405,7 @@ final class StopManagerService
                             'liq_price'      => $liqPrice,
                             'liq_source'     => $liqSource,
                             'stop_price'     => $stopPrice,
-                            'execution_mode' => $pos['execution_mode'] ?? 'paper',
+                            'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
                             'reason'         => $recalcEventType,
                         ]);
                     }
@@ -416,6 +416,9 @@ final class StopManagerService
                     $stopMap[$key]['liq_source']        = $liqSource;
                     $stopMap[$key]['stop_state']        = $newStopState;
                     $stopMap[$key]['last_updated_at']   = $tickAt;
+                    $stopMap[$key]['execution_mode']    = $this->normalizeExecMode(
+                        (string)($stopMap[$key]['execution_mode'] ?? 'paper')
+                    );
                     if ($recalcReason !== null) {
                         $stopMap[$key]['transition_reason'] = $recalcReason;
                     }
@@ -446,7 +449,7 @@ final class StopManagerService
                     'entry_price'    => $stop['entry_price']    ?? 0.0,
                     'liq_source'     => $stop['liq_source']     ?? 'missing',
                     'stop_price'     => $stop['stop_price']     ?? 0.0,
-                    'execution_mode' => $stop['execution_mode'] ?? 'paper',
+                    'execution_mode' => $this->normalizeExecMode((string)($stop['execution_mode'] ?? 'paper')),
                     'reason'         => 'position_no_longer_active',
                 ]);
             }
@@ -589,7 +592,7 @@ final class StopManagerService
             'entry_price'       => (float)($pos['entry_price']     ?? 0.0),
             'liq_price'         => $liqPrice,
             'liq_source'        => $liqSource,
-            'execution_mode'    => (string)($pos['execution_mode'] ?? 'paper'),
+            'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
             'stop_mode'         => 'entry_liq_percent',
             'stop_price'        => $stopPrice,
             'stop_state'        => $stopState,
@@ -611,7 +614,7 @@ final class StopManagerService
             'entry_price'       => (float)($pos['entry_price']     ?? 0.0),
             'liq_price'         => null,
             'liq_source'        => 'missing',
-            'execution_mode'    => (string)($pos['execution_mode'] ?? 'paper'),
+            'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
             'stop_mode'         => 'entry_liq_percent',
             'stop_price'        => null,
             'stop_state'        => 'no_liq',
@@ -694,6 +697,21 @@ final class StopManagerService
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Normalize legacy execution_mode values into the canonical set.
+     *   smoke  → paper  (legacy alias)
+     *   active → paper  (legacy alias)
+     * Any other value is returned unchanged; unknown values fall back to 'paper'.
+     */
+    private function normalizeExecMode(string $raw): string
+    {
+        return match ($raw) {
+            'smoke', 'active' => 'paper',
+            'paper', 'disabled', 'passive' => $raw,
+            default => 'paper',
+        };
+    }
 
     private function positionKey(array $item): string
     {

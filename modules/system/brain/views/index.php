@@ -16,6 +16,9 @@ use Core\System\System;
 $brainUrl = rtrim(System::web('admin/brain'), '/');
 $stratUrl = rtrim(System::web('admin/strategy'), '/');
 
+$activeTab = 'dashboard';
+require __DIR__ . '/_tabs.php';
+
 $totalModules  = count($strategyModules ?? []);
 $activeCount   = count(array_filter($strategyModules ?? [], fn($m) => $m['status'] === 'active'));
 $passiveCount  = count(array_filter($strategyModules ?? [], fn($m) => $m['status'] === 'passive'));

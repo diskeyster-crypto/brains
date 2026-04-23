@@ -651,6 +651,7 @@ final class DoubleBottomLongService
             'stop_from_liq_buffer_type'  => $config['stop_from_liq_buffer_type']    ?? 'percent',
             'bot_budget'                 => $config['bot_budget']                   ?? 0.0,
             'bot_leverage'               => $config['bot_leverage']                 ?? 1,
+            'entry_mode'                 => $config['entry_mode']                   ?? 'limit',
             // Exit (strategy-owned; no trailing in this module)
             'reverse_pattern_close_enabled' => $config['reverse_pattern_close_enabled'] ?? false,
             'tp_enabled'                    => $config['tp_enabled']                    ?? false,
@@ -1903,6 +1904,7 @@ final class DoubleBottomLongService
             'handoff_status' => 'active',
 
             // Entry geometry
+            'entry_mode'      => (string)($config['entry_mode']          ?? 'limit'),
             'entry_type'      => (string)($signal['entry_type']      ?? 'breakout'),
             'entry_price'     => (float)($signal['entry_price']      ?? 0.0),
             'primary_pattern' => (string)($signal['primary_pattern'] ?? 'double_bottom'),

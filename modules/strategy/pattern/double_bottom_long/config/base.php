@@ -81,6 +81,7 @@ return [
     // Bot execution parameters
     'bot_budget'   => 0.0,
     'bot_leverage' => 1,
+    'entry_mode'   => 'limit',    // limit | market
 
     // Fibonacci extensions
     'fibo_enabled' => false,

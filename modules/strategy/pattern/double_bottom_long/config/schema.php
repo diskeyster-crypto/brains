@@ -69,6 +69,7 @@ return [
     // Bot execution parameters
     'bot_budget'   => 'float',
     'bot_leverage' => 'int',
+    'entry_mode'   => 'string',
 
     // Fibonacci
     'fibo_enabled' => 'bool',

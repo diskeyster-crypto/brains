@@ -154,7 +154,8 @@ function renderDashboardHub(): string
     }
 
     // ── strategy cards HTML ───────────────────────────────────────────────
-    $saveUrl = System::web('admin/dashboard/overrides/save');
+    $saveUrl      = System::web('admin/dashboard/overrides/save');
+    $stratActUrl  = System::web('admin/dashboard/strategy/action');
     $stratCards = '';
     if (empty($registry)) {
         $stratCards = '<p style="color:var(--ui-text-muted);padding:20px 0;">Стратегии не обнаружены.</p>';
@@ -219,7 +220,25 @@ function renderDashboardHub(): string
             $enYes = $opEnabled ? ' selected' : '';
             $enNo  = $opEnabled ? '' : ' selected';
 
-            $cardId = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
+            // ── strategy run_state ────────────────────────────────────────
+            $runStatePath = System::path('root') . '/' . $modulePath . '/storage/run_state.json';
+            $runState     = [];
+            if (file_exists($runStatePath)) {
+                $rsRaw = file_get_contents($runStatePath);
+                if ($rsRaw !== false) {
+                    $rsDec = json_decode($rsRaw, true);
+                    if (is_array($rsDec)) {
+                        $runState = $rsDec;
+                    }
+                }
+            }
+            $rsStatus    = $e((string)($runState['status']       ?? 'idle'));
+            $rsCursor    = (int)($runState['cursor']             ?? 0);
+            $rsTotal     = (int)($runState['total']              ?? 0);
+            $rsCycleId   = (int)($runState['cycle_id']           ?? 0);
+            $rsLastTick  = $e((string)($runState['last_tick_at'] ?? '—'));
+
+            $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
 
             $stratCards .= <<<HTML
 <div class="card" style="margin-bottom:16px;">
@@ -265,13 +284,41 @@ function renderDashboardHub(): string
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Макс.поз</td>
         <td colspan="3" style="padding:3px 0;"><code>{$esMax}</code></td>
       </tr>
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Runtime</td>
+        <td colspan="3" style="padding:3px 0;">
+          <code style="font-size:11px;">{$rsStatus}</code>
+          <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">{$rsCursor}/{$rsTotal} · цикл {$rsCycleId} · {$rsLastTick}</span>
+        </td>
+      </tr>
     </table>
 
-    <!-- Toggle edit button -->
-    <div style="margin-top:12px;">
+    <!-- Toggle edit / manual action buttons -->
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
       <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
         Изменить
       </button>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="queue_run">
+        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
+          Запуск цикла
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="tick_batch">
+        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
+          Тик батча
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="refresh">
+        <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
+          Обновить runtime
+        </button>
+      </form>
     </div>
 
     <!-- Inline edit form (hidden by default) -->
@@ -397,6 +444,7 @@ HTML;
     }
 
     // ── flash HTML ────────────────────────────────────────────────────────
+    $botTickUrl = System::web('admin/dashboard/bot/tick');
     $flashHtml = '';
     if ($flash) {
         $ftype = ($flash['type'] === 'success') ? 'success' : 'danger';
@@ -499,6 +547,29 @@ HTML;
       </div>
     </div>
   </div>
+  <div class="card">
+    <div class="card-header">Ручное управление</div>
+    <div class="card-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <form method="post" action="{$botTickUrl}" style="margin:0;">
+          <input type="hidden" name="action" value="tick">
+          <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;padding:6px 18px;">
+            <i class="bi bi-play-fill" style="margin-right:4px;"></i>Тик бота
+          </button>
+        </form>
+        <form method="post" action="{$botTickUrl}" style="margin:0;">
+          <input type="hidden" name="action" value="refresh">
+          <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
+            <i class="bi bi-arrow-clockwise" style="margin-right:4px;"></i>Обновить runtime
+          </button>
+        </form>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
+        «Тик бота» запускает полный цикл Bot::tick() — сканирование реестра, применение переопределений, ingestion handoff-очередей. Без биржевого исполнения.
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">Накопленная статистика (stats.json)</div>
     <div class="card-body" style="padding:0;">
@@ -737,3 +808,121 @@ function handleDashboardGlobalSave(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardGlobalSave'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: manual strategy actions (queue_run / tick_batch / refresh)
+// Registered as: POST /admin/dashboard/strategy/action
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardStrategyAction')) {
+function handleDashboardStrategyAction(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    $stratId = trim((string)($_POST['strategy_id'] ?? ''));
+    $action  = trim((string)($_POST['action']      ?? ''));
+    $dashUrl = System::web('admin/dashboard');
+
+    if ($stratId === '' || $action === '') {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'strategy_id или action не указаны'];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    // Route by strategy_id to its service
+    // Currently only double_bottom_long is wired; extend here as more strategies are added.
+    if ($stratId === 'double_bottom_long') {
+        $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+
+        require_once $moduleDir . '/bootstrap.php';
+        require_once $moduleDir . '/service.php';
+
+        $service = \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::instance($moduleDir);
+
+        if ($action === 'queue_run') {
+            $result = $service->queueRun();
+            $msg = $result['ok']
+                ? 'Запуск цикла поставлен в очередь (' . ($result['total'] ?? 0) . ' символов)'
+                : ('Ошибка: ' . ($result['error'] ?? 'Неизвестная'));
+            $_SESSION['dashboard_flash'] = ['type' => $result['ok'] ? 'success' : 'error', 'msg' => $msg];
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+
+        if ($action === 'tick_batch') {
+            try {
+                $service->tickBatch();
+                $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Шаг батча выполнен'];
+            } catch (\Throwable $ex) {
+                $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка тика батча: ' . $ex->getMessage()];
+            }
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+
+        if ($action === 'refresh') {
+            // No-op: page reload will re-read fresh storage state
+            $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime обновлён'];
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+    }
+
+    $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => "Неизвестная стратегия или действие: {$stratId}/{$action}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardStrategyAction'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: manual bot tick / refresh
+// Registered as: POST /admin/dashboard/bot/tick
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardBotTick')) {
+function handleDashboardBotTick(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    $action  = trim((string)($_POST['action'] ?? 'tick'));
+    $dashUrl = System::web('admin/dashboard');
+
+    if ($action === 'refresh') {
+        // No-op: page reload re-reads storage
+        $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Bot runtime обновлён'];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    // action === 'tick' (default)
+    $moduleDir = \Core\System\SystemPaths::instance()->get('bot');
+
+    require_once $moduleDir . '/bootstrap.php';
+    require_once $moduleDir . '/service.php';
+
+    try {
+        $service = \Modules\Bot\BotService::instance($moduleDir);
+        $service->tick();
+        $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Bot tick выполнен'];
+    } catch (\Throwable $ex) {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка bot tick: ' . $ex->getMessage()];
+    }
+
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardBotTick'))

@@ -297,6 +297,22 @@ Router::post('/admin/dashboard/global/save', function () {
     handleDashboardGlobalSave();
 });
 
+Router::post('/admin/dashboard/strategy/action', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardStrategyAction();
+});
+
+Router::post('/admin/dashboard/bot/tick', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardBotTick();
+});
+
 Router::get('/admin/modules', function () {
     echo renderLayout('Модули', renderModules(), 'modules');
 });

@@ -34,9 +34,15 @@ declare(strict_types=1);
  *       = (entry_price − current_price) / entry_price × 100 × leverage (short)
  *
  * Stop state values:
- *   active    — computed and current
- *   no_liq    — cannot compute; liq_price unavailable and leverage unusable
- *   stale     — position closed; stop kept as closed reference
+ *   active        — computed from a real (exchange-provided) liquidation price
+ *   estimated_liq — computed from an estimated liquidation price (leverage fallback)
+ *   no_liq        — cannot compute; liq_price unavailable and leverage unusable
+ *   stale         — position closed; stop kept as closed reference
+ *
+ * Liquidation source values (liq_source field on every stop record):
+ *   real      — exchange-provided liq_price > 0
+ *   estimated — derived from entry_price and bot_leverage (isolated-margin approx)
+ *   missing   — no valid liq data; stop_state will be no_liq
  *
  * Execution modes:
  *   disabled — initialize storage only; no stop computation
@@ -166,16 +172,18 @@ final class StopManagerService
         $stops  = $result['stops'];
 
         // ── 3. Update stats ────────────────────────────────────────────────────
-        $stats['ticks_total']                   += 1;
-        $stats['positions_seen_total']           += $result['positions_seen'];
-        $stats['stops_initialized_total']        += $result['stops_initialized'];
-        $stats['stops_recalculated_total']       += $result['stops_recalculated'];
-        $stats['breakeven_applied_total']        += $result['breakeven_applied'];
-        $stats['stops_closed_reference_total']   += $result['stops_closed_reference'];
-        $stats['positions_without_liq_total']    += $result['positions_without_liq'];
-        $stats['stops_active_total']              = count(array_filter(
+        $stats['ticks_total']                        += 1;
+        $stats['positions_seen_total']               += $result['positions_seen'];
+        $stats['positions_with_real_liq_total']      += $result['positions_with_real_liq'];
+        $stats['positions_with_estimated_liq_total'] += $result['positions_with_estimated_liq'];
+        $stats['positions_without_liq_total']        += $result['positions_without_liq'];
+        $stats['stops_initialized_total']            += $result['stops_initialized'];
+        $stats['stops_recalculated_total']           += $result['stops_recalculated'];
+        $stats['breakeven_applied_total']            += $result['breakeven_applied'];
+        $stats['stops_closed_reference_total']       += $result['stops_closed_reference'];
+        $stats['stops_active_total']                  = count(array_filter(
             $stops,
-            static fn(array $s) => ($s['stop_state'] ?? '') === 'active'
+            static fn(array $s) => in_array($s['stop_state'] ?? '', ['active', 'estimated_liq'], true)
         ));
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
@@ -185,19 +193,21 @@ final class StopManagerService
         $elapsed = round(microtime(true) - $tStart, 4);
 
         $lastRun = [
-            'status'                  => 'ok',
-            'tick_at'                 => $tickAt,
-            'elapsed_sec'             => $elapsed,
-            'module_enabled'          => true,
-            'module_mode'             => $mode,
-            'positions_seen'          => $result['positions_seen'],
-            'stops_initialized'       => $result['stops_initialized'],
-            'stops_recalculated'      => $result['stops_recalculated'],
-            'breakeven_applied'       => $result['breakeven_applied'],
-            'stops_closed_reference'  => $result['stops_closed_reference'],
-            'positions_without_liq'   => $result['positions_without_liq'],
-            'stops_active_count'      => (int)($stats['stops_active_total'] ?? 0),
-            'ticks_total'             => (int)($stats['ticks_total'] ?? 0),
+            'status'                       => 'ok',
+            'tick_at'                      => $tickAt,
+            'elapsed_sec'                  => $elapsed,
+            'module_enabled'               => true,
+            'module_mode'                  => $mode,
+            'positions_seen'               => $result['positions_seen'],
+            'positions_with_real_liq'      => $result['positions_with_real_liq'],
+            'positions_with_estimated_liq' => $result['positions_with_estimated_liq'],
+            'positions_without_liq'        => $result['positions_without_liq'],
+            'stops_initialized'            => $result['stops_initialized'],
+            'stops_recalculated'           => $result['stops_recalculated'],
+            'breakeven_applied'            => $result['breakeven_applied'],
+            'stops_closed_reference'       => $result['stops_closed_reference'],
+            'stops_active_count'           => (int)($stats['stops_active_total'] ?? 0),
+            'ticks_total'                  => (int)($stats['ticks_total'] ?? 0),
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -214,11 +224,13 @@ final class StopManagerService
      * @return array{
      *   stops: array,
      *   positions_seen: int,
+     *   positions_with_real_liq: int,
+     *   positions_with_estimated_liq: int,
+     *   positions_without_liq: int,
      *   stops_initialized: int,
      *   stops_recalculated: int,
      *   breakeven_applied: int,
      *   stops_closed_reference: int,
-     *   positions_without_liq: int,
      * }
      */
     private function processStops(
@@ -228,12 +240,14 @@ final class StopManagerService
         string $mode,
         string $tickAt
     ): array {
-        $positionsSeen         = 0;
-        $stopsInitialized      = 0;
-        $stopsRecalculated     = 0;
-        $breakevenApplied      = 0;
-        $stopsClosedReference  = 0;
-        $positionsWithoutLiq   = 0;
+        $positionsSeen              = 0;
+        $positionsWithRealLiq       = 0;
+        $positionsWithEstimatedLiq  = 0;
+        $positionsWithoutLiq        = 0;
+        $stopsInitialized           = 0;
+        $stopsRecalculated          = 0;
+        $breakevenApplied           = 0;
+        $stopsClosedReference       = 0;
 
         $isPaperMode = in_array($mode, ['paper'], true);
 
@@ -261,34 +275,56 @@ final class StopManagerService
                 $positionsSeen++;
                 $bufferPct = (float)($config['stop_from_liq_buffer_pct'] ?? 0.05);
 
-                // Resolve liq_price
-                $liqPrice   = isset($pos['liq_price']) && (float)$pos['liq_price'] > 0.0
-                    ? (float)$pos['liq_price']
-                    : $this->estimateLiqPrice($pos);
+                // Classify liquidation data quality
+                $liq       = $this->classifyLiqSource($pos);
+                $liqSource = $liq['source'];  // 'real' | 'estimated' | 'missing'
+                $liqPrice  = $liq['price'];   // float | null
 
-                if ($liqPrice === null) {
+                if ($liqSource === 'real') {
+                    $positionsWithRealLiq++;
+                } elseif ($liqSource === 'estimated') {
+                    $positionsWithEstimatedLiq++;
+                } else {
+                    // missing — record no_liq stop so the position is tracked
                     $positionsWithoutLiq++;
-                    // Record no_liq stop state so the position is tracked
                     $isNew = !isset($stopMap[$key]);
                     $stopMap[$key] = $this->buildNoLiqStop($pos, $tickAt);
                     if ($isNew) {
                         $stopsInitialized++;
+                        $this->appendActionLog([
+                            'timestamp'      => $tickAt,
+                            'event_type'     => 'stop_skipped_missing_liq',
+                            'strategy_id'    => $pos['strategy_id']    ?? '',
+                            'owner_strategy' => $pos['owner_strategy'] ?? '',
+                            'signal_id'      => $pos['signal_id']      ?? '',
+                            'symbol'         => $pos['symbol']         ?? '',
+                            'side'           => $pos['side']           ?? '',
+                            'entry_price'    => (float)($pos['entry_price'] ?? 0.0),
+                            'liq_source'     => 'missing',
+                            'execution_mode' => $pos['execution_mode'] ?? 'paper',
+                            'reason'         => 'stop_skipped_missing_liq',
+                        ]);
                     }
                     continue;
                 }
 
-                $entryPrice = (float)($pos['entry_price'] ?? 0.0);
-                $side       = (string)($pos['side'] ?? 'long');
-
-                $stopPrice = $this->calcStopPrice($side, $entryPrice, $liqPrice, $bufferPct);
+                $entryPrice      = (float)($pos['entry_price'] ?? 0.0);
+                $side            = (string)($pos['side'] ?? 'long');
+                $stopPrice       = $this->calcStopPrice($side, $entryPrice, $liqPrice, $bufferPct);
+                $initEventType   = $liqSource === 'real'
+                    ? 'stop_initialized_real_liq'
+                    : 'stop_initialized_estimated_liq';
+                $recalcEventType = $liqSource === 'real'
+                    ? 'stop_recalculated_real_liq'
+                    : 'stop_recalculated_estimated_liq';
 
                 if (!isset($stopMap[$key])) {
                     // New stop
-                    $stopMap[$key] = $this->buildStop($pos, $stopPrice, $liqPrice, $tickAt, 'stop_initialized');
+                    $stopMap[$key] = $this->buildStop($pos, $stopPrice, $liqPrice, $liqSource, $tickAt, $initEventType);
                     $stopsInitialized++;
                     $this->appendActionLog([
                         'timestamp'      => $tickAt,
-                        'event_type'     => 'stop_initialized',
+                        'event_type'     => $initEventType,
                         'strategy_id'    => $pos['strategy_id']    ?? '',
                         'owner_strategy' => $pos['owner_strategy'] ?? '',
                         'signal_id'      => $pos['signal_id']      ?? '',
@@ -296,18 +332,24 @@ final class StopManagerService
                         'side'           => $side,
                         'entry_price'    => $entryPrice,
                         'liq_price'      => $liqPrice,
+                        'liq_source'     => $liqSource,
                         'stop_price'     => $stopPrice,
                         'execution_mode' => $pos['execution_mode'] ?? 'paper',
-                        'reason'         => 'stop_initialized',
+                        'reason'         => $initEventType,
                     ]);
                 } else {
-                    // Recalculate: check if stop price has changed meaningfully (>0.001%)
-                    $prevStop = $stopMap[$key];
+                    // Recalculate existing stop
+                    $prevStop      = $stopMap[$key];
                     $prevStopPrice = (float)($prevStop['stop_price'] ?? 0.0);
+                    $prevState     = (string)($prevStop['stop_state'] ?? '');
                     $recalcReason  = null;
 
-                    if (abs($stopPrice - $prevStopPrice) > ($entryPrice * 0.00001)) {
-                        $recalcReason = 'stop_recalculated';
+                    // Recalc if price changed meaningfully OR if transitioning out of no_liq
+                    if (
+                        abs($stopPrice - $prevStopPrice) > ($entryPrice * 0.00001)
+                        || $prevState === 'no_liq'
+                    ) {
+                        $recalcReason = $recalcEventType;
                     }
 
                     // Apply breakeven if not yet applied
@@ -324,9 +366,9 @@ final class StopManagerService
                         $lockRoi  = (float)($config['breakeven_profit_lock_roi'] ?? 3.0);
 
                         if ($roi >= $trigger) {
-                            $beStopPrice   = $this->calcBreakevenStop($side, $entryPrice, $leverage, $lockRoi);
-                            $stopPrice     = $beStopPrice;
-                            $recalcReason  = 'breakeven_applied';
+                            $beStopPrice  = $this->calcBreakevenStop($side, $entryPrice, $leverage, $lockRoi);
+                            $stopPrice    = $beStopPrice;
+                            $recalcReason = 'breakeven_applied';
                             $breakevenApplied++;
                             $stopMap[$key]['breakeven_applied'] = true;
 
@@ -339,6 +381,7 @@ final class StopManagerService
                                 'symbol'         => $pos['symbol']         ?? '',
                                 'side'           => $side,
                                 'entry_price'    => $entryPrice,
+                                'liq_source'     => $liqSource,
                                 'current_price'  => $currentPrice,
                                 'roi'            => $roi,
                                 'stop_price'     => $stopPrice,
@@ -352,23 +395,27 @@ final class StopManagerService
                         $stopsRecalculated++;
                         $this->appendActionLog([
                             'timestamp'      => $tickAt,
-                            'event_type'     => 'stop_recalculated',
+                            'event_type'     => $recalcEventType,
                             'strategy_id'    => $pos['strategy_id']    ?? '',
                             'owner_strategy' => $pos['owner_strategy'] ?? '',
                             'signal_id'      => $pos['signal_id']      ?? '',
                             'symbol'         => $pos['symbol']         ?? '',
                             'side'           => $side,
                             'entry_price'    => $entryPrice,
+                            'liq_price'      => $liqPrice,
+                            'liq_source'     => $liqSource,
                             'stop_price'     => $stopPrice,
                             'execution_mode' => $pos['execution_mode'] ?? 'paper',
-                            'reason'         => 'stop_recalculated',
+                            'reason'         => $recalcEventType,
                         ]);
                     }
 
-                    $stopMap[$key]['stop_price']      = $stopPrice;
-                    $stopMap[$key]['liq_price']       = $liqPrice;
-                    $stopMap[$key]['stop_state']      = 'active';
-                    $stopMap[$key]['last_updated_at'] = $tickAt;
+                    $newStopState = $liqSource === 'real' ? 'active' : 'estimated_liq';
+                    $stopMap[$key]['stop_price']        = $stopPrice;
+                    $stopMap[$key]['liq_price']         = $liqPrice;
+                    $stopMap[$key]['liq_source']        = $liqSource;
+                    $stopMap[$key]['stop_state']        = $newStopState;
+                    $stopMap[$key]['last_updated_at']   = $tickAt;
                     if ($recalcReason !== null) {
                         $stopMap[$key]['transition_reason'] = $recalcReason;
                     }
@@ -383,8 +430,8 @@ final class StopManagerService
                 if (($stop['stop_state'] ?? '') === 'stale') {
                     continue;
                 }
-                $stopMap[$key]['stop_state']      = 'stale';
-                $stopMap[$key]['last_updated_at'] = $tickAt;
+                $stopMap[$key]['stop_state']        = 'stale';
+                $stopMap[$key]['last_updated_at']   = $tickAt;
                 $stopMap[$key]['transition_reason'] = 'stop_position_closed_reference';
                 $stopsClosedReference++;
 
@@ -397,6 +444,7 @@ final class StopManagerService
                     'symbol'         => $stop['symbol']         ?? '',
                     'side'           => $stop['side']           ?? '',
                     'entry_price'    => $stop['entry_price']    ?? 0.0,
+                    'liq_source'     => $stop['liq_source']     ?? 'missing',
                     'stop_price'     => $stop['stop_price']     ?? 0.0,
                     'execution_mode' => $stop['execution_mode'] ?? 'paper',
                     'reason'         => 'position_no_longer_active',
@@ -405,13 +453,15 @@ final class StopManagerService
         }
 
         return [
-            'stops'                  => $stopMap,
-            'positions_seen'         => $positionsSeen,
-            'stops_initialized'      => $stopsInitialized,
-            'stops_recalculated'     => $stopsRecalculated,
-            'breakeven_applied'      => $breakevenApplied,
-            'stops_closed_reference' => $stopsClosedReference,
-            'positions_without_liq'  => $positionsWithoutLiq,
+            'stops'                       => $stopMap,
+            'positions_seen'              => $positionsSeen,
+            'positions_with_real_liq'     => $positionsWithRealLiq,
+            'positions_with_estimated_liq'=> $positionsWithEstimatedLiq,
+            'positions_without_liq'       => $positionsWithoutLiq,
+            'stops_initialized'           => $stopsInitialized,
+            'stops_recalculated'          => $stopsRecalculated,
+            'breakeven_applied'           => $breakevenApplied,
+            'stops_closed_reference'      => $stopsClosedReference,
         ];
     }
 
@@ -470,6 +520,29 @@ final class StopManagerService
     }
 
     /**
+     * Classify the liquidation data quality for a position.
+     *
+     * Returns one of:
+     *   ['source' => 'real',      'price' => float]  — exchange-provided liq_price > 0
+     *   ['source' => 'estimated', 'price' => float]  — derived from leverage (isolated-margin fallback)
+     *   ['source' => 'missing',   'price' => null]   — no usable liq data
+     *
+     * Zero, null, or absent liq_price is never treated as real.
+     */
+    private function classifyLiqSource(array $pos): array
+    {
+        $raw = $pos['liq_price'] ?? null;
+        if ($raw !== null && is_numeric($raw) && (float)$raw > 0.0) {
+            return ['source' => 'real', 'price' => (float)$raw];
+        }
+        $estimated = $this->estimateLiqPrice($pos);
+        if ($estimated !== null) {
+            return ['source' => 'estimated', 'price' => $estimated];
+        }
+        return ['source' => 'missing', 'price' => null];
+    }
+
+    /**
      * Estimate liquidation price when it is not provided in the position record.
      * Uses simplified isolated-margin approximation.
      *
@@ -502,9 +575,11 @@ final class StopManagerService
         array $pos,
         float $stopPrice,
         float $liqPrice,
+        string $liqSource,
         string $tickAt,
         string $reason
     ): array {
+        $stopState = $liqSource === 'real' ? 'active' : 'estimated_liq';
         return [
             'owner_strategy'    => (string)($pos['owner_strategy'] ?? ''),
             'strategy_id'       => (string)($pos['strategy_id']    ?? ''),
@@ -513,10 +588,11 @@ final class StopManagerService
             'side'              => (string)($pos['side']           ?? 'long'),
             'entry_price'       => (float)($pos['entry_price']     ?? 0.0),
             'liq_price'         => $liqPrice,
+            'liq_source'        => $liqSource,
             'execution_mode'    => (string)($pos['execution_mode'] ?? 'paper'),
             'stop_mode'         => 'entry_liq_percent',
             'stop_price'        => $stopPrice,
-            'stop_state'        => 'active',
+            'stop_state'        => $stopState,
             'breakeven_applied' => false,
             'last_updated_at'   => $tickAt,
             'created_at'        => $tickAt,
@@ -534,6 +610,7 @@ final class StopManagerService
             'side'              => (string)($pos['side']           ?? 'long'),
             'entry_price'       => (float)($pos['entry_price']     ?? 0.0),
             'liq_price'         => null,
+            'liq_source'        => 'missing',
             'execution_mode'    => (string)($pos['execution_mode'] ?? 'paper'),
             'stop_mode'         => 'entry_liq_percent',
             'stop_price'        => null,
@@ -581,19 +658,21 @@ final class StopManagerService
         $defaults = [
             'storage/stops.json'    => [],
             'storage/last_run.json' => [
-                'status'                  => 'never_run',
-                'tick_at'                 => null,
-                'elapsed_sec'             => 0,
-                'module_enabled'          => false,
-                'module_mode'             => 'disabled',
-                'positions_seen'          => 0,
-                'stops_initialized'       => 0,
-                'stops_recalculated'      => 0,
-                'breakeven_applied'       => 0,
-                'stops_closed_reference'  => 0,
-                'positions_without_liq'   => 0,
-                'stops_active_count'      => 0,
-                'ticks_total'             => 0,
+                'status'                       => 'never_run',
+                'tick_at'                      => null,
+                'elapsed_sec'                  => 0,
+                'module_enabled'               => false,
+                'module_mode'                  => 'disabled',
+                'positions_seen'               => 0,
+                'positions_with_real_liq'      => 0,
+                'positions_with_estimated_liq' => 0,
+                'positions_without_liq'        => 0,
+                'stops_initialized'            => 0,
+                'stops_recalculated'           => 0,
+                'breakeven_applied'            => 0,
+                'stops_closed_reference'       => 0,
+                'stops_active_count'           => 0,
+                'ticks_total'                  => 0,
             ],
             'storage/stats.json' => $this->zeroStats(),
         ];
@@ -629,14 +708,16 @@ final class StopManagerService
     private function zeroStats(): array
     {
         return [
-            'ticks_total'                  => 0,
-            'positions_seen_total'         => 0,
-            'stops_initialized_total'      => 0,
-            'stops_recalculated_total'     => 0,
-            'breakeven_applied_total'      => 0,
-            'stops_closed_reference_total' => 0,
-            'positions_without_liq_total'  => 0,
-            'stops_active_total'           => 0,
+            'ticks_total'                         => 0,
+            'positions_seen_total'                => 0,
+            'positions_with_real_liq_total'       => 0,
+            'positions_with_estimated_liq_total'  => 0,
+            'positions_without_liq_total'         => 0,
+            'stops_initialized_total'             => 0,
+            'stops_recalculated_total'            => 0,
+            'breakeven_applied_total'             => 0,
+            'stops_closed_reference_total'        => 0,
+            'stops_active_total'                  => 0,
         ];
     }
 

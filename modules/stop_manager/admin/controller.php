@@ -97,11 +97,13 @@ HTML;
         $lrStatus    = $e($lastRun['status']     ?? 'never_run');
         $lrTickAt    = $e($lastRun['tick_at']    ?? '—');
         $lrElapsed   = $e($lastRun['elapsed_sec'] ?? 0);
-        $lrPosSeen   = $e($lastRun['positions_seen']         ?? 0);
-        $lrInited    = $e($lastRun['stops_initialized']      ?? 0);
-        $lrRecalc    = $e($lastRun['stops_recalculated']     ?? 0);
-        $lrBe        = $e($lastRun['breakeven_applied']      ?? 0);
-        $lrNoLiq     = $e($lastRun['positions_without_liq']  ?? 0);
+        $lrPosSeen   = $e($lastRun['positions_seen']              ?? 0);
+        $lrRealLiq   = $e($lastRun['positions_with_real_liq']     ?? 0);
+        $lrEstLiq    = $e($lastRun['positions_with_estimated_liq'] ?? 0);
+        $lrInited    = $e($lastRun['stops_initialized']           ?? 0);
+        $lrRecalc    = $e($lastRun['stops_recalculated']          ?? 0);
+        $lrBe        = $e($lastRun['breakeven_applied']           ?? 0);
+        $lrNoLiq     = $e($lastRun['positions_without_liq']       ?? 0);
         $lrActive    = $e($lastRun['stops_active_count']     ?? 0);
         $lrClosed    = $e($lastRun['stops_closed_reference'] ?? 0);
         $lrTicks     = $e($lastRun['ticks_total'] ?? 0);
@@ -163,14 +165,16 @@ HTML;
         // ── cumulative stats ──────────────────────────────────────────────────
         $statsRows = '';
         $statLabels = [
-            'ticks_total'                  => 'Тиков всего',
-            'positions_seen_total'         => 'Позиций просмотрено',
-            'stops_initialized_total'      => 'Стопов инициализировано',
-            'stops_recalculated_total'     => 'Стопов пересчитано',
-            'breakeven_applied_total'      => 'Breakeven применено',
-            'stops_closed_reference_total' => 'Закрыто (reference)',
-            'positions_without_liq_total'  => 'Позиций без liq_price',
-            'stops_active_total'           => 'Активных стопов (сейчас)',
+            'ticks_total'                      => 'Тиков всего',
+            'positions_seen_total'             => 'Позиций просмотрено',
+            'positions_with_real_liq_total'    => 'Позиций с реальным liq',
+            'positions_with_estimated_liq_total' => 'Позиций с расчётным liq',
+            'positions_without_liq_total'      => 'Позиций без liq_price',
+            'stops_initialized_total'          => 'Стопов инициализировано',
+            'stops_recalculated_total'         => 'Стопов пересчитано',
+            'breakeven_applied_total'          => 'Breakeven применено',
+            'stops_closed_reference_total'     => 'Закрыто (reference)',
+            'stops_active_total'               => 'Активных стопов (сейчас)',
         ];
         foreach ($statLabels as $key => $label) {
             $val = $stats[$key] ?? 0;
@@ -245,6 +249,8 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Время тика</td><td><code>{$lrTickAt}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Длительность</td><td><code>{$lrElapsed}s</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций увидено</td><td><code>{$lrPosSeen}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С реальным liq</td><td><code>{$lrRealLiq}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С расчётным liq</td><td><code>{$lrEstLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стопов инициализировано</td><td><code>{$lrInited}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стопов пересчитано</td><td><code>{$lrRecalc}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven применено</td><td><code>{$lrBe}</code></td></tr>

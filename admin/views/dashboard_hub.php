@@ -575,11 +575,13 @@ ROWS;
     $smBeEn        = ($smConfig['breakeven_enabled'] ?? false) ? 'Да' : 'Нет';
     $smBeTrig      = (string)($smConfig['breakeven_trigger_roi']     ?? 10.0);
     $smBeLock      = (string)($smConfig['breakeven_profit_lock_roi'] ?? 3.0);
-    $smLastTick    = (string)($smLastRun['tick_at']                  ?? '—');
-    $smLastStatus  = (string)($smLastRun['status']                   ?? 'never_run');
-    $smPosSeen     = (string)($smLastRun['positions_seen']            ?? 0);
-    $smActiveStops = (string)($smLastRun['stops_active_count']        ?? count($smStops));
-    $smBeApplied   = (string)($smStats['breakeven_applied_total']     ?? 0);
+    $smLastTick    = (string)($smLastRun['tick_at']                      ?? '—');
+    $smLastStatus  = (string)($smLastRun['status']                       ?? 'never_run');
+    $smPosSeen     = (string)($smLastRun['positions_seen']                ?? 0);
+    $smEstLiq      = (string)($smLastRun['positions_with_estimated_liq']  ?? 0);
+    $smNoLiq       = (string)($smLastRun['positions_without_liq']         ?? 0);
+    $smActiveStops = (string)($smLastRun['stops_active_count']            ?? count($smStops));
+    $smBeApplied   = (string)($smStats['breakeven_applied_total']         ?? 0);
     $smStatusColor = $smLastStatus === 'ok' ? '#3fb950' : '#8b949e';
 
     // ── stop_manager config for Control tab (mirrored) ───────────────────
@@ -769,6 +771,8 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Последний тик</td><td><code>{$smLastTick}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус тика</td><td style="color:{$smStatusColor};"><strong>{$smLastStatus}</strong></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций увидено</td><td><code>{$smPosSeen}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С расчётным liq</td><td><code>{$smEstLiq}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Без liq</td><td><code>{$smNoLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных стопов</td><td><code>{$smActiveStops}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven применено</td><td><code>{$smBeApplied}</code></td></tr>
         </table>

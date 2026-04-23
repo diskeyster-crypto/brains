@@ -19,12 +19,26 @@ declare(strict_types=1);
  *
  * Bot queue lifecycle states:
  *   queued    — signal ingested, awaiting validation
- *   ready     — validated, bot-owned, ready for future execution
+ *   ready     — validated, bot-owned, ready for execution
+ *   submitted — promoted to active_orders (terminal for the queue)
  *   expired   — signal TTL elapsed before execution
  *   withdrawn — signal disappeared from handoff before TTL
  *
- * Future states (not implemented here):
- *   submitted, active_order, active_position, rejected
+ * Bot execution modes:
+ *   disabled  — ingest and manage queue/runtime; do not execute queue items
+ *   passive   — alias for disabled (legacy); same behaviour
+ *   smoke     — simulate execution locally in storage/state; no real exchange calls
+ *
+ * Order lifecycle states (smoke mode):
+ *   created          — order record built from ready queue item
+ *   submitted_smoke  — smoke-submitted (deterministic, no real exchange)
+ *   filled_smoke     — smoke-filled; originating position is created
+ *   cancelled        — order cancelled before fill
+ *   expired          — order TTL elapsed before fill
+ *
+ * Position lifecycle states:
+ *   open   — active (smoke) position
+ *   closed — position closed
  */
 
 namespace Modules\Bot;
@@ -210,7 +224,14 @@ final class BotService
         $result     = $this->processHandoff($allSignals, $orderQueue, $config, $overrides, $tickAt);
         $orderQueue = $result['order_queue'];
 
-        // ── 5. Update stats ───────────────────────────────────────────────────
+        // ── 5. Execution state machine (smoke mode only) ──────────────────────
+        $botMode  = (string)($config['mode'] ?? 'passive');
+        $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $botMode, $tickAt);
+        $orderQueue      = $execResult['order_queue'];
+        $activeOrders    = $execResult['active_orders'];
+        $activePositions = $execResult['active_positions'];
+
+        // ── 6. Update stats ───────────────────────────────────────────────────
         $stats['ticks_total']               += 1;
         // Discovery counters are current-state snapshots, not cumulative
         $stats['strategies_discovered_total'] = count($registry);
@@ -224,12 +245,19 @@ final class BotService
         $stats['order_queue_refreshed_total'] += $result['refreshed_total'];
         $stats['order_queue_expired_total']   += $result['expired_total'];
         $stats['order_queue_withdrawn_total'] += $result['withdrawn_total'];
+        // Execution counters are cumulative
+        $stats['orders_created_total']              += $execResult['orders_created'];
+        $stats['orders_submitted_smoke_total']       += $execResult['orders_submitted_smoke'];
+        $stats['orders_filled_smoke_total']          += $execResult['orders_filled_smoke'];
+        $stats['positions_opened_total']             += $execResult['positions_opened'];
+        $stats['positions_closed_total']             += $execResult['positions_closed'];
+        $stats['queue_items_skipped_bot_disabled_total'] += $execResult['queue_items_skipped_disabled'];
         // Derived counts
         $stats['order_queue_total']      = $this->countByStatus($orderQueue, ['queued', 'ready']);
         $stats['active_orders_total']    = count($activeOrders);
         $stats['active_positions_total'] = count($activePositions);
 
-        // ── 6. Persist ────────────────────────────────────────────────────────
+        // ── 7. Persist ────────────────────────────────────────────────────────
         $this->writeJson('storage/order_queue.json',      $orderQueue);
         $this->writeJson('storage/active_orders.json',    $activeOrders);
         $this->writeJson('storage/active_positions.json', $activePositions);
@@ -242,7 +270,7 @@ final class BotService
             'tick_at'     => $tickAt,
             'elapsed_sec' => $elapsed,
             'bot_enabled' => true,
-            'bot_mode'    => $config['mode'] ?? 'passive',
+            'bot_mode'    => $botMode,
 
             // Discovery
             'strategies_discovered_total' => count($registry),
@@ -262,7 +290,16 @@ final class BotService
             'order_queue_expired_total'   => $result['expired_total'],
             'order_queue_withdrawn_total' => $result['withdrawn_total'],
 
-            // Current queue state
+            // Execution this tick
+            'execution_mode'                   => $botMode,
+            'orders_created'                   => $execResult['orders_created'],
+            'orders_submitted_smoke'           => $execResult['orders_submitted_smoke'],
+            'orders_filled_smoke'              => $execResult['orders_filled_smoke'],
+            'positions_opened'                 => $execResult['positions_opened'],
+            'positions_closed'                 => $execResult['positions_closed'],
+            'queue_items_skipped_bot_disabled' => $execResult['queue_items_skipped_disabled'],
+
+            // Current queue/execution state
             'order_queue_total'      => $stats['order_queue_total'],
             'active_orders_count'    => count($activeOrders),
             'active_positions_count' => count($activePositions),
@@ -572,8 +609,245 @@ final class BotService
         ];
     }
 
+    // =========================================================================
+    // Execution state machine
+    // =========================================================================
+
     /**
-     * Build a bot-owned queue item from a strategy handoff signal.
+     * Process execution for the current tick.
+     *
+     * Modes:
+     *   disabled / passive → skip execution; count skipped ready items.
+     *   smoke              → deterministic local execution in storage/state;
+     *                        no real exchange calls.
+     *
+     * Smoke tick flow (all in one pass):
+     *   queue ready  → create order (created)
+     *                → submit order (submitted_smoke)
+     *                → fill order   (filled_smoke)
+     *                → open position (open)
+     *
+     * @return array{
+     *   order_queue: array,
+     *   active_orders: array,
+     *   active_positions: array,
+     *   orders_created: int,
+     *   orders_submitted_smoke: int,
+     *   orders_filled_smoke: int,
+     *   positions_opened: int,
+     *   positions_closed: int,
+     *   queue_items_skipped_disabled: int,
+     * }
+     */
+    private function processExecution(
+        array $orderQueue,
+        array $activeOrders,
+        array $activePositions,
+        string $mode,
+        string $tickAt
+    ): array {
+        $ordersCreated         = 0;
+        $ordersSubmittedSmoke  = 0;
+        $ordersFilledSmoke     = 0;
+        $positionsOpened       = 0;
+        $positionsClosed       = 0;
+        $queueSkippedDisabled  = 0;
+
+        $isSmokeMode = ($mode === 'smoke');
+
+        // Build order lookup by composite key {strategy_id}:{signal_id}
+        $orderMap = [];
+        foreach ($activeOrders as $order) {
+            $k = $this->executionKey($order);
+            if ($k !== '') {
+                $orderMap[$k] = $order;
+            }
+        }
+
+        // Build position lookup by composite key
+        $positionMap = [];
+        foreach ($activePositions as $pos) {
+            $k = $this->executionKey($pos);
+            if ($k !== '') {
+                $positionMap[$k] = $pos;
+            }
+        }
+
+        // ── Step 1: promote ready queue items ────────────────────────────────
+        foreach ($orderQueue as &$qItem) {
+            $qStatus = (string)($qItem['queue_status'] ?? '');
+            if ($qStatus !== 'ready') {
+                continue;
+            }
+
+            $key = $this->executionKey($qItem);
+            if ($key === '') {
+                continue;
+            }
+
+            if (!$isSmokeMode) {
+                // Execution is disabled: count but leave queue item as-is
+                $queueSkippedDisabled++;
+                $qItem['skip_reason'] = 'ignored_bot_disabled';
+                continue;
+            }
+
+            // Already has an order record from a previous tick
+            if (isset($orderMap[$key])) {
+                continue;
+            }
+
+            // Create order record
+            $order = $this->buildOrderFromQueueItem($qItem, $tickAt);
+            $orderMap[$key] = $order;
+
+            // Mark queue item as submitted (terminal)
+            $qItem['queue_status']       = 'submitted';
+            $qItem['submitted_at']       = $tickAt;
+            $qItem['last_change_reason'] = 'submitted_to_execution';
+
+            $ordersCreated++;
+        }
+        unset($qItem);
+
+        // ── Step 2: smoke submit + fill in one pass ───────────────────────────
+        if ($isSmokeMode) {
+            foreach ($orderMap as $key => &$order) {
+                $oStatus = (string)($order['order_status'] ?? '');
+
+                if ($oStatus === 'created') {
+                    $order['order_status']      = 'submitted_smoke';
+                    $order['submitted_at']      = $tickAt;
+                    $order['last_updated_at']   = $tickAt;
+                    $order['transition_reason'] = 'submitted_in_smoke_mode';
+                    $oStatus = 'submitted_smoke';
+                    $ordersSubmittedSmoke++;
+                }
+
+                if ($oStatus === 'submitted_smoke') {
+                    $order['order_status']      = 'filled_smoke';
+                    $order['filled_at']         = $tickAt;
+                    $order['last_updated_at']   = $tickAt;
+                    $order['transition_reason'] = 'filled_in_smoke_mode';
+                    $ordersFilledSmoke++;
+
+                    // Open position if not already present
+                    if (!isset($positionMap[$key])) {
+                        $position = $this->buildPositionFromOrder($order, $tickAt);
+                        $positionMap[$key] = $position;
+                        $positionsOpened++;
+                    }
+                }
+            }
+            unset($order);
+        }
+
+        return [
+            'order_queue'                  => array_values($orderQueue),
+            'active_orders'                => array_values($orderMap),
+            'active_positions'             => array_values($positionMap),
+            'orders_created'               => $ordersCreated,
+            'orders_submitted_smoke'       => $ordersSubmittedSmoke,
+            'orders_filled_smoke'          => $ordersFilledSmoke,
+            'positions_opened'             => $positionsOpened,
+            'positions_closed'             => $positionsClosed,
+            'queue_items_skipped_disabled' => $queueSkippedDisabled,
+        ];
+    }
+
+    /**
+     * Build a bot-owned active order record from a ready queue item.
+     */
+    private function buildOrderFromQueueItem(array $qItem, string $tickAt): array
+    {
+        return [
+            // Ownership — carried forward unchanged from queue item
+            'owner_strategy' => (string)($qItem['owner_strategy'] ?? ''),
+            'strategy_id'    => (string)($qItem['strategy_id']    ?? ''),
+            'signal_id'      => (string)($qItem['signal_id']      ?? ''),
+
+            // Signal geometry
+            'symbol'      => (string)($qItem['symbol']      ?? ''),
+            'side'        => (string)($qItem['side']        ?? 'long'),
+            'timeframe'   => (string)($qItem['timeframe']   ?? 'H4'),
+            'entry_mode'  => (string)($qItem['entry_mode']  ?? 'limit'),
+            'entry_type'  => (string)($qItem['entry_type']  ?? 'breakout'),
+            'entry_price' => (float)($qItem['entry_price']  ?? 0.0),
+
+            // Execution parameters
+            'bot_budget'                    => (float)($qItem['bot_budget']                    ?? 0.0),
+            'bot_leverage'                  => (int)($qItem['bot_leverage']                    ?? 1),
+            'stop_mode'                     => (string)($qItem['stop_mode']                    ?? 'fixed_from_liq_zone'),
+            'stop_from_liq_buffer_value'    => (float)($qItem['stop_from_liq_buffer_value']   ?? 0.002),
+            'stop_from_liq_buffer_type'     => (string)($qItem['stop_from_liq_buffer_type']   ?? 'percent'),
+            'tp_enabled'                    => (bool)($qItem['tp_enabled']                    ?? false),
+            'tp_mode'                       => (string)($qItem['tp_mode']                     ?? 'fixed_r'),
+            'tp_value'                      => (float)($qItem['tp_value']                     ?? 2.0),
+            'reverse_pattern_close_enabled' => (bool)($qItem['reverse_pattern_close_enabled'] ?? false),
+
+            // Order lifecycle
+            'order_status'      => 'created',
+            'execution_mode'    => 'smoke',
+            'transition_reason' => 'created_from_ready_queue',
+            'created_at'        => $tickAt,
+            'last_updated_at'   => $tickAt,
+        ];
+    }
+
+    /**
+     * Build a bot-owned active position record from a filled smoke order.
+     */
+    private function buildPositionFromOrder(array $order, string $tickAt): array
+    {
+        return [
+            // Ownership — carried forward unchanged
+            'owner_strategy' => (string)($order['owner_strategy'] ?? ''),
+            'strategy_id'    => (string)($order['strategy_id']    ?? ''),
+            'signal_id'      => (string)($order['signal_id']      ?? ''),
+
+            // Signal geometry
+            'symbol'      => (string)($order['symbol']      ?? ''),
+            'side'        => (string)($order['side']        ?? 'long'),
+            'timeframe'   => (string)($order['timeframe']   ?? 'H4'),
+            'entry_mode'  => (string)($order['entry_mode']  ?? 'limit'),
+            'entry_type'  => (string)($order['entry_type']  ?? 'breakout'),
+            'entry_price' => (float)($order['entry_price']  ?? 0.0),
+
+            // Execution parameters
+            'bot_budget'                    => (float)($order['bot_budget']                    ?? 0.0),
+            'bot_leverage'                  => (int)($order['bot_leverage']                    ?? 1),
+            'stop_mode'                     => (string)($order['stop_mode']                    ?? 'fixed_from_liq_zone'),
+            'stop_from_liq_buffer_value'    => (float)($order['stop_from_liq_buffer_value']   ?? 0.002),
+            'stop_from_liq_buffer_type'     => (string)($order['stop_from_liq_buffer_type']   ?? 'percent'),
+            'tp_enabled'                    => (bool)($order['tp_enabled']                    ?? false),
+            'tp_mode'                       => (string)($order['tp_mode']                     ?? 'fixed_r'),
+            'tp_value'                      => (float)($order['tp_value']                     ?? 2.0),
+            'reverse_pattern_close_enabled' => (bool)($order['reverse_pattern_close_enabled'] ?? false),
+
+            // Position lifecycle
+            'position_status'   => 'open',
+            'execution_mode'    => 'smoke',
+            'transition_reason' => 'filled_in_smoke_mode',
+            'opened_at'         => $tickAt,
+            'last_updated_at'   => $tickAt,
+        ];
+    }
+
+    /**
+     * Build a composite execution key: strategy_id:signal_id
+     * Used for deduplication across active_orders and active_positions.
+     */
+    private function executionKey(array $item): string
+    {
+        $signalId = (string)($item['signal_id'] ?? '');
+        if ($signalId === '') {
+            return '';
+        }
+        $stratId = (string)($item['strategy_id'] ?? $item['owner_strategy'] ?? 'unknown');
+        return $stratId . ':' . $signalId;
+    }
+
+    /**
      *
      * Operator overrides (per-strategy) are applied here:
      *   - bot_budget   (> 0 overrides signal value)
@@ -672,6 +946,13 @@ final class BotService
                 'order_queue_refreshed_total'              => 0,
                 'order_queue_expired_total'                => 0,
                 'order_queue_withdrawn_total'              => 0,
+                'execution_mode'                           => 'passive',
+                'orders_created'                           => 0,
+                'orders_submitted_smoke'                   => 0,
+                'orders_filled_smoke'                      => 0,
+                'positions_opened'                         => 0,
+                'positions_closed'                         => 0,
+                'queue_items_skipped_bot_disabled'         => 0,
                 'order_queue_total'                        => 0,
                 'active_orders_count'                      => 0,
                 'active_positions_count'                   => 0,
@@ -736,6 +1017,13 @@ final class BotService
             'order_queue_refreshed_total' => 0,
             'order_queue_expired_total'   => 0,
             'order_queue_withdrawn_total' => 0,
+            // Execution (cumulative)
+            'orders_created_total'                   => 0,
+            'orders_submitted_smoke_total'           => 0,
+            'orders_filled_smoke_total'              => 0,
+            'positions_opened_total'                 => 0,
+            'positions_closed_total'                 => 0,
+            'queue_items_skipped_bot_disabled_total' => 0,
             // Live counts
             'active_orders_total'         => 0,
             'active_positions_total'      => 0,

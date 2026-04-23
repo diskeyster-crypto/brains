@@ -17,7 +17,7 @@ return [
     // Core identity
     'bot_id'  => 'bot',
     'enabled' => false,
-    'mode'    => 'passive',   // active | passive | disabled
+    'mode'    => 'passive',   // smoke | passive | disabled  (passive = ingest only; smoke = local state execution)
 
     // Strategy autodiscovery
     // Bot scans these repo-relative directories for strategy modules.

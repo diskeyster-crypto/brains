@@ -13,6 +13,6 @@ return [
     'tick' => [
         'interval'    => 60,
         'enabled'     => true,
-        'description' => 'Ingest double_bottom_long handoff queue, refresh bot order queue lifecycle state.',
+        'description' => 'Discover strategy modules, apply operator overrides, ingest enabled handoff queues, refresh bot order queue lifecycle state.',
     ],
 ];

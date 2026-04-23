@@ -1,6 +1,11 @@
 {
     "ticks_total": 0,
+    "strategies_discovered_total": 0,
+    "strategies_enabled_total": 0,
+    "strategies_disabled_total": 0,
+    "handoff_sources_active_total": 0,
     "handoff_signals_seen_total": 0,
+    "handoff_signals_ignored_disabled_strategy_total": 0,
     "order_queue_total": 0,
     "order_queue_new_total": 0,
     "order_queue_refreshed_total": 0,

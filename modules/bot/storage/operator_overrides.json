@@ -1,0 +1,12 @@
+{
+    "double_bottom_long": {
+        "enabled": true,
+        "mode": "passive",
+        "bot_budget": 0,
+        "bot_leverage": 0,
+        "entry_mode": null,
+        "stop_preset": null,
+        "exit_preset": null,
+        "max_active_positions": 0
+    }
+}

@@ -14,9 +14,9 @@ return [
     'enabled' => 'bool',
     'mode'    => 'string',
 
-    // Handoff source
-    'handoff_source_strategy' => 'string',
-    'handoff_source_path'     => 'string',
+    // Strategy autodiscovery
+    'strategy_scan_roots' => 'array',
+    'strategy_scan_depth' => 'int',
 
     // Entry mode filter
     'allowed_entry_modes' => 'array',

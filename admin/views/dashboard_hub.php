@@ -89,6 +89,7 @@ function renderDashboardHub(): string
     $botEnabled = ($lastRun['bot_enabled'] ?? false) ? 'Включён' : 'Выключен';
     $botMode    = (string)($lastRun['bot_mode']   ?? 'passive');
     $sigProc    = (int)($lastRun['handoff_signals_processed'] ?? 0);
+    $handoffTotal = (int)($lastRun['handoff_signals_seen_total'] ?? $lastRun['handoff_sources_active_total'] ?? 0);
 
     // ── escape helper ─────────────────────────────────────────────────────
     $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -108,9 +109,10 @@ function renderDashboardHub(): string
 
             $op         = (array)($overrides[$stratId] ?? []);
             $opEnabled  = $op['enabled']               ?? true;
+            $opMode     = (string)($op['mode']         ?? 'passive');
             $opBudget   = $op['bot_budget']             ?? 0;
             $opLev      = $op['bot_leverage']           ?? 0;
-            $opMode     = (string)($op['entry_mode']   ?? '');
+            $opEntryMode= (string)($op['entry_mode']   ?? '');
             $opMax      = $op['max_active_positions']   ?? 0;
 
             $enabledBadge = $opEnabled
@@ -125,6 +127,7 @@ function renderDashboardHub(): string
             $dataBudget  = (float)$opBudget;
             $dataLev     = (int)$opLev;
             $dataMode    = $e($opMode);
+            $dataEntryMode = $e($opEntryMode);
             $dataMax     = (int)$opMax;
             $esStratId   = $e($stratId);
             $esTitle     = $e($title);
@@ -137,14 +140,15 @@ function renderDashboardHub(): string
     <td>{$handoff}</td>
     <td>{$enabledBadge}</td>
     <td style="font-size:12px;">
+        Режим: <code>{$dataMode}</code> &nbsp;
         Бюджет: <code>{$dataBudget}</code> &nbsp;
         Плечо: <code>{$dataLev}</code> &nbsp;
-        Вход: <code>{$dataMode}</code> &nbsp;
+        Вход: <code>{$dataEntryMode}</code> &nbsp;
         Макс.поз: <code>{$dataMax}</code>
     </td>
     <td>
         <button class="btn btn-sm btn-primary"
-            onclick="dhOpenEdit({$dataEnabled},'{$esStratId}','{$esTitle}',{$dataBudget},{$dataLev},'{$dataMode}',{$dataMax})">
+            onclick="dhOpenEdit({$dataEnabled},'{$esStratId}','{$esTitle}','{$dataMode}',{$dataBudget},{$dataLev},'{$dataEntryMode}',{$dataMax})">
             Изменить
         </button>
     </td>
@@ -154,12 +158,19 @@ HTML;
     }
 
     // ── Control tab: bot config display ───────────────────────────────────
-    $cfgEnabled     = ($botConfig['enabled'] ?? false) ? 'Да' : 'Нет';
+    $cfgEnabled     = ($botConfig['enabled'] ?? false) ? '1' : '0';
     $cfgMode        = $e($botConfig['mode']              ?? 'passive');
+    $cfgMaxBudget   = (float)($botConfig['max_bot_budget']   ?? 0.0);
+    $cfgMaxLeverage = (int)($botConfig['max_bot_leverage']   ?? 0);
+    $cfgDefEntry    = $e($botConfig['default_entry_mode']    ?? '');
+    $cfgDefMaxPos   = (int)($botConfig['default_max_active_positions'] ?? 0);
     $cfgEntryModes  = implode(', ', (array)($botConfig['allowed_entry_modes'] ?? []));
     $cfgMaxAgeSec   = (int)($botConfig['max_signal_age_sec'] ?? 0);
-    $cfgDedupWindow = (int)($botConfig['dedup_window_sec']   ?? 0);
+    $cfgDedupWindow = (int)($botConfig['queue_dedup_ttl_sec'] ?? 0);
     $cfgScanRoots   = implode(', ', (array)($botConfig['strategy_scan_roots'] ?? []));
+    $cfgEnabledLabel = $cfgEnabled === '1' ? 'Да' : 'Нет';
+
+    $globalSaveUrl = System::web('admin/dashboard/global/save');
 
     $overridesTable = '';
     if (empty($overrides)) {
@@ -244,6 +255,10 @@ HTML;
     <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
         <div style="font-size:22px;font-weight:700;color:#6b7280;">{$disabledStrat}</div>
         <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Выключено</div>
+    </div>
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#06b6d4;">{$sigProc}</div>
+        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Сигналов</div>
     </div>
     <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
         <div style="font-size:22px;font-weight:700;color:#f59e0b;">{$queueSize}</div>
@@ -344,20 +359,57 @@ HTML;
     <!-- ── Control tab ───────────────────────────────────────────────── -->
     <div class="tab-pane fade" id="dh-ctrl" role="tabpanel">
         <div class="card mb-3">
-            <div class="card-header">Глобальная конфигурация бота</div>
+            <div class="card-header">Глобальные настройки бота</div>
             <div class="card-body">
-                <table class="table table-sm mb-0">
-                    <tr><th style="width:240px;">Включён (base/active)</th><td><code>{$cfgEnabled}</code></td></tr>
-                    <tr><th>Режим (mode)</th><td><code>{$cfgMode}</code></td></tr>
-                    <tr><th>Допустимые режимы входа</th><td><code>{$e($cfgEntryModes)}</code></td></tr>
-                    <tr><th>Макс. возраст сигнала (сек)</th><td><code>{$cfgMaxAgeSec}</code></td></tr>
-                    <tr><th>Окно дедупликации (сек)</th><td><code>{$cfgDedupWindow}</code></td></tr>
-                    <tr><th>Корни сканирования стратегий</th><td><code>{$e($cfgScanRoots)}</code></td></tr>
+                <form method="post" action="{$globalSaveUrl}">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label" style="font-size:13px;">Бот включён</label>
+                            <select name="enabled" class="form-select form-select-sm">
+                                <option value="1" <?= $cfgEnabled === '1' ? 'selected' : '' ?>>Да</option>
+                                <option value="0" <?= $cfgEnabled === '0' ? 'selected' : '' ?>>Нет</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" style="font-size:13px;">Режим бота</label>
+                            <select name="mode" class="form-select form-select-sm">
+                                <option value="passive"  <?= $cfgMode === 'passive'  ? 'selected' : '' ?>>passive</option>
+                                <option value="active"   <?= $cfgMode === 'active'   ? 'selected' : '' ?>>active</option>
+                                <option value="disabled" <?= $cfgMode === 'disabled' ? 'selected' : '' ?>>disabled</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" style="font-size:13px;">Режим входа по умолчанию</label>
+                            <select name="default_entry_mode" class="form-select form-select-sm">
+                                <option value=""       <?= $cfgDefEntry === '' ? 'selected' : '' ?>>— из сигнала —</option>
+                                <option value="limit"  <?= $cfgDefEntry === 'limit'  ? 'selected' : '' ?>>limit</option>
+                                <option value="market" <?= $cfgDefEntry === 'market' ? 'selected' : '' ?>>market</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label" style="font-size:13px;">Бюджет глобальный (0=из стратегии)</label>
+                            <input type="number" step="0.01" min="0" name="max_bot_budget" value="{$cfgMaxBudget}" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" style="font-size:13px;">Плечо глобальное (0=из стратегии)</label>
+                            <input type="number" step="1" min="0" name="max_bot_leverage" value="{$cfgMaxLeverage}" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" style="font-size:13px;">Макс. позиций по умолчанию (0=∞)</label>
+                            <input type="number" step="1" min="0" name="default_max_active_positions" value="{$cfgDefMaxPos}" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+                </form>
+                <hr style="border-color:#334155;margin:14px 0;">
+                <table class="table table-sm mb-0" style="font-size:12px;">
+                    <tr><th style="width:260px;color:#94a3b8;">Допустимые режимы входа</th><td><code>{$e($cfgEntryModes)}</code></td></tr>
+                    <tr><th style="color:#94a3b8;">Макс. возраст сигнала (сек)</th><td><code>{$cfgMaxAgeSec}</code></td></tr>
+                    <tr><th style="color:#94a3b8;">Окно дедупликации (сек)</th><td><code>{$cfgDedupWindow}</code></td></tr>
+                    <tr><th style="color:#94a3b8;">Корни сканирования стратегий</th><td><code>{$e($cfgScanRoots)}</code></td></tr>
                 </table>
-                <p style="font-size:12px;color:#64748b;margin-top:10px;">
-                    Глобальные параметры изменяются через <code>modules/bot/config/active.php</code>.
-                    Детальные настройки — в старом интерфейсе Brain или напрямую в файлах конфигурации.
-                </p>
             </div>
         </div>
 
@@ -389,6 +441,17 @@ HTML;
                     </select>
                 </div>
                 <div class="col-6">
+                    <label class="form-label" style="font-size:13px;">Режим стратегии</label>
+                    <select name="mode" id="dhEditMode" class="form-select form-select-sm">
+                        <option value="passive">passive</option>
+                        <option value="active">active</option>
+                        <option value="disabled">disabled</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row g-2 mb-2">
+                <div class="col-6">
                     <label class="form-label" style="font-size:13px;">Режим входа</label>
                     <select name="entry_mode" id="dhEditEntryMode" class="form-select form-select-sm">
                         <option value="">— из сигнала —</option>
@@ -396,20 +459,20 @@ HTML;
                         <option value="market">market</option>
                     </select>
                 </div>
+                <div class="col-6">
+                    <label class="form-label" style="font-size:13px;">Макс. позиций (0=∞)</label>
+                    <input type="number" step="1" min="0" name="max_active_positions" id="dhEditMaxPos" class="form-control form-control-sm">
+                </div>
             </div>
 
             <div class="row g-2 mb-3">
-                <div class="col-4">
+                <div class="col-6">
                     <label class="form-label" style="font-size:13px;">Бюджет (0=из сигнала)</label>
                     <input type="number" step="0.01" min="0" name="bot_budget" id="dhEditBudget" class="form-control form-control-sm">
                 </div>
-                <div class="col-4">
+                <div class="col-6">
                     <label class="form-label" style="font-size:13px;">Плечо (0=из сигнала)</label>
                     <input type="number" step="1" min="0" name="bot_leverage" id="dhEditLeverage" class="form-control form-control-sm">
-                </div>
-                <div class="col-4">
-                    <label class="form-label" style="font-size:13px;">Макс. позиций (0=∞)</label>
-                    <input type="number" step="1" min="0" name="max_active_positions" id="dhEditMaxPos" class="form-control form-control-sm">
                 </div>
             </div>
 
@@ -422,10 +485,11 @@ HTML;
 </div>
 
 <script>
-function dhOpenEdit(enabled, stratId, title, budget, leverage, entryMode, maxPos) {
+function dhOpenEdit(enabled, stratId, title, mode, budget, leverage, entryMode, maxPos) {
     document.getElementById('dhEditTitle').textContent = 'Стратегия: ' + title;
     document.getElementById('dhEditStratId').value  = stratId;
     document.getElementById('dhEditEnabled').value  = enabled ? '1' : '0';
+    document.getElementById('dhEditMode').value     = mode || 'passive';
     document.getElementById('dhEditBudget').value   = budget;
     document.getElementById('dhEditLeverage').value = leverage;
     document.getElementById('dhEditEntryMode').value = entryMode || '';
@@ -474,6 +538,7 @@ function handleDashboardOverridesSave(): void
     }
 
     $enabled   = (int)($_POST['enabled']               ?? 1);
+    $mode      = trim((string)($_POST['mode']           ?? 'passive'));
     $budget    = (float)($_POST['bot_budget']           ?? 0.0);
     $leverage  = (int)($_POST['bot_leverage']           ?? 0);
     $entryMode = trim((string)($_POST['entry_mode']     ?? ''));
@@ -482,11 +547,14 @@ function handleDashboardOverridesSave(): void
     if (!in_array($entryMode, ['limit', 'market'], true)) {
         $entryMode = null;
     }
+    if (!in_array($mode, ['passive', 'active', 'disabled'], true)) {
+        $mode = 'passive';
+    }
 
     $prev = (array)($overrides[$stratId] ?? []);
     $overrides[$stratId] = array_merge($prev, [
         'enabled'              => (bool)$enabled,
-        'mode'                 => $prev['mode']         ?? 'passive',
+        'mode'                 => $mode,
         'bot_budget'           => $budget,
         'bot_leverage'         => $leverage,
         'entry_mode'           => $entryMode,
@@ -506,3 +574,64 @@ function handleDashboardOverridesSave(): void
 }
 
 } // end if (!function_exists('renderDashboardHub'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: save global bot config
+// Registered as: POST /admin/dashboard/global/save
+// Writes operator-controlled keys to modules/bot/config/active.php
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardGlobalSave')) {
+function handleDashboardGlobalSave(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $root       = System::path('root');
+    $activeFile = $root . '/modules/bot/config/active.php';
+
+    // Read current active overrides so we don't clobber keys we don't manage
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    $enabled   = (int)($_POST['enabled']    ?? 0);
+    $mode      = trim((string)($_POST['mode'] ?? 'passive'));
+    $defEntry  = trim((string)($_POST['default_entry_mode']          ?? ''));
+    $budget    = (float)($_POST['max_bot_budget']                    ?? 0.0);
+    $leverage  = (int)($_POST['max_bot_leverage']                    ?? 0);
+    $defMaxPos = (int)($_POST['default_max_active_positions']        ?? 0);
+
+    if (!in_array($mode, ['passive', 'active', 'disabled'], true)) {
+        $mode = 'passive';
+    }
+    if (!in_array($defEntry, ['limit', 'market'], true)) {
+        $defEntry = '';
+    }
+
+    $current['enabled']                       = (bool)$enabled;
+    $current['mode']                          = $mode;
+    $current['max_bot_budget']                = $budget;
+    $current['max_bot_leverage']              = $leverage;
+    $current['default_entry_mode']            = $defEntry !== '' ? $defEntry : null;
+    $current['default_max_active_positions']  = $defMaxPos;
+
+    // Serialise as PHP array file
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    if (!is_dir(dirname($activeFile))) {
+        mkdir(dirname($activeFile), 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Глобальные настройки бота сохранены'];
+    header('Location: ' . System::web('admin/dashboard') . '#dh-ctrl');
+    exit;
+}
+} // end if (!function_exists('handleDashboardGlobalSave'))

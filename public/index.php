@@ -289,6 +289,14 @@ Router::post('/admin/dashboard/overrides/save', function () {
     handleDashboardOverridesSave();
 });
 
+Router::post('/admin/dashboard/global/save', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardGlobalSave();
+});
+
 Router::get('/admin/modules', function () {
     echo renderLayout('Модули', renderModules(), 'modules');
 });

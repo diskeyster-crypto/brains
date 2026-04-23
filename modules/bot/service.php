@@ -26,8 +26,9 @@ declare(strict_types=1);
  *
  * Bot execution modes:
  *   disabled  — ingest and manage queue/runtime; do not execute queue items
- *   passive   — alias for disabled (legacy); same behaviour
+ *   passive   — ingest/queue/runtime only; no execution promotion
  *   smoke     — simulate execution locally in storage/state; no real exchange calls
+ *   active    — at this stage maps to smoke (live exchange not yet implemented)
  *
  * Order lifecycle states (smoke mode):
  *   created          — order record built from ready queue item
@@ -246,12 +247,13 @@ final class BotService
         $stats['order_queue_expired_total']   += $result['expired_total'];
         $stats['order_queue_withdrawn_total'] += $result['withdrawn_total'];
         // Execution counters are cumulative
-        $stats['orders_created_total']              += $execResult['orders_created'];
-        $stats['orders_submitted_smoke_total']       += $execResult['orders_submitted_smoke'];
-        $stats['orders_filled_smoke_total']          += $execResult['orders_filled_smoke'];
-        $stats['positions_opened_total']             += $execResult['positions_opened'];
-        $stats['positions_closed_total']             += $execResult['positions_closed'];
-        $stats['queue_items_skipped_bot_disabled_total'] += $execResult['queue_items_skipped_disabled'];
+        $stats['orders_created_total']                   += $execResult['orders_created'];
+        $stats['orders_submitted_smoke_total']           += $execResult['orders_submitted_smoke'];
+        $stats['orders_filled_smoke_total']              += $execResult['orders_filled_smoke'];
+        $stats['positions_opened_total']                 += $execResult['positions_opened'];
+        $stats['positions_closed_total']                 += $execResult['positions_closed'];
+        $stats['queue_items_skipped_mode_disabled_total'] += $execResult['queue_items_skipped_mode_disabled'];
+        $stats['queue_items_skipped_mode_passive_total']  += $execResult['queue_items_skipped_mode_passive'];
         // Derived counts
         $stats['order_queue_total']      = $this->countByStatus($orderQueue, ['queued', 'ready']);
         $stats['active_orders_total']    = count($activeOrders);
@@ -291,13 +293,14 @@ final class BotService
             'order_queue_withdrawn_total' => $result['withdrawn_total'],
 
             // Execution this tick
-            'execution_mode'                   => $botMode,
-            'orders_created'                   => $execResult['orders_created'],
-            'orders_submitted_smoke'           => $execResult['orders_submitted_smoke'],
-            'orders_filled_smoke'              => $execResult['orders_filled_smoke'],
-            'positions_opened'                 => $execResult['positions_opened'],
-            'positions_closed'                 => $execResult['positions_closed'],
-            'queue_items_skipped_bot_disabled' => $execResult['queue_items_skipped_disabled'],
+            'execution_mode'                    => $botMode,
+            'orders_created'                    => $execResult['orders_created'],
+            'orders_submitted_smoke'            => $execResult['orders_submitted_smoke'],
+            'orders_filled_smoke'               => $execResult['orders_filled_smoke'],
+            'positions_opened'                  => $execResult['positions_opened'],
+            'positions_closed'                  => $execResult['positions_closed'],
+            'queue_items_skipped_mode_disabled' => $execResult['queue_items_skipped_mode_disabled'],
+            'queue_items_skipped_mode_passive'  => $execResult['queue_items_skipped_mode_passive'],
 
             // Current queue/execution state
             'order_queue_total'      => $stats['order_queue_total'],
@@ -617,9 +620,10 @@ final class BotService
      * Process execution for the current tick.
      *
      * Modes:
-     *   disabled / passive → skip execution; count skipped ready items.
-     *   smoke              → deterministic local execution in storage/state;
-     *                        no real exchange calls.
+     *   disabled → skip execution; count skipped ready items as mode_disabled.
+     *   passive  → skip execution; count skipped ready items as mode_passive.
+     *   smoke    → deterministic local execution in storage/state; no real exchange.
+     *   active   → maps to smoke at this stage (live exchange not yet implemented).
      *
      * Smoke tick flow (all in one pass):
      *   queue ready  → create order (created)
@@ -636,7 +640,8 @@ final class BotService
      *   orders_filled_smoke: int,
      *   positions_opened: int,
      *   positions_closed: int,
-     *   queue_items_skipped_disabled: int,
+     *   queue_items_skipped_mode_disabled: int,
+     *   queue_items_skipped_mode_passive: int,
      * }
      */
     private function processExecution(
@@ -646,14 +651,18 @@ final class BotService
         string $mode,
         string $tickAt
     ): array {
-        $ordersCreated         = 0;
-        $ordersSubmittedSmoke  = 0;
-        $ordersFilledSmoke     = 0;
-        $positionsOpened       = 0;
-        $positionsClosed       = 0;
-        $queueSkippedDisabled  = 0;
+        $ordersCreated              = 0;
+        $ordersSubmittedSmoke       = 0;
+        $ordersFilledSmoke          = 0;
+        $positionsOpened            = 0;
+        $positionsClosed            = 0;
+        $queueSkippedModeDisabled   = 0;
+        $queueSkippedModePassive    = 0;
 
-        $isSmokeMode = ($mode === 'smoke');
+        // active maps to smoke: live exchange is not implemented yet
+        $isSmokeMode    = in_array($mode, ['smoke', 'active'], true);
+        $isPassiveMode  = ($mode === 'passive');
+        $isDisabledMode = ($mode === 'disabled');
 
         // Build order lookup by composite key {strategy_id}:{signal_id}
         $orderMap = [];
@@ -686,9 +695,15 @@ final class BotService
             }
 
             if (!$isSmokeMode) {
-                // Execution is disabled: count but leave queue item as-is
-                $queueSkippedDisabled++;
-                $qItem['skip_reason'] = 'ignored_bot_disabled';
+                // Not in an execution mode — count and label truthfully
+                if ($isPassiveMode) {
+                    $queueSkippedModePassive++;
+                    $qItem['skip_reason'] = 'ignored_mode_passive';
+                } else {
+                    // disabled or any unknown mode
+                    $queueSkippedModeDisabled++;
+                    $qItem['skip_reason'] = 'ignored_mode_disabled';
+                }
                 continue;
             }
 
@@ -743,15 +758,16 @@ final class BotService
         }
 
         return [
-            'order_queue'                  => array_values($orderQueue),
-            'active_orders'                => array_values($orderMap),
-            'active_positions'             => array_values($positionMap),
-            'orders_created'               => $ordersCreated,
-            'orders_submitted_smoke'       => $ordersSubmittedSmoke,
-            'orders_filled_smoke'          => $ordersFilledSmoke,
-            'positions_opened'             => $positionsOpened,
-            'positions_closed'             => $positionsClosed,
-            'queue_items_skipped_disabled' => $queueSkippedDisabled,
+            'order_queue'                      => array_values($orderQueue),
+            'active_orders'                    => array_values($orderMap),
+            'active_positions'                 => array_values($positionMap),
+            'orders_created'                   => $ordersCreated,
+            'orders_submitted_smoke'           => $ordersSubmittedSmoke,
+            'orders_filled_smoke'              => $ordersFilledSmoke,
+            'positions_opened'                 => $positionsOpened,
+            'positions_closed'                 => $positionsClosed,
+            'queue_items_skipped_mode_disabled' => $queueSkippedModeDisabled,
+            'queue_items_skipped_mode_passive'  => $queueSkippedModePassive,
         ];
     }
 
@@ -952,7 +968,8 @@ final class BotService
                 'orders_filled_smoke'                      => 0,
                 'positions_opened'                         => 0,
                 'positions_closed'                         => 0,
-                'queue_items_skipped_bot_disabled'         => 0,
+                'queue_items_skipped_mode_disabled'        => 0,
+                'queue_items_skipped_mode_passive'         => 0,
                 'order_queue_total'                        => 0,
                 'active_orders_count'                      => 0,
                 'active_positions_count'                   => 0,
@@ -1018,12 +1035,13 @@ final class BotService
             'order_queue_expired_total'   => 0,
             'order_queue_withdrawn_total' => 0,
             // Execution (cumulative)
-            'orders_created_total'                   => 0,
-            'orders_submitted_smoke_total'           => 0,
-            'orders_filled_smoke_total'              => 0,
-            'positions_opened_total'                 => 0,
-            'positions_closed_total'                 => 0,
-            'queue_items_skipped_bot_disabled_total' => 0,
+            'orders_created_total'                    => 0,
+            'orders_submitted_smoke_total'            => 0,
+            'orders_filled_smoke_total'               => 0,
+            'positions_opened_total'                  => 0,
+            'positions_closed_total'                  => 0,
+            'queue_items_skipped_mode_disabled_total' => 0,
+            'queue_items_skipped_mode_passive_total'  => 0,
             // Live counts
             'active_orders_total'         => 0,
             'active_positions_total'      => 0,

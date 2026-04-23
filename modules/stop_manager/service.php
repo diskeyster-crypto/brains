@@ -539,7 +539,7 @@ final class StopManagerService
             return ['source' => 'real', 'price' => (float)$raw];
         }
         $estimated = $this->estimateLiqPrice($pos);
-        if ($estimated !== null) {
+        if ($estimated !== null && $estimated > 0.0) {
             return ['source' => 'estimated', 'price' => $estimated];
         }
         return ['source' => 'missing', 'price' => null];
@@ -565,9 +565,17 @@ final class StopManagerService
         }
 
         if ($side === 'long') {
-            return $entryPrice * (1.0 - 1.0 / $leverage);
+            $estimate = $entryPrice * (1.0 - 1.0 / $leverage);
+        } else {
+            $estimate = $entryPrice * (1.0 + 1.0 / $leverage);
         }
-        return $entryPrice * (1.0 + 1.0 / $leverage);
+
+        // Leverage = 1 long yields estimate = 0; any non-positive result is unusable.
+        if ($estimate <= 0.0) {
+            return null;
+        }
+
+        return $estimate;
     }
 
     // =========================================================================

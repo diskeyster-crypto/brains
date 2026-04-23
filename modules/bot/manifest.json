@@ -1,0 +1,13 @@
+{
+    "name": "bot",
+    "title": "Bot · Signal Execution Foundation",
+    "version": "0.1.0",
+    "description": "Separate Bot module. Reads strategy handoff queue from double_bottom_long, converts ready signals into a bot-owned order queue, and tracks lifecycle state. No exchange execution yet.",
+    "author": "Tredercopis",
+    "category": "bot",
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php",
+        "logs":    "logs"
+    }
+}

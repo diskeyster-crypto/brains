@@ -1,0 +1,11 @@
+{
+    "ticks_total": 0,
+    "handoff_signals_seen_total": 0,
+    "order_queue_total": 0,
+    "order_queue_new_total": 0,
+    "order_queue_refreshed_total": 0,
+    "order_queue_expired_total": 0,
+    "order_queue_withdrawn_total": 0,
+    "active_orders_total": 0,
+    "active_positions_total": 0
+}

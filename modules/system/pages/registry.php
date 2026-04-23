@@ -389,6 +389,17 @@ final class PagesRegistry
                 'order' => 38,
                 'locked' => false,
             ],
+            15 => [
+                'id' => 15,
+                'title' => 'Оперативный центр',
+                'route' => '/admin/dashboard',
+                'type' => 'module',
+                'roles' => ['admin'],
+                'visible' => true,
+                'icon' => 'bi-layout-text-sidebar-reverse',
+                'order' => 3,
+                'locked' => false,
+            ],
         ];
     }
 }

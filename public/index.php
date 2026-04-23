@@ -221,6 +221,7 @@ Router::get('/cron/task/{task}', function (string $task) {
 require_once ROOT . '/admin/views/layout.php';
 require_once ROOT . '/admin/views/login.php';
 require_once ROOT . '/admin/views/dashboard.php';
+require_once ROOT . '/admin/views/dashboard_hub.php';
 require_once ROOT . '/admin/views/modules.php';
 require_once ROOT . '/admin/views/cron.php';
 require_once ROOT . '/admin/views/storage.php';
@@ -270,6 +271,22 @@ Router::get('/admin/logout', function () {
 
 Router::get('/admin', function () {
     echo renderLayout('Панель управления', renderDashboard(), 'dashboard');
+});
+
+Router::get('/admin/dashboard', function () {
+    if (!Auth::check()) {
+        header('Location: ' . System::adminUrl('login'));
+        exit;
+    }
+    echo renderLayout('Оперативный центр', renderDashboardHub(), 'dashboard');
+});
+
+Router::post('/admin/dashboard/overrides/save', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardOverridesSave();
 });
 
 Router::get('/admin/modules', function () {

@@ -68,6 +68,45 @@ function renderDashboardHub(): string
     }
 
     // ── summary counts ────────────────────────────────────────────────────
+    // Fallback: scan strategy module manifests if bot hasn't run yet
+    if (empty($registry)) {
+        $stratRoot = System::path('root') . '/modules/strategy';
+        if (is_dir($stratRoot)) {
+            foreach (new \DirectoryIterator($stratRoot) as $entry) {
+                if (!$entry->isDir() || $entry->isDot()) {
+                    continue;
+                }
+                $mfPath = $entry->getPathname() . '/manifest.json';
+                if (!file_exists($mfPath)) {
+                    continue;
+                }
+                $mfRaw = file_get_contents($mfPath);
+                $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
+                if (!is_array($mf) || ($mf['category'] ?? '') !== 'strategy') {
+                    continue;
+                }
+                $mfId = (string)($mf['name'] ?? '');
+                if ($mfId === '') {
+                    continue;
+                }
+                $mfDir = 'modules/strategy/' . $entry->getFilename();
+                $registry[] = [
+                    'strategy_id'        => $mfId,
+                    'module_path'        => $mfDir,
+                    'manifest_path'      => $mfDir . '/manifest.json',
+                    'title'              => (string)($mf['title'] ?? $mfId),
+                    'category'           => 'strategy',
+                    'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
+                    'handoff_queue_path' => null,
+                    'supports_long'      => true,
+                    'supports_short'     => true,
+                    'status'             => 'discovered',
+                    'discovered_at'      => null,
+                ];
+            }
+        }
+    }
+
     $totalStrat    = count($registry);
     $enabledStrat  = 0;
     $disabledStrat = 0;
@@ -89,419 +128,482 @@ function renderDashboardHub(): string
     $botEnabled = ($lastRun['bot_enabled'] ?? false) ? 'Включён' : 'Выключен';
     $botMode    = (string)($lastRun['bot_mode']   ?? 'passive');
     $sigProc    = (int)($lastRun['handoff_signals_processed'] ?? 0);
-    $handoffTotal = (int)($lastRun['handoff_signals_seen_total'] ?? $lastRun['handoff_sources_active_total'] ?? 0);
 
     // ── escape helper ─────────────────────────────────────────────────────
     $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 
-    // ── Strategies tab rows ───────────────────────────────────────────────
-    $stratRows = '';
+    // ── per-strategy active signal counts from handoff queues ────────────
+    $stratSignals = [];
+    foreach ($registry as $rec) {
+        $hqPath = $rec['handoff_queue_path'] ?? null;
+        if ($hqPath !== null) {
+            $hqAbs = System::path('root') . '/' . $hqPath;
+            if (file_exists($hqAbs)) {
+                $hqRaw  = file_get_contents($hqAbs);
+                $hqData = ($hqRaw !== false) ? json_decode($hqRaw, true) : [];
+                $active = 0;
+                foreach ((array)$hqData as $sig) {
+                    $hs = (string)($sig['handoff_status'] ?? '');
+                    if ($hs === 'new' || $hs === 'refreshed') {
+                        $active++;
+                    }
+                }
+                $stratSignals[$rec['strategy_id']] = $active;
+            }
+        }
+    }
+
+    // ── strategy cards HTML ───────────────────────────────────────────────
+    $saveUrl = System::web('admin/dashboard/overrides/save');
+    $stratCards = '';
     if (empty($registry)) {
-        $stratRows = '<tr><td colspan="7" class="text-center" style="color:#64748b;padding:20px;">Стратегии ещё не обнаружены. Выполните первый тик бота.</td></tr>';
+        $stratCards = '<p style="color:var(--ui-text-muted);padding:20px 0;">Стратегии не обнаружены.</p>';
     } else {
         foreach ($registry as $rec) {
-            $stratId  = (string)($rec['strategy_id'] ?? '');
-            $title    = (string)($rec['title']       ?? $stratId);
-            $status   = (string)($rec['status']      ?? 'discovered');
-            $supLong  = $rec['supports_long']  ? '<span style="color:#22c55e;">✓ Long</span>'  : '<span style="color:#475569;">—</span>';
-            $supShort = $rec['supports_short'] ? '<span style="color:#22c55e;">✓ Short</span>' : '<span style="color:#475569;">—</span>';
-            $handoff  = $rec['handoff_queue_path'] ? '<span style="color:#22c55e;">Да</span>' : '<span style="color:#475569;">Нет</span>';
+            $stratId    = (string)($rec['strategy_id'] ?? '');
+            $title      = (string)($rec['title']       ?? $stratId);
+            $status     = (string)($rec['status']      ?? 'discovered');
+            $modulePath = (string)($rec['module_path'] ?? '');
+            $supLong    = $rec['supports_long']  ?? true;
+            $supShort   = $rec['supports_short'] ?? true;
+            $hasHandoff = ($rec['handoff_queue_path'] ?? null) !== null;
+            $signalCount = $stratSignals[$stratId] ?? null;
 
-            $op         = (array)($overrides[$stratId] ?? []);
-            $opEnabled  = $op['enabled']               ?? true;
-            $opMode     = (string)($op['mode']         ?? 'passive');
-            $opBudget   = $op['bot_budget']             ?? 0;
-            $opLev      = $op['bot_leverage']           ?? 0;
-            $opEntryMode= (string)($op['entry_mode']   ?? '');
-            $opMax      = $op['max_active_positions']   ?? 0;
+            $op          = (array)($overrides[$stratId] ?? []);
+            $opEnabled   = $op['enabled']              ?? true;
+            $opMode      = (string)($op['mode']        ?? 'passive');
+            $opBudget    = (float)($op['bot_budget']   ?? 0);
+            $opLev       = (int)($op['bot_leverage']   ?? 0);
+            $opEntry     = (string)($op['entry_mode']  ?? '');
+            $opMax       = (int)($op['max_active_positions'] ?? 0);
 
-            $enabledBadge = $opEnabled
-                ? '<span style="background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3);font-size:11px;padding:2px 7px;border-radius:999px;">Включено</span>'
-                : '<span style="background:rgba(107,114,128,.15);color:#6b7280;border:1px solid rgba(107,114,128,.3);font-size:11px;padding:2px 7px;border-radius:999px;">Выключено</span>';
+            $esId    = $e($stratId);
+            $esTitle = $e($title);
+            $esPath  = $e($modulePath);
+            $esBudget   = $e($opBudget);
+            $esLev      = $e($opLev);
+            $esEntry    = $e($opEntry);
+            $esMax      = $e($opMax);
+            $esMode     = $e($opMode);
 
-            $statusBadge = $status === 'bot_ready'
-                ? '<span style="background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3);font-size:11px;padding:2px 7px;border-radius:999px;">bot_ready</span>'
-                : '<span style="background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.3);font-size:11px;padding:2px 7px;border-radius:999px;">' . $e($status) . '</span>';
+            // Status badge colour
+            $statusColor = $status === 'bot_ready' ? '#3fb950' : '#8b949e';
+            $statusLabel = $e($status);
 
-            $dataEnabled = $opEnabled ? 'true' : 'false';
-            $dataBudget  = (float)$opBudget;
-            $dataLev     = (int)$opLev;
-            $dataMode    = $e($opMode);
-            $dataEntryMode = $e($opEntryMode);
-            $dataMax     = (int)$opMax;
-            $esStratId   = $e($stratId);
-            $esTitle     = $e($title);
+            // Enabled badge
+            $enBg    = $opEnabled ? 'rgba(63,185,80,.15)' : 'rgba(107,114,128,.15)';
+            $enColor = $opEnabled ? '#3fb950' : '#8b949e';
+            $enLabel = $opEnabled ? 'Включено' : 'Выключено';
 
-            $stratRows .= <<<HTML
-<tr>
-    <td><strong>{$esTitle}</strong><br><code style="font-size:11px;color:#7dd3fc;">{$esStratId}</code></td>
-    <td>{$statusBadge}</td>
-    <td>{$supLong} / {$supShort}</td>
-    <td>{$handoff}</td>
-    <td>{$enabledBadge}</td>
-    <td style="font-size:12px;">
-        Режим: <code>{$dataMode}</code> &nbsp;
-        Бюджет: <code>{$dataBudget}</code> &nbsp;
-        Плечо: <code>{$dataLev}</code> &nbsp;
-        Вход: <code>{$dataEntryMode}</code> &nbsp;
-        Макс.поз: <code>{$dataMax}</code>
-    </td>
-    <td>
-        <button class="btn btn-sm btn-primary"
-            onclick="dhOpenEdit({$dataEnabled},'{$esStratId}','{$esTitle}','{$dataMode}',{$dataBudget},{$dataLev},'{$dataEntryMode}',{$dataMax})">
-            Изменить
-        </button>
-    </td>
-</tr>
+            // Direction
+            $dir = [];
+            if ($supLong)  { $dir[] = 'Long'; }
+            if ($supShort) { $dir[] = 'Short'; }
+            $dirStr = $e(implode(' / ', $dir));
+
+            // Handoff
+            $handoffStr   = $hasHandoff ? '<span style="color:#3fb950;">Да</span>' : '<span style="color:#8b949e;">Нет</span>';
+            $signalStr    = ($signalCount !== null) ? $e((string)$signalCount) : '—';
+
+            // Options: mode select
+            $modePassive  = $opMode === 'passive'  ? ' selected' : '';
+            $modeActive   = $opMode === 'active'   ? ' selected' : '';
+            $modeDisabled = $opMode === 'disabled' ? ' selected' : '';
+
+            // Options: entry_mode select
+            $entryNone    = $opEntry === ''       ? ' selected' : '';
+            $entryLimit   = $opEntry === 'limit'  ? ' selected' : '';
+            $entryMarket  = $opEntry === 'market' ? ' selected' : '';
+
+            // Options: enabled select
+            $enYes = $opEnabled ? ' selected' : '';
+            $enNo  = $opEnabled ? '' : ' selected';
+
+            $cardId = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
+
+            $stratCards .= <<<HTML
+<div class="card" style="margin-bottom:16px;">
+  <!-- Card header -->
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+    <div>
+      <strong style="font-size:15px;">{$esTitle}</strong>
+      <code style="margin-left:8px;font-size:11px;color:#58a6ff;">{$esId}</code>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      <span style="background:{$enBg};color:{$enColor};border:1px solid {$enColor};font-size:11px;padding:2px 8px;border-radius:999px;">{$enLabel}</span>
+      <span style="background:rgba(100,116,139,.12);color:{$statusColor};border:1px solid {$statusColor}55;font-size:11px;padding:2px 8px;border-radius:999px;">{$statusLabel}</span>
+    </div>
+  </div>
+  <!-- Card info row -->
+  <div class="card-body" style="padding:12px 16px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Модуль</td>
+        <td style="padding:3px 0;"><code style="font-size:11px;">{$esPath}</code></td>
+        <td style="padding:3px 12px 3px 16px;color:var(--ui-text-muted);white-space:nowrap;">Направление</td>
+        <td style="padding:3px 0;">{$dirStr}</td>
+      </tr>
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Handoff</td>
+        <td style="padding:3px 0;">{$handoffStr}</td>
+        <td style="padding:3px 12px 3px 16px;color:var(--ui-text-muted);white-space:nowrap;">Сигналов</td>
+        <td style="padding:3px 0;">{$signalStr}</td>
+      </tr>
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Режим</td>
+        <td style="padding:3px 0;"><code>{$esMode}</code></td>
+        <td style="padding:3px 12px 3px 16px;color:var(--ui-text-muted);">Вход</td>
+        <td style="padding:3px 0;"><code>{$esEntry}</code></td>
+      </tr>
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Бюджет</td>
+        <td style="padding:3px 0;"><code>{$esBudget}</code></td>
+        <td style="padding:3px 12px 3px 16px;color:var(--ui-text-muted);">Плечо</td>
+        <td style="padding:3px 0;"><code>{$esLev}</code></td>
+      </tr>
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Макс.поз</td>
+        <td colspan="3" style="padding:3px 0;"><code>{$esMax}</code></td>
+      </tr>
+    </table>
+
+    <!-- Toggle edit button -->
+    <div style="margin-top:12px;">
+      <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
+        Изменить
+      </button>
+    </div>
+
+    <!-- Inline edit form (hidden by default) -->
+    <div id="{$cardId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
+      <form method="post" action="{$saveUrl}">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включено</label>
+            <select name="enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$enYes}>Да</option>
+              <option value="0"{$enNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
+            <select name="mode" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+              <option value="passive"{$modePassive}>passive</option>
+              <option value="active"{$modeActive}>active</option>
+              <option value="disabled"{$modeDisabled}>disabled</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Бюджет (0=из сигнала)</label>
+            <input type="number" step="0.01" min="0" name="bot_budget" value="{$esBudget}" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Плечо (0=из сигнала)</label>
+            <input type="number" step="1" min="0" name="bot_leverage" value="{$esLev}" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим входа</label>
+            <select name="entry_mode" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+              <option value=""{$entryNone}>— из сигнала —</option>
+              <option value="limit"{$entryLimit}>limit</option>
+              <option value="market"{$entryMarket}>market</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Макс. позиций (0=∞)</label>
+            <input type="number" step="1" min="0" name="max_active_positions" value="{$esMax}" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+          <button type="button" class="btn btn-sm" style="background:transparent;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+            onclick="dhToggleEdit('{$cardId}')">Отмена</button>
+        </div>
+      </form>
+    </div>
+  </div><!-- /card-body -->
+</div>
 HTML;
         }
     }
 
-    // ── Control tab: bot config display ───────────────────────────────────
+    // ── Control tab: global bot config ───────────────────────────────────
     $cfgEnabled     = ($botConfig['enabled'] ?? false) ? '1' : '0';
     $cfgMode        = $e($botConfig['mode']              ?? 'passive');
     $cfgMaxBudget   = (float)($botConfig['max_bot_budget']   ?? 0.0);
     $cfgMaxLeverage = (int)($botConfig['max_bot_leverage']   ?? 0);
     $cfgDefEntry    = $e($botConfig['default_entry_mode']    ?? '');
     $cfgDefMaxPos   = (int)($botConfig['default_max_active_positions'] ?? 0);
-    $cfgEntryModes  = implode(', ', (array)($botConfig['allowed_entry_modes'] ?? []));
+    $cfgEntryModes  = $e(implode(', ', (array)($botConfig['allowed_entry_modes'] ?? [])));
     $cfgMaxAgeSec   = (int)($botConfig['max_signal_age_sec'] ?? 0);
     $cfgDedupWindow = (int)($botConfig['queue_dedup_ttl_sec'] ?? 0);
-    $cfgScanRoots   = implode(', ', (array)($botConfig['strategy_scan_roots'] ?? []));
-    $cfgEnabledLabel = $cfgEnabled === '1' ? 'Да' : 'Нет';
+    $cfgScanRoots   = $e(implode(', ', (array)($botConfig['strategy_scan_roots'] ?? [])));
+
+    $gcfgEnYes  = $cfgEnabled === '1' ? ' selected' : '';
+    $gcfgEnNo   = $cfgEnabled === '0' ? ' selected' : '';
+    $gcfgModeP  = $cfgMode === 'passive'  ? ' selected' : '';
+    $gcfgModeA  = $cfgMode === 'active'   ? ' selected' : '';
+    $gcfgModeD  = $cfgMode === 'disabled' ? ' selected' : '';
+    $gcfgEntN   = $cfgDefEntry === ''       ? ' selected' : '';
+    $gcfgEntL   = $cfgDefEntry === 'limit'  ? ' selected' : '';
+    $gcfgEntM   = $cfgDefEntry === 'market' ? ' selected' : '';
 
     $globalSaveUrl = System::web('admin/dashboard/global/save');
 
-    $overridesTable = '';
-    if (empty($overrides)) {
-        $overridesTable = '<p style="color:#64748b;font-size:13px;">Нет переопределений оператора.</p>';
-    } else {
-        $overridesTable .= '<table class="table table-sm" style="font-size:12px;"><thead><tr><th>Стратегия</th><th>Вкл</th><th>Бюджет</th><th>Плечо</th><th>Вход</th><th>Макс.поз</th></tr></thead><tbody>';
-        foreach ($overrides as $sid => $ov) {
-            $overridesTable .= '<tr>';
-            $overridesTable .= '<td><code>' . $e($sid) . '</code></td>';
-            $overridesTable .= '<td>' . ($ov['enabled'] ? '✓' : '—') . '</td>';
-            $overridesTable .= '<td>' . $e($ov['bot_budget'] ?? 0) . '</td>';
-            $overridesTable .= '<td>' . $e($ov['bot_leverage'] ?? 0) . '</td>';
-            $overridesTable .= '<td>' . $e($ov['entry_mode'] ?? '—') . '</td>';
-            $overridesTable .= '<td>' . $e($ov['max_active_positions'] ?? 0) . '</td>';
-            $overridesTable .= '</tr>';
-        }
-        $overridesTable .= '</tbody></table>';
+    // ── Control tab: per-strategy mirrored overrides ──────────────────────
+    $mirrorRows = '';
+    foreach ($registry as $rec) {
+        $sid = (string)($rec['strategy_id'] ?? '');
+        $stitle = $e($rec['title'] ?? $sid);
+        $op  = (array)($overrides[$sid] ?? []);
+        $opEnabled = $op['enabled'] ?? true;
+        $enColor = $opEnabled ? '#3fb950' : '#8b949e';
+        $enLbl   = $opEnabled ? '✓' : '—';
+        $mirrorRows .= '<tr>';
+        $mirrorRows .= '<td><strong>' . $stitle . '</strong><br><code style="font-size:11px;color:#58a6ff;">' . $e($sid) . '</code></td>';
+        $mirrorRows .= '<td style="color:' . $enColor . ';">' . $enLbl . '</td>';
+        $mirrorRows .= '<td><code>' . $e($op['mode'] ?? 'passive') . '</code></td>';
+        $mirrorRows .= '<td><code>' . $e($op['bot_budget'] ?? 0) . '</code></td>';
+        $mirrorRows .= '<td><code>' . $e($op['bot_leverage'] ?? 0) . '</code></td>';
+        $mirrorRows .= '<td><code>' . $e($op['entry_mode'] ?? '—') . '</code></td>';
+        $mirrorRows .= '<td><code>' . $e($op['max_active_positions'] ?? 0) . '</code></td>';
+        $mirrorRows .= '</tr>';
+    }
+    if ($mirrorRows === '') {
+        $mirrorRows = '<tr><td colspan="7" style="color:var(--ui-text-muted);padding:12px 0;">Нет данных. Стратегии ещё не обнаружены.</td></tr>';
     }
 
     // ── Bot tab: stats rows ───────────────────────────────────────────────
     $statsRows = '';
     $statLabels = [
-        'ticks_total'                            => 'Всего тиков',
-        'strategies_discovered_total'            => 'Стратегий обнаружено',
-        'strategies_enabled_total'               => 'Стратегий включено',
-        'strategies_disabled_total'              => 'Стратегий выключено',
-        'handoff_signals_seen_total'             => 'Handoff-сигналов получено',
+        'ticks_total'                                     => 'Всего тиков',
+        'strategies_discovered_total'                     => 'Стратегий обнаружено',
+        'strategies_enabled_total'                        => 'Стратегий включено',
+        'strategies_disabled_total'                       => 'Стратегий выключено',
+        'handoff_signals_seen_total'                      => 'Handoff-сигналов получено',
         'handoff_signals_ignored_disabled_strategy_total' => 'Сигналов проигнорировано (выкл. стратегия)',
-        'order_queue_total'                      => 'Очередь ордеров (всего активных)',
-        'order_queue_new_total'                  => 'Ордеров поставлено в очередь',
-        'order_queue_refreshed_total'            => 'Ордеров обновлено',
-        'order_queue_expired_total'              => 'Ордеров истекло',
-        'order_queue_withdrawn_total'            => 'Ордеров отозвано',
-        'active_orders_total'                    => 'Активных ордеров',
-        'active_positions_total'                 => 'Активных позиций',
+        'order_queue_total'                               => 'Очередь ордеров (всего активных)',
+        'order_queue_new_total'                           => 'Ордеров поставлено в очередь',
+        'order_queue_refreshed_total'                     => 'Ордеров обновлено',
+        'order_queue_expired_total'                       => 'Ордеров истекло',
+        'order_queue_withdrawn_total'                     => 'Ордеров отозвано',
+        'active_orders_total'                             => 'Активных ордеров',
+        'active_positions_total'                          => 'Активных позиций',
     ];
     foreach ($statLabels as $key => $label) {
         $val = $stats[$key] ?? 0;
-        $statsRows .= '<tr><td style="color:#94a3b8;">' . $e($label) . '</td><td><strong>' . $e($val) . '</strong></td></tr>';
+        $statsRows .= '<tr><td style="color:var(--ui-text-muted);">' . $e($label) . '</td><td><strong>' . $e($val) . '</strong></td></tr>';
     }
-
-    // ── save URL ──────────────────────────────────────────────────────────
-    $saveUrl = System::web('admin/dashboard/overrides/save');
 
     // ── flash HTML ────────────────────────────────────────────────────────
     $flashHtml = '';
     if ($flash) {
-        $type = ($flash['type'] === 'success') ? 'success' : 'danger';
-        $msg  = $e($flash['msg'] ?? '');
+        $ftype = ($flash['type'] === 'success') ? 'success' : 'danger';
+        $fmsg  = $e($flash['msg'] ?? '');
+        $fbg   = $ftype === 'success' ? 'rgba(63,185,80,.12)' : 'rgba(248,81,73,.12)';
+        $fclr  = $ftype === 'success' ? '#3fb950' : '#f85149';
         $flashHtml = <<<HTML
-<div class="alert alert-{$type} alert-dismissible fade show" style="font-size:13px;">
-    {$msg}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+<div style="background:{$fbg};border:1px solid {$fclr}55;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:{$fclr};">
+    {$fmsg}
 </div>
 HTML;
     }
 
     // ── render ────────────────────────────────────────────────────────────
     return <<<HTML
+<style>
+.dh-tab-nav{display:flex;gap:0;border-bottom:1px solid var(--ui-border);margin-bottom:20px;}
+.dh-tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:10px 22px;color:var(--ui-text-muted);cursor:pointer;font-size:14px;transition:color .15s,border-color .15s;outline:none;}
+.dh-tab-btn:hover{color:var(--ui-text);border-bottom-color:var(--ui-border);}
+.dh-tab-btn.dh-active{color:var(--ui-accent);border-bottom-color:var(--ui-accent);font-weight:600;}
+.dh-pane{display:none;}
+.dh-pane.dh-visible{display:block;}
+.dh-stat{background:var(--ui-card);border:1px solid var(--ui-border);border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;}
+.dh-stat-val{font-size:22px;font-weight:700;}
+.dh-stat-lbl{font-size:11px;color:var(--ui-text-muted);text-transform:uppercase;margin-top:2px;}
+</style>
+
 <div style="max-width:1200px;">
 
 {$flashHtml}
 
 <!-- Page header -->
-<div class="d-flex align-items-center justify-content-between mb-3">
-    <div>
-        <h4 class="mb-0"><i class="bi bi-layout-text-sidebar-reverse me-2"></i>Оперативный центр</h4>
-        <div style="font-size:12px;color:#64748b;">Управление стратегиями · Бот · Контроль</div>
-    </div>
+<div style="margin-bottom:16px;">
+  <h4 style="margin:0 0 2px;"><i class="bi bi-layout-text-sidebar-reverse" style="margin-right:8px;"></i>Оперативный центр</h4>
+  <div style="font-size:12px;color:var(--ui-text-muted);">Управление стратегиями · Бот · Контроль</div>
 </div>
 
 <!-- Summary strip -->
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#e2e8f0;">{$totalStrat}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Стратегий</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#22c55e;">{$enabledStrat}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Включено</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#6b7280;">{$disabledStrat}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Выключено</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#06b6d4;">{$sigProc}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Сигналов</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#f59e0b;">{$queueSize}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Очередь</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#3b82f6;">{$ordersCount}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Ордеров</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:110px;text-align:center;">
-        <div style="font-size:22px;font-weight:700;color:#a78bfa;">{$posCount}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;">Позиций</div>
-    </div>
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 18px;min-width:160px;text-align:center;">
-        <div style="font-size:14px;font-weight:700;color:#e2e8f0;">{$e($tickStatus)}</div>
-        <div style="font-size:11px;color:#64748b;">{$e($tickAt)}</div>
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;margin-top:2px;">Бот: {$botEnabled}</div>
-    </div>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+  <div class="dh-stat"><div class="dh-stat-val" style="color:var(--ui-text);">{$totalStrat}</div><div class="dh-stat-lbl">Стратегий</div></div>
+  <div class="dh-stat"><div class="dh-stat-val" style="color:#3fb950;">{$enabledStrat}</div><div class="dh-stat-lbl">Включено</div></div>
+  <div class="dh-stat"><div class="dh-stat-val" style="color:#8b949e;">{$disabledStrat}</div><div class="dh-stat-lbl">Выключено</div></div>
+  <div class="dh-stat"><div class="dh-stat-val" style="color:#58a6ff;">{$sigProc}</div><div class="dh-stat-lbl">Сигналов</div></div>
+  <div class="dh-stat"><div class="dh-stat-val" style="color:#f0883e;">{$queueSize}</div><div class="dh-stat-lbl">Очередь</div></div>
+  <div class="dh-stat"><div class="dh-stat-val" style="color:#58a6ff;">{$ordersCount}</div><div class="dh-stat-lbl">Ордеров</div></div>
+  <div class="dh-stat"><div class="dh-stat-val" style="color:#a78bfa;">{$posCount}</div><div class="dh-stat-lbl">Позиций</div></div>
+  <div class="dh-stat" style="min-width:160px;">
+    <div style="font-size:13px;font-weight:700;color:var(--ui-text);">{$e($tickStatus)}</div>
+    <div style="font-size:11px;color:var(--ui-text-muted);">{$e($tickAt)}</div>
+    <div style="font-size:11px;color:var(--ui-text-muted);margin-top:2px;">Бот: {$botEnabled}</div>
+  </div>
 </div>
 
-<!-- Tabs navigation -->
-<ul class="nav nav-tabs mb-3" id="dhTabs" role="tablist">
-    <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="dh-strat-tab" data-bs-toggle="tab" data-bs-target="#dh-strat" type="button" role="tab">
-            <i class="bi bi-layers me-1"></i>Стратегии
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="dh-bot-tab" data-bs-toggle="tab" data-bs-target="#dh-bot" type="button" role="tab">
-            <i class="bi bi-cpu me-1"></i>Бот
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="dh-ctrl-tab" data-bs-toggle="tab" data-bs-target="#dh-ctrl" type="button" role="tab">
-            <i class="bi bi-sliders me-1"></i>Управление
-        </button>
-    </li>
-</ul>
+<!-- Top tab navigation (vanilla JS) -->
+<nav class="dh-tab-nav" role="tablist">
+  <button class="dh-tab-btn dh-active" onclick="dhTab(this,'dh-strat')" type="button">
+    <i class="bi bi-layers" style="margin-right:5px;"></i>Стратегии
+  </button>
+  <button class="dh-tab-btn" onclick="dhTab(this,'dh-bot')" type="button">
+    <i class="bi bi-cpu" style="margin-right:5px;"></i>Бот
+  </button>
+  <button class="dh-tab-btn" onclick="dhTab(this,'dh-ctrl')" type="button">
+    <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
+  </button>
+</nav>
 
-<div class="tab-content">
+<!-- ── Strategies pane ──────────────────────────────────────────────── -->
+<div id="dh-strat" class="dh-pane dh-visible">
+  <div style="font-size:12px;color:var(--ui-text-muted);margin-bottom:12px;">
+    Источник: <code>bot/storage/strategy_registry.json</code> · <code>modules/strategy/*/manifest.json</code> · <code>operator_overrides.json</code>
+  </div>
+  {$stratCards}
+</div>
 
-    <!-- ── Strategies tab ────────────────────────────────────────────── -->
-    <div class="tab-pane fade show active" id="dh-strat" role="tabpanel">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Обнаруженные стратегии</span>
-                <small style="color:#64748b;font-size:11px;">Источник: bot/storage/strategy_registry.json</small>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr>
-                            <th>Стратегия</th>
-                            <th>Статус</th>
-                            <th>Направление</th>
-                            <th>Handoff</th>
-                            <th>Оператор</th>
-                            <th>Параметры</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>{$stratRows}</tbody>
-                </table>
-            </div>
-        </div>
+<!-- ── Bot pane ─────────────────────────────────────────────────────── -->
+<div id="dh-bot" class="dh-pane">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div class="card-header">Бот</div>
+      <div class="card-body">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:140px;">Включён</td><td>{$botEnabled}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$e($botMode)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус тика</td><td><code>{$e($tickStatus)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Время тика</td><td><code>{$e($tickAt)}</code></td></tr>
+        </table>
+      </div>
     </div>
-
-    <!-- ── Bot tab ───────────────────────────────────────────────────── -->
-    <div class="tab-pane fade" id="dh-bot" role="tabpanel">
-        <div class="card mb-3">
-            <div class="card-header">Текущий прогон (last_run.json)</div>
-            <div class="card-body">
-                <table class="table table-sm mb-0">
-                    <tr><th style="width:180px;">Статус тика</th><td><code>{$e($tickStatus)}</code></td>
-                        <th style="width:160px;">Время тика</th><td><code>{$e($tickAt)}</code></td></tr>
-                    <tr><th>Бот включён</th><td>{$botEnabled}</td>
-                        <th>Режим</th><td><code>{$e($botMode)}</code></td></tr>
-                    <tr><th>Обработано сигналов</th><td>{$e($sigProc)}</td>
-                        <th>Очередь ордеров</th><td>{$e($lastRun['order_queue_total'] ?? 0)}</td></tr>
-                    <tr><th>Активных ордеров</th><td>{$e($lastRun['active_orders_count'] ?? 0)}</td>
-                        <th>Активных позиций</th><td>{$e($lastRun['active_positions_count'] ?? 0)}</td></tr>
-                    <tr><th>Стратегий обнаружено</th><td>{$e($lastRun['strategies_discovered_total'] ?? 0)}</td>
-                        <th>Стратегий включено</th><td>{$e($lastRun['strategies_enabled_total'] ?? 0)}</td></tr>
-                </table>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">Накопленная статистика (stats.json)</div>
-            <div class="card-body p-0">
-                <table class="table table-sm mb-0">
-                    {$statsRows}
-                </table>
-            </div>
-        </div>
+    <div class="card">
+      <div class="card-header">Текущий прогон</div>
+      <div class="card-body">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:160px;">Очередь ордеров</td><td><code>{$e($lastRun['order_queue_total'] ?? 0)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных ордеров</td><td><code>{$e($lastRun['active_orders_count'] ?? 0)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных позиций</td><td><code>{$e($lastRun['active_positions_count'] ?? 0)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Сигналов обработано</td><td><code>{$e($sigProc)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стратегий обнаружено</td><td><code>{$e($lastRun['strategies_discovered_total'] ?? 0)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стратегий включено</td><td><code>{$e($lastRun['strategies_enabled_total'] ?? 0)}</code></td></tr>
+        </table>
+      </div>
     </div>
-
-    <!-- ── Control tab ───────────────────────────────────────────────── -->
-    <div class="tab-pane fade" id="dh-ctrl" role="tabpanel">
-        <div class="card mb-3">
-            <div class="card-header">Глобальные настройки бота</div>
-            <div class="card-body">
-                <form method="post" action="{$globalSaveUrl}">
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label" style="font-size:13px;">Бот включён</label>
-                            <select name="enabled" class="form-select form-select-sm">
-                                <option value="1" <?= $cfgEnabled === '1' ? 'selected' : '' ?>>Да</option>
-                                <option value="0" <?= $cfgEnabled === '0' ? 'selected' : '' ?>>Нет</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label" style="font-size:13px;">Режим бота</label>
-                            <select name="mode" class="form-select form-select-sm">
-                                <option value="passive"  <?= $cfgMode === 'passive'  ? 'selected' : '' ?>>passive</option>
-                                <option value="active"   <?= $cfgMode === 'active'   ? 'selected' : '' ?>>active</option>
-                                <option value="disabled" <?= $cfgMode === 'disabled' ? 'selected' : '' ?>>disabled</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label" style="font-size:13px;">Режим входа по умолчанию</label>
-                            <select name="default_entry_mode" class="form-select form-select-sm">
-                                <option value=""       <?= $cfgDefEntry === '' ? 'selected' : '' ?>>— из сигнала —</option>
-                                <option value="limit"  <?= $cfgDefEntry === 'limit'  ? 'selected' : '' ?>>limit</option>
-                                <option value="market" <?= $cfgDefEntry === 'market' ? 'selected' : '' ?>>market</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label" style="font-size:13px;">Бюджет глобальный (0=из стратегии)</label>
-                            <input type="number" step="0.01" min="0" name="max_bot_budget" value="{$cfgMaxBudget}" class="form-control form-control-sm">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label" style="font-size:13px;">Плечо глобальное (0=из стратегии)</label>
-                            <input type="number" step="1" min="0" name="max_bot_leverage" value="{$cfgMaxLeverage}" class="form-control form-control-sm">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label" style="font-size:13px;">Макс. позиций по умолчанию (0=∞)</label>
-                            <input type="number" step="1" min="0" name="default_max_active_positions" value="{$cfgDefMaxPos}" class="form-control form-control-sm">
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
-                </form>
-                <hr style="border-color:#334155;margin:14px 0;">
-                <table class="table table-sm mb-0" style="font-size:12px;">
-                    <tr><th style="width:260px;color:#94a3b8;">Допустимые режимы входа</th><td><code>{$e($cfgEntryModes)}</code></td></tr>
-                    <tr><th style="color:#94a3b8;">Макс. возраст сигнала (сек)</th><td><code>{$cfgMaxAgeSec}</code></td></tr>
-                    <tr><th style="color:#94a3b8;">Окно дедупликации (сек)</th><td><code>{$cfgDedupWindow}</code></td></tr>
-                    <tr><th style="color:#94a3b8;">Корни сканирования стратегий</th><td><code>{$e($cfgScanRoots)}</code></td></tr>
-                </table>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">Переопределения оператора (operator_overrides.json)</div>
-            <div class="card-body">
-                {$overridesTable}
-            </div>
-        </div>
+  </div>
+  <div class="card">
+    <div class="card-header">Накопленная статистика (stats.json)</div>
+    <div class="card-body" style="padding:0;">
+      <table class="table" style="margin:0;">
+        {$statsRows}
+      </table>
     </div>
+  </div>
+</div>
 
-</div><!-- /tab-content -->
+<!-- ── Control pane ──────────────────────────────────────────────────── -->
+<div id="dh-ctrl" class="dh-pane">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">Глобальные настройки бота</div>
+    <div class="card-body">
+      <form method="post" action="{$globalSaveUrl}">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Бот включён</label>
+            <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$gcfgEnYes}>Да</option>
+              <option value="0"{$gcfgEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим бота</label>
+            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="passive"{$gcfgModeP}>passive</option>
+              <option value="active"{$gcfgModeA}>active</option>
+              <option value="disabled"{$gcfgModeD}>disabled</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Вход по умолчанию</label>
+            <select name="default_entry_mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value=""{$gcfgEntN}>— из сигнала —</option>
+              <option value="limit"{$gcfgEntL}>limit</option>
+              <option value="market"{$gcfgEntM}>market</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Бюджет глоб. (0=из стратегии)</label>
+            <input type="number" step="0.01" min="0" name="max_bot_budget" value="{$e($cfgMaxBudget)}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Плечо глоб. (0=из стратегии)</label>
+            <input type="number" step="1" min="0" name="max_bot_leverage" value="{$e($cfgMaxLeverage)}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Макс. позиций (0=∞)</label>
+            <input type="number" step="1" min="0" name="default_max_active_positions" value="{$e($cfgDefMaxPos)}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+      </form>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
+        <table style="font-size:12px;width:100%;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:220px;">Допустимые режимы входа</td><td><code>{$cfgEntryModes}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Макс. возраст сигнала (сек)</td><td><code>{$e($cfgMaxAgeSec)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Окно дедупликации (сек)</td><td><code>{$e($cfgDedupWindow)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Корни сканирования</td><td><code>{$cfgScanRoots}</code></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mirrored per-strategy overrides -->
+  <div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Переопределения по стратегиям</span>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало: operator_overrides.json · редактировать через карточки стратегий</small>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <table class="table" style="margin:0;font-size:13px;">
+        <thead>
+          <tr>
+            <th>Стратегия</th>
+            <th>Вкл</th>
+            <th>Режим</th>
+            <th>Бюджет</th>
+            <th>Плечо</th>
+            <th>Вход</th>
+            <th>Макс.поз</th>
+          </tr>
+        </thead>
+        <tbody>{$mirrorRows}</tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
 </div><!-- /max-width -->
 
-<!-- Edit override modal -->
-<div id="dhEditModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:2000;align-items:center;justify-content:center;">
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:24px;min-width:440px;max-width:560px;width:100%;">
-        <h5 id="dhEditTitle" class="mb-3">Настройки стратегии</h5>
-        <form id="dhEditForm" method="post" action="{$saveUrl}">
-            <input type="hidden" name="strategy_id" id="dhEditStratId">
-
-            <div class="row g-2 mb-2">
-                <div class="col-6">
-                    <label class="form-label" style="font-size:13px;">Включено</label>
-                    <select name="enabled" id="dhEditEnabled" class="form-select form-select-sm">
-                        <option value="1">Да</option>
-                        <option value="0">Нет</option>
-                    </select>
-                </div>
-                <div class="col-6">
-                    <label class="form-label" style="font-size:13px;">Режим стратегии</label>
-                    <select name="mode" id="dhEditMode" class="form-select form-select-sm">
-                        <option value="passive">passive</option>
-                        <option value="active">active</option>
-                        <option value="disabled">disabled</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="row g-2 mb-2">
-                <div class="col-6">
-                    <label class="form-label" style="font-size:13px;">Режим входа</label>
-                    <select name="entry_mode" id="dhEditEntryMode" class="form-select form-select-sm">
-                        <option value="">— из сигнала —</option>
-                        <option value="limit">limit</option>
-                        <option value="market">market</option>
-                    </select>
-                </div>
-                <div class="col-6">
-                    <label class="form-label" style="font-size:13px;">Макс. позиций (0=∞)</label>
-                    <input type="number" step="1" min="0" name="max_active_positions" id="dhEditMaxPos" class="form-control form-control-sm">
-                </div>
-            </div>
-
-            <div class="row g-2 mb-3">
-                <div class="col-6">
-                    <label class="form-label" style="font-size:13px;">Бюджет (0=из сигнала)</label>
-                    <input type="number" step="0.01" min="0" name="bot_budget" id="dhEditBudget" class="form-control form-control-sm">
-                </div>
-                <div class="col-6">
-                    <label class="form-label" style="font-size:13px;">Плечо (0=из сигнала)</label>
-                    <input type="number" step="1" min="0" name="bot_leverage" id="dhEditLeverage" class="form-control form-control-sm">
-                </div>
-            </div>
-
-            <div class="d-flex gap-2">
-                <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="dhCloseEdit()">Отмена</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <script>
-function dhOpenEdit(enabled, stratId, title, mode, budget, leverage, entryMode, maxPos) {
-    document.getElementById('dhEditTitle').textContent = 'Стратегия: ' + title;
-    document.getElementById('dhEditStratId').value  = stratId;
-    document.getElementById('dhEditEnabled').value  = enabled ? '1' : '0';
-    document.getElementById('dhEditMode').value     = mode || 'passive';
-    document.getElementById('dhEditBudget').value   = budget;
-    document.getElementById('dhEditLeverage').value = leverage;
-    document.getElementById('dhEditEntryMode').value = entryMode || '';
-    document.getElementById('dhEditMaxPos').value   = maxPos;
-    document.getElementById('dhEditModal').style.display = 'flex';
+function dhTab(btn, panelId) {
+    document.querySelectorAll('.dh-tab-btn').forEach(function(b){ b.classList.remove('dh-active'); });
+    document.querySelectorAll('.dh-pane').forEach(function(p){ p.classList.remove('dh-visible'); });
+    btn.classList.add('dh-active');
+    var panel = document.getElementById(panelId);
+    if (panel) { panel.classList.add('dh-visible'); }
 }
-function dhCloseEdit() {
-    document.getElementById('dhEditModal').style.display = 'none';
+function dhToggleEdit(id) {
+    var el = document.getElementById(id);
+    if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; }
 }
-document.getElementById('dhEditModal').addEventListener('click', function(e) {
-    if (e.target === this) dhCloseEdit();
-});
 </script>
 HTML;
 }

@@ -106,6 +106,11 @@ final class BotService
         return $this->readJson('storage/operator_overrides.json', []);
     }
 
+    public function saveOperatorOverrides(array $overrides): void
+    {
+        $this->writeJson('storage/operator_overrides.json', $overrides);
+    }
+
     public function getRuntimeSnapshot(): array
     {
         try {
@@ -131,11 +136,27 @@ final class BotService
      */
     public function tick(): void
     {
+        // Always ensure storage files exist with truthful empty-state values,
+        // even when the bot is disabled. This guarantees the admin UI always
+        // has real files to read rather than missing-file errors.
+        $this->initializeStorage();
+
         $config = $this->getConfig();
         if (empty($config)) {
             return;
         }
         if (!(bool)($config['enabled'] ?? false)) {
+            // Bot disabled: write a truthful disabled last_run so the UI
+            // can show the correct state without running any processing.
+            $this->writeJson('storage/last_run.json', array_merge(
+                $this->readJson('storage/last_run.json', []),
+                [
+                    'status'      => 'disabled',
+                    'tick_at'     => date('c'),
+                    'bot_enabled' => false,
+                    'bot_mode'    => $config['mode'] ?? 'passive',
+                ]
+            ));
             return;
         }
 
@@ -596,6 +617,62 @@ final class BotService
             // Bot lifecycle state (overwritten by caller)
             'queue_status' => 'queued',
         ];
+    }
+
+    // =========================================================================
+    // Storage initialization
+    // =========================================================================
+
+    /**
+     * Ensure all 7 bot storage files exist with truthful empty-state values.
+     * Called at the start of every tick regardless of enabled/disabled state.
+     * Never overwrites a file that already contains real data.
+     */
+    private function initializeStorage(): void
+    {
+        $storageDir = $this->moduleDir . '/storage';
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0755, true);
+        }
+
+        // Each entry: [relative path, default value (written only if file missing)]
+        $defaults = [
+            'storage/strategy_registry.json'  => [],
+            'storage/operator_overrides.json' => (object)[],
+            'storage/order_queue.json'        => [],
+            'storage/active_orders.json'      => [],
+            'storage/active_positions.json'   => [],
+            'storage/last_run.json'           => [
+                'status'                                   => 'never_run',
+                'tick_at'                                  => null,
+                'elapsed_sec'                              => 0,
+                'bot_enabled'                              => false,
+                'bot_mode'                                 => 'passive',
+                'strategies_discovered_total'              => 0,
+                'strategies_enabled_total'                 => 0,
+                'strategies_disabled_total'                => 0,
+                'handoff_sources_active_total'             => 0,
+                'handoff_signals_processed'                => 0,
+                'handoff_signals_ignored_disabled_strategy'=> 0,
+                'order_queue_new_total'                    => 0,
+                'order_queue_refreshed_total'              => 0,
+                'order_queue_expired_total'                => 0,
+                'order_queue_withdrawn_total'              => 0,
+                'order_queue_total'                        => 0,
+                'active_orders_count'                      => 0,
+                'active_positions_count'                   => 0,
+                'ticks_total'                              => 0,
+                'handoff_signals_seen_total'               => 0,
+            ],
+            'storage/stats.json' => $this->zeroStats(),
+        ];
+
+        foreach ($defaults as $relPath => $default) {
+            $absPath = $this->moduleDir . '/' . $relPath;
+            if (!file_exists($absPath)) {
+                $this->writeJson($relPath, $default);
+            }
+        }
     }
 
     // =========================================================================

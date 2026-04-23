@@ -739,6 +739,189 @@ final class BrainController
     }
 
     // ========================================================================
+    // BOT OPERATOR TABS
+    // ========================================================================
+
+    /**
+     * Bot Strategies tab — discovered strategies + operator overrides editor
+     * GET /admin/brain/bot/strategies
+     */
+    public function botStrategies(): string
+    {
+        if (!Auth::check()) {
+            header('Location: ' . System::adminUrl('login'));
+            exit;
+        }
+
+        $bot      = $this->loadBotService();
+        $registry  = $bot ? $bot->getStrategyRegistry() : [];
+        $overrides = $bot ? $bot->getOperatorOverrides() : [];
+        $flash     = $this->getFlash();
+        $saveUrl   = System::web('admin/brain/bot/overrides/save');
+
+        ob_start();
+        $title = 'Brain — Bot Strategies';
+        require SystemPaths::instance()->get('system.brain') . '/views/bot_strategies.php';
+        $content = ob_get_clean();
+
+        return $this->wrapLayout($title, $content);
+    }
+
+    /**
+     * Bot runtime tab — last_run.json / stats.json truth
+     * GET /admin/brain/bot
+     */
+    public function bot(): string
+    {
+        if (!Auth::check()) {
+            header('Location: ' . System::adminUrl('login'));
+            exit;
+        }
+
+        $botSvc     = $this->loadBotService();
+        $lastRun    = $botSvc ? $botSvc->getLastRun() : [];
+        $stats      = $botSvc ? $botSvc->getStats()   : [];
+        $botConfig  = $botSvc ? $botSvc->getConfig()  : [];
+        $botEnabled = (bool)($botConfig['enabled'] ?? false);
+        $botMode    = (string)($botConfig['mode'] ?? 'passive');
+        $flash      = $this->getFlash();
+
+        ob_start();
+        $title = 'Brain — Bot Runtime';
+        require SystemPaths::instance()->get('system.brain') . '/views/bot.php';
+        $content = ob_get_clean();
+
+        return $this->wrapLayout($title, $content);
+    }
+
+    /**
+     * Profit Manager placeholder tab
+     * GET /admin/brain/bot/pm
+     */
+    public function botPm(): string
+    {
+        if (!Auth::check()) {
+            header('Location: ' . System::adminUrl('login'));
+            exit;
+        }
+
+        $flash = $this->getFlash();
+
+        ob_start();
+        $title = 'Brain — Profit Manager';
+        require SystemPaths::instance()->get('system.brain') . '/views/bot_pm.php';
+        $content = ob_get_clean();
+
+        return $this->wrapLayout($title, $content);
+    }
+
+    /**
+     * Control tab — global bot state + strategy override summary
+     * GET /admin/brain/bot/control
+     */
+    public function botControl(): string
+    {
+        if (!Auth::check()) {
+            header('Location: ' . System::adminUrl('login'));
+            exit;
+        }
+
+        $bot       = $this->loadBotService();
+        $botConfig = $bot ? $bot->getConfig()          : [];
+        $overrides = $bot ? $bot->getOperatorOverrides(): [];
+        $registry  = $bot ? $bot->getStrategyRegistry(): [];
+        $flash     = $this->getFlash();
+        $saveUrl   = System::web('admin/brain/bot/overrides/save');
+
+        ob_start();
+        $title = 'Brain — Control';
+        require SystemPaths::instance()->get('system.brain') . '/views/bot_control.php';
+        $content = ob_get_clean();
+
+        return $this->wrapLayout($title, $content);
+    }
+
+    /**
+     * Save per-strategy operator overrides
+     * POST /admin/brain/bot/overrides/save
+     */
+    public function botOverridesSave(): void
+    {
+        if (!Auth::check()) {
+            $this->jsonResponse(['error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $stratId = trim((string)($_POST['strategy_id'] ?? ''));
+        if ($stratId === '') {
+            $this->setFlash('error', 'strategy_id is required');
+            $this->redirect('admin/brain/bot/strategies');
+            return;
+        }
+
+        $bot = $this->loadBotService();
+        if ($bot === null) {
+            $this->setFlash('error', 'Bot module not found');
+            $this->redirect('admin/brain/bot/strategies');
+            return;
+        }
+
+        $overrides = $bot->getOperatorOverrides();
+        $prev      = (array)($overrides[$stratId] ?? []);
+
+        $enabled   = (int)($_POST['enabled']              ?? 1);
+        $budget    = (float)($_POST['bot_budget']         ?? 0.0);
+        $leverage  = (int)($_POST['bot_leverage']         ?? 0);
+        $entryMode = trim((string)($_POST['entry_mode']   ?? ''));
+        $maxPos    = (int)($_POST['max_active_positions'] ?? 0);
+
+        if (!in_array($entryMode, ['limit', 'market'], true)) {
+            $entryMode = null;
+        }
+
+        $overrides[$stratId] = array_merge($prev, [
+            'enabled'              => (bool)$enabled,
+            'mode'                 => $prev['mode']        ?? 'passive',
+            'bot_budget'           => $budget,
+            'bot_leverage'         => $leverage,
+            'entry_mode'           => $entryMode,
+            'stop_preset'          => $prev['stop_preset'] ?? null,
+            'exit_preset'          => $prev['exit_preset'] ?? null,
+            'max_active_positions' => $maxPos,
+        ]);
+
+        $bot->saveOperatorOverrides($overrides);
+
+        $this->setFlash('success', "Overrides saved for strategy «{$stratId}»");
+        $this->redirect('admin/brain/bot/strategies');
+    }
+
+    /**
+     * Load BotService instance.
+     * Returns null if bot module is not registered in SystemPaths.
+     */
+    private function loadBotService(): ?\Modules\Bot\BotService
+    {
+        try {
+            $botDir = SystemPaths::instance()->get('bot');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (!$botDir || !is_dir($botDir)) {
+            return null;
+        }
+
+        $serviceFile = $botDir . '/service.php';
+        if (!file_exists($serviceFile)) {
+            return null;
+        }
+
+        require_once $serviceFile;
+        return new \Modules\Bot\BotService($botDir);
+    }
+
+    // ========================================================================
     // C5: RESET ALL + C6: SELFTEST ENDPOINTS
     // ========================================================================
 

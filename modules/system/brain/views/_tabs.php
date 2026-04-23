@@ -52,4 +52,25 @@ $activeTab = $activeTab ?? 'dashboard';
             <i class="bi bi-clock-history me-1"></i> History
         </a>
     </li>
+    <li class="nav-item nav-item-separator" style="border-left:1px solid #334155;margin:0 4px;"></li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'bot-strategies' ? 'active' : '' ?>" href="<?= $brainUrl ?>/bot/strategies">
+            <i class="bi bi-robot me-1"></i> Bot Strategies
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'bot' ? 'active' : '' ?>" href="<?= $brainUrl ?>/bot">
+            <i class="bi bi-cpu me-1"></i> Bot
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'bot-pm' ? 'active' : '' ?>" href="<?= $brainUrl ?>/bot/pm">
+            <i class="bi bi-graph-up-arrow me-1"></i> Profit Mgr
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeTab === 'bot-control' ? 'active' : '' ?>" href="<?= $brainUrl ?>/bot/control">
+            <i class="bi bi-sliders me-1"></i> Control
+        </a>
+    </li>
 </ul>

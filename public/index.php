@@ -1002,6 +1002,32 @@ Router::post('/admin/brain/api/profiles/set_active', function () {
     $controller->apiProfileSetActive();
 });
 
+// Brain Bot Operator Tabs
+Router::get('/admin/brain/bot/strategies', function () {
+    $controller = BrainController::instance();
+    echo $controller->botStrategies();
+});
+
+Router::get('/admin/brain/bot', function () {
+    $controller = BrainController::instance();
+    echo $controller->bot();
+});
+
+Router::get('/admin/brain/bot/pm', function () {
+    $controller = BrainController::instance();
+    echo $controller->botPm();
+});
+
+Router::get('/admin/brain/bot/control', function () {
+    $controller = BrainController::instance();
+    echo $controller->botControl();
+});
+
+Router::post('/admin/brain/bot/overrides/save', function () {
+    $controller = BrainController::instance();
+    $controller->botOverridesSave();
+});
+
 // ============================================================
 // SMART BRAIN MODULE ROUTES
 // ============================================================

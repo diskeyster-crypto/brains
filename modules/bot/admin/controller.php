@@ -35,7 +35,7 @@ final class BotAdminController
     private function __construct()
     {
         $this->moduleDir = rtrim(
-            SystemPaths::instance()->get('bot'),
+            SystemPaths::instance()->get('bot.bot'),
             '/'
         );
     }

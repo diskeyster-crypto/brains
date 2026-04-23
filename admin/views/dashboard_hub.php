@@ -68,41 +68,64 @@ function renderDashboardHub(): string
     }
 
     // ── summary counts ────────────────────────────────────────────────────
-    // Fallback: scan strategy module manifests if bot hasn't run yet
+    // Fallback: scan strategy module manifests if bot hasn't run yet.
+    // Scans two levels deep (e.g. modules/strategy/fish/ and
+    // modules/strategy/pattern/double_bottom_long/) so all concrete strategy
+    // modules are discovered regardless of nesting.
     if (empty($registry)) {
         $stratRoot = System::path('root') . '/modules/strategy';
+        $addFromManifest = static function (string $mfPath, string $relDir) use (&$registry): void {
+            if (!file_exists($mfPath)) {
+                return;
+            }
+            $mfRaw = file_get_contents($mfPath);
+            $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
+            if (!is_array($mf) || ($mf['category'] ?? '') !== 'strategy') {
+                return;
+            }
+            $mfId = (string)($mf['name'] ?? '');
+            if ($mfId === '') {
+                return;
+            }
+            // Avoid duplicates
+            foreach ($registry as $r) {
+                if (($r['strategy_id'] ?? '') === $mfId) {
+                    return;
+                }
+            }
+            $registry[] = [
+                'strategy_id'        => $mfId,
+                'module_path'        => $relDir,
+                'manifest_path'      => $relDir . '/manifest.json',
+                'title'              => (string)($mf['title'] ?? $mfId),
+                'category'           => 'strategy',
+                'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
+                'handoff_queue_path' => null,
+                'supports_long'      => true,
+                'supports_short'     => true,
+                'status'             => 'discovered',
+                'discovered_at'      => null,
+            ];
+        };
         if (is_dir($stratRoot)) {
             foreach (new \DirectoryIterator($stratRoot) as $entry) {
                 if (!$entry->isDir() || $entry->isDot()) {
                     continue;
                 }
-                $mfPath = $entry->getPathname() . '/manifest.json';
-                if (!file_exists($mfPath)) {
-                    continue;
+                $relDir  = 'modules/strategy/' . $entry->getFilename();
+                $absDir  = $entry->getPathname();
+                // Try top-level manifest
+                $addFromManifest($absDir . '/manifest.json', $relDir);
+                // Try one level of subdirectories (e.g. pattern/double_bottom_long)
+                foreach (new \DirectoryIterator($absDir) as $sub) {
+                    if (!$sub->isDir() || $sub->isDot()) {
+                        continue;
+                    }
+                    $addFromManifest(
+                        $sub->getPathname() . '/manifest.json',
+                        $relDir . '/' . $sub->getFilename()
+                    );
                 }
-                $mfRaw = file_get_contents($mfPath);
-                $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
-                if (!is_array($mf) || ($mf['category'] ?? '') !== 'strategy') {
-                    continue;
-                }
-                $mfId = (string)($mf['name'] ?? '');
-                if ($mfId === '') {
-                    continue;
-                }
-                $mfDir = 'modules/strategy/' . $entry->getFilename();
-                $registry[] = [
-                    'strategy_id'        => $mfId,
-                    'module_path'        => $mfDir,
-                    'manifest_path'      => $mfDir . '/manifest.json',
-                    'title'              => (string)($mf['title'] ?? $mfId),
-                    'category'           => 'strategy',
-                    'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
-                    'handoff_queue_path' => null,
-                    'supports_long'      => true,
-                    'supports_short'     => true,
-                    'status'             => 'discovered',
-                    'discovered_at'      => null,
-                ];
             }
         }
     }
@@ -240,6 +263,43 @@ function renderDashboardHub(): string
 
             $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
 
+            // Manual run action buttons — only active for strategies with a wired service.
+            // All other strategies show disabled/unavailable buttons so the operator can see
+            // the actions exist but are not yet supported for that module.
+            $supportsManualRun = ($stratId === 'double_bottom_long');
+            if ($supportsManualRun) {
+                $actionButtonsHtml = <<<BTN
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="queue_run">
+        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
+          Запуск цикла
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="tick_batch">
+        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
+          Тик батча
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="refresh">
+        <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
+          Обновить runtime
+        </button>
+      </form>
+BTN;
+            } else {
+                $actionButtonsHtml = <<<BTN
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="Ручной запуск не поддерживается для этой стратегии">Запуск цикла</button>
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="Ручной запуск не поддерживается для этой стратегии">Тик батча</button>
+BTN;
+            }
+
             $stratCards .= <<<HTML
 <div class="card" style="margin-bottom:16px;">
   <!-- Card header -->
@@ -298,27 +358,7 @@ function renderDashboardHub(): string
       <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
         Изменить
       </button>
-      <form method="post" action="{$stratActUrl}" style="margin:0;">
-        <input type="hidden" name="strategy_id" value="{$esId}">
-        <input type="hidden" name="action" value="queue_run">
-        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
-          Запуск цикла
-        </button>
-      </form>
-      <form method="post" action="{$stratActUrl}" style="margin:0;">
-        <input type="hidden" name="strategy_id" value="{$esId}">
-        <input type="hidden" name="action" value="tick_batch">
-        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
-          Тик батча
-        </button>
-      </form>
-      <form method="post" action="{$stratActUrl}" style="margin:0;">
-        <input type="hidden" name="strategy_id" value="{$esId}">
-        <input type="hidden" name="action" value="refresh">
-        <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
-          Обновить runtime
-        </button>
-      </form>
+      {$actionButtonsHtml}
     </div>
 
     <!-- Inline edit form (hidden by default) -->
@@ -909,7 +949,7 @@ function handleDashboardBotTick(): void
     }
 
     // action === 'tick' (default)
-    $moduleDir = \Core\System\SystemPaths::instance()->get('bot');
+    $moduleDir = \Core\System\SystemPaths::instance()->get('bot.bot');
 
     require_once $moduleDir . '/bootstrap.php';
     require_once $moduleDir . '/service.php';

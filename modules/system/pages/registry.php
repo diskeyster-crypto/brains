@@ -367,17 +367,6 @@ final class PagesRegistry
                 'order' => 37,
                 'locked' => false,
             ],
-            13 => [
-                'id' => 13,
-                'title' => 'Brain',
-                'route' => '/admin/brain',
-                'type' => 'module',
-                'roles' => ['admin'],
-                'visible' => false,
-                'icon' => 'bi-cpu',
-                'order' => 5,
-                'locked' => false,
-            ],
             14 => [
                 'id' => 14,
                 'title' => 'Copytrading',

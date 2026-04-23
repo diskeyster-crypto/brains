@@ -1443,16 +1443,26 @@ final class DoubleBottomLongService
     }
 
     /**
+     * Compute signal TTL in seconds from config (signal_ttl_bars × H4 bar duration).
+     * Single authoritative place for this calculation.
+     */
+    private function signalTtlSec(array $config): int
+    {
+        $bars = (int)($config['signal_ttl_bars'] ?? 2);
+        // H4_INTERVAL is in minutes (240); convert to seconds per bar.
+        return max(1, $bars) * (int)self::H4_INTERVAL * 60;
+    }
+
+    /**
      * Remove signals from signals.json that have exceeded signal_ttl_bars * H4 seconds.
      * Expired signals are dropped entirely so signals.json stays coherent across cycles.
      */
     private function expireSignals(array $signals, array $config): array
     {
-        $ttlBars = (int)($config['signal_ttl_bars'] ?? 2);
-        if ($ttlBars <= 0) {
+        if ((int)($config['signal_ttl_bars'] ?? 2) <= 0) {
             return $signals;
         }
-        $ttlSec = $ttlBars * 4 * 3600;   // H4 bar = 4 hours
+        $ttlSec = $this->signalTtlSec($config);
         $now    = time();
         return array_values(
             array_filter($signals, static function (array $s) use ($now, $ttlSec): bool {
@@ -1821,8 +1831,7 @@ final class DoubleBottomLongService
         }
 
         // Process records that have left the active pool: mark as expired or withdrawn
-        $ttlBars = (int)($config['signal_ttl_bars'] ?? 2);
-        $ttlSec  = $ttlBars * 4 * 3600;  // H4 bar = 4 hours
+        $ttlSec = $this->signalTtlSec($config);
 
         foreach ($existingMap as $id => $prev) {
             if (isset($result[$id])) {
@@ -1870,8 +1879,7 @@ final class DoubleBottomLongService
      */
     private function buildBotHandoffRecord(array $signal, array $config): array
     {
-        $ttlBars    = (int)($config['signal_ttl_bars'] ?? 2);
-        $ttlSec     = $ttlBars * 4 * 3600;  // H4 bar = 4 hours
+        $ttlSec     = $this->signalTtlSec($config);
         $detectedAt = (string)($signal['detected_at'] ?? date('c'));
         $detectedTs = strtotime($detectedAt);
         $expiresAt  = $detectedTs !== false

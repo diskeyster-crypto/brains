@@ -1316,6 +1316,28 @@ Router::get('/admin/copytrading/api/history', function () {
 });
 
 // ============================================================
+// BOT MODULE ROUTES (Operator Control Layer)
+// ============================================================
+
+require_once ROOT . '/modules/bot/admin/controller.php';
+use Modules\Bot\Admin\BotAdminController;
+
+Router::get('/admin/bot', function () {
+    $controller = BotAdminController::instance();
+    echo renderLayout('Bot — Управление', $controller->dashboard(), 'bot');
+});
+
+Router::get('/admin/bot/api/status', function () {
+    $controller = BotAdminController::instance();
+    $controller->apiStatus();
+});
+
+Router::post('/admin/bot/api/overrides/save', function () {
+    $controller = BotAdminController::instance();
+    $controller->saveOverrides();
+});
+
+// ============================================================
 // ADMIN API ROUTES
 // ============================================================
 

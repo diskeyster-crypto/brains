@@ -1,1 +1,22 @@
-{}
+{
+    "status": "never_run",
+    "tick_at": null,
+    "elapsed_sec": 0,
+    "bot_enabled": false,
+    "bot_mode": "passive",
+    "strategies_discovered_total": 0,
+    "strategies_enabled_total": 0,
+    "strategies_disabled_total": 0,
+    "handoff_sources_active_total": 0,
+    "handoff_signals_processed": 0,
+    "handoff_signals_ignored_disabled_strategy": 0,
+    "order_queue_new_total": 0,
+    "order_queue_refreshed_total": 0,
+    "order_queue_expired_total": 0,
+    "order_queue_withdrawn_total": 0,
+    "order_queue_total": 0,
+    "active_orders_count": 0,
+    "active_positions_count": 0,
+    "ticks_total": 0,
+    "handoff_signals_seen_total": 0
+}

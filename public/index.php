@@ -942,6 +942,40 @@ Router::post('/admin/bot/api/overrides/save', function () {
 });
 
 // ============================================================
+// STOP MANAGER MODULE ROUTES (Operator Control Layer)
+// ============================================================
+
+require_once ROOT . '/modules/stop_manager/admin/controller.php';
+use Modules\StopManager\Admin\StopManagerAdminController;
+
+Router::get('/admin/stop-manager', function () {
+    if (!Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $controller = StopManagerAdminController::instance();
+    echo renderLayout('Stop Manager', $controller->dashboard(), 'stop_manager');
+});
+
+Router::post('/admin/stop-manager/tick', function () {
+    $controller = StopManagerAdminController::instance();
+    $controller->tick();
+});
+
+Router::post('/admin/stop-manager/config/save', function () {
+    $controller = StopManagerAdminController::instance();
+    $controller->configSave();
+});
+
+Router::post('/admin/dashboard/stop-manager/tick', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardStopManagerTick();
+});
+
+// ============================================================
 // ADMIN API ROUTES
 // ============================================================
 

@@ -57,6 +57,33 @@ function renderDashboardHub(): string
         $botConfigErrors[] = $e->getMessage();
     }
 
+    // ── stop_manager config + runtime ────────────────────────────────────
+    $smDir     = System::path('root') . '/modules/stop_manager';
+    $smStorage = $smDir . '/storage';
+    $readSmJson = static function (string $file, mixed $default = []) use ($smStorage): mixed {
+        $path = $smStorage . '/' . $file;
+        if (!file_exists($path)) {
+            return $default;
+        }
+        $raw = file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return $default;
+        }
+        $decoded = json_decode($raw, true);
+        return ($decoded !== null) ? $decoded : $default;
+    };
+    $smLastRun = $readSmJson('last_run.json', []);
+    $smStats   = $readSmJson('stats.json',   []);
+    $smStops   = $readSmJson('stops.json',   []);
+    $smConfig  = [];
+    try {
+        $smBase   = is_file($smDir . '/config/base.php')   ? (require $smDir . '/config/base.php')   : [];
+        $smActive = is_file($smDir . '/config/active.php') ? (require $smDir . '/config/active.php') : [];
+        $smConfig = array_merge(is_array($smBase) ? $smBase : [], is_array($smActive) ? $smActive : []);
+    } catch (\Throwable) {
+        // keep empty
+    }
+
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
     if (session_status() === PHP_SESSION_NONE) {
@@ -537,6 +564,35 @@ ROWS;
 
     // ── flash HTML ────────────────────────────────────────────────────────
     $botTickUrl = System::web('admin/dashboard/bot/tick');
+    $smTickUrl  = System::web('admin/dashboard/stop-manager/tick');
+    $smPageUrl  = System::web('admin/stop-manager');
+
+    // ── stop_manager display values ───────────────────────────────────────
+    $smEnabled     = ($smConfig['enabled']          ?? false) ? 'Да' : 'Нет';
+    $smMode        = (string)($smConfig['mode']      ?? 'disabled');
+    $smStopMode    = (string)($smConfig['stop_mode'] ?? 'entry_liq_percent');
+    $smBuf         = (string)($smConfig['stop_from_liq_buffer_pct'] ?? 0.05);
+    $smBeEn        = ($smConfig['breakeven_enabled'] ?? false) ? 'Да' : 'Нет';
+    $smBeTrig      = (string)($smConfig['breakeven_trigger_roi']     ?? 10.0);
+    $smBeLock      = (string)($smConfig['breakeven_profit_lock_roi'] ?? 3.0);
+    $smLastTick    = (string)($smLastRun['tick_at']                  ?? '—');
+    $smLastStatus  = (string)($smLastRun['status']                   ?? 'never_run');
+    $smPosSeen     = (string)($smLastRun['positions_seen']            ?? 0);
+    $smActiveStops = (string)($smLastRun['stops_active_count']        ?? count($smStops));
+    $smBeApplied   = (string)($smStats['breakeven_applied_total']     ?? 0);
+    $smStatusColor = $smLastStatus === 'ok' ? '#3fb950' : '#8b949e';
+
+    // ── stop_manager config for Control tab (mirrored) ───────────────────
+    $smCfgEnYes = ($smConfig['enabled'] ?? false) ? ' selected' : '';
+    $smCfgEnNo  = !($smConfig['enabled'] ?? false) ? ' selected' : '';
+    $smCfgModeD = $smMode === 'disabled' ? ' selected' : '';
+    $smCfgModeP = $smMode === 'paper'    ? ' selected' : '';
+    $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
+    $smCfgBeEnNo  = !($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
+    $smCfgBuf   = $e($smBuf);
+    $smCfgTrig  = $e($smBeTrig);
+    $smCfgLock  = $e($smBeLock);
+    $smConfigSaveUrl = System::web('admin/stop-manager/config/save');
     $flashHtml = '';
     if ($flash) {
         $ftype = ($flash['type'] === 'success') ? 'success' : 'danger';
@@ -597,6 +653,9 @@ HTML;
   </button>
   <button class="dh-tab-btn" onclick="dhTab(this,'dh-bot')" type="button">
     <i class="bi bi-cpu" style="margin-right:5px;"></i>Бот
+  </button>
+  <button class="dh-tab-btn" onclick="dhTab(this,'dh-sm')" type="button">
+    <i class="bi bi-shield-exclamation" style="margin-right:5px;"></i>Стоп
   </button>
   <button class="dh-tab-btn" onclick="dhTab(this,'dh-ctrl')" type="button">
     <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
@@ -681,6 +740,65 @@ HTML;
   </div>
 </div>
 
+<!-- ── Stop Manager pane ────────────────────────────────────────────── -->
+<div id="dh-sm" class="dh-pane">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div class="card-header">Stop Manager — Конфигурация</div>
+      <div class="card-body">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$smEnabled}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$smMode}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stop mode</td><td><code>{$smStopMode}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Буфер от liq (%)</td><td><code>{$smBuf}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven</td><td>{$smBeEn}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE trigger ROI%</td><td><code>{$smBeTrig}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE lock ROI%</td><td><code>{$smBeLock}</code></td></tr>
+        </table>
+        <div style="margin-top:10px;">
+          <a href="{$smPageUrl}" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;padding:5px 14px;font-size:12px;">
+            <i class="bi bi-arrow-right" style="margin-right:4px;"></i>Полный интерфейс
+          </a>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Stop Manager — Runtime</div>
+      <div class="card-body">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Последний тик</td><td><code>{$smLastTick}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус тика</td><td style="color:{$smStatusColor};"><strong>{$smLastStatus}</strong></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций увидено</td><td><code>{$smPosSeen}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных стопов</td><td><code>{$smActiveStops}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven применено</td><td><code>{$smBeApplied}</code></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">Ручное управление</div>
+    <div class="card-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <form method="post" action="{$smTickUrl}" style="margin:0;">
+          <input type="hidden" name="action" value="tick">
+          <button type="submit" class="btn btn-sm" style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid #a78bfa55;padding:6px 18px;">
+            <i class="bi bi-play-fill" style="margin-right:4px;"></i>Тик стоп-менеджера
+          </button>
+        </form>
+        <form method="post" action="{$smTickUrl}" style="margin:0;">
+          <input type="hidden" name="action" value="refresh">
+          <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
+            <i class="bi bi-arrow-clockwise" style="margin-right:4px;"></i>Обновить runtime
+          </button>
+        </form>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
+        Только paper/local. Биржевые стопы не размещаются.
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Control pane ──────────────────────────────────────────────────── -->
 <div id="dh-ctrl" class="dh-pane">
   <div class="card" style="margin-bottom:16px;">
@@ -758,6 +876,63 @@ HTML;
         </thead>
         <tbody>{$mirrorRows}</tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Stop Manager mirrored controls -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><i class="bi bi-shield-exclamation" style="margin-right:6px;"></i>Stop Manager — Быстрые настройки</span>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · тот же источник истины</small>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{$smConfigSaveUrl}">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
+            <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$smCfgEnYes}>Да</option>
+              <option value="0"{$smCfgEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
+            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="disabled"{$smCfgModeD}>disabled</option>
+              <option value="paper"{$smCfgModeP}>paper</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Stop mode</label>
+            <select name="stop_mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="entry_liq_percent" selected>entry_liq_percent</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Буфер от liq (доля 0–1)</label>
+            <input type="number" step="0.001" min="0" max="1" name="stop_from_liq_buffer_pct"
+              value="{$smCfgBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Breakeven</label>
+            <select name="breakeven_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$smCfgBeEnYes}>Да</option>
+              <option value="0"{$smCfgBeEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">BE trigger ROI%</label>
+            <input type="number" step="0.1" min="0" name="breakeven_trigger_roi"
+              value="{$smCfgTrig}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">BE lock ROI%</label>
+            <input type="number" step="0.1" name="breakeven_profit_lock_roi"
+              value="{$smCfgLock}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+      </form>
     </div>
   </div>
 </div>
@@ -1027,3 +1202,46 @@ function handleDashboardBotTick(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardBotTick'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: manual stop_manager tick from dashboard
+// Registered as: POST /admin/dashboard/stop-manager/tick
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardStopManagerTick')) {
+function handleDashboardStopManagerTick(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    $action  = trim((string)($_POST['action'] ?? 'tick'));
+    $dashUrl = System::web('admin/dashboard');
+
+    if ($action === 'refresh') {
+        $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Stop Manager runtime обновлён'];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    $moduleDir = System::path('root') . '/modules/stop_manager';
+
+    try {
+        require_once $moduleDir . '/bootstrap.php';
+        require_once $moduleDir . '/service.php';
+        $service = \Modules\StopManager\StopManagerService::instance($moduleDir);
+        $service->tick();
+        $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Stop Manager tick выполнен'];
+    } catch (\Throwable $ex) {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Stop Manager tick: ' . $ex->getMessage()];
+    }
+
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardStopManagerTick'))

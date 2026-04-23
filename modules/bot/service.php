@@ -930,9 +930,24 @@ final class BotService
 
     /**
      * Build a bot-owned active position record from a filled paper order.
+     *
+     * Liquidation context for stop_manager:
+     *   liq_price           — null in paper mode (no real exchange liq available)
+     *   estimated_liq_price — isolated-margin local estimate; positive float or null
+     *                         long:  entry × (1 − 1 / leverage)
+     *                         short: entry × (1 + 1 / leverage)
+     *                         null when entry_price ≤ 0, leverage ≤ 1, or result ≤ 0
+     *
+     * stop_manager reads estimated_liq_price as liq_source = estimated.
+     * Only an exchange-provided liq_price > 0 may be treated as real.
      */
     private function buildPositionFromOrder(array $order, string $tickAt): array
     {
+        $entryPrice      = (float)($order['entry_price'] ?? 0.0);
+        $leverage        = (int)($order['bot_leverage']  ?? 1);
+        $side            = (string)($order['side']       ?? 'long');
+        $estimatedLiqPrice = $this->computeEstimatedLiqPrice($entryPrice, $leverage, $side);
+
         return [
             // Ownership — carried forward unchanged
             'owner_strategy' => (string)($order['owner_strategy'] ?? ''),
@@ -941,15 +956,15 @@ final class BotService
 
             // Signal geometry
             'symbol'      => (string)($order['symbol']      ?? ''),
-            'side'        => (string)($order['side']        ?? 'long'),
+            'side'        => $side,
             'timeframe'   => (string)($order['timeframe']   ?? 'H4'),
             'entry_mode'  => (string)($order['entry_mode']  ?? 'limit'),
             'entry_type'  => (string)($order['entry_type']  ?? 'breakout'),
-            'entry_price' => (float)($order['entry_price']  ?? 0.0),
+            'entry_price' => $entryPrice,
 
             // Execution parameters
             'bot_budget'                    => (float)($order['bot_budget']                    ?? 0.0),
-            'bot_leverage'                  => (int)($order['bot_leverage']                    ?? 1),
+            'bot_leverage'                  => $leverage,
             'stop_mode'                     => (string)($order['stop_mode']                    ?? 'fixed_from_liq_zone'),
             'stop_from_liq_buffer_value'    => (float)($order['stop_from_liq_buffer_value']   ?? 0.002),
             'stop_from_liq_buffer_type'     => (string)($order['stop_from_liq_buffer_type']   ?? 'percent'),
@@ -957,6 +972,10 @@ final class BotService
             'tp_mode'                       => (string)($order['tp_mode']                     ?? 'fixed_r'),
             'tp_value'                      => (float)($order['tp_value']                     ?? 2.0),
             'reverse_pattern_close_enabled' => (bool)($order['reverse_pattern_close_enabled'] ?? false),
+
+            // Liquidation context (paper-local; no real exchange liq in paper mode)
+            'liq_price'           => null,
+            'estimated_liq_price' => $estimatedLiqPrice,
 
             // Position lifecycle
             'position_status'   => 'open',
@@ -967,6 +986,27 @@ final class BotService
             'entered_at'        => $tickAt,
             'last_updated_at'   => $tickAt,
         ];
+    }
+
+    /**
+     * Compute isolated-margin estimated liquidation price for paper positions.
+     *
+     * Long:  liq_estimate = entry × (1 − 1 / leverage)
+     * Short: liq_estimate = entry × (1 + 1 / leverage)
+     *
+     * Returns null when result would be ≤ 0 (e.g. leverage = 1 long) or inputs are unusable.
+     */
+    private function computeEstimatedLiqPrice(float $entryPrice, int $leverage, string $side): ?float
+    {
+        if ($entryPrice <= 0.0 || $leverage <= 0) {
+            return null;
+        }
+
+        $estimate = $side === 'long'
+            ? $entryPrice * (1.0 - 1.0 / $leverage)
+            : $entryPrice * (1.0 + 1.0 / $leverage);
+
+        return $estimate > 0.0 ? $estimate : null;
     }
 
     /**

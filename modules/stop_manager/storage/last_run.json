@@ -1,17 +1,17 @@
 {
-    "status": "never_run",
-    "tick_at": null,
-    "elapsed_sec": 0,
-    "module_enabled": false,
-    "module_mode": "disabled",
-    "positions_seen": 0,
+    "status": "ok",
+    "tick_at": "2026-04-23T18:41:18+00:00",
+    "elapsed_sec": 0.0003,
+    "module_enabled": true,
+    "module_mode": "paper",
+    "positions_seen": 1,
     "positions_with_real_liq": 0,
-    "positions_with_estimated_liq": 0,
+    "positions_with_estimated_liq": 1,
     "positions_without_liq": 0,
-    "stops_initialized": 0,
+    "stops_initialized": 1,
     "stops_recalculated": 0,
     "breakeven_applied": 0,
     "stops_closed_reference": 0,
-    "stops_active_count": 0,
-    "ticks_total": 0
+    "stops_active_count": 1,
+    "ticks_total": 1
 }

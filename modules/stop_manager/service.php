@@ -525,12 +525,14 @@ final class StopManagerService
     /**
      * Classify the liquidation data quality for a position.
      *
-     * Returns one of:
-     *   ['source' => 'real',      'price' => float]  — exchange-provided liq_price > 0
-     *   ['source' => 'estimated', 'price' => float]  — derived from leverage (isolated-margin fallback)
-     *   ['source' => 'missing',   'price' => null]   — no usable liq data
+     * Priority:
+     *   1. liq_price > 0            → real      (exchange-provided)
+     *   2. estimated_liq_price > 0  → estimated (bot-computed local paper estimate)
+     *   3. formula from leverage    → estimated (fallback for legacy records)
+     *   4. none of the above        → missing
      *
      * Zero, null, or absent liq_price is never treated as real.
+     * estimated_liq_price set by the bot position contract is taken as-is.
      */
     private function classifyLiqSource(array $pos): array
     {
@@ -538,10 +540,19 @@ final class StopManagerService
         if ($raw !== null && is_numeric($raw) && (float)$raw > 0.0) {
             return ['source' => 'real', 'price' => (float)$raw];
         }
+
+        // Explicit estimated liq provided by the bot position contract
+        $explicit = $pos['estimated_liq_price'] ?? null;
+        if ($explicit !== null && is_numeric($explicit) && (float)$explicit > 0.0) {
+            return ['source' => 'estimated', 'price' => (float)$explicit];
+        }
+
+        // Fallback: derive from entry_price + bot_leverage (handles legacy records)
         $estimated = $this->estimateLiqPrice($pos);
         if ($estimated !== null && $estimated > 0.0) {
             return ['source' => 'estimated', 'price' => $estimated];
         }
+
         return ['source' => 'missing', 'price' => null];
     }
 

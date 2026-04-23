@@ -25,21 +25,29 @@ declare(strict_types=1);
  *   withdrawn — signal disappeared from handoff before TTL
  *
  * Bot execution modes:
- *   disabled  — ingest and manage queue/runtime; do not execute queue items
- *   passive   — ingest/queue/runtime only; no execution promotion
- *   smoke     — simulate execution locally in storage/state; no real exchange calls
- *   active    — at this stage maps to smoke (live exchange not yet implemented)
+ *   disabled — ingest/runtime only; no local entries created
+ *   passive  — ingest/queue/runtime only; no execution promotion
+ *   paper    — full local execution simulation in storage; no exchange interaction
+ *   smoke    — legacy alias for paper
+ *   active   — legacy alias for paper (live exchange not yet implemented)
  *
- * Order lifecycle states (smoke mode):
+ * Order lifecycle states (paper mode):
  *   created          — order record built from ready queue item
- *   submitted_smoke  — smoke-submitted (deterministic, no real exchange)
- *   filled_smoke     — smoke-filled; originating position is created
+ *   submitted_paper  — paper-submitted (deterministic, no real exchange)
+ *   filled_paper     — paper-filled; originating position is created
  *   cancelled        — order cancelled before fill
  *   expired          — order TTL elapsed before fill
  *
  * Position lifecycle states:
- *   open   — active (smoke) position
- *   closed — position closed
+ *   open    — active paper position
+ *   closing — close in progress (reserved)
+ *   closed  — position closed
+ *
+ * Storage files:
+ *   active_orders.json      — open paper orders
+ *   active_positions.json   — open paper positions
+ *   closed_positions.json   — historical closed positions
+ *   execution_log.ndjson    — append-only execution event log
  */
 
 namespace Modules\Bot;
@@ -216,21 +224,23 @@ final class BotService
         }
 
         // ── 3. Load bot state ─────────────────────────────────────────────────
-        $orderQueue      = $this->readJson('storage/order_queue.json', []);
-        $activeOrders    = $this->readJson('storage/active_orders.json', []);
-        $activePositions = $this->readJson('storage/active_positions.json', []);
-        $stats           = array_merge($this->zeroStats(), $this->getStats());
+        $orderQueue       = $this->readJson('storage/order_queue.json', []);
+        $activeOrders     = $this->readJson('storage/active_orders.json', []);
+        $activePositions  = $this->readJson('storage/active_positions.json', []);
+        $closedPositions  = $this->readJson('storage/closed_positions.json', []);
+        $stats            = array_merge($this->zeroStats(), $this->getStats());
 
         // ── 4. Process handoff → order queue ──────────────────────────────────
         $result     = $this->processHandoff($allSignals, $orderQueue, $config, $overrides, $tickAt);
         $orderQueue = $result['order_queue'];
 
-        // ── 5. Execution state machine (smoke mode only) ──────────────────────
+        // ── 5. Execution state machine (paper mode only) ──────────────────────
         $botMode  = (string)($config['mode'] ?? 'passive');
-        $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $botMode, $tickAt);
+        $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $tickAt);
         $orderQueue      = $execResult['order_queue'];
         $activeOrders    = $execResult['active_orders'];
         $activePositions = $execResult['active_positions'];
+        $closedPositions = $execResult['closed_positions'];
 
         // ── 6. Update stats ───────────────────────────────────────────────────
         $stats['ticks_total']               += 1;
@@ -247,23 +257,28 @@ final class BotService
         $stats['order_queue_expired_total']   += $result['expired_total'];
         $stats['order_queue_withdrawn_total'] += $result['withdrawn_total'];
         // Execution counters are cumulative
-        $stats['orders_created_total']                   += $execResult['orders_created'];
-        $stats['orders_submitted_smoke_total']           += $execResult['orders_submitted_smoke'];
-        $stats['orders_filled_smoke_total']              += $execResult['orders_filled_smoke'];
-        $stats['positions_opened_total']                 += $execResult['positions_opened'];
-        $stats['positions_closed_total']                 += $execResult['positions_closed'];
+        $stats['orders_created_total']                    += $execResult['orders_created'];
+        $stats['orders_submitted_paper_total']            += $execResult['orders_submitted_paper'];
+        $stats['orders_filled_paper_total']               += $execResult['orders_filled_paper'];
+        $stats['positions_opened_total']                  += $execResult['positions_opened'];
+        $stats['positions_closed_total']                  += $execResult['positions_closed'];
+        $stats['positions_closed_expired_total']          += $execResult['positions_closed_expired'];
+        $stats['positions_closed_withdrawn_total']        += $execResult['positions_closed_withdrawn'];
+        $stats['positions_closed_reverse_pattern_total']  += $execResult['positions_closed_reverse_pattern'];
         $stats['queue_items_skipped_mode_disabled_total'] += $execResult['queue_items_skipped_mode_disabled'];
         $stats['queue_items_skipped_mode_passive_total']  += $execResult['queue_items_skipped_mode_passive'];
+        $stats['execution_log_events_total']              += $execResult['execution_log_events'];
         // Derived counts
         $stats['order_queue_total']      = $this->countByStatus($orderQueue, ['queued', 'ready']);
         $stats['active_orders_total']    = count($activeOrders);
         $stats['active_positions_total'] = count($activePositions);
 
         // ── 7. Persist ────────────────────────────────────────────────────────
-        $this->writeJson('storage/order_queue.json',      $orderQueue);
-        $this->writeJson('storage/active_orders.json',    $activeOrders);
-        $this->writeJson('storage/active_positions.json', $activePositions);
-        $this->writeJson('storage/stats.json',            $stats);
+        $this->writeJson('storage/order_queue.json',       $orderQueue);
+        $this->writeJson('storage/active_orders.json',     $activeOrders);
+        $this->writeJson('storage/active_positions.json',  $activePositions);
+        $this->writeJson('storage/closed_positions.json',  $closedPositions);
+        $this->writeJson('storage/stats.json',             $stats);
 
         $elapsed = round(microtime(true) - $tStart, 4);
 
@@ -293,14 +308,18 @@ final class BotService
             'order_queue_withdrawn_total' => $result['withdrawn_total'],
 
             // Execution this tick
-            'execution_mode'                    => $botMode,
-            'orders_created'                    => $execResult['orders_created'],
-            'orders_submitted_smoke'            => $execResult['orders_submitted_smoke'],
-            'orders_filled_smoke'               => $execResult['orders_filled_smoke'],
-            'positions_opened'                  => $execResult['positions_opened'],
-            'positions_closed'                  => $execResult['positions_closed'],
-            'queue_items_skipped_mode_disabled' => $execResult['queue_items_skipped_mode_disabled'],
-            'queue_items_skipped_mode_passive'  => $execResult['queue_items_skipped_mode_passive'],
+            'execution_mode'                         => $botMode,
+            'orders_created'                         => $execResult['orders_created'],
+            'orders_submitted_paper'                 => $execResult['orders_submitted_paper'],
+            'orders_filled_paper'                    => $execResult['orders_filled_paper'],
+            'positions_opened'                       => $execResult['positions_opened'],
+            'positions_closed'                       => $execResult['positions_closed'],
+            'positions_closed_expired'               => $execResult['positions_closed_expired'],
+            'positions_closed_withdrawn'             => $execResult['positions_closed_withdrawn'],
+            'positions_closed_reverse_pattern'       => $execResult['positions_closed_reverse_pattern'],
+            'queue_items_skipped_mode_disabled'      => $execResult['queue_items_skipped_mode_disabled'],
+            'queue_items_skipped_mode_passive'       => $execResult['queue_items_skipped_mode_passive'],
+            'execution_log_events'                   => $execResult['execution_log_events'],
 
             // Current queue/execution state
             'order_queue_total'      => $stats['order_queue_total'],
@@ -622,45 +641,59 @@ final class BotService
      * Modes:
      *   disabled → skip execution; count skipped ready items as mode_disabled.
      *   passive  → skip execution; count skipped ready items as mode_passive.
-     *   smoke    → deterministic local execution in storage/state; no real exchange.
-     *   active   → maps to smoke at this stage (live exchange not yet implemented).
+     *   paper    → deterministic local execution in storage/state; no real exchange.
+     *   smoke    → legacy alias for paper.
+     *   active   → legacy alias for paper (live exchange not yet implemented).
      *
-     * Smoke tick flow (all in one pass):
+     * Paper tick flow (all in one pass):
      *   queue ready  → create order (created)
-     *                → submit order (submitted_smoke)
-     *                → fill order   (filled_smoke)
+     *                → submit order (submitted_paper)
+     *                → fill order   (filled_paper)
      *                → open position (open)
+     *
+     * Position close conditions checked each tick:
+     *   expired_by_signal_ttl — position expires_at has passed
      *
      * @return array{
      *   order_queue: array,
      *   active_orders: array,
      *   active_positions: array,
+     *   closed_positions: array,
      *   orders_created: int,
-     *   orders_submitted_smoke: int,
-     *   orders_filled_smoke: int,
+     *   orders_submitted_paper: int,
+     *   orders_filled_paper: int,
      *   positions_opened: int,
      *   positions_closed: int,
+     *   positions_closed_expired: int,
+     *   positions_closed_withdrawn: int,
+     *   positions_closed_reverse_pattern: int,
      *   queue_items_skipped_mode_disabled: int,
      *   queue_items_skipped_mode_passive: int,
+     *   execution_log_events: int,
      * }
      */
     private function processExecution(
         array $orderQueue,
         array $activeOrders,
         array $activePositions,
+        array $closedPositions,
         string $mode,
         string $tickAt
     ): array {
-        $ordersCreated              = 0;
-        $ordersSubmittedSmoke       = 0;
-        $ordersFilledSmoke          = 0;
-        $positionsOpened            = 0;
-        $positionsClosed            = 0;
-        $queueSkippedModeDisabled   = 0;
-        $queueSkippedModePassive    = 0;
+        $ordersCreated                  = 0;
+        $ordersSubmittedPaper           = 0;
+        $ordersFilledPaper              = 0;
+        $positionsOpened                = 0;
+        $positionsClosed                = 0;
+        $positionsClosedExpired         = 0;
+        $positionsClosedWithdrawn       = 0;
+        $positionsClosedReversePattern  = 0;
+        $queueSkippedModeDisabled       = 0;
+        $queueSkippedModePassive        = 0;
+        $logEvents                      = 0;
 
-        // active maps to smoke: live exchange is not implemented yet
-        $isSmokeMode    = in_array($mode, ['smoke', 'active'], true);
+        // paper, smoke, and active all mean local paper execution
+        $isPaperMode    = in_array($mode, ['paper', 'smoke', 'active'], true);
         $isPassiveMode  = ($mode === 'passive');
         $isDisabledMode = ($mode === 'disabled');
 
@@ -694,7 +727,7 @@ final class BotService
                 continue;
             }
 
-            if (!$isSmokeMode) {
+            if (!$isPaperMode) {
                 // Not in an execution mode — count and label truthfully
                 if ($isPassiveMode) {
                     $queueSkippedModePassive++;
@@ -722,52 +755,136 @@ final class BotService
             $qItem['last_change_reason'] = 'submitted_to_execution';
 
             $ordersCreated++;
+            $this->appendExecutionLog([
+                'timestamp'      => $tickAt,
+                'event_type'     => 'order_created',
+                'strategy_id'    => $order['strategy_id'],
+                'owner_strategy' => $order['owner_strategy'],
+                'signal_id'      => $order['signal_id'],
+                'symbol'         => $order['symbol'],
+                'side'           => $order['side'],
+                'entry_mode'     => $order['entry_mode'],
+                'entry_price'    => $order['entry_price'],
+                'execution_mode' => $order['execution_mode'],
+                'reason'         => 'created_from_ready_queue',
+            ]);
+            $logEvents++;
         }
         unset($qItem);
 
-        // ── Step 2: smoke submit + fill in one pass ───────────────────────────
-        if ($isSmokeMode) {
+        // ── Step 2: paper submit + fill in one pass ───────────────────────────
+        if ($isPaperMode) {
             foreach ($orderMap as $key => &$order) {
                 $oStatus = (string)($order['order_status'] ?? '');
 
                 if ($oStatus === 'created') {
-                    $order['order_status']      = 'submitted_smoke';
+                    $order['order_status']      = 'submitted_paper';
                     $order['submitted_at']      = $tickAt;
                     $order['last_updated_at']   = $tickAt;
-                    $order['transition_reason'] = 'submitted_in_smoke_mode';
-                    $oStatus = 'submitted_smoke';
-                    $ordersSubmittedSmoke++;
+                    $order['transition_reason'] = 'submitted_in_paper_mode';
+                    $oStatus = 'submitted_paper';
+                    $ordersSubmittedPaper++;
                 }
 
-                if ($oStatus === 'submitted_smoke') {
-                    $order['order_status']      = 'filled_smoke';
+                if ($oStatus === 'submitted_paper') {
+                    $order['order_status']      = 'filled_paper';
                     $order['filled_at']         = $tickAt;
                     $order['last_updated_at']   = $tickAt;
-                    $order['transition_reason'] = 'filled_in_smoke_mode';
-                    $ordersFilledSmoke++;
+                    $order['transition_reason'] = 'filled_in_paper_mode';
+                    $ordersFilledPaper++;
 
                     // Open position if not already present
                     if (!isset($positionMap[$key])) {
                         $position = $this->buildPositionFromOrder($order, $tickAt);
                         $positionMap[$key] = $position;
                         $positionsOpened++;
+                        $this->appendExecutionLog([
+                            'timestamp'      => $tickAt,
+                            'event_type'     => 'position_opened',
+                            'strategy_id'    => $position['strategy_id'],
+                            'owner_strategy' => $position['owner_strategy'],
+                            'signal_id'      => $position['signal_id'],
+                            'symbol'         => $position['symbol'],
+                            'side'           => $position['side'],
+                            'entry_mode'     => $position['entry_mode'],
+                            'entry_price'    => $position['entry_price'],
+                            'execution_mode' => $position['execution_mode'],
+                            'reason'         => 'filled_in_paper_mode',
+                        ]);
+                        $logEvents++;
                     }
                 }
             }
             unset($order);
         }
 
+        // ── Step 3: check open positions for close conditions ─────────────────
+        if ($isPaperMode && !empty($positionMap)) {
+            // Collect keys to close (avoid mutating map during iteration)
+            $keysToClose = [];
+            foreach ($positionMap as $key => $pos) {
+                $expiresAt = (string)($pos['expires_at'] ?? '');
+                if ($expiresAt !== ''
+                    && ($ts = strtotime($expiresAt)) !== false
+                    && time() > $ts
+                ) {
+                    $keysToClose[$key] = 'expired_by_signal_ttl';
+                }
+            }
+
+            foreach ($keysToClose as $key => $closeReason) {
+                $pos                      = $positionMap[$key];
+                $pos['position_status']   = 'closed';
+                $pos['closed_at']         = $tickAt;
+                $pos['close_reason']      = $closeReason;
+                $pos['transition_reason'] = $closeReason;
+                $pos['last_updated_at']   = $tickAt;
+                $closedPositions[]        = $pos;
+                $positionsClosed++;
+
+                if ($closeReason === 'expired_by_signal_ttl') {
+                    $positionsClosedExpired++;
+                } elseif ($closeReason === 'withdrawn_by_strategy') {
+                    $positionsClosedWithdrawn++;
+                } elseif ($closeReason === 'reverse_pattern_close_requested') {
+                    $positionsClosedReversePattern++;
+                }
+
+                unset($positionMap[$key]);
+
+                $this->appendExecutionLog([
+                    'timestamp'      => $tickAt,
+                    'event_type'     => 'position_closed',
+                    'strategy_id'    => $pos['strategy_id'],
+                    'owner_strategy' => $pos['owner_strategy'],
+                    'signal_id'      => $pos['signal_id'],
+                    'symbol'         => $pos['symbol'],
+                    'side'           => $pos['side'],
+                    'entry_mode'     => $pos['entry_mode'],
+                    'entry_price'    => $pos['entry_price'],
+                    'execution_mode' => $pos['execution_mode'],
+                    'reason'         => $closeReason,
+                ]);
+                $logEvents++;
+            }
+        }
+
         return [
             'order_queue'                      => array_values($orderQueue),
             'active_orders'                    => array_values($orderMap),
             'active_positions'                 => array_values($positionMap),
+            'closed_positions'                 => $closedPositions,
             'orders_created'                   => $ordersCreated,
-            'orders_submitted_smoke'           => $ordersSubmittedSmoke,
-            'orders_filled_smoke'              => $ordersFilledSmoke,
+            'orders_submitted_paper'           => $ordersSubmittedPaper,
+            'orders_filled_paper'              => $ordersFilledPaper,
             'positions_opened'                 => $positionsOpened,
             'positions_closed'                 => $positionsClosed,
+            'positions_closed_expired'         => $positionsClosedExpired,
+            'positions_closed_withdrawn'       => $positionsClosedWithdrawn,
+            'positions_closed_reverse_pattern' => $positionsClosedReversePattern,
             'queue_items_skipped_mode_disabled' => $queueSkippedModeDisabled,
             'queue_items_skipped_mode_passive'  => $queueSkippedModePassive,
+            'execution_log_events'             => $logEvents,
         ];
     }
 
@@ -803,15 +920,16 @@ final class BotService
 
             // Order lifecycle
             'order_status'      => 'created',
-            'execution_mode'    => 'smoke',
+            'execution_mode'    => 'paper',
             'transition_reason' => 'created_from_ready_queue',
+            'expires_at'        => (string)($qItem['expires_at'] ?? ''),
             'created_at'        => $tickAt,
             'last_updated_at'   => $tickAt,
         ];
     }
 
     /**
-     * Build a bot-owned active position record from a filled smoke order.
+     * Build a bot-owned active position record from a filled paper order.
      */
     private function buildPositionFromOrder(array $order, string $tickAt): array
     {
@@ -842,9 +960,11 @@ final class BotService
 
             // Position lifecycle
             'position_status'   => 'open',
-            'execution_mode'    => 'smoke',
-            'transition_reason' => 'filled_in_smoke_mode',
+            'execution_mode'    => 'paper',
+            'transition_reason' => 'filled_in_paper_mode',
+            'expires_at'        => (string)($order['expires_at'] ?? ''),
             'opened_at'         => $tickAt,
+            'entered_at'        => $tickAt,
             'last_updated_at'   => $tickAt,
         ];
     }
@@ -946,35 +1066,40 @@ final class BotService
             'storage/order_queue.json'        => [],
             'storage/active_orders.json'      => [],
             'storage/active_positions.json'   => [],
+            'storage/closed_positions.json'   => [],
             'storage/last_run.json'           => [
-                'status'                                   => 'never_run',
-                'tick_at'                                  => null,
-                'elapsed_sec'                              => 0,
-                'bot_enabled'                              => false,
-                'bot_mode'                                 => 'passive',
-                'strategies_discovered_total'              => 0,
-                'strategies_enabled_total'                 => 0,
-                'strategies_disabled_total'                => 0,
-                'handoff_sources_active_total'             => 0,
-                'handoff_signals_processed'                => 0,
-                'handoff_signals_ignored_disabled_strategy'=> 0,
-                'order_queue_new_total'                    => 0,
-                'order_queue_refreshed_total'              => 0,
-                'order_queue_expired_total'                => 0,
-                'order_queue_withdrawn_total'              => 0,
-                'execution_mode'                           => 'passive',
-                'orders_created'                           => 0,
-                'orders_submitted_smoke'                   => 0,
-                'orders_filled_smoke'                      => 0,
-                'positions_opened'                         => 0,
-                'positions_closed'                         => 0,
-                'queue_items_skipped_mode_disabled'        => 0,
-                'queue_items_skipped_mode_passive'         => 0,
-                'order_queue_total'                        => 0,
-                'active_orders_count'                      => 0,
-                'active_positions_count'                   => 0,
-                'ticks_total'                              => 0,
-                'handoff_signals_seen_total'               => 0,
+                'status'                                    => 'never_run',
+                'tick_at'                                   => null,
+                'elapsed_sec'                               => 0,
+                'bot_enabled'                               => false,
+                'bot_mode'                                  => 'passive',
+                'strategies_discovered_total'               => 0,
+                'strategies_enabled_total'                  => 0,
+                'strategies_disabled_total'                 => 0,
+                'handoff_sources_active_total'              => 0,
+                'handoff_signals_processed'                 => 0,
+                'handoff_signals_ignored_disabled_strategy' => 0,
+                'order_queue_new_total'                     => 0,
+                'order_queue_refreshed_total'               => 0,
+                'order_queue_expired_total'                 => 0,
+                'order_queue_withdrawn_total'               => 0,
+                'execution_mode'                            => 'passive',
+                'orders_created'                            => 0,
+                'orders_submitted_paper'                    => 0,
+                'orders_filled_paper'                       => 0,
+                'positions_opened'                          => 0,
+                'positions_closed'                          => 0,
+                'positions_closed_expired'                  => 0,
+                'positions_closed_withdrawn'                => 0,
+                'positions_closed_reverse_pattern'          => 0,
+                'queue_items_skipped_mode_disabled'         => 0,
+                'queue_items_skipped_mode_passive'          => 0,
+                'execution_log_events'                      => 0,
+                'order_queue_total'                         => 0,
+                'active_orders_count'                       => 0,
+                'active_positions_count'                    => 0,
+                'ticks_total'                               => 0,
+                'handoff_signals_seen_total'                => 0,
             ],
             'storage/stats.json' => $this->zeroStats(),
         ];
@@ -1036,12 +1161,16 @@ final class BotService
             'order_queue_withdrawn_total' => 0,
             // Execution (cumulative)
             'orders_created_total'                    => 0,
-            'orders_submitted_smoke_total'            => 0,
-            'orders_filled_smoke_total'               => 0,
+            'orders_submitted_paper_total'            => 0,
+            'orders_filled_paper_total'               => 0,
             'positions_opened_total'                  => 0,
             'positions_closed_total'                  => 0,
+            'positions_closed_expired_total'          => 0,
+            'positions_closed_withdrawn_total'        => 0,
+            'positions_closed_reverse_pattern_total'  => 0,
             'queue_items_skipped_mode_disabled_total' => 0,
             'queue_items_skipped_mode_passive_total'  => 0,
+            'execution_log_events_total'              => 0,
             // Live counts
             'active_orders_total'         => 0,
             'active_positions_total'      => 0,
@@ -1100,6 +1229,13 @@ final class BotService
             "return " . var_export($snap, true) . ";\n",
         ];
         @file_put_contents($path, implode('', $lines));
+    }
+
+    private function appendExecutionLog(array $event): void
+    {
+        $path = $this->moduleDir . '/storage/execution_log.ndjson';
+        $line = json_encode($event, JSON_UNESCAPED_UNICODE) . "\n";
+        file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
     }
 
     private function requireBootstrap(): void

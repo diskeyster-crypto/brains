@@ -268,6 +268,11 @@ final class DoubleBottomLongService
         $foundCandidates   = (array)$this->readJson('storage/candidates_found.json', []);
         $emittedCandidates = (array)$this->readJson('storage/candidates_emitted.json', []);
 
+        // Pre-initialise fields that are only assigned inside the $isDone block
+        // so they are always defined when used in the last_run.json write below.
+        $completedCycleId = null;
+        $finishedAt       = null;
+
         while ($cursor < $total && $processed < $batchSz && (time() - $tStart) < $maxSec) {
             $symbol = $symbols[$cursor];
             $cursor++;
@@ -397,25 +402,32 @@ final class DoubleBottomLongService
 
         if ($isDone) {
             $finishedAt = date('c');
+            $completedCycleId = (int)($state['cycle_id'] ?? 0);  // id of the cycle that just finished
+
             $state['cycle_finished_at'] = $finishedAt;
-            $state['cycle_id']          = (int)($state['cycle_id'] ?? 0) + 1;
+            $state['cycle_id']          = $completedCycleId + 1;
             $state['cumulative_cycles_completed'] = (int)($state['cycle_id']);
 
+            // Compact summary of the just-completed cycle (persisted for operator rollover verification).
+            $lastCycleSummary = [
+                'cycle_id'               => $completedCycleId,
+                'started_at'             => $state['cycle_started_at'] ?? $state['started_at'] ?? null,
+                'finished_at'            => $finishedAt,
+                'symbols_total'          => $total,
+                'symbols_scanned'        => $totalProcessed,
+                'signals_emitted_total'  => (int)($cycleStats['signals_emitted_total'] ?? 0),
+                'signals_active_final'   => count($signals),
+                'candidates_found_total' => count($foundCandidates),
+                'candidates_emitted_total' => count($emittedCandidates),
+                'final_status'           => $continuousEnabled ? 'continuous' : 'done',
+            ];
+            $state['last_cycle_summary'] = $lastCycleSummary;
+
             // Append a compact record to cycle_history.ndjson for operator audit trail.
-            $cycleHistoryRecord = json_encode([
-                'cycle_id'                   => (int)($state['cycle_id']),
-                'started_at'                 => $state['cycle_started_at'] ?? $state['started_at'] ?? null,
-                'finished_at'                => $finishedAt,
-                'symbols_total'              => $total,
-                'symbols_scanned'            => $totalProcessed,
-                'signals_emitted_total'      => (int)($cycleStats['signals_emitted_total'] ?? 0),
-                'signals_active_final_total' => count($signals),
-                'candidates_found_total'     => count($foundCandidates),
-                'candidates_emitted_total'   => count($emittedCandidates),
-                'reject_reason_distribution' => $cycleStats['reject_reason_distribution'] ?? (object)[],
+            $cycleHistoryRecord = json_encode(array_merge($lastCycleSummary, [
+                'reject_reason_distribution'       => $cycleStats['reject_reason_distribution'] ?? (object)[],
                 'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
-                'final_status'               => $continuousEnabled ? 'continuous' : 'done',
-            ]) . "\n";
+            ])) . "\n";
             @file_put_contents(
                 $this->moduleDir . '/storage/cycle_history.ndjson',
                 $cycleHistoryRecord,
@@ -444,6 +456,7 @@ final class DoubleBottomLongService
 
         // Cron diagnostics — persisted so the operator can verify cron is driving the module
         $state['cron_enabled']            = (bool)($config['enabled'] ?? false);
+        $state['tick_source']             = 'centralized_cron';
         $state['last_tick_at']            = $tickAt;
         $state['last_tick_result']        = sprintf(
             'ok: cycle=%d processed=%d/%d remaining=%d',
@@ -506,11 +519,17 @@ final class DoubleBottomLongService
             'status'            => $isDone && !$continuousEnabled ? 'done' : 'running',
             'started_at'        => $state['started_at']      ?? null,
             'updated_at'        => date('c'),
-            'finished_at'       => ($isDone && !$continuousEnabled) ? date('c') : null,
-            'cycle_id'          => $state['cycle_id']         ?? 0,
+            'finished_at'       => ($isDone && !$continuousEnabled) ? $finishedAt : null,
+            // current_cycle_id is the cycle actively running right now (post-increment if just rolled over)
+            'current_cycle_id'          => (int)($state['cycle_id'] ?? 0),
+            // last_completed_cycle_id is the cycle that just finished in this tick (null while still in progress)
+            'last_completed_cycle_id'   => $completedCycleId,
+            'cycle_id'          => (int)($state['cycle_id'] ?? 0),
             'cycle_started_at'  => $state['cycle_started_at'] ?? null,
-            'cycle_finished_at' => $isDone ? date('c')        : null,
+            'cycle_finished_at' => $finishedAt,
+            'cumulative_cycles_completed' => (int)($state['cumulative_cycles_completed'] ?? 0),
             'continuous_scan'   => $continuousEnabled,
+            'tick_source'       => 'centralized_cron',
             'total'             => $total,
             'processed'         => $totalProcessed,
             'found'             => $totalFound,
@@ -518,6 +537,7 @@ final class DoubleBottomLongService
             'signals_emitted_total'      => (int)($stats['signals_emitted_total'] ?? 0),
             'signals_active_final_total' => count($signals),
             'final_signals_total'        => count($signals),
+            'last_cycle_summary' => $state['last_cycle_summary'] ?? null,
             'regime'       => $regimeSummary,
             'pipeline_summary' => [
                 'symbols_total'            => $total,

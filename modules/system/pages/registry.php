@@ -373,7 +373,7 @@ final class PagesRegistry
                 'route' => '/admin/brain',
                 'type' => 'module',
                 'roles' => ['admin'],
-                'visible' => true,
+                'visible' => false,
                 'icon' => 'bi-cpu',
                 'order' => 5,
                 'locked' => false,

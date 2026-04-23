@@ -867,8 +867,8 @@ require_once ROOT . '/modules/system/brain/controller.php';
 use Modules\System\Brain\BrainController;
 
 Router::get('/admin/brain', function () {
-    $controller = BrainController::instance();
-    echo $controller->index();
+    header('Location: /admin/dashboard');
+    exit;
 });
 
 Router::get('/admin/brain/strategies', function () {
@@ -1052,8 +1052,8 @@ Router::post('/admin/brain/bot/overrides/save', function () {
 require_once ROOT . '/modules/system/smart_brain/controller.php';
 
 Router::get('/admin/smart_brain', function () {
-    $controller = new SmartBrainController();
-    $controller->index();
+    header('Location: /admin/dashboard');
+    exit;
 });
 
 Router::get('/admin/smart_brain/config', function () {
@@ -1263,8 +1263,8 @@ require_once ROOT . '/modules/system/simulator/controller.php';
 use Modules\System\Simulator\SimulatorController;
 
 Router::get('/admin/simulator', function () {
-    $controller = new SimulatorController();
-    $controller->index();
+    header('Location: /admin/dashboard');
+    exit;
 });
 
 Router::get('/admin/simulator/api/state', function () {

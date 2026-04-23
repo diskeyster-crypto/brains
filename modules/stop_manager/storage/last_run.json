@@ -1,0 +1,15 @@
+{
+    "status": "never_run",
+    "tick_at": null,
+    "elapsed_sec": 0,
+    "module_enabled": false,
+    "module_mode": "disabled",
+    "positions_seen": 0,
+    "stops_initialized": 0,
+    "stops_recalculated": 0,
+    "breakeven_applied": 0,
+    "stops_closed_reference": 0,
+    "positions_without_liq": 0,
+    "stops_active_count": 0,
+    "ticks_total": 0
+}

@@ -1,0 +1,13 @@
+{
+    "name": "stop_manager",
+    "title": "Stop Manager · Local Stop-Loss Owner",
+    "version": "0.1.0",
+    "description": "Separate Stop Manager module. Reads active positions from the bot module and computes local stop-loss state. Paper/local only. No exchange interaction.",
+    "author": "Tredercopis",
+    "category": "stop_manager",
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php",
+        "logs":    "logs"
+    }
+}

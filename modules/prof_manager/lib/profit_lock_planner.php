@@ -144,8 +144,21 @@ class ProfitLockPlanner
         }
 
         // ── Anti-spam: min_price_distance_pct ────────────────────────────────
+        $minDistPct = (float) ($profileConfig['min_price_distance_pct'] ?? 0.15);
         if (!$this->riskMath->isSafeDistance($position, $targetLockPrice, $profileConfig)) {
-            return $this->skip($symbol, $side, 'lock_price_too_close_to_current', $lockState, $positionState, $currentRoi, $peakRoi);
+            $currentPrice2 = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+            $actualDistPct = null;
+            if ($currentPrice2 > 0.0 && $targetLockPrice > 0.0) {
+                if ($side === 'long' || $side === 'buy') {
+                    $actualDistPct = round(($currentPrice2 - $targetLockPrice) / $currentPrice2 * 100.0, 4);
+                } elseif ($side === 'short' || $side === 'sell') {
+                    $actualDistPct = round(($targetLockPrice - $currentPrice2) / $currentPrice2 * 100.0, 4);
+                }
+            }
+            return $this->skip($symbol, $side, 'lock_price_too_close_to_current', $lockState, $positionState, $currentRoi, $peakRoi, [
+                'distance_pct'              => $actualDistPct,
+                'min_required_distance_pct' => $minDistPct,
+            ]);
         }
 
         // ── Plan the lock ─────────────────────────────────────────────────────
@@ -165,9 +178,10 @@ class ProfitLockPlanner
         array $lockState,
         array $positionState,
         ?float $currentRoi = null,
-        ?float $peakRoi    = null
+        ?float $peakRoi    = null,
+        array  $extra      = []
     ): array {
-        return [
+        return array_merge([
             'action'          => 'skip',
             'symbol'          => $symbol,
             'side'            => $side,
@@ -178,7 +192,7 @@ class ProfitLockPlanner
             'proposed_lock'   => null,
             'proposed_roi'    => null,
             'position_state'  => $positionState,
-        ];
+        ], $extra);
     }
 
     private function buildPlan(

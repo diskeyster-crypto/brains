@@ -1064,35 +1064,50 @@ ROWS;
 
         $tableRows = '';
         foreach ($pmPositionsRuntime as $pr) {
-            $symbol      = $e((string)($pr['symbol']       ?? ''));
-            $side        = $e((string)($pr['side']         ?? ''));
-            $roi         = $fmtFloat($pr['roi']         ?? null);
-            $peakRoi     = $fmtFloat($pr['peak_roi']    ?? null);
-            $initRoi     = $fmtFloat($pr['init_roi']    ?? null);
-            $activRoi    = $fmtFloat($pr['activation_roi'] ?? null);
-            $action      = (string)($pr['action']       ?? 'skip');
-            $rawReason   = (string)($pr['skip_reason']  ?? '');
-            $priceSource = $e((string)($pr['price_source'] ?? ''));
+            $symbol      = $e((string)($pr['symbol']          ?? ''));
+            $side        = $e((string)($pr['side']            ?? ''));
+            $roi         = $fmtFloat($pr['roi']               ?? null);
+            $peakRoi     = $fmtFloat($pr['peak_roi']          ?? null);
+            $gapVal      = $pr['roi_gap_to_activation']       ?? null;
+            $gap         = $gapVal !== null ? $fmtFloat($gapVal) : '—';
+            $gapColor    = ($gapVal !== null && (float)$gapVal <= 0) ? '#3fb950' : '#f0883e';
+            $initRoi     = $fmtFloat($pr['init_roi']          ?? null);
+            $activRoi    = $fmtFloat($pr['activation_roi']    ?? null);
+            $action      = (string)($pr['action']             ?? 'skip');
+            $rawReason   = (string)($pr['skip_reason']        ?? '');
+            $priceSource = $e((string)($pr['price_source']    ?? ''));
             $reasonLabel = $rawReason !== ''
                 ? ($pmReasonLabels[$rawReason] ?? $rawReason)
-                : ($action !== 'skip' ? '—' : '—');
+                : '—';
             $actionShort = match (true) {
-                $action === 'skip'                                          => 'skip',
-                $action === 'would_set_profit_lock'                        => 'set lock',
-                $action === 'would_move_profit_lock'                       => 'move lock',
-                $action === 'would_close_on_lock_touch'                    => 'close',
-                default                                                    => $e($action),
+                $action === 'skip'                      => 'skip',
+                $action === 'would_set_profit_lock'     => 'set lock',
+                $action === 'would_move_profit_lock'    => 'move lock',
+                $action === 'would_close_on_lock_touch' => 'close',
+                default                                 => $e($action),
             };
             $aClr = $actionColor($action);
+            // Distance: show only for lock_price_too_close_to_current
+            if ($rawReason === 'lock_price_too_close_to_current') {
+                $distVal = $pr['distance_pct']              ?? null;
+                $minDist = $pr['min_required_distance_pct'] ?? null;
+                $distStr = ($distVal !== null)
+                    ? $fmtFloat($distVal, 3) . '% / min ' . $fmtFloat($minDist, 2) . '%'
+                    : '—';
+            } else {
+                $distStr = '—';
+            }
             $tableRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
                 . '<td style="padding:4px 8px;font-weight:600;">' . $symbol . '</td>'
                 . '<td style="padding:4px 8px;color:#8b949e;">' . $side . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $roi . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:#a78bfa;">' . $peakRoi . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;color:' . $gapColor . ';">' . $gap . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $initRoi . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $activRoi . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:' . $aClr . ';font-weight:600;">' . $actionShort . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $e($reasonLabel) . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $e($distStr) . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $priceSource . '</td>'
                 . '</tr>';
         }
@@ -1109,10 +1124,12 @@ ROWS;
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Side</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">ROI %</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Peak ROI %</th>
+            <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Gap</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Init</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Activation</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Action</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Reason</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Distance</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Price Source</th>
           </tr>
         </thead>
@@ -1124,6 +1141,73 @@ ROWS;
   </div>
 </div>
 HTML;
+    }
+
+    // ── System Overview block ────────────────────────────────────────────
+    // Collect system-level stats from existing runtime JSONs (no new modules).
+    $sysLastError = '';
+    if ($pmLastError !== '') {
+        $sysLastError = 'PM: ' . $pmLastError;
+    } elseif ($smLastStatus !== 'ok' && $smLastStatus !== 'never_run') {
+        $sysLastError = 'SM: ' . $smLastStatus;
+    } elseif (!empty($lastRun['error'])) {
+        $sysLastError = 'Bot: ' . (string)$lastRun['error'];
+    }
+    // Average ROI from PM runtime positions (if any tracked with ROI)
+    $sysRoiValues = [];
+    foreach ($pmPositionsRuntime as $pr) {
+        if (isset($pr['roi']) && $pr['roi'] !== null) {
+            $sysRoiValues[] = (float)$pr['roi'];
+        }
+    }
+    $sysAvgRoi = count($sysRoiValues) > 0
+        ? number_format(array_sum($sysRoiValues) / count($sysRoiValues), 2) . '%'
+        : '—';
+
+    $sysLastErrorHtml = $sysLastError !== ''
+        ? '<span style="color:#f85149;">' . $e($sysLastError) . '</span>'
+        : '<span style="color:#3fb950;">—</span>';
+
+    $sysOverviewHtml = <<<HTML
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header"><i class="bi bi-grid-1x2" style="margin-right:6px;"></i>System Overview</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 20px;font-size:13px;">
+      <div><span style="color:var(--ui-text-muted);">Позиций активно</span><br><strong style="color:#a78bfa;">{$posCount}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Стратегий включено</span><br><strong style="color:#3fb950;">{$enabledStrat}</strong> / {$totalStrat}</div>
+      <div><span style="color:var(--ui-text-muted);">PM отслеживает</span><br><strong style="color:#f0883e;">{$pmPosTracked}</strong> поз.</div>
+      <div><span style="color:var(--ui-text-muted);">SM стопов активно</span><br><strong style="color:#a78bfa;">{$smActiveStops}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ср. ROI (PM поз.)</span><br><strong style="color:#58a6ff;">{$sysAvgRoi}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Последняя ошибка</span><br>{$sysLastErrorHtml}</div>
+    </div>
+  </div>
+</div>
+HTML;
+
+    // ── Compact strategy summary (for Обзор pane) ────────────────────────
+    $compactStratRows = '';
+    foreach ($registry as $rec) {
+        $cSid    = (string)($rec['strategy_id'] ?? '');
+        $cTitle  = $e($rec['title'] ?? $cSid);
+        $cOp     = (array)($overrides[$cSid] ?? []);
+        $cEnabled = array_key_exists('enabled', $cOp)
+            ? (bool)$cOp['enabled']
+            : (bool)($rec['enabled_by_default'] ?? true);
+        $cEnColor = $cEnabled ? '#3fb950' : '#8b949e';
+        $cEnLabel = $cEnabled ? 'ON' : 'OFF';
+        $cStatus  = $e((string)($rec['status'] ?? 'discovered'));
+        $cSigs    = $stratSignals[$cSid] ?? null;
+        $cSigsStr = ($cSigs !== null) ? (string)$cSigs : '—';
+        $compactStratRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+            . '<td style="padding:5px 10px;font-weight:600;">' . $cTitle . '</td>'
+            . '<td style="padding:5px 10px;"><code style="font-size:11px;color:#58a6ff;">' . $e($cSid) . '</code></td>'
+            . '<td style="padding:5px 10px;"><span style="color:' . $cEnColor . ';font-weight:700;">' . $cEnLabel . '</span></td>'
+            . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $cStatus . '</td>'
+            . '<td style="padding:5px 10px;text-align:right;color:#58a6ff;">' . $e($cSigsStr) . '</td>'
+            . '</tr>';
+    }
+    if ($compactStratRows === '') {
+        $compactStratRows = '<tr><td colspan="5" style="padding:12px 10px;color:var(--ui-text-muted);">Стратегии не обнаружены.</td></tr>';
     }
 
     $flashHtml = '';
@@ -1190,9 +1274,15 @@ HTML;
 <!-- Status chain (always visible) -->
 {$scHtml}
 
+<!-- System Overview (always visible) -->
+{$sysOverviewHtml}
+
 <!-- Top tab navigation (vanilla JS) -->
 <nav class="dh-tab-nav" role="tablist">
-  <button class="dh-tab-btn dh-active" onclick="dhTab(this,'dh-strat')" type="button">
+  <button class="dh-tab-btn dh-active" onclick="dhTab(this,'dh-overview')" type="button">
+    <i class="bi bi-grid-1x2" style="margin-right:5px;"></i>Обзор
+  </button>
+  <button class="dh-tab-btn" onclick="dhTab(this,'dh-strat')" type="button">
     <i class="bi bi-layers" style="margin-right:5px;"></i>Стратегии
   </button>
   <button class="dh-tab-btn" onclick="dhTab(this,'dh-bot')" type="button">
@@ -1209,8 +1299,32 @@ HTML;
   </button>
 </nav>
 
+<!-- ── Overview pane (default) ─────────────────────────────────────── -->
+<div id="dh-overview" class="dh-pane dh-visible">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><i class="bi bi-layers" style="margin-right:6px;"></i>Стратегии — сводка</span>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Полное управление → вкладка «Стратегии»</small>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--ui-border);">
+            <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Название</th>
+            <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">ID</th>
+            <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Статус</th>
+            <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Тип</th>
+            <th style="padding:5px 10px;text-align:right;color:var(--ui-text-muted);">Сигналов</th>
+          </tr>
+        </thead>
+        <tbody>{$compactStratRows}</tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ── Strategies pane ──────────────────────────────────────────────── -->
-<div id="dh-strat" class="dh-pane dh-visible">
+<div id="dh-strat" class="dh-pane">
   <div style="font-size:12px;color:var(--ui-text-muted);margin-bottom:12px;">
     Источник: <code>bot/storage/strategy_registry.json</code> · <code>modules/strategy/*/manifest.json</code> · <code>operator_overrides.json</code>
   </div>

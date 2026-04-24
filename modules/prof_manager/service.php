@@ -205,19 +205,26 @@ final class ProfManagerService
 
                 // ── Collect per-position runtime diagnostics ──────────────────
                 $positionsRuntime[] = [
-                    'symbol'         => $pos['symbol']      ?? '',
-                    'side'           => $pos['side']        ?? '',
-                    'entry_price'    => (float) ($pos['entry_price']    ?? $pos['avg_price'] ?? 0.0),
-                    'current_price'  => (float) ($pos['current_price']  ?? 0.0),
-                    'roi'            => $runResult['plan']['current_roi'] ?? null,
-                    'peak_roi'       => $runResult['plan']['peak_roi']    ?? null,
-                    'init_roi'       => $initRoiCfg,
-                    'activation_roi' => $activationRoiCfg,
-                    'action'         => $runResult['plan']['action']      ?? 'skip',
-                    'skip_reason'    => $runResult['plan']['skip_reason'] ?? null,
-                    'lock_price'     => $runResult['lock_state']['lock_price'] ?? null,
-                    'old_lock_price' => $oldLockPrice > 0.0 ? $oldLockPrice : null,
-                    'price_source'   => $pos['_price_source'] ?? 'unknown',
+                    'symbol'                    => $pos['symbol']      ?? '',
+                    'side'                      => $pos['side']        ?? '',
+                    'entry_price'               => (float) ($pos['entry_price']    ?? $pos['avg_price'] ?? 0.0),
+                    'current_price'             => (float) ($pos['current_price']  ?? 0.0),
+                    'roi'                       => $runResult['plan']['current_roi'] ?? null,
+                    'peak_roi'                  => $runResult['plan']['peak_roi']    ?? null,
+                    'init_roi'                  => $initRoiCfg,
+                    'activation_roi'            => $activationRoiCfg,
+                    'roi_gap_to_activation'     => ($runResult['plan']['current_roi'] !== null)
+                        ? round($activationRoiCfg - (float) $runResult['plan']['current_roi'], 4)
+                        : null,
+                    'action'                    => $runResult['plan']['action']      ?? 'skip',
+                    'skip_reason'               => !empty($runResult['plan']['skip_reason'])
+                        ? $runResult['plan']['skip_reason']
+                        : (($runResult['plan']['action'] ?? 'skip') === 'skip' ? 'unknown' : null),
+                    'lock_price'                => $runResult['lock_state']['lock_price'] ?? null,
+                    'old_lock_price'            => $oldLockPrice > 0.0 ? $oldLockPrice : null,
+                    'distance_pct'              => $runResult['plan']['distance_pct']              ?? null,
+                    'min_required_distance_pct' => $runResult['plan']['min_required_distance_pct'] ?? null,
+                    'price_source'              => $pos['_price_source'] ?? 'unknown',
                 ];
             }
 

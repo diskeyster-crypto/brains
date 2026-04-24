@@ -7,4 +7,7 @@ declare(strict_types=1);
  * Written by the admin UI. Edit via the config page.
  */
 
-return [];
+return [
+    'enabled' => true,
+    'mode'    => 'paper',
+];

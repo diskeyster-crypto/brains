@@ -1,1 +1,20 @@
-[]
+[
+    {
+        "owner_strategy": "double_bottom_long",
+        "strategy_id": "double_bottom_long",
+        "signal_id": "sig-demo-001",
+        "symbol": "BTCUSDT",
+        "side": "long",
+        "entry_price": 50000,
+        "liq_price": 45000,
+        "liq_source": "estimated",
+        "execution_mode": "paper",
+        "stop_mode": "entry_liq_percent",
+        "stop_price": 45250,
+        "stop_state": "estimated_liq",
+        "breakeven_applied": false,
+        "last_updated_at": "2026-04-24T04:44:33+00:00",
+        "created_at": "2026-04-24T04:44:33+00:00",
+        "transition_reason": "stop_initialized_estimated_liq"
+    }
+]

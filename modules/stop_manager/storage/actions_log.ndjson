@@ -1,0 +1,1 @@
+{"timestamp":"2026-04-24T04:44:33+00:00","event_type":"stop_initialized_estimated_liq","strategy_id":"double_bottom_long","owner_strategy":"double_bottom_long","signal_id":"sig-demo-001","symbol":"BTCUSDT","side":"long","entry_price":50000,"liq_price":45000,"liq_source":"estimated","stop_price":45250,"execution_mode":"paper","reason":"stop_initialized_estimated_liq"}

@@ -302,6 +302,7 @@ function renderDashboardHub(): string
     $botToggleUrl   = System::web('admin/dashboard/bot/toggle');
     $smToggleUrl    = System::web('admin/dashboard/stop-manager/toggle');
     $chainRunUrl    = System::web('admin/dashboard/chain-run');
+    $resetRuntimeUrl = System::web('admin/dashboard/reset-runtime');
     $stratCards = '';
     if (empty($registry)) {
         $stratCards = '<p style="color:var(--ui-text-muted);padding:20px 0;">Стратегии не обнаружены.</p>';
@@ -1553,6 +1554,13 @@ HTML;
   </div>
   {$overviewPositionsHtml}
   {$modStripHtml}
+  <div style="margin-top:16px;text-align:right;">
+    <button
+      type="button"
+      onclick="dhResetRuntime()"
+      style="background:rgba(248,81,73,.12);border:1px solid #f85149;color:#f85149;padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;"
+    ><i class="bi bi-trash3" style="margin-right:5px;"></i>Сбросить данные (paper)</button>
+  </div>
 </div>
 
 <!-- ── Strategies pane ──────────────────────────────────────────────── -->
@@ -2015,6 +2023,25 @@ function dhSwitchToTab(panelId) {
 function dhToggleEdit(id) {
     var el = document.getElementById(id);
     if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; }
+}
+function dhResetRuntime() {
+    if (!confirm('Вы уверены? Это удалит все текущие paper позиции и runtime PM данные.')) {
+        return;
+    }
+    fetch('{$resetRuntimeUrl}', {
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin'
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+        if (d && d.ok) {
+            window.location.reload();
+        } else {
+            alert('Ошибка сброса: ' + (d && d.error ? d.error : 'неизвестная ошибка'));
+        }
+    })
+    .catch(function(){ alert('Не удалось выполнить сброс. Повторите попытку.'); });
 }
 </script>
 HTML;
@@ -2773,3 +2800,48 @@ function handleDashboardPmConfigSave(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardPmConfigSave'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: reset paper runtime data (active_positions + PM runtime files)
+// Registered as: POST /admin/dashboard/reset-runtime
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardResetRuntime')) {
+function handleDashboardResetRuntime(): void
+{
+    header('Content-Type: application/json');
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    // Fixed absolute paths — no user input, no path injection possible
+    $root = defined('ROOT') ? rtrim(ROOT, '/') : dirname(__DIR__, 2);
+
+    $files = [
+        $root . '/modules/bot/storage/active_positions.json' => '[]',
+        $root . '/modules/prof_manager/storage/runtime/last_run.json' => json_encode([
+            'ok'                 => true,
+            'positions'          => 0,
+            'valid_positions'    => 0,
+            'invalid_positions'  => 0,
+            'skip_reason'        => '',
+            'positions_runtime'  => [],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+        $root . '/modules/prof_manager/storage/runtime/positions_state.json' => '{}',
+        $root . '/modules/prof_manager/storage/runtime/locks.json'           => '{}',
+    ];
+
+    foreach ($files as $path => $content) {
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($path, $content);
+    }
+
+    echo json_encode(['ok' => true]);
+    exit;
+}
+} // end if (!function_exists('handleDashboardResetRuntime'))

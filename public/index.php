@@ -926,6 +926,16 @@ Router::post('/admin/dashboard/chain-run', function () {
     handleDashboardChainRun();
 });
 
+Router::post('/admin/dashboard/reset-runtime', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+    handleDashboardResetRuntime();
+});
+
 // ============================================================
 // ADMIN API ROUTES
 // ============================================================

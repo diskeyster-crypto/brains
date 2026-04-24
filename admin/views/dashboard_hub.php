@@ -161,8 +161,13 @@ function renderDashboardHub(): string
     $enabledStrat  = 0;
     $disabledStrat = 0;
     foreach ($registry as $r) {
-        $op = (array)($overrides[$r['strategy_id'] ?? ''] ?? []);
-        if ($op['enabled'] ?? true) {
+        $rid = (string)($r['strategy_id'] ?? '');
+        $op  = (array)($overrides[$rid] ?? []);
+        // Use override if present; fall back to manifest's enabled_by_default; then true
+        $isEnabled = array_key_exists('enabled', $op)
+            ? (bool)$op['enabled']
+            : (bool)($r['enabled_by_default'] ?? true);
+        if ($isEnabled) {
             $enabledStrat++;
         } else {
             $disabledStrat++;
@@ -177,12 +182,13 @@ function renderDashboardHub(): string
     $tickStatus = (string)($lastRun['status']     ?? 'never_run');
     $botEnabled = ($lastRun['bot_enabled'] ?? false) ? 'Включён' : 'Выключен';
     $botMode    = (string)($lastRun['bot_mode']   ?? 'passive');
-    $sigProc    = (int)($lastRun['handoff_signals_processed'] ?? 0);
+    // $sigProc will be computed after $stratSignals is populated below
 
     // ── escape helper ─────────────────────────────────────────────────────
     $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 
     // ── per-strategy active signal counts from handoff queues ────────────
+    // Also attempt direct last_run bot_handoff_ready_total per strategy as fallback
     $stratSignals = [];
     foreach ($registry as $rec) {
         $hqPath = $rec['handoff_queue_path'] ?? null;
@@ -202,6 +208,12 @@ function renderDashboardHub(): string
             }
         }
     }
+
+    // $sigProc: sum of active handoff-ready signals across all strategies, with
+    // fallback to the bot's last_run processed count when we have no strategy data.
+    $sigProcFromStrats = array_sum($stratSignals);
+    $sigProcFromBot    = (int)($lastRun['handoff_signals_processed'] ?? 0);
+    $sigProc           = $sigProcFromStrats > 0 ? $sigProcFromStrats : $sigProcFromBot;
 
     // ── strategy cards HTML ───────────────────────────────────────────────
     $saveUrl      = System::web('admin/dashboard/overrides/save');
@@ -225,7 +237,10 @@ function renderDashboardHub(): string
             $signalCount = $stratSignals[$stratId] ?? null;
 
             $op          = (array)($overrides[$stratId] ?? []);
-            $opEnabled   = $op['enabled']              ?? true;
+            // Use stored override if present; fall back to manifest's enabled_by_default; then true
+            $opEnabled   = array_key_exists('enabled', $op)
+                ? (bool)$op['enabled']
+                : (bool)($rec['enabled_by_default'] ?? true);
             $opMode      = (string)($op['mode']        ?? 'passive');
             $opBudget    = (float)($op['bot_budget']   ?? 0);
             $opLev       = (int)($op['bot_leverage']   ?? 0);
@@ -393,19 +408,7 @@ BTN;
       </tr>
       <tr>
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Режим</td>
-        <td style="padding:3px 0;"><code>{$esMode}</code></td>
-        <td style="padding:3px 12px 3px 16px;color:var(--ui-text-muted);">Вход</td>
-        <td style="padding:3px 0;"><code>{$esEntry}</code></td>
-      </tr>
-      <tr>
-        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Бюджет</td>
-        <td style="padding:3px 0;"><code>{$esBudget}</code></td>
-        <td style="padding:3px 12px 3px 16px;color:var(--ui-text-muted);">Плечо</td>
-        <td style="padding:3px 0;"><code>{$esLev}</code></td>
-      </tr>
-      <tr>
-        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Макс.поз</td>
-        <td colspan="3" style="padding:3px 0;"><code>{$esMax}</code></td>
+        <td colspan="3" style="padding:3px 0;"><code>{$esMode}</code></td>
       </tr>
       <tr>
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Runtime</td>
@@ -461,26 +464,6 @@ BTN;
               <option value="active"{$modeActive}>active</option>
               <option value="disabled"{$modeDisabled}>disabled</option>
             </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Бюджет (0=из сигнала)</label>
-            <input type="number" step="0.01" min="0" name="bot_budget" value="{$esBudget}" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Плечо (0=из сигнала)</label>
-            <input type="number" step="1" min="0" name="bot_leverage" value="{$esLev}" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим входа</label>
-            <select name="entry_mode" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
-              <option value=""{$entryNone}>— из сигнала —</option>
-              <option value="limit"{$entryLimit}>limit</option>
-              <option value="market"{$entryMarket}>market</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Макс. позиций (0=∞)</label>
-            <input type="number" step="1" min="0" name="max_active_positions" value="{$esMax}" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
         <div style="display:flex;gap:8px;">
@@ -1053,28 +1036,17 @@ function handleDashboardOverridesSave(): void
 
     $enabled   = (int)($_POST['enabled']               ?? 1);
     $mode      = trim((string)($_POST['mode']           ?? 'passive'));
-    $budget    = (float)($_POST['bot_budget']           ?? 0.0);
-    $leverage  = (int)($_POST['bot_leverage']           ?? 0);
-    $entryMode = trim((string)($_POST['entry_mode']     ?? ''));
-    $maxPos    = (int)($_POST['max_active_positions']   ?? 0);
 
-    if (!in_array($entryMode, ['limit', 'market'], true)) {
-        $entryMode = null;
-    }
     if (!in_array($mode, ['passive', 'active', 'disabled'], true)) {
         $mode = 'passive';
     }
 
+    // Preserve all bot-owned execution fields from existing override; do not clobber
+    // them — they are managed via the Bot/Control tab, not the strategy card form.
     $prev = (array)($overrides[$stratId] ?? []);
     $overrides[$stratId] = array_merge($prev, [
-        'enabled'              => (bool)$enabled,
-        'mode'                 => $mode,
-        'bot_budget'           => $budget,
-        'bot_leverage'         => $leverage,
-        'entry_mode'           => $entryMode,
-        'stop_preset'          => $prev['stop_preset']  ?? null,
-        'exit_preset'          => $prev['exit_preset']  ?? null,
-        'max_active_positions' => $maxPos,
+        'enabled' => (bool)$enabled,
+        'mode'    => $mode,
     ]);
 
     if (!is_dir($storageDir)) {

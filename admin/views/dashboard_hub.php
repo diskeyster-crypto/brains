@@ -85,10 +85,13 @@ function renderDashboardHub(): string
     }
 
     // ── prof_manager runtime data ─────────────────────────────────────────
+    $pmModuleDir = System::path('root') . '/modules/prof_manager';
     $pmStatus = [];
     try {
-        $pmModuleDir = System::path('root') . '/modules/prof_manager';
         if (is_file($pmModuleDir . '/service.php')) {
+            if (is_file($pmModuleDir . '/bootstrap.php')) {
+                require_once $pmModuleDir . '/bootstrap.php';
+            }
             require_once $pmModuleDir . '/service.php';
             $pmSvc    = new \Modules\ProfManager\ProfManagerService($pmModuleDir);
             $pmStatus = $pmSvc->getStatus();
@@ -695,6 +698,164 @@ ROWS;
     $smCfgTrig  = $e($smBeTrig);
     $smCfgLock  = $e($smBeLock);
     $smConfigSaveUrl = System::web('admin/stop-manager/config/save');
+
+    // ── PM direct last_run.json read (for status chain + runtime note) ────
+    $pmRawLastRun = [];
+    $pmLastRunFile = $pmModuleDir . '/storage/runtime/last_run.json';
+    if (is_file($pmLastRunFile)) {
+        $raw = @file_get_contents($pmLastRunFile);
+        if ($raw !== false) {
+            $dec = @json_decode($raw, true);
+            if (is_array($dec)) {
+                $pmRawLastRun = $dec;
+            }
+        }
+    }
+    $pmRawSkipped = (string)($pmRawLastRun['skipped'] ?? '');
+
+    // ── PM cron task check ────────────────────────────────────────────────
+    $pmCronTaskExists  = false;
+    $pmCronTaskEnabled = false;
+    $pmCronLastRunTs   = null;
+    try {
+        $cronMgr      = \Core\Cron\CronManager::instance();
+        $allCronTasks = $cronMgr->getAllTasks();
+        foreach ($allCronTasks as $tId => $tData) {
+            if (($tData['module'] ?? '') === 'prof_manager') {
+                $pmCronTaskExists  = true;
+                $pmCronTaskEnabled = (bool)($tData['enabled'] ?? false);
+                $pmCronLastRunTs   = isset($tData['last_run']) ? (int)$tData['last_run'] : null;
+                break;
+            }
+        }
+    } catch (\Throwable) {}
+
+    // ── Status chain badge computation ────────────────────────────────────
+    // helper: [color, bg]
+    $scColor = static function (string $state): array {
+        switch ($state) {
+            case 'ON':   return ['#3fb950', 'rgba(63,185,80,.15)'];
+            case 'WARN': return ['#f0883e', 'rgba(240,136,62,.15)'];
+            case 'ERR':  return ['#f85149', 'rgba(248,81,73,.15)'];
+            default:     return ['#8b949e', 'rgba(107,114,128,.12)'];
+        }
+    };
+
+    // Strategy badge
+    $scStratState  = ($enabledStrat > 0) ? 'ON' : 'OFF';
+    $scStratReason = ($enabledStrat === 0) ? 'нет включённых стратегий' : '';
+
+    // Bot badge
+    $botLastError = (string)($lastRun['last_error'] ?? '');
+    if ($botLastError !== '') {
+        $scBotState  = 'ERR';
+        $scBotReason = $botLastError;
+    } elseif ($botCurrentlyEnabled) {
+        if ($tickStatus === 'skipped') {
+            $scBotState  = 'WARN';
+            $scBotReason = 'tick skipped';
+        } elseif ($posCount === 0 && $queueSize === 0 && $tickStatus !== 'never_run') {
+            $scBotState  = 'WARN';
+            $scBotReason = 'нет позиций / очереди';
+        } else {
+            $scBotState  = 'ON';
+            $scBotReason = '';
+        }
+    } else {
+        $scBotState  = 'OFF';
+        $scBotReason = 'bot disabled';
+    }
+
+    // Stop Manager badge
+    $smLastError = (string)($smLastRun['last_error'] ?? '');
+    if ($smLastError !== '') {
+        $scSmState  = 'ERR';
+        $scSmReason = $smLastError;
+    } elseif ($smCurrentlyEnabled) {
+        $scSmState  = ($smLastStatus === 'skipped') ? 'WARN' : 'ON';
+        $scSmReason = ($smLastStatus === 'skipped') ? 'tick skipped' : '';
+    } else {
+        $scSmState  = 'OFF';
+        $scSmReason = '';
+    }
+
+    // Profit Manager badge
+    if ($pmLastError !== '') {
+        $scPmState  = 'ERR';
+        $scPmReason = $pmLastError;
+    } elseif ($pmEnabledBool) {
+        if ($pmRawSkipped !== '' && $pmRawSkipped !== 'module_disabled') {
+            $scPmState  = 'WARN';
+            $scPmReason = $pmRawSkipped;
+        } else {
+            $scPmState  = 'ON';
+            $scPmReason = '';
+        }
+    } else {
+        $scPmState  = 'OFF';
+        $scPmReason = $pmRawSkipped !== '' ? $pmRawSkipped : 'module_disabled';
+    }
+
+    // Cron badge
+    if (!$pmCronTaskExists) {
+        $scCronState  = 'OFF';
+        $scCronReason = 'PM cron task не найден';
+    } elseif (!$pmCronTaskEnabled) {
+        $scCronState  = 'OFF';
+        $scCronReason = 'PM cron task disabled';
+    } elseif ($pmCronLastRunTs !== null) {
+        $cronAge = time() - $pmCronLastRunTs;
+        if ($cronAge > 180) {
+            $scCronState  = 'WARN';
+            $scCronReason = 'последний тик ' . round($cronAge / 60, 1) . ' мин назад';
+        } else {
+            $scCronState  = 'ON';
+            $scCronReason = '';
+        }
+    } else {
+        $scCronState  = 'WARN';
+        $scCronReason = 'не запускался';
+    }
+
+    // Build badge HTML helper
+    $scBadge = static function (string $label, string $state, string $reason) use ($scColor, $e): string {
+        [$clr, $bg] = $scColor($state);
+        $title = $reason !== '' ? ' title="' . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '"' : '';
+        $sub   = $reason !== ''
+            ? '<div style="font-size:10px;color:' . $clr . ';opacity:.8;margin-top:1px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+              . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</div>'
+            : '';
+        return '<div style="display:flex;flex-direction:column;align-items:center;padding:6px 14px;background:' . $bg . ';border:1px solid ' . $clr . '55;border-radius:8px;min-width:80px;"' . $title . '>'
+            . '<div style="font-size:11px;color:var(--ui-text-muted);margin-bottom:2px;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</div>'
+            . '<div style="font-size:13px;font-weight:700;color:' . $clr . ';">' . $state . '</div>'
+            . $sub
+            . '</div>';
+    };
+
+    $scHtml = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:10px 14px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:10px;">'
+        . '<span style="font-size:11px;color:var(--ui-text-muted);margin-right:4px;white-space:nowrap;">Статус цепочки:</span>'
+        . $scBadge('Стратегии', $scStratState, $scStratReason)
+        . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
+        . $scBadge('Бот', $scBotState, $scBotReason)
+        . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
+        . $scBadge('Stop', $scSmState, $scSmReason)
+        . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
+        . $scBadge('Profit', $scPmState, $scPmReason)
+        . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
+        . $scBadge('Cron', $scCronState, $scCronReason)
+        . '</div>';
+
+    // ── PM Runtime note (shown when PM is disabled but had a tick) ────────
+    $pmRuntimeNote = '';
+    if (!$pmEnabledBool && $pmRawLastRun !== []) {
+        $noteReason = $pmRawSkipped !== '' ? $pmRawSkipped : 'module_disabled';
+        $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
+            . 'Последний тик был, но PM выключен: <strong>' . $e($noteReason) . '</strong></div>';
+    } elseif ($pmEnabledBool && $pmRawSkipped !== '') {
+        $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
+            . 'Тик пропущен: <strong>' . $e($pmRawSkipped) . '</strong></div>';
+    }
+
     $flashHtml = '';
     if ($flash) {
         $ftype = ($flash['type'] === 'success') ? 'success' : 'danger';
@@ -741,7 +902,7 @@ HTML;
 </div>
 
 <!-- Summary strip -->
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
   <div class="dh-stat"><div class="dh-stat-val" style="color:var(--ui-text);">{$totalStrat}</div><div class="dh-stat-lbl">Стратегий</div></div>
   <div class="dh-stat"><div class="dh-stat-val" style="color:#3fb950;">{$enabledStrat}</div><div class="dh-stat-lbl">Включено</div></div>
   <div class="dh-stat"><div class="dh-stat-val" style="color:#8b949e;">{$disabledStrat}</div><div class="dh-stat-lbl">Выключено</div></div>
@@ -755,6 +916,9 @@ HTML;
     <div style="font-size:11px;color:var(--ui-text-muted);margin-top:2px;">Бот: {$botEnabled}</div>
   </div>
 </div>
+
+<!-- Status chain (always visible) -->
+{$scHtml}
 
 <!-- Top tab navigation (vanilla JS) -->
 <nav class="dh-tab-nav" role="tablist">
@@ -955,6 +1119,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус токена</td><td>{$pmCronStatusText}</td></tr>
         </table>
+        {$pmRuntimeNote}
       </div>
     </div>
   </div>

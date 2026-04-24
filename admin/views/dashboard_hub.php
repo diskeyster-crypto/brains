@@ -939,7 +939,7 @@ ROWS;
               . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</div>'
             : '';
         $pointer    = $tabId !== '' ? 'cursor:pointer;' : '';
-        $dataTarget = $tabId !== '' ? ' data-tab-target="' . htmlspecialchars($tabId, ENT_QUOTES, 'UTF-8') . '" onclick="dhSwitchToTab(\'' . htmlspecialchars($tabId, ENT_QUOTES, 'UTF-8') . '\')"' : '';
+        $dataTarget = $tabId !== '' ? ' data-tab-target="' . htmlspecialchars($tabId, ENT_QUOTES, 'UTF-8') . '" role="button" tabindex="0"' : '';
         return '<div style="' . $pointer . 'display:flex;flex-direction:column;align-items:center;padding:6px 14px;background:' . $bg . ';border:1px solid ' . $clr . '55;border-radius:8px;min-width:80px;"' . $title . $dataTarget . '>'
             . '<div style="font-size:11px;color:var(--ui-text-muted);margin-bottom:2px;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</div>'
             . '<div style="font-size:13px;font-weight:700;color:' . $clr . ';">' . $state . '</div>'
@@ -1525,22 +1525,22 @@ HTML;
 
 <!-- Top tab navigation (vanilla JS) -->
 <nav class="dh-tab-nav" role="tablist">
-  <button class="dh-tab-btn dh-active" data-tab-target="dh-overview" onclick="dhSwitchToTab('dh-overview')" type="button">
+  <button class="dh-tab-btn dh-active" data-tab-target="dh-overview" type="button">
     <i class="bi bi-grid-1x2" style="margin-right:5px;"></i>Обзор
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-strat" onclick="dhSwitchToTab('dh-strat')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-strat" type="button">
     <i class="bi bi-layers" style="margin-right:5px;"></i>Стратегии
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-bot" onclick="dhSwitchToTab('dh-bot')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-bot" type="button">
     <i class="bi bi-cpu" style="margin-right:5px;"></i>Бот
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-sm" onclick="dhSwitchToTab('dh-sm')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-sm" type="button">
     <i class="bi bi-shield-exclamation" style="margin-right:5px;"></i>Стоп
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-pm" onclick="dhSwitchToTab('dh-pm')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-pm" type="button">
     <i class="bi bi-graph-up-arrow" style="margin-right:5px;"></i>Профит
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-ctrl" onclick="dhSwitchToTab('dh-ctrl')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-ctrl" type="button">
     <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
   </button>
 </nav>
@@ -2051,9 +2051,7 @@ function dhTab(panelId) {
     var panel = document.getElementById(panelId);
     if (panel) { panel.classList.add('dh-visible'); }
 }
-function dhSwitchToTab(panelId) {
-    dhTab(panelId);
-}
+function dhSwitchToTab(panelId) { dhTab(panelId); }
 function dhToggleEdit(id) {
     var el = document.getElementById(id);
     if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; }
@@ -2077,6 +2075,13 @@ function dhResetRuntime() {
     })
     .catch(function(){ alert('Не удалось выполнить сброс. Повторите попытку.'); });
 }
+// Event delegation — handles tab-nav buttons and status-chain badges via [data-tab-target]
+document.addEventListener('click', function(e) {
+    var target = e.target.closest('[data-tab-target]');
+    if (target) {
+        dhTab(target.getAttribute('data-tab-target'));
+    }
+});
 // Activate tab from URL ?tab= on page load
 (function() {
     var valid = ['dh-overview','dh-strat','dh-bot','dh-sm','dh-pm','dh-ctrl'];
@@ -2085,7 +2090,6 @@ function dhResetRuntime() {
     if (tab && valid.indexOf(tab) !== -1) {
         dhTab(tab);
     }
-    // Click handlers are wired via onclick="dhSwitchToTab(...)" on each .dh-tab-btn button.
 })();
 </script>
 HTML;

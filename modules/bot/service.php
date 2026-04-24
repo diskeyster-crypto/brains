@@ -342,13 +342,14 @@ final class BotService
     /**
      * Scan modules/strategy/* (up to configured depth) for strategy modules.
      * Writes strategy_registry.json and returns the discovered records.
+     * Always overwrites the file with a fresh scan — never merges stale contents.
      *
-     * A directory is a bot-consumable strategy module when:
-     *   - it has a manifest.json with category == 'strategy'
-     *   - it has a storage/ subdirectory
+     * A directory is a strategy module when it has a manifest.json with
+     * category == 'strategy'. Storage presence is NOT required for discovery.
      *
-     * status: 'bot_ready'   — storage/bot_handoff_queue.json exists
-     *         'discovered'  — valid module but no handoff queue file yet
+     * status: 'bot_ready'              — storage/bot_handoff_queue.json exists
+     *         'discovered'             — storage dir present but no handoff queue yet
+     *         'storage_not_initialized'— manifest found, storage dir absent
      */
     private function refreshRegistry(array $config): array
     {

@@ -108,6 +108,73 @@ final class BotService
         return $this->readJson('storage/last_run.json', []);
     }
 
+    /**
+     * Check connectivity to Bybit Demo account using configured credentials.
+     *
+     * Makes a lightweight authenticated call (/v5/account/wallet-balance) and
+     * returns a structured result.  Never logs credentials.
+     *
+     * @return array{
+     *   connected: bool,
+     *   mode: string,
+     *   account: string,
+     *   error: string|null
+     * }
+     */
+    public function checkDemoConnection(): array
+    {
+        $config    = $this->getConfig();
+        $apiKey    = (string)($config['demo_api_key']      ?? '');
+        $apiSecret = (string)($config['demo_api_secret']   ?? '');
+        $baseUrl   = (string)($config['demo_api_base_url'] ?? 'https://api-demo.bybit.com');
+
+        if ($apiKey === '' || $apiSecret === '') {
+            return [
+                'connected' => false,
+                'mode'      => 'demo',
+                'account'   => 'bybit_demo',
+                'error'     => 'missing_credentials',
+            ];
+        }
+
+        try {
+            $gw = \Core\Gateway\Bybit::client('bybit_demo_check');
+            $gw->setCredentials($apiKey, $apiSecret);
+            $gw->setBaseUrl($baseUrl);
+
+            $resp = $gw->request('/v5/account/wallet-balance', [
+                'accountType' => 'UNIFIED',
+            ], true);
+
+            $retCode = $resp['ret_code'] ?? -1;
+            $success = ($resp['success'] ?? false) && $retCode === 0;
+
+            if ($success) {
+                return [
+                    'connected' => true,
+                    'mode'      => 'demo',
+                    'account'   => 'bybit_demo',
+                    'error'     => null,
+                ];
+            }
+
+            $errMsg = (string)($resp['ret_msg'] ?? ($resp['error_type'] ?? 'api_error'));
+            return [
+                'connected' => false,
+                'mode'      => 'demo',
+                'account'   => 'bybit_demo',
+                'error'     => $errMsg,
+            ];
+        } catch (\Throwable $ex) {
+            return [
+                'connected' => false,
+                'mode'      => 'demo',
+                'account'   => 'bybit_demo',
+                'error'     => $ex->getMessage(),
+            ];
+        }
+    }
+
     public function getStats(): array
     {
         return $this->readJson('storage/stats.json', []);
@@ -200,6 +267,24 @@ final class BotService
             }
         }
 
+        // ── Demo credentials diagnostics ─────────────────────────────────────
+        $botMode            = (string)($config['mode'] ?? 'passive');
+        $demoApiKey         = (string)($config['demo_api_key']    ?? '');
+        $demoApiSecret      = (string)($config['demo_api_secret'] ?? '');
+        $demoCredsConfigured = ($demoApiKey !== '' && $demoApiSecret !== '');
+        $demoConnected      = false;
+        $demoConnError      = null;
+
+        if ($botMode === 'demo') {
+            $connResult        = $this->checkDemoConnection();
+            $demoConnected     = (bool)($connResult['connected'] ?? false);
+            $demoConnError     = $connResult['error'] ?? null;
+        } elseif (!$demoCredsConfigured) {
+            $demoConnError = 'missing_credentials';
+        }
+
+        $account = $botMode === 'demo' ? 'bybit_demo' : 'local';
+
         if (!(bool)($config['enabled'] ?? false)) {
             // Bot disabled: still write truthful last_run including fresh strategy
             // discovery totals so the dashboard can render the current registry.
@@ -212,21 +297,26 @@ final class BotService
             $this->writeJson('storage/last_run.json', array_merge(
                 $this->readJson('storage/last_run.json', []),
                 [
-                    'status'                     => 'disabled',
-                    'tick_at'                    => $tickAt,
-                    'elapsed_sec'                => round(microtime(true) - $tStart, 6),
-                    'bot_enabled'                => false,
-                    'bot_mode'                   => $config['mode'] ?? 'passive',
-                    'strategies_discovered_total'=> count($registry),
-                    'strategies_enabled_total'   => count($enabledStrategies),
-                    'strategies_disabled_total'  => count($disabledStrategies),
+                    'status'                       => 'disabled',
+                    'tick_at'                      => $tickAt,
+                    'elapsed_sec'                  => round(microtime(true) - $tStart, 6),
+                    'bot_enabled'                  => false,
+                    'bot_mode'                     => $botMode,
+                    'mode'                         => $botMode,
+                    'account'                      => $account,
+                    'demo_credentials_configured'  => $demoCredsConfigured,
+                    'demo_connected'               => $demoConnected,
+                    'demo_connection_error'        => $demoConnError,
+                    'strategies_discovered_total'  => count($registry),
+                    'strategies_enabled_total'     => count($enabledStrategies),
+                    'strategies_disabled_total'    => count($disabledStrategies),
                     'handoff_sources_active_total' => 0,
-                    'handoff_signals_processed'  => 0,
-                    'order_queue_total'          => count($this->readJson('storage/order_queue.json', [])),
-                    'active_orders_count'        => count($this->readJson('storage/active_orders.json', [])),
-                    'active_positions_count'     => count($this->readJson('storage/active_positions.json', [])),
-                    'ticks_total'                => (int)($stats['ticks_total'] ?? 0),
-                    'handoff_signals_seen_total' => (int)($stats['handoff_signals_seen_total'] ?? 0),
+                    'handoff_signals_processed'    => 0,
+                    'order_queue_total'            => count($this->readJson('storage/order_queue.json', [])),
+                    'active_orders_count'          => count($this->readJson('storage/active_orders.json', [])),
+                    'active_positions_count'       => count($this->readJson('storage/active_positions.json', [])),
+                    'ticks_total'                  => (int)($stats['ticks_total'] ?? 0),
+                    'handoff_signals_seen_total'   => (int)($stats['handoff_signals_seen_total'] ?? 0),
                 ]
             ));
             $this->writeRuntimeSnapshot($config, $this->readJson('storage/last_run.json', []), count($registry), count($enabledStrategies));
@@ -264,8 +354,7 @@ final class BotService
         $result     = $this->processHandoff($allSignals, $orderQueue, $config, $overrides, $tickAt);
         $orderQueue = $result['order_queue'];
 
-        // ── 5. Execution state machine (paper mode only) ──────────────────────
-        $botMode  = (string)($config['mode'] ?? 'passive');
+        // ── 5. Execution state machine ────────────────────────────────────────
         $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $config, $tickAt);
         $orderQueue      = $execResult['order_queue'];
         $activeOrders    = $execResult['active_orders'];
@@ -320,6 +409,11 @@ final class BotService
             'elapsed_sec' => $elapsed,
             'bot_enabled' => true,
             'bot_mode'    => $botMode,
+            'mode'        => $botMode,
+            'account'     => $account,
+            'demo_credentials_configured' => $demoCredsConfigured,
+            'demo_connected'              => $demoConnected,
+            'demo_connection_error'       => $demoConnError,
 
             // Discovery
             'strategies_discovered_total' => count($registry),

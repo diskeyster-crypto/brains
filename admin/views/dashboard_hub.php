@@ -265,7 +265,12 @@ function renderDashboardHub(): string
     $tickStatus = (string)($lastRun['status']     ?? 'never_run');
     $botEnabled = ($lastRun['bot_enabled'] ?? false) ? 'Включён' : 'Выключен';
     $botMode    = (string)($lastRun['bot_mode']   ?? 'passive');
-    // $sigProc will be computed after $stratSignals is populated below
+
+    // ── Demo connection diagnostics from last_run.json ────────────────────
+    $lrDemoCredsConfigured = (bool)($lastRun['demo_credentials_configured'] ?? false);
+    $lrDemoConnected       = (bool)($lastRun['demo_connected']              ?? false);
+    $lrDemoConnError       = (string)($lastRun['demo_connection_error']     ?? '');
+    $lrAccount             = (string)($lastRun['account']                   ?? ($botMode === 'demo' ? 'bybit_demo' : 'local'));
 
     // ── escape helper ─────────────────────────────────────────────────────
     $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -574,6 +579,13 @@ HTML;
     $cfgMaxAgeSec   = (int)($botConfig['max_signal_age_sec'] ?? 0);
     $cfgDedupWindow = (int)($botConfig['queue_dedup_ttl_sec'] ?? 0);
     $cfgScanRoots   = $e(implode(', ', (array)($botConfig['strategy_scan_roots'] ?? [])));
+
+    // Demo credentials status (never display actual secret value)
+    $cfgDemoApiKey    = (string)($botConfig['demo_api_key']      ?? '');
+    $cfgDemoApiSecret = (string)($botConfig['demo_api_secret']   ?? '');
+    $cfgDemoBaseUrl   = $e($botConfig['demo_api_base_url'] ?? 'https://api-demo.bybit.com');
+    $cfgDemoKeyStatus    = $cfgDemoApiKey    !== '' ? '<span style="color:#3fb950;">&#10003; настроен</span>' : '<span style="color:#f85149;">&#10007; не задан</span>';
+    $cfgDemoSecretStatus = $cfgDemoApiSecret !== '' ? '<span style="color:#3fb950;">&#10003; настроен</span>' : '<span style="color:#f85149;">&#10007; не задан</span>';
 
     // Bot quick-toggle values
     $botCurrentlyEnabled = ($botConfig['enabled'] ?? false);
@@ -1473,6 +1485,17 @@ HTML;
 HTML;
     }
 
+    // ── Demo connection status HTML (pre-computed for use in heredoc) ──────
+    $demoCredsHtml    = $lrDemoCredsConfigured
+        ? '<span style="color:#3fb950;font-weight:600;">&#10003; настроены</span>'
+        : '<span style="color:#f85149;font-weight:600;">&#10007; отсутствуют</span>';
+    $demoConnHtml     = $lrDemoConnected
+        ? '<span style="color:#3fb950;font-weight:600;">&#10003; подключено</span>'
+        : '<span style="color:#f85149;font-weight:600;">&#10007; нет соединения</span>';
+    $demoConnErrRow   = $lrDemoConnError !== ''
+        ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибка</td><td style="color:#f85149;font-size:12px;">' . $e($lrDemoConnError) . '</td></tr>'
+        : '';
+
     // ── render ────────────────────────────────────────────────────────────
     return <<<HTML
 <style>
@@ -1604,6 +1627,7 @@ HTML;
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:140px;">Включён</td><td>{$botEnabled}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$e($botMode)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Аккаунт</td><td><code>{$e($lrAccount)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус тика</td><td><code>{$e($tickStatus)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Время тика</td><td><code>{$e($tickAt)}</code></td></tr>
         </table>
@@ -1620,6 +1644,25 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стратегий обнаружено</td><td><code>{$e($lastRun['strategies_discovered_total'] ?? 0)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стратегий включено</td><td><code>{$e($lastRun['strategies_enabled_total'] ?? 0)}</code></td></tr>
         </table>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">Demo подключение</div>
+    <div class="card-body">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr>
+          <td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Учётные данные</td>
+          <td>{$demoCredsHtml}</td>
+        </tr>
+        <tr>
+          <td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус соединения</td>
+          <td>{$demoConnHtml}</td>
+        </tr>
+        {$demoConnErrRow}
+      </table>
+      <div style="margin-top:8px;font-size:11px;color:var(--ui-text-muted);">
+        Статус обновляется при каждом тике бота в режиме demo. Настройте учётные данные во вкладке «Управление».
       </div>
     </div>
   </div>
@@ -1871,7 +1914,39 @@ HTML;
             <input type="number" step="1" min="0" name="default_max_active_positions" value="{$e($cfgDefMaxPos)}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
-        <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+
+        <!-- Demo credentials section -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
+          <div style="font-size:12px;color:var(--ui-text-muted);margin-bottom:8px;font-weight:600;">Bybit Demo — учётные данные</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;">
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">
+                API Key <span style="margin-left:6px;">{$cfgDemoKeyStatus}</span>
+              </label>
+              <input type="text" name="demo_api_key" value="" placeholder="оставьте пустым, чтобы не изменять"
+                autocomplete="off" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">
+                API Secret <span style="margin-left:6px;">{$cfgDemoSecretStatus}</span>
+              </label>
+              <input type="password" name="demo_api_secret" value="" placeholder="оставьте пустым, чтобы не изменять"
+                autocomplete="new-password" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Base URL</label>
+              <input type="text" name="demo_api_base_url" value="{$cfgDemoBaseUrl}"
+                class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:var(--ui-text-muted);">
+            Ключ и секрет сохраняются только при заполнении. Оставьте поле пустым — текущее значение не изменится.
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+        </div>
       </form>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
         <table style="font-size:12px;width:100%;border-collapse:collapse;">
@@ -2187,6 +2262,11 @@ function handleDashboardGlobalSave(): void
     $leverage  = (int)($_POST['max_bot_leverage']                    ?? 0);
     $defMaxPos = (int)($_POST['default_max_active_positions']        ?? 0);
 
+    // Demo credentials: only update when non-empty; never log the values
+    $demoApiKey    = trim((string)($_POST['demo_api_key']      ?? ''));
+    $demoApiSecret = trim((string)($_POST['demo_api_secret']   ?? ''));
+    $demoBaseUrl   = trim((string)($_POST['demo_api_base_url'] ?? ''));
+
     if (!in_array($mode, ['demo', 'passive', 'active', 'disabled'], true)) {
         $mode = 'demo';
     }
@@ -2200,6 +2280,17 @@ function handleDashboardGlobalSave(): void
     $current['max_bot_leverage']              = $leverage;
     $current['default_entry_mode']            = $defEntry !== '' ? $defEntry : null;
     $current['default_max_active_positions']  = $defMaxPos;
+
+    // Only overwrite credentials when the user actually submitted a value
+    if ($demoApiKey !== '') {
+        $current['demo_api_key'] = $demoApiKey;
+    }
+    if ($demoApiSecret !== '') {
+        $current['demo_api_secret'] = $demoApiSecret;
+    }
+    $current['demo_api_base_url'] = $demoBaseUrl !== ''
+        ? $demoBaseUrl
+        : ($current['demo_api_base_url'] ?? 'https://api-demo.bybit.com');
 
     // Serialise as PHP array file
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";

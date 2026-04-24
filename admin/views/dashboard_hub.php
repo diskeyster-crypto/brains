@@ -283,6 +283,14 @@ function renderDashboardHub(): string
     $lrDemoQtyInvalidCount     = (int)($lastRun['demo_qty_invalid_count']         ?? 0);
     $lrDemoLevClampedCount     = (int)($lastRun['demo_leverage_clamped_count']    ?? 0);
     $lrDemoSetLevFailedCount   = (int)($lastRun['demo_set_leverage_failed_count'] ?? 0);
+    $lrDemoLastReqLev          = $lastRun['demo_last_req_leverage']               ?? null;
+    $lrDemoLastEffLev          = $lastRun['demo_last_eff_leverage']               ?? null;
+    $lrDemoLastLevSrc          = (string)($lastRun['demo_last_leverage_source']   ?? '');
+    $lrDemoLastBudgetSrc       = (string)($lastRun['demo_last_budget_source']     ?? '');
+    $lrDemoLastSetLevNote      = (string)($lastRun['demo_last_set_lev_note']      ?? '');
+    $lrDemoLastSetLevCode      = $lastRun['demo_last_set_lev_code']               ?? null;
+    $lrDemoLastSetLevMsg       = (string)($lastRun['demo_last_set_lev_msg']       ?? '');
+    $lrDemoLevMismatchCount    = (int)($lastRun['demo_leverage_mismatch_count']   ?? 0);
 
     // ── escape helper ─────────────────────────────────────────────────────
     $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -1530,6 +1538,31 @@ HTML;
         $levClampedNote = $lrDemoLevClampedCount > 0
             ? ' <span style="color:#f0883e;font-size:11px;">— Плечо снижено до максимального Bybit для монеты</span>'
             : '';
+        // Leverage diagnostics rows
+        $levReqRow = $lrDemoLastReqLev !== null
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Запрошенное плечо</td>'
+              . '<td><code>' . $e($lrDemoLastReqLev) . 'x</code>'
+              . ($lrDemoLastLevSrc !== '' ? ' <span style="color:var(--ui-text-muted);font-size:11px;">(' . $e($lrDemoLastLevSrc) . ')</span>' : '')
+              . '</td></tr>'
+            : '';
+        $levEffRow = $lrDemoLastEffLev !== null
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Эффективное плечо</td>'
+              . '<td><code style="color:' . ($lrDemoLastEffLev !== $lrDemoLastReqLev ? '#f0883e' : '#3fb950') . ';">' . $e($lrDemoLastEffLev) . 'x</code></td></tr>'
+            : '';
+        $levNoteRow = $lrDemoLastSetLevNote !== ''
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Set leverage статус</td>'
+              . '<td><code>' . $e($lrDemoLastSetLevNote) . '</code>'
+              . ($lrDemoLastSetLevCode !== null ? ' <span style="color:var(--ui-text-muted);font-size:11px;">[' . $e($lrDemoLastSetLevCode) . ']</span>' : '')
+              . '</td></tr>'
+            : '';
+        $budgetSrcRow = $lrDemoLastBudgetSrc !== ''
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Источник бюджета</td>'
+              . '<td><code>' . $e($lrDemoLastBudgetSrc) . '</code></td></tr>'
+            : '';
+        $levMismatchRow = $lrDemoLevMismatchCount > 0
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">&#9888; Плечо не применено</td>'
+              . '<td><code style="color:#f85149;">leverage_not_applied_on_exchange (' . $e($lrDemoLevMismatchCount) . ')</code></td></tr>'
+            : '';
         $demoExecDiagHtml = '<div class="card" style="margin-bottom:16px;">'
             . '<div class="card-header">Demo — диагностика исполнения</div>'
             . '<div class="card-body">'
@@ -1541,6 +1574,11 @@ HTML;
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Qty invalid (тик)</td><td><code style="color:' . ($lrDemoQtyInvalidCount > 0 ? '#f85149' : 'inherit') . ';">' . $e($lrDemoQtyInvalidCount) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плечо снижено (тик)</td><td><code>' . $e($lrDemoLevClampedCount) . '</code>' . $levClampedNote . '</td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Set leverage ошибок</td><td><code style="color:' . ($lrDemoSetLevFailedCount > 0 ? '#f85149' : 'inherit') . ';">' . $e($lrDemoSetLevFailedCount) . '</code></td></tr>'
+            . $levReqRow
+            . $levEffRow
+            . $budgetSrcRow
+            . $levNoteRow
+            . $levMismatchRow
             . $lastRejSymHtml
             . $lastErrMsgHtml
             . '</table>'

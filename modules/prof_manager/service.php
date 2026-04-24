@@ -20,7 +20,8 @@ namespace Modules\ProfManager;
  * Public API:
  *   tick()            — run one processing cycle
  *   getStatus()       — return current module status
- *   setEnabled(bool)  — toggle enabled flag in config (runtime only, not persisted)
+ *   setEnabled(bool)  — toggle enabled flag and persist to active.php
+ *   saveConfig(array) — persist arbitrary config keys to active.php
  *
  * Mode is always 'paper'; no exchange calls are ever made.
  */
@@ -250,6 +251,8 @@ final class ProfManagerService
             }
         }
 
+        $cronToken = (string)($this->config['cron_token'] ?? '');
+
         return [
             'enabled'          => $this->runtimeEnabled,
             'mode'             => 'paper',
@@ -260,11 +263,13 @@ final class ProfManagerService
             'planned_updates'  => (int) ($lastRun['executed_count'] ?? 0),
             'skipped'          => (int) ($lastRun['skipped_count'] ?? 0),
             'last_error'       => $lastError,
+            'cron_interval_sec'=> 60,
+            'cron_configured'  => ($cronToken !== ''),
         ];
     }
 
     /**
-     * Enable or disable the module at runtime (does not persist to config file).
+     * Enable or disable the module and persist the flag to active.php.
      *
      * @param bool $enabled
      * @return array{ok: bool, enabled: bool}
@@ -272,7 +277,49 @@ final class ProfManagerService
     public function setEnabled(bool $enabled): array
     {
         $this->runtimeEnabled = $enabled;
+        $this->config['enabled'] = $enabled;
+        $this->saveConfig($this->config);
         return ['ok' => true, 'enabled' => $enabled];
+    }
+
+    /**
+     * Save an arbitrary config array to active.php (merges on top of base config).
+     *
+     * @param array<string,mixed> $data
+     */
+    public function saveConfig(array $data): void
+    {
+        $activeFile = $this->moduleDir . '/config/active.php';
+
+        $existing = [];
+        if (is_file($activeFile)) {
+            try {
+                $loaded = @include $activeFile;
+                if (is_array($loaded)) {
+                    $existing = $loaded;
+                }
+            } catch (\Throwable) {
+                // ignore
+            }
+        }
+
+        $merged = array_merge($existing, $data);
+
+        $php  = "<?php\n\ndeclare(strict_types=1);\n\n";
+        $php .= "/**\n * Profit Manager Module — Active Config Overrides\n";
+        $php .= " * Written by the admin UI. Do not edit manually.\n */\n\n";
+        $php .= "return ";
+        $php .= var_export($merged, true);
+        $php .= ";\n";
+
+        $dir = dirname($activeFile);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($activeFile, $php);
+
+        // Reload config to keep instance in sync
+        $this->config = $this->loadConfig();
     }
 
     // =========================================================================

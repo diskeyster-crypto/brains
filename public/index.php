@@ -910,6 +910,14 @@ Router::post('/admin/dashboard/profit-manager/toggle', function () {
     handleDashboardPmToggle();
 });
 
+Router::post('/admin/dashboard/profit-manager/config/save', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardPmConfigSave();
+});
+
 Router::post('/admin/dashboard/chain-run', function () {
     if (!Auth::check()) {
         http_response_code(403);

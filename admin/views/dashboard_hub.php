@@ -107,14 +107,49 @@ function renderDashboardHub(): string
     $pmPlanned       = (int)    ($pmStatus['planned_updates'] ?? 0);
     $pmSkipped       = (int)    ($pmStatus['skipped']        ?? 0);
     $pmLastError     = (string) ($pmStatus['last_error']     ?? '');
+    $pmCronInterval  = (int)    ($pmStatus['cron_interval_sec'] ?? 60);
+    $pmCronConfigured = (bool)  ($pmStatus['cron_configured'] ?? false);
+    $pmCronStatusText = $pmCronConfigured ? 'Настроен ✓' : 'Токен не задан';
+    $pmCronPath      = 'public/cron/prof_manager.php';
 
     $pmToggleTarget  = $pmEnabledBool ? '0' : '1';
     $pmToggleLabel   = $pmEnabledBool ? 'Выключить PM' : 'Включить PM';
     $pmToggleBg      = $pmEnabledBool ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
     $pmToggleColor   = $pmEnabledBool ? '#f85149' : '#3fb950';
 
-    $pmTickUrl   = System::web('admin/dashboard/profit-manager/tick');
-    $pmToggleUrl = System::web('admin/dashboard/profit-manager/toggle');
+    $pmTickUrl         = System::web('admin/dashboard/profit-manager/tick');
+    $pmToggleUrl       = System::web('admin/dashboard/profit-manager/toggle');
+    $pmConfigSaveUrl   = System::web('admin/dashboard/profit-manager/config/save');
+
+    // ── prof_manager config (for Управление form) ─────────────────────────
+    $pmCfg = [];
+    try {
+        $pmCfgBase   = is_file($pmModuleDir . '/config/config.php')
+            ? (require $pmModuleDir . '/config/config.php') : [];
+        $pmCfgActive = is_file($pmModuleDir . '/config/active.php')
+            ? (require $pmModuleDir . '/config/active.php') : [];
+        $pmCfg = array_merge(
+            is_array($pmCfgBase)   ? $pmCfgBase   : [],
+            is_array($pmCfgActive) ? $pmCfgActive : []
+        );
+    } catch (\Throwable) {}
+
+    $pmCfgProfile   = (string) ($pmCfg['active_profile'] ?? 'legacy_safe');
+    $pmCfgProfileCfg = $pmCfg['profiles'][$pmCfgProfile] ?? [];
+
+    $pmCfgEnYes = ($pmCfg['enabled'] ?? false) ? ' selected' : '';
+    $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
+
+    $pmCfgInitRoi      = (string) ($pmCfgProfileCfg['init_roi']               ?? 2.0);
+    $pmCfgActivRoi     = (string) ($pmCfgProfileCfg['activation_roi']         ?? 10.0);
+    $pmCfgStepRoi      = (string) ($pmCfgProfileCfg['step_roi']               ?? 3.0);
+    $pmCfgLockBuf      = (string) ($pmCfgProfileCfg['lock_buffer_roi']        ?? 2.0);
+    $pmCfgLockFloor    = (string) ($pmCfgProfileCfg['lock_floor_roi']         ?? 5.0);
+    $pmCfgMinInterval  = (string) ($pmCfgProfileCfg['min_update_interval_sec']?? 30);
+    $pmCfgMinPriceDist = (string) ($pmCfgProfileCfg['min_price_distance_pct'] ?? 0.15);
+    $pmCfgMinRoiStep   = (string) ($pmCfgProfileCfg['min_roi_step']           ?? 1.0);
+    $pmCfgMaxUpdates   = (string) ($pmCfgProfileCfg['max_updates_per_run']    ?? 20);
+    $pmCfgTickSize     = (string) ($pmCfgProfileCfg['default_tick_size']      ?? 0.0001);
 
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
@@ -916,6 +951,9 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плановых обновлений</td><td><code>{$pmPlanned}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено</td><td><code>{$pmSkipped}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td><td style="color:#f85149;font-size:12px;">{$pmLastError}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Cron-обработчик</td><td><code>{$pmCronPath}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус токена</td><td>{$pmCronStatusText}</td></tr>
         </table>
       </div>
     </div>
@@ -1081,6 +1119,98 @@ HTML;
         </div>
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Profit Manager quick settings -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><i class="bi bi-graph-up-arrow" style="margin-right:6px;"></i>Profit Manager — Быстрые настройки</span>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · paper-only profit-lock</small>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{$pmConfigSaveUrl}">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
+            <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgEnYes}>Да</option>
+              <option value="0"{$pmCfgEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
+            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="paper" selected>paper</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Профиль</label>
+            <select name="active_profile" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="legacy_safe" selected>legacy_safe</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Init ROI%</label>
+            <input type="number" step="0.1" min="0" name="init_roi"
+              value="{$pmCfgInitRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Activation ROI%</label>
+            <input type="number" step="0.1" min="0" name="activation_roi"
+              value="{$pmCfgActivRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Step ROI%</label>
+            <input type="number" step="0.1" min="0" name="step_roi"
+              value="{$pmCfgStepRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock buffer ROI%</label>
+            <input type="number" step="0.1" min="0" name="lock_buffer_roi"
+              value="{$pmCfgLockBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock floor ROI%</label>
+            <input type="number" step="0.1" min="0" name="lock_floor_roi"
+              value="{$pmCfgLockFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min update interval (сек)</label>
+            <input type="number" step="1" min="1" name="min_update_interval_sec"
+              value="{$pmCfgMinInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min price distance %</label>
+            <input type="number" step="0.01" min="0" name="min_price_distance_pct"
+              value="{$pmCfgMinPriceDist}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min ROI step%</label>
+            <input type="number" step="0.1" min="0" name="min_roi_step"
+              value="{$pmCfgMinRoiStep}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Max updates per run</label>
+            <input type="number" step="1" min="1" name="max_updates_per_run"
+              value="{$pmCfgMaxUpdates}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Default tick size</label>
+            <input type="number" step="0.00001" min="0.00001" name="default_tick_size"
+              value="{$pmCfgTickSize}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+      </form>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
+        <table style="font-size:12px;width:100%;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Cron-обработчик</td><td><code>{$pmCronPath}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус токена</td><td>{$pmCronStatusText}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td>{$pmLastTick}</td></tr>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -1746,3 +1876,110 @@ function handleDashboardPmToggle(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardPmToggle'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: save Profit Manager quick settings
+// Registered as: POST /admin/dashboard/profit-manager/config/save
+// Saves enabled, mode, active_profile, and per-profile numeric fields to
+// modules/prof_manager/config/active.php. Does not touch Stop Manager.
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardPmConfigSave')) {
+function handleDashboardPmConfigSave(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $dashUrl    = System::web('admin/dashboard') . '#dh-ctrl';
+    $moduleDir  = System::path('root') . '/modules/prof_manager';
+    $activeFile = $moduleDir . '/config/active.php';
+
+    // Load existing active config (preserve unknown keys like cron_token)
+    $existing = [];
+    if (is_file($activeFile)) {
+        try {
+            $loaded = @include $activeFile;
+            if (is_array($loaded)) {
+                $existing = $loaded;
+            }
+        } catch (\Throwable) {}
+    }
+
+    // Load base config to know defaults
+    $base = [];
+    $baseFile = $moduleDir . '/config/config.php';
+    if (is_file($baseFile)) {
+        try {
+            $b = @include $baseFile;
+            if (is_array($b)) {
+                $base = $b;
+            }
+        } catch (\Throwable) {}
+    }
+
+    // ── Top-level fields ─────────────────────────────────────────────────
+    $existing['enabled']        = (bool)(int)($_POST['enabled'] ?? 0);
+    $existing['mode']           = 'paper'; // always paper
+    $existing['active_profile'] = trim((string)($_POST['active_profile'] ?? 'legacy_safe'));
+    if ($existing['active_profile'] === '') {
+        $existing['active_profile'] = 'legacy_safe';
+    }
+
+    // ── Profile numeric fields ───────────────────────────────────────────
+    $profile = $existing['active_profile'];
+
+    $numericFields = [
+        'init_roi'                => ['step' => 0.1,    'min' => 0.0],
+        'activation_roi'          => ['step' => 0.1,    'min' => 0.0],
+        'step_roi'                => ['step' => 0.1,    'min' => 0.0],
+        'lock_buffer_roi'         => ['step' => 0.1,    'min' => 0.0],
+        'lock_floor_roi'          => ['step' => 0.1,    'min' => 0.0],
+        'min_update_interval_sec' => ['step' => 1,      'min' => 1.0, 'int' => true],
+        'min_price_distance_pct'  => ['step' => 0.01,   'min' => 0.0],
+        'min_roi_step'            => ['step' => 0.1,    'min' => 0.0],
+        'max_updates_per_run'     => ['step' => 1,      'min' => 1.0, 'int' => true],
+        'default_tick_size'       => ['step' => 0.00001,'min' => 0.00001],
+    ];
+
+    $baseProfileCfg = $base['profiles'][$profile] ?? [];
+    $profileData    = $existing['profiles'][$profile] ?? $baseProfileCfg;
+
+    foreach ($numericFields as $field => $rules) {
+        if (isset($_POST[$field])) {
+            $raw = (float) $_POST[$field];
+            if ($raw < $rules['min']) {
+                $raw = (float) $rules['min'];
+            }
+            $profileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+
+    if (!isset($existing['profiles'])) {
+        $existing['profiles'] = [];
+    }
+    $existing['profiles'][$profile] = $profileData;
+
+    // ── Persist ──────────────────────────────────────────────────────────
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n";
+    $php .= "/**\n * Profit Manager Module — Active Config Overrides\n";
+    $php .= " * Written by the admin UI. Do not edit manually.\n */\n\n";
+    $php .= "return ";
+    $php .= var_export($existing, true);
+    $php .= ";\n";
+
+    $dir = dirname($activeFile);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Profit Manager настройки сохранены'];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardPmConfigSave'))

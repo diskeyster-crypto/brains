@@ -178,7 +178,7 @@ ob_start();
                         'max_concurrent_positions' => ['type'=>'int',    'label'=>'Макс. одновременных позиций'],
                         'max_intents_per_run'      => ['type'=>'int',    'label'=>'Макс. намерений за цикл'],
                         'pm_trailing_owner'        => ['type'=>'select', 'label'=>'Трейлинг управляет',
-                            'opts'=>['profit_manager'=>'profit_manager','trading_bot'=>'trading_bot']],
+                            'opts'=>['trading_bot'=>'trading_bot']],
                     ];
                     foreach ($editFields as $k => $def):
                         $draftEntry  = $params[$k] ?? null;

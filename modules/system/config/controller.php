@@ -88,21 +88,6 @@ final class UnifiedConfigController
         include __DIR__ . '/views/trading_bot.php';
     }
 
-    public function profitManager(): void
-    {
-        $this->requireAuth();
-        $tab             = 'profit_manager';
-        $title           = 'Центр Конфигурации — Менеджер Прибыли';
-        $summary         = $this->service->getSummary();
-        $data            = $this->service->getOperationalDraft();
-        $master          = $this->service->getOperationalMaster();
-        $preview         = $this->service->getEffectivePreview();
-        $migrationStatus = $this->service->getProfitManagerMigrationStatus();
-        $baseUrl         = $this->baseUrl;
-        $flash           = $this->consumeFlash();
-        include __DIR__ . '/views/profit_manager.php';
-    }
-
     public function coinCycle(): void
     {
         $this->requireAuth();

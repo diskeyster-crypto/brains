@@ -96,25 +96,6 @@ final class CoinPassportService
     }
 
     /**
-     * Passively write Profit Manager observation stats into a symbol's passport.
-     *
-     * Only the profit_manager_stats block is updated — all other passport fields
-     * are left untouched. Best-effort: returns true on success, false on any failure.
-     *
-     * @param string              $symbol Upper-case symbol, e.g. 'BTCUSDT'
-     * @param array<string,mixed> $stats  Compact PM observation summary (avg_peak_roi, samples_total, …)
-     * @return bool
-     */
-    public function updateProfitManagerStats(string $symbol, array $stats): bool
-    {
-        try {
-            return $this->engine->updateProfitManagerStats(strtoupper($symbol), $stats);
-        } catch (\Throwable $e) {
-            return false;
-        }
-    }
-
-    /**
      * Return last rebuild status (for UI display).
      *
      * @return array<string,mixed>

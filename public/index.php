@@ -760,7 +760,7 @@ Router::post('/admin/signal/api/config/save', function () {
 // PROFIT MANAGER MODULE ROUTES (P2 контур - Trailing / Profit Lock)
 // ============================================================
 
-require_once ROOT . '/modules/system/profit_manager/controller.php';
+
 use Modules\System\ProfitManager\ProfitManagerController;
 
 Router::get('/admin/trading/profit', function () {

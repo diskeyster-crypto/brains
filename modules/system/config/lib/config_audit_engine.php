@@ -33,7 +33,6 @@ final class ConfigAuditEngine
     // Source module base directories (resolved at extract time)
     private string $brainBase       = '';
     private string $botBase         = '';
-    private string $pmBase          = '';
     private string $passportBase    = '';
 
     public function __construct(string $moduleBase, array $config)
@@ -96,7 +95,6 @@ final class ConfigAuditEngine
 
         $this->brainBase    = $systemDir . '/smart_brain';
         $this->botBase      = $systemDir . '/trading_bot';
-        $this->pmBase       = $systemDir . '/profit_manager';
         $this->passportBase = $systemDir . '/coin_passport';
 
         // Try SystemPaths for more reliable resolution when available
@@ -107,7 +105,6 @@ final class ConfigAuditEngine
             $candidates = [
                 'brainBase'    => ['smart_brain',    $keys['smart_brain']    ?? ''],
                 'botBase'      => ['trading_bot',    $keys['trading_bot']    ?? ''],
-                'pmBase'       => ['profit_manager', $keys['profit_manager'] ?? ''],
                 'passportBase' => ['coin_passport',  $keys['coin_passport']  ?? ''],
             ];
 
@@ -146,7 +143,6 @@ final class ConfigAuditEngine
             'brain_effective'      => $this->loadJsonFile($this->brainBase . '/runtime/effective_config.json'),
             'bot_config'           => $this->loadPhpConfig($this->botBase  . '/config/config.php'),
             'bot_runtime'          => $this->loadJsonFile($this->botBase   . '/config/bot.json'),
-            'pm_config'            => $this->loadPhpConfig($this->pmBase   . '/config/config.php'),
             'cp_config'            => $this->loadPhpConfig($this->passportBase . '/config/config.php'),
             'passport_manifest'    => $this->loadPhpConfig($this->passportBase . '/manifest.php'),
         ];
@@ -266,7 +262,7 @@ final class ConfigAuditEngine
         unset($entry);
 
         // Attach migration_readiness status to each parameter
-        $legacySources = ['bot_config', 'brain_risk_engine', 'brain_effective', 'pm_config', 'cp_config', 'passport_manifest'];
+        $legacySources = ['bot_config', 'brain_risk_engine', 'brain_effective', 'cp_config', 'passport_manifest'];
         foreach ($map as $key => &$entry) {
             if ($entry['unused']) {
                 $entry['migration_readiness'] = 'blocked_by_missing_owner';
@@ -307,7 +303,6 @@ final class ConfigAuditEngine
             'bot_runtime'       => 'Bot runtime config (bot.json override)',
             'bot_config'        => 'Bot static config.php (lowest operational precedence)',
             'brain_risk_engine' => 'Risk engine coefficients (immutable)',
-            'pm_config'         => 'Profit Manager config.php',
             'cp_config'         => 'Coin Passport config.php',
             'passport_manifest' => 'Coin Passport manifest',
         ];
@@ -537,13 +532,6 @@ final class ConfigAuditEngine
             ),
         ];
 
-        // Profit Manager effective (it reads from bot config)
-        $pmCfg = $sources['pm_config'] ?? [];
-        $pmPreview = [
-            'module'    => $pmCfg['module']    ?? null,
-            'execution' => $pmCfg['execution'] ?? null,
-        ];
-
         // Coin Passport — first-wave operational config from cp_config
         $cpCfg = $sources['cp_config'] ?? [];
         $passportPreview = [
@@ -555,7 +543,6 @@ final class ConfigAuditEngine
             'modules'       => [
                 'smart_brain'    => $brainPreview,
                 'trading_bot'    => $botPreview,
-                'profit_manager' => $pmPreview,
                 'coin_passport'  => $passportPreview,
             ],
         ];
@@ -627,10 +614,6 @@ final class ConfigAuditEngine
             ['key' => 'max_intents_per_run',       'source' => 'bot_config',        'path' => 'execution.max_intents_per_run', 'type' => 'operational', 'notes' => ''],
             ['key' => 'max_concurrent_positions',  'source' => 'bot_runtime',       'path' => 'max_positions',             'type' => 'operational', 'notes' => 'Bot-side concurrent position cap'],
             ['key' => 'bot_brain_controlled',      'source' => 'bot_runtime',       'path' => 'sources.brain_source_enabled', 'type' => 'operational', 'notes' => 'Brain-controlled mode flag'],
-
-            // ── Profit Manager — core ──────────────────────────────────────
-            ['key' => 'pm_trailing_owner',         'source' => 'bot_runtime',       'path' => 'execution.trailing_owner',  'type' => 'operational', 'notes' => 'bot | profit_manager | profit_manager_shadow'],
-            ['key' => 'pm_enabled',                'source' => 'bot_config',        'path' => 'profit_manager.module.enabled', 'type' => 'operational', 'notes' => 'Profit Manager on/off'],
 
             // ── Coin Passport — first-wave operational ─────────────────────
             ['key' => 'cp_enabled',                'source' => 'cp_config',         'path' => 'module.enabled',                'type' => 'operational', 'notes' => 'Coin Passport master on/off switch'],
@@ -878,21 +861,6 @@ final class ConfigAuditEngine
                     'bot_runtime' => 'sources.brain_source_enabled',
                 ],
             ],
-            // Profit Manager
-            'pm_trailing_owner' => [
-                'label' => 'Trailing Owner',
-                'notes' => 'bot | profit_manager | profit_manager_shadow',
-                'sources' => [
-                    'bot_runtime' => 'execution.trailing_owner',
-                ],
-            ],
-            'pm_enabled' => [
-                'label' => 'Profit Manager Enabled',
-                'notes' => 'PM on/off (reads from bot config profit_manager block)',
-                'sources' => [
-                    'bot_config' => 'profit_manager.module.enabled',
-                ],
-            ],
             // Coin Passport — first-wave operational params
             'cp_enabled' => [
                 'label' => 'Coin Passport Enabled',
@@ -1044,7 +1012,6 @@ final class ConfigAuditEngine
             'brain_effective'   => 'modules/system/smart_brain/runtime/effective_config.json',
             'bot_config'        => 'modules/system/trading_bot/config/config.php',
             'bot_runtime'       => 'modules/system/trading_bot/config/bot.json',
-            'pm_config'         => 'modules/system/profit_manager/config/config.php',
             'cp_config'         => 'modules/system/coin_passport/config/config.php',
             'passport_manifest' => 'modules/system/coin_passport/manifest.php',
             default             => $source,

@@ -28,7 +28,6 @@ return [
     'sources' => [
         'smart_brain'    => 'system.smart_brain',
         'trading_bot'    => 'system.trading_bot',
-        'profit_manager' => 'system.profit_manager',
         'coin_passport'  => 'system.coin_passport',
     ],
 

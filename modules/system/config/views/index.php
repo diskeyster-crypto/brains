@@ -240,7 +240,7 @@ ob_start();
                                     'execution_profile'          => ['sniper_lite' => 'sniper_lite', 'balanced' => 'balanced', 'passive' => 'passive', 'custom' => 'custom'],
                                     'patterns_mode'              => ['any' => 'any — любой', 'all' => 'all — все'],
                                     'bot_mode'                   => ['live' => 'live — лайв', 'demo' => 'demo — демо', 'paper' => 'paper — бумажная'],
-                                    'pm_trailing_owner'          => ['profit_manager' => 'profit_manager', 'trading_bot' => 'trading_bot'],
+                                    'pm_trailing_owner'          => ['trading_bot' => 'trading_bot'],
                                     default                      => [],
                                 };
                                 ?>

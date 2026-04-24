@@ -745,6 +745,33 @@ ROWS;
     $pmDiagPriceProvErr    = (string)($pmRawLastRun['price_provider_error']  ?? '');
     $pmDiagPriceProvSource = (string)($pmRawLastRun['price_provider_source'] ?? '');
 
+    // ── PM per-position runtime rows (new diagnostics) ────────────────────
+    $pmPositionsRuntime   = is_array($pmRawLastRun['positions_runtime']    ?? null)
+        ? $pmRawLastRun['positions_runtime']    : [];
+    $pmSkipReasonsSummary = is_array($pmRawLastRun['skip_reasons_summary'] ?? null)
+        ? $pmRawLastRun['skip_reasons_summary'] : [];
+
+    // Human-readable skip reason labels (Russian)
+    $pmReasonLabels = [
+        'below_init_roi'                  => 'ROI ниже порога инициализации PM',
+        'below_activation_roi'            => 'ROI ниже порога активации lock',
+        'lock_price_too_close_to_current' => 'Lock слишком близко к текущей цене',
+        'lock_not_improving'              => 'Новый lock не улучшает старый',
+        'no_price_data'                   => 'Нет текущей цены',
+        'cannot_calculate_roi'            => 'Невозможно рассчитать ROI',
+        'all_positions_invalid'           => 'Все позиции невалидны',
+        'no_positions'                    => 'Нет позиций',
+        'module_disabled'                 => 'Модуль отключён',
+    ];
+
+    // Normal paper-runtime skip conditions (WARN, not ERR)
+    $pmNormalSkipReasons = [
+        'below_init_roi', 'below_activation_roi',
+        'lock_not_improving', 'lock_price_too_close_to_current',
+        'lock_not_on_profit_side', 'roi_step_too_small',
+        'update_interval_not_elapsed', 'planned',
+    ];
+
     // ── PM cron task check ────────────────────────────────────────────────
     $pmCronTaskExists  = false;
     $pmCronTaskEnabled = false;
@@ -820,8 +847,28 @@ ROWS;
         $scPmReason = 'price_provider: ' . $pmDiagPriceProvErr;
     } elseif ($pmEnabledBool) {
         if ($pmRawSkipped !== '' && $pmRawSkipped !== 'module_disabled') {
-            $scPmState  = 'WARN';
-            $scPmReason = $pmRawSkipped;
+            $scPmState = 'WARN';
+            // Use clean summary for badge; fall back to raw string for legacy data
+            if (!empty($pmSkipReasonsSummary)) {
+                $topReason    = (string) array_key_first($pmSkipReasonsSummary);
+                $totalSkipped = (int) array_sum($pmSkipReasonsSummary);
+                $scPmReason   = $topReason . ' ×' . $totalSkipped;
+            } else {
+                $scPmReason = $pmRawSkipped;
+            }
+        } elseif (!empty($pmSkipReasonsSummary)) {
+            // Positions processed; some skipped for normal reasons (skip_reason='' globally)
+            $allNormal = true;
+            foreach (array_keys($pmSkipReasonsSummary) as $r) {
+                if (!in_array($r, $pmNormalSkipReasons, true)) {
+                    $allNormal = false;
+                    break;
+                }
+            }
+            $scPmState    = $allNormal ? 'WARN' : 'ERR';
+            $topReason    = (string) array_key_first($pmSkipReasonsSummary);
+            $totalSkipped = (int) array_sum($pmSkipReasonsSummary);
+            $scPmReason   = $topReason . ' ×' . $totalSkipped;
         } elseif ($pmDiagInvalidPos > 0 && $pmDiagErrSum !== '') {
             $scPmState  = 'WARN';
             $scPmReason = $pmDiagErrSum;
@@ -889,7 +936,6 @@ ROWS;
         . $scBadge('Cron', $scCronState, $scCronReason)
         . '</div>';
 
-    // ── PM Runtime note (shown when PM is disabled but had a tick) ────────
     $pmRuntimeNote = '';
     if (!$pmEnabledBool && $pmRawLastRun !== []) {
         $noteReason = $pmRawSkipped !== '' ? $pmRawSkipped : 'module_disabled';
@@ -899,7 +945,17 @@ ROWS;
         $errDetail = $pmDiagErrSum !== '' ? ' (' . $e($pmDiagErrSum) . ')' : '';
         $pmRuntimeNote = '<div style="color:#f85149;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(248,81,73,.08);border-radius:6px;border-left:3px solid #f8514977;">'
             . 'Позиции найдены, но все невалидны для PM' . $errDetail . '</div>';
+    } elseif ($pmEnabledBool && !empty($pmSkipReasonsSummary)) {
+        // Per-reason summary with human-readable labels (replaces raw concatenated message)
+        $noteLines = [];
+        foreach ($pmSkipReasonsSummary as $reason => $cnt) {
+            $label      = $pmReasonLabels[$reason] ?? $reason;
+            $noteLines[] = $e($label) . ' (' . (int)$cnt . ')';
+        }
+        $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
+            . 'Позиции в режиме ожидания: ' . implode(' · ', $noteLines) . '</div>';
     } elseif ($pmEnabledBool && $pmRawSkipped !== '') {
+        // Legacy fallback for old last_run.json without skip_reasons_summary
         $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
             . 'Тик пропущен: <strong>' . $e($pmRawSkipped) . '</strong></div>';
     } elseif ($pmEnabledBool && $pmDiagInvalidPos > 0 && $pmDiagValidPos === 0 && $pmDiagPositions > 0) {
@@ -976,6 +1032,98 @@ ROWS;
     if ($pmDiagSource !== '' && $pmDiagSource !== 'none') {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Источник позиций</td>'
             . '<td style="font-size:11px;"><code>' . $e($pmDiagSource) . '</code></td></tr>';
+    }
+    if (!empty($pmSkipReasonsSummary)) {
+        $skipSummaryParts = [];
+        foreach ($pmSkipReasonsSummary as $reason => $cnt) {
+            $label = $pmReasonLabels[$reason] ?? $reason;
+            $skipSummaryParts[] = $e($label) . ': ' . (int)$cnt;
+        }
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Skip по причинам</td>'
+            . '<td style="color:#f0883e;font-size:12px;">' . implode('<br>', $skipSummaryParts) . '</td></tr>';
+    }
+
+    // ── PM per-position runtime table HTML ───────────────────────────────
+    $pmPositionsTable = '';
+    if (!empty($pmPositionsRuntime)) {
+        $fmtFloat = static function ($v, int $dec = 2): string {
+            return ($v === null || $v === '') ? '—' : number_format((float)$v, $dec);
+        };
+        $actionColor = static function (string $action): string {
+            if ($action === 'skip') {
+                return '#8b949e';
+            }
+            if (str_contains($action, 'would_set') || str_contains($action, 'would_move')) {
+                return '#3fb950';
+            }
+            if (str_contains($action, 'would_close')) {
+                return '#f0883e';
+            }
+            return '#58a6ff';
+        };
+
+        $tableRows = '';
+        foreach ($pmPositionsRuntime as $pr) {
+            $symbol      = $e((string)($pr['symbol']       ?? ''));
+            $side        = $e((string)($pr['side']         ?? ''));
+            $roi         = $fmtFloat($pr['roi']         ?? null);
+            $peakRoi     = $fmtFloat($pr['peak_roi']    ?? null);
+            $initRoi     = $fmtFloat($pr['init_roi']    ?? null);
+            $activRoi    = $fmtFloat($pr['activation_roi'] ?? null);
+            $action      = (string)($pr['action']       ?? 'skip');
+            $rawReason   = (string)($pr['skip_reason']  ?? '');
+            $priceSource = $e((string)($pr['price_source'] ?? ''));
+            $reasonLabel = $rawReason !== ''
+                ? ($pmReasonLabels[$rawReason] ?? $rawReason)
+                : ($action !== 'skip' ? '—' : '—');
+            $actionShort = match (true) {
+                $action === 'skip'                                          => 'skip',
+                $action === 'would_set_profit_lock'                        => 'set lock',
+                $action === 'would_move_profit_lock'                       => 'move lock',
+                $action === 'would_close_on_lock_touch'                    => 'close',
+                default                                                    => $e($action),
+            };
+            $aClr = $actionColor($action);
+            $tableRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+                . '<td style="padding:4px 8px;font-weight:600;">' . $symbol . '</td>'
+                . '<td style="padding:4px 8px;color:#8b949e;">' . $side . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $roi . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;color:#a78bfa;">' . $peakRoi . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $initRoi . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $activRoi . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:' . $aClr . ';font-weight:600;">' . $actionShort . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $e($reasonLabel) . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $priceSource . '</td>'
+                . '</tr>';
+        }
+
+        $pmPositionsTable = <<<HTML
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">Profit Manager — Позиции (runtime)</div>
+  <div class="card-body" style="padding:0;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--ui-border);">
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Symbol</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Side</th>
+            <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">ROI %</th>
+            <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Peak ROI %</th>
+            <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Init</th>
+            <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Activation</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Action</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Reason</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Price Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {$tableRows}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+HTML;
     }
 
     $flashHtml = '';
@@ -1274,6 +1422,7 @@ HTML;
       </div>
     </div>
   </div>
+  {$pmPositionsTable}
 </div>
 
 <!-- ── Control pane ──────────────────────────────────────────────────── -->

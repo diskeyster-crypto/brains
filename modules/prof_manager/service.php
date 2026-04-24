@@ -159,6 +159,11 @@ final class ProfManagerService
             $plans            = [];
             $validationErrors = [];
             $allWarningCodes  = [];
+            $positionsRuntime = [];
+
+            // Config values used for per-position diagnostics
+            $initRoiCfg       = (float) ($profileConfig['init_roi']       ?? 2.0);
+            $activationRoiCfg = (float) ($profileConfig['activation_roi'] ?? 10.0);
 
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
@@ -187,6 +192,9 @@ final class ProfManagerService
                 $lockState     = $locks[$key] ?? [];
                 $positionState = $positionsState[$key] ?? [];
 
+                // Capture existing lock price before running profile
+                $oldLockPrice = (float) ($lockState['lock_price'] ?? 0.0);
+
                 $runResult = $this->profile->run($pos, $lockState, $positionState, $profileConfig, $nowTs);
 
                 // Update tracking state immediately (in-memory)
@@ -194,7 +202,40 @@ final class ProfManagerService
                 $locks[$key]          = $runResult['lock_state'];
 
                 $plans[] = $runResult['plan'];
+
+                // ── Collect per-position runtime diagnostics ──────────────────
+                $positionsRuntime[] = [
+                    'symbol'         => $pos['symbol']      ?? '',
+                    'side'           => $pos['side']        ?? '',
+                    'entry_price'    => (float) ($pos['entry_price']    ?? $pos['avg_price'] ?? 0.0),
+                    'current_price'  => (float) ($pos['current_price']  ?? 0.0),
+                    'roi'            => $runResult['plan']['current_roi'] ?? null,
+                    'peak_roi'       => $runResult['plan']['peak_roi']    ?? null,
+                    'init_roi'       => $initRoiCfg,
+                    'activation_roi' => $activationRoiCfg,
+                    'action'         => $runResult['plan']['action']      ?? 'skip',
+                    'skip_reason'    => $runResult['plan']['skip_reason'] ?? null,
+                    'lock_price'     => $runResult['lock_state']['lock_price'] ?? null,
+                    'old_lock_price' => $oldLockPrice > 0.0 ? $oldLockPrice : null,
+                    'price_source'   => $pos['_price_source'] ?? 'unknown',
+                ];
             }
+
+            // ── Build skip-reason summary (with priority deduplication) ───────
+            // Priority: no_price_data > below_init_roi > below_activation_roi > …
+            // If below_init_roi is present, below_activation_roi is implied and
+            // removed to avoid showing redundant reasons.
+            $rawSkipCounts = [];
+            foreach ($plans as $plan) {
+                if (($plan['action'] ?? '') === 'skip' && !empty($plan['skip_reason'])) {
+                    $r = (string) $plan['skip_reason'];
+                    $rawSkipCounts[$r] = ($rawSkipCounts[$r] ?? 0) + 1;
+                }
+            }
+            if (isset($rawSkipCounts['below_init_roi'], $rawSkipCounts['below_activation_roi'])) {
+                unset($rawSkipCounts['below_activation_roi']);
+            }
+            $skipReasonsSummary = $rawSkipCounts;
 
             // ── Paper execution ───────────────────────────────────────────────
             $execResult = $this->executor->execute($plans, $locks, $maxUpdates);
@@ -268,6 +309,8 @@ final class ProfManagerService
                 'executed'                    => $execResult['executed'],
                 'skipped'                     => $execResult['skipped'],
                 'skip_reason'                 => $skipReason,
+                'skip_reasons_summary'        => $skipReasonsSummary,
+                'positions_runtime'           => $positionsRuntime,
                 'validation_errors'           => $validationErrors,
                 'validation_errors_summary'   => $errorsSummary,
                 'validation_errors_by_symbol' => $errorsBySymbol,

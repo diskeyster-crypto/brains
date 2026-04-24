@@ -1815,6 +1815,9 @@ function handleDashboardPmTick(): void
     $moduleDir = System::path('root') . '/modules/prof_manager';
 
     try {
+        if (is_file($moduleDir . '/bootstrap.php')) {
+            require_once $moduleDir . '/bootstrap.php';
+        }
         require_once $moduleDir . '/service.php';
         $service = new \Modules\ProfManager\ProfManagerService($moduleDir);
         $service->setEnabled(true);

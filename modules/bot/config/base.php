@@ -40,6 +40,13 @@ return [
     // Signals within this window are refreshed, not re-queued.
     'queue_dedup_ttl_sec' => 57600,   // 16 h  (4 × H4 bars)
 
+    // Per-trade execution defaults.
+    // Resolution order: signal value → operator override → these config values → hard fallback.
+    // 0 means "not set at config level" — the hard fallbacks (leverage=5, budget=6) will apply.
+    'leverage'             => 5,     // default leverage for paper positions
+    'budget_per_trade'     => 6.0,   // default USDT allocated per position
+    'max_active_positions' => 10,    // maximum concurrently open paper positions (0 = unlimited)
+
     // Global budget / leverage caps enforced at bot level (0 = use per-strategy value).
     // Per-strategy overrides in operator_overrides.json take precedence over signal values.
     'max_bot_budget'   => 0.0,

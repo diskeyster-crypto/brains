@@ -31,6 +31,11 @@ return [
     'max_bot_budget'   => 'float',
     'max_bot_leverage' => 'int',
 
+    // Per-trade execution defaults
+    'leverage'             => 'int',
+    'budget_per_trade'     => 'float',
+    'max_active_positions' => 'int',
+
     // Cron
     'tick_interval_sec'   => 'int',
     'max_runtime_seconds' => 'int',

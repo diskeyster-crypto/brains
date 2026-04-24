@@ -258,7 +258,7 @@ final class BotService
 
         // ── 5. Execution state machine (paper mode only) ──────────────────────
         $botMode  = (string)($config['mode'] ?? 'passive');
-        $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $tickAt);
+        $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $config, $tickAt);
         $orderQueue      = $execResult['order_queue'];
         $activeOrders    = $execResult['active_orders'];
         $activePositions = $execResult['active_positions'];
@@ -588,7 +588,7 @@ final class BotService
                 $prevStatus = (string)($prev['queue_status'] ?? 'queued');
 
                 if (in_array($prevStatus, ['queued', 'ready'], true)) {
-                    $item = $this->buildQueueItem($signal, $opOverrides, $tickAt);
+                    $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt);
                     $item['entry_mode']            = $entryMode;
                     $item['queue_status']          = 'ready';
                     $item['first_queued_at']       = $prev['first_queued_at'] ?? $tickAt;
@@ -602,7 +602,7 @@ final class BotService
                     $result[$key] = $prev;
                 }
             } else {
-                $item = $this->buildQueueItem($signal, $opOverrides, $tickAt);
+                $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt);
                 $item['entry_mode']            = $entryMode;
                 $item['queue_status']          = 'queued';
                 $item['first_queued_at']       = $tickAt;
@@ -702,6 +702,7 @@ final class BotService
         array $activePositions,
         array $closedPositions,
         string $mode,
+        array $config,
         string $tickAt
     ): array {
         $ordersCreated                  = 0;
@@ -819,23 +820,57 @@ final class BotService
 
                     // Open position if not already present
                     if (!isset($positionMap[$key])) {
-                        $position = $this->buildPositionFromOrder($order, $tickAt);
-                        $positionMap[$key] = $position;
-                        $positionsOpened++;
-                        $this->appendExecutionLog([
-                            'timestamp'      => $tickAt,
-                            'event_type'     => 'position_opened',
-                            'strategy_id'    => $position['strategy_id'],
-                            'owner_strategy' => $position['owner_strategy'],
-                            'signal_id'      => $position['signal_id'],
-                            'symbol'         => $position['symbol'],
-                            'side'           => $position['side'],
-                            'entry_mode'     => $position['entry_mode'],
-                            'entry_price'    => $position['entry_price'],
-                            'execution_mode' => $position['execution_mode'],
-                            'reason'         => 'filled_in_paper_mode',
-                        ]);
-                        $logEvents++;
+                        // Max active positions guard
+                        $maxPos = (int)($config['max_active_positions'] ?? 10);
+                        if ($maxPos > 0 && count($positionMap) >= $maxPos) {
+                            $this->appendExecutionLog([
+                                'timestamp'     => $tickAt,
+                                'event_type'    => 'position_skipped',
+                                'symbol'        => $order['symbol'] ?? '',
+                                'reason'        => 'max_active_positions_reached',
+                                'max_positions' => $maxPos,
+                            ]);
+                            $logEvents++;
+                        } else {
+                            // Validate critical fields before creating position
+                            $epCheck  = (float)($order['entry_price'] ?? 0.0);
+                            $budCheck = (float)($order['bot_budget']  ?? 0.0);
+                            $levCheck = (int)($order['bot_leverage']  ?? 0);
+                            if ($epCheck <= 0.0 || $budCheck <= 0.0 || $levCheck <= 0) {
+                                $this->appendExecutionLog([
+                                    'timestamp'    => $tickAt,
+                                    'event_type'   => 'position_skipped',
+                                    'symbol'       => $order['symbol'] ?? '',
+                                    'entry_price'  => $epCheck,
+                                    'bot_budget'   => $budCheck,
+                                    'bot_leverage' => $levCheck,
+                                    'reason'       => 'invalid_entry_price_budget_or_leverage',
+                                ]);
+                                $logEvents++;
+                            } else {
+                                $position = $this->buildPositionFromOrder($order, $tickAt);
+                                $positionMap[$key] = $position;
+                                $positionsOpened++;
+                                $this->appendExecutionLog([
+                                    'timestamp'      => $tickAt,
+                                    'event_type'     => 'position_opened',
+                                    'strategy_id'    => $position['strategy_id'],
+                                    'owner_strategy' => $position['owner_strategy'],
+                                    'signal_id'      => $position['signal_id'],
+                                    'symbol'         => $position['symbol'],
+                                    'side'           => $position['side'],
+                                    'entry_mode'     => $position['entry_mode'],
+                                    'entry_price'    => $position['entry_price'],
+                                    'bot_leverage'   => $position['bot_leverage'],
+                                    'bot_budget'     => $position['bot_budget'],
+                                    'size'           => $position['size'],
+                                    'budget_source'  => $position['budget_source'],
+                                    'execution_mode' => $position['execution_mode'],
+                                    'reason'         => 'filled_in_paper_mode',
+                                ]);
+                                $logEvents++;
+                            }
+                        }
                     }
                 }
             }
@@ -934,6 +969,8 @@ final class BotService
             // Execution parameters
             'bot_budget'                    => (float)($qItem['bot_budget']                    ?? 0.0),
             'bot_leverage'                  => (int)($qItem['bot_leverage']                    ?? 1),
+            'budget_source'                 => (string)($qItem['budget_source']                ?? 'unknown'),
+            'leverage_source'               => (string)($qItem['leverage_source']              ?? 'unknown'),
             'stop_mode'                     => (string)($qItem['stop_mode']                    ?? 'fixed_from_liq_zone'),
             'stop_from_liq_buffer_value'    => (float)($qItem['stop_from_liq_buffer_value']   ?? 0.002),
             'stop_from_liq_buffer_type'     => (string)($qItem['stop_from_liq_buffer_type']   ?? 'percent'),
@@ -967,9 +1004,17 @@ final class BotService
      */
     private function buildPositionFromOrder(array $order, string $tickAt): array
     {
-        $entryPrice      = (float)($order['entry_price'] ?? 0.0);
-        $leverage        = (int)($order['bot_leverage']  ?? 1);
-        $side            = (string)($order['side']       ?? 'long');
+        $entryPrice = (float)($order['entry_price'] ?? 0.0);
+        $leverage   = max(1, (int)($order['bot_leverage'] ?? 5));
+        $budget     = (float)($order['bot_budget'] ?? 0.0);
+        $side       = (string)($order['side'] ?? 'long');
+
+        // size = (budget × leverage) / entry_price
+        $size = 0.0;
+        if ($entryPrice > 0.0 && $budget > 0.0 && $leverage > 0) {
+            $size = round(($budget * $leverage) / $entryPrice, 6);
+        }
+
         $estimatedLiqPrice = $this->computeEstimatedLiqPrice($entryPrice, $leverage, $side);
 
         return [
@@ -987,11 +1032,14 @@ final class BotService
             'entry_price' => $entryPrice,
 
             // Execution parameters
-            'bot_budget'                    => (float)($order['bot_budget']                    ?? 0.0),
+            'bot_budget'                    => $budget,
             'bot_leverage'                  => $leverage,
             // Canonical PM fields (mirrors bot_budget / bot_leverage for live-like paper format)
-            'budget'                        => (float)($order['bot_budget']                    ?? 0.0),
+            'budget'                        => $budget,
             'leverage'                      => (float)$leverage,
+            'size'                          => $size,
+            'budget_source'                 => (string)($order['budget_source']   ?? 'unknown'),
+            'leverage_source'               => (string)($order['leverage_source'] ?? 'unknown'),
             'stop_mode'                     => (string)($order['stop_mode']                    ?? 'fixed_from_liq_zone'),
             'stop_from_liq_buffer_value'    => (float)($order['stop_from_liq_buffer_value']   ?? 0.002),
             'stop_from_liq_buffer_type'     => (string)($order['stop_from_liq_buffer_type']   ?? 'percent'),
@@ -1060,18 +1108,44 @@ final class BotService
      * Deep strategy internals (pattern thresholds, TTL, corridor config, etc.)
      * are NOT exposed here — they stay inside each strategy module.
      */
-    private function buildQueueItem(array $signal, array $opOverrides, string $tickAt): array
+    private function buildQueueItem(array $signal, array $opOverrides, array $config, string $tickAt): array
     {
-        $botBudget   = (float)($signal['bot_budget']   ?? 0.0);
-        $botLeverage = (int)($signal['bot_leverage']   ?? 1);
+        // Resolve budget: signal → operator override → config → hard fallback
+        $botBudget      = (float)($signal['bot_budget']  ?? 0.0);
+        $botLeverage    = (int)($signal['bot_leverage']  ?? 0);
+        $budgetSource   = ($botBudget  > 0.0) ? 'signal' : '';
+        $leverageSource = ($botLeverage > 0)  ? 'signal' : '';
 
         $opBudget   = (float)($opOverrides['bot_budget']   ?? 0.0);
         $opLeverage = (int)($opOverrides['bot_leverage']   ?? 0);
         if ($opBudget > 0.0) {
-            $botBudget = $opBudget;
+            $botBudget    = $opBudget;
+            $budgetSource = 'operator';
         }
         if ($opLeverage > 0) {
-            $botLeverage = $opLeverage;
+            $botLeverage    = $opLeverage;
+            $leverageSource = 'operator';
+        }
+
+        if ($botBudget <= 0.0) {
+            $cfgBudget = (float)($config['budget_per_trade'] ?? 0.0);
+            if ($cfgBudget > 0.0) {
+                $botBudget    = $cfgBudget;
+                $budgetSource = 'config';
+            } else {
+                $botBudget    = 6.0;
+                $budgetSource = 'default';
+            }
+        }
+        if ($botLeverage <= 0) {
+            $cfgLeverage = (int)($config['leverage'] ?? 0);
+            if ($cfgLeverage > 0) {
+                $botLeverage    = $cfgLeverage;
+                $leverageSource = 'config';
+            } else {
+                $botLeverage    = 5;
+                $leverageSource = 'default';
+            }
         }
 
         return [
@@ -1100,6 +1174,8 @@ final class BotService
             'stop_from_liq_buffer_type'     => (string)($signal['stop_from_liq_buffer_type']   ?? 'percent'),
             'bot_budget'                    => $botBudget,
             'bot_leverage'                  => $botLeverage,
+            'budget_source'                 => $budgetSource,
+            'leverage_source'               => $leverageSource,
             'tp_enabled'                    => (bool)($signal['tp_enabled']                    ?? false),
             'tp_mode'                       => (string)($signal['tp_mode']                     ?? 'fixed_r'),
             'tp_value'                      => (float)($signal['tp_value']                     ?? 2.0),
